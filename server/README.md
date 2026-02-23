@@ -21,13 +21,7 @@ Backend API for the PreSkool School Management System built with Express.js and 
 
 ## Database Setup
 
-Make sure you have PostgreSQL installed and running with the following credentials:
-
-- **Database Name**: `schooldb`
-- **Username**: `schooluser`
-- **Password**: `Webster@123456`
-- **Host**: `localhost`
-- **Port**: `5432`
+Make sure you have PostgreSQL installed and running. Configure your database credentials in `.env` (see `.env.example`).
 
 ## Installation
 
@@ -94,7 +88,7 @@ The server uses PostgreSQL with connection pooling for optimal performance. The 
 | DB_PORT | 5432 | Database port |
 | DB_NAME | schooldb | Database name |
 | DB_USER | schooluser | Database username |
-| DB_PASSWORD | Webster@123456 | Database password |
+| DB_PASSWORD | (set in .env) | Database password |
 | JWT_SECRET | your-super-secret-jwt-key-change-this-in-production | JWT secret key |
 | JWT_EXPIRES_IN | 7d | JWT expiration time |
 | CORS_ORIGIN | http://localhost:3000 | CORS allowed origin |

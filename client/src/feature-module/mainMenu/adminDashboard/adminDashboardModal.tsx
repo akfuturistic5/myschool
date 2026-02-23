@@ -41,8 +41,20 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
     useEffect(() => {
         (async () => {
             try {
+                const fetchTeachers = async () => {
+                    try {
+                        const me = await apiService.getCurrentTeacher();
+                        if (me?.status === 'SUCCESS' && me.data) {
+                            const t = me.data as { id: number; first_name?: string; last_name?: string };
+                            return { status: 'SUCCESS' as const, data: [t] };
+                        }
+                    } catch {
+                        // Not a teacher (404 etc) - fall back to full list for admins
+                    }
+                    return apiService.getTeachers();
+                };
                 const [tRes, cRes, sRes, rRes] = await Promise.all([
-                    apiService.getTeachers(),
+                    fetchTeachers(),
                     apiService.getClasses(),
                     apiService.getSections(),
                     apiService.getClassRooms(),

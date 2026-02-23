@@ -1,4 +1,6 @@
 const express = require('express');
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ADMIN_DASHBOARD_ROLES } = require('../config/roles');
 const {
   getDashboardStats,
   getUpcomingEvents,
@@ -9,12 +11,18 @@ const {
   getTopSubjects,
   getRecentActivity,
   getNoticeBoardForDashboard,
+  getDashboardFeeStats,
+  getDashboardFinanceSummary,
 } = require('../controllers/dashboardController');
 
 const router = express.Router();
 
-// GET /api/dashboard/stats
-router.get('/stats', getDashboardStats);
+// Admin-only dashboard stats (full system counts)
+router.get('/stats', requireRole(ADMIN_DASHBOARD_ROLES), getDashboardStats);
+router.get('/fee-stats', requireRole(ADMIN_DASHBOARD_ROLES), getDashboardFeeStats);
+router.get('/finance-summary', requireRole(ADMIN_DASHBOARD_ROLES), getDashboardFinanceSummary);
+
+// Shared dashboard endpoints (all authenticated roles)
 router.get('/upcoming-events', getUpcomingEvents);
 router.get('/class-routine', getClassRoutineForDashboard);
 router.get('/best-performers', getBestPerformers);

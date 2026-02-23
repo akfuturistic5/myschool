@@ -5,6 +5,7 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import ReactApexChart from "react-apexcharts";
 import { useGuardians } from "../../../core/hooks/useGuardians";
 import { useGuardianWardLeaves } from "../../../core/hooks/useGuardianWardLeaves";
+import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useCalendarEvents } from "../../../core/hooks/useCalendarEvents";
 
 const GuardianDashboard = () => {
@@ -16,6 +17,7 @@ const GuardianDashboard = () => {
   const wards = guardians ?? [];
   const firstWard = wards[0];
   const activeWard = firstWard ?? null;
+  const { data: feeData } = useStudentFees(activeWard?.student_id ?? null);
 
   const displayGuardian = activeWard ?? firstWard;
   const guardianName = displayGuardian
@@ -146,7 +148,7 @@ const GuardianDashboard = () => {
                           <i className="ti ti-chevron-right fs-14" />
                         </Link>
                       </div>
-                      <div className="d-flex bg-white border rounded flex-wrap justify-content-between align-items-center p-3 row-gap-2 mb-4 animate-card">
+                      <div className="d-flex bg-white border rounded flex-wrap justify-content-between align-items-center p-3 row-gap-2 mb-2 animate-card">
                         <div className="d-flex align-items-center">
                           <span className="avatar avatar-sm bg-light-500 me-2 rounded">
                             <i className="ti ti-message-up text-dark fs-16" />
@@ -157,6 +159,23 @@ const GuardianDashboard = () => {
                           <i className="ti ti-chevron-right fs-14" />
                         </Link>
                       </div>
+                      {(activeWard?.student_id ?? firstWard?.student_id) && (
+                        <div className="d-flex bg-white border rounded flex-wrap justify-content-between align-items-center p-3 row-gap-2 mb-4 animate-card">
+                          <div className="d-flex align-items-center">
+                            <span className="avatar avatar-sm bg-light-500 me-2 rounded">
+                              <i className="ti ti-report-money text-dark fs-16" />
+                            </span>
+                            <h6>View Ward Fees</h6>
+                          </div>
+                          <Link
+                            to={routes.studentFees}
+                            state={{ studentId: activeWard?.student_id ?? firstWard?.student_id }}
+                            className="badge rounded-circle arrow d-flex align-items-center justify-content-center"
+                          >
+                            <i className="ti ti-chevron-right fs-14" />
+                          </Link>
+                        </div>
+                      )}
                     </div>
                     <div className="col-xl-4 col-md-6">
                       <div className="card bg-success-transparent border-3 border-white text-center p-3">
@@ -259,6 +278,46 @@ const GuardianDashboard = () => {
               </div>
 
               <div className="row">
+                {(activeWard?.student_id ?? firstWard?.student_id) && (
+                  <div className="col-xxl-4 col-xl-6 d-flex">
+                    <div className="card flex-fill">
+                      <div className="card-header d-flex align-items-center justify-content-between">
+                        <h4 className="card-title">Ward Fees</h4>
+                        <Link
+                          to={routes.studentFees}
+                          state={{ studentId: activeWard?.student_id ?? firstWard?.student_id }}
+                          className="fw-medium"
+                        >
+                          View Fees
+                        </Link>
+                      </div>
+                      <div className="card-body py-1">
+                        {feeData ? (
+                          <div>
+                            <p className="mb-2"><strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                            <p className="mb-2"><strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                            <p className="mb-0">
+                              <strong>Outstanding:</strong>{" "}
+                              <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
+                                ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                              </span>
+                            </p>
+                            {feeData.totalOutstanding > 0 && (
+                              <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
+                                <i className="ti ti-alert-circle me-2" /> Outstanding amount due.
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                            <i className="ti ti-info-circle me-2 fs-18" />
+                            <span>No fees data available.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="col-xxl-4 col-xl-6 d-flex">
                   <div className="card flex-fill">
                     <div className="card-header d-flex align-items-center justify-content-between">

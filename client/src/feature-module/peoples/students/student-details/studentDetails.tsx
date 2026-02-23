@@ -531,7 +531,7 @@ const StudentDetails = () => {
     </div>
   </div>
   {/* /Page Wrapper */}
-  <StudentModals />
+  <StudentModals studentId={student?.id} student={student} feeData={null} onFeeCollected={() => window.location.reload()} />
 </>
 
   )

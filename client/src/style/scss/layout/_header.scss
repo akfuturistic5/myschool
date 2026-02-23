@@ -556,7 +556,7 @@
                                 color: variables.$white;
                             }
                             &.active,&:hover{
-                                background: #F7F7F7 url(../../../../public/assets/img/icons/check.svg) no-repeat calc(100% - 12px) center;
+                                background: #F7F7F7 url(/assets/img/icons/check.svg) no-repeat calc(100% - 12px) center;
                             }
                         }
                         a{

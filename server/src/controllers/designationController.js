@@ -116,7 +116,7 @@ const updateDesignation = async (req, res) => {
     console.error('Error updating designation:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update designation: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update designation' : `Failed to update designation: ${error.message || 'Unknown error'}`,
     });
   }
 };

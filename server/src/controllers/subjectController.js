@@ -170,7 +170,7 @@ const updateSubject = async (req, res) => {
     console.error('Error updating subject:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update subject: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update subject' : `Failed to update subject: ${error.message || 'Unknown error'}`,
     });
   }
 };

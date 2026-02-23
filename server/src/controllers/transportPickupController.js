@@ -101,7 +101,7 @@ const updatePickupPoint = async (req, res) => {
     console.error('Error updating pickup point:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update pickup point: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update pickup point' : `Failed to update pickup point: ${error.message || 'Unknown error'}`,
     });
   }
 };

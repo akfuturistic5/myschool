@@ -3837,7 +3837,7 @@ body.mini-sidebar.expand-menu .sidebar .sidebar-menu > ul > li ul > li.active a 
 }
 
 [data-sidebar=sidebarbg1] .sidebar {
-  background-image: url(../../../../public/assets/img/theme/bg-1.png);
+  background-image: url(/assets/img/theme/bg-1.png);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: 50% 50%;
@@ -3848,7 +3848,7 @@ body.mini-sidebar.expand-menu .sidebar .sidebar-menu > ul > li ul > li.active a 
 }
 
 [data-sidebar=sidebarbg2] .sidebar {
-  background-image: url(../../../../public/assets/img/theme/bg-2.png);
+  background-image: url(/assets/img/theme/bg-2.png);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: 50% 50%;
@@ -3859,7 +3859,7 @@ body.mini-sidebar.expand-menu .sidebar .sidebar-menu > ul > li ul > li.active a 
 }
 
 [data-sidebar=sidebarbg3] .sidebar {
-  background-image: url(../../../../public/assets/img/theme/bg-3.png);
+  background-image: url(/assets/img/theme/bg-3.png);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: 50% 50%;
@@ -3870,7 +3870,7 @@ body.mini-sidebar.expand-menu .sidebar .sidebar-menu > ul > li ul > li.active a 
 }
 
 [data-sidebar=sidebarbg4] .sidebar {
-  background-image: url(../../../../public/assets/img/theme/bg-4.png);
+  background-image: url(/assets/img/theme/bg-4.png);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: 50% 50%;
@@ -27033,7 +27033,7 @@ fieldset#first-field-file {
   display: flex;
 }
 .login-wrapper.account-bg {
-  background-image: url(../../../../public/assets/img/authentication/login-bg.jpg);
+  background-image: url(/assets/img/authentication/login-bg.jpg);
   background-repeat: no-repeat;
   background-size: cover;
   background-position: center;
@@ -27043,13 +27043,13 @@ fieldset#first-field-file {
   backdrop-filter: blur(10px);
 }
 .login-wrapper.account-bg.register-bg {
-  background-image: url(../../../../public/assets/img/authentication/register-bg.jpg);
+  background-image: url(/assets/img/authentication/register-bg.jpg);
 }
 .login-wrapper.account-bg.forgot-bg {
-  background-image: url(../../../../public/assets/img/authentication/forgot-bg.jpg);
+  background-image: url(/assets/img/authentication/forgot-bg.jpg);
 }
 .login-wrapper.account-bg.reset-bg {
-  background-image: url(../../../../public/assets/img/authentication/reset-bg.jpg);
+  background-image: url(/assets/img/authentication/reset-bg.jpg);
 }
 .login-wrapper .login-content {
   width: 50%;

@@ -150,7 +150,7 @@ const createStudent = async (req, res) => {
   } catch (error) {
     console.error('Error creating student:', error);
     if (error.statusCode === 400) {
-      return res.status(400).json({ status: 'ERROR', message: error.message });
+      return res.status(400).json({ status: 'ERROR', message: process.env.NODE_ENV === 'production' ? 'Invalid request' : error.message });
     }
     res.status(500).json({
       status: 'ERROR',
@@ -406,10 +406,10 @@ const updateStudent = async (req, res) => {
   } catch (error) {
     console.error('Error updating student:', error);
     if (error.statusCode === 400) {
-      return res.status(400).json({ status: 'ERROR', message: error.message });
+      return res.status(400).json({ status: 'ERROR', message: process.env.NODE_ENV === 'production' ? 'Invalid request' : error.message });
     }
     if (error.statusCode === 404) {
-      return res.status(404).json({ status: 'ERROR', message: error.message });
+      return res.status(404).json({ status: 'ERROR', message: process.env.NODE_ENV === 'production' ? 'Not found' : error.message });
     }
     res.status(500).json({
       status: 'ERROR',
@@ -604,8 +604,7 @@ const getStudentById = async (req, res) => {
         const hostelExtra = await query(`
           SELECT 
             h.hostel_name as hostel_name,
-            COALESCE(hr.floor_number, h.floor, h.floor_number, h.floor_name) as floor,
-            COALESCE(hr.room_number, hr.room_no, hr.number, hr.room_name) as hostel_room_number
+            hr.room_number as hostel_room_number
           FROM students s
           LEFT JOIN hostel_rooms hr ON s.hostel_room_id = hr.id
           LEFT JOIN hostels h ON COALESCE(s.hostel_id, hr.hostel_id) = h.id
@@ -613,34 +612,21 @@ const getStudentById = async (req, res) => {
         `, [id]);
         if (hostelExtra.rows.length > 0 && hostelExtra.rows[0]) {
           const row = hostelExtra.rows[0];
-          console.log('[HOSTEL DEBUG getStudentById] id=', id, 'hostel_id=', studentData.hostel_id, 'hostel_room_id=', studentData.hostel_room_id, 'row=', row);
           studentData.hostel_name = row.hostel_name || null;
-          studentData.floor = row.floor != null ? String(row.floor) : null;
+          studentData.floor = null;
           studentData.hostel_room_number = row.hostel_room_number != null ? String(row.hostel_room_number) : null;
         }
         // Fallback: direct queries if JOIN returned nulls (e.g. table name differs)
         if (!studentData.hostel_name && studentData.hostel_id) {
-          const hRes = await query('SELECT hostel_name, floor, floor_number, floor_name FROM hostels WHERE id = $1', [studentData.hostel_id]);
+          const hRes = await query('SELECT hostel_name FROM hostels WHERE id = $1', [studentData.hostel_id]);
           if (hRes.rows.length > 0) {
-            const h = hRes.rows[0];
-            studentData.hostel_name = h.hostel_name || null;
-            studentData.floor = h.floor || h.floor_number || h.floor_name || null;
+            studentData.hostel_name = hRes.rows[0].hostel_name || null;
           }
         }
         if (!studentData.hostel_room_number && studentData.hostel_room_id) {
-          const rRes = await query('SELECT room_number, room_no, number, room_name, room_id FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
+          const rRes = await query('SELECT room_number FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
           if (rRes.rows.length > 0) {
-            const r = rRes.rows[0];
-            studentData.hostel_room_number = r.room_number || r.room_no || r.number || r.room_name || null;
-            if (!studentData.hostel_room_number && r.room_id) {
-              try {
-                const rmRes = await query('SELECT room_number, room_no, number, room_name FROM room WHERE id = $1', [r.room_id]);
-                if (rmRes.rows.length > 0) {
-                  const rm = rmRes.rows[0];
-                  studentData.hostel_room_number = rm.room_number || rm.room_no || rm.number || rm.room_name || null;
-                }
-              } catch (_e) { /* room table may not exist */ }
-            }
+            studentData.hostel_room_number = rRes.rows[0].room_number != null ? String(rRes.rows[0].room_number) : null;
           }
         }
         // If we have room but no hostel_name, get it from room's hostel_id
@@ -817,7 +803,7 @@ const getCurrentStudent = async (req, res) => {
     try {
       if (studentData.hostel_id || studentData.hostel_room_id) {
         const hostelRes = await query(`
-          SELECT h.hostel_name as hostel_name, COALESCE(hr.floor_number, h.floor, h.floor_number, h.floor_name) as floor, COALESCE(hr.room_number, hr.room_no, hr.number, hr.room_name) as hostel_room_number
+          SELECT h.hostel_name as hostel_name, hr.room_number as hostel_room_number
           FROM students s
           LEFT JOIN hostel_rooms hr ON s.hostel_room_id = hr.id
           LEFT JOIN hostels h ON COALESCE(s.hostel_id, hr.hostel_id) = h.id
@@ -825,9 +811,8 @@ const getCurrentStudent = async (req, res) => {
         `, [studentId]);
         if (hostelRes.rows.length > 0 && hostelRes.rows[0]) {
           const row = hostelRes.rows[0];
-          console.log('[HOSTEL DEBUG] studentId=', studentId, 'hostel_id=', studentData.hostel_id, 'hostel_room_id=', studentData.hostel_room_id, 'row=', row);
           studentData.hostel_name = row.hostel_name || null;
-          studentData.floor = row.floor != null ? String(row.floor) : null;
+          studentData.floor = null;
           studentData.hostel_room_number = row.hostel_room_number != null ? String(row.hostel_room_number) : null;
         }
         if (!studentData.hostel_name && studentData.hostel_id) {
@@ -835,8 +820,8 @@ const getCurrentStudent = async (req, res) => {
           if (hRes.rows.length > 0) { studentData.hostel_name = hRes.rows[0].hostel_name || null; }
         }
         if (!studentData.hostel_room_number && studentData.hostel_room_id) {
-          const rRes = await query('SELECT room_number, room_no, number, room_name FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
-          if (rRes.rows.length > 0) { const r = rRes.rows[0]; studentData.hostel_room_number = r.room_number || r.room_no || r.number || r.room_name || null; }
+          const rRes = await query('SELECT room_number FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
+          if (rRes.rows.length > 0) { studentData.hostel_room_number = rRes.rows[0].room_number != null ? String(rRes.rows[0].room_number) : null; }
         }
         if (!studentData.hostel_name && studentData.hostel_room_id) {
           const rRes = await query('SELECT hostel_id FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
@@ -964,11 +949,76 @@ const getStudentsByClass = async (req, res) => {
   }
 };
 
+// Get attendance for a student (from attendance table)
+const getStudentAttendance = async (req, res) => {
+  try {
+    const studentId = parseInt(req.params.studentId, 10);
+    if (!studentId || Number.isNaN(studentId)) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
+
+    const result = await query(
+      `SELECT id, student_id, class_id, section_id, attendance_date, status, 
+              check_in_time, check_out_time, marked_by, remarks
+       FROM attendance
+       WHERE student_id = $1
+       ORDER BY attendance_date DESC`,
+      [studentId]
+    );
+
+    const normalizeStatus = (s) => {
+      const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+      if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
+      if (v === 'absent' || v === 'absence' || v === 'a' || v === 'ab') return 'absent';
+      if (v === 'present' || v === 'p' || v === 'pres') return 'present';
+      if (v === 'late' || v === 'l') return 'late';
+      return v;
+    };
+
+    const records = result.rows.map((r) => {
+      const status = normalizeStatus(r.status);
+      return {
+        id: r.id,
+        studentId: r.student_id,
+        classId: r.class_id,
+        sectionId: r.section_id,
+        attendanceDate: r.attendance_date,
+        status,
+        checkInTime: r.check_in_time,
+        checkOutTime: r.check_out_time,
+        markedBy: r.marked_by,
+        remark: r.remarks,
+      };
+    });
+
+    const present = records.filter((r) => r.status === 'present').length;
+    const absent = records.filter((r) => r.status === 'absent').length;
+    const halfDay = records.filter((r) => r.status === 'half_day' || r.status === 'halfday').length;
+    const late = records.filter((r) => r.status === 'late').length;
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student attendance fetched successfully',
+      data: {
+        records,
+        summary: { present, absent, halfDay, late },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching student attendance:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch student attendance',
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   updateStudent,
   getAllStudents,
   getStudentById,
   getCurrentStudent,
-  getStudentsByClass
+  getStudentsByClass,
+  getStudentAttendance,
 };

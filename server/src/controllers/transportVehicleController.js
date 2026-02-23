@@ -212,7 +212,7 @@ const updateVehicle = async (req, res) => {
     console.error('Error updating vehicle:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update vehicle: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update vehicle' : `Failed to update vehicle: ${error.message || 'Unknown error'}`,
     });
   }
 };

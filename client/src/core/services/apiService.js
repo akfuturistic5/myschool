@@ -259,6 +259,10 @@ class ApiService {
     return this.makeRequest(`/students/${id}`);
   }
 
+  async getStudentAttendance(studentId) {
+    return this.makeRequest(`/students/${studentId}/attendance`);
+  }
+
   async getCurrentStudent() {
     return this.makeRequest('/students/me');
   }
@@ -395,6 +399,14 @@ class ApiService {
     return this.makeRequest(`/teachers/${teacherId}/routine`);
   }
 
+  async getTeacherClassAttendance(teacherId, params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.days != null) searchParams.set('days', params.days);
+    if (params.offset != null) searchParams.set('offset', params.offset);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/teachers/${teacherId}/class-attendance${qs ? `?${qs}` : ''}`);
+  }
+
   async updateTeacher(id, teacherData) {
     return this.makeRequest(`/teachers/${id}`, {
       method: 'PUT',
@@ -515,6 +527,34 @@ class ApiService {
     if (params.limit != null) searchParams.set('limit', params.limit);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/notice-board${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDashboardFeeStats() {
+    return this.makeRequest('/dashboard/fee-stats');
+  }
+
+  async getDashboardFinanceSummary() {
+    return this.makeRequest('/dashboard/finance-summary');
+  }
+
+  // Fees
+  async getFeeCollectionsList() {
+    return this.makeRequest('/fees/collections');
+  }
+
+  async getStudentFees(studentId) {
+    return this.makeRequest(`/fees/student/${studentId}`);
+  }
+
+  async getFeeStructures() {
+    return this.makeRequest('/fees/structures');
+  }
+
+  async createFeeCollection(data) {
+    return this.makeRequest('/fees/collect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // Notice Board

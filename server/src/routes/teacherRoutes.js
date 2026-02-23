@@ -1,22 +1,27 @@
 const express = require('express');
-const { getAllTeachers, getCurrentTeacher, getTeacherById, getTeachersByClass, getTeacherRoutine, updateTeacher } = require('../controllers/teacherController');
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { TEACHER_LIST_ALL_ROLES, PEOPLE_MANAGER_ROLES } = require('../config/roles');
+const { getAllTeachers, getCurrentTeacher, getTeacherById, getTeachersByClass, getTeacherRoutine, getTeacherClassAttendance, updateTeacher } = require('../controllers/teacherController');
 
 const router = express.Router();
 
-// Get all teachers
-router.get('/', getAllTeachers);
+// Get all teachers - Admin only
+router.get('/', requireRole(TEACHER_LIST_ALL_ROLES), getAllTeachers);
 
 // Get current logged-in teacher (must be before /:id route)
 router.get('/me', getCurrentTeacher);
 
-// Get teachers by class (must be before /:id route)
+// Get teachers by class
 router.get('/class/:classId', getTeachersByClass);
 
 // Get teacher routine (must be before /:id route)
 router.get('/:id/routine', getTeacherRoutine);
 
-// Update teacher (must be before /:id route)
-router.put('/:id', updateTeacher);
+// Get attendance for students in teacher's classes (Teacher Dashboard)
+router.get('/:id/class-attendance', getTeacherClassAttendance);
+
+// Update teacher - Admin only
+router.put('/:id', requireRole(PEOPLE_MANAGER_ROLES), updateTeacher);
 
 // Get teacher by ID
 router.get('/:id', getTeacherById);

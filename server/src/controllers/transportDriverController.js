@@ -116,7 +116,7 @@ const updateDriver = async (req, res) => {
     console.error('Error updating driver:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update driver: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update driver' : `Failed to update driver: ${error.message || 'Unknown error'}`,
     });
   }
 };

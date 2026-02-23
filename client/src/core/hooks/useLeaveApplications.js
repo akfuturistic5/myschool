@@ -48,8 +48,10 @@ export const useLeaveApplications = (options = {}) => {
         response = await apiService.getLeaveApplications({ limit });
       }
 
-      if (response.status === 'SUCCESS' && Array.isArray(response.data)) {
-        let rows = response.data;
+      const rawData = response?.data;
+      const dataArr = Array.isArray(rawData) ? rawData : (Array.isArray(rawData?.data) ? rawData.data : rawData?.items) || [];
+      if (response.status === 'SUCCESS' && Array.isArray(dataArr)) {
+        let rows = dataArr;
         if (parentChildren && studentId != null) {
           rows = rows.filter((r) => Number(r.student_id) === Number(studentId));
         }

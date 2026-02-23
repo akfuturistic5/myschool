@@ -381,6 +381,111 @@ const getNoticeBoardForDashboard = async (req, res) => {
   }
 };
 
+// Fee stats for dashboard (from fee_collections and fee_structures)
+const getDashboardFeeStats = async (req, res) => {
+  try {
+    let totalFeesCollected = 0;
+    let fineCollected = 0;
+    let studentNotPaid = 0;
+    let totalOutstanding = 0;
+
+    try {
+      const collectedResult = await query(`
+        SELECT COALESCE(SUM(amount_paid::numeric), 0) AS total
+        FROM fee_collections
+        WHERE is_active = true
+      `);
+      totalFeesCollected = parseFloat(collectedResult.rows[0]?.total || '0') || 0;
+    } catch (e) {
+      console.warn('Dashboard: fee_collections sum failed', e.message);
+    }
+
+    // fine_collected: no column in fee_collections - show 0
+    fineCollected = 0;
+
+    try {
+      const outstandingResult = await query(`
+        WITH student_fee_due AS (
+          SELECT s.id AS student_id, fs.id AS fee_structure_id, fs.amount::numeric AS due_amount,
+            COALESCE((
+              SELECT SUM(fc.amount_paid::numeric)
+              FROM fee_collections fc
+              WHERE fc.student_id = s.id AND fc.fee_structure_id = fs.id AND fc.is_active = true
+            ), 0) AS paid
+          FROM students s
+          INNER JOIN fee_structures fs ON (fs.class_id IS NULL OR fs.class_id = s.class_id) AND COALESCE(fs.is_active, true) = true
+          WHERE s.is_active = true
+        ),
+        with_outstanding AS (
+          SELECT student_id, (due_amount - paid) AS outstanding
+          FROM student_fee_due
+          WHERE paid < due_amount AND due_amount > 0
+        )
+        SELECT
+          COUNT(DISTINCT student_id)::int AS student_not_paid,
+          COALESCE(SUM(outstanding), 0)::numeric AS total_outstanding
+        FROM with_outstanding
+      `);
+      const row = outstandingResult.rows[0];
+      studentNotPaid = parseInt(row?.student_not_paid || '0', 10) || 0;
+      totalOutstanding = parseFloat(row?.total_outstanding || '0') || 0;
+    } catch (e) {
+      console.warn('Dashboard: fee outstanding calc failed', e.message);
+    }
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Fee stats fetched successfully',
+      data: {
+        totalFeesCollected,
+        fineCollected,
+        studentNotPaid,
+        totalOutstanding,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching fee stats:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch fee stats',
+    });
+  }
+};
+
+// Finance summary: Total Earnings (from fees), Total Expenses (0 - no expense table)
+const getDashboardFinanceSummary = async (req, res) => {
+  try {
+    let totalEarnings = 0;
+    let totalExpenses = 0;
+
+    try {
+      const earningsResult = await query(`
+        SELECT COALESCE(SUM(amount_paid::numeric), 0) AS total
+        FROM fee_collections
+        WHERE is_active = true
+      `);
+      totalEarnings = parseFloat(earningsResult.rows[0]?.total || '0') || 0;
+    } catch (e) {
+      console.warn('Dashboard: total earnings (fees) failed', e.message);
+    }
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Finance summary fetched successfully',
+      data: {
+        totalEarnings,
+        totalExpenses,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching finance summary:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch finance summary',
+    });
+  }
+};
+
 // Recent activity for alert (most recent leave application)
 const getRecentActivity = async (req, res) => {
   try {
@@ -418,9 +523,10 @@ const getRecentActivity = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching recent activity:', error);
-    res.status(500).json({
+    res.status(200).json({
       status: 'SUCCESS',
       data: null,
+      message: 'No recent activity',
     });
   }
 };
@@ -435,4 +541,6 @@ module.exports = {
   getTopSubjects,
   getRecentActivity,
   getNoticeBoardForDashboard,
+  getDashboardFeeStats,
+  getDashboardFinanceSummary,
 };

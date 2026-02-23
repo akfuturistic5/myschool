@@ -24,6 +24,8 @@ import {
   useDashboardTopSubjects,
   useDashboardRecentActivity,
   useDashboardNoticeBoard,
+  useDashboardFeeStats,
+  useDashboardFinanceSummary,
 } from "../../../core/hooks/useDashboardData";
 
 const AdminDashboard = () => {
@@ -61,6 +63,8 @@ const AdminDashboard = () => {
   const { subjects: topSubjects } = useDashboardTopSubjects();
   const { activity: recentActivity } = useDashboardRecentActivity();
   const { notices: dashboardNotices } = useDashboardNoticeBoard({ limit: 5 });
+  const { feeStats } = useDashboardFeeStats();
+  const { financeSummary } = useDashboardFinanceSummary();
   function SampleNextArrow(props: any) {
     const { style, onClick } = props;
     return (
@@ -304,13 +308,13 @@ const AdminDashboard = () => {
   },
   series: [{
       name: 'Collected Fee',
-      data: [0]
+      data: [feeStats.totalFeesCollected ?? 0]
   }, {
       name: 'Total Fee',
-      data: [0]
+      data: [(feeStats.totalFeesCollected ?? 0) + (feeStats.totalOutstanding ?? 0)]
   }],
   xaxis: {
-      categories: ['No fee data'],
+      categories: [(feeStats.totalFeesCollected ?? 0) + (feeStats.totalOutstanding ?? 0) > 0 ? 'Fees' : 'No fee data'],
   },
   yaxis: {
     tickAmount: 3,
@@ -350,7 +354,7 @@ const AdminDashboard = () => {
   },
   series: [{
       name: 'Earnings',
-      data: [0]
+      data: [financeSummary.totalEarnings ?? 0]
   }]
   };
   const totalExpenseArea = {
@@ -373,7 +377,7 @@ const AdminDashboard = () => {
   },
   series: [{
       name: 'Expense',
-      data: [0]
+      data: [financeSummary.totalExpenses ?? 0]
   }]
   };
 
@@ -1500,8 +1504,8 @@ const AdminDashboard = () => {
                       <div className="d-flex align-items-center justify-content-between">
                         <div>
                           <h6 className="mb-1">Total Earnings</h6>
-                          <h2>N/A</h2>
-                          <small className="text-muted">No earnings data available</small>
+                          <h2>${(financeSummary.totalEarnings ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+                          <small className="text-muted">From fees collected</small>
                         </div>
                         <span className="avatar avatar-lg bg-primary">
                           <i className="ti ti-user-dollar" />
@@ -1522,7 +1526,7 @@ const AdminDashboard = () => {
                       <div className="d-flex align-items-center justify-content-between">
                         <div>
                           <h6 className="mb-1">Total Expenses</h6>
-                          <h2>$60,522,24</h2>
+                          <h2>${(financeSummary.totalExpenses ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
                         </div>
                         <span className="avatar avatar-lg bg-danger">
                           <i className="ti ti-user-dollar" />
@@ -1581,10 +1585,10 @@ const AdminDashboard = () => {
                     <div className="card-body">
                       <p className="mb-2">Total Fees Collected</p>
                       <div className="d-flex align-items-end justify-content-between">
-                        <h4>N/A</h4>
+                        <h4>${(feeStats.totalFeesCollected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                         <span className="badge badge-soft-success">
                           <i className="ti ti-chart-line me-1" />
-                          1.2%
+                          Real
                         </span>
                       </div>
                     </div>
@@ -1593,10 +1597,10 @@ const AdminDashboard = () => {
                     <div className="card-body">
                       <p className="mb-2">Fine Collected till date</p>
                       <div className="d-flex align-items-end justify-content-between">
-                        <h4>N/A</h4>
+                        <h4>${(feeStats.fineCollected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                         <span className="badge badge-soft-danger">
                           <i className="ti ti-chart-line me-1" />
-                          1.2%
+                          Real
                         </span>
                       </div>
                     </div>
@@ -1605,10 +1609,10 @@ const AdminDashboard = () => {
                     <div className="card-body">
                       <p className="mb-2">Student Not Paid</p>
                       <div className="d-flex align-items-end justify-content-between">
-                        <h4>N/A</h4>
+                        <h4>{feeStats.studentNotPaid ?? 0}</h4>
                         <span className="badge badge-soft-info">
                           <i className="ti ti-chart-line me-1" />
-                          1.2%
+                          Real
                         </span>
                       </div>
                     </div>
@@ -1617,10 +1621,10 @@ const AdminDashboard = () => {
                     <div className="card-body">
                       <p className="mb-2">Total Outstanding</p>
                       <div className="d-flex align-items-end justify-content-between">
-                        <h4>N/A</h4>
+                        <h4>${(feeStats.totalOutstanding ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                         <span className="badge badge-soft-danger">
                           <i className="ti ti-chart-line me-1" />
-                          1.2%
+                          Real
                         </span>
                       </div>
                     </div>

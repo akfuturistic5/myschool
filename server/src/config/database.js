@@ -1,17 +1,16 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-console.log("ENV CHECK:");
-console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+const isProduction = process.env.NODE_ENV === 'production';
 
 // Use DATABASE_URL in production (Render)
 // Fallback to local config only if DATABASE_URL not present
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false,
-      },
+      ssl: isProduction
+        ? { rejectUnauthorized: true }
+        : { rejectUnauthorized: false },
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 2000,

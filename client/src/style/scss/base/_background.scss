@@ -560,13 +560,13 @@ $value in variables.$theme-colors {
     }
 }
 .bg-01 {
-    background: url('../../../../public/assets/img/bg/star-bg-01.svg')  no-repeat;
+    background: url('/assets/img/bg/star-bg-01.svg')  no-repeat;
 }
 .bg-02 {
-    background: url('../../../../public/assets/img/bg/star-bg-02.svg')  no-repeat;
+    background: url('/assets/img/bg/star-bg-02.svg')  no-repeat;
 }
 .bg-03 {
-    background-image: url('../../../../public/assets/img/bg/bg-01.png'),  url('../../../../public/assets/img/bg/shape-05.png');
+    background-image: url('/assets/img/bg/bg-01.png'), url('/assets/img/bg/shape-05.png');
     background-position: right, right;
     background-size: contain;
     background-repeat: no-repeat;
@@ -576,7 +576,7 @@ $value in variables.$theme-colors {
 }
 .account-page {
     .bg-01 {
-        background-image: url(../../../../public/assets/img/authentication/authentication-bg.svg);
+        background-image: url(/assets/img/authentication/authentication-bg.svg);
         background-repeat: no-repeat;
         background-position: bottom left;
         background-size: 100%;

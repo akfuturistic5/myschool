@@ -52,6 +52,7 @@ const notesRoutes = require('./src/routes/notesRoutes');
 const fileRoutes = require('./src/routes/fileRoutes');
 const syllabusRoutes = require('./src/routes/syllabusRoutes');
 const noticeBoardRoutes = require('./src/routes/noticeBoardRoutes');
+const feeRoutes = require('./src/routes/feeRoutes');
 const { protectApi } = require('./src/middleware/authMiddleware');
 
 // Create Express app
@@ -61,16 +62,29 @@ const app = express();
 app.use(helmet()); // Security headers
 // Logging: use 'dev' (shorter), skip OPTIONS to reduce noise
 app.use(morgan('dev', { skip: (req) => req.method === 'OPTIONS' }));
-// CORS: in production allow any origin so frontend can read response; in dev use localhost.
+// CORS: production = trusted origins from CORS_ORIGIN; dev = localhost
 const corsOrigins = ['http://localhost:3000', 'http://localhost:5173'];
 if (serverConfig.corsOrigin) {
   const extra = serverConfig.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean);
   corsOrigins.push(...extra);
 }
 const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = serverConfig.corsOrigin
+  ? serverConfig.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
 const corsOptions = {
   origin: isProduction
-    ? function (origin, callback) { callback(null, true); }
+    ? function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.length === 0) {
+          if (process.env.NODE_ENV === 'production') {
+            console.warn('CORS_ORIGIN not set in production - restricting to localhost');
+          }
+          return callback(null, origin.startsWith('http://localhost') || origin.startsWith('https://localhost'));
+        }
+        const allowed = allowedOrigins.some((o) => origin === o);
+        return callback(allowed ? null : new Error('CORS not allowed'), allowed);
+      }
     : corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -80,15 +94,23 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting - increased limit to prevent "too many requests" errors
-// Default: 500 requests per 15 minutes per IP (can be overridden via RATE_LIMIT_MAX env var)
+// Login rate limiting - stricter (10 attempts per 15 min per IP)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.LOGIN_RATE_LIMIT_MAX || '10', 10),
+  message: { status: 'ERROR', message: 'Too many login attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth/login', loginLimiter);
+
+// Global API rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX || '500', 10), // Increased from 100 to 500
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),
   message: { status: 'ERROR', message: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  // Skip rate limiting for health checks
   skip: (req) => req.path === '/api/health' || req.path === '/api/health/database'
 });
 app.use('/api', limiter);
@@ -136,6 +158,7 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/class-syllabus', syllabusRoutes);
 app.use('/api/notice-board', noticeBoardRoutes);
+app.use('/api/fees', feeRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -153,10 +176,8 @@ app.use('*', (req, res) => {
 });
 
 // Global error handler - never leak internal error details to client
-app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
-  errorResponse(res, 500, 'Internal server error');
-});
+const { globalErrorHandler } = require('./src/utils/errorHandler');
+app.use(globalErrorHandler);
 
 // Start server
 const startServer = async () => {

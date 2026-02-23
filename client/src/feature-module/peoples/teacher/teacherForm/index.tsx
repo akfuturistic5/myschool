@@ -28,6 +28,7 @@ import TagInput from "../../../../core/common/Taginput";
 interface TeacherLocationState {
   teacherId?: number;
   teacher?: any;
+  returnTo?: string;
 }
 
 const TeacherForm = () => {
@@ -118,7 +119,7 @@ const TeacherForm = () => {
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <Link
-                to={routes.teacherList}
+                to={state?.returnTo ?? routes.teacherList}
                 className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
               >
                 <i className="ti ti-arrow-left me-1" />

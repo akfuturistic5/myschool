@@ -49,7 +49,7 @@ const getAllHostelRooms = async (req, res) => {
     console.error('Error detail:', error.detail);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to fetch hostel rooms: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to fetch hostel rooms' : `Failed to fetch hostel rooms: ${error.message || 'Unknown error'}`,
       error: process.env.NODE_ENV === 'development' ? {
         code: error.code,
         hint: error.hint,
@@ -105,7 +105,7 @@ const getHostelRoomById = async (req, res) => {
     console.error('Error hint:', error.hint);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to fetch hostel room: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to fetch hostel room' : `Failed to fetch hostel room: ${error.message || 'Unknown error'}`,
       error: process.env.NODE_ENV === 'development' ? {
         code: error.code,
         hint: error.hint,
@@ -214,7 +214,7 @@ const updateHostelRoom = async (req, res) => {
     console.error('Error:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update hostel room: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update hostel room' : `Failed to update hostel room: ${error.message || 'Unknown error'}`,
     });
   }
 };

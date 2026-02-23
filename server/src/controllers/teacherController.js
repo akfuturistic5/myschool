@@ -393,24 +393,24 @@ const getTeacherRoutine = async (req, res) => {
       LEFT JOIN classes c ON cs.class_id = c.id
       LEFT JOIN sections sec ON cs.section_id = sec.id
       LEFT JOIN subjects sub ON cs.subject_id = sub.id
-      LEFT JOIN slots ts ON cs.time_slot_id = ts.id
+      LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
       WHERE cs.teacher_id = $1
       ORDER BY 
-        CASE cs.day_of_week
-          WHEN 'Monday' THEN 1
-          WHEN 'Tuesday' THEN 2
-          WHEN 'Wednesday' THEN 3
-          WHEN 'Thursday' THEN 4
-          WHEN 'Friday' THEN 5
-          WHEN 'Saturday' THEN 6
-          WHEN 'Sunday' THEN 7
-          WHEN 0 THEN 1
-          WHEN 1 THEN 2
-          WHEN 2 THEN 3
-          WHEN 3 THEN 4
-          WHEN 4 THEN 5
-          WHEN 5 THEN 6
-          WHEN 6 THEN 7
+        CASE LOWER(TRIM(cs.day_of_week::text))
+          WHEN '0' THEN 1
+          WHEN '1' THEN 2
+          WHEN '2' THEN 3
+          WHEN '3' THEN 4
+          WHEN '4' THEN 5
+          WHEN '5' THEN 6
+          WHEN '6' THEN 7
+          WHEN 'sunday' THEN 1
+          WHEN 'monday' THEN 2
+          WHEN 'tuesday' THEN 3
+          WHEN 'wednesday' THEN 4
+          WHEN 'thursday' THEN 5
+          WHEN 'friday' THEN 6
+          WHEN 'saturday' THEN 7
           ELSE 8
         END,
         ts.start_time ASC
@@ -425,8 +425,9 @@ const getTeacherRoutine = async (req, res) => {
       }
     } catch (e) {
       console.error('Error with slots table:', e.message);
-      // Try with time_slots table if slots doesn't exist
-      if (e.message.includes('slots') || e.message.includes('does not exist') || e.message.includes('relation')) {
+      const isSlotsError = e.message.includes('slots') || e.message.includes('does not exist') ||
+        e.message.includes('relation') || e.message.includes('invalid input syntax');
+      if (isSlotsError) {
         schedulesQuery = `
           SELECT 
             cs.id,
@@ -451,24 +452,24 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN classes c ON cs.class_id = c.id
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          LEFT JOIN time_slots ts ON cs.time_slot_id = ts.id
+          LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
           WHERE cs.teacher_id = $1
           ORDER BY 
-            CASE cs.day_of_week
-              WHEN 'Monday' THEN 1
-              WHEN 'Tuesday' THEN 2
-              WHEN 'Wednesday' THEN 3
-              WHEN 'Thursday' THEN 4
-              WHEN 'Friday' THEN 5
-              WHEN 'Saturday' THEN 6
-              WHEN 'Sunday' THEN 7
-              WHEN 0 THEN 1
-              WHEN 1 THEN 2
-              WHEN 2 THEN 3
-              WHEN 3 THEN 4
-              WHEN 4 THEN 5
-              WHEN 5 THEN 6
-              WHEN 6 THEN 7
+            CASE LOWER(TRIM(cs.day_of_week::text))
+              WHEN '0' THEN 1
+              WHEN '1' THEN 2
+              WHEN '2' THEN 3
+              WHEN '3' THEN 4
+              WHEN '4' THEN 5
+              WHEN '5' THEN 6
+              WHEN '6' THEN 7
+              WHEN 'sunday' THEN 1
+              WHEN 'monday' THEN 2
+              WHEN 'tuesday' THEN 3
+              WHEN 'wednesday' THEN 4
+              WHEN 'thursday' THEN 5
+              WHEN 'friday' THEN 6
+              WHEN 'saturday' THEN 7
               ELSE 8
             END,
             ts.start_time ASC
@@ -734,7 +735,111 @@ const updateTeacher = async (req, res) => {
     console.error('Error updating teacher:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update teacher: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update teacher' : `Failed to update teacher: ${error.message || 'Unknown error'}`,
+    });
+  }
+};
+
+// Get attendance for students in teacher's classes (for Teacher Dashboard)
+const getTeacherClassAttendance = async (req, res) => {
+  try {
+    const teacherId = parseInt(req.params.id, 10);
+    if (!teacherId || Number.isNaN(teacherId)) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid teacher ID' });
+    }
+    const userId = req.user?.id;
+    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
+    const ROLES = require('../config/roles').ROLES;
+    if (roleId === ROLES.TEACHER && userId) {
+      const ownTeacher = await query('SELECT t.id FROM teachers t INNER JOIN staff s ON t.staff_id = s.id WHERE s.user_id = $1 LIMIT 1', [userId]);
+      if (ownTeacher.rows.length > 0 && parseInt(ownTeacher.rows[0].id, 10) !== teacherId) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+      }
+    }
+
+    const days = parseInt(req.query.days, 10);
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    let dateFilter = '';
+    let params = [teacherId];
+    if (days > 0 && days <= 365) {
+      if (offset > 0) {
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($2 + $3) * INTERVAL '1 day'
+                      AND a.attendance_date < CURRENT_DATE - $3 * INTERVAL '1 day'`;
+        params = [teacherId, days, offset];
+      } else {
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $2 * INTERVAL '1 day'`;
+        params = [teacherId, days];
+      }
+    }
+    const rowLimit = days === 0 ? 5000 : 500; // All Time: higher limit to fetch more records
+
+    // Use EXISTS to avoid duplicates; include BOTH class_schedules AND teachers.class_id
+    const result = await query(
+      `SELECT a.id, a.student_id, a.class_id, a.section_id, a.attendance_date, a.status,
+              a.check_in_time, a.check_out_time, a.marked_by, a.remarks
+       FROM attendance a
+       INNER JOIN students s ON a.student_id = s.id AND s.is_active = true
+       WHERE (
+         EXISTS (
+           SELECT 1 FROM class_schedules cs
+           WHERE cs.teacher_id = $1
+             AND cs.class_id = a.class_id
+             AND (cs.section_id = a.section_id OR (cs.section_id IS NULL AND a.section_id IS NULL))
+         )
+         OR EXISTS (
+           SELECT 1 FROM teachers t
+           WHERE t.id = $1 AND t.class_id = a.class_id
+         )
+       )
+       ${dateFilter}
+       ORDER BY a.attendance_date DESC
+       LIMIT ${rowLimit}`,
+      params
+    );
+
+    const normalizeStatus = (s) => {
+      const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+      if (v === 'half_day' || v === 'halfday' || v === 'half' || v === 'half_day') return 'half_day';
+      if (v === 'absent' || v === 'absence' || v === 'a' || v === 'ab') return 'absent';
+      if (v === 'present' || v === 'p' || v === 'pres') return 'present';
+      if (v === 'late' || v === 'l') return 'late';
+      return v;
+    };
+
+    const records = result.rows.map((r) => {
+      const status = normalizeStatus(r.status);
+      return {
+        id: r.id,
+        studentId: r.student_id,
+        classId: r.class_id,
+        sectionId: r.section_id,
+        attendanceDate: r.attendance_date,
+        status,
+        checkInTime: r.check_in_time,
+        checkOutTime: r.check_out_time,
+        markedBy: r.marked_by,
+        remark: r.remarks,
+      };
+    });
+
+    const present = records.filter((r) => r.status === 'present').length;
+    const absent = records.filter((r) => r.status === 'absent').length;
+    const halfDay = records.filter((r) => r.status === 'half_day' || r.status === 'halfday').length;
+    const late = records.filter((r) => r.status === 'late').length;
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Teacher class attendance fetched successfully',
+      data: {
+        records,
+        summary: { present, absent, halfDay, late },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching teacher class attendance:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch teacher class attendance',
     });
   }
 };
@@ -745,5 +850,6 @@ module.exports = {
   getTeacherById,
   getTeachersByClass,
   getTeacherRoutine,
+  getTeacherClassAttendance,
   updateTeacher
 };

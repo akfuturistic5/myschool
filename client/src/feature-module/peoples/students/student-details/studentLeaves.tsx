@@ -7,10 +7,10 @@ import StudentSidebar from "./studentSidebar";
 import StudentBreadcrumb from "./studentBreadcrumb";
 import Table from "../../../../core/common/dataTable/index";
 import type { TableData } from "../../../../core/data/interface";
-import { Attendance } from "../../../../core/data/json/attendance";
 import { apiService } from "../../../../core/services/apiService";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
 import { useGuardianWardLeaves } from "../../../../core/hooks/useGuardianWardLeaves";
+import { useStudentAttendance } from "../../../../core/hooks/useStudentAttendance";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
 
@@ -99,6 +99,8 @@ const StudentLeaves = () => {
   const leaveDataLoading = role === "guardian" ? guardianLoading : leaveLoading;
   const refetchLeaveData = role === "guardian" ? refetchGuardianLeaves : refetchLeaves;
 
+  const { data: attendanceData, loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useStudentAttendance(studentId ?? null);
+
   const leaveCounts = useMemo(() => {
     const medical = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical"));
     const casual = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("casual"));
@@ -107,7 +109,9 @@ const StudentLeaves = () => {
     return { medical: medical.length, casual: casual.length, maternity: maternity.length, paternity: paternity.length };
   }, [data]);
 
-  const data2 = Attendance;
+  const attendanceRecords = attendanceData?.records ?? [];
+  const attendanceSummary = attendanceData?.summary ?? { present: 0, absent: 0, halfDay: 0, late: 0 };
+  const hasAttendance = attendanceRecords.length > 0;
 
   useEffect(() => {
     if (!studentId) {
@@ -200,253 +204,50 @@ const StudentLeaves = () => {
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
     },
   ];
-  const columns2 = [
+  const attendanceTableColumns = [
     {
-      title: "Date | Month",
-      dataIndex: "date",
-      sorter: (a: TableData, b: TableData) => a.date.length - b.date.length,
+      title: "Date",
+      dataIndex: "attendanceDate",
+      render: (val: string) => (val ? new Date(val).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"),
+      sorter: (a: TableData & { attendanceDate?: string }, b: TableData & { attendanceDate?: string }) =>
+        (a.attendanceDate || "").localeCompare(b.attendanceDate || ""),
     },
     {
-      title: "Jan",
-      dataIndex: "jan",
-      render: (text: string) => (
-        <>
-          {text === "1" ? (
-            <span className="attendance-range bg-success"></span>
-          ) : text === "2" ? (
-            <span className="attendance-range bg-pending"></span>
-          ) : text === "3" ? (
-            <span className="attendance-range bg-dark"></span>
-          ) : text === "4" ? (
-            <span className="attendance-range bg-danger"></span>
-          ) : (
-            <span className="attendance-range bg-info"></span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => a.jan.length - b.jan.length,
+      title: "Status",
+      dataIndex: "status",
+      render: (text: string) => {
+        const s = (text || "").toLowerCase();
+        const badgeClass =
+          s === "present" ? "badge-soft-success" :
+          s === "absent" ? "badge-soft-danger" :
+          s === "late" ? "badge-soft-warning" :
+          s === "half_day" || s === "halfday" ? "badge-soft-info" : "badge-soft-secondary";
+        const label = s ? s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ") : "—";
+        return (
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {label}
+          </span>
+        );
+      },
+      sorter: (a: TableData, b: TableData) => (a.status || "").length - (b.status || "").length,
     },
     {
-        title: "feb",
-        dataIndex: "feb",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.feb.length - b.feb.length,
-      },
-      {
-        title: "mar",
-        dataIndex: "mar",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.mar.length - b.mar.length,
-      },
-      {
-        title: "apr",
-        dataIndex: "apr",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.apr.length - b.apr.length,
-      },
-      {
-        title: "may",
-        dataIndex: "may",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.may.length - b.may.length,
-      },
-      {
-        title: "jun",
-        dataIndex: "jun",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.jun.length - b.jun.length,
-      },
-      {
-        title: "jul",
-        dataIndex: "jul",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.jul.length - b.jul.length,
-      },
-      {
-        title: "aug",
-        dataIndex: "aug",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.aug.length - b.aug.length,
-      },
-      {
-        title: "sep",
-        dataIndex: "sep",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.sep.length - b.sep.length,
-      },
-      {
-        title: "oct",
-        dataIndex: "oct",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.oct.length - b.oct.length,
-      },
-      {
-        title: "nov",
-        dataIndex: "nov",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.nov.length - b.nov.length,
-      },
-      {
-        title: "dec",
-        dataIndex: "dec",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.dec.length - b.dec.length,
-      },
+      title: "Check In",
+      dataIndex: "checkInTime",
+      render: (val: string) => (val ? String(val).slice(0, 5) : "—"),
+    },
+    {
+      title: "Check Out",
+      dataIndex: "checkOutTime",
+      render: (val: string) => (val ? String(val).slice(0, 5) : "—"),
+    },
   ];
+
+  const attendanceTableData = attendanceRecords.map((r: { id?: number; attendanceDate?: string; status?: string; checkInTime?: string; checkOutTime?: string }, idx: number) => ({
+    key: r.id ?? idx,
+    ...r,
+  }));
   return (
     <>
       <style>{tableStyles}</style>
@@ -643,11 +444,17 @@ const StudentLeaves = () => {
                           <div className="d-flex align-items-center flex-wrap">
                             <div className="d-flex align-items-center flex-wrap me-3">
                               <p className="text-dark mb-3 me-2">
-                                Last Updated on : 25 May 2024
+                                {hasAttendance && attendanceRecords[0]?.attendanceDate
+                                  ? `Last Updated on : ${new Date(attendanceRecords[0].attendanceDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                                  : "Last Updated : —"}
                               </p>
                               <Link
                                 to="#"
                                 className="btn btn-primary btn-icon btn-sm rounded-circle d-inline-flex align-items-center justify-content-center p-0 mb-3"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  refetchAttendance();
+                                }}
                               >
                                 <i className="ti ti-refresh-dot" />
                               </Link>
@@ -692,6 +499,25 @@ const StudentLeaves = () => {
                           </div>
                         </div>
                         <div className="card-body pb-1">
+                          {attendanceError && (
+                            <div className="alert alert-warning mb-3 d-flex align-items-center" role="alert">
+                              <i className="ti ti-alert-circle me-2 fs-18" />
+                              <span>{attendanceError}</span>
+                            </div>
+                          )}
+                          {attendanceLoading && (
+                            <div className="text-center py-3">
+                              <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                              <span className="ms-2">Loading attendance...</span>
+                            </div>
+                          )}
+                          {!attendanceLoading && !hasAttendance && (
+                            <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                              <i className="ti ti-info-circle me-2 fs-18" />
+                              <span>No attendance data available. Attendance records will appear here once available.</span>
+                            </div>
+                          )}
+                          {!attendanceLoading && hasAttendance && (
                           <div className="row">
                             {/* Total Present */}
                             <div className="col-md-6 col-xxl-3 d-flex">
@@ -701,7 +527,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Present</p>
-                                  <h5>265</h5>
+                                  <h5>{attendanceSummary.present}</h5>
                                 </div>
                               </div>
                             </div>
@@ -714,7 +540,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Absent</p>
-                                  <h5>05</h5>
+                                  <h5>{attendanceSummary.absent}</h5>
                                 </div>
                               </div>
                             </div>
@@ -727,7 +553,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Half Day</p>
-                                  <h5>01</h5>
+                                  <h5>{attendanceSummary.halfDay}</h5>
                                 </div>
                               </div>
                             </div>
@@ -740,12 +566,13 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Late</p>
-                                  <h5>12</h5>
+                                  <h5>{attendanceSummary.late}</h5>
                                 </div>
                               </div>
                             </div>
                             {/* /Late to School*/}
                           </div>
+                          )}
                         </div>
                       </div>
                       <div className="card">
@@ -856,12 +683,22 @@ const StudentLeaves = () => {
                             </div>
                           </div>
                           {/* Attendance List */}
-                         
-                          <Table
-                            dataSource={data2}
-                            columns={columns2}
-                            Selection={false}
-                          />
+                          {attendanceLoading && (
+                            <div className="p-4 text-center text-muted">Loading attendance records...</div>
+                          )}
+                          {!attendanceLoading && !hasAttendance && (
+                            <div className="alert alert-info m-3 mb-0 d-flex align-items-center" role="alert">
+                              <i className="ti ti-info-circle me-2 fs-18" />
+                              <span>No attendance records available for this student.</span>
+                            </div>
+                          )}
+                          {!attendanceLoading && hasAttendance && (
+                            <Table
+                              dataSource={attendanceTableData}
+                              columns={attendanceTableColumns}
+                              Selection={false}
+                            />
+                          )}
                           {/* /Attendance List */}
                         </div>
                       </div>

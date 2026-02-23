@@ -4,12 +4,12 @@ import { all_routes } from "../../router/all_routes";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useParents } from "../../../core/hooks/useParents";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
+import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useCalendarEvents } from "../../../core/hooks/useCalendarEvents";
 
 const ParentDashboard = () => {
   const routes = all_routes;
   const { parents, loading: parentLoading, error: parentError } = useParents({ forCurrentUser: true });
-  const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ parentChildren: true, limit: 20 });
   const { events: calendarEvents } = useCalendarEvents();
 
   const children = useMemo(() => parents || [], [parents]);
@@ -20,10 +20,24 @@ const ParentDashboard = () => {
     : firstParent;
   const selectedChild = activeStudent || firstParent;
 
+  const { leaveApplications: myLeaves, loading: leaveLoading, error: leaveError } = useLeaveApplications({
+    parentChildren: true,
+    limit: 20,
+    studentId: null,
+  });
+  const { data: feeData } = useStudentFees(selectedChild?.student_id ?? null);
+
   // Leave counts by type (from real leave data)
   const leaveCounts = useMemo(() => {
-    const medical = myLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical"));
-    const casual = myLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("casual"));
+    const t = (s: string) => String(s || "").toLowerCase();
+    const medical = myLeaves.filter((l: { leaveType?: string }) => {
+      const lt = t(l.leaveType);
+      return lt.includes("medical") || lt.includes("sick");
+    });
+    const casual = myLeaves.filter((l: { leaveType?: string }) => {
+      const lt = t(l.leaveType);
+      return lt.includes("casual") || lt.includes("casual leave");
+    });
     return { medical: medical.length, casual: casual.length, total: myLeaves.length };
   }, [myLeaves]);
 
@@ -161,11 +175,33 @@ const ParentDashboard = () => {
                     </div>
                     <Link
                       to={routes.studentLeaves}
+                      state={
+                        selectedChild?.student_id
+                          ? { studentId: selectedChild.student_id, returnTo: routes.parentDashboard }
+                          : undefined
+                      }
                       className="badge rounded-circle arrow d-flex align-items-center justify-content-center"
                     >
                       <i className="ti ti-chevron-right fs-14" />
                     </Link>
                   </div>
+                  {selectedChild?.student_id && (
+                    <div className="d-flex bg-white border rounded flex-wrap justify-content-between align-items-center p-3 row-gap-2 mb-2 animate-card">
+                      <div className="d-flex align-items-center">
+                        <span className="avatar avatar-sm bg-light-500 me-2 rounded">
+                          <i className="ti ti-report-money text-dark fs-16" />
+                        </span>
+                        <h6>View Child Fees</h6>
+                      </div>
+                      <Link
+                        to={routes.studentFees}
+                        state={{ studentId: selectedChild.student_id }}
+                        className="badge rounded-circle arrow d-flex align-items-center justify-content-center"
+                      >
+                        <i className="ti ti-chevron-right fs-14" />
+                      </Link>
+                    </div>
+                  )}
                   <div className="d-flex bg-white border rounded flex-wrap justify-content-between align-items-center p-3 row-gap-2 mb-4 animate-card">
                     <div className="d-flex align-items-center">
                       <span className="avatar avatar-sm bg-light-500 me-2 rounded">
@@ -308,7 +344,17 @@ const ParentDashboard = () => {
               <div className="card flex-fill">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-title">Leave Status</h4>
-                  <div className="dropdown">
+                  <div className="d-flex align-items-center gap-2">
+                    {selectedChild?.student_id && (
+                      <Link
+                        to={routes.studentLeaves}
+                        state={{ studentId: selectedChild.student_id, returnTo: routes.parentDashboard }}
+                        className="fw-medium"
+                      >
+                        View All
+                      </Link>
+                    )}
+                    <div className="dropdown">
                     <Link
                       to="#"
                       className="bg-white dropdown-toggle"
@@ -335,14 +381,21 @@ const ParentDashboard = () => {
                       </li>
                     </ul>
                   </div>
+                  </div>
                 </div>
                 <div className="card-body">
+                  {leaveError && (
+                    <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
+                      <i className="ti ti-alert-circle me-2 fs-18" />
+                      <span>{leaveError}</span>
+                    </div>
+                  )}
                   {leaveLoading && (
                     <div className="text-center py-3">
                       <div className="spinner-border spinner-border-sm text-primary" role="status" />
                     </div>
                   )}
-                  {!leaveLoading && myLeaves.length === 0 && (
+                  {!leaveLoading && !leaveError && myLeaves.length === 0 && (
                     <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
                       <i className="ti ti-info-circle me-2 fs-18" />
                       <span>No leave applications.</span>
@@ -415,19 +468,52 @@ const ParentDashboard = () => {
             <div className="col-xxl-4 col-xl-12 d-flex">
               <div className="card flex-fill">
                 <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-titile">Fees Reminder</h4>
-                  <Link
-                    to={routes.feesAssign}
-                    className="link-primary fw-medium"
-                  >
-                    View All
-                  </Link>
+                  <h4 className="card-titile">Child Fees</h4>
+                  {selectedChild?.student_id && (
+                    <Link
+                      to={routes.studentFees}
+                      state={{ studentId: selectedChild.student_id }}
+                      className="link-primary fw-medium"
+                    >
+                      View Fees
+                    </Link>
+                  )}
                 </div>
                 <div className="card-body py-1">
-                  <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No fees data available. Fee reminders will appear here.</span>
-                  </div>
+                  {selectedChild?.student_id ? (
+                    feeData ? (
+                      <div>
+                        <p className="mb-2">
+                          <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="mb-2">
+                          <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="mb-0">
+                          <strong>Outstanding:</strong>{" "}
+                          <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
+                            ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </span>
+                        </p>
+                        {feeData.totalOutstanding > 0 && (
+                          <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
+                            <i className="ti ti-alert-circle me-2" />
+                            Please pay outstanding amount for {selectedChild?.Child || "your child"}.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                        <i className="ti ti-info-circle me-2 fs-18" />
+                        <span>Loading fee data...</span>
+                      </div>
+                    )
+                  ) : (
+                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                      <i className="ti ti-info-circle me-2 fs-18" />
+                      <span>Select a child to view fee details.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

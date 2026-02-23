@@ -101,7 +101,7 @@ const updateRoute = async (req, res) => {
     console.error('Error updating route:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update route: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update route' : `Failed to update route: ${error.message || 'Unknown error'}`,
     });
   }
 };

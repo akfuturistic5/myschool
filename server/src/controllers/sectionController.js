@@ -333,7 +333,7 @@ const updateSection = async (req, res) => {
     console.error('Error stack:', error.stack);
     res.status(500).json({
       status: 'ERROR',
-      message: `Failed to update section: ${error.message || 'Unknown error'}`,
+      message: process.env.NODE_ENV === 'production' ? 'Failed to update section' : `Failed to update section: ${error.message || 'Unknown error'}`,
     });
   }
 };

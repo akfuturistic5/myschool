@@ -286,3 +286,79 @@ export const useDashboardRecentActivity = () => {
 
   return { activity, loading, error };
 };
+
+export const useDashboardFeeStats = () => {
+  const [feeStats, setFeeStats] = useState({
+    totalFeesCollected: 0,
+    fineCollected: 0,
+    studentNotPaid: 0,
+    totalOutstanding: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiService.getDashboardFeeStats();
+        if (mounted && res.status === 'SUCCESS' && res.data) {
+          setFeeStats({
+            totalFeesCollected: res.data.totalFeesCollected ?? 0,
+            fineCollected: res.data.fineCollected ?? 0,
+            studentNotPaid: res.data.studentNotPaid ?? 0,
+            totalOutstanding: res.data.totalOutstanding ?? 0,
+          });
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err.message || 'Failed to fetch fee stats');
+          setFeeStats({ totalFeesCollected: 0, fineCollected: 0, studentNotPaid: 0, totalOutstanding: 0 });
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  return { feeStats, loading, error };
+};
+
+export const useDashboardFinanceSummary = () => {
+  const [financeSummary, setFinanceSummary] = useState({
+    totalEarnings: 0,
+    totalExpenses: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiService.getDashboardFinanceSummary();
+        if (mounted && res.status === 'SUCCESS' && res.data) {
+          setFinanceSummary({
+            totalEarnings: res.data.totalEarnings ?? 0,
+            totalExpenses: res.data.totalExpenses ?? 0,
+          });
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err.message || 'Failed to fetch finance summary');
+          setFinanceSummary({ totalEarnings: 0, totalExpenses: 0 });
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  return { financeSummary, loading, error };
+};

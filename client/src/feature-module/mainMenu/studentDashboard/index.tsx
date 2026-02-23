@@ -3,16 +3,15 @@ import { Link } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useCurrentStudent } from "../../../core/hooks/useCurrentStudent";
+import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
 import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
 import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
+import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useTodos } from "../../../core/hooks/useTodos";
 import { useCalendarEvents } from "../../../core/hooks/useCalendarEvents";
 import { Calendar } from "primereact/calendar";
 import type { Nullable } from "primereact/ts-helpers";
-import Slider from "react-slick";
-import "slick-carousel/slick/slick.css";
-import "slick-carousel/slick/slick-theme.css";
 import dayjs from "dayjs";
 import { DatePicker } from "antd";
 
@@ -21,9 +20,11 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 const StudentDasboard = () => {
   const routes = all_routes;
   const { student, loading: studentLoading, error: studentError } = useCurrentStudent();
+  const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null);
   const { data: allSchedules, loading: scheduleLoading } = useClassSchedules();
   const { data: syllabusData } = useClassSyllabus();
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
+  const { data: feeData } = useStudentFees(student?.id ?? null);
   const { todos } = useTodos();
   const { events: calendarEvents } = useCalendarEvents();
 
@@ -82,78 +83,6 @@ const StudentDasboard = () => {
     );
   }, [student, syllabusData]);
 
-  function SampleNextArrow(props: any) {
-    const {  style, onClick } = props;
-    return (
-      <div
-        className="slick-nav slick-nav-next class-slides"
-        style={{ ...style, display: "flex", top: "-60px", right: "0" }}
-        onClick={onClick}
-      >
-        <i className="fas fa-chevron-right" style={{ fontSize:"12px"}}></i>
-      </div>
-    );
-  }
-
-  function SamplePrevArrow(props: any) {
-    const {  style, onClick } = props;
-    return (
-      <div
-        className="slick-nav slick-nav-prev class-slides"
-        style={{ ...style, display: "flex", top: "-60px", right: "30px" }}
-        onClick={onClick}
-      >
-        <i className="fas fa-chevron-left" style={{ fontSize:"12px"}}></i>
-      </div>
-    );
-  }
-  const profile = {
-    dots: false,
-    autoplay: false,
-    slidesToShow: 5,
-    margin: 24,
-    speed: 500,
-    nextArrow: <SampleNextArrow />,
-    prevArrow: <SamplePrevArrow />,
-    responsive: [
-      {
-        breakpoint: 1500,
-        settings: {
-          slidesToShow: 5,
-        },
-      },
-      {
-        breakpoint: 1400,
-        settings: {
-          slidesToShow: 5,
-        },
-      },
-      {
-        breakpoint: 992,
-        settings: {
-          slidesToShow: 4,
-        },
-      },
-      {
-        breakpoint: 800,
-        settings: {
-          slidesToShow: 3,
-        },
-      },
-      {
-        breakpoint: 776,
-        settings: {
-          slidesToShow: 2,
-        },
-      },
-      {
-        breakpoint: 567,
-        settings: {
-          slidesToShow: 1,
-        },
-      },
-    ],
-  };
   return (
     <>
       {/* Page Wrapper */}
@@ -359,10 +288,72 @@ const StudentDasboard = () => {
                           <i className="ti ti-calendar-heart text-primary me-2" />
                           Attendance data
                         </p>
-                        <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
-                          <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No attendance data available. Attendance records will appear here once available.</span>
-                        </div>
+                        {attendanceError && (
+                          <div className="alert alert-warning mb-3 d-flex align-items-center" role="alert">
+                            <i className="ti ti-alert-circle me-2 fs-18" />
+                            <span>{attendanceError}</span>
+                          </div>
+                        )}
+                        {attendanceLoading && (
+                          <div className="text-center py-3">
+                            <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                            <span className="ms-2">Loading attendance...</span>
+                          </div>
+                        )}
+                        {!attendanceLoading && !attendanceError && (!attendanceData?.records?.length || attendanceData.records.length === 0) && (
+                          <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
+                            <i className="ti ti-info-circle me-2 fs-18" />
+                            <span>No attendance data available. Attendance records will appear here once available.</span>
+                          </div>
+                        )}
+                        {!attendanceLoading && !attendanceError && attendanceData?.records?.length > 0 && (
+                          <div className="row g-2">
+                            <div className="col-6 col-sm-3">
+                              <div className="d-flex align-items-center rounded border p-2">
+                                <span className="avatar avatar-sm bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
+                                  <i className="ti ti-user-check fs-14" />
+                                </span>
+                                <div>
+                                  <small className="text-muted d-block">Present</small>
+                                  <strong>{attendanceData.summary?.present ?? 0}</strong>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="col-6 col-sm-3">
+                              <div className="d-flex align-items-center rounded border p-2">
+                                <span className="avatar avatar-sm bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
+                                  <i className="ti ti-user-x fs-14" />
+                                </span>
+                                <div>
+                                  <small className="text-muted d-block">Absent</small>
+                                  <strong>{attendanceData.summary?.absent ?? 0}</strong>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="col-6 col-sm-3">
+                              <div className="d-flex align-items-center rounded border p-2">
+                                <span className="avatar avatar-sm bg-info-transparent rounded me-2 flex-shrink-0 text-info">
+                                  <i className="ti ti-clock-half fs-14" />
+                                </span>
+                                <div>
+                                  <small className="text-muted d-block">Half Day</small>
+                                  <strong>{attendanceData.summary?.halfDay ?? 0}</strong>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="col-6 col-sm-3">
+                              <div className="d-flex align-items-center rounded border p-2">
+                                <span className="avatar avatar-sm bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
+                                  <i className="ti ti-clock fs-14" />
+                                </span>
+                                <div>
+                                  <small className="text-muted d-block">Late</small>
+                                  <strong>{attendanceData.summary?.late ?? 0}</strong>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -557,9 +548,8 @@ const StudentDasboard = () => {
             {/* Class Faculties */}
             <div className="col-xl-12">
               <div className="card flex-fill">
-                <div className="card-header d-flex align-items-center justify-content-between">
+                <div className="card-header">
                   <h4 className="card-title">Class Faculties</h4>
-                  <div className="owl-nav slide-nav text-end nav-control" />
                 </div>
                 <div className="card-body">
                   {classFaculties.length === 0 && (
@@ -569,9 +559,10 @@ const StudentDasboard = () => {
                     </div>
                   )}
                   {classFaculties.length > 0 && (
-                    <Slider {...profile} className="teachers-profile-slider owl-carousel">
+                    <div className="row g-3">
                       {classFaculties.map((fac: { teacher?: string; subject?: string }, idx: number) => (
-                        <div key={idx} className="card bg-light-100 mb-0">
+                        <div key={idx} className="col-sm-6 col-md-4 col-xl-3">
+                          <div className="card bg-light-100 mb-0 h-100">
                           <div className="card-body">
                             <div className="d-flex align-items-center mb-3">
                               <span className="avatar avatar-lg rounded me-2 bg-primary-transparent">
@@ -603,9 +594,10 @@ const StudentDasboard = () => {
                               </div>
                             </div>
                           </div>
+                          </div>
                         </div>
                       ))}
-                    </Slider>
+                    </div>
                   )}
                 </div>
               </div>
@@ -721,15 +713,38 @@ const StudentDasboard = () => {
               <div className="card flex-fill">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-titile">Fees Reminder</h4>
-                  <Link to={routes.studentFees} className="link-primary fw-medium">
+                  <Link to={routes.studentFees} state={student ? { studentId: student.id, student } : undefined} className="link-primary fw-medium">
                     View All
                   </Link>
                 </div>
                 <div className="card-body py-1">
-                  <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No fees data available. Fee reminders will appear here.</span>
-                  </div>
+                  {feeData ? (
+                    <div>
+                      <p className="mb-2">
+                        <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="mb-2">
+                        <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="mb-0">
+                        <strong>Outstanding:</strong>{" "}
+                        <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
+                          ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </span>
+                      </p>
+                      {feeData.totalOutstanding > 0 && (
+                        <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
+                          <i className="ti ti-alert-circle me-2" />
+                          Please pay outstanding amount.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                      <i className="ti ti-info-circle me-2 fs-18" />
+                      <span>No fees data available. Fee reminders will appear here.</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -1,13 +1,14 @@
 const { query } = require('../config/database');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const serverConfig = require('../config/server');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 
 /**
  * Login - authenticate user with username/phone and password
- * Password = user's phone number (stored in phone column)
- * password_hash column stores bcrypt(phone)
- * Lookup by username, email, or phone
+ * Uses bcrypt.compare with password_hash column.
+ * Backward compat: if password_hash is empty, compares with phone and migrates hash on success.
+ * Lookup by username, email, or phone.
  */
 const login = async (req, res) => {
   try {
@@ -18,11 +19,9 @@ const login = async (req, res) => {
     }
 
     if (!serverConfig.jwtSecret) {
-      console.error('JWT_SECRET not configured');
       return errorResponse(res, 500, 'Server configuration error');
     }
 
-    // Look up user - by username, email, or phone (password = phone number)
     const identifier = username.trim().toString();
     const enteredPassword = (password || '').toString().trim();
 
@@ -66,13 +65,28 @@ const login = async (req, res) => {
 
     const user = userResult.rows[0];
     const storedPhone = (user.phone || '').toString().trim();
+    const passwordHash = user.password_hash;
 
-    if (!storedPhone) {
+    if (!storedPhone && !passwordHash) {
       return errorResponse(res, 401, 'Account not configured for login. Please contact admin.');
     }
 
-    // Password = phone (direct comparison)
-    if (enteredPassword !== storedPhone) {
+    let passwordValid = false;
+    if (passwordHash) {
+      try {
+        passwordValid = await bcrypt.compare(enteredPassword, passwordHash);
+      } catch {
+        passwordValid = false;
+      }
+    }
+    if (!passwordValid && storedPhone) {
+      passwordValid = enteredPassword === storedPhone;
+      if (passwordValid) {
+        const hash = bcrypt.hashSync(enteredPassword, 10);
+        await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, user.id]).catch(() => {});
+      }
+    }
+    if (!passwordValid) {
       return errorResponse(res, 401, 'Invalid username or password');
     }
 
