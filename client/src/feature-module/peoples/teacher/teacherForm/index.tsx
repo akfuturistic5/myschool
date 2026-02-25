@@ -6,7 +6,6 @@ import dayjs from "dayjs";
 import { all_routes } from "../../../router/all_routes";
 import { apiService } from "../../../../core/services/apiService";
 import {
- 
   Contract,
   Hostel,
   Marital,
@@ -24,6 +23,14 @@ import {
 
 import CommonSelect from "../../../../core/common/commonSelect";
 import TagInput from "../../../../core/common/Taginput";
+import { useClasses } from "../../../../core/hooks/useClasses";
+import { useSubjects } from "../../../../core/hooks/useSubjects";
+import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
+import { useHostels } from "../../../../core/hooks/useHostels";
+import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
+import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
+import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
+import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
 
 interface TeacherLocationState {
   teacherId?: number;
@@ -44,12 +51,29 @@ const TeacherForm = () => {
   const [loadingTeacher, setLoadingTeacher] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [owner, setOwner] = useState<string[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [selectedGender, setSelectedGender] = useState<string | null>(null);
+  const [selectedMaritalStatus, setSelectedMaritalStatus] = useState<string | null>(null);
+  const [selectedBloodGroup, setSelectedBloodGroup] = useState<string | null>(null);
+  const [selectedContractType, setSelectedContractType] = useState<string | null>(null);
+  const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const handleTagsChange = (newTags: string[]) => {
     setOwner(newTags);
   };
 
   const [defaultDate, setDefaultDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('Active');
+
+  // Lookup data from API (real data for dropdowns)
+  const { classes, loading: classesLoading, error: classesError } = useClasses();
+  const { subjects, loading: subjectsLoading, error: subjectsError } = useSubjects();
+  const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
+  const { hostels } = useHostels();
+  const { hostelRooms } = useHostelRooms();
+  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
+  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
 
   useEffect(() => {
     if (location.pathname === routes.editTeacher) {
@@ -90,6 +114,13 @@ const TeacherForm = () => {
         ? 'Active' 
         : 'Inactive';
       setSelectedStatus(currentStatus);
+      setSelectedClassId(teacherData.class_id ? String(teacherData.class_id) : null);
+      setSelectedSubjectId(teacherData.subject_id ? String(teacherData.subject_id) : null);
+      setSelectedGender(teacherData.gender ?? null);
+      setSelectedMaritalStatus(teacherData.marital_status ?? null);
+      setSelectedBloodGroup(teacherData.blood_group ?? null);
+      setSelectedContractType(teacherData.contract_type ?? null);
+      setSelectedShift(teacherData.shift ?? null);
     }
   }, [teacherData, isEdit]);
 
@@ -223,21 +254,65 @@ const TeacherForm = () => {
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Class</label>
-                            <CommonSelect
-                              className="select"
-                              options={allClass}
-                              defaultValue={isEdit ? allClass[0] : undefined}
-                            />
+                            {classesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading classes...
+                              </div>
+                            ) : classesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2" />
+                                Error: {classesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={(classes || []).map((cls: any) => ({
+                                  value: String(cls.id),
+                                  label: cls.class_name ?? ''
+                                }))}
+                                value={selectedClassId}
+                                onChange={(value) => {
+                                  if (isEdit) {
+                                    setSelectedClassId(value);
+                                  }
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Subject</label>
-                            <CommonSelect
-                              className="select"
-                              options={allSubject}
-                              defaultValue={isEdit ? allSubject[0] : undefined}
-                            />
+                            {subjectsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading subjects...
+                              </div>
+                            ) : subjectsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2" />
+                                Error: {subjectsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={(subjects || [])
+                                  .filter((sub: any) =>
+                                    selectedClassId ? String(sub.class_id) === selectedClassId : true
+                                  )
+                                  .map((sub: any) => ({
+                                    value: String(sub.id),
+                                    label: sub.subject_name ?? ''
+                                  }))}
+                                value={selectedSubjectId}
+                                onChange={(value) => {
+                                  if (isEdit) {
+                                    setSelectedSubjectId(value);
+                                  }
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -246,7 +321,18 @@ const TeacherForm = () => {
                             <CommonSelect
                               className="select"
                               options={gender}
-                              defaultValue={isEdit ? gender[0] : undefined}
+                              defaultValue={
+                                isEdit && t
+                                  ? (gender as any).find(
+                                      (g: any) => g.value === String(t.gender || '').toLowerCase()
+                                    ) || gender[0]
+                                  : undefined
+                              }
+                              onChange={(value: string | null) => {
+                                if (isEdit) {
+                                  setSelectedGender(value);
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -277,11 +363,31 @@ const TeacherForm = () => {
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Blood Group</label>
-                            <CommonSelect
-                              className="select"
-                              options={bloodGroup}
-                              defaultValue={isEdit ? bloodGroup[0] : undefined}
-                            />
+                            {bloodGroupsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading blood groups...
+                              </div>
+                            ) : bloodGroupsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2" />
+                                Error: {bloodGroupsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={(bloodGroups || []).map((bg: any) => ({
+                                  value: bg.blood_group ?? '',
+                                  label: bg.blood_group ?? ''
+                                }))}
+                                value={selectedBloodGroup}
+                                onChange={(value: string | null) => {
+                                  if (isEdit) {
+                                    setSelectedBloodGroup(value);
+                                  }
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -356,7 +462,18 @@ const TeacherForm = () => {
                             <CommonSelect
                               className="select"
                               options={Marital}
-                              defaultValue={isEdit ? Marital[0] : undefined}
+                              defaultValue={
+                                isEdit && t
+                                  ? (Marital as any).find(
+                                      (m: any) => m.value === (teacherData?.marital_status || t.marital_status || '')
+                                    ) || Marital[0]
+                                  : undefined
+                              }
+                              onChange={(value: string | null) => {
+                                if (isEdit) {
+                                  setSelectedMaritalStatus(value);
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -413,6 +530,7 @@ const TeacherForm = () => {
                               Previous School Address
                             </label>
                             <input
+                              name="previous_school_address"
                               type="text"
                               className="form-control"
                               defaultValue={isEdit && t ? (t.previous_school_address ?? "") : undefined}
@@ -425,6 +543,7 @@ const TeacherForm = () => {
                               Previous School Phone No
                             </label>
                             <input
+                              name="previous_school_phone"
                               type="text"
                               className="form-control"
                               defaultValue={isEdit && t ? (t.previous_school_phone ?? "") : undefined}
@@ -458,12 +577,26 @@ const TeacherForm = () => {
                         <div className="col-xxl-3 col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">
-                              PAN Number / ID Number
+                              PAN Number
                             </label>
                             <input
+                              name="pan_number"
                               type="text"
                               className="form-control"
-                              defaultValue={isEdit && t ? (t.pan_number ?? t.id_number ?? "") : undefined}
+                              defaultValue={isEdit && t ? (t.pan_number ?? "") : undefined}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl-3 col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">
+                              ID Number
+                            </label>
+                            <input
+                              name="id_number"
+                              type="text"
+                              className="form-control"
+                              defaultValue={isEdit && t ? (t.id_number ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -537,6 +670,7 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Basic Salary</label>
                             <input
+                              name="salary"
                               type="text"
                               className="form-control"
                               defaultValue={isEdit && t ? (t.salary != null ? String(t.salary) : "") : undefined}
@@ -549,7 +683,18 @@ const TeacherForm = () => {
                             <CommonSelect
                               className="select"
                               options={Contract}
-                              defaultValue={isEdit ? Contract[0] : undefined}
+                              defaultValue={
+                                isEdit && t
+                                  ? (Contract as any).find(
+                                      (c: any) => c.value === (teacherData?.contract_type || t.contract_type || '')
+                                    ) || Contract[0]
+                                  : undefined
+                              }
+                              onChange={(value: string | null) => {
+                                if (isEdit) {
+                                  setSelectedContractType(value);
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -559,7 +704,18 @@ const TeacherForm = () => {
                             <CommonSelect
                               className="select"
                               options={Shift}
-                              defaultValue={isEdit ? Shift[0] : undefined}
+                              defaultValue={
+                                isEdit && t
+                                  ? (Shift as any).find(
+                                      (s: any) => s.value === (teacherData?.shift || t.shift || '')
+                                    ) || Shift[0]
+                                  : undefined
+                              }
+                              onChange={(value: string | null) => {
+                                if (isEdit) {
+                                  setSelectedShift(value);
+                                }
+                              }}
                             />
                           </div>
                         </div>
@@ -567,6 +723,7 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Work Location</label>
                             <input
+                              name="work_location"
                               type="text"
                               className="form-control"
                               defaultValue={isEdit && t ? (t.work_location ?? "") : undefined}
@@ -757,31 +914,76 @@ const TeacherForm = () => {
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Route</label>
-                          <CommonSelect
-                            className="select"
-                            options={route}
-                            defaultValue={isEdit ? route[0] : undefined}
-                          />
+                          {routesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading routes...
+                            </div>
+                          ) : routesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {routesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={(transportRoutes || []).map((r: any) => ({
+                                value: String((r.originalData?.id ?? r.id) ?? ''),
+                                label: r.routes ?? r.originalData?.route_name ?? 'N/A',
+                              }))}
+                              defaultValue={undefined}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Vehicle Number</label>
-                          <CommonSelect
-                            className="select"
-                            options={VehicleNumber}
-                            defaultValue={isEdit ? VehicleNumber[0] : undefined}
-                          />
+                          {vehiclesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading vehicles...
+                            </div>
+                          ) : vehiclesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {vehiclesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={(vehicles || []).map((v: any) => ({
+                                value: String((v.originalData?.id ?? v.id) ?? ''),
+                                label: v.vehicleNumber ?? v.originalData?.vehicle_number ?? 'N/A',
+                              }))}
+                              defaultValue={undefined}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Pickup Point</label>
-                          <CommonSelect
-                            className="select"
-                            options={PickupPoint}
-                            defaultValue={isEdit ? PickupPoint[0] : undefined}
-                          />
+                          {pickupLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading pickup points...
+                            </div>
+                          ) : pickupError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {pickupError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={(pickupPoints || []).map((p: any) => ({
+                                value: String((p.originalData?.id ?? p.id) ?? ''),
+                                label: p.pickupPoint ?? p.originalData?.pickup_point_name ?? 'N/A',
+                              }))}
+                              defaultValue={undefined}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -812,8 +1014,11 @@ const TeacherForm = () => {
                           <label className="form-label">Hostel</label>
                           <CommonSelect
                             className="select"
-                            options={Hostel}
-                            defaultValue={isEdit ? Hostel[0] : undefined}
+                            options={(hostels || []).map((h: any) => ({
+                              value: String((h.originalData as { id?: number })?.id ?? ""),
+                              label: (h.hostelName as string) || "N/A",
+                            }))}
+                            defaultValue={undefined}
                           />
                         </div>
                       </div>
@@ -822,8 +1027,11 @@ const TeacherForm = () => {
                           <label className="form-label">Room No</label>
                           <CommonSelect
                             className="select"
-                            options={roomNO}
-                            defaultValue={isEdit ? roomNO[0] : undefined}
+                            options={(hostelRooms || []).map((r: any) => ({
+                              value: String((r.originalData as { id?: number })?.id ?? ""),
+                              label: (r.roomNo as string) || "N/A",
+                            }))}
+                            defaultValue={undefined}
                           />
                         </div>
                       </div>
@@ -1034,18 +1242,28 @@ const TeacherForm = () => {
                             qualification: get('qualification') || teacherData?.qualification,
                             experience_years: getNum('experience_years') ?? teacherData?.experience_years,
                             previous_school_name: get('previous_school_name') || teacherData?.previous_school_name,
+                            previous_school_address: get('previous_school_address') || teacherData?.previous_school_address,
+                            previous_school_phone: get('previous_school_phone') || teacherData?.previous_school_phone,
                             bank_name: get('bank_name') || teacherData?.bank_name,
                             branch: get('branch') || teacherData?.branch,
                             ifsc: get('ifsc') || teacherData?.ifsc,
                             current_address: get('address') || teacherData?.current_address || teacherData?.address,
                             permanent_address: get('permanent_address') || teacherData?.permanent_address,
+                            pan_number: get('pan_number') || teacherData?.pan_number,
+                            id_number: get('id_number') || teacherData?.id_number,
                             facebook: get('facebook') || teacherData?.facebook,
                             twitter: get('twitter') || teacherData?.twitter,
                             linkedin: get('linkedin') || teacherData?.linkedin,
                             languages_known: owner?.length ? owner : (teacherData?.languages_known ? (Array.isArray(teacherData.languages_known) ? teacherData.languages_known : [teacherData.languages_known]) : undefined),
                             class_id: teacherData?.class_id,
                             subject_id: teacherData?.subject_id,
-                            gender: teacherData?.gender,
+                            gender: selectedGender || teacherData?.gender,
+                            marital_status: selectedMaritalStatus || teacherData?.marital_status,
+                            blood_group: selectedBloodGroup || teacherData?.blood_group,
+                            salary: getNum('salary') ?? teacherData?.salary,
+                            contract_type: selectedContractType || teacherData?.contract_type,
+                            shift: selectedShift || teacherData?.shift,
+                            work_location: get('work_location') || teacherData?.work_location,
                             date_of_birth: teacherData?.date_of_birth ? dayjs(teacherData.date_of_birth).format('YYYY-MM-DD') : undefined,
                             joining_date: teacherData?.joining_date ? dayjs(teacherData.joining_date).format('YYYY-MM-DD') : undefined,
                           };

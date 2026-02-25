@@ -16,14 +16,14 @@ const createStudent = async (req, res) => {
       // Guardian fields
       guardian_first_name, guardian_last_name, guardian_relation, guardian_phone,
       guardian_email, guardian_occupation, guardian_address,
-      // Address, siblings, transport, hostel, bank, medical
+      // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
-      previous_school,
+      previous_school, previous_school_address,
       sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
-      is_transport_required, route_id, pickup_point_id,
+      is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
-      known_allergies, medications
+      known_allergies, medications, medical_condition, other_information
     } = req.body;
 
     // Validate required fields
@@ -60,37 +60,83 @@ const createStudent = async (req, res) => {
         throw err;
       }
 
-      const result = await client.query(`
-        INSERT INTO students (
-          academic_year_id, admission_number, admission_date, roll_number,
-          first_name, last_name, class_id, section_id, gender, date_of_birth,
-          blood_group_id, house_id, religion_id, cast_id, phone, email,
-          mother_tongue_id, is_active,
-          address, previous_school,
-          sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
-          is_transport_required, route_id, pickup_point_id,
-          is_hostel_required, hostel_id, hostel_room_id,
-          bank_name, branch, ifsc,
-          known_allergies, medications,
-          created_at, modified_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, NOW(), NOW())
-        RETURNING *
-      `, [
-        academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-        first_name, last_name, class_id || null, section_id || null, gender || null,
-        date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-        cast_id || null, phone || null, email || null, mother_tongue_id || null,
-        status === 'Active' ? true : false,
-        addrVal,
-        previous_school || null,
-        sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
-        is_transport_required === true || is_transport_required === 'true',
-        route_id || null, pickup_point_id || null,
-        is_hostel_required === true || is_hostel_required === 'true',
-        hostel_id || null, hostel_room_id || null,
-        bank_name || null, branch || null, ifsc || null,
-        knownAllergiesVal, medicationsVal
-      ]);
+      let result;
+      try {
+        // Primary path: for schemas using correct "religion_id" column and new address columns
+        result = await client.query(`
+          INSERT INTO students (
+            academic_year_id, admission_number, admission_date, roll_number,
+            first_name, last_name, class_id, section_id, gender, date_of_birth,
+            blood_group_id, house_id, religion_id, cast_id, phone, email,
+            mother_tongue_id, is_active,
+            address, current_address, permanent_address,
+            previous_school, previous_school_address,
+            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+            is_transport_required, route_id, pickup_point_id, vehicle_number,
+            is_hostel_required, hostel_id, hostel_room_id,
+            bank_name, branch, ifsc,
+            known_allergies, medications, medical_condition, other_information,
+            created_at, modified_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW(), NOW())
+          RETURNING *
+        `, [
+          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
+          first_name, last_name, class_id || null, section_id || null, gender || null,
+          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          status === 'Active' ? true : false,
+          addrVal,
+          current_address || addrVal || null,
+          permanent_address || null,
+          previous_school || null, previous_school_address || null,
+          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
+          is_transport_required === true || is_transport_required === 'true',
+          route_id || null, pickup_point_id || null, vehicle_number || null,
+          is_hostel_required === true || is_hostel_required === 'true',
+          hostel_id || null, hostel_room_id || null,
+          bank_name || null, branch || null, ifsc || null,
+          knownAllergiesVal, medicationsVal,
+          medical_condition || null, other_information || null
+        ]);
+      } catch (e) {
+        // Fallback path: handle legacy schemas that use "reigion_id" and/or lack new address columns
+        const hasReligionError = e.message && (e.message.includes('religion_id') || e.message.includes('reigion'));
+        const useLegacyReligion = hasReligionError;
+        const religionColumn = useLegacyReligion ? 'reigion_id' : 'religion_id';
+
+        result = await client.query(`
+          INSERT INTO students (
+            academic_year_id, admission_number, admission_date, roll_number,
+            first_name, last_name, class_id, section_id, gender, date_of_birth,
+            blood_group_id, house_id, ${religionColumn}, cast_id, phone, email,
+            mother_tongue_id, is_active,
+            address, previous_school, previous_school_address,
+            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+            is_transport_required, route_id, pickup_point_id, vehicle_number,
+            is_hostel_required, hostel_id, hostel_room_id,
+            bank_name, branch, ifsc,
+            known_allergies, medications, medical_condition, other_information,
+            created_at, modified_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, NOW(), NOW())
+          RETURNING *
+        `, [
+          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
+          first_name, last_name, class_id || null, section_id || null, gender || null,
+          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          status === 'Active' ? true : false,
+          addrVal,
+          previous_school || null, previous_school_address || null,
+          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
+          is_transport_required === true || is_transport_required === 'true',
+          route_id || null, pickup_point_id || null, vehicle_number || null,
+          is_hostel_required === true || is_hostel_required === 'true',
+          hostel_id || null, hostel_room_id || null,
+          bank_name || null, branch || null, ifsc || null,
+          knownAllergiesVal, medicationsVal,
+          medical_condition || null, other_information || null
+        ]);
+      }
 
       const studentRow = result.rows[0];
 
@@ -141,6 +187,45 @@ const createStudent = async (req, res) => {
         studentRow.guardian_id = guardianResult.rows[0].id;
       }
 
+      // Sync current & permanent address into addresses table (per-user address book)
+      // so that Student Details and Edit Student form stay in sync.
+      if ((current_address || permanent_address || addrVal) && studentRow.user_id) {
+        const currentAddrVal = current_address || addrVal || null;
+        const permanentAddrVal = permanent_address || null;
+
+        const existingAddr = await client.query(
+          'SELECT id FROM addresses WHERE user_id = $1 AND role_id = $2 LIMIT 1',
+          [studentRow.user_id, ROLES.STUDENT]
+        );
+
+        if (existingAddr.rows.length > 0) {
+          await client.query(
+            `
+            UPDATE addresses SET
+              current_address = $1,
+              permanent_address = $2,
+              person_id = $3
+            WHERE id = $4
+          `,
+            [currentAddrVal, permanentAddrVal, studentRow.id, existingAddr.rows[0].id]
+          );
+        } else if (currentAddrVal || permanentAddrVal) {
+          await client.query(
+            `
+            INSERT INTO addresses (
+              current_address,
+              permanent_address,
+              user_id,
+              role_id,
+              person_id,
+              created_at
+            ) VALUES ($1, $2, $3, $4, $5, NOW())
+          `,
+            [currentAddrVal, permanentAddrVal, studentRow.user_id, ROLES.STUDENT, studentRow.id]
+          );
+        }
+      }
+
       return studentRow;
     });
 
@@ -175,14 +260,14 @@ const updateStudent = async (req, res) => {
       // Guardian fields
       guardian_first_name, guardian_last_name, guardian_relation, guardian_phone,
       guardian_email, guardian_occupation, guardian_address,
-      // Address, siblings, transport, hostel, bank, medical
+      // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
-      previous_school,
+      previous_school, previous_school_address,
       sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
-      is_transport_required, route_id, pickup_point_id,
+      is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
-      known_allergies, medications
+      known_allergies, medications, medical_condition, other_information
     } = req.body;
 
     // Validate required fields
@@ -219,63 +304,140 @@ const updateStudent = async (req, res) => {
         throw err;
       }
 
-      const result = await client.query(`
-        UPDATE students SET
-          academic_year_id = $1,
-          admission_number = $2,
-          admission_date = $3,
-          roll_number = $4,
-          first_name = $5,
-          last_name = $6,
-          class_id = $7,
-          section_id = $8,
-          gender = $9,
-          date_of_birth = $10,
-          blood_group_id = $11,
-          house_id = $12,
-          religion_id = $13,
-          cast_id = $14,
-          phone = $15,
-          email = $16,
-          mother_tongue_id = $17,
-          is_active = $18,
-          address = $19,
-          previous_school = $20,
-          sibiling_1 = $21,
-          sibiling_2 = $22,
-          sibiling_1_class = $23,
-          sibiling_2_class = $24,
-          is_transport_required = $25,
-          route_id = $26,
-          pickup_point_id = $27,
-          is_hostel_required = $28,
-          hostel_id = $29,
-          hostel_room_id = $30,
-          bank_name = $31,
-          branch = $32,
-          ifsc = $33,
-          known_allergies = $34,
-          medications = $35,
-          modified_at = NOW()
-        WHERE id = $36
-        RETURNING *
-      `, [
-        academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-        first_name, last_name, class_id || null, section_id || null, gender || null,
-        date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-        cast_id || null, phone || null, email || null, mother_tongue_id || null,
-        status === 'Active' ? true : false,
-        addrVal,
-        previous_school || null,
-        sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
-        is_transport_required === true || is_transport_required === 'true',
-        route_id || null, pickup_point_id || null,
-        is_hostel_required === true || is_hostel_required === 'true',
-        hostel_id || null, hostel_room_id || null,
-        bank_name || null, branch || null, ifsc || null,
-        knownAllergiesVal, medicationsVal,
-        id
-      ]);
+      let result;
+      try {
+        // Primary path: for schemas using correct "religion_id" column
+        result = await client.query(`
+          UPDATE students SET
+            academic_year_id = $1,
+            admission_number = $2,
+            admission_date = $3,
+            roll_number = $4,
+            first_name = $5,
+            last_name = $6,
+            class_id = $7,
+            section_id = $8,
+            gender = $9,
+            date_of_birth = $10,
+            blood_group_id = $11,
+            house_id = $12,
+            religion_id = $13,
+            cast_id = $14,
+            phone = $15,
+            email = $16,
+            mother_tongue_id = $17,
+            is_active = $18,
+            address = $19,
+            previous_school = $20,
+            previous_school_address = $21,
+            sibiling_1 = $22,
+            sibiling_2 = $23,
+            sibiling_1_class = $24,
+            sibiling_2_class = $25,
+            is_transport_required = $26,
+            route_id = $27,
+            pickup_point_id = $28,
+            vehicle_number = $29,
+            is_hostel_required = $30,
+            hostel_id = $31,
+            hostel_room_id = $32,
+            bank_name = $33,
+            branch = $34,
+            ifsc = $35,
+            known_allergies = $36,
+            medications = $37,
+            medical_condition = $38,
+            other_information = $39,
+            modified_at = NOW()
+          WHERE id = $40
+          RETURNING *
+        `, [
+          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
+          first_name, last_name, class_id || null, section_id || null, gender || null,
+          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          status === 'Active' ? true : false,
+          addrVal,
+          previous_school || null, previous_school_address || null,
+          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
+          is_transport_required === true || is_transport_required === 'true',
+          route_id || null, pickup_point_id || null, vehicle_number || null,
+          is_hostel_required === true || is_hostel_required === 'true',
+          hostel_id || null, hostel_room_id || null,
+          bank_name || null, branch || null, ifsc || null,
+          knownAllergiesVal, medicationsVal,
+          medical_condition || null, other_information || null,
+          id
+        ]);
+      } catch (e) {
+        // Fallback path: handle legacy schemas that use "reigion_id" instead of "religion_id"
+        if (e.message && (e.message.includes('religion_id') || e.message.includes('reigion'))) {
+          result = await client.query(`
+            UPDATE students SET
+              academic_year_id = $1,
+              admission_number = $2,
+              admission_date = $3,
+              roll_number = $4,
+              first_name = $5,
+              last_name = $6,
+              class_id = $7,
+              section_id = $8,
+              gender = $9,
+              date_of_birth = $10,
+              blood_group_id = $11,
+              house_id = $12,
+              reigion_id = $13,
+              cast_id = $14,
+              phone = $15,
+              email = $16,
+              mother_tongue_id = $17,
+              is_active = $18,
+              address = $19,
+              previous_school = $20,
+              previous_school_address = $21,
+              sibiling_1 = $22,
+              sibiling_2 = $23,
+              sibiling_1_class = $24,
+              sibiling_2_class = $25,
+              is_transport_required = $26,
+              route_id = $27,
+              pickup_point_id = $28,
+              vehicle_number = $29,
+              is_hostel_required = $30,
+              hostel_id = $31,
+              hostel_room_id = $32,
+              bank_name = $33,
+              branch = $34,
+              ifsc = $35,
+              known_allergies = $36,
+              medications = $37,
+              medical_condition = $38,
+              other_information = $39,
+              modified_at = NOW()
+            WHERE id = $40
+            RETURNING *
+          `, [
+            academic_year_id || null, admission_number, admission_date || null, roll_number || null,
+            first_name, last_name, class_id || null, section_id || null, gender || null,
+            date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
+            cast_id || null, phone || null, email || null, mother_tongue_id || null,
+            status === 'Active' ? true : false,
+            addrVal,
+            previous_school || null, previous_school_address || null,
+            sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
+            is_transport_required === true || is_transport_required === 'true',
+            route_id || null, pickup_point_id || null, vehicle_number || null,
+            is_hostel_required === true || is_hostel_required === 'true',
+            hostel_id || null, hostel_room_id || null,
+            bank_name || null, branch || null, ifsc || null,
+            knownAllergiesVal, medicationsVal,
+            medical_condition || null, other_information || null,
+            id
+          ]);
+        } else {
+          throw e;
+        }
+      }
 
       if (result.rows.length === 0) {
         const err = new Error('Student not found');
@@ -397,6 +559,45 @@ const updateStudent = async (req, res) => {
         }
       }
 
+      // Sync current & permanent address into addresses table so that
+      // Student Details and Edit Student form stay consistent with the DB.
+      if ((current_address || permanent_address || addrVal) && studentRow.user_id) {
+        const currentAddrVal = current_address || addrVal || null;
+        const permanentAddrVal = permanent_address || null;
+
+        const existingAddr = await client.query(
+          'SELECT id FROM addresses WHERE user_id = $1 AND role_id = $2 LIMIT 1',
+          [studentRow.user_id, ROLES.STUDENT]
+        );
+
+        if (existingAddr.rows.length > 0) {
+          await client.query(
+            `
+            UPDATE addresses SET
+              current_address = $1,
+              permanent_address = $2,
+              person_id = $3
+            WHERE id = $4
+          `,
+            [currentAddrVal, permanentAddrVal, studentRow.id, existingAddr.rows[0].id]
+          );
+        } else if (currentAddrVal || permanentAddrVal) {
+          await client.query(
+            `
+            INSERT INTO addresses (
+              current_address,
+              permanent_address,
+              user_id,
+              role_id,
+              person_id,
+              created_at
+            ) VALUES ($1, $2, $3, $4, $5, NOW())
+          `,
+            [currentAddrVal, permanentAddrVal, studentRow.user_id, ROLES.STUDENT, studentRow.id]
+          );
+        }
+      }
+
       return studentRow;
     });
 
@@ -481,8 +682,8 @@ const getAllStudents = async (req, res) => {
         g.email as guardian_email,
         g.occupation as guardian_occupation,
         g.relation as guardian_relation,
-        COALESCE(addr.current_address, s.address) as current_address,
-        addr.permanent_address
+        COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+        COALESCE(s.permanent_address, addr.permanent_address) as permanent_address
       FROM students s
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
@@ -528,9 +729,9 @@ const getStudentById = async (req, res) => {
       p.father_name, p.father_email, p.father_phone, p.father_occupation,
       p.mother_name, p.mother_email, p.mother_phone, p.mother_occupation,
       g.first_name as guardian_first_name, g.last_name as guardian_last_name,
-      g.phone as guardian_phone, g.email as guardian_email, g.occupation as guardian_occupation, g.relation as guardian_relation,
-      COALESCE(addr.current_address, s.address) as current_address,
-      addr.permanent_address`;
+      g.phone as guardian_phone, g.email as guardian_email, g.occupation as guardian_occupation, g.relation as guardian_relation, g.address as guardian_address,
+      COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+      COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
     const fromAndJoins = `
       FROM students s
       LEFT JOIN users u ON s.user_id = u.id
@@ -609,7 +810,7 @@ const getStudentById = async (req, res) => {
     }
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information, vehicle_number FROM students WHERE id = $1',
         [id]
       );
       if (extra.rows.length > 0) {
@@ -620,6 +821,10 @@ const getStudentById = async (req, res) => {
         studentData.ifsc = studentData.ifsc ?? null;
         studentData.known_allergies = studentData.known_allergies ?? null;
         studentData.medications = studentData.medications ?? null;
+        studentData.previous_school_address = studentData.previous_school_address ?? null;
+        studentData.medical_condition = studentData.medical_condition ?? null;
+        studentData.other_information = studentData.other_information ?? null;
+        studentData.vehicle_number = studentData.vehicle_number ?? null;
       }
     } catch (e) {
       studentData.bank_name = studentData.bank_name ?? null;
@@ -627,6 +832,10 @@ const getStudentById = async (req, res) => {
       studentData.ifsc = studentData.ifsc ?? null;
       studentData.known_allergies = studentData.known_allergies ?? null;
       studentData.medications = studentData.medications ?? null;
+      studentData.previous_school_address = studentData.previous_school_address ?? null;
+      studentData.medical_condition = studentData.medical_condition ?? null;
+      studentData.other_information = studentData.other_information ?? null;
+      studentData.vehicle_number = studentData.vehicle_number ?? null;
     }
     try {
       if (studentData.hostel_id || studentData.hostel_room_id) {
@@ -959,9 +1168,9 @@ const getCurrentStudent = async (req, res) => {
       p.father_name, p.father_email, p.father_phone, p.father_occupation,
       p.mother_name, p.mother_email, p.mother_phone, p.mother_occupation,
       g.first_name as guardian_first_name, g.last_name as guardian_last_name,
-      g.phone as guardian_phone, g.email as guardian_email, g.occupation as guardian_occupation, g.relation as guardian_relation,
-      COALESCE(addr.current_address, s.address) as current_address,
-      addr.permanent_address`;
+      g.phone as guardian_phone, g.email as guardian_email, g.occupation as guardian_occupation, g.relation as guardian_relation, g.address as guardian_address,
+      COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+      COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
     const fromAndJoins = `
       FROM students s
       LEFT JOIN users u ON s.user_id = u.id
@@ -1041,7 +1250,7 @@ const getCurrentStudent = async (req, res) => {
 
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information, vehicle_number FROM students WHERE id = $1',
         [studentId]
       );
       if (extra.rows.length > 0) {
@@ -1053,6 +1262,10 @@ const getCurrentStudent = async (req, res) => {
       studentData.ifsc = studentData.ifsc ?? null;
       studentData.known_allergies = studentData.known_allergies ?? null;
       studentData.medications = studentData.medications ?? null;
+      studentData.previous_school_address = studentData.previous_school_address ?? null;
+      studentData.medical_condition = studentData.medical_condition ?? null;
+      studentData.other_information = studentData.other_information ?? null;
+      studentData.vehicle_number = studentData.vehicle_number ?? null;
     }
     // Fallback: if phone/email still empty, fetch from users table
     if (studentData.user_id && (!studentData.phone || !studentData.email)) {
@@ -1188,8 +1401,8 @@ const getStudentsByClass = async (req, res) => {
         g.email as guardian_email,
         g.occupation as guardian_occupation,
         g.relation as guardian_relation,
-        COALESCE(addr.current_address, s.address) as current_address,
-        addr.permanent_address
+        COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+        COALESCE(s.permanent_address, addr.permanent_address) as permanent_address
       FROM students s
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id

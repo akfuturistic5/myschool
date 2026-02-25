@@ -22,6 +22,7 @@ const StudentBreadcrumb = ({ studentId }: StudentBreadcrumbProps) => {
   const dashboardRoles = ['student', 'parent', 'guardian', 'teacher']
   const roleBasedBack = dashboardRoles.includes(roleLower) ? getDashboardForRole(role) : routes.studentList
   const backTo = state?.returnTo || roleBasedBack
+  const canEditStudent = roleLower === 'admin' || roleLower === 'teacher'
 
   return (
     <div className="col-md-12">
@@ -59,22 +60,10 @@ const StudentBreadcrumb = ({ studentId }: StudentBreadcrumbProps) => {
             <i className="ti ti-lock me-2" />
             Login Details
           </Link>
-          {studentId != null && studentId !== '' ? (
+          {canEditStudent && studentId != null && studentId !== '' && (
             <Link
               to={`${routes.editStudent}/${studentId}`}
               className="btn btn-primary d-flex align-items-center mb-2"
-            >
-              <i className="ti ti-edit-circle me-2" />
-              Edit Student
-            </Link>
-          ) : (
-            <Link
-              to="#"
-              className="btn btn-primary d-flex align-items-center mb-2"
-              onClick={(e) => {
-                e.preventDefault();
-                alert('Please use the edit button from the Students List or Students Grid page to edit a specific student.');
-              }}
             >
               <i className="ti ti-edit-circle me-2" />
               Edit Student

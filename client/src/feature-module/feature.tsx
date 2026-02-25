@@ -3,13 +3,22 @@ import { Outlet, useLocation } from "react-router";
 import Header from "../core/common/header";
 import Sidebar from "../core/common/sidebar";
 import DashboardGuard from "../core/components/DashboardGuard";
+import InactiveAccountScreen from "../core/components/InactiveAccountScreen";
 import ThemeSettings from "../core/common/theme-settings";
 import { useEffect, useState } from "react";
 import { all_routes } from "./router/all_routes";
+import { useCurrentUser } from "../core/hooks/useCurrentUser";
+import { selectUser } from "../core/data/redux/authSlice";
 
 const Feature = () => {
   const routes = all_routes;
   const [showLoader, setShowLoader] = useState(true);
+  const reduxUser = useSelector(selectUser);
+  const { user: currentUser } = useCurrentUser();
+  const accountDisabled =
+    reduxUser?.accountDisabled === true ||
+    (currentUser as Record<string, unknown> | null)?.account_disabled === true;
+
   const mobileSidebar = useSelector(
     (state: any) => state.sidebarSlice.mobileSidebar
   );
@@ -193,6 +202,16 @@ const Feature = () => {
       sidebarBgMap[dataSidebarBg] || ""
     );
   }, [layoutClass, dataSidebarBg, dataLayout, expandMenu, dataTheme]);
+
+  if (accountDisabled) {
+    return (
+      <div>
+        <InactiveAccountScreen />
+        <div className="sidebar-overlay"></div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {showLoader ? (

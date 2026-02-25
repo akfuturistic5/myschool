@@ -107,6 +107,30 @@ const login = async (req, res) => {
       ? `${user.staff_first_name || user.first_name} ${user.staff_last_name || user.last_name}`.trim()
       : user.username;
 
+    let accountDisabled = false;
+    try {
+      const accCheck = await query(
+        `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, st.is_active AS staff_is_active
+         FROM users u
+         LEFT JOIN students s ON u.id = s.user_id
+         LEFT JOIN staff st ON u.id = st.user_id
+         WHERE u.id = $1`,
+        [user.id]
+      );
+      if (accCheck.rows.length > 0) {
+        const r = accCheck.rows[0];
+        const sid = r.student_id;
+        const sActive = r.student_is_active;
+        const tid = r.staff_id;
+        const tActive = r.staff_is_active;
+        const studentInactive = sid != null && (sActive === false || sActive === 'f' || sActive === 0);
+        const staffInactive = tid != null && (tActive === false || tActive === 'f' || tActive === 0);
+        accountDisabled = !!studentInactive || !!staffInactive;
+      }
+    } catch {
+      // ignore; accountDisabled stays false
+    }
+
     success(res, 200, 'Login successful', {
       token,
       user: {
@@ -115,7 +139,8 @@ const login = async (req, res) => {
         displayName,
         role: user.role_name || 'User',
         role_id: user.role_id,
-        staff_id: user.staff_id
+        staff_id: user.staff_id,
+        accountDisabled,
       }
     });
   } catch (err) {
@@ -137,19 +162,23 @@ const getMe = async (req, res) => {
     const result = await query(
       `SELECT 
         u.*,
+        s.id AS student_id,
         s.first_name AS student_first_name,
         s.last_name AS student_last_name,
+        s.is_active AS student_is_active,
         c.class_name,
         sec.section_name,
+        st.id AS staff_id,
         st.first_name AS staff_first_name,
         st.last_name AS staff_last_name,
+        st.is_active AS staff_is_active,
         d.designation_name,
         ur.role_name
       FROM users u
-      LEFT JOIN students s ON u.id = s.user_id AND s.is_active = true
+      LEFT JOIN students s ON u.id = s.user_id
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
-      LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
+      LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
       LEFT JOIN user_roles ur ON u.role_id = ur.id
       WHERE u.id = $1 AND u.is_active = true`,
@@ -159,6 +188,12 @@ const getMe = async (req, res) => {
       return errorResponse(res, 404, 'User not found');
     }
     const user = result.rows[0];
+    const hasStudent = user.student_id != null;
+    const hasStaff = user.staff_id != null;
+    const studentInactive = hasStudent && (user.student_is_active === false || user.student_is_active === 'f' || user.student_is_active === 0);
+    const staffInactive = hasStaff && (user.staff_is_active === false || user.staff_is_active === 'f' || user.staff_is_active === 0);
+    const accountDisabled = !!studentInactive || !!staffInactive;
+
     let displayName = '';
     let displayRole = '';
     if (user.student_first_name || user.student_last_name) {
@@ -175,6 +210,7 @@ const getMe = async (req, res) => {
       ...user,
       display_name: displayName,
       display_role: displayRole,
+      account_disabled: accountDisabled,
     };
     success(res, 200, 'User fetched', userData);
   } catch (err) {

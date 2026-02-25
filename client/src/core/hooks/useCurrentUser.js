@@ -45,6 +45,7 @@ export const useCurrentUser = () => {
           id: userData.id,
           name,
           role,
+          account_disabled: userData.account_disabled === true,
           ...userData,
         });
       } else {

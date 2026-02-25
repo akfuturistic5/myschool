@@ -5,14 +5,8 @@ import { DatePicker } from "antd";
 import dayjs from "dayjs";
 import { all_routes } from "../../../router/all_routes";
 import {
-  AdmissionNo,
-  PickupPoint,
-  VehicleNumber,
   allClass,
   gender,
-  names,
-  rollno,
-  route,
   status,
 } from "../../../../core/common/selectoption/selectoption";
 
@@ -30,6 +24,9 @@ import { useHouses } from "../../../../core/hooks/useHouses";
 import { useHostels } from "../../../../core/hooks/useHostels";
 import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { apiService } from "../../../../core/services/apiService";
+import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
+import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
+import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
 
 // Lookup item types (hooks are JS and return untyped arrays)
 interface AcademicYearItem {
@@ -235,6 +232,9 @@ const AddStudent = () => {
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   const { hostels } = useHostels();
   const { hostelRooms } = useHostelRooms();
+  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
+  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
   const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
     value: String((h.originalData as { id?: number })?.id ?? ""),
     label: (h.hostelName as string) || "N/A",
@@ -253,6 +253,27 @@ const AddStudent = () => {
   const religionsList = (religions || []) as ReligionItem[];
   const castsList = (casts || []) as CastItem[];
   const motherTonguesList = (motherTongues || []) as MotherTongueItem[];
+
+  const routeOptions = (transportRoutes || []).map((r: any) => ({
+    value: String((r.originalData?.id ?? r.id) ?? ""),
+    label: r.routes ?? r.originalData?.route_name ?? "N/A",
+    original: r,
+  })).filter((o: { value: string }) => o.value);
+
+  const pickupPointOptions = (pickupPoints || []).map((p: any) => ({
+    value: String((p.originalData?.id ?? p.id) ?? ""),
+    label: p.pickupPoint ?? p.originalData?.address ?? "N/A",
+    original: p,
+  })).filter((o: { value: string }) => o.value);
+
+  const vehicleOptions = (vehicles || []).map((v: any) => {
+    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "";
+    return {
+      value: vehicleNo || "",
+      label: vehicleNo || "N/A",
+      original: v,
+    };
+  }).filter((o: { value: string }) => o.value);
 
   // Parse comma-separated or single string into array of non-empty trimmed strings
   const parseTagList = (val: unknown): string[] => {
@@ -415,7 +436,7 @@ const AddStudent = () => {
     }
   }, [academicYearsList.length, formData.academic_year_id]);
 
-  const [owner, setOwner] = useState<string[]>(["English", "Spanish"]);
+  const [owner, setOwner] = useState<string[]>([]);
   const handleTagsChange2 = (newTags: string[]) => {
     setOwner(newTags);
   };
@@ -430,12 +451,27 @@ const AddStudent = () => {
   };
   const [defaultDate, setDefaultDate] = useState<dayjs.Dayjs | null>(null);
   const [newContents, setNewContents] = useState<number[]>([0]);
+  // Siblings: per-row Yes/No (UI-only, controls which fields are visible)
+  const [siblingInSameSchool, setSiblingInSameSchool] = useState<boolean[]>([true]);
+  const [siblingRollNos, setSiblingRollNos] = useState<string[]>(['']);
+  const [siblingAdmissionNos, setSiblingAdmissionNos] = useState<string[]>(['']);
   const location = useLocation();
+
   const addNewContent = () => {
-    setNewContents([...newContents, newContents.length]);
+    setNewContents(prev => {
+      const nextIndex = prev.length;
+      setSiblingInSameSchool(prevFlags => [...prevFlags, true]);
+      setSiblingRollNos(prevRolls => [...prevRolls, '']);
+      setSiblingAdmissionNos(prevAdmissions => [...prevAdmissions, '']);
+      return [...prev, nextIndex];
+    });
   };
-  const removeContent = (index: any) => {
-    setNewContents(newContents.filter((_, i) => i !== index));
+
+  const removeContent = (index: number) => {
+    setNewContents(prev => prev.filter((_, i) => i !== index));
+    setSiblingInSameSchool(prev => prev.filter((_, i) => i !== index));
+    setSiblingRollNos(prev => prev.filter((_, i) => i !== index));
+    setSiblingAdmissionNos(prev => prev.filter((_, i) => i !== index));
   };
 
   // Handle form field changes
@@ -497,6 +533,7 @@ const AddStudent = () => {
         guardian_address: formData.guardian_address || null,
         current_address: formData.current_address || null,
         previous_school: formData.previous_school || null,
+        previous_school_address: formData.previous_school_address || null,
         sibiling_1: formData.sibiling_1 || null,
         sibiling_2: formData.sibiling_2 || null,
         sibiling_1_class: formData.sibiling_1_class || null,
@@ -1367,47 +1404,65 @@ const AddStudent = () => {
                         <div className="col-md-12">
                           <div className="mb-2">
                             <label className="form-label">Sibling Info</label>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <label className="form-label text-dark fw-normal me-2">
-                                Is Sibling studying in the same school
-                              </label>
-                              <div className="form-check me-3 mb-2">
-                                <input
-                                  className="form-check-input"
-                                  type="radio"
-                                  name="sibling"
-                                  id="yes"
-                                  defaultChecked
-                                />
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="yes"
-                                >
-                                  Yes
-                                </label>
-                              </div>
-                              <div className="form-check mb-2">
-                                <input
-                                  className="form-check-input"
-                                  type="radio"
-                                  name="sibling"
-                                  id="no"
-                                />
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="no"
-                                >
-                                  No
-                                </label>
-                              </div>
-                            </div>
                           </div>
                         </div>
                         {newContents.map((_, index) => {
-                          const useRealData = isEdit && (index === 0 || index === 1);
+                          const useRealData = true;
+                          const isSameSchool = siblingInSameSchool[index] ?? true;
                           return (
                           <div key={index} className="col-lg-12">
                             <div className="row">
+                              <div className="col-md-12">
+                                <div className="mb-2 d-flex align-items-center flex-wrap">
+                                  <label className="form-label text-dark fw-normal me-2 mb-0">
+                                    {`Is Sibling ${index + 1} studying in the same school`}
+                                  </label>
+                                  <div className="form-check me-3 mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="radio"
+                                      name={`sibling-${index}`}
+                                      id={`sibling-${index}-yes`}
+                                      checked={isSameSchool}
+                                      onChange={() => {
+                                        setSiblingInSameSchool(prev => {
+                                          const next = [...prev];
+                                          next[index] = true;
+                                          return next;
+                                        });
+                                      }}
+                                    />
+                                    <label
+                                      className="form-check-label"
+                                      htmlFor={`sibling-${index}-yes`}
+                                    >
+                                      Yes
+                                    </label>
+                                  </div>
+                                  <div className="form-check mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="radio"
+                                      name={`sibling-${index}`}
+                                      id={`sibling-${index}-no`}
+                                      checked={!isSameSchool}
+                                      onChange={() => {
+                                        setSiblingInSameSchool(prev => {
+                                          const next = [...prev];
+                                          next[index] = false;
+                                          return next;
+                                        });
+                                      }}
+                                    />
+                                    <label
+                                      className="form-check-label"
+                                      htmlFor={`sibling-${index}-no`}
+                                    >
+                                      No
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
                               <div className="col-lg-3 col-md-6">
                                 <div className="mb-3">
                                   <label className="form-label">Name</label>
@@ -1419,36 +1474,53 @@ const AddStudent = () => {
                                       onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1' : 'sibiling_2', e.target.value)}
                                     />
                                   ) : (
-                                    <CommonSelect
-                                      className="select"
-                                      options={names}
-                                      defaultValue={undefined}
+                                    <input
+                                      type="text"
+                                      className="form-control"
+                                      placeholder="Sibling Name"
+                                      disabled
                                     />
                                   )}
                                 </div>
                               </div>
-                              <div className="col-lg-3 col-md-6">
-                                <div className="mb-3">
-                                  <label className="form-label">Roll No</label>
-                                  <CommonSelect
-                                    className="select"
-                                    options={rollno}
-                                    defaultValue={undefined}
-                                  />
-                                </div>
-                              </div>
-                              <div className="col-lg-3 col-md-6">
-                                <div className="mb-3">
-                                  <label className="form-label">
-                                    Admission No
-                                  </label>
-                                  <CommonSelect
-                                    className="select"
-                                    options={AdmissionNo}
-                                    defaultValue={undefined}
-                                  />
-                                </div>
-                              </div>
+                              {isSameSchool && (
+                                <>
+                                  <div className="col-lg-3 col-md-6">
+                                    <div className="mb-3">
+                                      <label className="form-label">Roll No</label>
+                                      <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Roll No"
+                                        value={(siblingRollNos[index] ?? '')}
+                                        onChange={(e) => {
+                                          const next = [...siblingRollNos];
+                                          next[index] = e.target.value;
+                                          setSiblingRollNos(next);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                  <div className="col-lg-3 col-md-6">
+                                    <div className="mb-3">
+                                      <label className="form-label">
+                                        Admission No
+                                      </label>
+                                      <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Admission No"
+                                        value={(siblingAdmissionNos[index] ?? '')}
+                                        onChange={(e) => {
+                                          const next = [...siblingAdmissionNos];
+                                          next[index] = e.target.value;
+                                          setSiblingAdmissionNos(next);
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                </>
+                              )}
                               <div className="col-lg-3 col-md-6">
                                 <div className="mb-3">
                                   <div className="d-flex align-items-center">
@@ -1573,34 +1645,70 @@ const AddStudent = () => {
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Route</label>
-                          <CommonSelect
-                            className="select"
-                            options={formData.route_name && !route.find(o => o.value === formData.route_name) ? [{ value: formData.route_name, label: formData.route_name }, ...route] : route}
-                            value={formData.route_name || null}
-                            onChange={(v) => handleInputChange('route_name', v || '')}
-                          />
+                          {routesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2"></i>
+                              Loading routes...
+                            </div>
+                          ) : routesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2"></i>
+                              Error: {routesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
+                              value={formData.route_id}
+                              onChange={(v) => handleInputChange('route_id', v || null)}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Vehicle Number</label>
-                          <CommonSelect
-                            className="select"
-                            options={formData.vehicle_number && !VehicleNumber.find(o => o.value === formData.vehicle_number) ? [{ value: formData.vehicle_number, label: formData.vehicle_number }, ...VehicleNumber] : VehicleNumber}
-                            value={formData.vehicle_number || null}
-                            onChange={(v) => handleInputChange('vehicle_number', v || '')}
-                          />
+                          {vehiclesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2"></i>
+                              Loading vehicles...
+                            </div>
+                          ) : vehiclesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2"></i>
+                              Error: {vehiclesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
+                              value={formData.vehicle_number || null}
+                              onChange={(v) => handleInputChange('vehicle_number', v || '')}
+                            />
+                          )}
                         </div>
                       </div>
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Pickup Point</label>
-                          <CommonSelect
-                            className="select"
-                            options={formData.pickup_point_name && !PickupPoint.find(o => o.value === formData.pickup_point_name) ? [{ value: formData.pickup_point_name, label: formData.pickup_point_name }, ...PickupPoint] : PickupPoint}
-                            value={formData.pickup_point_name || null}
-                            onChange={(v) => handleInputChange('pickup_point_name', v || '')}
-                          />
+                          {pickupLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2"></i>
+                              Loading pickup points...
+                            </div>
+                          ) : pickupError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2"></i>
+                              Error: {pickupError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={pickupPointOptions.map(p => ({ value: p.value, label: p.label }))}
+                              value={formData.pickup_point_id}
+                              onChange={(v) => handleInputChange('pickup_point_id', v || null)}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>

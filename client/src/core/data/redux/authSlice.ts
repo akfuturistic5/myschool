@@ -28,6 +28,7 @@ interface AuthUser {
   role: string;
   user_role_id?: number;
   staff_id?: number;
+  accountDisabled?: boolean;
 }
 
 interface AuthState {

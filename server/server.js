@@ -54,6 +54,7 @@ const syllabusRoutes = require('./src/routes/syllabusRoutes');
 const noticeBoardRoutes = require('./src/routes/noticeBoardRoutes');
 const feeRoutes = require('./src/routes/feeRoutes');
 const { protectApi } = require('./src/middleware/authMiddleware');
+const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
 
 // Create Express app
 const app = express();
@@ -119,8 +120,8 @@ app.use('/api', limiter);
 app.use('/api/auth', authRoutes);
 app.use('/api', healthRoutes);
 
-// Protect all other API routes - require valid JWT
-app.use('/api', protectApi);
+// Protect all other API routes - require valid JWT; then block inactive student/teacher accounts (except /auth/me)
+app.use('/api', protectApi, (req, res, next) => requireActiveAccount(req, res, next).catch(next));
 app.use('/api/academic-years', academicYearRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/sections', sectionRoutes);
