@@ -74,10 +74,13 @@ const AddStudent = () => {
   const [studentData, setStudentData] = useState<any>(null);
   const [loadingStudent, setLoadingStudent] = useState<boolean>(false);
   const fetchedStudentIdRef = useRef<string | null>(null); // Track which student ID we've fetched
-  
+
   // Form state for Personal Information section
   const [formData, setFormData] = useState<{
     academic_year_id: string | null;
+    unique_student_ids: string;
+    pen_number: string;
+    aadhaar_no: string;
     admission_number: string;
     admission_date: dayjs.Dayjs | null;
     roll_number: string;
@@ -145,6 +148,9 @@ const AddStudent = () => {
     other_information: string;
   }>({
     academic_year_id: null,
+    unique_student_ids: '',
+    pen_number: '',
+    aadhaar_no: '',
     admission_number: '',
     admission_date: null,
     roll_number: '',
@@ -204,28 +210,28 @@ const AddStudent = () => {
     ifsc: '',
     other_information: ''
   });
-  
+
   // Fetch academic years from API
   const { academicYears, loading: academicYearsLoading, error: academicYearsError } = useAcademicYears();
-  
+
   // Fetch classes from API
   const { classes, loading: classesLoading, error: classesError } = useClasses();
-  
+
   // Fetch sections from API
   const { sections, loading: sectionsLoading, error: sectionsError } = useSections();
-  
+
   // Fetch blood groups from API
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  
+
   // Fetch religions from API
   const { religions, loading: religionsLoading, error: religionsError } = useReligions();
-  
+
   // Fetch casts from API
   const { casts, loading: castsLoading, error: castsError } = useCasts();
-  
+
   // Fetch mother tongues from API
   const { motherTongues, loading: motherTonguesLoading, error: motherTonguesError } = useMotherTongues();
-  
+
   // Fetch houses from API
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
@@ -301,10 +307,13 @@ const AddStudent = () => {
       const response = await apiService.getStudentById(studentId);
       console.log('Fetched student data:', response);
       setStudentData(response.data);
-      
+
       const student = response.data;
       setFormData({
         academic_year_id: student.academic_year_id ? student.academic_year_id.toString() : null,
+        unique_student_ids: student.unique_student_ids || '',
+        pen_number: student.pen_number || '',
+        aadhaar_no: student.aadhaar_no || '',
         admission_number: student.admission_number || '',
         admission_date: student.admission_date ? dayjs(student.admission_date) : null,
         roll_number: student.roll_number || '',
@@ -381,9 +390,9 @@ const AddStudent = () => {
   useEffect(() => {
     if (studentData && isEdit && !formDataPopulatedRef.current) {
       // Only populate if dropdowns are loaded (non-empty arrays)
-      const dropdownsReady = bloodGroups.length > 0 && religions.length > 0 && 
-                            casts.length > 0 && motherTongues.length > 0 && houses.length > 0;
-      
+      const dropdownsReady = bloodGroups.length > 0 && religions.length > 0 &&
+        casts.length > 0 && motherTongues.length > 0 && houses.length > 0;
+
       if (dropdownsReady) {
         console.log('Student data available, populating form data...');
         const student = studentData;
@@ -496,7 +505,7 @@ const AddStudent = () => {
     try {
       // Debug: Log the raw form data
       console.log('Raw form data before processing:', formData);
-      
+
       // Prepare data for submission
       const submitData = {
         ...formData,
@@ -563,7 +572,7 @@ const AddStudent = () => {
         cast_id: formData.cast_id,
         mother_tongue_id: formData.mother_tongue_id
       });
-      
+
       let response;
       if (isEdit && id) {
         // Update existing student
@@ -574,7 +583,7 @@ const AddStudent = () => {
         response = await apiService.createStudent(submitData);
         console.log('Student created successfully:', response);
       }
-      
+
       // Navigate to student list on success
       navigate(routes.studentList);
     } catch (error: any) {
@@ -588,7 +597,7 @@ const AddStudent = () => {
   useEffect(() => {
     // Check if we're in edit mode by looking for the ID parameter
     const isEditMode = !!id;
-    
+
     if (isEditMode) {
       const today = new Date();
       const year = today.getFullYear();
@@ -601,7 +610,7 @@ const AddStudent = () => {
       // owner1/owner2 (allergies, medications) are set from API in fetchStudentData when editing
       setDefaultDate(defaultValue);
       console.log('Edit mode detected, formattedDate:', formattedDate);
-      
+
       // Fetch student data if ID is available and not already loaded for this ID
       if (id && fetchedStudentIdRef.current !== id && !loadingStudent) {
         console.log('Fetching student data for ID:', id);
@@ -668,1384 +677,1417 @@ const AddStudent = () => {
             </div>
           )}
           {!loadingStudent && (
-          <div className="row">
-            <div className="col-md-12">
-              <form onSubmit={handleSubmit}>
-                {/* Personal Information */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-info-square-rounded fs-16" />
-                      </span>
-                      <h4 className="text-dark">Personal Information</h4>
+            <div className="row">
+              <div className="col-md-12">
+                <form onSubmit={handleSubmit}>
+                  {/* Personal Information */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-info-square-rounded fs-16" />
+                        </span>
+                        <h4 className="text-dark">Personal Information</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-md-12">
+                          <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
+                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
+                              <i className="ti ti-photo-plus fs-16" />
+                            </div>
+                            <div className="profile-upload">
+                              <div className="profile-uploader d-flex align-items-center">
+                                <div className="drag-upload-btn mb-3">
+                                  Upload
+                                  <input
+                                    type="file"
+                                    className="form-control image-sign"
+                                    multiple
+                                  />
+                                </div>
+                                <Link to="#" className="btn btn-primary mb-3">
+                                  Remove
+                                </Link>
+                              </div>
+                              <p className="fs-12">
+                                Upload image size 4MB, Format JPG, PNG, SVG
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="row row-cols-xxl-5 row-cols-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Academic Year</label>
+                            {academicYearsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading academic years...
+                              </div>
+                            ) : academicYearsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {academicYearsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={academicYearsList.map(year => ({
+                                  value: year.id.toString(),
+                                  label: year.year_name ?? ''
+                                }))}
+                                value={formData.academic_year_id}
+                                onChange={(value) => handleInputChange('academic_year_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Admission Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.admission_number}
+                              onChange={(e) => handleInputChange('admission_number', e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Admission Date</label>
+                            <div className="input-icon position-relative">
+                              <DatePicker
+                                className="form-control datetimepicker"
+                                format={{
+                                  format: "DD-MM-YYYY",
+                                  type: "mask",
+                                }}
+                                value={formData.admission_date}
+                                onChange={(date) => handleInputChange('admission_date', date)}
+                                placeholder="Select Date"
+                              />
+                              <span className="input-icon-addon">
+                                <i className="ti ti-calendar" />
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Roll Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.roll_number}
+                              onChange={(e) => handleInputChange('roll_number', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Status</label>
+                            <CommonSelect
+                              className="select"
+                              options={status}
+                              value={formData.status}
+                              onChange={(value) => handleInputChange('status', value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">First Name</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.first_name}
+                              onChange={(e) => handleInputChange('first_name', e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Last Name</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.last_name}
+                              onChange={(e) => handleInputChange('last_name', e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Class</label>
+                            {classesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading classes...
+                              </div>
+                            ) : classesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {classesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={classesList.map(cls => ({
+                                  value: cls.id.toString(),
+                                  label: cls.class_name ?? ''
+                                }))}
+                                value={formData.class_id}
+                                onChange={(value) => handleInputChange('class_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Section</label>
+                            {sectionsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading sections...
+                              </div>
+                            ) : sectionsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {sectionsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={sectionsList.map(section => ({
+                                  value: section.id.toString(),
+                                  label: section.section_name ?? ''
+                                }))}
+                                value={formData.section_id}
+                                onChange={(value) => handleInputChange('section_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Gender</label>
+                            <CommonSelect
+                              className="select"
+                              options={gender}
+                              value={formData.gender}
+                              onChange={(value) => handleInputChange('gender', value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Date of Birth</label>
+                            <div className="input-icon position-relative">
+                              <DatePicker
+                                className="form-control datetimepicker"
+                                format={{
+                                  format: "DD-MM-YYYY",
+                                  type: "mask",
+                                }}
+                                value={formData.date_of_birth}
+                                onChange={(date) => handleInputChange('date_of_birth', date)}
+                                placeholder="Select Date"
+                              />
+                              <span className="input-icon-addon">
+                                <i className="ti ti-calendar" />
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Blood Group</label>
+                            {bloodGroupsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading blood groups...
+                              </div>
+                            ) : bloodGroupsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {bloodGroupsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={bloodGroupsList.map(bg => ({
+                                  value: bg.id.toString(),
+                                  label: bg.blood_group ?? ''
+                                }))}
+                                value={formData.blood_group_id}
+                                onChange={(value) => handleInputChange('blood_group_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">House</label>
+                            {housesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading houses...
+                              </div>
+                            ) : housesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {housesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={housesList.map(h => ({
+                                  value: h.id.toString(),
+                                  label: h.house_name ?? ''
+                                }))}
+                                value={formData.house_id}
+                                onChange={(value) => handleInputChange('house_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Religion</label>
+                            {religionsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading religions...
+                              </div>
+                            ) : religionsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {religionsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={religionsList.map(religion => ({
+                                  value: religion.id.toString(),
+                                  label: religion.religion_name ?? ''
+                                }))}
+                                value={formData.religion_id}
+                                onChange={(value) => handleInputChange('religion_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Category</label>
+                            {castsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading categories...
+                              </div>
+                            ) : castsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {castsError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={castsList.map(cast => ({
+                                  value: cast.id.toString(),
+                                  label: cast.cast_name ?? ''
+                                }))}
+                                value={formData.cast_id}
+                                onChange={(value) => handleInputChange('cast_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">
+                              Primary Contact Number
+                            </label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.phone}
+                              onChange={(e) => handleInputChange('phone', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Email Address</label>
+                            <input
+                              type="email"
+                              className="form-control"
+                              value={formData.email}
+                              onChange={(e) => handleInputChange('email', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Mother Tongue</label>
+                            {motherTonguesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading mother tongues...
+                              </div>
+                            ) : motherTonguesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {motherTonguesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={motherTonguesList.map(mt => ({
+                                  value: mt.id.toString(),
+                                  label: mt.language_name ?? ''
+                                }))}
+                                value={formData.mother_tongue_id}
+                                onChange={(value) => handleInputChange('mother_tongue_id', value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Language Known</label>
+                            <TagInput
+                              initialTags={owner}
+                              onTagsChange={handleTagsChange2}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Unique Student ids (Saral id)</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.unique_student_ids}
+                              onChange={(e) => handleInputChange('unique_student_ids', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Pen Number (UDISE id)</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.pen_number}
+                              onChange={(e) => handleInputChange('pen_number', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Aadhar Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.aadhaar_no}
+                              onChange={(e) => handleInputChange('aadhaar_no', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-12">
-                        <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                          <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                            <i className="ti ti-photo-plus fs-16" />
+                  {/* /Personal Information */}
+                  {/* Parents & Guardian Information */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-user-shield fs-16" />
+                        </span>
+                        <h4 className="text-dark">
+                          Parents &amp; Guardian Information
+                        </h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-0">
+                      <div className="border-bottom mb-3">
+                        <h5 className="mb-3">Father’s Info</h5>
+                        <div className="row">
+                          <div className="col-md-12">
+                            <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
+                                <i className="ti ti-photo-plus fs-16" />
+                              </div>
+                              <div className="profile-upload">
+                                <div className="profile-uploader d-flex align-items-center">
+                                  <div className="drag-upload-btn mb-3">
+                                    Upload
+                                    <input
+                                      type="file"
+                                      className="form-control image-sign"
+                                      multiple
+                                    />
+                                  </div>
+                                  <Link to="#" className="btn btn-primary mb-3">
+                                    Remove
+                                  </Link>
+                                </div>
+                                <p className="fs-12">
+                                  Upload image size 4MB, Format JPG, PNG, SVG
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                          <div className="profile-upload">
-                            <div className="profile-uploader d-flex align-items-center">
-                              <div className="drag-upload-btn mb-3">
-                                Upload
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Father Name</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.father_name}
+                                onChange={(e) => handleInputChange('father_name', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Email</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.father_email}
+                                onChange={(e) => handleInputChange('father_email', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Phone Number</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.father_phone}
+                                onChange={(e) => handleInputChange('father_phone', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">
+                                Father Occupation
+                              </label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.father_occupation}
+                                onChange={(e) => handleInputChange('father_occupation', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-bottom mb-3">
+                        <h5 className="mb-3">Mother’s Info</h5>
+                        <div className="row">
+                          <div className="col-md-12">
+                            <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
+                                <i className="ti ti-photo-plus fs-16" />
+                              </div>
+                              <div className="profile-upload">
+                                <div className="profile-uploader d-flex align-items-center">
+                                  <div className="drag-upload-btn mb-3">
+                                    Upload
+                                    <input
+                                      type="file"
+                                      className="form-control image-sign"
+                                      multiple
+                                    />
+                                  </div>
+                                  <Link to="#" className="btn btn-primary mb-3">
+                                    Remove
+                                  </Link>
+                                </div>
+                                <p className="fs-12">
+                                  Upload image size 4MB, Format JPG, PNG, SVG
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Mother Name</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.mother_name}
+                                onChange={(e) => handleInputChange('mother_name', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Email</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.mother_email}
+                                onChange={(e) => handleInputChange('mother_email', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Phone Number</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.mother_phone}
+                                onChange={(e) => handleInputChange('mother_phone', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">
+                                Mother Occupation
+                              </label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.mother_occupation}
+                                onChange={(e) => handleInputChange('mother_occupation', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <h5 className="mb-3">Guardian Details</h5>
+                        <div className="row">
+                          <div className="col-md-12">
+                            <div className="mb-2">
+                              <div className="d-flex align-items-center flex-wrap">
+                                <label className="form-label text-dark fw-normal me-2">
+                                  If Guardian Is
+                                </label>
+                                <div className="form-check me-3 mb-2">
+                                  <input
+                                    className="form-check-input"
+                                    type="radio"
+                                    name="guardian"
+                                    id="parents"
+                                    defaultChecked
+                                  />
+                                  <label
+                                    className="form-check-label"
+                                    htmlFor="parents"
+                                  >
+                                    Parents
+                                  </label>
+                                </div>
+                                <div className="form-check me-3 mb-2">
+                                  <input
+                                    className="form-check-input"
+                                    type="radio"
+                                    name="guardian"
+                                    id="guardian"
+                                  />
+                                  <label
+                                    className="form-check-label"
+                                    htmlFor="guardian"
+                                  >
+                                    Guardian
+                                  </label>
+                                </div>
+                                <div className="form-check mb-2">
+                                  <input
+                                    className="form-check-input"
+                                    type="radio"
+                                    name="guardian"
+                                    id="other"
+                                  />
+                                  <label
+                                    className="form-check-label"
+                                    htmlFor="other"
+                                  >
+                                    Others
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
+                                <i className="ti ti-photo-plus fs-16" />
+                              </div>
+                              <div className="profile-upload">
+                                <div className="profile-uploader d-flex align-items-center">
+                                  <div className="drag-upload-btn mb-3">
+                                    Upload
+                                    <input
+                                      type="file"
+                                      className="form-control image-sign"
+                                      multiple
+                                    />
+                                  </div>
+                                  <Link to="#" className="btn btn-primary mb-3">
+                                    Remove
+                                  </Link>
+                                </div>
+                                <p className="fs-12">
+                                  Upload image size 4MB, Format JPG, PNG, SVG
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Guardian Name</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={[formData.guardian_first_name, formData.guardian_last_name].filter(Boolean).join(' ')}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  const idx = v.trim().indexOf(' ');
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    guardian_first_name: idx >= 0 ? v.slice(0, idx).trim() : v.trim(),
+                                    guardian_last_name: idx >= 0 ? v.slice(idx + 1).trim() : ''
+                                  }));
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">
+                                Guardian Relation
+                              </label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.guardian_relation || ''}
+                                onChange={(e) => handleInputChange('guardian_relation', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Phone Number</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.guardian_phone || ''}
+                                onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Email</label>
+                              <input
+                                type="email"
+                                className="form-control"
+                                value={formData.guardian_email || ''}
+                                onChange={(e) => handleInputChange('guardian_email', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Occupation</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.guardian_occupation || ''}
+                                onChange={(e) => handleInputChange('guardian_occupation', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-lg-3 col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Address</label>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={formData.guardian_address || ''}
+                                onChange={(e) => handleInputChange('guardian_address', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Parents & Guardian Information */}
+                  {/* Sibilings */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-users fs-16" />
+                        </span>
+                        <h4 className="text-dark">Sibilings</h4>
+                      </div>
+                    </div>
+                    <div className="card-body">
+                      <div className="addsibling-info">
+                        <div className="row">
+                          <div className="col-md-12">
+                            <div className="mb-2">
+                              <label className="form-label">Sibling Info</label>
+                            </div>
+                          </div>
+                          {newContents.map((_, index) => {
+                            const useRealData = true;
+                            const isSameSchool = siblingInSameSchool[index] ?? true;
+                            return (
+                              <div key={index} className="col-lg-12">
+                                <div className="row">
+                                  <div className="col-md-12">
+                                    <div className="mb-2 d-flex align-items-center flex-wrap">
+                                      <label className="form-label text-dark fw-normal me-2 mb-0">
+                                        {`Is Sibling ${index + 1} studying in the same school`}
+                                      </label>
+                                      <div className="form-check me-3 mb-2">
+                                        <input
+                                          className="form-check-input"
+                                          type="radio"
+                                          name={`sibling-${index}`}
+                                          id={`sibling-${index}-yes`}
+                                          checked={isSameSchool}
+                                          onChange={() => {
+                                            setSiblingInSameSchool(prev => {
+                                              const next = [...prev];
+                                              next[index] = true;
+                                              return next;
+                                            });
+                                          }}
+                                        />
+                                        <label
+                                          className="form-check-label"
+                                          htmlFor={`sibling-${index}-yes`}
+                                        >
+                                          Yes
+                                        </label>
+                                      </div>
+                                      <div className="form-check mb-2">
+                                        <input
+                                          className="form-check-input"
+                                          type="radio"
+                                          name={`sibling-${index}`}
+                                          id={`sibling-${index}-no`}
+                                          checked={!isSameSchool}
+                                          onChange={() => {
+                                            setSiblingInSameSchool(prev => {
+                                              const next = [...prev];
+                                              next[index] = false;
+                                              return next;
+                                            });
+                                          }}
+                                        />
+                                        <label
+                                          className="form-check-label"
+                                          htmlFor={`sibling-${index}-no`}
+                                        >
+                                          No
+                                        </label>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="col-lg-3 col-md-6">
+                                    <div className="mb-3">
+                                      <label className="form-label">Name</label>
+                                      {useRealData ? (
+                                        <input
+                                          type="text"
+                                          className="form-control"
+                                          value={index === 0 ? (formData.sibiling_1 || '') : (formData.sibiling_2 || '')}
+                                          onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1' : 'sibiling_2', e.target.value)}
+                                        />
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          className="form-control"
+                                          placeholder="Sibling Name"
+                                          disabled
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isSameSchool && (
+                                    <>
+                                      <div className="col-lg-3 col-md-6">
+                                        <div className="mb-3">
+                                          <label className="form-label">Roll No</label>
+                                          <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Roll No"
+                                            value={(siblingRollNos[index] ?? '')}
+                                            onChange={(e) => {
+                                              const next = [...siblingRollNos];
+                                              next[index] = e.target.value;
+                                              setSiblingRollNos(next);
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="col-lg-3 col-md-6">
+                                        <div className="mb-3">
+                                          <label className="form-label">
+                                            Admission No
+                                          </label>
+                                          <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Admission No"
+                                            value={(siblingAdmissionNos[index] ?? '')}
+                                            onChange={(e) => {
+                                              const next = [...siblingAdmissionNos];
+                                              next[index] = e.target.value;
+                                              setSiblingAdmissionNos(next);
+                                            }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="col-lg-3 col-md-6">
+                                    <div className="mb-3">
+                                      <div className="d-flex align-items-center">
+                                        <div className="w-100">
+                                          <label className="form-label">
+                                            Class
+                                          </label>
+                                          {useRealData ? (
+                                            <input
+                                              type="text"
+                                              className="form-control"
+                                              value={index === 0 ? (formData.sibiling_1_class || '') : (formData.sibiling_2_class || '')}
+                                              onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1_class' : 'sibiling_2_class', e.target.value)}
+                                            />
+                                          ) : (
+                                            <CommonSelect
+                                              className="select"
+                                              options={allClass}
+                                              defaultValue={undefined}
+                                            />
+                                          )}
+                                        </div>
+                                        {newContents.length > 1 && (
+                                          <div>
+                                            <label className="form-label">
+                                              &nbsp;
+                                            </label>
+                                            <Link
+                                              to="#"
+                                              className="trash-icon ms-3"
+                                              onClick={() => removeContent(index)}
+                                            >
+                                              <i className="ti ti-trash-x" />
+                                            </Link>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="border-top pt-3">
+                        <Link
+                          to="#"
+                          onClick={addNewContent}
+                          className="add-sibling btn btn-primary d-inline-flex align-items-center"
+                        >
+                          <i className="ti ti-circle-plus me-2" />
+                          Add New
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Sibilings */}
+                  {/* Address */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-map fs-16" />
+                        </span>
+                        <h4 className="text-dark">Address</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Current Address</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.current_address || ''}
+                              onChange={(e) => handleInputChange('current_address', e.target.value)}
+                              placeholder="Enter current address"
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">
+                              Permanent Address
+                            </label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.permanent_address || ''}
+                              onChange={(e) => handleInputChange('permanent_address', e.target.value)}
+                              placeholder="Enter permanent address"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Address */}
+                  {/* Transport Information */}
+                  <div className="card">
+                    <div className="card-header bg-light d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-bus-stop fs-16" />
+                        </span>
+                        <h4 className="text-dark">Transport Information</h4>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          checked={formData.is_transport_required}
+                          onChange={(e) => handleInputChange('is_transport_required', e.target.checked)}
+                        />
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Route</label>
+                            {routesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading routes...
+                              </div>
+                            ) : routesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {routesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
+                                value={formData.route_id}
+                                onChange={(v) => handleInputChange('route_id', v || null)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Vehicle Number</label>
+                            {vehiclesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading vehicles...
+                              </div>
+                            ) : vehiclesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {vehiclesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
+                                value={formData.vehicle_number || null}
+                                onChange={(v) => handleInputChange('vehicle_number', v || '')}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Pickup Point</label>
+                            {pickupLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading pickup points...
+                              </div>
+                            ) : pickupError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {pickupError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={pickupPointOptions.map(p => ({ value: p.value, label: p.label }))}
+                                value={formData.pickup_point_id}
+                                onChange={(v) => handleInputChange('pickup_point_id', v || null)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Transport Information */}
+                  {/* Hostel Information */}
+                  <div className="card">
+                    <div className="card-header bg-light d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-building-fortress fs-16" />
+                        </span>
+                        <h4 className="text-dark">Hostel Information</h4>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          checked={formData.is_hostel_required}
+                          onChange={(e) => handleInputChange('is_hostel_required', e.target.checked)}
+                        />
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Hostel</label>
+                            <CommonSelect
+                              className="select"
+                              options={
+                                formData.hostel_id && !hostelOptions.find(o => o.value === formData.hostel_id)
+                                  ? [{ value: formData.hostel_id, label: formData.hostel_name || formData.hostel_id }, ...hostelOptions]
+                                  : hostelOptions.length > 0 ? hostelOptions : [{ value: "", label: "No hostels" }]
+                              }
+                              value={formData.hostel_id || null}
+                              onChange={(v) => {
+                                const opt = hostelOptions.find(o => o.value === v);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  hostel_id: v || null,
+                                  hostel_name: opt?.label ?? "",
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Room No</label>
+                            <CommonSelect
+                              className="select"
+                              options={
+                                formData.hostel_room_id && !roomOptions.find(o => o.value === formData.hostel_room_id)
+                                  ? [{ value: formData.hostel_room_id, label: formData.hostel_room_number || formData.hostel_room_id }, ...roomOptions]
+                                  : roomOptions.length > 0 ? roomOptions : [{ value: "", label: "No rooms" }]
+                              }
+                              value={formData.hostel_room_id || null}
+                              onChange={(v) => {
+                                const opt = roomOptions.find(o => o.value === v);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  hostel_room_id: v || null,
+                                  hostel_room_number: opt?.label ?? "",
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Hostel Information */}
+                  {/* Documents */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-file fs-16" />
+                        </span>
+                        <h4 className="text-dark">Documents</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-lg-6">
+                          <div className="mb-2">
+                            <div className="mb-3">
+                              <label className="form-label mb-1">
+                                Medical Condition
+                              </label>
+                              <p>Upload image size of 4MB, Accepted Format PDF</p>
+                            </div>
+                            <div className="d-flex align-items-center flex-wrap">
+                              <div className="btn btn-primary drag-upload-btn mb-2 me-2">
+                                <i className="ti ti-file-upload me-1" />
+                                Change
                                 <input
                                   type="file"
-                                  className="form-control image-sign"
+                                  className="form-control image_sign"
                                   multiple
                                 />
                               </div>
-                              <Link to="#" className="btn btn-primary mb-3">
-                                Remove
-                              </Link>
+                              {isEdit ? (
+                                <p className="mb-2">BirthCertificate.pdf</p>
+                              ) : (
+                                <></>
+                              )}
                             </div>
-                            <p className="fs-12">
-                              Upload image size 4MB, Format JPG, PNG, SVG
-                            </p>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                    <div className="row row-cols-xxl-5 row-cols-md-6">
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Academic Year</label>
-                          {academicYearsLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading academic years...
+                        <div className="col-lg-6">
+                          <div className="mb-2">
+                            <div className="mb-3">
+                              <label className="form-label mb-1">
+                                Upload Transfer Certificate
+                              </label>
+                              <p>Upload image size of 4MB, Accepted Format PDF</p>
                             </div>
-                          ) : academicYearsError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {academicYearsError}
+                            <div className="d-flex align-items-center flex-wrap">
+                              <div className="btn btn-primary drag-upload-btn mb-2">
+                                <i className="ti ti-file-upload me-1" />
+                                Upload Document
+                                <input
+                                  type="file"
+                                  className="form-control image_sign"
+                                  multiple
+                                />
+                              </div>
                             </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={academicYearsList.map(year => ({
-                                value: year.id.toString(),
-                                label: year.year_name ?? ''
-                              }))}
-                              value={formData.academic_year_id}
-                              onChange={(value) => handleInputChange('academic_year_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Admission Number</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.admission_number}
-                            onChange={(e) => handleInputChange('admission_number', e.target.value)}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Admission Date</label>
-                          <div className="input-icon position-relative">
-                            <DatePicker
-                              className="form-control datetimepicker"
-                              format={{
-                                format: "DD-MM-YYYY",
-                                type: "mask",
-                              }}
-                              value={formData.admission_date}
-                              onChange={(date) => handleInputChange('admission_date', date)}
-                              placeholder="Select Date"
-                            />
-                            <span className="input-icon-addon">
-                              <i className="ti ti-calendar" />
-                            </span>
                           </div>
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Roll Number</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.roll_number}
-                            onChange={(e) => handleInputChange('roll_number', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Status</label>
-                          <CommonSelect
-                            className="select"
-                            options={status}
-                            value={formData.status}
-                            onChange={(value) => handleInputChange('status', value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">First Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.first_name}
-                            onChange={(e) => handleInputChange('first_name', e.target.value)}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Last Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.last_name}
-                            onChange={(e) => handleInputChange('last_name', e.target.value)}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Class</label>
-                          {classesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading classes...
-                            </div>
-                          ) : classesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {classesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={classesList.map(cls => ({
-                                value: cls.id.toString(),
-                                label: cls.class_name ?? ''
-                              }))}
-                              value={formData.class_id}
-                              onChange={(value) => handleInputChange('class_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Section</label>
-                          {sectionsLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading sections...
-                            </div>
-                          ) : sectionsError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {sectionsError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={sectionsList.map(section => ({
-                                value: section.id.toString(),
-                                label: section.section_name ?? ''
-                              }))}
-                              value={formData.section_id}
-                              onChange={(value) => handleInputChange('section_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Gender</label>
-                          <CommonSelect
-                            className="select"
-                            options={gender}
-                            value={formData.gender}
-                            onChange={(value) => handleInputChange('gender', value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Date of Birth</label>
-                          <div className="input-icon position-relative">
-                            <DatePicker
-                              className="form-control datetimepicker"
-                              format={{
-                                format: "DD-MM-YYYY",
-                                type: "mask",
-                              }}
-                              value={formData.date_of_birth}
-                              onChange={(date) => handleInputChange('date_of_birth', date)}
-                              placeholder="Select Date"
-                            />
-                            <span className="input-icon-addon">
-                              <i className="ti ti-calendar" />
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Blood Group</label>
-                          {bloodGroupsLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading blood groups...
-                            </div>
-                          ) : bloodGroupsError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {bloodGroupsError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={bloodGroupsList.map(bg => ({
-                                value: bg.id.toString(),
-                                label: bg.blood_group ?? ''
-                              }))}
-                              value={formData.blood_group_id}
-                              onChange={(value) => handleInputChange('blood_group_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">House</label>
-                          {housesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading houses...
-                            </div>
-                          ) : housesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {housesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={housesList.map(h => ({
-                                value: h.id.toString(),
-                                label: h.house_name ?? ''
-                              }))}
-                              value={formData.house_id}
-                              onChange={(value) => handleInputChange('house_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Religion</label>
-                          {religionsLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading religions...
-                            </div>
-                          ) : religionsError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {religionsError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={religionsList.map(religion => ({
-                                value: religion.id.toString(),
-                                label: religion.religion_name ?? ''
-                              }))}
-                              value={formData.religion_id}
-                              onChange={(value) => handleInputChange('religion_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Category</label>
-                          {castsLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading categories...
-                            </div>
-                          ) : castsError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {castsError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={castsList.map(cast => ({
-                                value: cast.id.toString(),
-                                label: cast.cast_name ?? ''
-                              }))}
-                              value={formData.cast_id}
-                              onChange={(value) => handleInputChange('cast_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">
-                            Primary Contact Number
-                          </label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.phone}
-                            onChange={(e) => handleInputChange('phone', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Email Address</label>
-                          <input
-                            type="email"
-                            className="form-control"
-                            value={formData.email}
-                            onChange={(e) => handleInputChange('email', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Mother Tongue</label>
-                          {motherTonguesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading mother tongues...
-                            </div>
-                          ) : motherTonguesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {motherTonguesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={motherTonguesList.map(mt => ({
-                                value: mt.id.toString(),
-                                label: mt.language_name ?? ''
-                              }))}
-                              value={formData.mother_tongue_id}
-                              onChange={(value) => handleInputChange('mother_tongue_id', value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-xxl col-xl-3 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Language Known</label>
-                          <TagInput
-                           initialTags ={owner}
-                            onTagsChange={handleTagsChange2}
-                          />
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                {/* /Personal Information */}
-                {/* Parents & Guardian Information */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-user-shield fs-16" />
-                      </span>
-                      <h4 className="text-dark">
-                        Parents &amp; Guardian Information
-                      </h4>
-                    </div>
-                  </div>
-                  <div className="card-body pb-0">
-                    <div className="border-bottom mb-3">
-                      <h5 className="mb-3">Father’s Info</h5>
-                      <div className="row">
-                        <div className="col-md-12">
-                          <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                              <i className="ti ti-photo-plus fs-16" />
-                            </div>
-                            <div className="profile-upload">
-                              <div className="profile-uploader d-flex align-items-center">
-                                <div className="drag-upload-btn mb-3">
-                                  Upload
-                                  <input
-                                    type="file"
-                                    className="form-control image-sign"
-                                    multiple
-                                  />
-                                </div>
-                                <Link to="#" className="btn btn-primary mb-3">
-                                  Remove
-                                </Link>
-                              </div>
-                              <p className="fs-12">
-                                Upload image size 4MB, Format JPG, PNG, SVG
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Father Name</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.father_name}
-                              onChange={(e) => handleInputChange('father_name', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Email</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.father_email}
-                              onChange={(e) => handleInputChange('father_email', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Phone Number</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.father_phone}
-                              onChange={(e) => handleInputChange('father_phone', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Father Occupation
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.father_occupation}
-                              onChange={(e) => handleInputChange('father_occupation', e.target.value)}
-                            />
-                          </div>
-                        </div>
+                  {/* /Documents */}
+                  {/* Medical History */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-medical-cross fs-16" />
+                        </span>
+                        <h4 className="text-dark">Medical History</h4>
                       </div>
                     </div>
-                    <div className="border-bottom mb-3">
-                      <h5 className="mb-3">Mother’s Info</h5>
-                      <div className="row">
-                        <div className="col-md-12">
-                          <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                              <i className="ti ti-photo-plus fs-16" />
-                            </div>
-                            <div className="profile-upload">
-                              <div className="profile-uploader d-flex align-items-center">
-                                <div className="drag-upload-btn mb-3">
-                                  Upload
-                                  <input
-                                    type="file"
-                                    className="form-control image-sign"
-                                    multiple
-                                  />
-                                </div>
-                                <Link to="#" className="btn btn-primary mb-3">
-                                  Remove
-                                </Link>
-                              </div>
-                              <p className="fs-12">
-                                Upload image size 4MB, Format JPG, PNG, SVG
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Mother Name</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.mother_name}
-                              onChange={(e) => handleInputChange('mother_name', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Email</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.mother_email}
-                              onChange={(e) => handleInputChange('mother_email', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Phone Number</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.mother_phone}
-                              onChange={(e) => handleInputChange('mother_phone', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Mother Occupation
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.mother_occupation}
-                              onChange={(e) => handleInputChange('mother_occupation', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <h5 className="mb-3">Guardian Details</h5>
+                    <div className="card-body pb-1">
                       <div className="row">
                         <div className="col-md-12">
                           <div className="mb-2">
+                            <label className="form-label">
+                              Medical Condition
+                            </label>
                             <div className="d-flex align-items-center flex-wrap">
                               <label className="form-label text-dark fw-normal me-2">
-                                If Guardian Is
+                                Medical Condition of a Student
                               </label>
                               <div className="form-check me-3 mb-2">
                                 <input
                                   className="form-check-input"
                                   type="radio"
-                                  name="guardian"
-                                  id="parents"
-                                  defaultChecked
+                                  name="condition"
+                                  id="good"
+                                  checked={formData.medical_condition === 'Good'}
+                                  onChange={() => handleInputChange('medical_condition', 'Good')}
                                 />
                                 <label
                                   className="form-check-label"
-                                  htmlFor="parents"
+                                  htmlFor="good"
                                 >
-                                  Parents
+                                  Good
                                 </label>
                               </div>
                               <div className="form-check me-3 mb-2">
                                 <input
                                   className="form-check-input"
                                   type="radio"
-                                  name="guardian"
-                                  id="guardian"
+                                  name="condition"
+                                  id="bad"
+                                  checked={formData.medical_condition === 'Bad'}
+                                  onChange={() => handleInputChange('medical_condition', 'Bad')}
                                 />
-                                <label
-                                  className="form-check-label"
-                                  htmlFor="guardian"
-                                >
-                                  Guardian
+                                <label className="form-check-label" htmlFor="bad">
+                                  Bad
                                 </label>
                               </div>
                               <div className="form-check mb-2">
                                 <input
                                   className="form-check-input"
                                   type="radio"
-                                  name="guardian"
-                                  id="other"
+                                  name="condition"
+                                  id="others"
+                                  checked={formData.medical_condition === 'Others'}
+                                  onChange={() => handleInputChange('medical_condition', 'Others')}
                                 />
                                 <label
                                   className="form-check-label"
-                                  htmlFor="other"
+                                  htmlFor="others"
                                 >
                                   Others
                                 </label>
                               </div>
                             </div>
                           </div>
-                          <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                              <i className="ti ti-photo-plus fs-16" />
-                            </div>
-                            <div className="profile-upload">
-                              <div className="profile-uploader d-flex align-items-center">
-                                <div className="drag-upload-btn mb-3">
-                                  Upload
-                                  <input
-                                    type="file"
-                                    className="form-control image-sign"
-                                    multiple
-                                  />
-                                </div>
-                                <Link to="#" className="btn btn-primary mb-3">
-                                  Remove
-                                </Link>
-                              </div>
-                              <p className="fs-12">
-                                Upload image size 4MB, Format JPG, PNG, SVG
-                              </p>
-                            </div>
-                          </div>
                         </div>
-                        <div className="col-lg-3 col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Allergies</label>
+
+                          <TagInput
+                            initialTags={owner1}
+                            onTagsChange={handleTagsChange3}
+                          />
+                        </div>
+                        <div className="mb-3">
+                          <label className="form-label">Medications</label>
+                          <TagInput
+                            initialTags={owner2}
+                            onTagsChange={handleTagsChange4}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* /Medical History */}
+                  {/* Previous School details */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-building fs-16" />
+                        </span>
+                        <h4 className="text-dark">Previous School Details</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <div className="row">
+                        <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Guardian Name</label>
+                            <label className="form-label">School Name</label>
                             <input
                               type="text"
                               className="form-control"
-                              value={[formData.guardian_first_name, formData.guardian_last_name].filter(Boolean).join(' ')}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                const idx = v.trim().indexOf(' ');
-                                setFormData(prev => ({
-                                  ...prev,
-                                  guardian_first_name: idx >= 0 ? v.slice(0, idx).trim() : v.trim(),
-                                  guardian_last_name: idx >= 0 ? v.slice(idx + 1).trim() : ''
-                                }));
-                              }}
+                              value={formData.previous_school || ''}
+                              onChange={(e) => handleInputChange('previous_school', e.target.value)}
                             />
                           </div>
                         </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Guardian Relation
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.guardian_relation || ''}
-                              onChange={(e) => handleInputChange('guardian_relation', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Phone Number</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.guardian_phone || ''}
-                              onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Email</label>
-                            <input
-                              type="email"
-                              className="form-control"
-                              value={formData.guardian_email || ''}
-                              onChange={(e) => handleInputChange('guardian_email', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Occupation</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.guardian_occupation || ''}
-                              onChange={(e) => handleInputChange('guardian_occupation', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
+                        <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Address</label>
                             <input
                               type="text"
                               className="form-control"
-                              value={formData.guardian_address || ''}
-                              onChange={(e) => handleInputChange('guardian_address', e.target.value)}
+                              value={formData.previous_school_address || ''}
+                              onChange={(e) => handleInputChange('previous_school_address', e.target.value)}
                             />
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                {/* /Parents & Guardian Information */}
-                {/* Sibilings */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-users fs-16" />
-                      </span>
-                      <h4 className="text-dark">Sibilings</h4>
+                  {/* /Previous School details */}
+                  {/* Other Details */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-building-bank fs-16" />
+                        </span>
+                        <h4 className="text-dark">Other Details</h4>
+                      </div>
                     </div>
-                  </div>
-                  <div className="card-body">
-                    <div className="addsibling-info">
+                    <div className="card-body pb-1">
                       <div className="row">
+                        <div className="col-md-5">
+                          <div className="mb-3">
+                            <label className="form-label">Bank Name</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.bank_name || ''}
+                              onChange={(e) => handleInputChange('bank_name', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-2">
+                          <div className="mb-3">
+                            <label className="form-label">Branch</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.branch || ''}
+                              onChange={(e) => handleInputChange('branch', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-5">
+                          <div className="mb-3">
+                            <label className="form-label">IFSC Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.ifsc || ''}
+                              onChange={(e) => handleInputChange('ifsc', e.target.value)}
+                            />
+                          </div>
+                        </div>
                         <div className="col-md-12">
-                          <div className="mb-2">
-                            <label className="form-label">Sibling Info</label>
-                          </div>
-                        </div>
-                        {newContents.map((_, index) => {
-                          const useRealData = true;
-                          const isSameSchool = siblingInSameSchool[index] ?? true;
-                          return (
-                          <div key={index} className="col-lg-12">
-                            <div className="row">
-                              <div className="col-md-12">
-                                <div className="mb-2 d-flex align-items-center flex-wrap">
-                                  <label className="form-label text-dark fw-normal me-2 mb-0">
-                                    {`Is Sibling ${index + 1} studying in the same school`}
-                                  </label>
-                                  <div className="form-check me-3 mb-2">
-                                    <input
-                                      className="form-check-input"
-                                      type="radio"
-                                      name={`sibling-${index}`}
-                                      id={`sibling-${index}-yes`}
-                                      checked={isSameSchool}
-                                      onChange={() => {
-                                        setSiblingInSameSchool(prev => {
-                                          const next = [...prev];
-                                          next[index] = true;
-                                          return next;
-                                        });
-                                      }}
-                                    />
-                                    <label
-                                      className="form-check-label"
-                                      htmlFor={`sibling-${index}-yes`}
-                                    >
-                                      Yes
-                                    </label>
-                                  </div>
-                                  <div className="form-check mb-2">
-                                    <input
-                                      className="form-check-input"
-                                      type="radio"
-                                      name={`sibling-${index}`}
-                                      id={`sibling-${index}-no`}
-                                      checked={!isSameSchool}
-                                      onChange={() => {
-                                        setSiblingInSameSchool(prev => {
-                                          const next = [...prev];
-                                          next[index] = false;
-                                          return next;
-                                        });
-                                      }}
-                                    />
-                                    <label
-                                      className="form-check-label"
-                                      htmlFor={`sibling-${index}-no`}
-                                    >
-                                      No
-                                    </label>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="col-lg-3 col-md-6">
-                                <div className="mb-3">
-                                  <label className="form-label">Name</label>
-                                  {useRealData ? (
-                                    <input
-                                      type="text"
-                                      className="form-control"
-                                      value={index === 0 ? (formData.sibiling_1 || '') : (formData.sibiling_2 || '')}
-                                      onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1' : 'sibiling_2', e.target.value)}
-                                    />
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      className="form-control"
-                                      placeholder="Sibling Name"
-                                      disabled
-                                    />
-                                  )}
-                                </div>
-                              </div>
-                              {isSameSchool && (
-                                <>
-                                  <div className="col-lg-3 col-md-6">
-                                    <div className="mb-3">
-                                      <label className="form-label">Roll No</label>
-                                      <input
-                                        type="text"
-                                        className="form-control"
-                                        placeholder="Roll No"
-                                        value={(siblingRollNos[index] ?? '')}
-                                        onChange={(e) => {
-                                          const next = [...siblingRollNos];
-                                          next[index] = e.target.value;
-                                          setSiblingRollNos(next);
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-                                  <div className="col-lg-3 col-md-6">
-                                    <div className="mb-3">
-                                      <label className="form-label">
-                                        Admission No
-                                      </label>
-                                      <input
-                                        type="text"
-                                        className="form-control"
-                                        placeholder="Admission No"
-                                        value={(siblingAdmissionNos[index] ?? '')}
-                                        onChange={(e) => {
-                                          const next = [...siblingAdmissionNos];
-                                          next[index] = e.target.value;
-                                          setSiblingAdmissionNos(next);
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                              <div className="col-lg-3 col-md-6">
-                                <div className="mb-3">
-                                  <div className="d-flex align-items-center">
-                                    <div className="w-100">
-                                      <label className="form-label">
-                                        Class
-                                      </label>
-                                      {useRealData ? (
-                                        <input
-                                          type="text"
-                                          className="form-control"
-                                          value={index === 0 ? (formData.sibiling_1_class || '') : (formData.sibiling_2_class || '')}
-                                          onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1_class' : 'sibiling_2_class', e.target.value)}
-                                        />
-                                      ) : (
-                                        <CommonSelect
-                                          className="select"
-                                          options={allClass}
-                                          defaultValue={undefined}
-                                        />
-                                      )}
-                                    </div>
-                                    {newContents.length > 1 && (
-                                      <div>
-                                        <label className="form-label">
-                                          &nbsp;
-                                        </label>
-                                        <Link
-                                          to="#"
-                                          className="trash-icon ms-3"
-                                          onClick={() => removeContent(index)}
-                                        >
-                                          <i className="ti ti-trash-x" />
-                                        </Link>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="border-top pt-3">
-                      <Link
-                        to="#"
-                        onClick={addNewContent}
-                        className="add-sibling btn btn-primary d-inline-flex align-items-center"
-                      >
-                        <i className="ti ti-circle-plus me-2" />
-                        Add New
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-                {/* /Sibilings */}
-                {/* Address */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-map fs-16" />
-                      </span>
-                      <h4 className="text-dark">Address</h4>
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Current Address</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.current_address || ''}
-                            onChange={(e) => handleInputChange('current_address', e.target.value)}
-                            placeholder="Enter current address"
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">
-                            Permanent Address
-                          </label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.permanent_address || ''}
-                            onChange={(e) => handleInputChange('permanent_address', e.target.value)}
-                            placeholder="Enter permanent address"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Address */}
-                {/* Transport Information */}
-                <div className="card">
-                  <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-bus-stop fs-16" />
-                      </span>
-                      <h4 className="text-dark">Transport Information</h4>
-                    </div>
-                    <div className="form-check form-switch">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                        checked={formData.is_transport_required}
-                        onChange={(e) => handleInputChange('is_transport_required', e.target.checked)}
-                      />
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Route</label>
-                          {routesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading routes...
-                            </div>
-                          ) : routesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {routesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
-                              value={formData.route_id}
-                              onChange={(v) => handleInputChange('route_id', v || null)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Vehicle Number</label>
-                          {vehiclesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading vehicles...
-                            </div>
-                          ) : vehiclesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {vehiclesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
-                              value={formData.vehicle_number || null}
-                              onChange={(v) => handleInputChange('vehicle_number', v || '')}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Pickup Point</label>
-                          {pickupLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2"></i>
-                              Loading pickup points...
-                            </div>
-                          ) : pickupError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2"></i>
-                              Error: {pickupError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={pickupPointOptions.map(p => ({ value: p.value, label: p.label }))}
-                              value={formData.pickup_point_id}
-                              onChange={(v) => handleInputChange('pickup_point_id', v || null)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Transport Information */}
-                {/* Hostel Information */}
-                <div className="card">
-                  <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-building-fortress fs-16" />
-                      </span>
-                      <h4 className="text-dark">Hostel Information</h4>
-                    </div>
-                    <div className="form-check form-switch">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                        checked={formData.is_hostel_required}
-                        onChange={(e) => handleInputChange('is_hostel_required', e.target.checked)}
-                      />
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Hostel</label>
-                          <CommonSelect
-                            className="select"
-                            options={
-                              formData.hostel_id && !hostelOptions.find(o => o.value === formData.hostel_id)
-                                ? [{ value: formData.hostel_id, label: formData.hostel_name || formData.hostel_id }, ...hostelOptions]
-                                : hostelOptions.length > 0 ? hostelOptions : [{ value: "", label: "No hostels" }]
-                            }
-                            value={formData.hostel_id || null}
-                            onChange={(v) => {
-                              const opt = hostelOptions.find(o => o.value === v);
-                              setFormData(prev => ({
-                                ...prev,
-                                hostel_id: v || null,
-                                hostel_name: opt?.label ?? "",
-                              }));
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Room No</label>
-                          <CommonSelect
-                            className="select"
-                            options={
-                              formData.hostel_room_id && !roomOptions.find(o => o.value === formData.hostel_room_id)
-                                ? [{ value: formData.hostel_room_id, label: formData.hostel_room_number || formData.hostel_room_id }, ...roomOptions]
-                                : roomOptions.length > 0 ? roomOptions : [{ value: "", label: "No rooms" }]
-                            }
-                            value={formData.hostel_room_id || null}
-                            onChange={(v) => {
-                              const opt = roomOptions.find(o => o.value === v);
-                              setFormData(prev => ({
-                                ...prev,
-                                hostel_room_id: v || null,
-                                hostel_room_number: opt?.label ?? "",
-                              }));
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Hostel Information */}
-                {/* Documents */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-file fs-16" />
-                      </span>
-                      <h4 className="text-dark">Documents</h4>
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-lg-6">
-                        <div className="mb-2">
                           <div className="mb-3">
-                            <label className="form-label mb-1">
-                              Medical Condition
+                            <label className="form-label">
+                              Other Information
                             </label>
-                            <p>Upload image size of 4MB, Accepted Format PDF</p>
-                          </div>
-                          <div className="d-flex align-items-center flex-wrap">
-                            <div className="btn btn-primary drag-upload-btn mb-2 me-2">
-                              <i className="ti ti-file-upload me-1" />
-                              Change
-                              <input
-                                type="file"
-                                className="form-control image_sign"
-                                multiple
-                              />
-                            </div>
-                            {isEdit ? (
-                              <p className="mb-2">BirthCertificate.pdf</p>
-                            ) : (
-                              <></>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="col-lg-6">
-                        <div className="mb-2">
-                          <div className="mb-3">
-                            <label className="form-label mb-1">
-                              Upload Transfer Certificate
-                            </label>
-                            <p>Upload image size of 4MB, Accepted Format PDF</p>
-                          </div>
-                          <div className="d-flex align-items-center flex-wrap">
-                            <div className="btn btn-primary drag-upload-btn mb-2">
-                              <i className="ti ti-file-upload me-1" />
-                              Upload Document
-                              <input
-                                type="file"
-                                className="form-control image_sign"
-                                multiple
-                              />
-                            </div>
+                            <textarea
+                              className="form-control"
+                              rows={3}
+                              value={formData.other_information || ''}
+                              onChange={(e) => handleInputChange('other_information', e.target.value)}
+                            />
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                {/* /Documents */}
-                {/* Medical History */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-medical-cross fs-16" />
-                      </span>
-                      <h4 className="text-dark">Medical History</h4>
-                    </div>
+                  {/* /Other Details */}
+                  <div className="text-end">
+                    <button type="button" className="btn btn-light me-3">
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                      {isSubmitting ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Student' : 'Add Student')}
+                    </button>
                   </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-12">
-                        <div className="mb-2">
-                          <label className="form-label">
-                            Medical Condition
-                          </label>
-                          <div className="d-flex align-items-center flex-wrap">
-                            <label className="form-label text-dark fw-normal me-2">
-                              Medical Condition of a Student
-                            </label>
-                            <div className="form-check me-3 mb-2">
-                              <input
-                                className="form-check-input"
-                                type="radio"
-                                name="condition"
-                                id="good"
-                                checked={formData.medical_condition === 'Good'}
-                                onChange={() => handleInputChange('medical_condition', 'Good')}
-                              />
-                              <label
-                                className="form-check-label"
-                                htmlFor="good"
-                              >
-                                Good
-                              </label>
-                            </div>
-                            <div className="form-check me-3 mb-2">
-                              <input
-                                className="form-check-input"
-                                type="radio"
-                                name="condition"
-                                id="bad"
-                                checked={formData.medical_condition === 'Bad'}
-                                onChange={() => handleInputChange('medical_condition', 'Bad')}
-                              />
-                              <label className="form-check-label" htmlFor="bad">
-                                Bad
-                              </label>
-                            </div>
-                            <div className="form-check mb-2">
-                              <input
-                                className="form-check-input"
-                                type="radio"
-                                name="condition"
-                                id="others"
-                                checked={formData.medical_condition === 'Others'}
-                                onChange={() => handleInputChange('medical_condition', 'Others')}
-                              />
-                              <label
-                                className="form-check-label"
-                                htmlFor="others"
-                              >
-                                Others
-                              </label>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Allergies</label>
-
-                        <TagInput
-                          initialTags={owner1}
-                          onTagsChange={handleTagsChange3}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Medications</label>
-                        <TagInput
-                          initialTags={owner2}
-                          onTagsChange={handleTagsChange4}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Medical History */}
-                {/* Previous School details */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-building fs-16" />
-                      </span>
-                      <h4 className="text-dark">Previous School Details</h4>
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">School Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.previous_school || ''}
-                            onChange={(e) => handleInputChange('previous_school', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Address</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.previous_school_address || ''}
-                            onChange={(e) => handleInputChange('previous_school_address', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Previous School details */}
-                {/* Other Details */}
-                <div className="card">
-                  <div className="card-header bg-light">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-building-bank fs-16" />
-                      </span>
-                      <h4 className="text-dark">Other Details</h4>
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-5">
-                        <div className="mb-3">
-                          <label className="form-label">Bank Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.bank_name || ''}
-                            onChange={(e) => handleInputChange('bank_name', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-2">
-                        <div className="mb-3">
-                          <label className="form-label">Branch</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.branch || ''}
-                            onChange={(e) => handleInputChange('branch', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-5">
-                        <div className="mb-3">
-                          <label className="form-label">IFSC Number</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={formData.ifsc || ''}
-                            onChange={(e) => handleInputChange('ifsc', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-12">
-                        <div className="mb-3">
-                          <label className="form-label">
-                            Other Information
-                          </label>
-                          <textarea
-                            className="form-control"
-                            rows={3}
-                            value={formData.other_information || ''}
-                            onChange={(e) => handleInputChange('other_information', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Other Details */}
-                <div className="text-end">
-                  <button type="button" className="btn btn-light me-3">
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                    {isSubmitting ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Student' : 'Add Student')}
-                  </button>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
-          </div>
           )}
         </div>
       </div>
