@@ -54,10 +54,26 @@ function createPoolForDb(dbName) {
     attachPoolHandlers(pool, dbName);
     return pool;
   }
-
-  if (process.env.DATABASE_URL) {
-    // Derive connection string for specific DB from base DATABASE_URL
+  const hasDatabaseUrl = typeof process.env.DATABASE_URL === 'string' && process.env.DATABASE_URL.trim() !== '';
+  if (hasDatabaseUrl) {
     try {
+      // For the primary DB, use DATABASE_URL as-is (do not override db name).
+      // This is important on platforms like Render where the DB name inside
+      // DATABASE_URL is an opaque value (e.g. myschool_db_6276).
+      if (dbName === primaryDbName) {
+        const pool = new Pool({
+          connectionString: process.env.DATABASE_URL.trim(),
+          ssl: sslConfig,
+          max: 20,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
+        });
+        attachPoolHandlers(pool, dbName);
+        return pool;
+      }
+
+      // For non-primary DBs (legacy derived DBs), derive connection string
+      // by swapping the database name in DATABASE_URL.
       const url = new URL(process.env.DATABASE_URL);
       url.pathname = `/${dbName}`;
       const connectionString = url.toString();
