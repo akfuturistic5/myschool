@@ -61,6 +61,12 @@ const { requireActiveAccount } = require('./src/middleware/requireActiveAccount'
 // Create Express app
 const app = express();
 
+// When running behind a proxy/load balancer (Render, Nginx, etc.),
+// trust the X-Forwarded-* headers so express-rate-limit can identify
+// the real client IP instead of the proxy IP.
+// This also fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR in production.
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet()); // Security headers
 app.use(cookieParser());
