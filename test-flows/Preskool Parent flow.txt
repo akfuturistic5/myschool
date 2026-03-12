@@ -1,0 +1,197 @@
+Preskool.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 1111.
+4 User enters parent username or parent phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates required fields then calls api service login and redirects to parent dashboard for parent role.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute number in master database schools registry.
+3 Backend binds Preskool tenant database.
+4 Backend reads users and user roles verifies password returns token and cookie.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Tenant database users table read.
+3 Tenant database user roles table read.
+
+Final One Line Flow.
+Parent signs in. Frontend calls login. Api sends post auth login. Backend resolves tenant reads users verifies password returns token. Frontend stores token and opens parent dashboard.
+
+Frontend.
+Parent dashboard and child selection.
+1 Parent dashboard screen opens.
+2 Screen calls parents me hook with for current user option.
+3 Screen renders parent profile card and list of linked children.
+4 If multiple children exist screen renders a child selector.
+5 Parent clicks a child avatar to set active student id.
+6 Screen triggers dependent loads for the selected child including attendance fees exam results and leave list.
+7 Screen loads events for dashboard widgets.
+
+API.
+Parent dashboard and child selection.
+1 Parent profile endpoint is parents me.
+2 Parent children leaves endpoint is leave applications parent children.
+3 Child attendance endpoint is students student id attendance.
+4 Child fees endpoint is fees student student id.
+5 Child exam results endpoint is students student id exam results.
+6 Events endpoints are events upcoming and events completed.
+7 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Parent dashboard and child selection.
+1 Backend verifies token and binds tenant database from token.
+2 Parents me handler matches current user to parent records and returns children mapping.
+3 Leave applications parent children handler resolves linked student ids using parent user match logic and returns leave applications for those students.
+4 Attendance handler enforces parent can only access attendance for linked children then reads attendance table and returns records and summary.
+5 Fees handler enforces parent can only access fees for linked children then reads fee structures and fee collections and returns totals.
+6 Exam results handler enforces parent can only access results for linked children then reads exam results and returns grouped exams.
+7 Events handlers read events table and return lists.
+
+Database.
+Parent dashboard and child selection.
+1 Parents table is read to link parent to student id.
+2 Students table is read to resolve child records.
+3 Users table is read for parent matching by username email and phone when needed.
+4 Leave applications table is read filtered by student ids.
+5 Attendance table is read filtered by student id.
+6 Fee structures and fee collections tables are read filtered by student id.
+7 Exam results exams and subjects tables are read filtered by student id.
+8 Events table is read.
+
+Final One Line Flow.
+Parent opens dashboard selects a child. Frontend loads parent profile then loads leaves attendance fees results and events. Api sends get requests with token. Backend verifies token binds tenant resolves linked student ids enforces access reads tenant tables returns data. Frontend renders child specific widgets.
+
+Frontend.
+Parent views child profile details.
+1 Parent clicks view child profile.
+2 Student details screen opens with student id.
+3 Screen calls get student by id.
+4 Screen renders child details and related sections.
+
+API.
+Parent views child profile details.
+1 Endpoint is students by id.
+2 Method is get.
+3 Token is sent as Bearer token.
+
+Backend.
+Parent views child profile details.
+1 Backend verifies token.
+2 Backend enforces parent ownership by checking that student id is in parent linked student ids.
+3 Backend reads students and related tables and returns full record.
+
+Database.
+Parent views child profile details.
+1 Students table read.
+2 Classes sections parents guardians addresses and lookup tables read.
+
+Final One Line Flow.
+Parent opens child profile. Frontend calls get student by id. Api sends get with token. Backend verifies parent child relationship reads tables returns data. Frontend renders child profile sections.
+
+Frontend.
+Parent applies leave for child.
+1 Parent opens child leave screen.
+2 Screen loads leave types and existing leaves.
+3 Parent clicks apply leave.
+4 Parent selects leave type start date end date and reason for the active child.
+5 Parent clicks submit.
+6 Frontend calls create leave application with student id of active child.
+
+API.
+Parent applies leave for child.
+1 Leave types endpoint is leave applications leave types.
+2 Create leave endpoint is leave applications.
+3 Method is post for create.
+4 Token is sent as Bearer token.
+
+Backend.
+Parent applies leave for child.
+1 Backend verifies token.
+2 Backend validates required fields.
+3 Backend verifies parent child relationship by resolving linked student ids.
+4 Backend inserts leave applications record with applicant type student and status pending for the child student id.
+5 Backend returns created record.
+
+Database.
+Parent applies leave for child.
+1 Leave types table read and may be seeded.
+2 Parents and students tables read for relationship check.
+3 Leave applications table insert occurs.
+
+Final One Line Flow.
+Parent submits leave for child. Frontend calls create leave. Api sends post leave applications with token. Backend verifies relationship validates inserts leave application pending returns success. Frontend refreshes leave list and shows pending status.
+
+Frontend.
+Parent views fees and results and attendance.
+1 Parent opens child fees.
+2 Frontend calls fees student child id.
+3 Parent opens child exam results.
+4 Frontend calls students child id exam results.
+5 Parent opens child attendance.
+6 Frontend calls students child id attendance.
+
+API.
+Parent views fees and results and attendance.
+1 Fees endpoint is fees student student id.
+2 Exam results endpoint is students student id exam results.
+3 Attendance endpoint is students student id attendance.
+4 Method is get.
+5 Token is sent as Bearer token.
+
+Backend.
+Parent views fees and results and attendance.
+1 Backend verifies token.
+2 Backend enforces parent child relationship for each endpoint.
+3 Backend reads tenant tables and returns data.
+
+Database.
+Parent views fees and results and attendance.
+1 Attendance table read.
+2 Fee structures and fee collections tables read.
+3 Exam results exams subjects tables read.
+
+Final One Line Flow.
+Parent opens child modules. Frontend calls fees results and attendance apis. Api sends get with token. Backend verifies relationship reads tables returns data. Frontend renders lists and totals.
+
+Frontend.
+Profile update and password change.
+1 Parent opens profile screen.
+2 Parent edits allowed user fields and saves.
+3 Frontend calls auth me update.
+4 Parent changes password and frontend calls auth change password.
+
+API.
+Profile update and password change.
+1 Endpoints are auth me patch and auth change password.
+2 Token is sent as Bearer token.
+
+Backend.
+Profile update and password change.
+1 Backend verifies token.
+2 Backend updates users table and addresses when present.
+3 Backend updates password hash when changing password.
+
+Database.
+Profile update and password change.
+1 Users table update occurs.
+2 Addresses table may be read and updated.
+
+Final One Line Flow.
+Parent updates profile or password. Frontend calls auth endpoints. Api sends patch or post with token. Backend verifies updates users and password hash returns success. Frontend shows confirmation.
+

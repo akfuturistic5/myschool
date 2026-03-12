@@ -1,0 +1,62 @@
+Millat.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 2222.
+4 User enters username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates required fields and calls api service login.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body using request validation.
+2 Backend resolves institute number 2222 in master database schools registry.
+3 Backend binds tenant database for Millat using the resolved tenant database name.
+4 Backend reads users and user roles and verifies password hash.
+5 Backend creates token that includes tenant database name and school identity and role.
+6 Backend sets auth cookie and returns token and user object.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Millat tenant users table read.
+3 Millat tenant user roles table read.
+
+Final One Line Flow.
+User logs in with institute 2222. Frontend calls login. Api sends post auth login. Backend resolves tenant to Millat reads users verifies password signs token sets cookie returns success. Frontend stores token and opens headmaster dashboard.
+
+Frontend.
+Headmaster operations.
+1 Headmaster uses the full admin sidebar and screens.
+2 Headmaster opens dashboard and students and teachers and fees and leaves and notice board and events and settings.
+3 Frontend triggers the same functions and hooks as in Preskool headmaster flow for each screen.
+
+API.
+Headmaster operations.
+1 All endpoints are the same as the shared application endpoints.
+2 Token is sent as Bearer token in Authorization header for every request.
+
+Backend.
+Headmaster operations.
+1 Backend verifies token and binds tenant database to Millat for every request.
+2 Backend enforces role based access the same way as in other schools.
+3 Backend controllers execute the same logic but on Millat tenant tables.
+
+Database.
+Headmaster operations.
+1 All reads and writes occur only in Millat tenant tables.
+2 Students teachers staff attendance leave applications fee structures fee collections notice board events and related tables are used as described in Preskool headmaster flow.
+
+Final One Line Flow.
+Headmaster performs admin actions. Frontend calls shared api functions. Api sends requests with token. Backend verifies token binds Millat tenant runs controllers reads and writes Millat tables returns success. Frontend renders updated Millat data.
+

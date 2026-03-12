@@ -1,0 +1,68 @@
+Millat.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 2222.
+4 User enters student username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login and opens student dashboard.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute 2222 in schools registry.
+3 Backend binds tenant database to Millat.
+4 Backend reads users and user roles verifies password signs token returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Millat tenant users and user roles tables read.
+
+Final One Line Flow.
+Student logs in with institute 2222. Frontend calls login. Api sends post auth login. Backend resolves Millat tenant verifies user returns token. Frontend stores token and opens student dashboard.
+
+Frontend.
+Student main actions.
+1 Student views dashboard profile attendance timetable syllabus leaves fees and exam results and todos and events.
+2 Frontend uses the same hooks and functions as in Preskool student flow.
+3 Student applies leave using leave application form.
+4 Student updates profile and changes password using auth screens.
+
+API.
+Student main actions.
+1 Students me.
+2 Students student id attendance.
+3 Class schedules.
+4 Class syllabus.
+5 Leave applications leave types and leave applications me and leave applications create.
+6 Fees student student id.
+7 Students student id exam results.
+8 Todos.
+9 Events.
+10 Auth me and auth change password.
+11 Token is sent as Bearer token.
+
+Backend.
+Student main actions.
+1 Backend verifies token and binds tenant database to Millat.
+2 Backend enforces student ownership for attendance fees exam results and student details.
+3 Backend reads and writes Millat tenant tables for leaves and todos and returns responses.
+
+Database.
+Student main actions.
+1 Students attendance leave applications fee structures fee collections exam results exams subjects todos events and related tables are read and written only in Millat tenant database.
+
+Final One Line Flow.
+Student performs daily actions. Frontend calls hooks and submit handlers. Api sends requests with token. Backend verifies binds Millat tenant enforces ownership reads and writes tables returns success. Frontend renders Millat student data.
+

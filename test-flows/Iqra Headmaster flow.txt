@@ -1,0 +1,60 @@
+Iqra.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 3333.
+4 User enters username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute number 3333 in master database schools registry.
+3 Backend binds tenant database to Iqra using resolved tenant database name.
+4 Backend reads users and user roles and verifies password hash.
+5 Backend signs token and sets auth cookie and returns token and user object.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Iqra tenant users table read.
+3 Iqra tenant user roles table read.
+
+Final One Line Flow.
+User logs in with institute 3333. Frontend calls login. Api sends post auth login. Backend resolves tenant to Iqra reads users verifies password signs token sets cookie returns success. Frontend stores token and opens headmaster dashboard.
+
+Frontend.
+Headmaster operations.
+1 Headmaster uses the full admin sidebar and screens.
+2 Headmaster opens dashboard and students and teachers and fees and leaves and notice board and events and settings.
+3 Frontend triggers the same functions and hooks as in Preskool headmaster flow for each screen and operation.
+
+API.
+Headmaster operations.
+1 All endpoints are the shared application endpoints.
+2 Token is sent as Bearer token.
+
+Backend.
+Headmaster operations.
+1 Backend verifies token and binds tenant database to Iqra for every request.
+2 Backend enforces role based access the same way as other schools.
+3 Backend controllers run the same logic but operate on Iqra tenant tables only.
+
+Database.
+Headmaster operations.
+1 All reads and writes occur only in Iqra tenant database tables such as students teachers staff class schedules attendance leave applications fee structures fee collections notice board and events.
+
+Final One Line Flow.
+Headmaster performs admin actions. Frontend calls shared api. Api sends requests with token. Backend verifies token binds Iqra tenant authorizes executes controllers reads and writes Iqra tables returns success. Frontend renders Iqra data.
+

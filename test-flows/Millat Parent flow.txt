@@ -1,0 +1,68 @@
+Millat.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 2222.
+4 User enters parent username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login and opens parent dashboard.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute 2222 in schools registry.
+3 Backend binds tenant database to Millat.
+4 Backend reads users and user roles verifies password signs token returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Millat tenant users and user roles tables read.
+
+Final One Line Flow.
+Parent logs in with institute 2222. Frontend calls login. Api sends post auth login. Backend resolves Millat tenant verifies user returns token. Frontend stores token and opens parent dashboard.
+
+Frontend.
+Parent main actions.
+1 Parent views parent dashboard and selects a child student when multiple exist.
+2 Frontend loads parent profile and children mapping then loads child attendance fees results leaves and events.
+3 Parent applies leave for a child using leave application form.
+4 Parent views child profile details.
+5 Parent updates profile and changes password using auth screens.
+
+API.
+Parent main actions.
+1 Parents me.
+2 Leave applications parent children.
+3 Students student id attendance.
+4 Fees student student id.
+5 Students student id exam results.
+6 Students by id for profile view.
+7 Events endpoints for announcements.
+8 Auth me patch and auth change password.
+9 Token is sent as Bearer token.
+
+Backend.
+Parent main actions.
+1 Backend verifies token and binds tenant database to Millat.
+2 Parents me handler matches parent user to parent and student links.
+3 Backend enforces parent child relationship for attendance fees results and student details.
+4 Backend inserts leave applications for child when creating leave.
+
+Database.
+Parent main actions.
+1 Parents students attendance fee structures fee collections exam results leave applications leave types and events tables are read and written in Millat tenant database.
+
+Final One Line Flow.
+Parent selects a child and views modules or applies leave. Frontend calls hooks and submit handlers. Api sends requests with token. Backend verifies binds Millat tenant resolves child relationship reads and writes tables returns success. Frontend renders Millat child data.
+

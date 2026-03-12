@@ -1,0 +1,212 @@
+Preskool.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 1111.
+4 User enters teacher username or teacher phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend login submit function validates required fields and calls api service login.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Request method is post.
+3 Request body contains institute number username and password.
+4 No token is sent on login request.
+5 Frontend includes credentials to allow auth cookie set.
+
+Backend.
+Login.
+1 Backend validates request body.
+2 Backend resolves institute number in master database schools registry.
+3 Backend binds tenant database to Preskool using the resolved tenant database name.
+4 Backend reads users table and user roles table to validate identity and role.
+5 Backend verifies password hash.
+6 Backend creates token and sets http only auth cookie and returns token and user object.
+
+Database.
+Login.
+1 Master database schools table is read.
+2 Tenant database users table is read.
+3 Tenant database user roles table is read.
+4 Tenant database staff table is read to calculate display name when linked.
+
+Final One Line Flow.
+User submits login. Frontend validates calls api login. Api sends post auth login. Backend validates resolves tenant reads users verifies password signs token sets cookie returns success. Frontend stores token redirects to teacher dashboard.
+
+Frontend.
+Teacher dashboard and core data loads.
+1 Teacher dashboard screen opens.
+2 Screen calls current teacher hook to load teacher profile.
+3 Screen calls teacher routine hook to load timetable items.
+4 Screen calls teacher class attendance hook to load attendance summary for students in teachers classes.
+5 Screen calls class syllabus hook to load class syllabus list and filters to teacher class and section keys.
+6 Screen calls leave applications hook with my leaves mode to load current user leave applications.
+7 Screen calls events hook to load upcoming and completed events for dashboard widgets.
+8 Screen renders greeting card teacher profile card syllabus chart today class list attendance summary and event widgets.
+
+API.
+Teacher dashboard and core data loads.
+1 Teacher profile endpoint is teachers me.
+2 Teacher routine endpoint is teachers teacher id routine with optional academic year id query.
+3 Teacher class attendance endpoint is teachers teacher id class attendance with days and offset query.
+4 Class syllabus endpoint is class syllabus.
+5 My leave applications endpoint is leave applications me with optional limit query.
+6 Events endpoints are events upcoming and events completed with optional limit query.
+7 Token is sent in Authorization header as Bearer token for all calls.
+
+Backend.
+Teacher dashboard and core data loads.
+1 Backend verifies token and binds tenant database from token.
+2 Teachers me handler reads teachers table joined to staff and classes and subjects filtered by staff user id.
+3 Teachers routine handler validates teacher id and reads class schedules joined to classes sections subjects and slots or time slots tables.
+4 Teachers routine handler maps day of week values and time slot fields to a normalized routine array.
+5 Teacher class attendance handler enforces that teacher can only access own teacher id.
+6 Teacher class attendance handler reads attendance records for students that match teacher schedules and teacher class id using exists queries.
+7 Leave applications me handler resolves student or staff leaves based on user id and returns leave applications joined to leave types and applicant tables.
+8 Events handlers read events table and filter by date range for upcoming and completed.
+9 Backend returns structured success responses.
+
+Database.
+Teacher dashboard and core data loads.
+1 Teachers table and staff table are read to return teacher profile.
+2 Classes table and subjects table are read for class and subject display fields.
+3 Class schedules table is read for routine items filtered by teacher id and optional academic year id.
+4 Slots table or time slots table is read for start time and end time.
+5 Attendance table is read and joined to students table for active students and filtered by teacher schedule rules.
+6 Leave applications table and leave types table are read for my leave list.
+7 Events table is read for event widgets.
+
+Final One Line Flow.
+User opens teacher dashboard. Frontend triggers hooks. Api sends get requests with token. Backend verifies token binds tenant runs teachers and schedules and attendance and leaves and events queries returns data. Frontend renders dashboard widgets and updates on user filters.
+
+Frontend.
+Teacher views assigned students.
+1 Teacher opens a students list screen if accessible by navigation or deep link.
+2 Students screen checks role and uses teacher students mode.
+3 Students screen triggers fetch students function.
+4 Screen renders list of students assigned to teacher schedule and class.
+
+API.
+Teacher views assigned students.
+1 Endpoint is students teacher students.
+2 Request method is get.
+3 Optional academic year id query may be sent.
+4 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Teacher views assigned students.
+1 Backend verifies token and enforces teacher role for teacher students endpoint.
+2 Backend reads teachers and staff to resolve current teacher id from user id.
+3 Backend reads students table and filters students where a class schedules row exists for that teacher id and matches class id and section id rules.
+4 Backend joins classes and sections for display.
+5 Backend returns student list.
+
+Database.
+Teacher views assigned students.
+1 Staff table is read by user id.
+2 Teachers table is read by staff id to find teacher id.
+3 Students table is read with exists subqueries to class schedules and optional teacher class id.
+4 Class schedules table is read in exists filters.
+5 Classes and sections tables are read for names.
+
+Final One Line Flow.
+Teacher opens assigned students list. Frontend calls teacher students fetch. Api sends get students teacher students with token. Backend authorizes resolves teacher id reads students filtered by schedules returns list. Frontend shows student list.
+
+Frontend.
+Teacher manages events.
+1 Teacher opens events screen.
+2 Teacher clicks add new.
+3 Frontend opens create event form and collects input.
+4 Teacher clicks save.
+5 Frontend calls api service create event.
+6 Teacher edits or deletes an event and frontend calls update or delete event.
+
+API.
+Teacher manages events.
+1 Endpoints are events and events by id.
+2 Methods are post put delete.
+3 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Teacher manages events.
+1 Backend verifies token and checks role is teacher or admin for create update delete.
+2 Backend validates input fields as implemented in events controller.
+3 Backend writes events table and returns success.
+
+Database.
+Teacher manages events.
+1 Events table insert update delete occurs.
+2 Events table is read for list refresh.
+
+Final One Line Flow.
+Teacher creates or edits event. Frontend calls events api. Api sends post put delete with token. Backend authorizes writes events table returns success. Frontend refreshes event list and shows result.
+
+Frontend.
+Teacher uses leave applications.
+1 Teacher opens leave list widget or leave page.
+2 Frontend calls leave applications me.
+3 Teacher may submit a leave application using leave apply form.
+4 Frontend validates fields and calls create leave application.
+
+API.
+Teacher uses leave applications.
+1 Leave types endpoint is leave applications leave types.
+2 My leave list endpoint is leave applications me.
+3 Create leave endpoint is leave applications.
+4 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Teacher uses leave applications.
+1 Backend verifies token.
+2 Leave types handler seeds leave types table when empty then returns active types.
+3 Create leave handler validates leave type and start and end dates.
+4 Create leave handler resolves staff id from staff table when staff id is not provided.
+5 Create leave handler enforces that teacher can only create leave for own staff account.
+6 Create leave handler inserts leave applications record with applicant type staff and status pending.
+7 My leave handler reads leave applications joined to staff and leave types filtered by staff user id.
+
+Database.
+Teacher uses leave applications.
+1 Leave types table is read and may be inserted when seeded.
+2 Staff table is read to resolve staff id by user id.
+3 Leave applications table insert occurs for create.
+4 Leave applications table read occurs for list.
+
+Final One Line Flow.
+Teacher opens leaves. Frontend calls leave types and my leaves. Api sends get with token. Backend verifies seeds types reads leaves returns list. For create frontend posts leave application. Backend validates ownership inserts leave application returns success. Frontend shows pending leave entry.
+
+Frontend.
+Profile and password.
+1 Teacher opens profile screen.
+2 Frontend calls auth me.
+3 Teacher edits profile and clicks save.
+4 Frontend calls auth me update.
+5 Teacher changes password in security settings.
+6 Frontend calls auth change password.
+
+API.
+Profile and password.
+1 Auth me endpoint is auth me.
+2 Auth update endpoint is auth me patch.
+3 Password change endpoint is auth change password post.
+4 Token is sent in Authorization header as Bearer token and cookie is included.
+
+Backend.
+Profile and password.
+1 Backend verifies token and returns combined user and staff and role information for auth me.
+2 Backend update me uses schema tolerant column detection and updates users table and staff table name fields when linked.
+3 Backend change password compares current password to users password hash and updates users password hash.
+
+Database.
+Profile and password.
+1 Users table read and update occurs.
+2 Staff table update may occur for name sync.
+3 Addresses table may be read for latest address values.
+
+Final One Line Flow.
+Teacher updates profile or password. Frontend calls auth endpoints. Api sends patch or post with token. Backend verifies updates users and staff and password hash returns success. Frontend shows updated profile or password confirmation.
+

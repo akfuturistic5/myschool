@@ -492,7 +492,7 @@ const Header = () => {
                     </Link>
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
-                      to={routes.profilesettings}
+                      to={routes.securitysettings}
                     >
                       <i className="ti ti-settings me-2" />
                       Settings
@@ -526,7 +526,7 @@ const Header = () => {
             <Link className="dropdown-item" to={routes.profile}>
               My Profile
             </Link>
-            <Link className="dropdown-item" to={routes.profilesettings}>
+            <Link className="dropdown-item" to={routes.securitysettings}>
               Settings
             </Link>
             <Link className="dropdown-item" to="#" onClick={(e) => { e.preventDefault(); handleLogout(); }}>

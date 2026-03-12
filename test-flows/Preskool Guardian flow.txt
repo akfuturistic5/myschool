@@ -1,0 +1,153 @@
+Preskool.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 1111.
+4 User enters guardian username or guardian phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields calls api service login and redirects to guardian dashboard for guardian role.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute number in master database schools registry.
+3 Backend binds Preskool tenant database.
+4 Backend reads users and user roles verifies password creates token and cookie returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Tenant database users table read.
+3 Tenant database user roles table read.
+
+Final One Line Flow.
+Guardian signs in. Frontend calls login. Api sends post auth login. Backend resolves tenant reads users verifies password returns token. Frontend stores token and opens guardian dashboard.
+
+Frontend.
+Guardian dashboard and ward visibility.
+1 Guardian dashboard screen opens.
+2 Screen calls current guardian hook to load guardian profile data.
+3 Screen calls guardian ward leaves hook to load leave applications for all wards.
+4 Screen calls events hook for announcements widgets.
+5 Screen renders guardian profile and ward leave list and events widgets.
+
+API.
+Guardian dashboard and ward visibility.
+1 Guardian profile endpoint is guardians me.
+2 Guardian ward leaves endpoint is leave applications guardian wards.
+3 Events endpoints are events upcoming and events completed.
+4 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Guardian dashboard and ward visibility.
+1 Backend verifies token and binds tenant database from token.
+2 Guardians me handler reads guardians table for a guardian record linked to current user.
+3 Guardian ward leaves handler reads current user email and phone from users table.
+4 Guardian ward leaves handler reads guardians table to find ward student ids where guardian email or phone matches user.
+5 Guardian ward leaves handler reads leave applications filtered by ward student ids and joins leave types and students.
+6 Events handlers read events table and return lists.
+
+Database.
+Guardian dashboard and ward visibility.
+1 Users table read for email and phone.
+2 Guardians table read to map guardian to student id wards.
+3 Leave applications table read filtered by ward student ids.
+4 Leave types table read.
+5 Students table read for applicant fields.
+6 Events table read.
+
+Final One Line Flow.
+Guardian opens dashboard. Frontend calls guardian and ward leaves and events. Api sends get requests with token. Backend verifies token binds tenant reads users guardians leave applications and events returns data. Frontend renders ward leave status and announcements.
+
+Frontend.
+Guardian views ward student details.
+1 Guardian opens a student details screen using a ward student id.
+2 Screen calls get student by id.
+3 Screen renders ward student profile.
+
+API.
+Guardian views ward student details.
+1 Endpoint is students by id.
+2 Method is get.
+3 Token is sent as Bearer token.
+
+Backend.
+Guardian views ward student details.
+1 Backend verifies token.
+2 Backend enforces guardian ward relationship by matching guardians table student id for current user.
+3 Backend reads student and related tables and returns record.
+
+Database.
+Guardian views ward student details.
+1 Users and guardians tables read for relationship check.
+2 Students and related lookup tables read.
+
+Final One Line Flow.
+Guardian opens ward student profile. Frontend calls get student. Api sends get with token. Backend verifies guardian ward relationship reads tables returns data. Frontend shows ward profile.
+
+Frontend.
+Guardian applies leave for ward.
+1 Guardian opens leave apply screen for a ward student.
+2 Screen loads leave types and existing leaves.
+3 Guardian enters leave details and submits.
+4 Frontend calls create leave application with ward student id.
+
+API.
+Guardian applies leave for ward.
+1 Leave types endpoint is leave applications leave types.
+2 Create leave endpoint is leave applications.
+3 Method is post.
+4 Token is sent as Bearer token.
+
+Backend.
+Guardian applies leave for ward.
+1 Backend verifies token.
+2 Backend validates required fields.
+3 Backend verifies guardian ward relationship by matching user email or phone to guardians table for the student id.
+4 Backend inserts leave applications record with applicant type student and status pending.
+5 Backend returns created record.
+
+Database.
+Guardian applies leave for ward.
+1 Leave types table read and may be seeded.
+2 Users and guardians tables read for relationship check.
+3 Leave applications table insert occurs.
+
+Final One Line Flow.
+Guardian submits leave for ward. Frontend posts leave application. Api sends post with token. Backend verifies ward relationship validates inserts pending leave returns success. Frontend refreshes list and shows pending leave.
+
+Frontend.
+Profile update and password change.
+1 Guardian opens profile screen and edits allowed user fields.
+2 Frontend calls auth me update.
+3 Guardian changes password and frontend calls auth change password.
+
+API.
+Profile update and password change.
+1 Endpoints are auth me patch and auth change password.
+2 Token is sent as Bearer token.
+
+Backend.
+Profile update and password change.
+1 Backend verifies token.
+2 Backend updates users and may update linked person names when present.
+3 Backend updates password hash.
+
+Database.
+Profile update and password change.
+1 Users table update occurs.
+2 Password hash field update occurs.
+
+Final One Line Flow.
+Guardian updates profile or password. Frontend calls auth endpoints. Api sends patch or post with token. Backend verifies updates users and password hash returns success. Frontend shows confirmation.
+

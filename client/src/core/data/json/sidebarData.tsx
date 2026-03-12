@@ -805,7 +805,6 @@ export const SidebarData = [
         showSubRoute: false,
         icon: "ti ti-shield-cog",
         submenuItems: [
-          { label: "Profile Settings", link: routes.profilesettings },
           { label: "Security Settings", link: routes.securitysettings },
           {
             label: "Notifications Settings",

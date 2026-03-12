@@ -1,0 +1,498 @@
+Preskool.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 1111 in the institute number field.
+4 User enters username or phone in the username or phone field.
+5 User enters password in the password field.
+6 User clicks sign in button.
+7 Frontend login submit function runs in the login screen.
+8 Frontend validates that institute number is not empty and username is not empty and password is not empty.
+9 Frontend shows error message on the login screen if any required field is missing.
+10 If validation passes frontend calls the api service login function.
+
+API.
+Login.
+1 Api service builds a request to the auth login endpoint.
+2 Request method is post.
+3 Request body contains institute number username and password.
+4 Frontend sends request without token because user is not authenticated yet.
+5 Frontend includes cookies in the request because backend also uses an http only auth cookie.
+
+Backend.
+Login.
+1 Backend receives the auth login request.
+2 Backend validates the request body fields using request validation middleware.
+3 Backend queries the master database schools registry to resolve the institute number to a school record.
+4 Backend reads school name school type institute number and tenant database name from the schools registry.
+5 Backend selects the tenant database connection for Preskool using the resolved tenant database name.
+6 Backend queries the users table for an active user where username or email or phone matches the provided identifier.
+7 Backend joins user roles to read role name and joins staff to read staff linkage for display name.
+8 Backend verifies password using password hash comparison.
+9 If user is missing or password is invalid backend returns an authentication error.
+10 If password is valid backend creates a signed token that contains user id username role id role name tenant database name and school identity.
+11 Backend sets an http only cookie that stores the token.
+12 Backend returns a success response with token and user fields including role and school fields.
+
+Database.
+Login.
+1 Master database table schools is read to resolve institute number.
+2 Tenant database table users is read to find matching active user account.
+3 Tenant database table user roles is read to resolve role name for the user.
+4 Tenant database table staff is read to resolve staff linkage and active status for the user.
+5 No records are inserted during login.
+6 No records are updated during login.
+
+Final One Line Flow.
+User enters institute number username and password and clicks sign in. Frontend validates fields and calls api service login. Api sends post auth login request with credentials. Backend validates input resolves institute to tenant database reads users and user roles verifies password creates token sets auth cookie returns success. Frontend stores token redirects to headmaster dashboard and renders school specific header and menu.
+
+Frontend.
+Session and routing.
+1 After login frontend stores token in local storage and stores user object in application state.
+2 Frontend route guard component checks if authentication has been checked and if session is authenticated.
+3 If session is not authenticated frontend redirects to login screen.
+4 If session is authenticated frontend renders the main layout feature container and the requested route screen.
+5 Frontend redirects to headmaster dashboard route for admin role.
+
+API.
+Session and routing.
+1 For all subsequent requests api service reads token from local storage.
+2 Api service sends the token in the Authorization header using Bearer token format.
+3 Api service also includes credentials to send and receive the auth cookie.
+
+Backend.
+Session and routing.
+1 Backend protects all api routes except auth login and health endpoints.
+2 Backend reads token from http only cookie or from Authorization header.
+3 Backend verifies token signature and expiration.
+4 Backend attaches decoded user payload to the request context.
+5 Backend binds the request to the tenant database connection using the tenant database name inside the token.
+6 Backend enforces active account rules for student and staff accounts using an active account middleware.
+
+Database.
+Session and routing.
+1 No database changes occur for session verification.
+2 All subsequent queries run against the tenant database selected from the token.
+
+Final One Line Flow.
+Frontend navigates to protected screen. Api sends request with Bearer token and cookie. Backend verifies token binds tenant database checks active account continues to controller. Controller reads or writes tenant tables returns response. Frontend renders updated screen state.
+
+Frontend.
+Headmaster dashboard.
+1 User lands on headmaster dashboard screen.
+2 Dashboard screen triggers data load hooks on first render.
+3 Dashboard screen shows cards for students teachers staff and subjects.
+4 Dashboard screen shows star students and notices and other widgets.
+5 Dashboard screen shows errors when a widget request fails.
+
+API.
+Headmaster dashboard.
+1 Frontend calls api service dashboard stats function.
+2 Endpoint is dashboard stats.
+3 Request method is get.
+4 Request may include academic year id query if an academic year is selected in state.
+5 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Headmaster dashboard.
+1 Backend verifies token then routes request to dashboard controller stats handler.
+2 Backend checks role based access for admin dashboard stats.
+3 Backend parses academic year id query when provided.
+4 Backend executes multiple count queries for students teachers staff and subjects.
+5 Backend builds a structured stats object and returns success response.
+
+Database.
+Headmaster dashboard.
+1 Students table is counted for total active inactive. When academic year filter is provided students are filtered by academic year id.
+2 Teachers table is counted and joined to staff to compute active based on teacher status and staff is active.
+3 Staff table is counted for total active inactive.
+4 Subjects table is counted for total active inactive.
+5 No inserts updates or deletes occur.
+
+Final One Line Flow.
+User opens dashboard. Frontend loads stats. Api sends get dashboard stats with token. Backend authorizes admin runs count queries on students teachers staff subjects returns stats. Frontend renders cards with counts.
+
+Frontend.
+Manage students list view.
+1 User opens sidebar.
+2 User clicks students menu.
+3 Student list screen opens.
+4 Student list screen triggers fetch students function.
+5 Screen renders a table or grid of students with filters and actions.
+
+API.
+Manage students list view.
+1 Frontend calls api service get students.
+2 Endpoint is students.
+3 Request method is get.
+4 Request may include academic year id query for filtering.
+5 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Manage students list view.
+1 Backend verifies token and confirms role is admin for students list endpoint.
+2 Backend parses pagination and academic year filter.
+3 Backend queries students with left joins to classes sections parents guardians and latest address record.
+4 Backend returns list and pagination metadata.
+
+Database.
+Manage students list view.
+1 Students table is read.
+2 Classes table is read to map class id to class name.
+3 Sections table is read to map section id to section name.
+4 Parents table is read to map parent id to parent fields.
+5 Guardians table is read to map guardian id to guardian fields.
+6 Addresses table is read as latest address for the student user id.
+7 No inserts updates or deletes occur.
+
+Final One Line Flow.
+User opens students list. Frontend calls get students. Api sends get students with token and optional academic year filter. Backend authorizes admin reads students joins related tables returns rows. Frontend displays student list.
+
+Frontend.
+Create student.
+1 User clicks add student button on students screen.
+2 Add student form screen opens.
+3 User fills required fields including admission number first name last name.
+4 User optionally fills class section academic year contact address parent and guardian fields.
+5 User clicks save button.
+6 Frontend submit handler validates required form fields and builds payload.
+7 Frontend calls api service create student.
+
+API.
+Create student.
+1 Endpoint is students.
+2 Request method is post.
+3 Request body contains student fields and optional parent and guardian fields and address fields.
+4 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Create student.
+1 Backend verifies token and checks admin role for create student.
+2 Backend validates request body required fields.
+3 Backend starts a database transaction.
+4 Backend checks for duplicate admission number in students table.
+5 Backend inserts student record into students table using schema tolerant logic for religion field and address fields.
+6 Backend creates a linked user account for the student when admission number or phone or email is provided.
+7 Backend updates students user id foreign key to link student to user.
+8 If parent fields are provided backend inserts a parents record linked by student id.
+9 Backend updates students parent id foreign key to link student to parent.
+10 Backend creates a linked user account for parent when parent email or phone is provided.
+11 Backend updates parents user id foreign key to link parent to user.
+12 If guardian fields are provided backend inserts guardians record linked by student id.
+13 Backend updates students guardian id foreign key to link student to guardian.
+14 Backend creates a linked user account for guardian when guardian phone or email is provided.
+15 Backend updates guardians user id foreign key to link guardian to user.
+16 Backend synchronizes address into addresses table for the student user id when address values exist.
+17 Backend commits the transaction and returns created student record.
+
+Database.
+Create student.
+1 Students table insert occurs for the student master record.
+2 Users table insert may occur for student login account.
+3 Students table update occurs to set students user id foreign key.
+4 Parents table insert may occur for parent record linked to student id.
+5 Students table update may occur to set students parent id foreign key.
+6 Users table insert may occur for parent login account.
+7 Parents table update may occur to set parents user id foreign key.
+8 Guardians table insert may occur for guardian record linked to student id.
+9 Students table update may occur to set students guardian id foreign key.
+10 Users table insert may occur for guardian login account.
+11 Guardians table update may occur to set guardians user id foreign key.
+12 Addresses table insert or update may occur for student user id with role student and person id link to student id.
+
+Final One Line Flow.
+User fills add student form and clicks save. Frontend validates and calls create student. Api sends post students with token. Backend authorizes admin validates starts transaction checks admission number inserts student creates student user links student inserts parent and guardian links and creates users syncs addresses commits returns success. Frontend shows success and refreshes list.
+
+Frontend.
+View student details.
+1 User opens a student details screen by selecting a student.
+2 Student details screen triggers fetch student by id function.
+3 Screen renders personal academic parent guardian transport hostel and address sections.
+4 Screen may open sub tabs for attendance fees exam results and login details.
+
+API.
+View student details.
+1 Endpoint is students by id.
+2 Request method is get.
+3 Token is sent in Authorization header as Bearer token.
+
+Backend.
+View student details.
+1 Backend verifies token.
+2 Backend allows admin and teacher to view any student details.
+3 Backend reads student record and joins lookup tables for blood group cast mother tongue and joins users classes sections parents guardians and addresses.
+4 Backend resolves transport route name and pickup point name when route id or pickup point id exists.
+5 Backend resolves hostel name and hostel room number when hostel id or hostel room id exists.
+6 Backend returns the combined student data object.
+
+Database.
+View student details.
+1 Students table is read for the base student record.
+2 Users table is read to supply phone and email when student fields are empty.
+3 Classes and sections tables are read for class and section names.
+4 Blood groups casts mother tongues and religions tables are read when present.
+5 Parents and guardians tables are read for linked person information.
+6 Addresses table is read for latest address for the student user.
+7 Routes and pickup points tables are read for transport display values when present.
+8 Hostels and hostel rooms tables are read for hostel display values when present.
+
+Final One Line Flow.
+User opens student details. Frontend calls get student by id. Api sends get student by id with token. Backend verifies token reads student and related tables returns data. Frontend renders all student sections and related tabs.
+
+Frontend.
+Student attendance review.
+1 User opens student attendance view from student details or attendance module.
+2 Screen triggers fetch attendance function for a selected student.
+3 Screen renders attendance records and summary counts.
+
+API.
+Student attendance review.
+1 Endpoint is students student id attendance.
+2 Request method is get.
+3 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Student attendance review.
+1 Backend verifies token.
+2 Backend allows admin and teacher to view attendance for any student.
+3 Backend reads attendance records from attendance table ordered by attendance date.
+4 Backend normalizes status values to present absent half day late.
+5 Backend computes summary counts and returns records and summary.
+
+Database.
+Student attendance review.
+1 Attendance table is read by student id.
+2 Students table may be read for ownership checks for non admin roles but admin role uses direct access.
+
+Final One Line Flow.
+User opens attendance. Frontend calls get student attendance. Api sends get attendance with token. Backend authorizes reads attendance normalizes computes summary returns data. Frontend displays attendance list and counts.
+
+Frontend.
+Student exam results review.
+1 User opens student exam results view.
+2 Screen triggers fetch exam results function for student id.
+3 Screen renders exams grouped by exam and subjects and totals.
+
+API.
+Student exam results review.
+1 Endpoint is students student id exam results.
+2 Request method is get.
+3 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Student exam results review.
+1 Backend verifies token.
+2 Backend allows admin and teacher to view exam results for any student.
+3 Backend queries exam results table joined with exams and subjects when available.
+4 Backend groups rows by exam id and builds per exam subjects list and computed totals and percentage and pass fail.
+5 Backend returns exams array. If schema is missing backend returns empty exams array as success.
+
+Database.
+Student exam results review.
+1 Exam results table is read by student id.
+2 Exams table is read by exam id.
+3 Subjects table is read by subject id.
+4 No inserts updates or deletes occur.
+
+Final One Line Flow.
+User opens exam results. Frontend calls get student exam results. Api sends get exam results with token. Backend authorizes reads exam results joins exams and subjects groups computes summary returns exams. Frontend renders exam result tables.
+
+Frontend.
+Student fees review and fee collection.
+1 User opens student fees view for a student.
+2 Screen triggers fetch student fees function.
+3 Screen renders fee structures list payments list and totals.
+4 User opens collect fees screen from management module.
+5 Screen triggers fetch fee collections list function to list students with due and paid summary.
+6 User selects a student and selects a fee structure and enters amount and payment method and optional transaction and receipt.
+7 User clicks collect button.
+8 Frontend validates required fields and calls api service create fee collection.
+
+API.
+Student fees review and fee collection.
+1 Fees review endpoint is fees student student id.
+2 Fee collections list endpoint is fees collections.
+3 Fee collection create endpoint is fees collect.
+4 Request methods are get for review and list and post for collect.
+5 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Student fees review and fee collection.
+1 Backend verifies token.
+2 Backend allows admin to view any student fees.
+3 Backend queries fee structures applicable to student class and joins classes.
+4 Backend queries fee collections for student and maps last payment per fee structure.
+5 Backend returns structures payments and totals.
+6 For fee collections list backend queries students and fee structures and fee collections using summary queries.
+7 For fee collection create backend checks admin role.
+8 Backend validates student id fee structure id and amount.
+9 Backend inserts fee collection record and returns created payment record fields.
+10 Backend returns success and frontend refreshes fee summary.
+
+Database.
+Student fees review and fee collection.
+1 Fee structures table is read for due items.
+2 Fee collections table is read for paid items and payment history.
+3 Students table is read to map student class id and to filter by academic year when requested.
+4 Classes table is read to attach class name.
+5 Fee collections table insert occurs on fee collection create.
+6 Fee collections foreign keys link student id to students and fee structure id to fee structures.
+
+Final One Line Flow.
+User reviews fees or collects fees. Frontend calls fees endpoints and collect endpoint. Api sends get or post with token. Backend authorizes reads fee structures and fee collections and inserts fee collection when collecting returns success. Frontend displays totals and payment history.
+
+Frontend.
+Leave applications list and approval.
+1 User opens leave list screen in hrm leaves.
+2 Screen triggers fetch leave applications list function.
+3 User filters list by student or staff when screen provides filters.
+4 User opens a leave item.
+5 User clicks approve or reject button.
+6 Frontend calls api service update leave status with selected status.
+
+API.
+Leave applications list and approval.
+1 Leave list endpoint is leave applications.
+2 Leave status update endpoint is leave applications by id.
+3 Leave types endpoint is leave applications leave types.
+4 Request methods are get for list and types and put for status update.
+5 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Leave applications list and approval.
+1 Backend verifies token.
+2 Backend allows admin only to access the full leave list endpoint.
+3 Backend queries leave applications joined with leave types staff students and designations.
+4 Backend supports optional filters for student id staff id and academic year id.
+5 For status update backend checks admin role and validates status value.
+6 Backend updates leave applications status and returns updated row.
+
+Database.
+Leave applications list and approval.
+1 Leave types table is read and is seeded if empty.
+2 Leave applications table is read for list queries.
+3 Leave applications table update occurs on approval or rejection.
+4 Students staff designations tables are read to enrich applicant display fields.
+
+Final One Line Flow.
+User reviews leave list and approves or rejects. Frontend calls leave list and update status. Api sends get list and put update with token. Backend authorizes validates updates leave applications status returns success. Frontend updates list and shows new status.
+
+Frontend.
+Notice board management.
+1 User opens notice board screen.
+2 Screen triggers fetch notices function.
+3 User clicks add notice button.
+4 Create notice form opens.
+5 User enters title content and message target.
+6 User clicks save.
+7 Frontend calls api service create notice.
+8 User clicks edit on a notice.
+9 Frontend calls api service update notice.
+10 User clicks delete on a notice.
+11 Frontend calls api service delete notice.
+
+API.
+Notice board management.
+1 Notices list endpoint is notice board.
+2 Notice create endpoint is notice board.
+3 Notice update endpoint is notice board by id.
+4 Notice delete endpoint is notice board by id.
+5 Request methods are get post put delete.
+6 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Notice board management.
+1 Backend verifies token.
+2 Backend allows all authenticated roles to read notices list.
+3 Backend checks admin role for create update and delete.
+4 Backend validates that title is present for create.
+5 Backend inserts notice record or updates notice record or deletes notice record.
+6 Backend returns success responses with notice data.
+
+Database.
+Notice board management.
+1 Notice board table is read for list and by id.
+2 Notice board table insert occurs on create.
+3 Notice board table update occurs on update and modifies modified at timestamp.
+4 Notice board table delete occurs on delete.
+5 Notice board created by stores user id of creator.
+
+Final One Line Flow.
+User opens notice board and creates or edits or deletes notice. Frontend calls notice api functions. Api sends get post put delete with token. Backend authorizes validates writes notice board table returns success. Frontend refreshes notices list and shows updated content.
+
+Frontend.
+Events management.
+1 User opens events screen.
+2 Screen triggers fetch events function.
+3 User clicks add event button.
+4 Create event form opens and user enters fields such as title start date end date and color.
+5 User clicks save and frontend calls api service create event.
+6 User edits event and frontend calls api service update event.
+7 User deletes event and frontend calls api service delete event.
+
+API.
+Events management.
+1 Events list endpoint is events.
+2 Events create update delete endpoints are events and events by id.
+3 Token is sent in Authorization header as Bearer token.
+
+Backend.
+Events management.
+1 Backend verifies token.
+2 Backend allows all authenticated roles to list events.
+3 Backend allows admin and teacher roles to create update and delete events.
+4 Backend validates required event fields as implemented.
+5 Backend inserts updates or deletes events records and returns responses.
+
+Database.
+Events management.
+1 Events table is read for list and by id.
+2 Events table insert occurs for create.
+3 Events table update occurs for edit.
+4 Events table delete occurs for delete.
+
+Final One Line Flow.
+User manages events. Frontend calls events api. Api sends get post put delete with token. Backend authorizes validates writes events table returns success. Frontend refreshes events list and shows results.
+
+Frontend.
+Profile update and password change.
+1 User opens profile screen from header menu.
+2 Profile screen loads current user data.
+3 User edits name email phone and address fields.
+4 User clicks save and frontend calls api service update me.
+5 User opens security settings screen.
+6 User enters current password new password confirm password.
+7 User clicks save and frontend calls api service change password.
+
+API.
+Profile update and password change.
+1 Profile read endpoint is auth me.
+2 Profile update endpoint is auth me using patch.
+3 Password change endpoint is auth change password using post.
+4 Token is sent in Authorization header as Bearer token and cookie is also included.
+
+Backend.
+Profile update and password change.
+1 Backend verifies token.
+2 Backend reads users and linked student and staff and designation and role name for auth me.
+3 Backend validates update me request has at least one field.
+4 Backend updates only columns that exist in users table and syncs name into students or staff when linked.
+5 Backend reads latest addresses row when available.
+6 Backend validates change password request and compares current password to password hash.
+7 Backend updates users password hash with a new hash.
+8 Backend returns success.
+
+Database.
+Profile update and password change.
+1 Users table is read for auth me.
+2 Students staff classes sections designations user roles tables are read to enrich auth me response.
+3 Users table update occurs for update me and for change password.
+4 Students table update may occur when user is a student and updates name fields.
+5 Staff table update may occur when user is staff and updates name fields.
+6 Addresses table is read as latest address row.
+
+Final One Line Flow.
+User updates profile or password. Frontend calls auth me endpoints. Api sends patch auth me or post auth change password with token. Backend verifies token validates updates users and related person tables hashes password returns success. Frontend shows updated profile or password success message.
+

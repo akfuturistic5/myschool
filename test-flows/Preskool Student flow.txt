@@ -1,0 +1,216 @@
+Preskool.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 1111.
+4 User enters student username or student phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates required fields and calls api service login and then redirects to student dashboard for student role.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute number in master database schools registry.
+3 Backend binds Preskool tenant database for the request.
+4 Backend reads users and user roles and verifies password hash.
+5 Backend creates token and sets auth cookie and returns token and user object.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Tenant database users table read.
+3 Tenant database user roles table read.
+
+Final One Line Flow.
+User signs in. Frontend calls api login. Api sends post auth login. Backend resolves tenant reads users verifies password returns token. Frontend stores token and opens student dashboard.
+
+Frontend.
+Student dashboard and core data loads.
+1 Student dashboard screen opens.
+2 Screen calls current student hook to load student profile from backend.
+3 Screen calls student attendance hook using student id once profile is loaded.
+4 Screen calls class schedules hook and filters schedules by student class and section and selected day.
+5 Screen calls class syllabus hook and filters syllabus by student class and section.
+6 Screen calls leave applications hook in my leaves mode.
+7 Screen calls student fees hook using student id.
+8 Screen calls student exam results hook using student id.
+9 Screen calls todos hook for personal tasks list.
+10 Screen calls events hook for upcoming and completed events for dashboard cards.
+11 Screen renders profile card attendance summary today class list fees reminder exam results summary syllabus list notice board section and todo list.
+
+API.
+Student dashboard and core data loads.
+1 Student profile endpoint is students me.
+2 Attendance endpoint is students student id attendance.
+3 Class schedules endpoint is class schedules.
+4 Class syllabus endpoint is class syllabus.
+5 My leave applications endpoint is leave applications me.
+6 Student fees endpoint is fees student student id.
+7 Student exam results endpoint is students student id exam results.
+8 Todos endpoint is todos.
+9 Events endpoints are events upcoming and events completed.
+10 Token is sent in Authorization header as Bearer token for all requests.
+
+Backend.
+Student dashboard and core data loads.
+1 Backend verifies token and binds tenant database from token.
+2 Students me handler reads students by user id and joins users classes sections lookup tables and parents and guardians and addresses.
+3 Attendance handler verifies ownership for student role by matching students user id to token user id then reads attendance table and returns records and summary.
+4 Class schedules handler reads class schedules and related tables and returns schedule list for the tenant.
+5 Class syllabus handler reads class syllabus list for the tenant and returns items.
+6 Leave applications me handler returns student leave applications joined to leave types and student fields.
+7 Fees student handler verifies ownership for student role and reads fee structures and fee collections and returns totals.
+8 Exam results handler verifies ownership and reads exam results and exams and subjects and returns grouped exams array.
+9 Todos handler reads user scoped todos when implemented and returns list.
+10 Events handlers read events and return upcoming and completed lists.
+
+Database.
+Student dashboard and core data loads.
+1 Students table read by user id.
+2 Users table read for phone and email fallback.
+3 Classes and sections tables read for names.
+4 Parents and guardians tables read for linked info.
+5 Addresses table read for latest address.
+6 Attendance table read by student id.
+7 Class schedules table read.
+8 Class syllabus table read.
+9 Leave applications table read by student id.
+10 Leave types table read.
+11 Fee structures table read.
+12 Fee collections table read by student id.
+13 Exam results table read by student id.
+14 Exams and subjects tables read.
+15 Todos table read for user tasks.
+16 Events table read.
+
+Final One Line Flow.
+Student opens dashboard. Frontend triggers hooks. Api sends get requests with token. Backend verifies token binds tenant runs student profile attendance schedules syllabus leaves fees exam results todos events queries returns data. Frontend renders dashboard sections and updates when filters change.
+
+Frontend.
+Student views profile details.
+1 Student clicks view profile button on dashboard.
+2 Student details screen opens with student id in route.
+3 Screen calls get student by id.
+4 Screen renders student details and related sections.
+
+API.
+Student views profile details.
+1 Endpoint is students by id.
+2 Method is get.
+3 Token is sent as Bearer token.
+
+Backend.
+Student views profile details.
+1 Backend verifies token.
+2 Backend enforces student ownership by matching token user id to students user id.
+3 Backend reads student and related tables and returns full record.
+
+Database.
+Student views profile details.
+1 Students table read.
+2 Related lookup tables read.
+
+Final One Line Flow.
+Student opens profile. Frontend calls get student by id. Api sends get with token. Backend verifies ownership reads tables returns data. Frontend shows profile sections.
+
+Frontend.
+Student applies leave.
+1 Student opens student leaves screen from dashboard.
+2 Screen loads leave types list and my leave list.
+3 Student clicks apply leave.
+4 Student selects leave type start date end date and reason.
+5 Student clicks submit.
+6 Frontend validates fields and calls api service create leave application with student id and leave type id and dates and reason.
+
+API.
+Student applies leave.
+1 Leave types endpoint is leave applications leave types.
+2 Create leave endpoint is leave applications.
+3 Method is post for create.
+4 Token is sent as Bearer token.
+
+Backend.
+Student applies leave.
+1 Backend verifies token.
+2 Backend validates required fields leave type and start date and end date.
+3 Backend verifies that provided student id belongs to current user or matches by parent or guardian mapping when applicable.
+4 Backend inserts leave applications record with applicant type student and status pending.
+5 Backend returns created leave application.
+
+Database.
+Student applies leave.
+1 Leave types table read and may be seeded.
+2 Leave applications table insert occurs.
+3 Students table read for ownership check.
+
+Final One Line Flow.
+Student submits leave form. Frontend validates calls create leave. Api sends post leave applications with token. Backend verifies ownership validates inserts leave applications pending returns success. Frontend refreshes list and shows pending leave.
+
+Frontend.
+Student views fees and exam results.
+1 Student opens student fees screen.
+2 Screen calls student fees api using student id.
+3 Screen renders fee structures and payment history and totals.
+4 Student opens student exam results screen.
+5 Screen calls student exam results api using student id.
+6 Screen renders exam list grouped by exam and subject.
+
+API.
+Student views fees and exam results.
+1 Fees endpoint is fees student student id.
+2 Exam results endpoint is students student id exam results.
+3 Method is get.
+4 Token is sent as Bearer token.
+
+Backend.
+Student views fees and exam results.
+1 Backend verifies token.
+2 Backend enforces ownership for student role.
+3 Backend reads fee structures and fee collections and returns totals.
+4 Backend reads exam results and related tables and returns grouped results.
+
+Database.
+Student views fees and exam results.
+1 Fee structures table read.
+2 Fee collections table read.
+3 Exam results exams subjects tables read.
+
+Final One Line Flow.
+Student opens fees or results. Frontend calls get fees or get results. Api sends get with token. Backend verifies ownership reads tables returns data. Frontend renders totals and tables.
+
+Frontend.
+Profile update and password change.
+1 Student opens profile screen.
+2 Student edits allowed user fields and saves.
+3 Frontend calls auth me update.
+4 Student changes password in security settings and frontend calls auth change password.
+
+API.
+Profile update and password change.
+1 Endpoints are auth me patch and auth change password.
+2 Token is sent as Bearer token.
+
+Backend.
+Profile update and password change.
+1 Backend verifies token.
+2 Backend updates users table and may update students name fields when linked.
+3 Backend updates users password hash when changing password.
+
+Database.
+Profile update and password change.
+1 Users table update occurs.
+2 Students table update may occur for name sync.
+
+Final One Line Flow.
+Student updates profile or password. Frontend calls auth endpoints. Api sends patch or post with token. Backend verifies updates users and students and password hash returns success. Frontend shows confirmation.
+

@@ -1,0 +1,68 @@
+Millat.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 2222.
+4 User enters teacher username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login and redirects to teacher dashboard.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute number 2222 in schools registry.
+3 Backend binds tenant database to Millat.
+4 Backend reads users and user roles verifies password creates token returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Millat tenant users table read.
+3 Millat tenant user roles table read.
+
+Final One Line Flow.
+Teacher logs in with institute 2222. Frontend calls login. Api sends post auth login. Backend resolves Millat tenant reads users verifies password signs token returns success. Frontend stores token and opens teacher dashboard.
+
+Frontend.
+Teacher dashboard and core actions.
+1 Teacher opens teacher dashboard.
+2 Frontend loads teacher profile routine class attendance syllabus leaves and events using the same hooks and functions as other schools.
+3 Teacher views assigned students using teacher students screen when available.
+4 Teacher manages events using events create update delete actions when needed.
+5 Teacher updates profile using auth me update and changes password using auth change password.
+
+API.
+Teacher dashboard and core actions.
+1 Teachers me endpoint.
+2 Teachers routine endpoint.
+3 Teachers class attendance endpoint.
+4 Students teacher students endpoint.
+5 Leave applications me and leave applications create.
+6 Events endpoints for list and create update delete.
+7 Auth me and auth change password.
+8 Token is sent as Bearer token.
+
+Backend.
+Teacher dashboard and core actions.
+1 Backend verifies token and binds tenant database to Millat.
+2 Backend enforces teacher ownership on teacher id based endpoints.
+3 Backend enforces teacher role on students teacher students endpoint and events management endpoints.
+4 Backend reads and writes Millat tenant tables and returns responses.
+
+Database.
+Teacher dashboard and core actions.
+1 Teachers and staff and class schedules and attendance and class syllabus and leave applications and events tables are read and written in Millat tenant database.
+
+Final One Line Flow.
+Teacher performs dashboard and events actions. Frontend calls hooks and submit handlers. Api sends get and post and put and delete with token. Backend verifies binds Millat tenant authorizes executes controllers reads and writes tables returns success. Frontend renders Millat teacher data.
+

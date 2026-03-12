@@ -1,0 +1,66 @@
+Iqra.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 3333.
+4 User enters teacher username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login and opens teacher dashboard.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute 3333 in schools registry.
+3 Backend binds tenant database to Iqra.
+4 Backend reads users and user roles verifies password signs token returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Iqra tenant users and user roles tables read.
+
+Final One Line Flow.
+Teacher logs in with institute 3333. Frontend calls login. Api sends post auth login. Backend resolves Iqra tenant verifies user returns token. Frontend stores token and opens teacher dashboard.
+
+Frontend.
+Teacher main actions.
+1 Teacher views dashboard with teacher profile routine class attendance syllabus leaves and events.
+2 Teacher views assigned students list.
+3 Teacher manages events using create update delete where needed.
+4 Teacher updates profile and changes password using auth screens.
+
+API.
+Teacher main actions.
+1 Teachers me.
+2 Teachers teacher id routine.
+3 Teachers teacher id class attendance.
+4 Students teacher students.
+5 Leave applications me and leave applications create and leave applications leave types.
+6 Events list and create update delete.
+7 Auth me patch and auth change password.
+8 Token is sent as Bearer token.
+
+Backend.
+Teacher main actions.
+1 Backend verifies token and binds tenant database to Iqra.
+2 Backend enforces teacher ownership for teacher id endpoints.
+3 Backend enforces teacher role for teacher students endpoint and event management.
+4 Backend reads and writes Iqra tenant tables and returns responses.
+
+Database.
+Teacher main actions.
+1 Teachers and staff and class schedules and attendance and class syllabus and leave applications and events tables are read and written in Iqra tenant database.
+
+Final One Line Flow.
+Teacher performs dashboard and events actions. Frontend calls hooks and submit handlers. Api sends requests with token. Backend verifies binds Iqra tenant authorizes executes controllers reads and writes tables returns success. Frontend renders Iqra teacher data.
+

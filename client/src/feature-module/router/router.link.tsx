@@ -161,7 +161,6 @@ import PaymentGateways from "../settings/financialSettings/paymentGateways";
 import TaxRates from "../settings/financialSettings/taxRates";
 import ConnectedApps from "../settings/generalSettings/connectedApps";
 import Notificationssettings from "../settings/generalSettings/notifications";
-import Profilesettings from "../settings/generalSettings/profile";
 import Securitysettings from "../settings/generalSettings/security";
 import BanIpAddress from "../settings/otherSettings/banIpaddress";
 import Emailtemplates from "../settings/systemSettings/email-templates";
@@ -1199,11 +1198,6 @@ export const publicRoutes = [
 
   //Settings
 
-  {
-    path: routes.profilesettings,
-    element: <Profilesettings />,
-    route: Route,
-  },
   {
     path: routes.securitysettings,
     element: <Securitysettings />,

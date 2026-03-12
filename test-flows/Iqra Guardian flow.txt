@@ -1,0 +1,69 @@
+Iqra.
+
+Frontend.
+Login.
+1 User opens the web application.
+2 Login screen opens.
+3 User enters institute number 3333.
+4 User enters guardian username or phone.
+5 User enters password.
+6 User clicks sign in.
+7 Frontend validates fields and calls api service login and opens guardian dashboard.
+
+API.
+Login.
+1 Endpoint is auth login.
+2 Method is post.
+3 Body includes institute number username and password.
+4 No token is sent.
+
+Backend.
+Login.
+1 Backend validates body.
+2 Backend resolves institute 3333 in schools registry.
+3 Backend binds tenant database to Iqra.
+4 Backend reads users and user roles verifies password signs token returns success.
+
+Database.
+Login.
+1 Master database schools table read.
+2 Iqra tenant users and user roles tables read.
+
+Final One Line Flow.
+Guardian logs in with institute 3333. Frontend calls login. Api sends post auth login. Backend resolves Iqra tenant verifies user returns token. Frontend stores token and opens guardian dashboard.
+
+Frontend.
+Guardian main actions.
+1 Guardian opens guardian dashboard.
+2 Frontend loads guardian profile and ward leave applications and events.
+3 Guardian views ward student details when needed.
+4 Guardian applies leave for a ward when allowed.
+5 Guardian updates profile and changes password using auth screens.
+
+API.
+Guardian main actions.
+1 Guardians me.
+2 Leave applications guardian wards.
+3 Students by id for ward profile view.
+4 Leave applications leave types and leave applications create.
+5 Events endpoints.
+6 Auth me patch and auth change password.
+7 Token is sent as Bearer token.
+
+Backend.
+Guardian main actions.
+1 Backend verifies token and binds tenant database to Iqra.
+2 Backend resolves wards by matching user email or phone to guardians table.
+3 Backend enforces ward relationship for student details and other student scoped endpoints.
+4 Backend inserts leave applications for ward student id when guardian creates leave and passes relationship checks.
+
+Database.
+Guardian main actions.
+1 Users and guardians tables read for ward mapping.
+2 Leave applications and leave types tables read and leave applications table insert occurs for create.
+3 Students and related tables read for ward profile view.
+4 Events table read.
+
+Final One Line Flow.
+Guardian views ward data or applies leave. Frontend calls hooks and submits forms. Api sends requests with token. Backend verifies binds Iqra tenant verifies ward relationship reads and writes tables returns success. Frontend renders Iqra ward data.
+

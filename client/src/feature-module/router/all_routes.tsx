@@ -138,7 +138,6 @@ export const all_routes = {
 
   connectedApps: "/general-settings/connected-apps",
   notificationssettings: "/general-settings/notifications-settings",
-  profilesettings: "/general-settings/profile-settings",
   securitysettings: "/general-settings/security-settings",
 
   banIpAddress: "/other-settings/ban-ip-address",

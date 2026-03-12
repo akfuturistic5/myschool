@@ -171,6 +171,16 @@ app.use('/api/notice-board', noticeBoardRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/fees', feeRoutes);
 
+// Lightweight public health check (no DB, no auth, always 200)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'backend',
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+  });
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
