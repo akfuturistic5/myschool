@@ -130,14 +130,24 @@ function getConnectionStringForDb(dbName) {
 }
 
 /**
+ * Get pg_dump source URL. Use PROVISIONING_SOURCE_DATABASE_URL (Neon direct) to avoid
+ * "too many connections" on pooler. Else derive from TENANT_ADMIN.
+ */
+function getDumpSourceUrl(sourceDbName) {
+  const explicit = (process.env.PROVISIONING_SOURCE_DATABASE_URL || '').toString().trim();
+  if (explicit) return explicit;
+  return getConnectionStringForDb(sourceDbName);
+}
+
+/**
  * Clone database using pg_dump + pg_restore. Works when TEMPLATE fails (Neon keeps connections).
- * Requires postgresql-client (pg_dump, pg_restore) in PATH.
+ * Use PROVISIONING_SOURCE_DATABASE_URL with Neon direct endpoint to avoid pooler connection limits.
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
-  const sourceUrl = getConnectionStringForDb(sourceDbName);
+  const sourceUrl = getDumpSourceUrl(sourceDbName);
   const targetUrl = getConnectionStringForDb(targetDbName);
   if (!sourceUrl || !targetUrl) {
-    throw new Error('TENANT_ADMIN_DATABASE_URL or DATABASE_URL required for pg_dump fallback');
+    throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required for pg_dump');
   }
   const tmpFile = path.join(os.tmpdir(), `tenant_clone_${targetDbName}_${Date.now()}.dump`);
   try {
