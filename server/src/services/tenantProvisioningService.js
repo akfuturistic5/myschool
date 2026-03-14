@@ -155,36 +155,52 @@ function getConnectionStringForDb(dbName) {
 }
 
 /**
- * Get pg_dump source URL. Use PROVISIONING_SOURCE_DATABASE_URL (Neon direct) to avoid
- * "too many connections" on pooler. Else derive from TENANT_ADMIN.
+ * Get pg_dump source URL. Use PROVISIONING_SOURCE_DATABASE_URL (Neon DIRECT endpoint) to avoid
+ * "too many connections" on pooler. Else derive from TENANT_ADMIN. Set alternate DB to try on failure.
  */
-function getDumpSourceUrl(sourceDbName) {
+function getDumpSourceUrl(sourceDbName, useAlternate = false) {
   const explicit = (process.env.PROVISIONING_SOURCE_DATABASE_URL || '').toString().trim();
-  if (explicit) return explicit;
-  return getConnectionStringForDb(sourceDbName);
+  if (explicit && !useAlternate) return explicit;
+  const altDb = (process.env.PROVISIONING_ALTERNATE_SOURCE_DB || 'preskool').toString().trim();
+  return getConnectionStringForDb(useAlternate ? altDb : sourceDbName);
 }
 
 /**
- * Clone database using pg_dump + pg_restore. Works when TEMPLATE fails (Neon keeps connections).
- * Use PROVISIONING_SOURCE_DATABASE_URL with Neon direct endpoint to avoid pooler connection limits.
+ * Clone database using pg_dump + pg_restore. Use PROVISIONING_SOURCE_DATABASE_URL (Neon DIRECT)
+ * to avoid "too many connections". Retries with PROVISIONING_ALTERNATE_SOURCE_DB (e.g. preskool) on failure.
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
-  const sourceUrl = getDumpSourceUrl(sourceDbName);
   const targetUrl = getConnectionStringForDb(targetDbName);
-  if (!sourceUrl || !targetUrl) {
-    throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required for pg_dump');
+  if (!targetUrl) {
+    throw new Error('TENANT_ADMIN_DATABASE_URL or DATABASE_URL required for pg_dump target');
   }
-  const tmpFile = path.join(os.tmpdir(), `tenant_clone_${targetDbName}_${Date.now()}.dump`);
-  try {
+  const tryDump = async (useAlternate) => {
+    const sourceUrl = getDumpSourceUrl(sourceDbName, useAlternate);
+    if (!sourceUrl) throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required');
+    const tmpFile = path.join(os.tmpdir(), `tenant_clone_${targetDbName}_${Date.now()}.dump`);
     await new Promise((resolve, reject) => {
       const pd = spawn('pg_dump', [sourceUrl, '-Fc', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
       pd.stderr?.on('data', (c) => { stderr += c.toString(); });
       pd.on('close', (code) => {
-        if (code === 0) resolve();
+        if (code === 0) resolve(tmpFile);
         else reject(new Error(`pg_dump failed (${code}): ${stderr}`));
       });
     });
+    return tmpFile;
+  };
+
+  let tmpFile;
+  try {
+    try {
+      tmpFile = await tryDump(false);
+    } catch (e) {
+      if (/too many connections/i.test(e.message) && !process.env.PROVISIONING_SOURCE_DATABASE_URL) {
+        tmpFile = await tryDump(true);
+      } else {
+        throw e;
+      }
+    }
     await new Promise((resolve, reject) => {
       const pr = spawn('pg_restore', ['-d', targetUrl, '--no-owner', '--no-acl', '-Fc', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
@@ -195,7 +211,7 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
       });
     });
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    if (tmpFile) try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   }
 }
 
@@ -224,7 +240,20 @@ async function createTenantDatabase(dbName) {
     if (isAccessError) {
       await pool.query(`CREATE DATABASE "${dbName}"`);
       created = true;
-      await cloneViaDumpRestore(sourceDbName, dbName);
+      try {
+        await cloneViaDumpRestore(sourceDbName, dbName);
+      } catch (dumpErr) {
+        try {
+          await pool.query(
+            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+            [dbName]
+          );
+          await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+        } catch { /* ignore cleanup errors */ }
+        throw new Error(
+          `Failed to provision tenant (use PROVISIONING_SOURCE_DATABASE_URL with Neon DIRECT endpoint): ${dumpErr.message}`
+        );
+      }
     } else {
       throw new Error(
         `Failed to create tenant database "${dbName}" from template "${sourceDbName}": ${err.message}`
@@ -270,20 +299,36 @@ async function createTenantDatabase(dbName) {
 }
 
 async function dropTenantDatabaseIfExists(dbName) {
-  const pool = getAdminPool();
+  const adminUrl = (process.env.TENANT_ADMIN_DATABASE_URL || process.env.DATABASE_URL || '').toString().trim();
+  if (!adminUrl) {
+    const p = getAdminPool();
+    try {
+      await p.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName]
+      );
+    } catch { /* ignore */ }
+    await p.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    return;
+  }
+  const dropPool = new Pool({
+    connectionString: adminUrl,
+    ssl: sslConfig,
+    max: 1,
+    idleTimeoutMillis: 5000,
+  });
+  const client = await dropPool.connect();
   try {
-    await pool.query(
-      `
-      SELECT pg_terminate_backend(pid)
-      FROM pg_stat_activity
-      WHERE datname = $1
-        AND pid <> pg_backend_pid()
-      `,
+    await client.query(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
       [dbName]
     );
-  } catch {
+    await new Promise((r) => setTimeout(r, 500));
+    await client.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+  } finally {
+    client.release();
+    await dropPool.end();
   }
-  await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
 }
 
 async function createHeadmasterUserInTenant(dbName, adminName, adminEmail, adminPassword, instituteNumber) {
