@@ -410,31 +410,14 @@ const AddStudent = () => {
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
 
-  // Set current academic year as default when loaded (only once, not on every formData change)
-  const academicYearSetRef = useRef(false);
+  // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
-    if (academicYearsList.length > 0 && !formData.academic_year_id && !academicYearSetRef.current) {
-      const currentAcademicYear = academicYearsList.find(year => year.is_current === true);
-
-      if (currentAcademicYear) {
-        setFormData(prev => ({
-          ...prev,
-          academic_year_id: currentAcademicYear.id.toString()
-        }));
-      } else {
-        // Fallback to the first academic year if no current year is found
-        setFormData(prev => ({
-          ...prev,
-          academic_year_id: academicYearsList[0].id.toString()
-        }));
-      }
-      academicYearSetRef.current = true;
+    if (!isEdit && academicYearsList.length > 0) {
+      const id = academicYearId ?? academicYearsList.find(y => y.is_current)?.id ?? academicYearsList[0]?.id;
+      const yearIdStr = id != null ? String(id) : null;
+      setFormData(prev => (prev.academic_year_id !== yearIdStr ? { ...prev, academic_year_id: yearIdStr } : prev));
     }
-    // Reset ref when academic years change (new data loaded)
-    if (academicYearsList.length === 0) {
-      academicYearSetRef.current = false;
-    }
-  }, [academicYearsList.length, formData.academic_year_id]);
+  }, [isEdit, academicYearId, academicYearsList]);
 
   const [owner, setOwner] = useState<string[]>([]);
   const handleTagsChange2 = (newTags: string[]) => {
@@ -689,7 +672,7 @@ const AddStudent = () => {
                             {academicYearsLoading ? (
                               <div className="form-control">
                                 <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading academic years...
+                                Loading...
                               </div>
                             ) : academicYearsError ? (
                               <div className="form-control text-danger">
@@ -697,14 +680,13 @@ const AddStudent = () => {
                                 Error: {academicYearsError}
                               </div>
                             ) : (
-                              <CommonSelect
-                                className="select"
-                                options={academicYearsList.map(year => ({
-                                  value: year.id.toString(),
-                                  label: year.year_name ?? ''
-                                }))}
-                                value={formData.academic_year_id}
-                                onChange={(value) => handleInputChange('academic_year_id', value)}
+                              <input
+                                type="text"
+                                className="form-control bg-light"
+                                value={academicYearsList.find(y => String(y.id) === formData.academic_year_id)?.year_name ?? formData.academic_year_id ?? '—'}
+                                readOnly
+                                disabled
+                                style={{ cursor: 'default' }}
                               />
                             )}
                           </div>
