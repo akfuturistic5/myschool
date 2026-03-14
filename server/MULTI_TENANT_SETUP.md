@@ -42,12 +42,27 @@ To connect Iqra (institute 3333) to its Neon database in production:
 
 2. **Local development:** Leave `IQRA_DATABASE_URL` unset to use local `iqra_db`.
 
+## Tenant Provisioning (Create New School)
+
+When creating a new school, the system clones a template database. The template name is resolved as:
+
+1. `DB_NAME` if set
+2. Else database name from `DATABASE_URL` or `TENANT_ADMIN_DATABASE_URL`
+3. Else `school_db` (local default)
+
+**Production (Neon):** Neon's default database is `neondb`. Either set `DB_NAME=neondb` or ensure `DATABASE_URL` points to `neondb` (it will be auto-derived).
+
+**TENANT_ADMIN_DATABASE_URL:** Connection used for `CREATE DATABASE`. Must allow creating databases. If unset, falls back to `DATABASE_URL`.
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD | Yes (or DATABASE_URL) | Primary school + master_db connection |
+| DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD | Yes (local) or DATABASE_URL | Primary school + master_db connection |
+| DB_NAME | No | Template DB for new schools. Local: school_db. Neon: neondb. Auto-derived from DATABASE_URL if unset. |
+| DATABASE_URL | Yes (production) | Full connection string (primary DB) |
 | MASTER_DATABASE_URL | No | Full connection string for master_db on Neon |
+| TENANT_ADMIN_DATABASE_URL | No | Connection for CREATE DATABASE. Falls back to DATABASE_URL. |
 | MILLAT_DATABASE_URL | No | Full connection string for Millat on Neon |
 | IQRA_DATABASE_URL | No | Full connection string for Iqra on Neon |
 

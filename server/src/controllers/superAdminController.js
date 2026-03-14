@@ -5,6 +5,7 @@ const {
   createTenantDatabase,
   dropTenantDatabaseIfExists,
   createHeadmasterUserInTenant,
+  getTemplateDbName,
 } = require('../services/tenantProvisioningService');
 
 /**
@@ -319,7 +320,7 @@ const updateSchoolMetadata = async (req, res) => {
  * - Drop its tenant database
  * - Remove row from master_db.schools
  *
- * For safety, prevents deleting the primary template school (DB_NAME / school_db).
+ * For safety, prevents deleting the primary template school (DB_NAME / DATABASE_URL db).
  */
 const deleteSchool = async (req, res) => {
   try {
@@ -342,8 +343,8 @@ const deleteSchool = async (req, res) => {
     }
     const school = schoolRes.rows[0];
 
-    const primaryDbName = process.env.DB_NAME || 'school_db';
-    if (school.db_name === primaryDbName) {
+    const templateDbName = getTemplateDbName();
+    if (school.db_name === templateDbName) {
       return errorResponse(res, 400, 'Cannot delete primary template school');
     }
 

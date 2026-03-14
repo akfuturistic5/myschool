@@ -10,10 +10,34 @@ if (process.env.DATABASE_SSL_MODE === 'require') {
 
 let adminPool = null;
 
+/**
+ * Template database name for CREATE DATABASE ... TEMPLATE.
+ * Local: DB_NAME=school_db or fallback school_db.
+ * Production (Neon): DB_NAME=neondb or derived from DATABASE_URL (e.g. neondb).
+ */
+function getTemplateDbName() {
+  const explicit = (process.env.DB_NAME || '').toString().trim();
+  if (explicit) return explicit;
+  const url = (process.env.DATABASE_URL || process.env.TENANT_ADMIN_DATABASE_URL || '').toString().trim();
+  if (url) {
+    try {
+      const u = new URL(url);
+      const db = (u.pathname || '/').replace(/^\//, '').split('?')[0].trim();
+      if (db) return db;
+    } catch {
+      /* ignore parse errors */
+    }
+  }
+  return 'school_db';
+}
+
+/**
+ * Admin pool for CREATE DATABASE. Uses TENANT_ADMIN_DATABASE_URL, else DATABASE_URL, else local.
+ */
 function getAdminPool() {
   if (adminPool) return adminPool;
 
-  const adminUrl = (process.env.TENANT_ADMIN_DATABASE_URL || '').toString().trim();
+  const adminUrl = (process.env.TENANT_ADMIN_DATABASE_URL || process.env.DATABASE_URL || '').toString().trim();
   if (adminUrl) {
     adminPool = new Pool({
       connectionString: adminUrl,
@@ -38,6 +62,40 @@ function getAdminPool() {
   return adminPool;
 }
 
+/**
+ * Pool for connecting to a specific tenant database (e.g. TRUNCATE, insert headmaster).
+ * Production: uses TENANT_ADMIN_DATABASE_URL or DATABASE_URL with swapped db name.
+ * Local: uses DB_HOST, DB_PORT, DB_USER, DB_PASSWORD.
+ */
+function createPoolForTenantDb(dbName) {
+  const baseUrl = (process.env.TENANT_ADMIN_DATABASE_URL || process.env.DATABASE_URL || '').toString().trim();
+  if (baseUrl) {
+    try {
+      const u = new URL(baseUrl);
+      u.pathname = `/${dbName}`;
+      return new Pool({
+        connectionString: u.toString(),
+        ssl: sslConfig,
+        max: 5,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      });
+    } catch {
+      /* fall through to local config */
+    }
+  }
+  return new Pool({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    database: dbName,
+    max: 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+}
+
 function generateTenantDbName(instituteNumber) {
   const digits = String(instituteNumber || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
   const suffix = digits || 'school';
@@ -55,7 +113,7 @@ async function createTenantDatabase(dbName) {
     throw new Error(`Database "${dbName}" already exists`);
   }
 
-  const sourceDbName = process.env.DB_NAME || 'school_db';
+  const sourceDbName = getTemplateDbName();
 
   try {
     // Clone schema + reference data from source DB
@@ -68,16 +126,7 @@ async function createTenantDatabase(dbName) {
 
   // Immediately remove all tenant-specific/dynamic data so the new school starts clean.
   // Mirrors reset-tenant-dynamic-data.js behaviour.
-  const tenantPool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-    database: dbName,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+  const tenantPool = createPoolForTenantDb(dbName);
 
   try {
     await tenantPool.query('BEGIN');
@@ -130,16 +179,7 @@ async function dropTenantDatabaseIfExists(dbName) {
 }
 
 async function createHeadmasterUserInTenant(dbName, adminName, adminEmail, adminPassword, instituteNumber) {
-  const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-    database: dbName,
-    max: 5,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+  const pool = createPoolForTenantDb(dbName);
 
   try {
     const roleRes = await pool.query(
@@ -197,5 +237,6 @@ module.exports = {
   createTenantDatabase,
   dropTenantDatabaseIfExists,
   createHeadmasterUserInTenant,
+  getTemplateDbName,
 };
 
