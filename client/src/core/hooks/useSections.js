@@ -19,10 +19,13 @@ export const useSections = (classId = null) => {
         response = await apiService.getSections();
       }
 
-      setSections(response.data || []);
+      // Handle both { data: [...] } and direct array (for different API shapes)
+      const raw = response?.data ?? (Array.isArray(response) ? response : null);
+      setSections(Array.isArray(raw) ? raw : []);
     } catch (err) {
       console.error('Error fetching sections:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch sections');
+      setSections([]);
     } finally {
       setLoading(false);
     }

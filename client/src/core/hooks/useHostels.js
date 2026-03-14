@@ -11,10 +11,14 @@ export const useHostels = () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getHostels();
-      
-      if (response.status === 'SUCCESS') {
+
+      // Accept both { status: 'SUCCESS', data: [...] } and direct { data: [...] }
+      const rawData = response?.data ?? (Array.isArray(response) ? response : null);
+      const dataArray = Array.isArray(rawData) ? rawData : [];
+
+      if (dataArray.length >= 0) {
         // Transform the API data to match the expected format
-        const transformedData = response.data.map((hostel, index) => {
+        const transformedData = dataArray.map((hostel, index) => {
           // Handle multiple possible column name variations for intake
           // Check in order: intake, intake_capacity, capacity, hostel_intake, max_intake
           const intakeValue = hostel.intake !== undefined && hostel.intake !== null && hostel.intake !== '' ? hostel.intake :
@@ -46,12 +50,11 @@ export const useHostels = () => {
         });
         
         setHostels(transformedData);
-      } else {
-        setError('Failed to fetch hostels data');
       }
     } catch (err) {
       console.error('Error fetching hostels:', err);
       setError(err.message || 'Failed to fetch hostels data');
+      setHostels([]);
     } finally {
       setLoading(false);
     }

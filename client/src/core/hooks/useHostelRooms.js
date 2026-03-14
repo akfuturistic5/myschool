@@ -11,10 +11,14 @@ export const useHostelRooms = () => {
       setLoading(true);
       setError(null);
       const response = await apiService.getHostelRooms();
-      
-      if (response.status === 'SUCCESS') {
+
+      // Accept both { status: 'SUCCESS', data: [...] } and direct { data: [...] }
+      const rawData = response?.data ?? (Array.isArray(response) ? response : null);
+      const dataArray = Array.isArray(rawData) ? rawData : [];
+
+      if (dataArray.length >= 0) {
         // Transform the API data to match the expected format
-        const transformedData = response.data.map((room, index) => {
+        const transformedData = dataArray.map((room, index) => {
           // Room Type: from room_types table JOIN (already handled by COALESCE in backend)
           const roomTypeValue = room.room_type || null;
           
@@ -49,12 +53,11 @@ export const useHostelRooms = () => {
         });
         
         setHostelRooms(transformedData);
-      } else {
-        setError('Failed to fetch hostel rooms data');
       }
     } catch (err) {
       console.error('Error fetching hostel rooms:', err);
       setError(err.message || 'Failed to fetch hostel rooms data');
+      setHostelRooms([]);
     } finally {
       setLoading(false);
     }

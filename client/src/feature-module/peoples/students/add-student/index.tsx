@@ -239,8 +239,8 @@ const AddStudent = () => {
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
-  const { hostels } = useHostels();
-  const { hostelRooms } = useHostelRooms();
+  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels();
+  const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms();
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
   const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
@@ -801,15 +801,20 @@ const AddStudent = () => {
                                 Error: {classesError}
                               </div>
                             ) : (
-                              <CommonSelect
-                                className="select"
-                                options={classesList.map(cls => ({
-                                  value: cls.id.toString(),
-                                  label: cls.class_name ?? ''
-                                }))}
-                                value={formData.class_id}
-                                onChange={(value) => handleInputChange('class_id', value)}
-                              />
+                              <>
+                                <CommonSelect
+                                  className="select"
+                                  options={classesList.map(cls => ({
+                                    value: String((cls as ClassItem).id),
+                                    label: (cls as ClassItem).class_name ?? (cls as Record<string, unknown>).className ?? ''
+                                  }))}
+                                  value={formData.class_id}
+                                  onChange={(value) => handleInputChange('class_id', value)}
+                                />
+                                {!classesLoading && !classesError && classesList.length === 0 && (
+                                  <small className="text-muted d-block mt-1">No classes found. Add classes from Academic → Classes.</small>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -827,15 +832,20 @@ const AddStudent = () => {
                                 Error: {sectionsError}
                               </div>
                             ) : (
-                              <CommonSelect
-                                className="select"
-                                options={sectionsList.map(section => ({
-                                  value: section.id.toString(),
-                                  label: section.section_name ?? ''
-                                }))}
-                                value={formData.section_id}
-                                onChange={(value) => handleInputChange('section_id', value)}
-                              />
+                              <>
+                                <CommonSelect
+                                  className="select"
+                                  options={sectionsList.map(section => ({
+                                    value: String((section as SectionItem).id),
+                                    label: (section as SectionItem).section_name ?? (section as Record<string, unknown>).sectionName ?? ''
+                                  }))}
+                                  value={formData.section_id}
+                                  onChange={(value) => handleInputChange('section_id', value)}
+                                />
+                                {!sectionsLoading && !sectionsError && sectionsList.length === 0 && (
+                                  <small className="text-muted d-block mt-1">No sections found. Add sections from Academic → Sections.</small>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1745,45 +1755,79 @@ const AddStudent = () => {
                         <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Hostel</label>
-                            <CommonSelect
-                              className="select"
-                              options={
-                                formData.hostel_id && !hostelOptions.find(o => o.value === formData.hostel_id)
-                                  ? [{ value: formData.hostel_id, label: formData.hostel_name || formData.hostel_id }, ...hostelOptions]
-                                  : hostelOptions.length > 0 ? hostelOptions : [{ value: "", label: "No hostels" }]
-                              }
-                              value={formData.hostel_id || null}
-                              onChange={(v) => {
-                                const opt = hostelOptions.find(o => o.value === v);
-                                setFormData(prev => ({
-                                  ...prev,
-                                  hostel_id: v || null,
-                                  hostel_name: opt?.label ?? "",
-                                }));
-                              }}
-                            />
+                            {hostelsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading hostels...
+                              </div>
+                            ) : hostelsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {hostelsError}
+                              </div>
+                            ) : (
+                              <>
+                                <CommonSelect
+                                  className="select"
+                                  options={
+                                    formData.hostel_id && !hostelOptions.find(o => o.value === formData.hostel_id)
+                                      ? [{ value: formData.hostel_id, label: formData.hostel_name || formData.hostel_id }, ...hostelOptions]
+                                      : hostelOptions.length > 0 ? hostelOptions : [{ value: "", label: "No hostels" }]
+                                  }
+                                  value={formData.hostel_id || null}
+                                  onChange={(v) => {
+                                    const opt = hostelOptions.find(o => o.value === v);
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      hostel_id: v || null,
+                                      hostel_name: opt?.label ?? "",
+                                    }));
+                                  }}
+                                />
+                                {!hostelsLoading && !hostelsError && hostelOptions.length === 0 && (
+                                  <small className="text-muted d-block mt-1">No hostels found. Add hostels from Management → Hostel.</small>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Room No</label>
-                            <CommonSelect
-                              className="select"
-                              options={
-                                formData.hostel_room_id && !roomOptions.find(o => o.value === formData.hostel_room_id)
-                                  ? [{ value: formData.hostel_room_id, label: formData.hostel_room_number || formData.hostel_room_id }, ...roomOptions]
-                                  : roomOptions.length > 0 ? roomOptions : [{ value: "", label: "No rooms" }]
-                              }
-                              value={formData.hostel_room_id || null}
-                              onChange={(v) => {
-                                const opt = roomOptions.find(o => o.value === v);
-                                setFormData(prev => ({
-                                  ...prev,
-                                  hostel_room_id: v || null,
-                                  hostel_room_number: opt?.label ?? "",
-                                }));
-                              }}
-                            />
+                            {hostelRoomsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading rooms...
+                              </div>
+                            ) : hostelRoomsError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {hostelRoomsError}
+                              </div>
+                            ) : (
+                              <>
+                                <CommonSelect
+                                  className="select"
+                                  options={
+                                    formData.hostel_room_id && !roomOptions.find(o => o.value === formData.hostel_room_id)
+                                      ? [{ value: formData.hostel_room_id, label: formData.hostel_room_number || formData.hostel_room_id }, ...roomOptions]
+                                      : roomOptions.length > 0 ? roomOptions : [{ value: "", label: "No rooms" }]
+                                  }
+                                  value={formData.hostel_room_id || null}
+                                  onChange={(v) => {
+                                    const opt = roomOptions.find(o => o.value === v);
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      hostel_room_id: v || null,
+                                      hostel_room_number: opt?.label ?? "",
+                                    }));
+                                  }}
+                                />
+                                {!hostelRoomsLoading && !hostelRoomsError && roomOptions.length === 0 && (
+                                  <small className="text-muted d-block mt-1">No rooms found. Add rooms from Management → Hostel.</small>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

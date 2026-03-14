@@ -18,10 +18,13 @@ export const useClasses = (academicYearId = null) => {
         response = await apiService.getClasses();
       }
 
-      setClasses(response.data);
+      // Handle both { data: [...] } and direct array (for different API shapes)
+      const raw = response?.data ?? (Array.isArray(response) ? response : null);
+      setClasses(Array.isArray(raw) ? raw : []);
     } catch (err) {
       console.error('Error fetching classes:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch classes');
+      setClasses([]);
     } finally {
       setLoading(false);
     }
