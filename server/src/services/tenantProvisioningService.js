@@ -12,10 +12,14 @@ let adminPool = null;
 
 /**
  * Template database name for CREATE DATABASE ... TEMPLATE.
- * Local: DB_NAME=school_db or fallback school_db.
- * Production (Neon): DB_NAME=neondb or derived from DATABASE_URL (e.g. neondb).
+ * Must be a DB with NO active connections (PostgreSQL requirement).
+ *
+ * PROVISIONING_TEMPLATE_DB_NAME: Use this for provisioning only. Never used by app = no connections.
+ * Local: DB_NAME or school_db. Production: use a dedicated template DB (e.g. school_template).
  */
 function getTemplateDbName() {
+  const provisioning = (process.env.PROVISIONING_TEMPLATE_DB_NAME || '').toString().trim();
+  if (provisioning) return provisioning;
   const explicit = (process.env.DB_NAME || '').toString().trim();
   if (explicit) return explicit;
   const url = (process.env.DATABASE_URL || process.env.TENANT_ADMIN_DATABASE_URL || '').toString().trim();
@@ -25,7 +29,7 @@ function getTemplateDbName() {
       const db = (u.pathname || '/').replace(/^\//, '').split('?')[0].trim();
       if (db) return db;
     } catch {
-      /* ignore parse errors */
+      /* ignore */
     }
   }
   return 'school_db';

@@ -44,15 +44,17 @@ To connect Iqra (institute 3333) to its Neon database in production:
 
 ## Tenant Provisioning (Create New School)
 
-When creating a new school, the system clones a template database. The template name is resolved as:
+When creating a new school, the system clones a template database. **PostgreSQL requires the template DB to have zero active connections.**
 
-1. `DB_NAME` if set
-2. Else database name from `DATABASE_URL` or `TENANT_ADMIN_DATABASE_URL`
-3. Else `school_db` (local default)
+The template name is resolved as:
+1. `PROVISIONING_TEMPLATE_DB_NAME` (recommended for production)
+2. Else `DB_NAME` if set
+3. Else database name from `DATABASE_URL` or `TENANT_ADMIN_DATABASE_URL`
+4. Else `school_db` (local default)
 
-**Production (Neon):** Neon's default database is `neondb`. Either set `DB_NAME=neondb` or ensure `DATABASE_URL` points to `neondb` (it will be auto-derived).
+**Production (Neon):** Create a dedicated `school_template` database on Neon (clone from `neondb` once). This DB is never used by the app, so it has no connections. Set `PROVISIONING_TEMPLATE_DB_NAME=school_template`. This avoids "source database is being accessed by other users".
 
-**TENANT_ADMIN_DATABASE_URL:** Connection used for `CREATE DATABASE`. Must allow creating databases. If unset, falls back to `DATABASE_URL`.
+**TENANT_ADMIN_DATABASE_URL:** Connection for `CREATE DATABASE`. Falls back to `DATABASE_URL`.
 
 ## Environment Variables
 
