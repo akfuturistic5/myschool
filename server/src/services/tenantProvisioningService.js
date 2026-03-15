@@ -204,7 +204,7 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
       }
     }
     await new Promise((resolve, reject) => {
-      const psql = spawn('psql', [targetUrl, '-v', 'ON_ERROR_STOP=1', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const psql = spawn('psql', ['-d', targetUrl, '-v', 'ON_ERROR_STOP=1', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
       psql.stderr?.on('data', (c) => { stderr += c.toString(); });
       psql.on('close', (code) => {
