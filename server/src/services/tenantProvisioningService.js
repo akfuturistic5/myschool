@@ -197,7 +197,7 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
     try {
       tmpFile = await tryDump(false);
     } catch (e) {
-      if (/too many connections/i.test(e.message) && !process.env.PROVISIONING_SOURCE_DATABASE_URL) {
+      if (/too many connections/i.test(e.message)) {
         tmpFile = await tryDump(true);
       } else {
         throw e;
