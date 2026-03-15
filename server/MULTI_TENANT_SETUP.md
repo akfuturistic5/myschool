@@ -44,28 +44,34 @@ To connect Iqra (institute 3333) to its Neon database in production:
 
 ## Tenant Provisioning (Create New School)
 
-When creating a new school, the system clones a template database. **PostgreSQL requires the template DB to have zero active connections.**
+When creating a new school, the system:
+1. Resolves the template DB name via `getTemplateDbName()` (see priority below).
+2. Tries `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`.
+3. If the template is "being accessed by other users" (common on Neon), it creates an empty DB and clones schema via **pg_dump** (plain, single-transaction, minimal connections) and **psql** restore—no parallel jobs.
+4. Truncates tenant-specific data, creates headmaster, and inserts into `master_db.schools`.
 
-The template name is resolved as:
-1. `PROVISIONING_TEMPLATE_DB_NAME` (recommended for production)
-2. Else `DB_NAME` if set
-3. Else database name from `DATABASE_URL` or `TENANT_ADMIN_DATABASE_URL`
-4. Else `school_db` (local default)
+**Template name priority:** `PROVISIONING_TEMPLATE_DB_NAME` → `DB_NAME` → database from `DATABASE_URL` → database from `TENANT_ADMIN_DATABASE_URL` → `school_db`.
 
-**Production (Neon):** Neon may keep connections to databases. If "source database is being accessed" persists: (1) Create `school_template` on Neon, (2) In Neon SQL Editor run `ALTER DATABASE school_template CONNECTION LIMIT 0` to block new connections, (3) Wait for existing connections to drop, then retry. Or use Neon API/Console to create databases.
+**Neon "too many connections":** Use `PROVISIONING_SOURCE_DATABASE_URL` pointing to the template DB via Neon **direct** connection (host without `-pooler`). This avoids pooler connection limits during pg_dump.
 
-**TENANT_ADMIN_DATABASE_URL:** Connection for `CREATE DATABASE`. Falls back to `DATABASE_URL`.
+**TENANT_ADMIN_DATABASE_URL:** Used for `CREATE DATABASE` and for deriving target connection in provisioning. Falls back to `DATABASE_URL`.
+
+**Connection pools:** All pools use `DB_POOL_MAX` (default 5) to stay within Neon limits.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| DATABASE_URL | Yes (production) | Render Postgres. PreSkool (1111→school_db) uses this. |
-| DB_NAME | No | Local primary. Production primary from DATABASE_URL. |
-| MASTER_DATABASE_URL | Yes (production) | master_db on Neon (schools registry) |
-| MILLAT_DATABASE_URL | No | Millat on Neon |
-| IQRA_DATABASE_URL | No | Iqra on Neon |
-| TENANT_ADMIN_DATABASE_URL | No | CREATE DATABASE (Neon postgres). Falls back to DATABASE_URL. |
+| DATABASE_URL | Yes (production) | Primary DB (e.g. PreSkool). Used for routing and as fallback for provisioning. |
+| DB_NAME | No | Primary/template DB name. Local: schooldb. Neon: neondb. |
+| MASTER_DATABASE_URL | Yes (production) | master_db on Neon (schools registry). |
+| TENANT_ADMIN_DATABASE_URL | No | CREATE DATABASE and tenant connections. Falls back to DATABASE_URL. |
+| PROVISIONING_TEMPLATE_DB_NAME | No | Dedicated template DB name (e.g. school_template). |
+| PROVISIONING_SOURCE_DATABASE_URL | Recommended (Neon) | Template DB URL for pg_dump. Use **direct** endpoint (no -pooler). |
+| PROVISIONING_ALTERNATE_SOURCE_DB | No | Fallback DB name if template fails (default: preskool). |
+| DB_POOL_MAX | No | Max connections per pool (default 5). Keep low for Neon. |
+| MILLAT_DATABASE_URL | No | Millat on Neon. |
+| IQRA_DATABASE_URL | No | Iqra on Neon. |
 
 ## Security
 

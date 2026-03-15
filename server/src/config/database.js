@@ -28,12 +28,13 @@ function getPrimaryDbName() {
 const primaryDbName = getPrimaryDbName();
 const masterDbName = process.env.MASTER_DB_NAME || 'master_db';
 
+const POOL_MAX = parseInt(process.env.DB_POOL_MAX || '5', 10);
 const baseLocalConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432'),
   user: process.env.DB_USER || 'schooluser',
   password: process.env.DB_PASSWORD || '',
-  max: 20,
+  max: POOL_MAX,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 };
@@ -60,7 +61,7 @@ function createPoolForDb(dbName) {
     const pool = new Pool({
       connectionString: overrideUrl.trim(),
       ssl: sslConfig,
-      max: 20,
+      max: POOL_MAX,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     });
@@ -78,7 +79,7 @@ function createPoolForDb(dbName) {
       const pool = new Pool({
         connectionString: u.toString(),
         ssl: sslConfig,
-        max: 20,
+        max: POOL_MAX,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
       });
@@ -97,7 +98,7 @@ function createPoolForDb(dbName) {
         const pool = new Pool({
           connectionString: process.env.DATABASE_URL.trim(),
           ssl: sslConfig,
-          max: 20,
+          max: POOL_MAX,
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
         });
@@ -113,7 +114,7 @@ function createPoolForDb(dbName) {
       const pool = new Pool({
         connectionString,
         ssl: sslConfig,
-        max: 20,
+        max: POOL_MAX,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
       });
@@ -156,7 +157,7 @@ const masterPool = (() => {
     const pool = new Pool({
       connectionString: masterUrl,
       ssl: sslConfig,
-      max: 20,
+      max: POOL_MAX,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     });

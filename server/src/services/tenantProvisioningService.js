@@ -16,18 +16,16 @@ let adminPool = null;
 
 /**
  * Template database name for CREATE DATABASE ... TEMPLATE.
- * Must be a DB with NO active connections (PostgreSQL requirement).
- *
- * PROVISIONING_TEMPLATE_DB_NAME: Use this for provisioning only. Never used by app = no connections.
- * Local: DB_NAME or school_db. Production: use a dedicated template DB (e.g. school_template).
+ * Priority: PROVISIONING_TEMPLATE_DB_NAME (production override) → DB_NAME → DATABASE_URL → TENANT_ADMIN_DATABASE_URL → school_db.
  */
 function getTemplateDbName() {
   const provisioning = (process.env.PROVISIONING_TEMPLATE_DB_NAME || '').toString().trim();
   if (provisioning) return provisioning;
-  const explicit = (process.env.DB_NAME || '').toString().trim();
-  if (explicit) return explicit;
-  const url = (process.env.DATABASE_URL || process.env.TENANT_ADMIN_DATABASE_URL || '').toString().trim();
-  if (url) {
+  const dbName = (process.env.DB_NAME || '').toString().trim();
+  if (dbName) return dbName;
+  for (const urlVar of ['DATABASE_URL', 'TENANT_ADMIN_DATABASE_URL']) {
+    const url = (process.env[urlVar] || '').toString().trim();
+    if (!url) continue;
     try {
       const u = new URL(url);
       const db = (u.pathname || '/').replace(/^\//, '').split('?')[0].trim();
@@ -155,8 +153,7 @@ function getConnectionStringForDb(dbName) {
 }
 
 /**
- * Get pg_dump source URL. Use PROVISIONING_SOURCE_DATABASE_URL (Neon DIRECT endpoint) to avoid
- * "too many connections" on pooler. Else derive from TENANT_ADMIN. Set alternate DB to try on failure.
+ * Provisioning dump source: PROVISIONING_SOURCE_DATABASE_URL (Neon direct) or derive from TENANT_ADMIN/DATABASE_URL.
  */
 function getDumpSourceUrl(sourceDbName, useAlternate = false) {
   const explicit = (process.env.PROVISIONING_SOURCE_DATABASE_URL || '').toString().trim();
@@ -166,20 +163,24 @@ function getDumpSourceUrl(sourceDbName, useAlternate = false) {
 }
 
 /**
- * Clone database using pg_dump + pg_restore. Use PROVISIONING_SOURCE_DATABASE_URL (Neon DIRECT)
- * to avoid "too many connections". Retries with PROVISIONING_ALTERNATE_SOURCE_DB (e.g. preskool) on failure.
+ * Clone schema using pg_dump (plain, single-transaction, minimal connections) and psql restore.
+ * No parallel jobs; safe for Neon connection limits.
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
   const targetUrl = getConnectionStringForDb(targetDbName);
   if (!targetUrl) {
-    throw new Error('TENANT_ADMIN_DATABASE_URL or DATABASE_URL required for pg_dump target');
+    throw new Error('TENANT_ADMIN_DATABASE_URL or DATABASE_URL required for provisioning target');
   }
   const tryDump = async (useAlternate) => {
     const sourceUrl = getDumpSourceUrl(sourceDbName, useAlternate);
     if (!sourceUrl) throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required');
-    const tmpFile = path.join(os.tmpdir(), `tenant_clone_${targetDbName}_${Date.now()}.dump`);
+    const tmpFile = path.join(os.tmpdir(), `tenant_clone_${targetDbName}_${Date.now()}.sql`);
     await new Promise((resolve, reject) => {
-      const pd = spawn('pg_dump', [sourceUrl, '-Fc', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const pd = spawn(
+        'pg_dump',
+        ['-d', sourceUrl, '--no-owner', '--no-privileges', '--single-transaction', '--format=plain', '-f', tmpFile],
+        { stdio: ['ignore', 'pipe', 'pipe'] }
+      );
       let stderr = '';
       pd.stderr?.on('data', (c) => { stderr += c.toString(); });
       pd.on('close', (code) => {
@@ -202,12 +203,12 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
       }
     }
     await new Promise((resolve, reject) => {
-      const pr = spawn('pg_restore', ['-d', targetUrl, '--no-owner', '--no-acl', '-Fc', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const psql = spawn('psql', [targetUrl, '-v', 'ON_ERROR_STOP=1', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
-      pr.stderr?.on('data', (c) => { stderr += c.toString(); });
-      pr.on('close', (code) => {
-        if (code === 0 || code === 1) resolve();
-        else reject(new Error(`pg_restore failed (${code}): ${stderr}`));
+      psql.stderr?.on('data', (c) => { stderr += c.toString(); });
+      psql.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`psql restore failed (${code}): ${stderr}`));
       });
     });
   } finally {
