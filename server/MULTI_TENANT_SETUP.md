@@ -4,6 +4,16 @@
 
 The application supports multiple schools, each with its own database. The primary school uses the default connection (DB_HOST, DB_NAME, etc.). Additional schools can use separate cloud databases (e.g. Neon) via school-specific env vars.
 
+## Required Architecture (Neon)
+
+| Role | Database | When used |
+|------|----------|-----------|
+| **Main application** | `neondb` | All normal queries. `DATABASE_URL` and `TENANT_ADMIN_DATABASE_URL` must point here. |
+| **Template** | `school_template` | **Never** for app queries. Only during provisioning: `CREATE DATABASE new_tenant TEMPLATE school_template`. No persistent connections. |
+| **Tenant** | `school_5555`, `school_6666`, etc. | After login, tenant context switches to the school's `db_name` for that request. |
+
+**Critical:** The application must **never** open a connection pool to `school_template`. If `DATABASE_URL` (or `DB_NAME`) is set to `school_template`, the server will exit at startup with a clear error. Set `DATABASE_URL=.../neondb` and `PROVISIONING_TEMPLATE_DB_NAME=school_template` so the template is used only by name during provisioning. Before `CREATE DATABASE ... TEMPLATE`, the provisioning code terminates any sessions connected to the template so the clone can proceed.
+
 ## Production: Master DB on Neon
 
 To connect `master_db` (school registry) to its Neon database in production:

@@ -28,6 +28,17 @@ function getPrimaryDbName() {
 const primaryDbName = getPrimaryDbName();
 const masterDbName = process.env.MASTER_DB_NAME || 'master_db';
 
+// CRITICAL: Application must never use the template DB (e.g. school_template) as primary.
+// Template is only for: CREATE DATABASE new_tenant TEMPLATE school_template during provisioning.
+const provisioningTemplateDbName = (process.env.PROVISIONING_TEMPLATE_DB_NAME || '').toString().trim();
+if (provisioningTemplateDbName && primaryDbName === provisioningTemplateDbName) {
+  console.error(
+    `[FATAL] DATABASE_URL (or DB_NAME) must point to the main application database (e.g. neondb), not the template database "${provisioningTemplateDbName}". ` +
+    `The template must only be used during provisioning. Set DATABASE_URL to .../neondb and PROVISIONING_TEMPLATE_DB_NAME=${provisioningTemplateDbName} separately.`
+  );
+  process.exit(1);
+}
+
 const POOL_MAX = parseInt(process.env.DB_POOL_MAX || '5', 10);
 const baseLocalConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -177,6 +188,12 @@ function getCurrentTenantDbName() {
 
 function getTenantPool(dbName) {
   const key = dbName || primaryDbName;
+  if (provisioningTemplateDbName && key === provisioningTemplateDbName) {
+    throw new Error(
+      `Cannot use template database "${key}" as a tenant. No school in master_db.schools should have db_name = PROVISIONING_TEMPLATE_DB_NAME. ` +
+      `Template is only used during CREATE DATABASE ... TEMPLATE.`
+    );
+  }
   if (!tenantPools.has(key)) {
     tenantPools.set(key, createPoolForDb(key));
   }

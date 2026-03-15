@@ -39,12 +39,27 @@ function getTemplateDbName() {
 
 /**
  * Admin pool for CREATE DATABASE. Uses TENANT_ADMIN_DATABASE_URL, else DATABASE_URL, else local.
+ * Must connect to the main application DB (e.g. neondb), never to the template DB (school_template).
  */
 function getAdminPool() {
   if (adminPool) return adminPool;
 
   const adminUrl = (process.env.TENANT_ADMIN_DATABASE_URL || process.env.DATABASE_URL || '').toString().trim();
   if (adminUrl) {
+    const templateName = getTemplateDbName();
+    try {
+      const u = new URL(adminUrl);
+      const urlDbName = (u.pathname || '/').replace(/^\//, '').split('?')[0].trim();
+      if (urlDbName && templateName && urlDbName === templateName) {
+        throw new Error(
+          `TENANT_ADMIN_DATABASE_URL/DATABASE_URL must point to the main application database (e.g. neondb), not the template "${templateName}". ` +
+          `Set DATABASE_URL to .../neondb. Template is only used during CREATE DATABASE ... TEMPLATE.`
+        );
+      }
+    } catch (e) {
+      if (e.message && e.message.includes('main application database')) throw e;
+      /* URL parse error: continue and use URL as-is */
+    }
     adminPool = new Pool({
       connectionString: adminUrl,
       ssl: sslConfig,
