@@ -163,15 +163,11 @@ function getDumpSourceUrl(sourceDbName, useAlternate = false) {
 }
 
 /**
- * Clone schema using pg_dump (plain format) and psql restore.
- * No parallel jobs; safe for Neon connection limits.
- * Note: --single-transaction removed for pg_dump (dropped in PostgreSQL 18).
+ * Clone schema using pg_dump (plain format) then restore via Node pg client into target DB.
+ * Restore uses the same createPoolForTenantDb() as TRUNCATE, so we are guaranteed to run
+ * against the correct database (no psql/pooler/URI ambiguity on Neon).
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
-  const targetUrl = getConnectionStringForDb(targetDbName);
-  if (!targetUrl) {
-    throw new Error('TENANT_ADMIN_DATABASE_URL or DATABASE_URL required for provisioning target');
-  }
   const tryDump = async (useAlternate) => {
     const sourceUrl = getDumpSourceUrl(sourceDbName, useAlternate);
     if (!sourceUrl) throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required');
@@ -179,7 +175,7 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
     await new Promise((resolve, reject) => {
       const pd = spawn(
         'pg_dump',
-        ['-d', sourceUrl, '--no-owner', '--no-privileges', '--format=plain', '-f', tmpFile],
+        ['-d', sourceUrl, '--no-owner', '--no-privileges', '--format=plain', '--inserts', '-f', tmpFile],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );
       let stderr = '';
@@ -203,15 +199,23 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
         throw e;
       }
     }
-    await new Promise((resolve, reject) => {
-      const psql = spawn('psql', ['-d', targetUrl, '-v', 'ON_ERROR_STOP=1', '-f', tmpFile], { stdio: ['ignore', 'pipe', 'pipe'] });
-      let stderr = '';
-      psql.stderr?.on('data', (c) => { stderr += c.toString(); });
-      psql.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`psql restore failed (${code}): ${stderr}`));
-      });
-    });
+
+    const dumpSql = fs.readFileSync(tmpFile, 'utf8');
+    if (!dumpSql || !dumpSql.trim()) {
+      throw new Error('pg_dump produced empty output');
+    }
+
+    const targetPool = createPoolForTenantDb(targetDbName);
+    try {
+      const client = await targetPool.connect();
+      try {
+        await client.query(dumpSql);
+      } finally {
+        client.release();
+      }
+    } finally {
+      await targetPool.end();
+    }
   } finally {
     if (tmpFile) try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   }
@@ -268,11 +272,17 @@ async function createTenantDatabase(dbName) {
   const tenantPool = createPoolForTenantDb(dbName);
 
   try {
+    const tableCheck = await tenantPool.query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`
+    );
+    if (!tableCheck.rows || tableCheck.rows.length === 0) {
+      throw new Error('relation "users" does not exist (schema restore did not create required tables)');
+    }
     await tenantPool.query('BEGIN');
     await tenantPool.query('TRUNCATE TABLE users RESTART IDENTITY CASCADE');
     await tenantPool.query('COMMIT');
   } catch (err) {
-    await tenantPool.query('ROLLBACK');
+    await tenantPool.query('ROLLBACK').catch(() => {});
     // Cleanup the half-initialized tenant DB to avoid leaking data
     try {
       await pool.query(
