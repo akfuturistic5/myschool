@@ -54,7 +54,7 @@ When creating a new school, the system:
 
 **Neon "too many connections" / "syntax error" on create school:** Use `PROVISIONING_SOURCE_DATABASE_URL` pointing at the **template DB** (e.g. school_template or your primary DB) via Neon **DIRECT** endpoint (host without `-pooler`). This avoids pooler limits during pg_dump and ensures a clean dump. Restore uses `psql` when available (Docker image includes postgresql-client); otherwise statements are run one-by-one to avoid parsing errors.
 
-**Timeouts:** pg_dump is limited to 1.5 min and restore to 2 min. If create school hangs or times out, set `PROVISIONING_SOURCE_DATABASE_URL` to the template DB **DIRECT** URL.
+**Timeouts:** pg_dump default 2 min, restore default 5 min. If restore still times out, set `PROVISIONING_RESTORE_TIMEOUT_MS=600000` (10 min) in env. Prefer Neon **DIRECT** URL in `PROVISIONING_SOURCE_DATABASE_URL` for faster dump.
 
 **TENANT_ADMIN_DATABASE_URL:** Used for `CREATE DATABASE` and for deriving target connection in provisioning. Falls back to `DATABASE_URL`.
 

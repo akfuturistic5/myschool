@@ -278,9 +278,9 @@ function restoreViaPsql(targetUrl, tmpFile) {
  * the entire dump as a single query.
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
-  const RESTORE_TIMEOUT_MS = 120000; // 2 minutes max for restore
+  const RESTORE_TIMEOUT_MS = parseInt(process.env.PROVISIONING_RESTORE_TIMEOUT_MS || '300000', 10); // 5 min default (Neon + statement-by-statement can be slow)
+  const DUMP_TIMEOUT_MS = parseInt(process.env.PROVISIONING_DUMP_TIMEOUT_MS || '120000', 10); // 2 min for pg_dump
 
-  const DUMP_TIMEOUT_MS = 90000; // 1.5 min for pg_dump (Neon can be slow)
   const tryDump = async (useAlternate) => {
     const sourceUrl = getDumpSourceUrl(sourceDbName, useAlternate);
     if (!sourceUrl) throw new Error('PROVISIONING_SOURCE_DATABASE_URL or TENANT_ADMIN_DATABASE_URL required');
@@ -324,11 +324,12 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
     }
 
     const targetUrl = getConnectionStringForDb(targetDbName);
+    const restoreMinutes = Math.round(RESTORE_TIMEOUT_MS / 60000);
     const restoreWithTimeout = (fn) =>
       Promise.race([
         fn(),
         new Promise((_, rej) =>
-          setTimeout(() => rej(new Error('Restore timed out after 2 minutes. Check PROVISIONING_SOURCE_DATABASE_URL (use Neon DIRECT endpoint).')), RESTORE_TIMEOUT_MS)
+          setTimeout(() => rej(new Error(`Restore timed out after ${restoreMinutes} minute(s). Set PROVISIONING_RESTORE_TIMEOUT_MS (e.g. 600000 for 10 min) or use Neon DIRECT endpoint in PROVISIONING_SOURCE_DATABASE_URL.`)), RESTORE_TIMEOUT_MS)
         ),
       ]);
 
@@ -346,17 +347,19 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
     }
 
     const targetPool = createPoolForTenantDb(targetDbName);
+    const BATCH_SIZE = 25; // Run multiple statements per round-trip to speed up restore
     try {
       const client = await targetPool.connect();
       try {
-        const statements = splitSqlStatements(dumpSql);
-        for (let idx = 0; idx < statements.length; idx++) {
-          const stmt = statements[idx];
-          if (!stmt.trim()) continue;
+        const statements = splitSqlStatements(dumpSql).filter((s) => s.trim());
+        for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+          const batch = statements.slice(i, i + BATCH_SIZE);
+          const batchSql = batch.join(';\n') + (batch.length ? ';' : '');
           try {
-            await client.query(stmt);
-          } catch (stmtErr) {
-            throw new Error(`Statement ${idx + 1}/${statements.length} failed: ${stmtErr.message}. SQL (first 200 chars): ${stmt.slice(0, 200)}...`);
+            await client.query(batchSql);
+          } catch (batchErr) {
+            const firstStmt = batch[0] || '';
+            throw new Error(`Restore batch ${Math.floor(i / BATCH_SIZE) + 1} failed: ${batchErr.message}. First statement (200 chars): ${firstStmt.slice(0, 200)}...`);
           }
         }
       } finally {
