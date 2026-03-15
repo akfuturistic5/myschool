@@ -163,8 +163,9 @@ function getDumpSourceUrl(sourceDbName, useAlternate = false) {
 }
 
 /**
- * Clone schema using pg_dump (plain, single-transaction, minimal connections) and psql restore.
+ * Clone schema using pg_dump (plain format) and psql restore.
  * No parallel jobs; safe for Neon connection limits.
+ * Note: --single-transaction removed for pg_dump (dropped in PostgreSQL 18).
  */
 async function cloneViaDumpRestore(sourceDbName, targetDbName) {
   const targetUrl = getConnectionStringForDb(targetDbName);
@@ -178,7 +179,7 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
     await new Promise((resolve, reject) => {
       const pd = spawn(
         'pg_dump',
-        ['-d', sourceUrl, '--no-owner', '--no-privileges', '--single-transaction', '--format=plain', '-f', tmpFile],
+        ['-d', sourceUrl, '--no-owner', '--no-privileges', '--format=plain', '-f', tmpFile],
         { stdio: ['ignore', 'pipe', 'pipe'] }
       );
       let stderr = '';

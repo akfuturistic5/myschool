@@ -47,7 +47,7 @@ To connect Iqra (institute 3333) to its Neon database in production:
 When creating a new school, the system:
 1. Resolves the template DB name via `getTemplateDbName()` (see priority below).
 2. Tries `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`.
-3. If the template is "being accessed by other users" (common on Neon), it creates an empty DB and clones schema via **pg_dump** (plain, single-transaction, minimal connections) and **psql** restore—no parallel jobs.
+3. If the template is "being accessed by other users" (common on Neon), it creates an empty DB and clones schema via **pg_dump** (plain format) and **psql** restore—no parallel jobs (compatible with PostgreSQL 18+).
 4. Truncates tenant-specific data, creates headmaster, and inserts into `master_db.schools`.
 
 **Template name priority:** `PROVISIONING_TEMPLATE_DB_NAME` → `DB_NAME` → database from `DATABASE_URL` → database from `TENANT_ADMIN_DATABASE_URL` → `school_db`.
