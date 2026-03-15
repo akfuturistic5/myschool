@@ -56,9 +56,9 @@ To connect Iqra (institute 3333) to its Neon database in production:
 
 When creating a new school, the system:
 1. Resolves the template DB name via `getTemplateDbName()` (see priority below).
-2. Tries `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`.
-3. If the template is "being accessed by other users" (common on Neon), it creates an empty DB and clones schema via **pg_dump** (plain format) and **psql** restore—no parallel jobs (compatible with PostgreSQL 18+).
-4. If the new DB has no schema (e.g. Neon pooler: TEMPLATE succeeds but DB is empty), it drops the DB, creates an empty one, and provisions via **pg_dump** + restore from the template. Requires `PROVISIONING_SOURCE_DATABASE_URL` and `pg_dump`/`psql` (e.g. Docker with postgresql-client on Render).
+2. **Neon (URL contains neon.tech):** Does **not** use `CREATE DATABASE ... TEMPLATE`. Creates an empty DB, then clones schema via **pg_dump** + restore from template. Requires `PROVISIONING_SOURCE_DATABASE_URL` (Neon DIRECT endpoint) and **pg_dump/psql** on the server (e.g. Dockerfile with `postgresql-client` on Render). This avoids the Neon issue where TEMPLATE can create an empty DB (first school works, second fails).
+3. **Non-Neon:** Tries `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`. If the template is "being accessed by other users", creates an empty DB and clones via **pg_dump** + restore.
+4. If the new DB still has no schema (e.g. TEMPLATE produced empty), drops the DB, creates empty, and provisions via **pg_dump** + restore again.
 5. Truncates tenant-specific data, creates headmaster, and inserts into `master_db.schools`.
 
 **Template name priority:** `PROVISIONING_TEMPLATE_DB_NAME` → `DB_NAME` → database from `DATABASE_URL` → database from `TENANT_ADMIN_DATABASE_URL` → `school_db`.

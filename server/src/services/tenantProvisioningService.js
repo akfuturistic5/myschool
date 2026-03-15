@@ -118,6 +118,17 @@ function createPoolForTenantDb(dbName) {
 }
 
 /**
+ * True when using Neon (DATABASE_URL or TENANT_ADMIN_DATABASE_URL contains neon.tech).
+ * On Neon, CREATE DATABASE ... TEMPLATE often creates an empty DB (no schema copy).
+ * We skip TEMPLATE and always use dump/restore so every new school gets the schema reliably.
+ */
+function isNeonDatabase() {
+  const url =
+    (process.env.TENANT_ADMIN_DATABASE_URL || process.env.DATABASE_URL || '').toString().trim();
+  return url.length > 0 && url.includes('neon.tech');
+}
+
+/**
  * Slug from school name for use as DB name. "Anglo School" → "anglo_school", "Aabid School" → "aabid_school".
  * PostgreSQL: lowercase, alphanumeric + underscore, max 63 chars.
  */
@@ -313,6 +324,15 @@ async function cloneViaDumpRestore(sourceDbName, targetDbName) {
           if (code === 0) resolve(tmpFile);
           else reject(new Error(`pg_dump failed (${code}): ${stderr}`));
         });
+        pd.on('error', (err) => {
+          if (err.code === 'ENOENT') {
+            reject(
+              new Error(
+                'pg_dump not found. Deploy with Docker (Dockerfile installs postgresql-client) or install postgresql-client on the server.'
+              )
+            );
+          } else reject(err);
+        });
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('pg_dump timed out. Use PROVISIONING_SOURCE_DATABASE_URL with Neon DIRECT endpoint (no -pooler).')), DUMP_TIMEOUT_MS)
@@ -397,40 +417,62 @@ async function createTenantDatabase(dbName) {
 
   const sourceDbName = getTemplateDbName();
 
-  let created = false;
-  try {
-    await pool.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [sourceDbName]
-    );
-  } catch { /* ignore */ }
+  // On Neon, CREATE DATABASE ... TEMPLATE often succeeds but the new DB is empty (no schema).
+  // So we skip TEMPLATE and always provision via pg_dump + restore. Requires PROVISIONING_SOURCE_DATABASE_URL
+  // and postgresql-client (pg_dump/psql) in the environment (e.g. Dockerfile with postgresql-client).
+  const useDumpRestoreOnly = isNeonDatabase();
 
-  try {
-    await pool.query(`CREATE DATABASE "${dbName}" TEMPLATE "${sourceDbName}"`);
-    created = true;
-  } catch (err) {
-    const isAccessError = err.message && /is being accessed by other users/i.test(err.message);
-    if (isAccessError) {
-      await pool.query(`CREATE DATABASE "${dbName}"`);
-      created = true;
+  if (!useDumpRestoreOnly) {
+    try {
+      await pool.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [sourceDbName]
+      );
+    } catch { /* ignore */ }
+  }
+
+  if (useDumpRestoreOnly) {
+    await pool.query(`CREATE DATABASE "${dbName}"`);
+    try {
+      await cloneViaDumpRestore(sourceDbName, dbName);
+    } catch (dumpErr) {
       try {
-        await cloneViaDumpRestore(sourceDbName, dbName);
-      } catch (dumpErr) {
+        await pool.query(
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+          [dbName]
+        );
+        await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      } catch { /* ignore */ }
+      throw new Error(
+        `Failed to provision tenant from template. ${dumpErr.message} Ensure PROVISIONING_SOURCE_DATABASE_URL is set (Neon DIRECT endpoint) and the server has pg_dump/psql (e.g. deploy with Dockerfile that installs postgresql-client).`
+      );
+    }
+  } else {
+    try {
+      await pool.query(`CREATE DATABASE "${dbName}" TEMPLATE "${sourceDbName}"`);
+    } catch (err) {
+      const isAccessError = err.message && /is being accessed by other users/i.test(err.message);
+      if (isAccessError) {
+        await pool.query(`CREATE DATABASE "${dbName}"`);
         try {
-          await pool.query(
-            `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-            [dbName]
+          await cloneViaDumpRestore(sourceDbName, dbName);
+        } catch (dumpErr) {
+          try {
+            await pool.query(
+              `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+              [dbName]
+            );
+            await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+          } catch { /* ignore cleanup errors */ }
+          throw new Error(
+            `Failed to provision tenant (use PROVISIONING_SOURCE_DATABASE_URL with Neon DIRECT endpoint): ${dumpErr.message}`
           );
-          await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-        } catch { /* ignore cleanup errors */ }
+        }
+      } else {
         throw new Error(
-          `Failed to provision tenant (use PROVISIONING_SOURCE_DATABASE_URL with Neon DIRECT endpoint): ${dumpErr.message}`
+          `Failed to create tenant database "${dbName}" from template "${sourceDbName}": ${err.message}`
         );
       }
-    } else {
-      throw new Error(
-        `Failed to create tenant database "${dbName}" from template "${sourceDbName}": ${err.message}`
-      );
     }
   }
 
