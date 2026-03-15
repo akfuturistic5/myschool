@@ -23,6 +23,24 @@ Backend API for the PreSkool School Management System built with Express.js and 
 
 Make sure you have PostgreSQL installed and running. Configure your database credentials in `.env` (see `.env.example`).
 
+### Super Admin login (platform-level access)
+
+If **Super Admin login** returns `500 - Failed to authenticate` or errors in the console:
+
+1. **Create `master_db` and the `super_admin_users` table** (one-time):
+   ```bash
+   cd server
+   node init-master-database.js
+   ```
+
+2. **Create the default Super Admin user** (one-time):
+   ```bash
+   node scripts/create-default-super-admin.js
+   ```
+   Default credentials: username `superadmin`, password `SuperAdmin@123`. Change in production.
+
+3. **Production / Neon**: If the app uses a separate DB for the school registry, set `MASTER_DATABASE_URL` in `.env` to point at your `master_db` (e.g. `postgresql://...@host/master_db?sslmode=require`). The server uses this for Super Admin auth and school registry; without it, it derives from `DATABASE_URL` which may point at a different database.
+
 ## Installation
 
 1. Install dependencies:
