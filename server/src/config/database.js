@@ -152,8 +152,14 @@ function attachPoolHandlers(pool, dbName) {
   });
 
   pool.on('error', (err) => {
+    // Never crash the whole server due to a single pool error.
+    // For example, Neon or administrative commands can terminate connections
+    // (error code 57P01: terminating connection due to administrator command).
+    // Log the error and let pg/pool recreate connections on the next query.
     console.error(`Unexpected database error in pool for "${dbName}":`, err);
-    process.exit(1);
+
+    // If needed we could add targeted recovery per error code here, but we
+    // intentionally avoid process.exit(...) to keep the API online.
   });
 }
 
