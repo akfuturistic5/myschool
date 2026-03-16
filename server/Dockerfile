@@ -1,8 +1,5 @@
-# Node + postgresql-client for pg_dump/pg_restore (tenant provisioning on Neon)
+# Backend API. Provisioning uses CREATE DATABASE ... TEMPLATE only (no pg_dump/psql).
 FROM node:18-slim
-
-RUN apt-get update && apt-get install -y postgresql-client \
-  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

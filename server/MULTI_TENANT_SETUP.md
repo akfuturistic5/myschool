@@ -54,20 +54,19 @@ To connect Iqra (institute 3333) to its Neon database in production:
 
 ## Tenant Provisioning (Create New School)
 
+Provisioning uses **PostgreSQL native cloning only** (`CREATE DATABASE ... TEMPLATE`). No pg_dump or psql — avoids version mismatch (e.g. Neon PostgreSQL 17 vs client 15) and keeps deployment simple.
+
 When creating a new school, the system:
 1. Resolves the template DB name via `getTemplateDbName()` (see priority below).
-2. **Neon (URL contains neon.tech):** Does **not** use `CREATE DATABASE ... TEMPLATE`. Creates an empty DB, then clones schema via **pg_dump** + restore from template. Requires `PROVISIONING_SOURCE_DATABASE_URL` (Neon DIRECT endpoint) and **pg_dump/psql** on the server (e.g. Dockerfile with `postgresql-client` on Render). This avoids the Neon issue where TEMPLATE can create an empty DB (first school works, second fails).
-3. **Non-Neon:** Tries `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`. If the template is "being accessed by other users", creates an empty DB and clones via **pg_dump** + restore.
-4. If the new DB still has no schema (e.g. TEMPLATE produced empty), drops the DB, creates empty, and provisions via **pg_dump** + restore again.
-5. Truncates tenant-specific data, creates headmaster, and inserts into `master_db.schools`.
+2. Terminates any active connections to the template DB (PostgreSQL requires this for cloning).
+3. Runs `CREATE DATABASE "<tenant_db>" TEMPLATE "<template_db>"`.
+4. Connects to the new tenant DB, verifies required tables exist, truncates dynamic data (e.g. `users`), then creates the headmaster user and inserts the school into `master_db.schools`.
 
 **Template name priority:** `PROVISIONING_TEMPLATE_DB_NAME` → `DB_NAME` → database from `DATABASE_URL` → database from `TENANT_ADMIN_DATABASE_URL` → `school_db`.
 
-**Neon "too many connections" / "syntax error" on create school:** Use `PROVISIONING_SOURCE_DATABASE_URL` pointing at the **template DB** (e.g. school_template or your primary DB) via Neon **DIRECT** endpoint (host without `-pooler`). This avoids pooler limits during pg_dump and ensures a clean dump. Restore uses `psql` when available (Docker image includes postgresql-client); otherwise statements are run one-by-one to avoid parsing errors.
+**If "template is in use":** Ensure no application connections use the template. `DATABASE_URL` and `TENANT_ADMIN_DATABASE_URL` must point to **neondb** only. The template (`school_template`) is used only by name in `CREATE DATABASE ... TEMPLATE` and must never be opened for normal queries.
 
-**Timeouts:** pg_dump default 2 min, restore default 5 min. If restore still times out, set `PROVISIONING_RESTORE_TIMEOUT_MS=600000` (10 min) in env. Prefer Neon **DIRECT** URL in `PROVISIONING_SOURCE_DATABASE_URL` for faster dump.
-
-**TENANT_ADMIN_DATABASE_URL:** Used for `CREATE DATABASE` and for deriving target connection in provisioning. Falls back to `DATABASE_URL`.
+**TENANT_ADMIN_DATABASE_URL:** Used for `CREATE DATABASE` and for connecting to tenant DBs. Falls back to `DATABASE_URL`.
 
 **Connection pools:** All pools use `DB_POOL_MAX` (default 5) to stay within Neon limits.
 
@@ -79,9 +78,7 @@ When creating a new school, the system:
 | DB_NAME | No | Primary/template DB name. Local: schooldb. Neon: neondb. |
 | MASTER_DATABASE_URL | Yes (production) | master_db on Neon (schools registry). |
 | TENANT_ADMIN_DATABASE_URL | No | CREATE DATABASE and tenant connections. Falls back to DATABASE_URL. |
-| PROVISIONING_TEMPLATE_DB_NAME | No | Dedicated template DB name (e.g. school_template). |
-| PROVISIONING_SOURCE_DATABASE_URL | Recommended (Neon) | Template DB URL for pg_dump. Use **direct** endpoint (no -pooler). |
-| PROVISIONING_ALTERNATE_SOURCE_DB | No | Fallback DB name if template fails (default: preskool). |
+| PROVISIONING_TEMPLATE_DB_NAME | No | Dedicated template DB name (e.g. school_template). Used only in CREATE DATABASE ... TEMPLATE. |
 | DB_POOL_MAX | No | Max connections per pool (default 5). Keep low for Neon. |
 | MILLAT_DATABASE_URL | No | Millat on Neon. |
 | IQRA_DATABASE_URL | No | Iqra on Neon. |

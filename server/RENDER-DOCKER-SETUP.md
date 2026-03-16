@@ -1,46 +1,36 @@
-# Render: Backend ko Docker se deploy karna (Create School ke liye zaruri)
+# Render: Backend deploy (Node ya Docker)
 
-**Create School** tabhi kaam karega jab server par **pg_dump** aur **psql** hon. Ye **Node** runtime mein nahi hote; **Docker** se deploy karne par `Dockerfile` mein `postgresql-client` install hota hai.
-
----
-
-## Option A: Naya Web Service Docker se (recommended)
-
-1. **Render Dashboard** → **New +** → **Web Service**
-2. Same repo connect karo (GitHub/GitLab).
-3. **Root Directory** mein `server` likho (backend folder).
-4. Render ko **Docker** detect karna chahiye (`server/Dockerfile` ki wajah se). Agar **Environment** dropdown mein **Docker** dikhe to use select karo.
-5. **Name** do (e.g. `myschool-backend`).
-6. **Environment** tab mein saare env vars add karo (jo purane Node service mein the):
-   - `DATABASE_URL`
-   - `PROVISIONING_SOURCE_DATABASE_URL`
-   - `MASTER_DATABASE_URL`
-   - `JWT_SECRET`, `CORS_ORIGIN`, etc.
-7. **Create Web Service** → deploy hone do.
-8. Purana Node wala service delete kar sakte ho ya disable kar do; naye Docker service ka URL frontend/env mein use karo.
+**Create School** ab **pg_dump/psql** use nahi karta. Provisioning sirf `CREATE DATABASE ... TEMPLATE` se hota hai, isliye **Node** runtime se bhi kaam karega. Docker optional hai.
 
 ---
 
-## Option B: Blueprint se (repo mein render.yaml hai)
+## Env vars (zaruri)
 
-1. **Dashboard** → **Blueprints** → **New Blueprint Instance**
-2. Repo select karo; Render `render.yaml` use karega.
-3. Service create hone ke baad **Environment** mein env vars add karo (DATABASE_URL, PROVISIONING_SOURCE_DATABASE_URL, etc.).
+- `DATABASE_URL` → neondb (main app DB)
+- `TENANT_ADMIN_DATABASE_URL` → neondb (same)
+- `PROVISIONING_TEMPLATE_DB_NAME` → school_template
+- `MASTER_DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, etc.
+
+**Note:** `PROVISIONING_SOURCE_DATABASE_URL` ab zaruri nahi (pg_dump remove ho chuka hai).
 
 ---
 
-## Option C: Purana Node service ko Docker mein badalna
+## Option A: Node Web Service
 
-Render purane service ka **runtime (Node → Docker)** change karne ka option nahi deta. Isliye:
+1. **New +** → **Web Service** → repo connect → **Root Directory** = `server`
+2. **Environment** = Node (default). Build: `npm install`, Start: `npm start`
+3. Env vars add karo (above). Deploy.
 
-- **Naya Web Service** banao (Option A) aur **Docker** se deploy karo,  
-  **ya**
-- Purane service ko delete karke **Blueprint** (Option B) se naya Docker service banao.
+---
 
-Phir naye service ka URL use karo; env vars copy kar lena.
+## Option B: Docker Web Service
+
+1. **New +** → **Web Service** → repo connect → **Root Directory** = `server`
+2. **Environment** = Docker (Dockerfile detect hoga)
+3. Env vars add karo. Deploy.
 
 ---
 
 ## Verify
 
-Deploy ke baad **Create School** try karo. Agar ab bhi error aaye to Render **Logs** mein dekho — "pg_dump not found" aana chahiye nahi (Docker image mein postgresql-client hai).
+Deploy ke baad **Create School** try karo. Agar "template is in use" aaye to ensure karo `DATABASE_URL`/`TENANT_ADMIN_DATABASE_URL` sirf **neondb** pe point karte hon, **school_template** pe nahi.
