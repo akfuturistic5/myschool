@@ -1,0 +1,7546 @@
+-- Dumped from database version 17.8 (6108b59)
+-- Dumped by pg_dump version 18.1
+
+-- Started on 2026-03-16 14:18:13
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- TOC entry 4485 (class 0 OID 0)
+-- Dependencies: 5
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: pg_database_owner
+--
+
+COMMENT ON SCHEMA public IS '';
+
+
+--
+-- TOC entry 337 (class 1255 OID 214513)
+-- Name: get_academic_year_by_id(integer); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.get_academic_year_by_id(p_id integer) RETURNS TABLE(id integer, name character varying, start_date date, end_date date, is_active boolean, created_at timestamp without time zone)
+    LANGUAGE plpgsql
+    AS $$
+      BEGIN
+          RETURN QUERY
+          SELECT 
+              ay.id,
+              ay.year_name as name,
+              ay.start_date,
+              ay.end_date,
+              ay.is_active,
+              ay.created_at
+          FROM academic_years ay
+          WHERE ay.id = p_id AND ay.is_active = true;
+      END;
+      $$;
+
+
+ALTER FUNCTION public.get_academic_year_by_id(p_id integer) OWNER TO neondb_owner;
+
+--
+-- TOC entry 338 (class 1255 OID 214514)
+-- Name: get_academic_years(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.get_academic_years() RETURNS TABLE(id integer, name character varying, start_date date, end_date date, is_active boolean, created_at timestamp without time zone)
+    LANGUAGE plpgsql
+    AS $$
+      BEGIN
+          RETURN QUERY
+          SELECT 
+              ay.id,
+              ay.year_name as name,
+              ay.start_date,
+              ay.end_date,
+              ay.is_active,
+              ay.created_at
+          FROM academic_years ay
+          WHERE ay.is_active = true 
+          ORDER BY ay.start_date DESC;
+      END;
+      $$;
+
+
+ALTER FUNCTION public.get_academic_years() OWNER TO neondb_owner;
+
+--
+-- TOC entry 339 (class 1255 OID 214515)
+-- Name: update_class_students_count(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.update_class_students_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE classes
+    SET no_of_students = (
+        SELECT COALESCE(SUM(no_of_students), 0)
+        FROM sections
+        WHERE class_id = NEW.class_id
+    )
+    WHERE id = NEW.class_id;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_class_students_count() OWNER TO neondb_owner;
+
+--
+-- TOC entry 340 (class 1255 OID 214516)
+-- Name: update_notice_board_modified_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.update_notice_board_modified_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.modified_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_notice_board_modified_at() OWNER TO neondb_owner;
+
+--
+-- TOC entry 341 (class 1255 OID 214517)
+-- Name: update_parents_updated_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.update_parents_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_parents_updated_at() OWNER TO neondb_owner;
+
+--
+-- TOC entry 342 (class 1255 OID 214518)
+-- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+--
+
+CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_updated_at_column() OWNER TO neondb_owner;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- TOC entry 217 (class 1259 OID 214519)
+-- Name: academic_years; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.academic_years (
+    id integer NOT NULL,
+    year_name character varying(20) NOT NULL,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    is_current boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.academic_years OWNER TO neondb_owner;
+
+--
+-- TOC entry 218 (class 1259 OID 214526)
+-- Name: academic_years_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.academic_years_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.academic_years_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4487 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: academic_years_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.academic_years_id_seq OWNED BY public.academic_years.id;
+
+
+--
+-- TOC entry 219 (class 1259 OID 214527)
+-- Name: addresses; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.addresses (
+    id integer NOT NULL,
+    current_address text NOT NULL,
+    permanent_address text NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    user_id integer NOT NULL,
+    role_id integer NOT NULL,
+    person_id integer
+);
+
+
+ALTER TABLE public.addresses OWNER TO neondb_owner;
+
+--
+-- TOC entry 220 (class 1259 OID 214533)
+-- Name: addresses_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.addresses_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.addresses_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4488 (class 0 OID 0)
+-- Dependencies: 220
+-- Name: addresses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.addresses_id_seq OWNED BY public.addresses.id;
+
+
+--
+-- TOC entry 221 (class 1259 OID 214534)
+-- Name: attendance; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.attendance (
+    id integer NOT NULL,
+    student_id integer,
+    class_id integer,
+    section_id integer,
+    attendance_date date NOT NULL,
+    status character varying(10) NOT NULL,
+    check_in_time time without time zone,
+    check_out_time time without time zone,
+    marked_by integer,
+    remarks text,
+    academic_year_id integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT attendance_status_check CHECK (((status)::text = ANY (ARRAY[('present'::character varying)::text, ('absent'::character varying)::text, ('late'::character varying)::text, ('half_day'::character varying)::text])))
+);
+
+
+ALTER TABLE public.attendance OWNER TO neondb_owner;
+
+--
+-- TOC entry 222 (class 1259 OID 214542)
+-- Name: attendance_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.attendance_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.attendance_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4489 (class 0 OID 0)
+-- Dependencies: 222
+-- Name: attendance_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.attendance_id_seq OWNED BY public.attendance.id;
+
+
+--
+-- TOC entry 223 (class 1259 OID 214543)
+-- Name: blocked_users; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.blocked_users (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    blocked_user_id integer NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.blocked_users OWNER TO neondb_owner;
+
+--
+-- TOC entry 224 (class 1259 OID 214547)
+-- Name: blocked_users_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.blocked_users_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.blocked_users_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4490 (class 0 OID 0)
+-- Dependencies: 224
+-- Name: blocked_users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.blocked_users_id_seq OWNED BY public.blocked_users.id;
+
+
+--
+-- TOC entry 225 (class 1259 OID 214548)
+-- Name: blood_groups; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.blood_groups (
+    id integer NOT NULL,
+    blood_group character varying(10) NOT NULL,
+    description character varying(100),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.blood_groups OWNER TO neondb_owner;
+
+--
+-- TOC entry 226 (class 1259 OID 214554)
+-- Name: blood_groups_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.blood_groups_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.blood_groups_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4491 (class 0 OID 0)
+-- Dependencies: 226
+-- Name: blood_groups_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.blood_groups_id_seq OWNED BY public.blood_groups.id;
+
+
+--
+-- TOC entry 227 (class 1259 OID 214555)
+-- Name: calendar_events; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.calendar_events (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    start_date timestamp without time zone NOT NULL,
+    end_date timestamp without time zone,
+    event_color character varying(20) DEFAULT 'bg-primary'::character varying,
+    is_all_day boolean DEFAULT false,
+    location character varying(255),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.calendar_events OWNER TO neondb_owner;
+
+--
+-- TOC entry 228 (class 1259 OID 214564)
+-- Name: calendar_events_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.calendar_events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.calendar_events_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4492 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: calendar_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.calendar_events_id_seq OWNED BY public.calendar_events.id;
+
+
+--
+-- TOC entry 229 (class 1259 OID 214565)
+-- Name: calls; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.calls (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    recipient_id integer,
+    call_type character varying(20) NOT NULL,
+    phone_number character varying(20),
+    duration integer DEFAULT 0,
+    call_date timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.calls OWNER TO neondb_owner;
+
+--
+-- TOC entry 230 (class 1259 OID 214571)
+-- Name: calls_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.calls_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.calls_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4493 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: calls_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.calls_id_seq OWNED BY public.calls.id;
+
+
+--
+-- TOC entry 231 (class 1259 OID 214572)
+-- Name: casts; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.casts (
+    id integer NOT NULL,
+    cast_name character varying(50) NOT NULL,
+    religion_id integer,
+    description character varying(200),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.casts OWNER TO neondb_owner;
+
+--
+-- TOC entry 232 (class 1259 OID 214578)
+-- Name: casts_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.casts_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.casts_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4494 (class 0 OID 0)
+-- Dependencies: 232
+-- Name: casts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.casts_id_seq OWNED BY public.casts.id;
+
+
+--
+-- TOC entry 233 (class 1259 OID 214579)
+-- Name: chat_settings; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.chat_settings (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    recipient_id integer NOT NULL,
+    is_muted boolean DEFAULT false,
+    muted_until timestamp without time zone,
+    cleared_at timestamp without time zone,
+    disappearing_seconds integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.chat_settings OWNER TO neondb_owner;
+
+--
+-- TOC entry 234 (class 1259 OID 214585)
+-- Name: chat_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.chat_settings_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.chat_settings_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4495 (class 0 OID 0)
+-- Dependencies: 234
+-- Name: chat_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.chat_settings_id_seq OWNED BY public.chat_settings.id;
+
+
+--
+-- TOC entry 235 (class 1259 OID 214586)
+-- Name: chats; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.chats (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    recipient_id integer,
+    message text NOT NULL,
+    is_read boolean DEFAULT false,
+    is_pinned boolean DEFAULT false,
+    message_type character varying(20) DEFAULT 'text'::character varying,
+    file_url text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.chats OWNER TO neondb_owner;
+
+--
+-- TOC entry 236 (class 1259 OID 214596)
+-- Name: chats_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.chats_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.chats_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4496 (class 0 OID 0)
+-- Dependencies: 236
+-- Name: chats_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.chats_id_seq OWNED BY public.chats.id;
+
+
+--
+-- TOC entry 237 (class 1259 OID 214597)
+-- Name: class_rooms; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.class_rooms (
+    id integer NOT NULL,
+    room_no character varying(50) NOT NULL,
+    capacity integer DEFAULT 50 NOT NULL,
+    status character varying(20) DEFAULT 'Active'::character varying,
+    description text,
+    floor character varying(50),
+    building character varying(100),
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.class_rooms OWNER TO neondb_owner;
+
+--
+-- TOC entry 238 (class 1259 OID 214606)
+-- Name: class_rooms_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.class_rooms_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.class_rooms_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4497 (class 0 OID 0)
+-- Dependencies: 238
+-- Name: class_rooms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.class_rooms_id_seq OWNED BY public.class_rooms.id;
+
+
+--
+-- TOC entry 239 (class 1259 OID 214607)
+-- Name: class_schedules; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.class_schedules (
+    id integer NOT NULL,
+    class_id integer,
+    section_id integer,
+    subject_id integer,
+    time_slot_id integer,
+    day_of_week integer,
+    academic_year_id integer,
+    room_number character varying(20),
+    teacher_id integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT class_schedules_day_of_week_check CHECK (((day_of_week >= 1) AND (day_of_week <= 7)))
+);
+
+
+ALTER TABLE public.class_schedules OWNER TO neondb_owner;
+
+--
+-- TOC entry 240 (class 1259 OID 214614)
+-- Name: class_schedules_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.class_schedules_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.class_schedules_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4498 (class 0 OID 0)
+-- Dependencies: 240
+-- Name: class_schedules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.class_schedules_id_seq OWNED BY public.class_schedules.id;
+
+
+--
+-- TOC entry 241 (class 1259 OID 214615)
+-- Name: class_syllabus; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.class_syllabus (
+    id integer NOT NULL,
+    class_id integer,
+    section_id integer,
+    class_name character varying(100),
+    section_name character varying(100),
+    subject_group character varying(500) NOT NULL,
+    status character varying(20) DEFAULT 'Active'::character varying,
+    description text,
+    academic_year_id integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.class_syllabus OWNER TO neondb_owner;
+
+--
+-- TOC entry 242 (class 1259 OID 214623)
+-- Name: class_syllabus_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.class_syllabus_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.class_syllabus_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4499 (class 0 OID 0)
+-- Dependencies: 242
+-- Name: class_syllabus_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.class_syllabus_id_seq OWNED BY public.class_syllabus.id;
+
+
+--
+-- TOC entry 243 (class 1259 OID 214624)
+-- Name: classes; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.classes (
+    id integer NOT NULL,
+    class_name character varying(50) NOT NULL,
+    class_code character varying(10),
+    academic_year_id integer,
+    class_teacher_id integer,
+    max_students integer DEFAULT 30,
+    class_fee numeric(10,2),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    no_of_students integer DEFAULT 0
+);
+
+
+ALTER TABLE public.classes OWNER TO neondb_owner;
+
+--
+-- TOC entry 244 (class 1259 OID 214634)
+-- Name: classes_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.classes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.classes_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4500 (class 0 OID 0)
+-- Dependencies: 244
+-- Name: classes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.classes_id_seq OWNED BY public.classes.id;
+
+
+--
+-- TOC entry 245 (class 1259 OID 214635)
+-- Name: departments; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.departments (
+    id integer NOT NULL,
+    department_name character varying(100) NOT NULL,
+    department_code character varying(10),
+    head_of_department integer,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.departments OWNER TO neondb_owner;
+
+--
+-- TOC entry 246 (class 1259 OID 214643)
+-- Name: departments_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.departments_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.departments_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4501 (class 0 OID 0)
+-- Dependencies: 246
+-- Name: departments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.departments_id_seq OWNED BY public.departments.id;
+
+
+--
+-- TOC entry 247 (class 1259 OID 214644)
+-- Name: designations; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.designations (
+    id integer NOT NULL,
+    designation_name character varying(100) NOT NULL,
+    department_id integer,
+    salary_range_min numeric(10,2),
+    salary_range_max numeric(10,2),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.designations OWNER TO neondb_owner;
+
+--
+-- TOC entry 248 (class 1259 OID 214652)
+-- Name: designations_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.designations_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.designations_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4502 (class 0 OID 0)
+-- Dependencies: 248
+-- Name: designations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.designations_id_seq OWNED BY public.designations.id;
+
+
+--
+-- TOC entry 249 (class 1259 OID 214653)
+-- Name: document_types; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.document_types (
+    id integer NOT NULL,
+    document_type character varying(50) NOT NULL,
+    description character varying(200),
+    is_mandatory boolean DEFAULT false,
+    applicable_for character varying(20),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT document_types_applicable_for_check CHECK (((applicable_for)::text = ANY (ARRAY[('student'::character varying)::text, ('staff'::character varying)::text, ('both'::character varying)::text])))
+);
+
+
+ALTER TABLE public.document_types OWNER TO neondb_owner;
+
+--
+-- TOC entry 250 (class 1259 OID 214661)
+-- Name: document_types_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.document_types_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.document_types_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4503 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: document_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.document_types_id_seq OWNED BY public.document_types.id;
+
+
+--
+-- TOC entry 251 (class 1259 OID 214662)
+-- Name: documents; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.documents (
+    id integer NOT NULL,
+    document_type_id integer,
+    student_id integer,
+    staff_id integer,
+    document_name character varying(200) NOT NULL,
+    file_path character varying(500),
+    file_size integer,
+    upload_date date DEFAULT CURRENT_DATE,
+    expiry_date date,
+    is_verified boolean DEFAULT false,
+    verified_by integer,
+    verified_date date,
+    remarks text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.documents OWNER TO neondb_owner;
+
+--
+-- TOC entry 252 (class 1259 OID 214672)
+-- Name: documents_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.documents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.documents_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4504 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: documents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.documents_id_seq OWNED BY public.documents.id;
+
+
+--
+-- TOC entry 253 (class 1259 OID 214673)
+-- Name: drivers; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.drivers (
+    id integer NOT NULL,
+    driver_name character varying(100) NOT NULL,
+    employee_code character varying(20),
+    phone character varying(15) NOT NULL,
+    email character varying(100),
+    license_number character varying(50) NOT NULL,
+    license_expiry date,
+    address text,
+    emergency_contact character varying(15),
+    joining_date date,
+    salary numeric(10,2),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.drivers OWNER TO neondb_owner;
+
+--
+-- TOC entry 254 (class 1259 OID 214681)
+-- Name: drivers_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.drivers_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.drivers_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4505 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: drivers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.drivers_id_seq OWNED BY public.drivers.id;
+
+
+--
+-- TOC entry 255 (class 1259 OID 214682)
+-- Name: emails; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.emails (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    sender_id integer,
+    sender_email character varying(255),
+    recipient_email character varying(255),
+    subject character varying(500) NOT NULL,
+    body text NOT NULL,
+    is_read boolean DEFAULT false,
+    is_starred boolean DEFAULT false,
+    is_important boolean DEFAULT false,
+    folder character varying(50) DEFAULT 'inbox'::character varying,
+    has_attachment boolean DEFAULT false,
+    attachment_url text,
+    sent_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.emails OWNER TO neondb_owner;
+
+--
+-- TOC entry 256 (class 1259 OID 214695)
+-- Name: emails_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.emails_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.emails_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4506 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: emails_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.emails_id_seq OWNED BY public.emails.id;
+
+
+--
+-- TOC entry 257 (class 1259 OID 214696)
+-- Name: events; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.events (
+    id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    start_date timestamp without time zone NOT NULL,
+    end_date timestamp without time zone,
+    event_color character varying(50) DEFAULT 'bg-primary'::character varying,
+    is_all_day boolean DEFAULT false,
+    location character varying(255),
+    event_category character varying(50),
+    event_for character varying(20) DEFAULT 'all'::character varying,
+    target_class_ids jsonb,
+    target_section_ids jsonb,
+    attachment_url text,
+    created_by integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.events OWNER TO neondb_owner;
+
+--
+-- TOC entry 258 (class 1259 OID 214706)
+-- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.events_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.events_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4507 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.events_id_seq OWNED BY public.events.id;
+
+
+--
+-- TOC entry 259 (class 1259 OID 214707)
+-- Name: exam_results; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.exam_results (
+    id integer NOT NULL,
+    exam_id integer,
+    student_id integer,
+    subject_id integer,
+    marks_obtained numeric(5,2),
+    grade character varying(5),
+    remarks text,
+    is_absent boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.exam_results OWNER TO neondb_owner;
+
+--
+-- TOC entry 260 (class 1259 OID 214716)
+-- Name: exam_results_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.exam_results_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.exam_results_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4508 (class 0 OID 0)
+-- Dependencies: 260
+-- Name: exam_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.exam_results_id_seq OWNED BY public.exam_results.id;
+
+
+--
+-- TOC entry 261 (class 1259 OID 214717)
+-- Name: exams; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.exams (
+    id integer NOT NULL,
+    exam_name character varying(100) NOT NULL,
+    exam_type character varying(30),
+    class_id integer,
+    academic_year_id integer,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    total_marks integer DEFAULT 100,
+    passing_marks integer DEFAULT 35,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT exams_exam_type_check CHECK (((exam_type)::text = ANY (ARRAY[('unit_test'::character varying)::text, ('monthly'::character varying)::text, ('quarterly'::character varying)::text, ('half_yearly'::character varying)::text, ('annual'::character varying)::text])))
+);
+
+
+ALTER TABLE public.exams OWNER TO neondb_owner;
+
+--
+-- TOC entry 262 (class 1259 OID 214728)
+-- Name: exams_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.exams_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.exams_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4509 (class 0 OID 0)
+-- Dependencies: 262
+-- Name: exams_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.exams_id_seq OWNED BY public.exams.id;
+
+
+--
+-- TOC entry 263 (class 1259 OID 214729)
+-- Name: fee_collections; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.fee_collections (
+    id integer NOT NULL,
+    student_id integer,
+    fee_structure_id integer,
+    amount_paid numeric(10,2) NOT NULL,
+    payment_date date DEFAULT CURRENT_DATE,
+    payment_method character varying(20),
+    transaction_id character varying(100),
+    receipt_number character varying(50),
+    collected_by integer,
+    remarks text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fee_collections_payment_method_check CHECK (((payment_method)::text = ANY (ARRAY[('cash'::character varying)::text, ('upi'::character varying)::text, ('card'::character varying)::text])))
+);
+
+
+ALTER TABLE public.fee_collections OWNER TO neondb_owner;
+
+--
+-- TOC entry 264 (class 1259 OID 214739)
+-- Name: fee_collections_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.fee_collections_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.fee_collections_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4510 (class 0 OID 0)
+-- Dependencies: 264
+-- Name: fee_collections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.fee_collections_id_seq OWNED BY public.fee_collections.id;
+
+
+--
+-- TOC entry 265 (class 1259 OID 214740)
+-- Name: fee_structures; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.fee_structures (
+    id integer NOT NULL,
+    fee_name character varying(100) NOT NULL,
+    class_id integer,
+    academic_year_id integer,
+    amount numeric(10,2) NOT NULL,
+    due_date date,
+    fee_type character varying(30),
+    is_mandatory boolean DEFAULT true,
+    installment_allowed boolean DEFAULT false,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fee_structures_fee_type_check CHECK (((fee_type)::text = ANY (ARRAY[('admission'::character varying)::text, ('tuition'::character varying)::text, ('transport'::character varying)::text, ('hostel'::character varying)::text, ('library'::character varying)::text, ('exam'::character varying)::text, ('other'::character varying)::text])))
+);
+
+
+ALTER TABLE public.fee_structures OWNER TO neondb_owner;
+
+--
+-- TOC entry 266 (class 1259 OID 214751)
+-- Name: fee_structures_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.fee_structures_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.fee_structures_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4511 (class 0 OID 0)
+-- Dependencies: 266
+-- Name: fee_structures_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.fee_structures_id_seq OWNED BY public.fee_structures.id;
+
+
+--
+-- TOC entry 267 (class 1259 OID 214752)
+-- Name: files; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.files (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    file_type character varying(50),
+    mime_type character varying(100),
+    size bigint DEFAULT 0,
+    file_url text,
+    parent_folder_id integer,
+    is_folder boolean DEFAULT false,
+    is_shared boolean DEFAULT false,
+    shared_with integer[],
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.files OWNER TO neondb_owner;
+
+--
+-- TOC entry 268 (class 1259 OID 214762)
+-- Name: files_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.files_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.files_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4512 (class 0 OID 0)
+-- Dependencies: 268
+-- Name: files_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.files_id_seq OWNED BY public.files.id;
+
+
+--
+-- TOC entry 269 (class 1259 OID 214763)
+-- Name: guardians; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.guardians (
+    id integer NOT NULL,
+    student_id integer,
+    guardian_type character varying(20),
+    first_name character varying(50) NOT NULL,
+    last_name character varying(50) NOT NULL,
+    relation character varying(30),
+    occupation character varying(100),
+    phone character varying(15) NOT NULL,
+    email character varying(100),
+    address text,
+    office_address text,
+    annual_income numeric(12,2),
+    is_primary_contact boolean DEFAULT false,
+    is_emergency_contact boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    user_id integer,
+    CONSTRAINT guardians_guardian_type_check CHECK (((guardian_type)::text = ANY (ARRAY[('father'::character varying)::text, ('mother'::character varying)::text, ('guardian'::character varying)::text, ('other'::character varying)::text])))
+);
+
+
+ALTER TABLE public.guardians OWNER TO neondb_owner;
+
+--
+-- TOC entry 270 (class 1259 OID 214774)
+-- Name: guardians_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.guardians_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.guardians_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4513 (class 0 OID 0)
+-- Dependencies: 270
+-- Name: guardians_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.guardians_id_seq OWNED BY public.guardians.id;
+
+
+--
+-- TOC entry 271 (class 1259 OID 214775)
+-- Name: holidays; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.holidays (
+    id integer NOT NULL,
+    holiday_name character varying(100) NOT NULL,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    holiday_type character varying(20),
+    description text,
+    academic_year_id integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT holidays_holiday_type_check CHECK (((holiday_type)::text = ANY (ARRAY[('national'::character varying)::text, ('religious'::character varying)::text, ('academic'::character varying)::text, ('optional'::character varying)::text])))
+);
+
+
+ALTER TABLE public.holidays OWNER TO neondb_owner;
+
+--
+-- TOC entry 272 (class 1259 OID 214784)
+-- Name: holidays_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.holidays_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.holidays_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4514 (class 0 OID 0)
+-- Dependencies: 272
+-- Name: holidays_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.holidays_id_seq OWNED BY public.holidays.id;
+
+
+--
+-- TOC entry 273 (class 1259 OID 214785)
+-- Name: hostel_rooms; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.hostel_rooms (
+    id integer NOT NULL,
+    room_number character varying(20) NOT NULL,
+    hostel_id integer,
+    room_type_id integer,
+    floor_number integer,
+    max_occupancy integer,
+    current_occupancy integer DEFAULT 0,
+    monthly_fee numeric(10,2),
+    facilities text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.hostel_rooms OWNER TO neondb_owner;
+
+--
+-- TOC entry 274 (class 1259 OID 214794)
+-- Name: hostel_rooms_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.hostel_rooms_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.hostel_rooms_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4515 (class 0 OID 0)
+-- Dependencies: 274
+-- Name: hostel_rooms_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.hostel_rooms_id_seq OWNED BY public.hostel_rooms.id;
+
+
+--
+-- TOC entry 275 (class 1259 OID 214795)
+-- Name: hostels; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.hostels (
+    id integer NOT NULL,
+    hostel_name character varying(100) NOT NULL,
+    hostel_type character varying(20),
+    warden_id integer,
+    total_rooms integer,
+    address text,
+    contact_number character varying(15),
+    facilities text,
+    rules text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT hostels_hostel_type_check CHECK (((hostel_type)::text = ANY (ARRAY[('boys'::character varying)::text, ('girls'::character varying)::text, ('mixed'::character varying)::text])))
+);
+
+
+ALTER TABLE public.hostels OWNER TO neondb_owner;
+
+--
+-- TOC entry 276 (class 1259 OID 214804)
+-- Name: hostels_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.hostels_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.hostels_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4516 (class 0 OID 0)
+-- Dependencies: 276
+-- Name: hostels_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.hostels_id_seq OWNED BY public.hostels.id;
+
+
+--
+-- TOC entry 277 (class 1259 OID 214805)
+-- Name: houses; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.houses (
+    id integer NOT NULL,
+    house_name character varying(50) NOT NULL,
+    house_color character varying(20),
+    house_captain character varying(100),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.houses OWNER TO neondb_owner;
+
+--
+-- TOC entry 278 (class 1259 OID 214813)
+-- Name: houses_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.houses_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.houses_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4517 (class 0 OID 0)
+-- Dependencies: 278
+-- Name: houses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.houses_id_seq OWNED BY public.houses.id;
+
+
+--
+-- TOC entry 279 (class 1259 OID 214814)
+-- Name: languages; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.languages (
+    id integer NOT NULL,
+    language_name character varying(50) NOT NULL,
+    language_code character varying(10),
+    is_compulsory boolean DEFAULT false,
+    description character varying(200),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.languages OWNER TO neondb_owner;
+
+--
+-- TOC entry 280 (class 1259 OID 214821)
+-- Name: languages_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.languages_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.languages_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4518 (class 0 OID 0)
+-- Dependencies: 280
+-- Name: languages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.languages_id_seq OWNED BY public.languages.id;
+
+
+--
+-- TOC entry 281 (class 1259 OID 214822)
+-- Name: leave_applications; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.leave_applications (
+    id integer NOT NULL,
+    applicant_type character varying(10),
+    student_id integer,
+    staff_id integer,
+    leave_type_id integer,
+    start_date date NOT NULL,
+    end_date date NOT NULL,
+    total_days integer,
+    reason text NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying,
+    approved_by integer,
+    approved_date date,
+    rejection_reason text,
+    medical_certificate_path character varying(500),
+    emergency_contact character varying(15),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT leave_applications_applicant_type_check CHECK (((applicant_type)::text = ANY (ARRAY[('student'::character varying)::text, ('staff'::character varying)::text]))),
+    CONSTRAINT leave_applications_status_check CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('approved'::character varying)::text, ('rejected'::character varying)::text, ('cancelled'::character varying)::text])))
+);
+
+
+ALTER TABLE public.leave_applications OWNER TO neondb_owner;
+
+--
+-- TOC entry 282 (class 1259 OID 214833)
+-- Name: leave_applications_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.leave_applications_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.leave_applications_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4519 (class 0 OID 0)
+-- Dependencies: 282
+-- Name: leave_applications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.leave_applications_id_seq OWNED BY public.leave_applications.id;
+
+
+--
+-- TOC entry 283 (class 1259 OID 214834)
+-- Name: leave_types; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.leave_types (
+    id integer NOT NULL,
+    leave_type character varying(50) NOT NULL,
+    max_days integer,
+    description text,
+    applicable_for character varying(20),
+    requires_medical_certificate boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT leave_types_applicable_for_check CHECK (((applicable_for)::text = ANY (ARRAY[('student'::character varying)::text, ('staff'::character varying)::text, ('both'::character varying)::text])))
+);
+
+
+ALTER TABLE public.leave_types OWNER TO neondb_owner;
+
+--
+-- TOC entry 284 (class 1259 OID 214844)
+-- Name: leave_types_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.leave_types_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.leave_types_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4520 (class 0 OID 0)
+-- Dependencies: 284
+-- Name: leave_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.leave_types_id_seq OWNED BY public.leave_types.id;
+
+
+--
+-- TOC entry 285 (class 1259 OID 214845)
+-- Name: library_book_issues; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.library_book_issues (
+    id integer NOT NULL,
+    book_id integer,
+    student_id integer,
+    staff_id integer,
+    issue_date date DEFAULT CURRENT_DATE NOT NULL,
+    due_date date NOT NULL,
+    return_date date,
+    fine_amount numeric(8,2) DEFAULT 0,
+    status character varying(20) DEFAULT 'issued'::character varying,
+    issued_by integer,
+    returned_to integer,
+    remarks text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT library_book_issues_status_check CHECK (((status)::text = ANY (ARRAY[('issued'::character varying)::text, ('returned'::character varying)::text, ('lost'::character varying)::text, ('damaged'::character varying)::text])))
+);
+
+
+ALTER TABLE public.library_book_issues OWNER TO neondb_owner;
+
+--
+-- TOC entry 286 (class 1259 OID 214857)
+-- Name: library_book_issues_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.library_book_issues_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.library_book_issues_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4521 (class 0 OID 0)
+-- Dependencies: 286
+-- Name: library_book_issues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.library_book_issues_id_seq OWNED BY public.library_book_issues.id;
+
+
+--
+-- TOC entry 287 (class 1259 OID 214858)
+-- Name: library_books; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.library_books (
+    id integer NOT NULL,
+    book_title character varying(200) NOT NULL,
+    author character varying(200),
+    isbn character varying(20),
+    publisher character varying(100),
+    publication_year integer,
+    category_id integer,
+    total_copies integer DEFAULT 1,
+    available_copies integer DEFAULT 1,
+    book_price numeric(10,2),
+    book_location character varying(50),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.library_books OWNER TO neondb_owner;
+
+--
+-- TOC entry 288 (class 1259 OID 214868)
+-- Name: library_books_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.library_books_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.library_books_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4522 (class 0 OID 0)
+-- Dependencies: 288
+-- Name: library_books_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.library_books_id_seq OWNED BY public.library_books.id;
+
+
+--
+-- TOC entry 289 (class 1259 OID 214869)
+-- Name: library_categories; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.library_categories (
+    id integer NOT NULL,
+    category_name character varying(100) NOT NULL,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.library_categories OWNER TO neondb_owner;
+
+--
+-- TOC entry 290 (class 1259 OID 214877)
+-- Name: library_categories_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.library_categories_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.library_categories_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4523 (class 0 OID 0)
+-- Dependencies: 290
+-- Name: library_categories_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.library_categories_id_seq OWNED BY public.library_categories.id;
+
+
+--
+-- TOC entry 291 (class 1259 OID 214878)
+-- Name: medical_conditions; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.medical_conditions (
+    id integer NOT NULL,
+    condition_name character varying(100) NOT NULL,
+    description text,
+    severity_level character varying(20),
+    requires_medication boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT medical_conditions_severity_level_check CHECK (((severity_level)::text = ANY (ARRAY[('low'::character varying)::text, ('medium'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])))
+);
+
+
+ALTER TABLE public.medical_conditions OWNER TO neondb_owner;
+
+--
+-- TOC entry 292 (class 1259 OID 214888)
+-- Name: medical_conditions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.medical_conditions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.medical_conditions_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4524 (class 0 OID 0)
+-- Dependencies: 292
+-- Name: medical_conditions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.medical_conditions_id_seq OWNED BY public.medical_conditions.id;
+
+
+--
+-- TOC entry 293 (class 1259 OID 214889)
+-- Name: mother_tongues; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.mother_tongues (
+    id integer NOT NULL,
+    language_name character varying(50) NOT NULL,
+    language_code character varying(10),
+    description character varying(200),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.mother_tongues OWNER TO neondb_owner;
+
+--
+-- TOC entry 294 (class 1259 OID 214895)
+-- Name: mother_tongues_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.mother_tongues_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.mother_tongues_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4525 (class 0 OID 0)
+-- Dependencies: 294
+-- Name: mother_tongues_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.mother_tongues_id_seq OWNED BY public.mother_tongues.id;
+
+
+--
+-- TOC entry 295 (class 1259 OID 214896)
+-- Name: notes; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.notes (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    content text NOT NULL,
+    tag character varying(50),
+    priority character varying(20) DEFAULT 'medium'::character varying,
+    is_important boolean DEFAULT false,
+    is_deleted boolean DEFAULT false,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.notes OWNER TO neondb_owner;
+
+--
+-- TOC entry 296 (class 1259 OID 214906)
+-- Name: notes_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.notes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.notes_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4526 (class 0 OID 0)
+-- Dependencies: 296
+-- Name: notes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.notes_id_seq OWNED BY public.notes.id;
+
+
+--
+-- TOC entry 297 (class 1259 OID 214907)
+-- Name: notice_board; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.notice_board (
+    id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    content text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    message_to character varying(100) DEFAULT 'All'::character varying
+);
+
+
+ALTER TABLE public.notice_board OWNER TO neondb_owner;
+
+--
+-- TOC entry 298 (class 1259 OID 214915)
+-- Name: notice_board_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.notice_board_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.notice_board_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4527 (class 0 OID 0)
+-- Dependencies: 298
+-- Name: notice_board_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.notice_board_id_seq OWNED BY public.notice_board.id;
+
+
+--
+-- TOC entry 299 (class 1259 OID 214916)
+-- Name: parents; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.parents (
+    id integer NOT NULL,
+    student_id integer NOT NULL,
+    father_name character varying(100),
+    father_email character varying(255),
+    father_phone character varying(20),
+    father_occupation character varying(100),
+    father_image_url character varying(500),
+    mother_name character varying(100),
+    mother_email character varying(255),
+    mother_phone character varying(20),
+    mother_occupation character varying(100),
+    mother_image_url character varying(500),
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    user_id integer
+);
+
+
+ALTER TABLE public.parents OWNER TO neondb_owner;
+
+--
+-- TOC entry 300 (class 1259 OID 214923)
+-- Name: parents_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.parents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.parents_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4528 (class 0 OID 0)
+-- Dependencies: 300
+-- Name: parents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.parents_id_seq OWNED BY public.parents.id;
+
+
+--
+-- TOC entry 301 (class 1259 OID 214924)
+-- Name: pickup_points; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.pickup_points (
+    id integer NOT NULL,
+    point_name character varying(100) NOT NULL,
+    route_id integer,
+    address text,
+    landmark character varying(200),
+    pickup_time time without time zone,
+    drop_time time without time zone,
+    distance_from_school numeric(8,2),
+    sequence_order integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.pickup_points OWNER TO neondb_owner;
+
+--
+-- TOC entry 302 (class 1259 OID 214932)
+-- Name: pickup_points_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.pickup_points_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.pickup_points_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4529 (class 0 OID 0)
+-- Dependencies: 302
+-- Name: pickup_points_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.pickup_points_id_seq OWNED BY public.pickup_points.id;
+
+
+--
+-- TOC entry 303 (class 1259 OID 214933)
+-- Name: religions; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.religions (
+    id integer NOT NULL,
+    religion_name character varying(50) NOT NULL,
+    description character varying(200),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.religions OWNER TO neondb_owner;
+
+--
+-- TOC entry 304 (class 1259 OID 214939)
+-- Name: religions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.religions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.religions_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4530 (class 0 OID 0)
+-- Dependencies: 304
+-- Name: religions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.religions_id_seq OWNED BY public.religions.id;
+
+
+--
+-- TOC entry 305 (class 1259 OID 214940)
+-- Name: reports; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.reports (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    reported_user_id integer NOT NULL,
+    reason text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.reports OWNER TO neondb_owner;
+
+--
+-- TOC entry 306 (class 1259 OID 214946)
+-- Name: reports_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.reports_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.reports_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4531 (class 0 OID 0)
+-- Dependencies: 306
+-- Name: reports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.reports_id_seq OWNED BY public.reports.id;
+
+
+--
+-- TOC entry 307 (class 1259 OID 214947)
+-- Name: room_types; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.room_types (
+    id integer NOT NULL,
+    room_type character varying(50) NOT NULL,
+    description text,
+    max_occupancy integer,
+    room_fee numeric(10,2),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.room_types OWNER TO neondb_owner;
+
+--
+-- TOC entry 308 (class 1259 OID 214955)
+-- Name: room_types_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.room_types_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.room_types_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4532 (class 0 OID 0)
+-- Dependencies: 308
+-- Name: room_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.room_types_id_seq OWNED BY public.room_types.id;
+
+
+--
+-- TOC entry 309 (class 1259 OID 214956)
+-- Name: routes; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.routes (
+    id integer NOT NULL,
+    route_name character varying(100) NOT NULL,
+    route_code character varying(10),
+    start_point character varying(200),
+    end_point character varying(200),
+    total_distance numeric(8,2),
+    estimated_time integer,
+    route_fee numeric(10,2),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.routes OWNER TO neondb_owner;
+
+--
+-- TOC entry 310 (class 1259 OID 214964)
+-- Name: routes_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.routes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.routes_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4533 (class 0 OID 0)
+-- Dependencies: 310
+-- Name: routes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.routes_id_seq OWNED BY public.routes.id;
+
+
+--
+-- TOC entry 311 (class 1259 OID 214965)
+-- Name: sections; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.sections (
+    id integer NOT NULL,
+    section_name character varying(10) NOT NULL,
+    class_id integer,
+    section_teacher_id integer,
+    max_students integer DEFAULT 30,
+    room_number character varying(20),
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    no_of_students integer DEFAULT 0
+);
+
+
+ALTER TABLE public.sections OWNER TO neondb_owner;
+
+--
+-- TOC entry 312 (class 1259 OID 214975)
+-- Name: sections_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.sections_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.sections_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4534 (class 0 OID 0)
+-- Dependencies: 312
+-- Name: sections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.sections_id_seq OWNED BY public.sections.id;
+
+
+--
+-- TOC entry 313 (class 1259 OID 214976)
+-- Name: staff; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.staff (
+    id integer NOT NULL,
+    user_id integer,
+    employee_code character varying(20) NOT NULL,
+    first_name character varying(50) NOT NULL,
+    last_name character varying(50) NOT NULL,
+    gender character varying(10),
+    date_of_birth date,
+    blood_group_id integer,
+    phone character varying(15),
+    email character varying(100),
+    address text,
+    emergency_contact_name character varying(100),
+    emergency_contact_phone character varying(15),
+    designation_id integer,
+    department_id integer,
+    joining_date date,
+    salary numeric(12,2),
+    qualification text,
+    experience_years integer,
+    photo_url character varying(500),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT staff_gender_check CHECK (((gender)::text = ANY (ARRAY[('male'::character varying)::text, ('female'::character varying)::text, ('other'::character varying)::text])))
+);
+
+
+ALTER TABLE public.staff OWNER TO neondb_owner;
+
+--
+-- TOC entry 314 (class 1259 OID 214985)
+-- Name: staff_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.staff_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.staff_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4535 (class 0 OID 0)
+-- Dependencies: 314
+-- Name: staff_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.staff_id_seq OWNED BY public.staff.id;
+
+
+--
+-- TOC entry 315 (class 1259 OID 214986)
+-- Name: student_medical_conditions; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.student_medical_conditions (
+    id integer NOT NULL,
+    student_id integer,
+    medical_condition_id integer,
+    diagnosed_date date,
+    medication text,
+    special_instructions text,
+    doctor_name character varying(100),
+    doctor_contact character varying(15),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.student_medical_conditions OWNER TO neondb_owner;
+
+--
+-- TOC entry 316 (class 1259 OID 214994)
+-- Name: student_medical_conditions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.student_medical_conditions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.student_medical_conditions_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4536 (class 0 OID 0)
+-- Dependencies: 316
+-- Name: student_medical_conditions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.student_medical_conditions_id_seq OWNED BY public.student_medical_conditions.id;
+
+
+--
+-- TOC entry 317 (class 1259 OID 214995)
+-- Name: student_promotions; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.student_promotions (
+    id integer NOT NULL,
+    student_id integer,
+    from_class_id integer,
+    to_class_id integer,
+    from_section_id integer,
+    to_section_id integer,
+    from_academic_year_id integer,
+    to_academic_year_id integer,
+    promotion_date date DEFAULT CURRENT_DATE,
+    status character varying(20) DEFAULT 'promoted'::character varying,
+    remarks text,
+    promoted_by integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT student_promotions_status_check CHECK (((status)::text = ANY (ARRAY[('promoted'::character varying)::text, ('detained'::character varying)::text, ('transferred'::character varying)::text])))
+);
+
+
+ALTER TABLE public.student_promotions OWNER TO neondb_owner;
+
+--
+-- TOC entry 318 (class 1259 OID 215006)
+-- Name: student_promotions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.student_promotions_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.student_promotions_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4537 (class 0 OID 0)
+-- Dependencies: 318
+-- Name: student_promotions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.student_promotions_id_seq OWNED BY public.student_promotions.id;
+
+
+--
+-- TOC entry 319 (class 1259 OID 215007)
+-- Name: students; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.students (
+    id integer NOT NULL,
+    user_id integer,
+    admission_number character varying(20) NOT NULL,
+    roll_number character varying(20),
+    first_name character varying(50) NOT NULL,
+    last_name character varying(50) NOT NULL,
+    gender character varying(10),
+    date_of_birth date,
+    place_of_birth character varying(100),
+    blood_group_id integer,
+    religion_id integer,
+    cast_id integer,
+    mother_tongue_id integer,
+    nationality character varying(50) DEFAULT 'Indian'::character varying,
+    phone character varying(15),
+    email character varying(100),
+    address text,
+    academic_year_id integer,
+    class_id integer,
+    section_id integer,
+    house_id integer,
+    admission_date date,
+    previous_school character varying(200),
+    photo_url character varying(500),
+    is_transport_required boolean DEFAULT false,
+    route_id integer,
+    pickup_point_id integer,
+    is_hostel_required boolean DEFAULT false,
+    hostel_room_id integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    parent_id integer,
+    guardian_id integer,
+    address_id integer,
+    bank_name character varying(100),
+    branch character varying(100),
+    ifsc character varying(20),
+    known_allergies text,
+    medications text,
+    hostel_id integer,
+    sibiling_1 text,
+    sibiling_2 text,
+    sibiling_1_class text,
+    sibiling_2_class text,
+    previous_school_address text,
+    medical_condition text,
+    other_information text,
+    vehicle_number text,
+    current_address text,
+    permanent_address text,
+    unique_student_ids character varying(50) NOT NULL,
+    pen_number character varying(20) NOT NULL,
+    aadhar_no character varying(12) NOT NULL,
+    CONSTRAINT students_gender_check CHECK (((gender)::text = ANY (ARRAY[('male'::character varying)::text, ('female'::character varying)::text, ('other'::character varying)::text])))
+);
+
+
+ALTER TABLE public.students OWNER TO neondb_owner;
+
+--
+-- TOC entry 4538 (class 0 OID 0)
+-- Dependencies: 319
+-- Name: COLUMN students.parent_id; Type: COMMENT; Schema: public; Owner: neondb_owner
+--
+
+COMMENT ON COLUMN public.students.parent_id IS 'Foreign key reference to parents table';
+
+
+--
+-- TOC entry 4539 (class 0 OID 0)
+-- Dependencies: 319
+-- Name: COLUMN students.guardian_id; Type: COMMENT; Schema: public; Owner: neondb_owner
+--
+
+COMMENT ON COLUMN public.students.guardian_id IS 'Foreign key reference to guardians table';
+
+
+--
+-- TOC entry 320 (class 1259 OID 215019)
+-- Name: students_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.students_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.students_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4540 (class 0 OID 0)
+-- Dependencies: 320
+-- Name: students_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.students_id_seq OWNED BY public.students.id;
+
+
+--
+-- TOC entry 321 (class 1259 OID 215020)
+-- Name: subjects; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.subjects (
+    id integer NOT NULL,
+    subject_name character varying(100) NOT NULL,
+    subject_code character varying(10),
+    class_id integer,
+    teacher_id integer,
+    theory_hours integer DEFAULT 0,
+    practical_hours integer DEFAULT 0,
+    total_marks integer DEFAULT 100,
+    passing_marks integer DEFAULT 35,
+    description text,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.subjects OWNER TO neondb_owner;
+
+--
+-- TOC entry 322 (class 1259 OID 215032)
+-- Name: subjects_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.subjects_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.subjects_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4541 (class 0 OID 0)
+-- Dependencies: 322
+-- Name: subjects_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.subjects_id_seq OWNED BY public.subjects.id;
+
+
+--
+-- TOC entry 323 (class 1259 OID 215033)
+-- Name: teacher_routines; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.teacher_routines (
+    id integer NOT NULL,
+    teacher_id integer,
+    class_schedule_id integer,
+    academic_year_id integer,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.teacher_routines OWNER TO neondb_owner;
+
+--
+-- TOC entry 324 (class 1259 OID 215039)
+-- Name: teacher_routines_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.teacher_routines_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.teacher_routines_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4542 (class 0 OID 0)
+-- Dependencies: 324
+-- Name: teacher_routines_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.teacher_routines_id_seq OWNED BY public.teacher_routines.id;
+
+
+--
+-- TOC entry 325 (class 1259 OID 215040)
+-- Name: teachers; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.teachers (
+    id integer NOT NULL,
+    class_id integer,
+    subject_id integer,
+    father_name character varying(100),
+    mother_name character varying(100),
+    marital_status character varying(20),
+    languages_known text[],
+    previous_school_name character varying(200),
+    previous_school_address text,
+    previous_school_phone character varying(15),
+    current_address text,
+    permanent_address text,
+    pan_number character varying(10),
+    id_number character varying(50),
+    status character varying(20) DEFAULT 'Active'::character varying,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    staff_id bigint,
+    bank_name text,
+    branch text,
+    ifsc text,
+    contract_type text,
+    shift text,
+    work_location text,
+    facebook text,
+    twitter text,
+    linkedin text,
+    youtube text,
+    instagram text,
+    blood_group text DEFAULT 'UNKNOWN'::text NOT NULL,
+    CONSTRAINT teachers_marital_status_check CHECK (((marital_status)::text = ANY (ARRAY[('Single'::character varying)::text, ('Married'::character varying)::text, ('Divorced'::character varying)::text, ('Widowed'::character varying)::text]))),
+    CONSTRAINT teachers_status_check CHECK (((status)::text = ANY (ARRAY[('Active'::character varying)::text, ('Inactive'::character varying)::text, ('On Leave'::character varying)::text, ('Terminated'::character varying)::text])))
+);
+
+
+ALTER TABLE public.teachers OWNER TO neondb_owner;
+
+--
+-- TOC entry 326 (class 1259 OID 215051)
+-- Name: teachers_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.teachers_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.teachers_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4543 (class 0 OID 0)
+-- Dependencies: 326
+-- Name: teachers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.teachers_id_seq OWNED BY public.teachers.id;
+
+
+--
+-- TOC entry 327 (class 1259 OID 215052)
+-- Name: time_slots; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.time_slots (
+    id integer NOT NULL,
+    slot_name character varying(50) NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
+    duration integer,
+    is_break boolean DEFAULT false,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.time_slots OWNER TO neondb_owner;
+
+--
+-- TOC entry 328 (class 1259 OID 215059)
+-- Name: time_slots_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.time_slots_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.time_slots_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4544 (class 0 OID 0)
+-- Dependencies: 328
+-- Name: time_slots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.time_slots_id_seq OWNED BY public.time_slots.id;
+
+
+--
+-- TOC entry 329 (class 1259 OID 215060)
+-- Name: todos; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.todos (
+    id integer NOT NULL,
+    user_id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    due_date timestamp without time zone,
+    priority character varying(20) DEFAULT 'medium'::character varying,
+    status character varying(20) DEFAULT 'pending'::character varying,
+    tag character varying(50),
+    is_important boolean DEFAULT false,
+    assigned_to integer,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.todos OWNER TO neondb_owner;
+
+--
+-- TOC entry 330 (class 1259 OID 215070)
+-- Name: todos_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.todos_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.todos_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4545 (class 0 OID 0)
+-- Dependencies: 330
+-- Name: todos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.todos_id_seq OWNED BY public.todos.id;
+
+
+--
+-- TOC entry 331 (class 1259 OID 215071)
+-- Name: user_roles; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.user_roles (
+    id integer NOT NULL,
+    role_name character varying(50) NOT NULL,
+    description text,
+    permissions jsonb,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.user_roles OWNER TO neondb_owner;
+
+--
+-- TOC entry 332 (class 1259 OID 215079)
+-- Name: user_roles_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.user_roles_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.user_roles_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4546 (class 0 OID 0)
+-- Dependencies: 332
+-- Name: user_roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.user_roles_id_seq OWNED BY public.user_roles.id;
+
+
+--
+-- TOC entry 333 (class 1259 OID 215080)
+-- Name: users; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.users (
+    id integer NOT NULL,
+    username character varying(50) NOT NULL,
+    email character varying(100),
+    password_hash character varying(255) NOT NULL,
+    role_id integer,
+    first_name character varying(50),
+    last_name character varying(50),
+    phone character varying(15),
+    last_login timestamp without time zone,
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    current_address text DEFAULT 'Not Provided'::text NOT NULL,
+    permanent_address text DEFAULT 'Not Provided'::text NOT NULL,
+    avatar text DEFAULT ''::text NOT NULL
+);
+
+
+ALTER TABLE public.users OWNER TO neondb_owner;
+
+--
+-- TOC entry 334 (class 1259 OID 215091)
+-- Name: users_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.users_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.users_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4547 (class 0 OID 0)
+-- Dependencies: 334
+-- Name: users_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- TOC entry 335 (class 1259 OID 215092)
+-- Name: vehicles; Type: TABLE; Schema: public; Owner: neondb_owner
+--
+
+CREATE TABLE public.vehicles (
+    id integer NOT NULL,
+    vehicle_number character varying(20) NOT NULL,
+    vehicle_type character varying(20),
+    brand character varying(50),
+    model character varying(50),
+    seating_capacity integer,
+    driver_id integer,
+    route_id integer,
+    insurance_expiry date,
+    fitness_certificate_expiry date,
+    permit_expiry date,
+    fuel_type character varying(20),
+    is_active boolean DEFAULT true,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    made_of_year integer,
+    registration_number text,
+    chassis_number text,
+    gps_device_id text,
+    CONSTRAINT vehicles_fuel_type_check CHECK (((fuel_type)::text = ANY (ARRAY[('petrol'::character varying)::text, ('diesel'::character varying)::text, ('cng'::character varying)::text, ('electric'::character varying)::text]))),
+    CONSTRAINT vehicles_vehicle_type_check CHECK (((vehicle_type)::text = ANY (ARRAY[('bus'::character varying)::text, ('van'::character varying)::text, ('car'::character varying)::text])))
+);
+
+
+ALTER TABLE public.vehicles OWNER TO neondb_owner;
+
+--
+-- TOC entry 336 (class 1259 OID 215102)
+-- Name: vehicles_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+--
+
+CREATE SEQUENCE public.vehicles_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.vehicles_id_seq OWNER TO neondb_owner;
+
+--
+-- TOC entry 4548 (class 0 OID 0)
+-- Dependencies: 336
+-- Name: vehicles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+--
+
+ALTER SEQUENCE public.vehicles_id_seq OWNED BY public.vehicles.id;
+
+
+--
+-- TOC entry 3511 (class 2604 OID 215103)
+-- Name: academic_years id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.academic_years ALTER COLUMN id SET DEFAULT nextval('public.academic_years_id_seq'::regclass);
+
+
+--
+-- TOC entry 3516 (class 2604 OID 215104)
+-- Name: addresses id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.addresses ALTER COLUMN id SET DEFAULT nextval('public.addresses_id_seq'::regclass);
+
+
+--
+-- TOC entry 3518 (class 2604 OID 215105)
+-- Name: attendance id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance ALTER COLUMN id SET DEFAULT nextval('public.attendance_id_seq'::regclass);
+
+
+--
+-- TOC entry 3521 (class 2604 OID 215106)
+-- Name: blocked_users id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blocked_users ALTER COLUMN id SET DEFAULT nextval('public.blocked_users_id_seq'::regclass);
+
+
+--
+-- TOC entry 3523 (class 2604 OID 215107)
+-- Name: blood_groups id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blood_groups ALTER COLUMN id SET DEFAULT nextval('public.blood_groups_id_seq'::regclass);
+
+
+--
+-- TOC entry 3527 (class 2604 OID 215108)
+-- Name: calendar_events id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calendar_events ALTER COLUMN id SET DEFAULT nextval('public.calendar_events_id_seq'::regclass);
+
+
+--
+-- TOC entry 3532 (class 2604 OID 215110)
+-- Name: calls id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calls ALTER COLUMN id SET DEFAULT nextval('public.calls_id_seq'::regclass);
+
+
+--
+-- TOC entry 3536 (class 2604 OID 215111)
+-- Name: casts id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.casts ALTER COLUMN id SET DEFAULT nextval('public.casts_id_seq'::regclass);
+
+
+--
+-- TOC entry 3540 (class 2604 OID 215112)
+-- Name: chat_settings id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chat_settings ALTER COLUMN id SET DEFAULT nextval('public.chat_settings_id_seq'::regclass);
+
+
+--
+-- TOC entry 3544 (class 2604 OID 215113)
+-- Name: chats id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chats ALTER COLUMN id SET DEFAULT nextval('public.chats_id_seq'::regclass);
+
+
+--
+-- TOC entry 3550 (class 2604 OID 215114)
+-- Name: class_rooms id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_rooms ALTER COLUMN id SET DEFAULT nextval('public.class_rooms_id_seq'::regclass);
+
+
+--
+-- TOC entry 3555 (class 2604 OID 215115)
+-- Name: class_schedules id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules ALTER COLUMN id SET DEFAULT nextval('public.class_schedules_id_seq'::regclass);
+
+
+--
+-- TOC entry 3559 (class 2604 OID 215116)
+-- Name: class_syllabus id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_syllabus ALTER COLUMN id SET DEFAULT nextval('public.class_syllabus_id_seq'::regclass);
+
+
+--
+-- TOC entry 3563 (class 2604 OID 215117)
+-- Name: classes id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.classes ALTER COLUMN id SET DEFAULT nextval('public.classes_id_seq'::regclass);
+
+
+--
+-- TOC entry 3569 (class 2604 OID 215118)
+-- Name: departments id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.departments ALTER COLUMN id SET DEFAULT nextval('public.departments_id_seq'::regclass);
+
+
+--
+-- TOC entry 3573 (class 2604 OID 215119)
+-- Name: designations id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.designations ALTER COLUMN id SET DEFAULT nextval('public.designations_id_seq'::regclass);
+
+
+--
+-- TOC entry 3577 (class 2604 OID 215120)
+-- Name: document_types id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.document_types ALTER COLUMN id SET DEFAULT nextval('public.document_types_id_seq'::regclass);
+
+
+--
+-- TOC entry 3582 (class 2604 OID 215121)
+-- Name: documents id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents ALTER COLUMN id SET DEFAULT nextval('public.documents_id_seq'::regclass);
+
+
+--
+-- TOC entry 3588 (class 2604 OID 215122)
+-- Name: drivers id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.drivers ALTER COLUMN id SET DEFAULT nextval('public.drivers_id_seq'::regclass);
+
+
+--
+-- TOC entry 3592 (class 2604 OID 215123)
+-- Name: emails id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.emails ALTER COLUMN id SET DEFAULT nextval('public.emails_id_seq'::regclass);
+
+
+--
+-- TOC entry 3601 (class 2604 OID 215124)
+-- Name: events id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.events_id_seq'::regclass);
+
+
+--
+-- TOC entry 3607 (class 2604 OID 215125)
+-- Name: exam_results id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results ALTER COLUMN id SET DEFAULT nextval('public.exam_results_id_seq'::regclass);
+
+
+--
+-- TOC entry 3612 (class 2604 OID 215126)
+-- Name: exams id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exams ALTER COLUMN id SET DEFAULT nextval('public.exams_id_seq'::regclass);
+
+
+--
+-- TOC entry 3618 (class 2604 OID 215127)
+-- Name: fee_collections id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections ALTER COLUMN id SET DEFAULT nextval('public.fee_collections_id_seq'::regclass);
+
+
+--
+-- TOC entry 3623 (class 2604 OID 215128)
+-- Name: fee_structures id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_structures ALTER COLUMN id SET DEFAULT nextval('public.fee_structures_id_seq'::regclass);
+
+
+--
+-- TOC entry 3629 (class 2604 OID 215129)
+-- Name: files id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.files ALTER COLUMN id SET DEFAULT nextval('public.files_id_seq'::regclass);
+
+
+--
+-- TOC entry 3635 (class 2604 OID 215130)
+-- Name: guardians id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.guardians ALTER COLUMN id SET DEFAULT nextval('public.guardians_id_seq'::regclass);
+
+
+--
+-- TOC entry 3641 (class 2604 OID 215131)
+-- Name: holidays id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.holidays ALTER COLUMN id SET DEFAULT nextval('public.holidays_id_seq'::regclass);
+
+
+--
+-- TOC entry 3645 (class 2604 OID 215132)
+-- Name: hostel_rooms id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostel_rooms ALTER COLUMN id SET DEFAULT nextval('public.hostel_rooms_id_seq'::regclass);
+
+
+--
+-- TOC entry 3650 (class 2604 OID 215133)
+-- Name: hostels id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostels ALTER COLUMN id SET DEFAULT nextval('public.hostels_id_seq'::regclass);
+
+
+--
+-- TOC entry 3654 (class 2604 OID 215134)
+-- Name: houses id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.houses ALTER COLUMN id SET DEFAULT nextval('public.houses_id_seq'::regclass);
+
+
+--
+-- TOC entry 3658 (class 2604 OID 215135)
+-- Name: languages id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.languages ALTER COLUMN id SET DEFAULT nextval('public.languages_id_seq'::regclass);
+
+
+--
+-- TOC entry 3663 (class 2604 OID 215136)
+-- Name: leave_applications id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications ALTER COLUMN id SET DEFAULT nextval('public.leave_applications_id_seq'::regclass);
+
+
+--
+-- TOC entry 3668 (class 2604 OID 215137)
+-- Name: leave_types id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_types ALTER COLUMN id SET DEFAULT nextval('public.leave_types_id_seq'::regclass);
+
+
+--
+-- TOC entry 3673 (class 2604 OID 215138)
+-- Name: library_book_issues id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues ALTER COLUMN id SET DEFAULT nextval('public.library_book_issues_id_seq'::regclass);
+
+
+--
+-- TOC entry 3680 (class 2604 OID 215139)
+-- Name: library_books id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_books ALTER COLUMN id SET DEFAULT nextval('public.library_books_id_seq'::regclass);
+
+
+--
+-- TOC entry 3686 (class 2604 OID 215140)
+-- Name: library_categories id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_categories ALTER COLUMN id SET DEFAULT nextval('public.library_categories_id_seq'::regclass);
+
+
+--
+-- TOC entry 3690 (class 2604 OID 215141)
+-- Name: medical_conditions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.medical_conditions ALTER COLUMN id SET DEFAULT nextval('public.medical_conditions_id_seq'::regclass);
+
+
+--
+-- TOC entry 3695 (class 2604 OID 215142)
+-- Name: mother_tongues id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.mother_tongues ALTER COLUMN id SET DEFAULT nextval('public.mother_tongues_id_seq'::regclass);
+
+
+--
+-- TOC entry 3699 (class 2604 OID 215143)
+-- Name: notes id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notes ALTER COLUMN id SET DEFAULT nextval('public.notes_id_seq'::regclass);
+
+
+--
+-- TOC entry 3705 (class 2604 OID 215144)
+-- Name: notice_board id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notice_board ALTER COLUMN id SET DEFAULT nextval('public.notice_board_id_seq'::regclass);
+
+
+--
+-- TOC entry 3709 (class 2604 OID 215145)
+-- Name: parents id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.parents ALTER COLUMN id SET DEFAULT nextval('public.parents_id_seq'::regclass);
+
+
+--
+-- TOC entry 3712 (class 2604 OID 215146)
+-- Name: pickup_points id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.pickup_points ALTER COLUMN id SET DEFAULT nextval('public.pickup_points_id_seq'::regclass);
+
+
+--
+-- TOC entry 3716 (class 2604 OID 215147)
+-- Name: religions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.religions ALTER COLUMN id SET DEFAULT nextval('public.religions_id_seq'::regclass);
+
+
+--
+-- TOC entry 3720 (class 2604 OID 215148)
+-- Name: reports id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.reports ALTER COLUMN id SET DEFAULT nextval('public.reports_id_seq'::regclass);
+
+
+--
+-- TOC entry 3722 (class 2604 OID 215149)
+-- Name: room_types id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.room_types ALTER COLUMN id SET DEFAULT nextval('public.room_types_id_seq'::regclass);
+
+
+--
+-- TOC entry 3726 (class 2604 OID 215150)
+-- Name: routes id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.routes ALTER COLUMN id SET DEFAULT nextval('public.routes_id_seq'::regclass);
+
+
+--
+-- TOC entry 3730 (class 2604 OID 215151)
+-- Name: sections id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.sections ALTER COLUMN id SET DEFAULT nextval('public.sections_id_seq'::regclass);
+
+
+--
+-- TOC entry 3736 (class 2604 OID 215152)
+-- Name: staff id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff ALTER COLUMN id SET DEFAULT nextval('public.staff_id_seq'::regclass);
+
+
+--
+-- TOC entry 3740 (class 2604 OID 215153)
+-- Name: student_medical_conditions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_medical_conditions ALTER COLUMN id SET DEFAULT nextval('public.student_medical_conditions_id_seq'::regclass);
+
+
+--
+-- TOC entry 3744 (class 2604 OID 215154)
+-- Name: student_promotions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions ALTER COLUMN id SET DEFAULT nextval('public.student_promotions_id_seq'::regclass);
+
+
+--
+-- TOC entry 3750 (class 2604 OID 215155)
+-- Name: students id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students ALTER COLUMN id SET DEFAULT nextval('public.students_id_seq'::regclass);
+
+
+--
+-- TOC entry 3757 (class 2604 OID 215156)
+-- Name: subjects id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.subjects ALTER COLUMN id SET DEFAULT nextval('public.subjects_id_seq'::regclass);
+
+
+--
+-- TOC entry 3765 (class 2604 OID 215157)
+-- Name: teacher_routines id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teacher_routines ALTER COLUMN id SET DEFAULT nextval('public.teacher_routines_id_seq'::regclass);
+
+
+--
+-- TOC entry 3769 (class 2604 OID 215158)
+-- Name: teachers id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers ALTER COLUMN id SET DEFAULT nextval('public.teachers_id_seq'::regclass);
+
+
+--
+-- TOC entry 3774 (class 2604 OID 215159)
+-- Name: time_slots id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.time_slots ALTER COLUMN id SET DEFAULT nextval('public.time_slots_id_seq'::regclass);
+
+
+--
+-- TOC entry 3779 (class 2604 OID 215160)
+-- Name: todos id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.todos ALTER COLUMN id SET DEFAULT nextval('public.todos_id_seq'::regclass);
+
+
+--
+-- TOC entry 3785 (class 2604 OID 215161)
+-- Name: user_roles id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.user_roles ALTER COLUMN id SET DEFAULT nextval('public.user_roles_id_seq'::regclass);
+
+
+--
+-- TOC entry 3789 (class 2604 OID 215162)
+-- Name: users id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- TOC entry 3796 (class 2604 OID 215163)
+-- Name: vehicles id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.vehicles ALTER COLUMN id SET DEFAULT nextval('public.vehicles_id_seq'::regclass);
+
+
+--
+-- TOC entry 4360 (class 0 OID 214519)
+-- Dependencies: 217
+-- Data for Name: academic_years; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.academic_years (id, year_name, start_date, end_date, is_current, is_active, created_at, created_by, modified_at) FROM stdin;
+2	2023-24	2023-04-01	2024-03-31	f	t	2025-08-14 04:05:11.845903	\N	2025-08-14 04:05:11.845903
+1	2024-25	2024-04-01	2025-03-31	f	t	2025-08-14 04:05:11.845903	\N	2025-08-14 04:05:11.845903
+3	2025-26	2025-04-01	2026-03-31	t	t	2025-08-14 04:05:11.845903	\N	2025-08-14 04:05:11.845903
+\.
+
+
+--
+-- TOC entry 4362 (class 0 OID 214527)
+-- Dependencies: 219
+-- Data for Name: addresses; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.addresses (id, current_address, permanent_address, created_at, user_id, role_id, person_id) FROM stdin;
+1	123 Green Street, City A	456 Oak Avenue, City A	2025-08-18 02:53:25.58864	9	3	1
+2	789 Maple Road, City B	321 Pine Lane, City B	2025-08-18 02:53:25.58864	10	3	2
+3	654 Elm Street, City C	987 Cedar Avenue, City C	2025-08-18 02:53:25.58864	11	3	3
+4	111 Birch Boulevard, City D	222 Spruce Drive, City D	2025-08-18 02:53:25.58864	12	3	16
+6	654 Elm Street, City C	987 Cedar Avenue, City C	2026-03-04 11:15:54.938815	11	2	3
+7	111 Birch Boulevard, City D	222 Spruce Drive, City D	2026-03-08 12:43:04.015571	12	2	16
+5	sector-5	sector-5	2026-02-25 16:45:40.502795	9	2	1
+\.
+
+
+--
+-- TOC entry 4364 (class 0 OID 214534)
+-- Dependencies: 221
+-- Data for Name: attendance; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.attendance (id, student_id, class_id, section_id, attendance_date, status, check_in_time, check_out_time, marked_by, remarks, academic_year_id, created_at, created_by, modified_at) FROM stdin;
+1	1	1	1	2024-08-05	present	08:30:00	13:30:00	2	\N	1	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+2	2	2	2	2024-08-05	present	08:25:00	13:30:00	2	\N	1	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+3	3	3	3	2024-08-05	late	09:15:00	13:30:00	3	\N	1	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+\.
+
+
+--
+-- TOC entry 4366 (class 0 OID 214543)
+-- Dependencies: 223
+-- Data for Name: blocked_users; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.blocked_users (id, user_id, blocked_user_id, created_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 4368 (class 0 OID 214548)
+-- Dependencies: 225
+-- Data for Name: blood_groups; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.blood_groups (id, blood_group, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	A+	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+2	A-	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+3	B+	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+4	B-	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+5	AB+	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+6	AB-	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+7	O+	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+8	O-	\N	t	2025-08-14 03:21:40.574751	\N	2025-08-14 03:21:40.574751
+\.
+
+
+--
+-- TOC entry 4370 (class 0 OID 214555)
+-- Dependencies: 227
+-- Data for Name: calendar_events; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.calendar_events (id, user_id, title, description, start_date, end_date, event_color, is_all_day, location, created_at, updated_at) FROM stdin;
+1	11	Team Meeting	Discuss project progress	2026-02-19 17:15:42.392318	2026-02-19 18:15:42.392318	bg-primary	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+2	11	School Event	Annual day celebration	2026-02-23 17:15:42.392318	2026-02-23 17:15:42.392318	bg-success	t	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+3	11	Parent-Teacher Meeting	Discuss student progress	2026-02-25 17:15:42.392318	2026-02-25 19:15:42.392318	bg-info	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+\.
+
+
+--
+-- TOC entry 4372 (class 0 OID 214565)
+-- Dependencies: 229
+-- Data for Name: calls; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.calls (id, user_id, recipient_id, call_type, phone_number, duration, call_date, created_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 4374 (class 0 OID 214572)
+-- Dependencies: 231
+-- Data for Name: casts; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.casts (id, cast_name, religion_id, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	General	1	General category	t	2025-08-14 04:11:53.220564	\N	2025-08-14 04:11:53.220564
+2	OBC	1	Other Backward Class	t	2025-08-14 04:11:53.220564	\N	2025-08-14 04:11:53.220564
+3	SC	1	Scheduled Caste	t	2025-08-14 04:11:53.220564	\N	2025-08-14 04:11:53.220564
+\.
+
+
+--
+-- TOC entry 4376 (class 0 OID 214579)
+-- Dependencies: 233
+-- Data for Name: chat_settings; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.chat_settings (id, user_id, recipient_id, is_muted, muted_until, cleared_at, disappearing_seconds, created_at, updated_at) FROM stdin;
+1	13	12	f	\N	2026-02-19 16:41:06.747971	\N	2026-02-19 16:41:06.747971	2026-02-19 16:41:06.747971
+\.
+
+
+--
+-- TOC entry 4378 (class 0 OID 214586)
+-- Dependencies: 235
+-- Data for Name: chats; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.chats (id, user_id, recipient_id, message, is_read, is_pinned, message_type, file_url, created_at, updated_at) FROM stdin;
+9	13	12	helloo	f	f	text	\N	2026-02-19 16:55:51.360018	2026-02-19 16:55:51.360018
+\.
+
+
+--
+-- TOC entry 4380 (class 0 OID 214597)
+-- Dependencies: 237
+-- Data for Name: class_rooms; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.class_rooms (id, room_no, capacity, status, description, floor, building, created_at, modified_at) FROM stdin;
+2	102	40	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+3	103	60	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+4	104	50	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+5	105	40	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+6	106	50	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+7	107	40	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+8	108	40	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+9	109	40	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+10	110	50	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:04:58.256769
+1	101	50	Active	\N	\N	\N	2026-02-20 16:04:58.256769	2026-02-20 16:17:56.490241
+\.
+
+
+--
+-- TOC entry 4382 (class 0 OID 214607)
+-- Dependencies: 239
+-- Data for Name: class_schedules; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.class_schedules (id, class_id, section_id, subject_id, time_slot_id, day_of_week, academic_year_id, room_number, teacher_id, is_active, created_at, created_by, modified_at) FROM stdin;
+1	1	1	1	1	1	1	R101	2	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+2	2	2	2	2	1	1	R201	2	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+3	3	3	3	1	2	1	R301	3	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+\.
+
+
+--
+-- TOC entry 4384 (class 0 OID 214615)
+-- Dependencies: 241
+-- Data for Name: class_syllabus; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.class_syllabus (id, class_id, section_id, class_name, section_name, subject_group, status, description, academic_year_id, created_at, modified_at) FROM stdin;
+2	2	2	LKG	B	English	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+3	3	3	UKG	C	Mathematics	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+4	2	2	LKG	B	English	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+5	1	1	Nursary	A	Play Activities	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+6	3	3	UKG	C	Mathematics	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+7	2	2	LKG	B	English	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+8	3	3	UKG	C	Mathematics	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+9	1	1	Nursary	A	Play Activities	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+10	1	1	Nursary	A	Play Activities	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-20 16:46:09.167788
+1	1	1	Nursery	A	Play Activiti	Active	\N	3	2026-02-20 16:46:09.167788	2026-02-21 10:36:31.096191
+\.
+
+
+--
+-- TOC entry 4386 (class 0 OID 214624)
+-- Dependencies: 243
+-- Data for Name: classes; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.classes (id, class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, created_at, created_by, modified_at, no_of_students) FROM stdin;
+3	UKG	UKG	1	3	30	20000.00	Upper Kindergarten	t	2025-08-14 04:10:59.275289	\N	2025-08-14 04:10:59.275289	28
+1	Nursery	NUR	1	2	25	15000.00	Nursery class for 3-4 years children	t	2025-08-14 04:10:59.275289	\N	2025-08-14 04:10:59.275289	22
+2	LKG	LKG	1	2	25	18000.00	Lower Kindergarten	t	2025-08-14 04:10:59.275289	\N	2025-08-14 04:10:59.275289	0
+\.
+
+
+--
+-- TOC entry 4388 (class 0 OID 214635)
+-- Dependencies: 245
+-- Data for Name: departments; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.departments (id, department_name, department_code, head_of_department, description, is_active, created_at, created_by, modified_at) FROM stdin;
+2	Administration	ADM	\N	Administrative department	t	2025-08-14 04:05:52.789248	\N	2025-08-14 04:05:52.789248
+3	Support Staff	SUP	\N	Support staff department	t	2025-08-14 04:05:52.789248	\N	2025-08-14 04:05:52.789248
+1	Primary Education	PED	\N	Primary level education department	t	2025-08-14 04:05:52.789248	\N	2026-02-17 19:39:35.248373
+\.
+
+
+--
+-- TOC entry 4390 (class 0 OID 214644)
+-- Dependencies: 247
+-- Data for Name: designations; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.designations (id, designation_name, department_id, salary_range_min, salary_range_max, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Principal	2	80000.00	120000.00	School Principal	t	2025-08-14 04:06:46.769615	\N	2025-08-14 04:06:46.769615
+2	Primary Teacher	1	25000.00	40000.00	Primary level teacher	t	2025-08-14 04:06:46.769615	\N	2025-08-14 04:06:46.769615
+3	Class Teacher	1	30000.00	45000.00	Class teacher with additional responsibilities	t	2025-08-14 04:06:46.769615	\N	2025-08-14 04:06:46.769615
+\.
+
+
+--
+-- TOC entry 4392 (class 0 OID 214653)
+-- Dependencies: 249
+-- Data for Name: document_types; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.document_types (id, document_type, description, is_mandatory, applicable_for, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Birth Certificate	Official birth certificate	t	student	t	2025-08-14 04:32:06.439895	\N	2025-08-14 04:32:06.439895
+2	Aadhar Card	Aadhar card copy	t	both	t	2025-08-14 04:32:06.439895	\N	2025-08-14 04:32:06.439895
+3	Medical Certificate	Health fitness certificate	t	student	t	2025-08-14 04:32:06.439895	\N	2025-08-14 04:32:06.439895
+\.
+
+
+--
+-- TOC entry 4394 (class 0 OID 214662)
+-- Dependencies: 251
+-- Data for Name: documents; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.documents (id, document_type_id, student_id, staff_id, document_name, file_path, file_size, upload_date, expiry_date, is_verified, verified_by, verified_date, remarks, is_active, created_at, created_by, modified_at) FROM stdin;
+1	1	1	\N	Aarav_Birth_Certificate.pdf	/documents/students/1/birth_cert.pdf	\N	2024-03-15	\N	t	1	2024-03-16	\N	t	2025-08-14 04:32:15.362948	\N	2025-08-14 04:32:15.362948
+2	2	2	\N	Sara_Aadhar_Card.pdf	/documents/students/2/aadhar.pdf	\N	2024-03-16	\N	t	1	2024-03-17	\N	t	2025-08-14 04:32:15.362948	\N	2025-08-14 04:32:15.362948
+3	3	3	\N	Arjun_Medical_Certificate.pdf	/documents/students/3/medical.pdf	\N	2024-03-17	\N	t	1	2024-03-18	\N	t	2025-08-14 04:32:15.362948	\N	2025-08-14 04:32:15.362948
+\.
+
+
+--
+-- TOC entry 4396 (class 0 OID 214673)
+-- Dependencies: 253
+-- Data for Name: drivers; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.drivers (id, driver_name, employee_code, phone, email, license_number, license_expiry, address, emergency_contact, joining_date, salary, is_active, created_at, created_by, modified_at) FROM stdin;
+2	Suresh Patil	DRV002	9876541113	suresh.driver@school.com	MH31DL789012	2025-12-20	456 Transport Nagar, Nagpur	9876541114	2021-08-10	19000.00	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+3	Mahesh Kumar	DRV003	9876541115	mahesh.driver@school.com	MH31DL345678	2027-03-25	789 Driver Street, Nagpur	9876541116	2023-02-01	17500.00	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+1	Ramesh Yadav	DRV001	9876541111	ramesh.driver@school.com	MH31DL123456	2026-05-15	123 Driver Colony, Nagpur	9876541112	2022-01-15	18000.00	t	2025-08-14 04:12:16.81416	\N	2026-02-17 16:38:38.315512
+\.
+
+
+--
+-- TOC entry 4398 (class 0 OID 214682)
+-- Dependencies: 255
+-- Data for Name: emails; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.emails (id, user_id, sender_id, sender_email, recipient_email, subject, body, is_read, is_starred, is_important, folder, has_attachment, attachment_url, sent_at, created_at, updated_at) FROM stdin;
+1	11	9	sender@example.com	\N	Welcome to School Management System	This is a welcome email.	f	t	f	inbox	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+2	11	9	admin@example.com	\N	Important Notice	Please review the attached document.	f	f	f	inbox	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+3	11	\N	noreply@example.com	\N	System Update	The system will be updated tonight.	t	f	f	inbox	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+\.
+
+
+--
+-- TOC entry 4400 (class 0 OID 214696)
+-- Dependencies: 257
+-- Data for Name: events; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.events (id, title, description, start_date, end_date, event_color, is_all_day, location, event_category, event_for, target_class_ids, target_section_ids, attachment_url, created_by, created_at, updated_at) FROM stdin;
+1	Parents Teacher Meet	Meeting with parents and teachers	2026-03-05 13:12:07.744468	2026-03-05 15:12:07.744468	bg-primary	f	\N	Meeting	all	\N	\N	\N	\N	2026-02-26 13:12:07.744468	2026-02-26 13:12:07.744468
+2	Summer Vacation	School summer break	2026-01-27 13:12:07.744468	2026-02-06 13:12:07.744468	bg-danger	t	\N	Holidays	all	\N	\N	\N	\N	2026-02-26 13:12:07.744468	2026-02-26 13:12:07.744468
+\.
+
+
+--
+-- TOC entry 4402 (class 0 OID 214707)
+-- Dependencies: 259
+-- Data for Name: exam_results; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.exam_results (id, exam_id, student_id, subject_id, marks_obtained, grade, remarks, is_absent, is_active, created_at, created_by, modified_at) FROM stdin;
+10	1	1	1	42.00	A	Excellent performance in play activities	f	t	2025-08-14 04:33:54.287649	\N	2025-08-14 04:33:54.287649
+11	2	2	2	85.00	A	Outstanding performance in English	f	t	2025-08-14 04:33:54.287649	\N	2025-08-14 04:33:54.287649
+12	3	3	3	78.00	A	Good mathematical understanding	f	t	2025-08-14 04:33:54.287649	\N	2025-08-14 04:33:54.287649
+13	3	16	3	66.00	B	Good mathematical understanding	f	t	2025-08-14 04:33:54.287649	\N	2025-08-14 04:33:54.287649
+\.
+
+
+--
+-- TOC entry 4404 (class 0 OID 214717)
+-- Dependencies: 261
+-- Data for Name: exams; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.exams (id, exam_name, exam_type, class_id, academic_year_id, start_date, end_date, total_marks, passing_marks, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Unit Test 1	unit_test	1	1	2024-07-15	2024-07-20	50	20	First unit test for Nursery	t	2025-08-14 04:33:24.765849	\N	2025-08-14 04:33:24.765849
+2	Unit Test 1	unit_test	2	1	2024-07-15	2024-07-20	100	40	First unit test for LKG	t	2025-08-14 04:33:24.765849	\N	2025-08-14 04:33:24.765849
+3	Unit Test 1	unit_test	3	1	2024-07-15	2024-07-20	100	40	First unit test for UKG	t	2025-08-14 04:33:24.765849	\N	2025-08-14 04:33:24.765849
+\.
+
+
+--
+-- TOC entry 4406 (class 0 OID 214729)
+-- Dependencies: 263
+-- Data for Name: fee_collections; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.fee_collections (id, student_id, fee_structure_id, amount_paid, payment_date, payment_method, transaction_id, receipt_number, collected_by, remarks, is_active, created_at, created_by, modified_at) FROM stdin;
+3	3	3	20000.00	2024-04-03	cash	CASH001	RCP2024003	1	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+4	16	2	18000.00	2026-02-23	card	\N	\N	\N	\N	t	2026-02-23 13:00:57.900155	\N	2026-02-23 13:00:57.900155
+1	1	1	15000.00	2024-04-01	card	TXN2024001	RCP2024001	1	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+2	2	2	18000.00	2024-04-02	card	CHQ123456	RCP2024002	1	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+7	16	3	20000.00	2026-02-23	upi	reference	reference	\N	\N	t	2026-02-23 13:23:29.204972	\N	2026-02-23 13:23:29.204972
+\.
+
+
+--
+-- TOC entry 4408 (class 0 OID 214740)
+-- Dependencies: 265
+-- Data for Name: fee_structures; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.fee_structures (id, fee_name, class_id, academic_year_id, amount, due_date, fee_type, is_mandatory, installment_allowed, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Annual Tuition Fee	1	1	15000.00	2024-04-30	tuition	t	f	Annual tuition fee for Nursery	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+2	Annual Tuition Fee	2	1	18000.00	2024-04-30	tuition	t	f	Annual tuition fee for LKG	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+3	Annual Tuition Fee	3	1	20000.00	2024-04-30	tuition	t	f	Annual tuition fee for UKG	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+\.
+
+
+--
+-- TOC entry 4410 (class 0 OID 214752)
+-- Dependencies: 267
+-- Data for Name: files; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.files (id, user_id, name, file_type, mime_type, size, file_url, parent_folder_id, is_folder, is_shared, shared_with, created_at, updated_at) FROM stdin;
+1	11	Documents	folder	\N	0	\N	\N	t	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+2	11	Assignments	folder	\N	0	\N	\N	t	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+3	11	Math Assignment.pdf	file	application/pdf	1024000	\N	\N	f	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+4	11	Science Project.docx	file	application/vnd.openxmlformats-officedocument.wordprocessingml.document	2048000	\N	\N	f	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+\.
+
+
+--
+-- TOC entry 4412 (class 0 OID 214763)
+-- Dependencies: 269
+-- Data for Name: guardians; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.guardians (id, student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address, office_address, annual_income, is_primary_contact, is_emergency_contact, is_active, created_at, created_by, modified_at, user_id) FROM stdin;
+2	2	father	Amit	Patel	Father	Doctor	9876501113	amit.guardian@email.com	456 Dharampeth, Near Medical College, Nagpur - 440010	Government Medical College, Nagpur	1500000.00	t	t	t	2025-08-14 04:19:49.243699	\N	2025-08-14 04:19:49.243699	\N
+3	3	father	Vikash	Kumar	Father	Business Owner	9876501113	vikash.guardian@email.com	789 Civil Lines, Near Metro Station, Nagpur - 440001	Kumar Electronics, Sadar	800000.00	t	t	t	2025-08-14 04:19:49.243699	\N	2026-03-04 11:15:54.938815	\N
+1	1	father	Rajesh	Sharma	Father	Software Engineer	9876501113	rajesh.guardian@email.com	sector-5	TCS, Hinjewadi, Pune	1200000.00	t	t	t	2025-08-14 04:19:49.243699	\N	2026-03-08 12:53:38.981468	\N
+\.
+
+
+--
+-- TOC entry 4414 (class 0 OID 214775)
+-- Dependencies: 271
+-- Data for Name: holidays; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.holidays (id, holiday_name, start_date, end_date, holiday_type, description, academic_year_id, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Independence Day	2024-08-15	2024-08-15	national	Indian Independence Day celebration	1	t	2025-08-14 04:32:36.757777	\N	2025-08-14 04:32:36.757777
+2	Diwali Vacation	2024-11-01	2024-11-05	religious	Diwali festival holidays	1	t	2025-08-14 04:32:36.757777	\N	2025-08-14 04:32:36.757777
+3	Republic Day	2025-01-26	2025-01-26	national	Indian Republic Day celebration	1	t	2025-08-14 04:32:36.757777	\N	2025-08-14 04:32:36.757777
+\.
+
+
+--
+-- TOC entry 4416 (class 0 OID 214785)
+-- Dependencies: 273
+-- Data for Name: hostel_rooms; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.hostel_rooms (id, room_number, hostel_id, room_type_id, floor_number, max_occupancy, current_occupancy, monthly_fee, facilities, is_active, created_at, created_by, modified_at) FROM stdin;
+13	101	1	2	1	2	0	6000.00	Attached bathroom, Study table, Wardrobe	t	2025-08-14 04:13:55.835545	\N	2025-08-14 04:13:55.835545
+14	201	2	2	2	2	0	6000.00	Attached bathroom, Study table, Wardrobe	t	2025-08-14 04:13:55.835545	\N	2025-08-14 04:13:55.835545
+15	301	3	3	3	3	0	4500.00	Common bathroom, Study table, Wardrobe	t	2025-08-14 04:13:55.835545	\N	2025-08-14 04:13:55.835545
+\.
+
+
+--
+-- TOC entry 4418 (class 0 OID 214795)
+-- Dependencies: 275
+-- Data for Name: hostels; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.hostels (id, hostel_name, hostel_type, warden_id, total_rooms, address, contact_number, facilities, rules, is_active, created_at, created_by, modified_at) FROM stdin;
+2	Girls Hostel Block B	girls	1	40	School Campus, Block B	0712-2345679	Wi-Fi, Mess, Recreation Room, Study Hall	No outside food, Lights out at 10 PM	t	2025-08-14 04:12:56.129802	\N	2025-08-14 04:12:56.129802
+3	Mixed Hostel Block C	mixed	3	30	School Campus, Block C	0712-2345680	Wi-Fi, Mess, Recreation Room	Separate floors for boys and girls	t	2025-08-14 04:12:56.129802	\N	2025-08-14 04:12:56.129802
+1	Boys Hostel Block A	boys	1	50	School Campus, Block A	0712-2345678	Wi-Fi, Mess, Recreation Room, Study Hall	No outside food, Lights out at 10 PM	t	2025-08-14 04:12:56.129802	\N	2025-08-14 04:12:56.129802
+\.
+
+
+--
+-- TOC entry 4420 (class 0 OID 214805)
+-- Dependencies: 277
+-- Data for Name: houses; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.houses (id, house_name, house_color, house_captain, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Red House	Red	Captain Red	Red house for competitive activities	t	2025-08-14 04:11:37.32943	\N	2025-08-14 04:11:37.32943
+2	Blue House	Blue	Captain Blue	Blue house for competitive activities	t	2025-08-14 04:11:37.32943	\N	2025-08-14 04:11:37.32943
+3	Green House	Green	Captain Green	Green house for competitive activities	t	2025-08-14 04:11:37.32943	\N	2025-08-14 04:11:37.32943
+\.
+
+
+--
+-- TOC entry 4422 (class 0 OID 214814)
+-- Dependencies: 279
+-- Data for Name: languages; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.languages (id, language_name, language_code, is_compulsory, description, is_active, created_at, created_by, modified_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 4424 (class 0 OID 214822)
+-- Dependencies: 281
+-- Data for Name: leave_applications; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.leave_applications (id, applicant_type, student_id, staff_id, leave_type_id, start_date, end_date, total_days, reason, status, approved_by, approved_date, rejection_reason, medical_certificate_path, emergency_contact, is_active, created_at, created_by, modified_at) FROM stdin;
+1	student	1	\N	1	2024-08-10	2024-08-12	3	Fever and cold, doctor advised rest	approved	1	2024-08-09	\N	\N	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+2	student	2	\N	2	2024-08-15	2024-08-15	1	Family function	approved	1	2024-08-14	\N	\N	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+3	staff	\N	2	1	2024-08-20	2024-08-22	3	Personal health issues	pending	\N	\N	\N	\N	\N	t	2025-08-14 04:32:45.108182	\N	2025-08-14 04:32:45.108182
+4	student	16	\N	3	2026-02-22	2026-02-23	2	health issue	approved	\N	\N	\N	\N	\N	t	2026-02-22 13:08:57.096244	\N	2026-02-22 13:08:57.096244
+\.
+
+
+--
+-- TOC entry 4426 (class 0 OID 214834)
+-- Dependencies: 283
+-- Data for Name: leave_types; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.leave_types (id, leave_type, max_days, description, applicable_for, requires_medical_certificate, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Sick Leave	10	\N	both	f	t	2025-08-14 03:23:28.784417	\N	2025-08-14 03:23:28.784417
+2	Casual Leave	5	\N	both	f	t	2025-08-14 03:23:28.784417	\N	2025-08-14 03:23:28.784417
+3	Medical Leave	30	\N	both	f	t	2025-08-14 03:23:28.784417	\N	2025-08-14 03:23:28.784417
+4	Emergency Leave	3	\N	both	f	t	2025-08-14 03:23:28.784417	\N	2025-08-14 03:23:28.784417
+5	Study Leave	15	\N	staff	f	t	2025-08-14 03:23:28.784417	\N	2025-08-14 03:23:28.784417
+\.
+
+
+--
+-- TOC entry 4428 (class 0 OID 214845)
+-- Dependencies: 285
+-- Data for Name: library_book_issues; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.library_book_issues (id, book_id, student_id, staff_id, issue_date, due_date, return_date, fine_amount, status, issued_by, returned_to, remarks, is_active, created_at, created_by, modified_at) FROM stdin;
+4	1	1	\N	2024-08-01	2024-08-15	\N	0.00	issued	1	\N	\N	t	2025-08-14 04:34:54.955265	\N	2025-08-14 04:34:54.955265
+5	3	2	\N	2024-08-02	2024-08-16	\N	0.00	issued	1	\N	\N	t	2025-08-14 04:34:54.955265	\N	2025-08-14 04:34:54.955265
+6	2	3	\N	2024-08-05	2024-08-19	\N	0.00	returned	1	\N	\N	t	2025-08-14 04:34:54.955265	\N	2025-08-14 04:34:54.955265
+\.
+
+
+--
+-- TOC entry 4430 (class 0 OID 214858)
+-- Dependencies: 287
+-- Data for Name: library_books; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.library_books (id, book_title, author, isbn, publisher, publication_year, category_id, total_copies, available_copies, book_price, book_location, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	The Very Hungry Caterpillar	Eric Carle	9780399226908	Penguin Books	2018	1	5	4	250.00	Shelf A1	Popular children picture book	t	2025-08-14 04:34:45.05493	\N	2025-08-14 04:34:45.05493
+2	First Encyclopedia	DK Publishing	9781465454300	DK Children	2019	2	3	3	800.00	Shelf R1	Reference book for young learners	t	2025-08-14 04:34:45.05493	\N	2025-08-14 04:34:45.05493
+3	Goodnight Moon	Margaret Wise Brown	9780064430173	Harper Collins	2017	3	3	2	200.00	Shelf A2	Classic bedtime story	t	2025-08-14 04:34:45.05493	\N	2025-08-14 04:34:45.05493
+\.
+
+
+--
+-- TOC entry 4432 (class 0 OID 214869)
+-- Dependencies: 289
+-- Data for Name: library_categories; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.library_categories (id, category_name, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Fiction	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+2	Non-Fiction	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+3	Academic	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+4	Children Books	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+5	Reference	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+6	Magazines	\N	t	2025-08-14 03:23:36.183628	\N	2025-08-14 03:23:36.183628
+\.
+
+
+--
+-- TOC entry 4434 (class 0 OID 214878)
+-- Dependencies: 291
+-- Data for Name: medical_conditions; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.medical_conditions (id, condition_name, description, severity_level, requires_medication, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Good	Healthy	low	f	t	2025-08-14 04:30:06.242301	1	2025-08-14 04:30:06.242301
+2	Bad	Not healthy	medium	t	t	2025-08-14 04:30:57.930702	1	2025-08-14 04:30:57.930702
+3	Other	Other	critical	t	t	2025-08-14 04:31:45.918016	1	2025-08-14 04:31:45.918016
+\.
+
+
+--
+-- TOC entry 4436 (class 0 OID 214889)
+-- Dependencies: 293
+-- Data for Name: mother_tongues; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.mother_tongues (id, language_name, language_code, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Hindi	HI	Hindi language	t	2025-08-14 04:12:04.350894	\N	2025-08-14 04:12:04.350894
+2	Marathi	MR	Marathi language	t	2025-08-14 04:12:04.350894	\N	2025-08-14 04:12:04.350894
+3	English	EN	English language	t	2025-08-14 04:12:04.350894	\N	2025-08-14 04:12:04.350894
+\.
+
+
+--
+-- TOC entry 4438 (class 0 OID 214896)
+-- Dependencies: 295
+-- Data for Name: notes; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.notes (id, user_id, title, content, tag, priority, is_important, is_deleted, created_at, updated_at) FROM stdin;
+1	11	Class Notes - Math	Today we learned about algebra and quadratic equations.	\N	medium	f	f	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+2	11	Important Reminders	Remember to bring lab coat tomorrow. Submit assignment by Friday.	pending	high	t	f	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+3	11	Study Plan	Study chapters 1-5 for the upcoming test.	inprogress	medium	f	f	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+\.
+
+
+--
+-- TOC entry 4440 (class 0 OID 214907)
+-- Dependencies: 297
+-- Data for Name: notice_board; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.notice_board (id, title, content, created_at, created_by, modified_at, message_to) FROM stdin;
+1	Classes Preparation	Please ensure all class materials are ready for the new session. Teachers are requested to submit lesson plans by end of week.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+2	Fees Reminder	Kindly pay the pending fees before the due date to avoid late charges. Contact accounts office for any queries.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+3	Parents Teacher Meeting	PTM scheduled for this Saturday. All parents are requested to attend. Timings: 10:00 AM - 1:00 PM.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+4	New Academic Session For Admission (2024-25)	Admission for the new academic session is now open. Submit applications before the deadline.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+5	Staff Meeting	All staff meeting on Friday at 3:00 PM in the conference room. Attendance is mandatory.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+6	World Environment Day Program	Join us for World Environment Day celebration. Plantation drive and awareness programs planned.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+7	New Syllabus Instructions	Updated syllabus for all classes is available. Please review and align your teaching plans accordingly.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+8	Exam Preparation Notification	Final exams begin next month. Students are advised to complete revision and submit pending assignments.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+9	Online Classes Preparation	Technical setup for hybrid learning is complete. Teachers should familiarize themselves with the platform.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+10	Exam Time Table Release	Exam time table has been published. Students can collect hard copies from the office or check online.	2026-02-22 11:56:08.385267	\N	2026-02-22 11:56:08.385267	All
+\.
+
+
+--
+-- TOC entry 4442 (class 0 OID 214916)
+-- Dependencies: 299
+-- Data for Name: parents; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.parents (id, student_id, father_name, father_email, father_phone, father_occupation, father_image_url, mother_name, mother_email, mother_phone, mother_occupation, mother_image_url, created_at, updated_at, user_id) FROM stdin;
+2	2	Amit Singh	amit.parent@email.com	9898989898	Business Owner	\N	Sunita Singh	sunita.singh@email.com	+91-8765432108	Doctor	\N	2025-08-14 22:28:01.677019+00	2026-02-21 06:50:09.199602+00	\N
+3	3	Vikram Patel	vikram.parent@email.com	9898989898	Bank Manager	\N	Meera Patel	meera.patel@email.com	+91-7654321097	Homemaker	\N	2025-08-14 22:28:01.677019+00	2026-03-04 05:45:54.938815+00	\N
+4	16	Aamir Khan	aamir.parent@email.com	9898989898	Updated Test Job	\N	Haika Khan	haika@school.com	9898989898	test	\N	2025-08-16 23:12:14.216513+00	2026-03-08 07:20:28.302508+00	\N
+1	1	Rajesh Kumar	rajesh.parent@email.com	9876501111	Software Engineer	\N	Priya Kumar	priya.kumar@email.com	+91-9876543211	School Principal	\N	2025-08-14 22:28:01.677019+00	2026-03-08 07:23:38.981468+00	\N
+\.
+
+
+--
+-- TOC entry 4444 (class 0 OID 214924)
+-- Dependencies: 301
+-- Data for Name: pickup_points; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.pickup_points (id, point_name, route_id, address, landmark, pickup_time, drop_time, distance_from_school, sequence_order, is_active, created_at, created_by, modified_at) FROM stdin;
+2	Sadar Market	2	Sadar Bazaar, Nagpur	Near Main Market	07:10:00	14:20:00	12.30	1	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+3	Civil Lines Metro	3	Civil Lines Metro Station	Metro Station	07:20:00	14:10:00	8.70	1	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+1	Sitabuldi Square	1	Sitabuldi Square, Nagpur	Near GPO	07:00:00	14:30:00	15.50	1	t	2025-08-14 04:12:16.81416	\N	2026-02-17 16:20:50.785115
+\.
+
+
+--
+-- TOC entry 4446 (class 0 OID 214933)
+-- Dependencies: 303
+-- Data for Name: religions; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.religions (id, religion_name, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Hinduism	Hindu religion	t	2025-08-14 04:11:49.000899	\N	2025-08-14 04:11:49.000899
+2	Islam	Islamic religion	t	2025-08-14 04:11:49.000899	\N	2025-08-14 04:11:49.000899
+3	Christianity	Christian religion	t	2025-08-14 04:11:49.000899	\N	2025-08-14 04:11:49.000899
+\.
+
+
+--
+-- TOC entry 4448 (class 0 OID 214940)
+-- Dependencies: 305
+-- Data for Name: reports; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.reports (id, user_id, reported_user_id, reason, created_at) FROM stdin;
+\.
+
+
+--
+-- TOC entry 4450 (class 0 OID 214947)
+-- Dependencies: 307
+-- Data for Name: room_types; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.room_types (id, room_type, description, max_occupancy, room_fee, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Single	Single occupancy room	1	8000.00	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+2	Double	Double occupancy room	2	6000.00	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+3	Triple	Triple occupancy room	3	4500.00	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416
+\.
+
+
+--
+-- TOC entry 4452 (class 0 OID 214956)
+-- Dependencies: 309
+-- Data for Name: routes; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.routes (id, route_name, route_code, start_point, end_point, total_distance, estimated_time, route_fee, description, is_active, created_at, created_by, modified_at) FROM stdin;
+2	Route 2 - Sadar	RT002	Sadar Market	School	12.30	35	2200.00	Route covering Sadar area	t	2025-08-14 04:12:09.365493	\N	2025-08-14 04:12:09.365493
+3	Route 3 - Civil Lines	RT003	Civil Lines	School	8.70	25	1800.00	Route covering Civil Lines area	t	2025-08-14 04:12:09.365493	\N	2025-08-14 04:12:09.365493
+1	Route 1 - Sitabuldi	RT001	Sitabuldi Square	School	15.50	45	2500.00	Route covering Sitabuldi area	t	2025-08-14 04:12:09.365493	\N	2026-02-17 16:09:29.728471
+\.
+
+
+--
+-- TOC entry 4454 (class 0 OID 214965)
+-- Dependencies: 311
+-- Data for Name: sections; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.sections (id, section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_at, created_by, modified_at, no_of_students) FROM stdin;
+3	C	3	3	30	R301	UKG Section A	t	2025-08-14 04:11:31.102661	\N	2025-08-14 04:11:31.102661	28
+1	A	1	2	25	R101	Nursery Section A	t	2025-08-14 04:11:31.102661	\N	2026-02-20 12:38:48.367888	22
+2	B	2	2	25	R201	LKG Section A	t	2025-08-14 04:11:31.102661	\N	2026-02-20 16:38:39.144937	\N
+\.
+
+
+--
+-- TOC entry 4456 (class 0 OID 214976)
+-- Dependencies: 313
+-- Data for Name: staff; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.staff (id, user_id, employee_code, first_name, last_name, gender, date_of_birth, blood_group_id, phone, email, address, emergency_contact_name, emergency_contact_phone, designation_id, department_id, joining_date, salary, qualification, experience_years, photo_url, is_active, created_at, created_by, modified_at) FROM stdin;
+3	16	EMP003	Anil	Patil	male	1990-07-10	\N	9876543214	anil.patil@school.com	789 School Lane, Nagpur	Meera Patil	9876543215	3	1	2019-07-01	42000.00	M.A, B.Ed	10	\N	t	2025-08-14 04:09:01.488329	\N	2025-08-14 04:09:01.488329
+2	14	EMP002	Priya	Sharma	female	1988-03-22	\N	9876543212	priya.sharma@school.com	House No. 45, Sector 23, Gurgaon, Haryana 122017	Amit Sharma	9876543213	2	1	2021-04-01	35000.00	B.Ed, B.A	8	\N	t	2025-08-14 04:09:01.488329	\N	2026-02-25 13:12:38.642
+1	15	EMP001	Rajesh	Kumar	male	1985-05-15	\N	9876543210	rajesh.kumar@school.com	123 Main Street, Nagpur	Sunita Kumar	9876543211	2	2	2020-06-01	100000.00	M.Ed, B.Ed	15	\N	t	2025-08-14 04:09:01.488329	\N	2025-08-14 04:09:01.488329
+\.
+
+
+--
+-- TOC entry 4458 (class 0 OID 214986)
+-- Dependencies: 315
+-- Data for Name: student_medical_conditions; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.student_medical_conditions (id, student_id, medical_condition_id, diagnosed_date, medication, special_instructions, doctor_name, doctor_contact, is_active, created_at, created_by, modified_at) FROM stdin;
+4	1	1	2023-06-15	Inhaler as needed	Keep inhaler always available, avoid dust	Dr. Ashok Patil	9876555001	t	2025-08-14 04:31:59.758157	\N	2025-08-14 04:31:59.758157
+5	2	2	2022-12-10	Antihistamines	Avoid nuts and dairy products	Dr. Meera Shah	9876555002	t	2025-08-14 04:31:59.758157	\N	2025-08-14 04:31:59.758157
+6	3	3	2021-08-20	Insulin shots	Monitor blood sugar regularly, controlled diet	Dr. Rajesh Agrawal	9876555003	t	2025-08-14 04:31:59.758157	\N	2025-08-14 04:31:59.758157
+\.
+
+
+--
+-- TOC entry 4460 (class 0 OID 214995)
+-- Dependencies: 317
+-- Data for Name: student_promotions; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.student_promotions (id, student_id, from_class_id, to_class_id, from_section_id, to_section_id, from_academic_year_id, to_academic_year_id, promotion_date, status, remarks, promoted_by, is_active, created_at, created_by, modified_at) FROM stdin;
+7	1	1	2	1	2	1	2	2025-04-01	promoted	Student promoted from Nursery to LKG	1	t	2025-08-14 04:35:45.600521	\N	2025-08-14 04:35:45.600521
+8	2	2	3	2	3	1	2	2025-04-01	promoted	Student promoted from LKG to UKG	1	t	2025-08-14 04:35:45.600521	\N	2025-08-14 04:35:45.600521
+\.
+
+
+--
+-- TOC entry 4462 (class 0 OID 215007)
+-- Dependencies: 319
+-- Data for Name: students; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.students (id, user_id, admission_number, roll_number, first_name, last_name, gender, date_of_birth, place_of_birth, blood_group_id, religion_id, cast_id, mother_tongue_id, nationality, phone, email, address, academic_year_id, class_id, section_id, house_id, admission_date, previous_school, photo_url, is_transport_required, route_id, pickup_point_id, is_hostel_required, hostel_room_id, is_active, created_at, created_by, modified_at, parent_id, guardian_id, address_id, bank_name, branch, ifsc, known_allergies, medications, hostel_id, sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class, previous_school_address, medical_condition, other_information, vehicle_number, current_address, permanent_address, unique_student_ids, pen_number, aadhar_no) FROM stdin;
+2	10	ADM2024002	LKG001	Sara	Patel	female	2019-08-22	Nagpur	2	1	2	2	Indian	9876501112	sara.patel@parent.com	456 Dharampeth, Near Medical College, Nagpur - 440010	3	2	2	2	2024-04-01	Little Angels Play School	\N	t	2	2	t	14	t	2025-08-14 04:18:39.176346	\N	2026-02-17 15:00:23.727298	2	2	2	BANK OF MAHARASHTRA	AREA NO.2	BOM123	N/A	HEADACHE	3	manoj	rekha	2nd, C	1st, B	\N	\N	\N	\N	456 Dharampeth, Near Medical College, Nagpur - 440010	456 Dharampeth, Near Medical College, Nagpur - 440010	123456	TEMP_PEN2	222222222222
+3	11	ADM2024003	UKG001	Arjun	Kumar	male	2018-12-10	Mumbai	3	1	1	3	Indian	9876501113	arjun.kumar@parent.com	654 Elm Street, City C	2	3	3	3	2024-04-01	\N	\N	f	\N	\N	f	\N	t	2025-08-14 04:18:39.176346	\N	2026-03-04 11:15:54.938815	3	3	3	\N	\N	\N			\N	\N	\N	\N	\N	\N	Good	\N	\N	\N	\N	1234567	TEMP_PEN3	333333333333
+16	12	12	12	Haniaa	Amir	female	2025-08-06	\N	7	2	1	3	Indian	9898989898	hania@gmail.com	111 Birch Boulevard, City D	3	3	1	3	2025-08-18	\N	\N	f	\N	\N	f	\N	t	2025-08-16 02:02:53.49177	\N	2026-03-08 12:50:28.302508	4	\N	4	\N	\N	\N			\N	\N	\N	\N	\N	\N	Good	\N	\N	111 Birch Boulevard, City D	222 Spruce Drive, City D	12345678	TEMP_PEN4	444444444433
+1	9	ADM2024001	NUR001	Aarav	Sharma	male	2020-05-15	Nagpur	5	1	1	1	Indian	9876501111	aarav.sharma@parent.com	sector-5	2	1	1	1	2024-04-01	first school	\N	f	2	2	f	15	t	2025-08-14 04:18:39.176346	\N	2026-03-08 12:53:38.981468	1	1	1	bank Of india	sector-5	BOI123456	allergy	yes	1	\N	\N	\N	\N	first school	Good	no	2	sector-5	sector-5	12345	TEMP_PEN1	111111111111
+\.
+
+
+--
+-- TOC entry 4464 (class 0 OID 215020)
+-- Dependencies: 321
+-- Data for Name: subjects; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.subjects (id, subject_name, subject_code, class_id, teacher_id, theory_hours, practical_hours, total_marks, passing_marks, description, is_active, created_at, created_by, modified_at) FROM stdin;
+1	Play Activities	PLAY_N	1	2	5	10	50	25	Play-based learning activities	t	2025-08-14 04:32:23.173633	\N	2025-08-14 04:32:23.173633
+3	Mathematics	MATH_U	3	3	8	2	100	40	Basic arithmetic operations	t	2025-08-14 04:32:23.173633	\N	2026-02-17 17:57:10.801132
+2	English	ENG_L	2	2	6	4	100	40	Basic English letters and words	t	2025-08-14 04:32:23.173633	\N	2026-02-20 16:38:53.675363
+\.
+
+
+--
+-- TOC entry 4466 (class 0 OID 215033)
+-- Dependencies: 323
+-- Data for Name: teacher_routines; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.teacher_routines (id, teacher_id, class_schedule_id, academic_year_id, is_active, created_at, created_by, modified_at) FROM stdin;
+1	2	1	1	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+2	2	2	1	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+3	3	3	1	t	2025-08-14 04:32:29.847596	\N	2025-08-14 04:32:29.847596
+\.
+
+
+--
+-- TOC entry 4468 (class 0 OID 215040)
+-- Dependencies: 325
+-- Data for Name: teachers; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.teachers (id, class_id, subject_id, father_name, mother_name, marital_status, languages_known, previous_school_name, previous_school_address, previous_school_phone, current_address, permanent_address, pan_number, id_number, status, created_at, updated_at, staff_id, bank_name, branch, ifsc, contract_type, shift, work_location, facebook, twitter, linkedin, youtube, instagram, blood_group) FROM stdin;
+1	1	1	Rajesh Sharma	Sunita Sharma	Married	{Hindi,English,Marathi}	St. Xavier High School	MG Road, Mumbai, Maharashtra 400001	+91-22-26543210	Flat 204, Sunrise Apartments, Bandra West, Mumbai 400050	Flat 204, Sunrise Apartments, Bandra West, Mumbai 400050	ABCPS1234N	1234-5678-9012	Active	2025-08-15 17:19:34.970329	2025-08-15 17:19:34.970329	1	Bank Of India	Ring Road	BO1234	Temporary	Evening	1st Floor	https://www.facebook.com/	https://x.com/	https://www.linkedin.com/feed/	https://www.youtube.com/	https://www.instagram.com/	B+
+3	3	3	Venkat Reddy	Lakshmi Reddy	Married	{English,Telugu,Hindi}	Narayana High School	Jubilee Hills, Hyderabad, Telangana 500033	+91-40-23456789	Plot 67, Madhapur, Hyderabad, Telangana 500081	H.No. 23-45, Begumpet, Hyderabad, Telangana 500016	IJKLM9012Q	3456-7890-1234	Active	2025-08-15 17:19:34.970329	2025-08-15 17:19:34.970329	3	HDFC bank	Tarsod	HDFC1234	Permanent	Evening	2nd Floor	https://www.facebook.com/	https://x.com/	https://www.linkedin.com/feed/	https://www.youtube.com/	https://www.instagram.com/	O-
+2	2	2	Kiran Patel	Meera Patel	Single	{English}	Delhi Public School	Sector 45, Gurgaon, Haryana 122003	+91-124-4567890	House No. 45, Sector 23, Gurgaon, Haryana 122017	B-12, Patel Colony, Ahmedabad, Gujarat 380001	DEFGH5678P	2345-6789-0123	Active	2025-08-15 17:19:34.970329	2026-02-25 13:12:38.661175	2	Bank Of Maharashtra	sector-5 main road	BOM1234	Temporary	Morning	3rd Floor	https://www.facebook.com/	https://x.com/	https://www.linkedin.com/feed/	https://www.youtube.com/	https://www.instagram.com/	AB+
+\.
+
+
+--
+-- TOC entry 4470 (class 0 OID 215052)
+-- Dependencies: 327
+-- Data for Name: time_slots; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.time_slots (id, slot_name, start_time, end_time, duration, is_break, is_active, created_at, created_by, modified_at) FROM stdin;
+3	Break	09:30:00	09:45:00	15	t	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+4	3rd Period	09:45:00	10:30:00	45	f	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+5	4th Period	10:30:00	11:15:00	45	f	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+6	Lunch Break	11:15:00	12:00:00	45	t	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+7	5th Period	12:00:00	12:45:00	45	f	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+8	6th Period	12:45:00	13:30:00	45	f	t	2025-08-14 03:23:23.164536	\N	2025-08-14 03:23:23.164536
+1	1st Period	08:00:00	09:30:00	45	f	t	2025-08-14 03:23:23.164536	\N	2026-02-20 15:24:45.416856
+2	2nd Period	08:45:00	09:30:00	45	f	t	2025-08-14 03:23:23.164536	\N	2026-02-20 15:25:20.168282
+\.
+
+
+--
+-- TOC entry 4472 (class 0 OID 215060)
+-- Dependencies: 329
+-- Data for Name: todos; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.todos (id, user_id, title, description, due_date, priority, status, tag, is_important, assigned_to, created_at, updated_at) FROM stdin;
+1	11	Complete Assignment	Finish the math homework	2026-02-19 17:15:42.392318	high	pending	pending	t	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+2	11	Review Notes	Review class notes for exam	2026-02-21 17:15:42.392318	medium	in_progress	inprogress	f	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+3	11	Submit Project	Submit the science project	2026-02-17 17:15:42.392318	high	done	done	t	\N	2026-02-18 17:15:42.392318	2026-02-18 17:15:42.392318
+\.
+
+
+--
+-- TOC entry 4474 (class 0 OID 215071)
+-- Dependencies: 331
+-- Data for Name: user_roles; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.user_roles (id, role_name, description, permissions, is_active, created_at, created_by, modified_at) FROM stdin;
+1	admin	System Administrator with full access	\N	t	2025-08-14 03:21:30.224811	\N	2025-08-14 03:21:30.224811
+2	teacher	Teaching staff with limited admin access	\N	t	2025-08-14 03:21:30.224811	\N	2025-08-14 03:21:30.224811
+3	student	Student user with restricted access	\N	t	2025-08-14 03:21:30.224811	\N	2025-08-14 03:21:30.224811
+4	parent	Parent with student information access	\N	t	2025-08-14 03:21:30.224811	\N	2025-08-14 03:21:30.224811
+5	Guardian	Guardian with student information access	\N	t	2026-02-21 06:44:07.908872	\N	2026-02-21 06:44:07.908872
+\.
+
+
+--
+-- TOC entry 4476 (class 0 OID 215080)
+-- Dependencies: 333
+-- Data for Name: users; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.users (id, username, email, password_hash, role_id, first_name, last_name, phone, last_login, is_active, created_at, created_by, modified_at, current_address, permanent_address, avatar) FROM stdin;
+20	amit.parent	amit.parent@gmail.com	$2b$12$example_hash_3	4	Amit	Singh	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+18	vikram.parent	vikram.parent@gmail.com	$2b$12$example_hash_3	4	Vikram	Patel	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+23	amit.guardian	amit.guardian@gmail.com	$2b$12$example_hash_3	5	Amit	patel	9876501113	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+22	vikash.guardian	vikash.guardian@gmail.com	$2b$12$example_hash_3	5	Vikash	kumar	9876501113	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+12	hania.aamir	hania@gmail.com	$2a$10$bJw8cnOVpKhNsTsaVJFqLe52UcJW3q5MMcjs7g.LBWywyHLdoruBK	3	hani	aamir	9898989898	\N	t	2025-08-18 02:43:45.031947	\N	2025-08-18 02:43:45.031947	Not Provided	Not Provided	
+14	priya.sharma	priya@gmail.com	$2a$10$qineXii7PwUJMOKLkucpk.GJBiYpiDZOCzAbbGpsz7kt/J0R0aywm	2	Priya	Sharma	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+16	anil.patil	anil@gmail.com	$2a$10$ARJZHqTlseAp4eLPu1w5AOcS./uEiEzj1t7ZEfAhdIHVSsLnuo6ny	2	Anil	Patil	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+21	rajesh.guardian	rajesh.guardian@gmail.com	$2a$10$ju8GbKP6rQC2JsdQbY87EOcoa5Mob4xP2p9Wpz6plY5Q6rBI0lCF.	5	Rajesh	Kumar	9876501113	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+19	aamir.parent	aamir.parent@gmail.com	$2a$10$ddJqLtKBApP6NGepP7R5I.s9DGmt7N1.Nvi75gNLoO/wMzx6lArmG	4	Aamir	Khan	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+9	aarav.sharma	aarav.sharma@parent.com	$2a$10$rAvDxrcqbFDc04oIMyABsO9or38pLjHhkPlV.7gRI6LZojlrS/yIC	3	Aarav	Sharma	9876501111	\N	t	2025-08-14 04:15:06.141517	\N	2025-08-14 04:15:06.141517	Not Provided	Not Provided	
+15	rajesh.kumar	rajesh@gmail.com	$2a$10$joONX2LNcrJEOj8hHu7km.RU0lxfHwP/HLPtpQEuO0Cb07ofRz09G	2	Rajesh	Kumar	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+17	rajesh.parent	rajesh.parent@gmail.com	$2a$10$eVTosdHRXhYSZS5bvZOaeOJdUF71gw5ozQealXghvRGKW.B6lfS5i	4	Rajesh	Kumar	9876501111	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+11	arjun.kumar	arjun.kumar@parent.com	$2a$10$IVVZX8TDqdEUhUkRYp6CKuVJV/tx7g9i36x98CXS1kJ1WB9e/YwhS	3	Arjun	Kumar	9876501113	\N	t	2025-08-14 04:15:06.141517	\N	2025-08-14 04:15:06.141517	Not Provided	Not Provided	
+10	sara.patel	sara.patel@parent.com	$2a$10$ywGj/vWGNSgo.QUyxxH8HOHg79tKi2KPzjMXrnm1/1rB4nK3oBQqO	3	Sara	Patel	9876501112	\N	t	2025-08-14 04:15:06.141517	\N	2025-08-14 04:15:06.141517	Not Provided	Not Provided	
+13	Headmaster	headmaster@gmail.com	$2a$10$AdgMLLsnKvKy.g5As0co1.HsaLD7rPvbPlzePoTnAlqIiRAi7IsMC	1	Head	Master	9898989898	\N	t	2026-02-05 18:06:39.689454	\N	2026-02-05 18:06:39.689454	Not Provided	Not Provided	
+\.
+
+
+--
+-- TOC entry 4478 (class 0 OID 215092)
+-- Dependencies: 335
+-- Data for Name: vehicles; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+
+COPY public.vehicles (id, vehicle_number, vehicle_type, brand, model, seating_capacity, driver_id, route_id, insurance_expiry, fitness_certificate_expiry, permit_expiry, fuel_type, is_active, created_at, created_by, modified_at, made_of_year, registration_number, chassis_number, gps_device_id) FROM stdin;
+2	MH31CD5678	bus	Ashok Leyland	Lynx	40	2	2	2025-08-20	2025-06-15	2025-12-31	diesel	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416	2021	2222	ch2222	gps2222
+3	MH31EF9012	van	Mahindra	Bolero Maxi Truck	15	3	3	2025-05-10	2025-03-25	2025-12-31	diesel	t	2025-08-14 04:12:16.81416	\N	2025-08-14 04:12:16.81416	2019	3333	ch3333	gps3333
+1	MH31AB1234	bus	Tata	LP 909	35	1	1	2025-06-15	2025-04-30	2025-12-31	diesel	t	2025-08-14 04:12:16.81416	\N	2026-02-17 16:45:47.113365	2020	1111	ch1111	gps1111
+\.
+
+
+--
+-- TOC entry 4549 (class 0 OID 0)
+-- Dependencies: 218
+-- Name: academic_years_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.academic_years_id_seq', 39, true);
+
+
+--
+-- TOC entry 4550 (class 0 OID 0)
+-- Dependencies: 220
+-- Name: addresses_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.addresses_id_seq', 7, true);
+
+
+--
+-- TOC entry 4551 (class 0 OID 0)
+-- Dependencies: 222
+-- Name: attendance_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.attendance_id_seq', 3, true);
+
+
+--
+-- TOC entry 4552 (class 0 OID 0)
+-- Dependencies: 224
+-- Name: blocked_users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.blocked_users_id_seq', 1, false);
+
+
+--
+-- TOC entry 4553 (class 0 OID 0)
+-- Dependencies: 226
+-- Name: blood_groups_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.blood_groups_id_seq', 25, true);
+
+
+--
+-- TOC entry 4554 (class 0 OID 0)
+-- Dependencies: 228
+-- Name: calendar_events_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.calendar_events_id_seq', 3, true);
+
+
+--
+-- TOC entry 4555 (class 0 OID 0)
+-- Dependencies: 230
+-- Name: calls_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.calls_id_seq', 3, true);
+
+
+--
+-- TOC entry 4556 (class 0 OID 0)
+-- Dependencies: 232
+-- Name: casts_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.casts_id_seq', 4, true);
+
+
+--
+-- TOC entry 4557 (class 0 OID 0)
+-- Dependencies: 234
+-- Name: chat_settings_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.chat_settings_id_seq', 1, true);
+
+
+--
+-- TOC entry 4558 (class 0 OID 0)
+-- Dependencies: 236
+-- Name: chats_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.chats_id_seq', 9, true);
+
+
+--
+-- TOC entry 4559 (class 0 OID 0)
+-- Dependencies: 238
+-- Name: class_rooms_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.class_rooms_id_seq', 10, true);
+
+
+--
+-- TOC entry 4560 (class 0 OID 0)
+-- Dependencies: 240
+-- Name: class_schedules_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.class_schedules_id_seq', 3, true);
+
+
+--
+-- TOC entry 4561 (class 0 OID 0)
+-- Dependencies: 242
+-- Name: class_syllabus_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.class_syllabus_id_seq', 10, true);
+
+
+--
+-- TOC entry 4562 (class 0 OID 0)
+-- Dependencies: 244
+-- Name: classes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.classes_id_seq', 23, true);
+
+
+--
+-- TOC entry 4563 (class 0 OID 0)
+-- Dependencies: 246
+-- Name: departments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.departments_id_seq', 11, true);
+
+
+--
+-- TOC entry 4564 (class 0 OID 0)
+-- Dependencies: 248
+-- Name: designations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.designations_id_seq', 22, true);
+
+
+--
+-- TOC entry 4565 (class 0 OID 0)
+-- Dependencies: 250
+-- Name: document_types_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.document_types_id_seq', 3, true);
+
+
+--
+-- TOC entry 4566 (class 0 OID 0)
+-- Dependencies: 252
+-- Name: documents_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.documents_id_seq', 3, true);
+
+
+--
+-- TOC entry 4567 (class 0 OID 0)
+-- Dependencies: 254
+-- Name: drivers_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.drivers_id_seq', 3, true);
+
+
+--
+-- TOC entry 4568 (class 0 OID 0)
+-- Dependencies: 256
+-- Name: emails_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.emails_id_seq', 3, true);
+
+
+--
+-- TOC entry 4569 (class 0 OID 0)
+-- Dependencies: 258
+-- Name: events_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.events_id_seq', 2, true);
+
+
+--
+-- TOC entry 4570 (class 0 OID 0)
+-- Dependencies: 260
+-- Name: exam_results_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.exam_results_id_seq', 12, true);
+
+
+--
+-- TOC entry 4571 (class 0 OID 0)
+-- Dependencies: 262
+-- Name: exams_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.exams_id_seq', 12, true);
+
+
+--
+-- TOC entry 4572 (class 0 OID 0)
+-- Dependencies: 264
+-- Name: fee_collections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.fee_collections_id_seq', 7, true);
+
+
+--
+-- TOC entry 4573 (class 0 OID 0)
+-- Dependencies: 266
+-- Name: fee_structures_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.fee_structures_id_seq', 3, true);
+
+
+--
+-- TOC entry 4574 (class 0 OID 0)
+-- Dependencies: 268
+-- Name: files_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.files_id_seq', 4, true);
+
+
+--
+-- TOC entry 4575 (class 0 OID 0)
+-- Dependencies: 270
+-- Name: guardians_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.guardians_id_seq', 12, true);
+
+
+--
+-- TOC entry 4576 (class 0 OID 0)
+-- Dependencies: 272
+-- Name: holidays_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.holidays_id_seq', 3, true);
+
+
+--
+-- TOC entry 4577 (class 0 OID 0)
+-- Dependencies: 274
+-- Name: hostel_rooms_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.hostel_rooms_id_seq', 15, true);
+
+
+--
+-- TOC entry 4578 (class 0 OID 0)
+-- Dependencies: 276
+-- Name: hostels_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.hostels_id_seq', 9, true);
+
+
+--
+-- TOC entry 4579 (class 0 OID 0)
+-- Dependencies: 278
+-- Name: houses_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.houses_id_seq', 3, true);
+
+
+--
+-- TOC entry 4580 (class 0 OID 0)
+-- Dependencies: 280
+-- Name: languages_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.languages_id_seq', 1, false);
+
+
+--
+-- TOC entry 4581 (class 0 OID 0)
+-- Dependencies: 282
+-- Name: leave_applications_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.leave_applications_id_seq', 4, true);
+
+
+--
+-- TOC entry 4582 (class 0 OID 0)
+-- Dependencies: 284
+-- Name: leave_types_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.leave_types_id_seq', 5, true);
+
+
+--
+-- TOC entry 4583 (class 0 OID 0)
+-- Dependencies: 286
+-- Name: library_book_issues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.library_book_issues_id_seq', 6, true);
+
+
+--
+-- TOC entry 4584 (class 0 OID 0)
+-- Dependencies: 288
+-- Name: library_books_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.library_books_id_seq', 3, true);
+
+
+--
+-- TOC entry 4585 (class 0 OID 0)
+-- Dependencies: 290
+-- Name: library_categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.library_categories_id_seq', 8, true);
+
+
+--
+-- TOC entry 4586 (class 0 OID 0)
+-- Dependencies: 292
+-- Name: medical_conditions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.medical_conditions_id_seq', 1, false);
+
+
+--
+-- TOC entry 4587 (class 0 OID 0)
+-- Dependencies: 294
+-- Name: mother_tongues_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.mother_tongues_id_seq', 3, true);
+
+
+--
+-- TOC entry 4588 (class 0 OID 0)
+-- Dependencies: 296
+-- Name: notes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.notes_id_seq', 3, true);
+
+
+--
+-- TOC entry 4589 (class 0 OID 0)
+-- Dependencies: 298
+-- Name: notice_board_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.notice_board_id_seq', 10, true);
+
+
+--
+-- TOC entry 4590 (class 0 OID 0)
+-- Dependencies: 300
+-- Name: parents_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.parents_id_seq', 10, true);
+
+
+--
+-- TOC entry 4591 (class 0 OID 0)
+-- Dependencies: 302
+-- Name: pickup_points_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.pickup_points_id_seq', 3, true);
+
+
+--
+-- TOC entry 4592 (class 0 OID 0)
+-- Dependencies: 304
+-- Name: religions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.religions_id_seq', 3, true);
+
+
+--
+-- TOC entry 4593 (class 0 OID 0)
+-- Dependencies: 306
+-- Name: reports_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.reports_id_seq', 1, false);
+
+
+--
+-- TOC entry 4594 (class 0 OID 0)
+-- Dependencies: 308
+-- Name: room_types_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.room_types_id_seq', 3, true);
+
+
+--
+-- TOC entry 4595 (class 0 OID 0)
+-- Dependencies: 310
+-- Name: routes_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.routes_id_seq', 3, true);
+
+
+--
+-- TOC entry 4596 (class 0 OID 0)
+-- Dependencies: 312
+-- Name: sections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.sections_id_seq', 10, true);
+
+
+--
+-- TOC entry 4597 (class 0 OID 0)
+-- Dependencies: 314
+-- Name: staff_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.staff_id_seq', 55, true);
+
+
+--
+-- TOC entry 4598 (class 0 OID 0)
+-- Dependencies: 316
+-- Name: student_medical_conditions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.student_medical_conditions_id_seq', 6, true);
+
+
+--
+-- TOC entry 4599 (class 0 OID 0)
+-- Dependencies: 318
+-- Name: student_promotions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.student_promotions_id_seq', 8, true);
+
+
+--
+-- TOC entry 4600 (class 0 OID 0)
+-- Dependencies: 320
+-- Name: students_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.students_id_seq', 27, true);
+
+
+--
+-- TOC entry 4601 (class 0 OID 0)
+-- Dependencies: 322
+-- Name: subjects_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.subjects_id_seq', 7, true);
+
+
+--
+-- TOC entry 4602 (class 0 OID 0)
+-- Dependencies: 324
+-- Name: teacher_routines_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.teacher_routines_id_seq', 3, true);
+
+
+--
+-- TOC entry 4603 (class 0 OID 0)
+-- Dependencies: 326
+-- Name: teachers_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.teachers_id_seq', 9, true);
+
+
+--
+-- TOC entry 4604 (class 0 OID 0)
+-- Dependencies: 328
+-- Name: time_slots_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.time_slots_id_seq', 8, true);
+
+
+--
+-- TOC entry 4605 (class 0 OID 0)
+-- Dependencies: 330
+-- Name: todos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.todos_id_seq', 3, true);
+
+
+--
+-- TOC entry 4606 (class 0 OID 0)
+-- Dependencies: 332
+-- Name: user_roles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.user_roles_id_seq', 8, true);
+
+
+--
+-- TOC entry 4607 (class 0 OID 0)
+-- Dependencies: 334
+-- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.users_id_seq', 73, true);
+
+
+--
+-- TOC entry 4608 (class 0 OID 0)
+-- Dependencies: 336
+-- Name: vehicles_id_seq; Type: SEQUENCE SET; Schema: public; Owner: neondb_owner
+--
+
+SELECT pg_catalog.setval('public.vehicles_id_seq', 3, true);
+
+
+--
+-- TOC entry 4040 (class 2606 OID 215165)
+-- Name: students aadhar_unique; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT aadhar_unique UNIQUE (aadhar_no);
+
+
+--
+-- TOC entry 3822 (class 2606 OID 215167)
+-- Name: academic_years academic_years_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3824 (class 2606 OID 215169)
+-- Name: academic_years academic_years_year_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.academic_years
+    ADD CONSTRAINT academic_years_year_name_key UNIQUE (year_name);
+
+
+--
+-- TOC entry 3826 (class 2606 OID 215171)
+-- Name: addresses addresses_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT addresses_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3828 (class 2606 OID 215173)
+-- Name: attendance attendance_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3830 (class 2606 OID 215175)
+-- Name: attendance attendance_student_id_attendance_date_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_student_id_attendance_date_key UNIQUE (student_id, attendance_date);
+
+
+--
+-- TOC entry 3834 (class 2606 OID 215177)
+-- Name: blocked_users blocked_users_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blocked_users
+    ADD CONSTRAINT blocked_users_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3836 (class 2606 OID 215179)
+-- Name: blocked_users blocked_users_user_id_blocked_user_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blocked_users
+    ADD CONSTRAINT blocked_users_user_id_blocked_user_id_key UNIQUE (user_id, blocked_user_id);
+
+
+--
+-- TOC entry 3840 (class 2606 OID 215181)
+-- Name: blood_groups blood_groups_blood_group_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blood_groups
+    ADD CONSTRAINT blood_groups_blood_group_key UNIQUE (blood_group);
+
+
+--
+-- TOC entry 3842 (class 2606 OID 215183)
+-- Name: blood_groups blood_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blood_groups
+    ADD CONSTRAINT blood_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3844 (class 2606 OID 215185)
+-- Name: calendar_events calendar_events_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calendar_events
+    ADD CONSTRAINT calendar_events_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3849 (class 2606 OID 215187)
+-- Name: calls calls_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calls
+    ADD CONSTRAINT calls_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3854 (class 2606 OID 215189)
+-- Name: casts casts_cast_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.casts
+    ADD CONSTRAINT casts_cast_name_key UNIQUE (cast_name);
+
+
+--
+-- TOC entry 3856 (class 2606 OID 215191)
+-- Name: casts casts_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.casts
+    ADD CONSTRAINT casts_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3858 (class 2606 OID 215193)
+-- Name: chat_settings chat_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chat_settings
+    ADD CONSTRAINT chat_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3860 (class 2606 OID 215195)
+-- Name: chat_settings chat_settings_user_id_recipient_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chat_settings
+    ADD CONSTRAINT chat_settings_user_id_recipient_id_key UNIQUE (user_id, recipient_id);
+
+
+--
+-- TOC entry 3864 (class 2606 OID 215197)
+-- Name: chats chats_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chats
+    ADD CONSTRAINT chats_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3869 (class 2606 OID 215199)
+-- Name: class_rooms class_rooms_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_rooms
+    ADD CONSTRAINT class_rooms_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3871 (class 2606 OID 215201)
+-- Name: class_rooms class_rooms_room_no_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_rooms
+    ADD CONSTRAINT class_rooms_room_no_key UNIQUE (room_no);
+
+
+--
+-- TOC entry 3875 (class 2606 OID 215203)
+-- Name: class_schedules class_schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3877 (class 2606 OID 215205)
+-- Name: class_syllabus class_syllabus_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_syllabus
+    ADD CONSTRAINT class_syllabus_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3884 (class 2606 OID 215207)
+-- Name: classes classes_class_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT classes_class_code_key UNIQUE (class_code);
+
+
+--
+-- TOC entry 3886 (class 2606 OID 215209)
+-- Name: classes classes_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT classes_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3888 (class 2606 OID 215211)
+-- Name: departments departments_department_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.departments
+    ADD CONSTRAINT departments_department_code_key UNIQUE (department_code);
+
+
+--
+-- TOC entry 3890 (class 2606 OID 215213)
+-- Name: departments departments_department_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.departments
+    ADD CONSTRAINT departments_department_name_key UNIQUE (department_name);
+
+
+--
+-- TOC entry 3892 (class 2606 OID 215215)
+-- Name: departments departments_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.departments
+    ADD CONSTRAINT departments_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3894 (class 2606 OID 215217)
+-- Name: designations designations_designation_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.designations
+    ADD CONSTRAINT designations_designation_name_key UNIQUE (designation_name);
+
+
+--
+-- TOC entry 3896 (class 2606 OID 215219)
+-- Name: designations designations_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.designations
+    ADD CONSTRAINT designations_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3898 (class 2606 OID 215221)
+-- Name: document_types document_types_document_type_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.document_types
+    ADD CONSTRAINT document_types_document_type_key UNIQUE (document_type);
+
+
+--
+-- TOC entry 3900 (class 2606 OID 215223)
+-- Name: document_types document_types_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.document_types
+    ADD CONSTRAINT document_types_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3902 (class 2606 OID 215225)
+-- Name: documents documents_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3904 (class 2606 OID 215227)
+-- Name: drivers drivers_employee_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.drivers
+    ADD CONSTRAINT drivers_employee_code_key UNIQUE (employee_code);
+
+
+--
+-- TOC entry 3906 (class 2606 OID 215229)
+-- Name: drivers drivers_license_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.drivers
+    ADD CONSTRAINT drivers_license_number_key UNIQUE (license_number);
+
+
+--
+-- TOC entry 3908 (class 2606 OID 215231)
+-- Name: drivers drivers_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.drivers
+    ADD CONSTRAINT drivers_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3910 (class 2606 OID 215233)
+-- Name: emails emails_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT emails_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3916 (class 2606 OID 215235)
+-- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3923 (class 2606 OID 215237)
+-- Name: exam_results exam_results_exam_id_student_id_subject_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results
+    ADD CONSTRAINT exam_results_exam_id_student_id_subject_id_key UNIQUE (exam_id, student_id, subject_id);
+
+
+--
+-- TOC entry 3925 (class 2606 OID 215239)
+-- Name: exam_results exam_results_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results
+    ADD CONSTRAINT exam_results_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3928 (class 2606 OID 215241)
+-- Name: exams exams_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exams
+    ADD CONSTRAINT exams_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3930 (class 2606 OID 215243)
+-- Name: fee_collections fee_collections_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections
+    ADD CONSTRAINT fee_collections_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3932 (class 2606 OID 215245)
+-- Name: fee_collections fee_collections_receipt_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections
+    ADD CONSTRAINT fee_collections_receipt_number_key UNIQUE (receipt_number);
+
+
+--
+-- TOC entry 3935 (class 2606 OID 215247)
+-- Name: fee_structures fee_structures_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_structures
+    ADD CONSTRAINT fee_structures_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3937 (class 2606 OID 215249)
+-- Name: files files_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3944 (class 2606 OID 215251)
+-- Name: guardians guardians_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.guardians
+    ADD CONSTRAINT guardians_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3947 (class 2606 OID 215253)
+-- Name: holidays holidays_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.holidays
+    ADD CONSTRAINT holidays_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3949 (class 2606 OID 215255)
+-- Name: hostel_rooms hostel_rooms_hostel_id_room_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostel_rooms
+    ADD CONSTRAINT hostel_rooms_hostel_id_room_number_key UNIQUE (hostel_id, room_number);
+
+
+--
+-- TOC entry 3951 (class 2606 OID 215257)
+-- Name: hostel_rooms hostel_rooms_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostel_rooms
+    ADD CONSTRAINT hostel_rooms_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3953 (class 2606 OID 215259)
+-- Name: hostels hostels_hostel_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostels
+    ADD CONSTRAINT hostels_hostel_name_key UNIQUE (hostel_name);
+
+
+--
+-- TOC entry 3955 (class 2606 OID 215261)
+-- Name: hostels hostels_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostels
+    ADD CONSTRAINT hostels_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3957 (class 2606 OID 215263)
+-- Name: houses houses_house_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.houses
+    ADD CONSTRAINT houses_house_name_key UNIQUE (house_name);
+
+
+--
+-- TOC entry 3959 (class 2606 OID 215265)
+-- Name: houses houses_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.houses
+    ADD CONSTRAINT houses_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3961 (class 2606 OID 215267)
+-- Name: languages languages_language_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.languages
+    ADD CONSTRAINT languages_language_name_key UNIQUE (language_name);
+
+
+--
+-- TOC entry 3963 (class 2606 OID 215269)
+-- Name: languages languages_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.languages
+    ADD CONSTRAINT languages_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3965 (class 2606 OID 215271)
+-- Name: leave_applications leave_applications_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications
+    ADD CONSTRAINT leave_applications_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3967 (class 2606 OID 215273)
+-- Name: leave_types leave_types_leave_type_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_types
+    ADD CONSTRAINT leave_types_leave_type_key UNIQUE (leave_type);
+
+
+--
+-- TOC entry 3969 (class 2606 OID 215275)
+-- Name: leave_types leave_types_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_types
+    ADD CONSTRAINT leave_types_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3972 (class 2606 OID 215277)
+-- Name: library_book_issues library_book_issues_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3974 (class 2606 OID 215279)
+-- Name: library_books library_books_isbn_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_books
+    ADD CONSTRAINT library_books_isbn_key UNIQUE (isbn);
+
+
+--
+-- TOC entry 3976 (class 2606 OID 215281)
+-- Name: library_books library_books_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_books
+    ADD CONSTRAINT library_books_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3978 (class 2606 OID 215283)
+-- Name: library_categories library_categories_category_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_categories
+    ADD CONSTRAINT library_categories_category_name_key UNIQUE (category_name);
+
+
+--
+-- TOC entry 3980 (class 2606 OID 215285)
+-- Name: library_categories library_categories_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_categories
+    ADD CONSTRAINT library_categories_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3982 (class 2606 OID 215287)
+-- Name: medical_conditions medical_conditions_condition_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.medical_conditions
+    ADD CONSTRAINT medical_conditions_condition_name_key UNIQUE (condition_name);
+
+
+--
+-- TOC entry 3984 (class 2606 OID 215289)
+-- Name: medical_conditions medical_conditions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.medical_conditions
+    ADD CONSTRAINT medical_conditions_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3986 (class 2606 OID 215291)
+-- Name: mother_tongues mother_tongues_language_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.mother_tongues
+    ADD CONSTRAINT mother_tongues_language_name_key UNIQUE (language_name);
+
+
+--
+-- TOC entry 3988 (class 2606 OID 215293)
+-- Name: mother_tongues mother_tongues_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.mother_tongues
+    ADD CONSTRAINT mother_tongues_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3994 (class 2606 OID 215295)
+-- Name: notes notes_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notes
+    ADD CONSTRAINT notes_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 3996 (class 2606 OID 215297)
+-- Name: notice_board notice_board_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notice_board
+    ADD CONSTRAINT notice_board_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4002 (class 2606 OID 215299)
+-- Name: parents parents_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.parents
+    ADD CONSTRAINT parents_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4046 (class 2606 OID 215301)
+-- Name: students pen_number_unique; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT pen_number_unique UNIQUE (pen_number);
+
+
+--
+-- TOC entry 4006 (class 2606 OID 215303)
+-- Name: pickup_points pickup_points_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.pickup_points
+    ADD CONSTRAINT pickup_points_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4008 (class 2606 OID 215305)
+-- Name: religions religions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.religions
+    ADD CONSTRAINT religions_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4010 (class 2606 OID 215307)
+-- Name: religions religions_religion_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.religions
+    ADD CONSTRAINT religions_religion_name_key UNIQUE (religion_name);
+
+
+--
+-- TOC entry 4014 (class 2606 OID 215309)
+-- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4016 (class 2606 OID 215311)
+-- Name: room_types room_types_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.room_types
+    ADD CONSTRAINT room_types_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4018 (class 2606 OID 215313)
+-- Name: room_types room_types_room_type_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.room_types
+    ADD CONSTRAINT room_types_room_type_key UNIQUE (room_type);
+
+
+--
+-- TOC entry 4020 (class 2606 OID 215315)
+-- Name: routes routes_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.routes
+    ADD CONSTRAINT routes_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4022 (class 2606 OID 215317)
+-- Name: routes routes_route_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.routes
+    ADD CONSTRAINT routes_route_code_key UNIQUE (route_code);
+
+
+--
+-- TOC entry 4024 (class 2606 OID 215319)
+-- Name: routes routes_route_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.routes
+    ADD CONSTRAINT routes_route_name_key UNIQUE (route_name);
+
+
+--
+-- TOC entry 4026 (class 2606 OID 215321)
+-- Name: sections sections_class_id_section_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.sections
+    ADD CONSTRAINT sections_class_id_section_name_key UNIQUE (class_id, section_name);
+
+
+--
+-- TOC entry 4028 (class 2606 OID 215323)
+-- Name: sections sections_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.sections
+    ADD CONSTRAINT sections_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4030 (class 2606 OID 215325)
+-- Name: staff staff_email_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_email_key UNIQUE (email);
+
+
+--
+-- TOC entry 4032 (class 2606 OID 215327)
+-- Name: staff staff_employee_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_employee_code_key UNIQUE (employee_code);
+
+
+--
+-- TOC entry 4034 (class 2606 OID 215329)
+-- Name: staff staff_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4036 (class 2606 OID 215331)
+-- Name: student_medical_conditions student_medical_conditions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_medical_conditions
+    ADD CONSTRAINT student_medical_conditions_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4038 (class 2606 OID 215333)
+-- Name: student_promotions student_promotions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4048 (class 2606 OID 215335)
+-- Name: students students_admission_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_admission_number_key UNIQUE (admission_number);
+
+
+--
+-- TOC entry 4050 (class 2606 OID 215337)
+-- Name: students students_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4054 (class 2606 OID 215339)
+-- Name: subjects subjects_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.subjects
+    ADD CONSTRAINT subjects_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4056 (class 2606 OID 215341)
+-- Name: subjects subjects_subject_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.subjects
+    ADD CONSTRAINT subjects_subject_code_key UNIQUE (subject_code);
+
+
+--
+-- TOC entry 4058 (class 2606 OID 215343)
+-- Name: teacher_routines teacher_routines_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teacher_routines
+    ADD CONSTRAINT teacher_routines_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4063 (class 2606 OID 215345)
+-- Name: teachers teachers_pan_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers
+    ADD CONSTRAINT teachers_pan_number_key UNIQUE (pan_number);
+
+
+--
+-- TOC entry 4065 (class 2606 OID 215347)
+-- Name: teachers teachers_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers
+    ADD CONSTRAINT teachers_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4067 (class 2606 OID 215349)
+-- Name: time_slots time_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.time_slots
+    ADD CONSTRAINT time_slots_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4073 (class 2606 OID 215351)
+-- Name: todos todos_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.todos
+    ADD CONSTRAINT todos_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4052 (class 2606 OID 215353)
+-- Name: students unique_student_ids_unique; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT unique_student_ids_unique UNIQUE (unique_student_ids);
+
+
+--
+-- TOC entry 4004 (class 2606 OID 215355)
+-- Name: parents unique_student_parents; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.parents
+    ADD CONSTRAINT unique_student_parents UNIQUE (student_id);
+
+
+--
+-- TOC entry 4075 (class 2606 OID 215357)
+-- Name: user_roles user_roles_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4077 (class 2606 OID 215359)
+-- Name: user_roles user_roles_role_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_role_name_key UNIQUE (role_name);
+
+
+--
+-- TOC entry 4079 (class 2606 OID 215361)
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_email_key UNIQUE (email);
+
+
+--
+-- TOC entry 4081 (class 2606 OID 215363)
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4083 (class 2606 OID 215365)
+-- Name: users users_username_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_username_key UNIQUE (username);
+
+
+--
+-- TOC entry 4085 (class 2606 OID 215367)
+-- Name: vehicles vehicles_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT vehicles_pkey PRIMARY KEY (id);
+
+
+--
+-- TOC entry 4087 (class 2606 OID 215369)
+-- Name: vehicles vehicles_vehicle_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT vehicles_vehicle_number_key UNIQUE (vehicle_number);
+
+
+--
+-- TOC entry 3831 (class 1259 OID 215370)
+-- Name: idx_attendance_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_attendance_date ON public.attendance USING btree (attendance_date);
+
+
+--
+-- TOC entry 3832 (class 1259 OID 215371)
+-- Name: idx_attendance_student; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_attendance_student ON public.attendance USING btree (student_id);
+
+
+--
+-- TOC entry 3837 (class 1259 OID 215372)
+-- Name: idx_blocked_users_blocked_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_blocked_users_blocked_user_id ON public.blocked_users USING btree (blocked_user_id);
+
+
+--
+-- TOC entry 3838 (class 1259 OID 215373)
+-- Name: idx_blocked_users_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_blocked_users_user_id ON public.blocked_users USING btree (user_id);
+
+
+--
+-- TOC entry 3845 (class 1259 OID 215374)
+-- Name: idx_calendar_events_end_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calendar_events_end_date ON public.calendar_events USING btree (end_date);
+
+
+--
+-- TOC entry 3846 (class 1259 OID 215375)
+-- Name: idx_calendar_events_start_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calendar_events_start_date ON public.calendar_events USING btree (start_date);
+
+
+--
+-- TOC entry 3847 (class 1259 OID 215376)
+-- Name: idx_calendar_events_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calendar_events_user_id ON public.calendar_events USING btree (user_id);
+
+
+--
+-- TOC entry 3850 (class 1259 OID 215377)
+-- Name: idx_calls_call_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calls_call_date ON public.calls USING btree (call_date DESC);
+
+
+--
+-- TOC entry 3851 (class 1259 OID 215378)
+-- Name: idx_calls_recipient_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calls_recipient_id ON public.calls USING btree (recipient_id);
+
+
+--
+-- TOC entry 3852 (class 1259 OID 215379)
+-- Name: idx_calls_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_calls_user_id ON public.calls USING btree (user_id);
+
+
+--
+-- TOC entry 3861 (class 1259 OID 215380)
+-- Name: idx_chat_settings_recipient_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_chat_settings_recipient_id ON public.chat_settings USING btree (recipient_id);
+
+
+--
+-- TOC entry 3862 (class 1259 OID 215381)
+-- Name: idx_chat_settings_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_chat_settings_user_id ON public.chat_settings USING btree (user_id);
+
+
+--
+-- TOC entry 3865 (class 1259 OID 215382)
+-- Name: idx_chats_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_chats_created_at ON public.chats USING btree (created_at DESC);
+
+
+--
+-- TOC entry 3866 (class 1259 OID 215383)
+-- Name: idx_chats_recipient_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_chats_recipient_id ON public.chats USING btree (recipient_id);
+
+
+--
+-- TOC entry 3867 (class 1259 OID 215384)
+-- Name: idx_chats_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_chats_user_id ON public.chats USING btree (user_id);
+
+
+--
+-- TOC entry 3872 (class 1259 OID 215385)
+-- Name: idx_class_rooms_room_no; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_rooms_room_no ON public.class_rooms USING btree (room_no);
+
+
+--
+-- TOC entry 3873 (class 1259 OID 215386)
+-- Name: idx_class_rooms_status; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_rooms_status ON public.class_rooms USING btree (status);
+
+
+--
+-- TOC entry 3878 (class 1259 OID 215387)
+-- Name: idx_class_syllabus_academic_year; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_syllabus_academic_year ON public.class_syllabus USING btree (academic_year_id);
+
+
+--
+-- TOC entry 3879 (class 1259 OID 215388)
+-- Name: idx_class_syllabus_class_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_syllabus_class_id ON public.class_syllabus USING btree (class_id);
+
+
+--
+-- TOC entry 3880 (class 1259 OID 215389)
+-- Name: idx_class_syllabus_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_syllabus_created_at ON public.class_syllabus USING btree (created_at DESC);
+
+
+--
+-- TOC entry 3881 (class 1259 OID 215390)
+-- Name: idx_class_syllabus_section_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_syllabus_section_id ON public.class_syllabus USING btree (section_id);
+
+
+--
+-- TOC entry 3882 (class 1259 OID 215391)
+-- Name: idx_class_syllabus_status; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_class_syllabus_status ON public.class_syllabus USING btree (status);
+
+
+--
+-- TOC entry 3911 (class 1259 OID 215392)
+-- Name: idx_emails_folder; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_emails_folder ON public.emails USING btree (folder);
+
+
+--
+-- TOC entry 3912 (class 1259 OID 215393)
+-- Name: idx_emails_sender_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_emails_sender_id ON public.emails USING btree (sender_id);
+
+
+--
+-- TOC entry 3913 (class 1259 OID 215394)
+-- Name: idx_emails_sent_at; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_emails_sent_at ON public.emails USING btree (sent_at DESC);
+
+
+--
+-- TOC entry 3914 (class 1259 OID 215395)
+-- Name: idx_emails_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_emails_user_id ON public.emails USING btree (user_id);
+
+
+--
+-- TOC entry 3917 (class 1259 OID 215396)
+-- Name: idx_events_created_by; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_events_created_by ON public.events USING btree (created_by);
+
+
+--
+-- TOC entry 3918 (class 1259 OID 215397)
+-- Name: idx_events_end_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_events_end_date ON public.events USING btree (end_date);
+
+
+--
+-- TOC entry 3919 (class 1259 OID 215398)
+-- Name: idx_events_event_category; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_events_event_category ON public.events USING btree (event_category);
+
+
+--
+-- TOC entry 3920 (class 1259 OID 215399)
+-- Name: idx_events_event_for; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_events_event_for ON public.events USING btree (event_for);
+
+
+--
+-- TOC entry 3921 (class 1259 OID 215400)
+-- Name: idx_events_start_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_events_start_date ON public.events USING btree (start_date);
+
+
+--
+-- TOC entry 3926 (class 1259 OID 215401)
+-- Name: idx_exam_results_student; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_exam_results_student ON public.exam_results USING btree (student_id);
+
+
+--
+-- TOC entry 3933 (class 1259 OID 215402)
+-- Name: idx_fee_collections_student; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_fee_collections_student ON public.fee_collections USING btree (student_id);
+
+
+--
+-- TOC entry 3938 (class 1259 OID 215403)
+-- Name: idx_files_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_files_created_at ON public.files USING btree (created_at DESC);
+
+
+--
+-- TOC entry 3939 (class 1259 OID 215404)
+-- Name: idx_files_file_type; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_files_file_type ON public.files USING btree (file_type);
+
+
+--
+-- TOC entry 3940 (class 1259 OID 215405)
+-- Name: idx_files_is_folder; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_files_is_folder ON public.files USING btree (is_folder);
+
+
+--
+-- TOC entry 3941 (class 1259 OID 215406)
+-- Name: idx_files_parent_folder_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_files_parent_folder_id ON public.files USING btree (parent_folder_id);
+
+
+--
+-- TOC entry 3942 (class 1259 OID 215407)
+-- Name: idx_files_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_files_user_id ON public.files USING btree (user_id);
+
+
+--
+-- TOC entry 3945 (class 1259 OID 215408)
+-- Name: idx_guardians_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_guardians_user_id ON public.guardians USING btree (user_id);
+
+
+--
+-- TOC entry 3970 (class 1259 OID 215409)
+-- Name: idx_library_issues_status; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_library_issues_status ON public.library_book_issues USING btree (status);
+
+
+--
+-- TOC entry 3989 (class 1259 OID 215410)
+-- Name: idx_notes_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_notes_created_at ON public.notes USING btree (created_at DESC);
+
+
+--
+-- TOC entry 3990 (class 1259 OID 215411)
+-- Name: idx_notes_is_deleted; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_notes_is_deleted ON public.notes USING btree (is_deleted);
+
+
+--
+-- TOC entry 3991 (class 1259 OID 215412)
+-- Name: idx_notes_priority; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_notes_priority ON public.notes USING btree (priority);
+
+
+--
+-- TOC entry 3992 (class 1259 OID 215413)
+-- Name: idx_notes_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_notes_user_id ON public.notes USING btree (user_id);
+
+
+--
+-- TOC entry 3997 (class 1259 OID 215414)
+-- Name: idx_parents_father_email; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_parents_father_email ON public.parents USING btree (father_email);
+
+
+--
+-- TOC entry 3998 (class 1259 OID 215415)
+-- Name: idx_parents_mother_email; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_parents_mother_email ON public.parents USING btree (mother_email);
+
+
+--
+-- TOC entry 3999 (class 1259 OID 215416)
+-- Name: idx_parents_student_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_parents_student_id ON public.parents USING btree (student_id);
+
+
+--
+-- TOC entry 4000 (class 1259 OID 215417)
+-- Name: idx_parents_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_parents_user_id ON public.parents USING btree (user_id);
+
+
+--
+-- TOC entry 4011 (class 1259 OID 215418)
+-- Name: idx_reports_reported_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_reports_reported_user_id ON public.reports USING btree (reported_user_id);
+
+
+--
+-- TOC entry 4012 (class 1259 OID 215419)
+-- Name: idx_reports_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_reports_user_id ON public.reports USING btree (user_id);
+
+
+--
+-- TOC entry 4041 (class 1259 OID 215420)
+-- Name: idx_students_admission_number; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_students_admission_number ON public.students USING btree (admission_number);
+
+
+--
+-- TOC entry 4042 (class 1259 OID 215421)
+-- Name: idx_students_class_section; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_students_class_section ON public.students USING btree (class_id, section_id);
+
+
+--
+-- TOC entry 4043 (class 1259 OID 215422)
+-- Name: idx_students_guardian_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_students_guardian_id ON public.students USING btree (guardian_id);
+
+
+--
+-- TOC entry 4044 (class 1259 OID 215423)
+-- Name: idx_students_parent_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_students_parent_id ON public.students USING btree (parent_id);
+
+
+--
+-- TOC entry 4059 (class 1259 OID 215424)
+-- Name: idx_teachers_class_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_teachers_class_id ON public.teachers USING btree (class_id);
+
+
+--
+-- TOC entry 4060 (class 1259 OID 215425)
+-- Name: idx_teachers_status; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_teachers_status ON public.teachers USING btree (status);
+
+
+--
+-- TOC entry 4061 (class 1259 OID 215426)
+-- Name: idx_teachers_subject_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_teachers_subject_id ON public.teachers USING btree (subject_id);
+
+
+--
+-- TOC entry 4068 (class 1259 OID 215427)
+-- Name: idx_todos_due_date; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_todos_due_date ON public.todos USING btree (due_date);
+
+
+--
+-- TOC entry 4069 (class 1259 OID 215428)
+-- Name: idx_todos_priority; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_todos_priority ON public.todos USING btree (priority);
+
+
+--
+-- TOC entry 4070 (class 1259 OID 215429)
+-- Name: idx_todos_status; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_todos_status ON public.todos USING btree (status);
+
+
+--
+-- TOC entry 4071 (class 1259 OID 215430)
+-- Name: idx_todos_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+--
+
+CREATE INDEX idx_todos_user_id ON public.todos USING btree (user_id);
+
+
+--
+-- TOC entry 4213 (class 2620 OID 215431)
+-- Name: sections trg_update_class_students; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER trg_update_class_students AFTER INSERT OR DELETE OR UPDATE ON public.sections FOR EACH ROW EXECUTE FUNCTION public.update_class_students_count();
+
+
+--
+-- TOC entry 4212 (class 2620 OID 215432)
+-- Name: parents trigger_parents_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER trigger_parents_updated_at BEFORE UPDATE ON public.parents FOR EACH ROW EXECUTE FUNCTION public.update_parents_updated_at();
+
+
+--
+-- TOC entry 4205 (class 2620 OID 215433)
+-- Name: calendar_events update_calendar_events_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_calendar_events_updated_at BEFORE UPDATE ON public.calendar_events FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4206 (class 2620 OID 215434)
+-- Name: chats update_chats_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_chats_updated_at BEFORE UPDATE ON public.chats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4207 (class 2620 OID 215435)
+-- Name: emails update_emails_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_emails_updated_at BEFORE UPDATE ON public.emails FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4208 (class 2620 OID 215436)
+-- Name: events update_events_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_events_updated_at BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4209 (class 2620 OID 215437)
+-- Name: files update_files_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_files_updated_at BEFORE UPDATE ON public.files FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4210 (class 2620 OID 215438)
+-- Name: notes update_notes_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_notes_updated_at BEFORE UPDATE ON public.notes FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4211 (class 2620 OID 215439)
+-- Name: notice_board update_notice_board_modified_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_notice_board_modified_at BEFORE UPDATE ON public.notice_board FOR EACH ROW EXECUTE FUNCTION public.update_notice_board_modified_at();
+
+
+--
+-- TOC entry 4214 (class 2620 OID 215440)
+-- Name: todos update_todos_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+--
+
+CREATE TRIGGER update_todos_updated_at BEFORE UPDATE ON public.todos FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- TOC entry 4090 (class 2606 OID 215441)
+-- Name: attendance attendance_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4091 (class 2606 OID 215446)
+-- Name: attendance attendance_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4092 (class 2606 OID 215451)
+-- Name: attendance attendance_marked_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_marked_by_fkey FOREIGN KEY (marked_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4093 (class 2606 OID 215456)
+-- Name: attendance attendance_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.sections(id);
+
+
+--
+-- TOC entry 4094 (class 2606 OID 215461)
+-- Name: attendance attendance_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.attendance
+    ADD CONSTRAINT attendance_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4095 (class 2606 OID 215466)
+-- Name: blocked_users blocked_users_blocked_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blocked_users
+    ADD CONSTRAINT blocked_users_blocked_user_id_fkey FOREIGN KEY (blocked_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4096 (class 2606 OID 215471)
+-- Name: blocked_users blocked_users_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.blocked_users
+    ADD CONSTRAINT blocked_users_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4097 (class 2606 OID 215476)
+-- Name: calendar_events calendar_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calendar_events
+    ADD CONSTRAINT calendar_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4098 (class 2606 OID 215481)
+-- Name: calls calls_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calls
+    ADD CONSTRAINT calls_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4099 (class 2606 OID 215486)
+-- Name: calls calls_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.calls
+    ADD CONSTRAINT calls_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4100 (class 2606 OID 215491)
+-- Name: casts casts_religion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.casts
+    ADD CONSTRAINT casts_religion_id_fkey FOREIGN KEY (religion_id) REFERENCES public.religions(id);
+
+
+--
+-- TOC entry 4101 (class 2606 OID 215496)
+-- Name: chat_settings chat_settings_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chat_settings
+    ADD CONSTRAINT chat_settings_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4102 (class 2606 OID 215501)
+-- Name: chat_settings chat_settings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chat_settings
+    ADD CONSTRAINT chat_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4103 (class 2606 OID 215506)
+-- Name: chats chats_recipient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chats
+    ADD CONSTRAINT chats_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4104 (class 2606 OID 215511)
+-- Name: chats chats_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.chats
+    ADD CONSTRAINT chats_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4105 (class 2606 OID 215516)
+-- Name: class_schedules class_schedules_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4106 (class 2606 OID 215521)
+-- Name: class_schedules class_schedules_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4107 (class 2606 OID 215526)
+-- Name: class_schedules class_schedules_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.sections(id);
+
+
+--
+-- TOC entry 4108 (class 2606 OID 215531)
+-- Name: class_schedules class_schedules_subject_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.subjects(id);
+
+
+--
+-- TOC entry 4109 (class 2606 OID 215536)
+-- Name: class_schedules class_schedules_teacher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4110 (class 2606 OID 215541)
+-- Name: class_schedules class_schedules_time_slot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_schedules
+    ADD CONSTRAINT class_schedules_time_slot_id_fkey FOREIGN KEY (time_slot_id) REFERENCES public.time_slots(id);
+
+
+--
+-- TOC entry 4114 (class 2606 OID 215546)
+-- Name: classes classes_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT classes_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4117 (class 2606 OID 215551)
+-- Name: designations designations_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.designations
+    ADD CONSTRAINT designations_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id);
+
+
+--
+-- TOC entry 4118 (class 2606 OID 215556)
+-- Name: documents documents_document_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_document_type_id_fkey FOREIGN KEY (document_type_id) REFERENCES public.document_types(id);
+
+
+--
+-- TOC entry 4119 (class 2606 OID 215561)
+-- Name: documents documents_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4120 (class 2606 OID 215566)
+-- Name: documents documents_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4121 (class 2606 OID 215571)
+-- Name: documents documents_verified_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.documents
+    ADD CONSTRAINT documents_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4122 (class 2606 OID 215576)
+-- Name: emails emails_sender_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT emails_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4123 (class 2606 OID 215581)
+-- Name: emails emails_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT emails_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4124 (class 2606 OID 215586)
+-- Name: events events_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4125 (class 2606 OID 215591)
+-- Name: exam_results exam_results_exam_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results
+    ADD CONSTRAINT exam_results_exam_id_fkey FOREIGN KEY (exam_id) REFERENCES public.exams(id);
+
+
+--
+-- TOC entry 4126 (class 2606 OID 215596)
+-- Name: exam_results exam_results_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results
+    ADD CONSTRAINT exam_results_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4127 (class 2606 OID 215601)
+-- Name: exam_results exam_results_subject_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exam_results
+    ADD CONSTRAINT exam_results_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.subjects(id);
+
+
+--
+-- TOC entry 4128 (class 2606 OID 215606)
+-- Name: exams exams_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exams
+    ADD CONSTRAINT exams_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4129 (class 2606 OID 215611)
+-- Name: exams exams_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.exams
+    ADD CONSTRAINT exams_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4130 (class 2606 OID 215616)
+-- Name: fee_collections fee_collections_collected_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections
+    ADD CONSTRAINT fee_collections_collected_by_fkey FOREIGN KEY (collected_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4131 (class 2606 OID 215621)
+-- Name: fee_collections fee_collections_fee_structure_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections
+    ADD CONSTRAINT fee_collections_fee_structure_id_fkey FOREIGN KEY (fee_structure_id) REFERENCES public.fee_structures(id);
+
+
+--
+-- TOC entry 4132 (class 2606 OID 215626)
+-- Name: fee_collections fee_collections_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_collections
+    ADD CONSTRAINT fee_collections_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4133 (class 2606 OID 215631)
+-- Name: fee_structures fee_structures_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_structures
+    ADD CONSTRAINT fee_structures_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4134 (class 2606 OID 215636)
+-- Name: fee_structures fee_structures_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.fee_structures
+    ADD CONSTRAINT fee_structures_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4135 (class 2606 OID 215641)
+-- Name: files files_parent_folder_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_parent_folder_id_fkey FOREIGN KEY (parent_folder_id) REFERENCES public.files(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4136 (class 2606 OID 215646)
+-- Name: files files_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4115 (class 2606 OID 215651)
+-- Name: classes fk_classes_teacher; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.classes
+    ADD CONSTRAINT fk_classes_teacher FOREIGN KEY (class_teacher_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4116 (class 2606 OID 215656)
+-- Name: departments fk_departments_head; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.departments
+    ADD CONSTRAINT fk_departments_head FOREIGN KEY (head_of_department) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4142 (class 2606 OID 215661)
+-- Name: hostels fk_hostels_warden; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostels
+    ADD CONSTRAINT fk_hostels_warden FOREIGN KEY (warden_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4155 (class 2606 OID 215666)
+-- Name: parents fk_parents_student; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.parents
+    ADD CONSTRAINT fk_parents_student FOREIGN KEY (student_id) REFERENCES public.students(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4088 (class 2606 OID 215671)
+-- Name: addresses fk_role; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT fk_role FOREIGN KEY (role_id) REFERENCES public.user_roles(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4160 (class 2606 OID 215676)
+-- Name: sections fk_sections_teacher; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.sections
+    ADD CONSTRAINT fk_sections_teacher FOREIGN KEY (section_teacher_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4176 (class 2606 OID 215681)
+-- Name: students fk_student_address; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT fk_student_address FOREIGN KEY (address_id) REFERENCES public.addresses(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4177 (class 2606 OID 215686)
+-- Name: students fk_students_guardian; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT fk_students_guardian FOREIGN KEY (guardian_id) REFERENCES public.guardians(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4178 (class 2606 OID 215691)
+-- Name: students fk_students_hostel; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT fk_students_hostel FOREIGN KEY (hostel_id) REFERENCES public.hostels(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4179 (class 2606 OID 215696)
+-- Name: students fk_students_parent; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT fk_students_parent FOREIGN KEY (parent_id) REFERENCES public.parents(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4111 (class 2606 OID 215701)
+-- Name: class_syllabus fk_syllabus_academic_year; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_syllabus
+    ADD CONSTRAINT fk_syllabus_academic_year FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4112 (class 2606 OID 215706)
+-- Name: class_syllabus fk_syllabus_class; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_syllabus
+    ADD CONSTRAINT fk_syllabus_class FOREIGN KEY (class_id) REFERENCES public.classes(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4113 (class 2606 OID 215711)
+-- Name: class_syllabus fk_syllabus_section; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.class_syllabus
+    ADD CONSTRAINT fk_syllabus_section FOREIGN KEY (section_id) REFERENCES public.sections(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4197 (class 2606 OID 215716)
+-- Name: teachers fk_teachers_staff; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers
+    ADD CONSTRAINT fk_teachers_staff FOREIGN KEY (staff_id) REFERENCES public.staff(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4089 (class 2606 OID 215721)
+-- Name: addresses fk_user; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4137 (class 2606 OID 215726)
+-- Name: guardians guardians_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.guardians
+    ADD CONSTRAINT guardians_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4138 (class 2606 OID 215731)
+-- Name: guardians guardians_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.guardians
+    ADD CONSTRAINT guardians_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4139 (class 2606 OID 215736)
+-- Name: holidays holidays_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.holidays
+    ADD CONSTRAINT holidays_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4140 (class 2606 OID 215741)
+-- Name: hostel_rooms hostel_rooms_hostel_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostel_rooms
+    ADD CONSTRAINT hostel_rooms_hostel_id_fkey FOREIGN KEY (hostel_id) REFERENCES public.hostels(id);
+
+
+--
+-- TOC entry 4141 (class 2606 OID 215746)
+-- Name: hostel_rooms hostel_rooms_room_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.hostel_rooms
+    ADD CONSTRAINT hostel_rooms_room_type_id_fkey FOREIGN KEY (room_type_id) REFERENCES public.room_types(id);
+
+
+--
+-- TOC entry 4143 (class 2606 OID 215751)
+-- Name: leave_applications leave_applications_approved_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications
+    ADD CONSTRAINT leave_applications_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4144 (class 2606 OID 215756)
+-- Name: leave_applications leave_applications_leave_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications
+    ADD CONSTRAINT leave_applications_leave_type_id_fkey FOREIGN KEY (leave_type_id) REFERENCES public.leave_types(id);
+
+
+--
+-- TOC entry 4145 (class 2606 OID 215761)
+-- Name: leave_applications leave_applications_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications
+    ADD CONSTRAINT leave_applications_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4146 (class 2606 OID 215766)
+-- Name: leave_applications leave_applications_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.leave_applications
+    ADD CONSTRAINT leave_applications_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4147 (class 2606 OID 215771)
+-- Name: library_book_issues library_book_issues_book_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_book_id_fkey FOREIGN KEY (book_id) REFERENCES public.library_books(id);
+
+
+--
+-- TOC entry 4148 (class 2606 OID 215776)
+-- Name: library_book_issues library_book_issues_issued_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_issued_by_fkey FOREIGN KEY (issued_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4149 (class 2606 OID 215781)
+-- Name: library_book_issues library_book_issues_returned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_returned_to_fkey FOREIGN KEY (returned_to) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4150 (class 2606 OID 215786)
+-- Name: library_book_issues library_book_issues_staff_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4151 (class 2606 OID 215791)
+-- Name: library_book_issues library_book_issues_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_book_issues
+    ADD CONSTRAINT library_book_issues_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4152 (class 2606 OID 215796)
+-- Name: library_books library_books_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.library_books
+    ADD CONSTRAINT library_books_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.library_categories(id);
+
+
+--
+-- TOC entry 4153 (class 2606 OID 215801)
+-- Name: notes notes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notes
+    ADD CONSTRAINT notes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4154 (class 2606 OID 215806)
+-- Name: notice_board notice_board_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.notice_board
+    ADD CONSTRAINT notice_board_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
+
+
+--
+-- TOC entry 4156 (class 2606 OID 215811)
+-- Name: parents parents_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.parents
+    ADD CONSTRAINT parents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4157 (class 2606 OID 215816)
+-- Name: pickup_points pickup_points_route_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.pickup_points
+    ADD CONSTRAINT pickup_points_route_id_fkey FOREIGN KEY (route_id) REFERENCES public.routes(id);
+
+
+--
+-- TOC entry 4158 (class 2606 OID 215821)
+-- Name: reports reports_reported_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_reported_user_id_fkey FOREIGN KEY (reported_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4159 (class 2606 OID 215826)
+-- Name: reports reports_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4161 (class 2606 OID 215831)
+-- Name: sections sections_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.sections
+    ADD CONSTRAINT sections_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4162 (class 2606 OID 215836)
+-- Name: staff staff_blood_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_blood_group_id_fkey FOREIGN KEY (blood_group_id) REFERENCES public.blood_groups(id);
+
+
+--
+-- TOC entry 4163 (class 2606 OID 215841)
+-- Name: staff staff_department_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_department_id_fkey FOREIGN KEY (department_id) REFERENCES public.departments(id);
+
+
+--
+-- TOC entry 4164 (class 2606 OID 215846)
+-- Name: staff staff_designation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_designation_id_fkey FOREIGN KEY (designation_id) REFERENCES public.designations(id);
+
+
+--
+-- TOC entry 4165 (class 2606 OID 215851)
+-- Name: staff staff_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.staff
+    ADD CONSTRAINT staff_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- TOC entry 4166 (class 2606 OID 215856)
+-- Name: student_medical_conditions student_medical_conditions_medical_condition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_medical_conditions
+    ADD CONSTRAINT student_medical_conditions_medical_condition_id_fkey FOREIGN KEY (medical_condition_id) REFERENCES public.medical_conditions(id);
+
+
+--
+-- TOC entry 4167 (class 2606 OID 215861)
+-- Name: student_medical_conditions student_medical_conditions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_medical_conditions
+    ADD CONSTRAINT student_medical_conditions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4168 (class 2606 OID 215866)
+-- Name: student_promotions student_promotions_from_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_from_academic_year_id_fkey FOREIGN KEY (from_academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4169 (class 2606 OID 215871)
+-- Name: student_promotions student_promotions_from_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_from_class_id_fkey FOREIGN KEY (from_class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4170 (class 2606 OID 215876)
+-- Name: student_promotions student_promotions_from_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_from_section_id_fkey FOREIGN KEY (from_section_id) REFERENCES public.sections(id);
+
+
+--
+-- TOC entry 4171 (class 2606 OID 215881)
+-- Name: student_promotions student_promotions_promoted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_promoted_by_fkey FOREIGN KEY (promoted_by) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4172 (class 2606 OID 215886)
+-- Name: student_promotions student_promotions_student_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_student_id_fkey FOREIGN KEY (student_id) REFERENCES public.students(id);
+
+
+--
+-- TOC entry 4173 (class 2606 OID 215891)
+-- Name: student_promotions student_promotions_to_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_to_academic_year_id_fkey FOREIGN KEY (to_academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4174 (class 2606 OID 215896)
+-- Name: student_promotions student_promotions_to_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_to_class_id_fkey FOREIGN KEY (to_class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4175 (class 2606 OID 215901)
+-- Name: student_promotions student_promotions_to_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.student_promotions
+    ADD CONSTRAINT student_promotions_to_section_id_fkey FOREIGN KEY (to_section_id) REFERENCES public.sections(id);
+
+
+--
+-- TOC entry 4180 (class 2606 OID 215906)
+-- Name: students students_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4181 (class 2606 OID 215911)
+-- Name: students students_blood_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_blood_group_id_fkey FOREIGN KEY (blood_group_id) REFERENCES public.blood_groups(id);
+
+
+--
+-- TOC entry 4182 (class 2606 OID 215916)
+-- Name: students students_cast_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_cast_id_fkey FOREIGN KEY (cast_id) REFERENCES public.casts(id);
+
+
+--
+-- TOC entry 4183 (class 2606 OID 215921)
+-- Name: students students_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4184 (class 2606 OID 215926)
+-- Name: students students_hostel_room_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_hostel_room_id_fkey FOREIGN KEY (hostel_room_id) REFERENCES public.hostel_rooms(id);
+
+
+--
+-- TOC entry 4185 (class 2606 OID 215931)
+-- Name: students students_house_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_house_id_fkey FOREIGN KEY (house_id) REFERENCES public.houses(id);
+
+
+--
+-- TOC entry 4186 (class 2606 OID 215936)
+-- Name: students students_mother_tongue_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_mother_tongue_id_fkey FOREIGN KEY (mother_tongue_id) REFERENCES public.mother_tongues(id);
+
+
+--
+-- TOC entry 4187 (class 2606 OID 215941)
+-- Name: students students_pickup_point_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_pickup_point_id_fkey FOREIGN KEY (pickup_point_id) REFERENCES public.pickup_points(id);
+
+
+--
+-- TOC entry 4188 (class 2606 OID 215946)
+-- Name: students students_religion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_religion_id_fkey FOREIGN KEY (religion_id) REFERENCES public.religions(id);
+
+
+--
+-- TOC entry 4189 (class 2606 OID 215951)
+-- Name: students students_route_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_route_id_fkey FOREIGN KEY (route_id) REFERENCES public.routes(id);
+
+
+--
+-- TOC entry 4190 (class 2606 OID 215956)
+-- Name: students students_section_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_section_id_fkey FOREIGN KEY (section_id) REFERENCES public.sections(id);
+
+
+--
+-- TOC entry 4191 (class 2606 OID 215961)
+-- Name: students students_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.students
+    ADD CONSTRAINT students_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- TOC entry 4192 (class 2606 OID 215966)
+-- Name: subjects subjects_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.subjects
+    ADD CONSTRAINT subjects_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4193 (class 2606 OID 215971)
+-- Name: subjects subjects_teacher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.subjects
+    ADD CONSTRAINT subjects_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4194 (class 2606 OID 215976)
+-- Name: teacher_routines teacher_routines_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teacher_routines
+    ADD CONSTRAINT teacher_routines_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
+
+
+--
+-- TOC entry 4195 (class 2606 OID 215981)
+-- Name: teacher_routines teacher_routines_class_schedule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teacher_routines
+    ADD CONSTRAINT teacher_routines_class_schedule_id_fkey FOREIGN KEY (class_schedule_id) REFERENCES public.class_schedules(id);
+
+
+--
+-- TOC entry 4196 (class 2606 OID 215986)
+-- Name: teacher_routines teacher_routines_teacher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teacher_routines
+    ADD CONSTRAINT teacher_routines_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES public.staff(id);
+
+
+--
+-- TOC entry 4198 (class 2606 OID 215991)
+-- Name: teachers teachers_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers
+    ADD CONSTRAINT teachers_class_id_fkey FOREIGN KEY (class_id) REFERENCES public.classes(id);
+
+
+--
+-- TOC entry 4199 (class 2606 OID 215996)
+-- Name: teachers teachers_subject_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.teachers
+    ADD CONSTRAINT teachers_subject_id_fkey FOREIGN KEY (subject_id) REFERENCES public.subjects(id);
+
+
+--
+-- TOC entry 4200 (class 2606 OID 216001)
+-- Name: todos todos_assigned_to_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.todos
+    ADD CONSTRAINT todos_assigned_to_fkey FOREIGN KEY (assigned_to) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- TOC entry 4201 (class 2606 OID 216006)
+-- Name: todos todos_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.todos
+    ADD CONSTRAINT todos_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- TOC entry 4202 (class 2606 OID 216011)
+-- Name: users users_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.user_roles(id);
+
+
+--
+-- TOC entry 4203 (class 2606 OID 216016)
+-- Name: vehicles vehicles_driver_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT vehicles_driver_id_fkey FOREIGN KEY (driver_id) REFERENCES public.drivers(id);
+
+
+--
+-- TOC entry 4204 (class 2606 OID 216021)
+-- Name: vehicles vehicles_route_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT vehicles_route_id_fkey FOREIGN KEY (route_id) REFERENCES public.routes(id);
+
+
+--
+-- TOC entry 4486 (class 0 OID 0)
+-- Dependencies: 5
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: pg_database_owner
+--
+
+REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+
+
+--
+-- TOC entry 2346 (class 826 OID 214510)
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: cloud_admin
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO neon_superuser WITH GRANT OPTION;
+
+
+--
+-- TOC entry 2345 (class 826 OID 214509)
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: cloud_admin
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON TABLES TO neon_superuser WITH GRANT OPTION;
+
+
+-- Completed on 2026-03-16 14:18:53
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict 0xKpyJP98OhNbaZztg9lJGptrxXox81SzVKRIRAXBn2mJ4PQTUZtdh7AR2SgYis
+
+

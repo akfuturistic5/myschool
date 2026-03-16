@@ -1,9 +1,13 @@
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-// Provisioning uses CREATE DATABASE ... TEMPLATE only. No pg_dump/psql (avoids version mismatch
-// with Neon PostgreSQL 17 and keeps deployment simple). Template DB must have no active connections.
+// Provisioning creates an empty tenant DB and then imports schema/data
+// from a local SQL file (template_schema.sql). This avoids relying on
+// CREATE DATABASE ... TEMPLATE behaviour on Neon or external pg_dump/psql
+// binaries, and makes provisioning deterministic and version-agnostic.
 
 // Reuse SSL mode rules similar to database.js
 let sslConfig = { rejectUnauthorized: false };
@@ -151,6 +155,31 @@ function generateTenantDbName(schoolName, instituteNumber, existingDbNames = [])
   return base;
 }
 
+// Lazy-loaded SQL template for tenant provisioning. Kept in memory after first read.
+let cachedTemplateSql = null;
+function getTemplateSql() {
+  if (cachedTemplateSql) return cachedTemplateSql;
+  const templatePath =
+    process.env.PROVISIONING_TEMPLATE_SQL_PATH ||
+    path.join(__dirname, '../../sql/template_schema.sql');
+  let sql;
+  try {
+    sql = fs.readFileSync(templatePath, 'utf8');
+  } catch (e) {
+    throw new Error(
+      `Template SQL file not found at "${templatePath}". Export schema/data from your template DB (e.g. school_template2) ` +
+      'to a plain .sql file and set PROVISIONING_TEMPLATE_SQL_PATH or place it at server/sql/template_schema.sql.'
+    );
+  }
+  if (!sql || !sql.trim()) {
+    throw new Error(
+      `Template SQL file at "${templatePath}" is empty. Export schema/data from your template DB before creating schools.`
+    );
+  }
+  cachedTemplateSql = sql;
+  return cachedTemplateSql;
+}
+
 async function createTenantDatabase(dbName) {
   const pool = getAdminPool();
   const checkRes = await pool.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
@@ -158,51 +187,34 @@ async function createTenantDatabase(dbName) {
     throw new Error(`Database "${dbName}" already exists`);
   }
 
-  const sourceDbName = getTemplateDbName();
-
-  // PostgreSQL requires the template database to have NO active connections when cloning.
-  // Application must never hold persistent connections to school_template (only to neondb).
+  // 1) Create an empty tenant database (no TEMPLATE dependency).
   try {
-    await pool.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [sourceDbName]
-    );
-  } catch (e) {
-    // Ignore (e.g. permission); proceed with CREATE DATABASE
-  }
-
-  try {
-    await pool.query(`CREATE DATABASE "${dbName}" TEMPLATE "${sourceDbName}"`);
+    await pool.query(`CREATE DATABASE "${dbName}"`);
   } catch (err) {
-    const isAccessError = err.message && /is being accessed by other users/i.test(err.message);
-    if (isAccessError) {
-      throw new Error(
-        `Template database "${sourceDbName}" is in use. Ensure no application connections use it. ` +
-        `DATABASE_URL and TENANT_ADMIN_DATABASE_URL must point to neondb only. ` +
-        `Then retry Create School.`
-      );
-    }
-    throw new Error(
-      `Failed to create tenant database "${dbName}" from template "${sourceDbName}": ${err.message}`
-    );
+    throw new Error(`Failed to create tenant database "${dbName}": ${err.message}`);
   }
 
-  // Connect to the new tenant DB and reset dynamic data (clone has template's data; we want a clean school).
+  // 2) Connect to the new DB and import schema/reference data from template_schema.sql.
   const tenantPool = createPoolForTenantDb(dbName);
   try {
+    const templateSql = getTemplateSql();
+    await tenantPool.query('BEGIN');
+    await tenantPool.query(templateSql);
+
     const tableCheck = await tenantPool.query(
       `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`
     );
     if (!tableCheck.rows || tableCheck.rows.length === 0) {
       throw new Error(
-        'Template clone did not create required tables (e.g. users). Ensure template database has full schema.'
+        'Template import did not create required tables (e.g. users). Ensure template_schema.sql contains full schema.'
       );
     }
-    await tenantPool.query('BEGIN');
+
     await tenantPool.query('TRUNCATE TABLE users RESTART IDENTITY CASCADE');
     await tenantPool.query('COMMIT');
   } catch (err) {
     await tenantPool.query('ROLLBACK').catch(() => {});
+    // Best-effort cleanup of half-created tenant DB.
     try {
       await pool.query(
         `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
@@ -213,7 +225,7 @@ async function createTenantDatabase(dbName) {
       await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
     } catch { /* ignore */ }
     throw new Error(
-      `Created tenant database "${dbName}" but failed to reset dynamic data: ${err.message}`
+      `Failed to provision tenant database "${dbName}" from template_schema.sql: ${err.message}`
     );
   } finally {
     await tenantPool.end();
