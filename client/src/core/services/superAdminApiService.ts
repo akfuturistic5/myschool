@@ -7,14 +7,32 @@ let cachedSuperAdminBaseUrl: string | null = null;
 async function getSuperAdminApiBaseUrl(): Promise<string> {
   if (cachedSuperAdminBaseUrl) return cachedSuperAdminBaseUrl;
 
-  // For now, mirror tenant API base logic but target /super-admin/api.
-  // BUILD_API_URL typically ends with /api.
-  let base = BUILD_API_URL;
+  // In production, prefer public/config.json (same as tenant API service),
+  // then convert /api -> /super-admin/api.
+  let baseApiUrl = BUILD_API_URL;
+  if (isProd) {
+    try {
+      const res = await fetch('/config.json', { cache: 'no-store' });
+      if (res.ok) {
+        const config = await res.json();
+        if (config && config.apiUrl) {
+          baseApiUrl = String(config.apiUrl).replace(/\/+$/, '');
+          if (!baseApiUrl.endsWith('/api')) baseApiUrl += '/api';
+        }
+      }
+    } catch {
+      // fall back to build-time URL
+    }
+  }
+
+  // Convert base API URL to Super Admin API URL.
+  let base = baseApiUrl;
   if (base.endsWith('/api')) {
     base = base.replace(/\/api$/, '/super-admin/api');
   } else {
     base = base.replace(/\/+$/, '') + '/super-admin/api';
   }
+
   cachedSuperAdminBaseUrl = base;
   return cachedSuperAdminBaseUrl;
 }
