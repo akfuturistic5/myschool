@@ -1222,6 +1222,11 @@ const getStudentLoginDetails = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
 
+    const userId = req.user?.id;
+    const isParent =
+      req.user?.role_id === ROLES.PARENT ||
+      (typeof req.user?.role === 'string' && req.user.role.toLowerCase() === 'parent');
+
     const stuResult = await query(
       `SELECT
          s.id,
