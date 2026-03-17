@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getAllEvents,
   getEventById,
@@ -8,10 +10,10 @@ const {
   deleteEvent
 } = require('../controllers/calendarController');
 
-router.get('/', getAllEvents);
-router.get('/:id', getEventById);
-router.post('/', createEvent);
-router.put('/:id', updateEvent);
-router.delete('/:id', deleteEvent);
+router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllEvents);
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getEventById);
+router.post('/', requireRole(ALL_AUTHENTICATED_ROLES), createEvent);
+router.put('/:id', requireRole(ALL_AUTHENTICATED_ROLES), updateEvent);
+router.delete('/:id', requireRole(ALL_AUTHENTICATED_ROLES), deleteEvent);
 
 module.exports = router;

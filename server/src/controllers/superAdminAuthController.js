@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const serverConfig = require('../config/server');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { SUPER_ADMIN_COOKIE_NAME } = require('../middleware/superAdminAuthMiddleware');
+const crypto = require('crypto');
 
 const getSuperAdminCookieOptions = () => {
   const isProd = process.env.NODE_ENV === 'production';
@@ -13,6 +14,16 @@ const getSuperAdminCookieOptions = () => {
     secure: isProd,
     sameSite: isProd ? 'none' : 'lax',
     maxAge: maxAgeMs,
+    path: '/',
+  };
+};
+
+const getCsrfCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: false,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
     path: '/',
   };
 };
@@ -104,6 +115,9 @@ const superAdminLogin = async (req, res) => {
     );
 
     res.cookie(SUPER_ADMIN_COOKIE_NAME, token, getSuperAdminCookieOptions());
+    // Ensure CSRF cookie exists for SPA requests after login.
+    const csrfToken = crypto.randomBytes(16).toString('base64url');
+    res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
 
     return success(res, 200, 'Super Admin login successful', {
       token,

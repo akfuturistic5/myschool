@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { getAuthContext, isAdmin, resolveTeacherIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
 
 // Parse academic_year_id from query (optional - when set, filter year-specific data)
 function parseAcademicYearId(req) {
@@ -122,15 +123,27 @@ const getDashboardStats = async (req, res) => {
 const getUpcomingEvents = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 10, 20);
+    const ctx = getAuthContext(req);
+    if (!ctx.userId) {
+      return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
+    }
     const result = await query(
-      `SELECT ce.id, ce.title, ce.description, ce.start_date, ce.end_date, ce.event_color, ce.is_all_day, ce.location,
+      isAdmin(ctx)
+        ? `SELECT ce.id, ce.title, ce.description, ce.start_date, ce.end_date, ce.event_color, ce.is_all_day, ce.location,
               u.first_name AS user_first_name, u.last_name AS user_last_name, u.username
        FROM calendar_events ce
        LEFT JOIN users u ON ce.user_id = u.id
        WHERE ce.start_date >= CURRENT_TIMESTAMP
        ORDER BY ce.start_date ASC
-       LIMIT $1`,
-      [limit]
+           LIMIT $1`
+        : `SELECT ce.id, ce.title, ce.description, ce.start_date, ce.end_date, ce.event_color, ce.is_all_day, ce.location,
+                u.first_name AS user_first_name, u.last_name AS user_last_name, u.username
+           FROM calendar_events ce
+           LEFT JOIN users u ON ce.user_id = u.id
+           WHERE ce.user_id = $1 AND ce.start_date >= CURRENT_TIMESTAMP
+           ORDER BY ce.start_date ASC
+           LIMIT $2`,
+      isAdmin(ctx) ? [limit] : [ctx.userId, limit]
     );
     res.status(200).json({
       status: 'SUCCESS',
@@ -152,25 +165,96 @@ const getClassRoutineForDashboard = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 5, 20);
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
+    const ctx = getAuthContext(req);
+    if (!ctx.userId) {
+      return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
+    }
 
     let rows = [];
     try {
+      let where = '';
+      const params = [];
+
+      if (!isAdmin(ctx)) {
+        // Teacher scope: only own schedules.
+        if (ctx.roleName === 'teacher' || ctx.roleId === 3) {
+          const teacherId = await resolveTeacherIdForUser(ctx.userId);
+          if (teacherId) {
+            where = ` WHERE (cs.teacher_id = $${params.length + 1} OR cs.teacher = $${params.length + 1})`;
+            params.push(teacherId);
+          }
+        }
+
+        // Student scope: only their class/section schedules.
+        if (!where && (ctx.roleName === 'student')) {
+          const scope = await resolveStudentScopeForUser(ctx.userId);
+          if (scope?.classId) {
+            where = ` WHERE cs.class_id = $${params.length + 1}`;
+            params.push(scope.classId);
+            if (scope.sectionId) {
+              where += ` AND (cs.section_id = $${params.length + 1} OR cs.section_id IS NULL)`;
+              params.push(scope.sectionId);
+            }
+          }
+        }
+
+        // Parent/Guardian scope: schedules for children's classes (and sections when available).
+        if (!where && (ctx.roleName === 'parent' || ctx.roleName === 'guardian')) {
+          const wardIds = await resolveWardStudentIdsForUser(req);
+          if (wardIds.length > 0) {
+            const wardRows = await query(
+              `SELECT DISTINCT class_id, section_id
+               FROM students
+               WHERE id = ANY($1) AND is_active = true`,
+              [wardIds]
+            );
+            const classIds = [...new Set(wardRows.rows.map((r) => parseId(r.class_id)).filter(Boolean))];
+            const sectionIds = [...new Set(wardRows.rows.map((r) => parseId(r.section_id)).filter(Boolean))];
+            if (classIds.length > 0) {
+              where = ` WHERE cs.class_id = ANY($${params.length + 1})`;
+              params.push(classIds);
+              if (sectionIds.length > 0) {
+                where += ` AND (cs.section_id IS NULL OR cs.section_id = ANY($${params.length + 1}))`;
+                params.push(sectionIds);
+              }
+            }
+          }
+        }
+
+        // Deny-by-default for roles without a defined scope.
+        if (!where) {
+          return res.status(200).json({ status: 'SUCCESS', data: [], count: 0 });
+        }
+      }
+
       if (hasYearFilter) {
         const r = await query(
-          `SELECT cs.* FROM class_schedules cs
+          `SELECT cs.id, cs.class_id, cs.section_id, cs.subject_id, cs.teacher_id, cs.class_room_id, cs.day_of_week, cs.day, cs.weekday, cs.room_number, cs.room_id, cs.class_room
+           FROM class_schedules cs
            INNER JOIN classes c ON cs.class_id = c.id
-           WHERE c.academic_year_id = $1
-           ORDER BY cs.id DESC LIMIT $2`,
-          [academicYearId, limit]
+           ${where ? where + ' AND c.academic_year_id = $' + (params.length + 1) : 'WHERE c.academic_year_id = $1'}
+           ORDER BY cs.id DESC LIMIT $${params.length + 2}`,
+          where ? [...params, academicYearId, limit] : [academicYearId, limit]
         );
         rows = r.rows;
       } else {
-        const r = await query('SELECT * FROM class_schedules ORDER BY id DESC LIMIT $1', [limit]);
+        const r = await query(
+          `SELECT id, class_id, section_id, subject_id, teacher_id, class_room_id, day_of_week, day, weekday, room_number, room_id, class_room
+           FROM class_schedules cs
+           ${where}
+           ORDER BY id DESC LIMIT $${params.length + 1}`,
+          [...params, limit]
+        );
         rows = r.rows;
       }
     } catch (e) {
       try {
-        const r = await query('SELECT * FROM class_schedule ORDER BY id DESC LIMIT $1', [limit]);
+        const r = await query(
+          `SELECT id, class_id, section_id, subject_id, teacher_id, class_room_id, day_of_week, day, weekday, room_number, room_id, class_room
+           FROM class_schedule
+           ORDER BY id DESC LIMIT $1`,
+          [limit]
+        );
         rows = r.rows;
       } catch (e2) {
         return res.status(200).json({ status: 'SUCCESS', data: [], count: 0 });

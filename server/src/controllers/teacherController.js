@@ -1,4 +1,6 @@
 const { query } = require('../config/database');
+const { ROLES } = require('../config/roles');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 // Get all teachers
 const getAllTeachers = async (req, res) => {
@@ -33,6 +35,7 @@ const getAllTeachers = async (req, res) => {
         t.created_at,
         t.updated_at,
         t.staff_id,
+        s.user_id,
         s.employee_code,
         s.first_name,
         s.last_name,
@@ -61,18 +64,10 @@ const getAllTeachers = async (req, res) => {
       ORDER BY s.first_name ASC, s.last_name ASC
     `);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Teachers fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Teachers fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching teachers:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch teachers',
-    });
+    return errorResponse(res, 500, 'Failed to fetch teachers');
   }
 };
 
@@ -80,14 +75,8 @@ const getAllTeachers = async (req, res) => {
 const getCurrentTeacher = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[Teacher] getCurrentTeacher - userId from JWT:', userId, 'username:', req.user?.username);
-    }
     if (!userId) {
-      return res.status(401).json({
-        status: 'ERROR',
-        message: 'Not authenticated'
-      });
+      return errorResponse(res, 401, 'Not authenticated');
     }
 
     const result = await query(`
@@ -150,23 +139,13 @@ const getCurrentTeacher = async (req, res) => {
     `, [userId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Teacher not found for this user'
-      });
+      return errorResponse(res, 404, 'Teacher not found for this user');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Teacher fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Teacher fetched successfully', result.rows[0]);
   } catch (error) {
     console.error('Error fetching current teacher:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch teacher',
-    });
+    return errorResponse(res, 500, 'Failed to fetch teacher');
   }
 };
 
@@ -174,6 +153,11 @@ const getCurrentTeacher = async (req, res) => {
 const getTeacherById = async (req, res) => {
   try {
     const { id } = req.params;
+    const requester = req.user;
+    const roleId = requester?.role_id != null ? parseInt(requester.role_id, 10) : null;
+    if (!requester?.id || roleId == null) {
+      return errorResponse(res, 401, 'Not authenticated');
+    }
     
     const result = await query(`
       SELECT
@@ -234,23 +218,20 @@ const getTeacherById = async (req, res) => {
     `, [id]);
     
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Teacher not found'
-      });
+      return errorResponse(res, 404, 'Teacher not found');
+    }
+
+    const row = result.rows[0];
+    const isAdmin = roleId === ROLES.ADMIN;
+    const isSelf = String(row?.user_id) === String(requester.id) || String(row?.staff_id) === String(requester.staff_id);
+    if (!isAdmin && !isSelf) {
+      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Teacher fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Teacher fetched successfully', row);
   } catch (error) {
     console.error('Error fetching teacher:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch teacher',
-    });
+    return errorResponse(res, 500, 'Failed to fetch teacher');
   }
 };
 

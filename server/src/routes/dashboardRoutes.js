@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireRole } = require('../middleware/rbacMiddleware');
-const { ADMIN_DASHBOARD_ROLES } = require('../config/roles');
+const { ADMIN_DASHBOARD_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getDashboardStats,
   getUpcomingEvents,
@@ -23,13 +23,13 @@ router.get('/fee-stats', requireRole(ADMIN_DASHBOARD_ROLES), getDashboardFeeStat
 router.get('/finance-summary', requireRole(ADMIN_DASHBOARD_ROLES), getDashboardFinanceSummary);
 
 // Shared dashboard endpoints (all authenticated roles)
-router.get('/upcoming-events', getUpcomingEvents);
-router.get('/class-routine', getClassRoutineForDashboard);
-router.get('/best-performers', getBestPerformers);
-router.get('/star-students', getStarStudents);
-router.get('/performance-summary', getPerformanceSummary);
-router.get('/top-subjects', getTopSubjects);
-router.get('/recent-activity', getRecentActivity);
-router.get('/notice-board', getNoticeBoardForDashboard);
+router.get('/upcoming-events', requireRole(ALL_AUTHENTICATED_ROLES), getUpcomingEvents);
+router.get('/class-routine', requireRole(ALL_AUTHENTICATED_ROLES), getClassRoutineForDashboard);
+router.get('/best-performers', requireRole(ALL_AUTHENTICATED_ROLES), getBestPerformers);
+router.get('/star-students', requireRole(ALL_AUTHENTICATED_ROLES), getStarStudents);
+router.get('/performance-summary', requireRole(ALL_AUTHENTICATED_ROLES), getPerformanceSummary);
+router.get('/top-subjects', requireRole(ALL_AUTHENTICATED_ROLES), getTopSubjects);
+router.get('/recent-activity', requireRole(ALL_AUTHENTICATED_ROLES), getRecentActivity);
+router.get('/notice-board', requireRole(ALL_AUTHENTICATED_ROLES), getNoticeBoardForDashboard);
 
 module.exports = router;

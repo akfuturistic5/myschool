@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireRole } = require('../middleware/rbacMiddleware');
-const { ROLES, STUDENT_LIST_ALL_ROLES, PEOPLE_MANAGER_ROLES } = require('../config/roles');
+const { ROLES, STUDENT_LIST_ALL_ROLES, PEOPLE_MANAGER_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getAllStudents,
   getTeacherStudents,
@@ -25,23 +25,23 @@ router.get('/', requireRole([ROLES.ADMIN]), getAllStudents);
 router.get('/teacher/students', requireRole([ROLES.TEACHER]), getTeacherStudents);
 
 // Get current logged-in student (must be before /:id)
-router.get('/me', getCurrentStudent);
+router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
 
 // Get students by class - Admin or Teacher
 router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsByClass);
 
 // Get login details (usernames) for a student
 // Auth is handled by protectApi globally; controller enforces ownership (admin / student / parent / guardian)
-router.get('/:id/login-details', getStudentLoginDetails);
+router.get('/:id/login-details', requireRole(ALL_AUTHENTICATED_ROLES), getStudentLoginDetails);
 
 // Get student attendance
-router.get('/:studentId/attendance', getStudentAttendance);
+router.get('/:studentId/attendance', requireRole(ALL_AUTHENTICATED_ROLES), getStudentAttendance);
 
 // Get student exam results (read-only, DB-backed)
-router.get('/:studentId/exam-results', getStudentExamResults);
+router.get('/:studentId/exam-results', requireRole(ALL_AUTHENTICATED_ROLES), getStudentExamResults);
 
 // Get student by ID
-router.get('/:id', getStudentById);
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
 
 // Create/Update student - Admin only
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);

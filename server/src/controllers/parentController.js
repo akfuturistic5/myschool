@@ -275,6 +275,11 @@ const getAllParents = async (req, res) => {
 const getParentById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { canAccessStudent, parseId, isAdmin, getAuthContext } = require('../utils/accessControl');
+    const pid = parseId(id);
+    if (!pid) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid parent ID' });
+    }
     
     const result = await query(`
       SELECT
@@ -303,13 +308,22 @@ const getParentById = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       WHERE p.id = $1 AND s.is_active = true
-    `, [id]);
+    `, [pid]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
         message: 'Parent not found'
       });
+    }
+
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) {
+      const sid = result.rows[0]?.student_id;
+      const access = await canAccessStudent(req, sid);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
+      }
     }
     
     res.status(200).json({
@@ -329,7 +343,16 @@ const getParentById = async (req, res) => {
 // Get parent by student ID
 const getParentByStudentId = async (req, res) => {
   try {
-    const { studentId } = req.params;
+    const { canAccessStudent, parseId } = require('../utils/accessControl');
+    const studentId = parseId(req.params.studentId);
+    if (!studentId) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
+
+    const access = await canAccessStudent(req, studentId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
+    }
     
     const result = await query(`
       SELECT

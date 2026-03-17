@@ -1,6 +1,23 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 
+function isSafeFileUrl(u) {
+  if (u == null) return true;
+  const s = String(u).trim();
+  if (!s) return true;
+  // Allow relative paths used by the app (no scheme).
+  if (s.startsWith('/')) return true;
+  // Reject dangerous schemes.
+  const lower = s.toLowerCase();
+  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('file:')) return false;
+  try {
+    const url = new URL(s);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 // Get all files for current user
 const getAllFiles = async (req, res) => {
   try {
@@ -79,12 +96,18 @@ const createFile = async (req, res) => {
     if (!name) {
       return errorResponse(res, 400, 'Name is required');
     }
+    if (!isSafeFileUrl(file_url)) {
+      return errorResponse(res, 400, 'Invalid file_url');
+    }
+    const sharedWithSafe = Array.isArray(shared_with)
+      ? shared_with.map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n))
+      : [];
     
     const result = await query(`
       INSERT INTO files (user_id, name, file_type, mime_type, size, file_url, parent_folder_id, is_folder, is_shared, shared_with)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
-    `, [userId, name, file_type || null, mime_type || null, size, file_url || null, parent_folder_id || null, is_folder, is_shared, shared_with]);
+    `, [userId, name, file_type || null, mime_type || null, size, file_url || null, parent_folder_id || null, is_folder, is_shared, sharedWithSafe]);
     
     success(res, 201, 'File created successfully', result.rows[0]);
   } catch (error) {
@@ -98,7 +121,7 @@ const updateFile = async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
-    const { name, is_shared, shared_with } = req.body;
+    const { name, is_shared, shared_with, file_url } = req.body;
     
     const updates = [];
     const values = [];
@@ -113,8 +136,18 @@ const updateFile = async (req, res) => {
       values.push(is_shared);
     }
     if (shared_with !== undefined) {
+      const sharedWithSafe = Array.isArray(shared_with)
+        ? shared_with.map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n))
+        : [];
       updates.push(`shared_with = $${paramCount++}`);
-      values.push(shared_with);
+      values.push(sharedWithSafe);
+    }
+    if (file_url !== undefined) {
+      if (!isSafeFileUrl(file_url)) {
+        return errorResponse(res, 400, 'Invalid file_url');
+      }
+      updates.push(`file_url = $${paramCount++}`);
+      values.push(file_url || null);
     }
     
     if (updates.length === 0) {

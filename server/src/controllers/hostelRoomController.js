@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 // Get all hostel rooms
 const getAllHostelRooms = async (req, res) => {
@@ -26,36 +27,10 @@ const getAllHostelRooms = async (req, res) => {
       ORDER BY hr.id ASC
     `);
     
-    // Log for debugging
-    console.log('=== HOSTEL ROOMS BACKEND DEBUG ===');
-    console.log('Total rooms:', result.rows.length);
-    if (result.rows.length > 0) {
-      console.log('First room data:', result.rows[0]);
-      console.log('First room columns:', Object.keys(result.rows[0]));
-    }
-    
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Hostel rooms fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Hostel rooms fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
-    console.error('=== ERROR FETCHING HOSTEL ROOMS ===');
-    console.error('Error:', error);
-    console.error('Error message:', error.message);
-    console.error('Error code:', error.code);
-    console.error('Error hint:', error.hint);
-    console.error('Error detail:', error.detail);
-    res.status(500).json({
-      status: 'ERROR',
-      message: process.env.NODE_ENV === 'production' ? 'Failed to fetch hostel rooms' : `Failed to fetch hostel rooms: ${error.message || 'Unknown error'}`,
-      error: process.env.NODE_ENV === 'development' ? {
-        code: error.code,
-        hint: error.hint,
-        detail: error.detail
-      } : undefined
-    });
+    console.error('Error fetching hostel rooms:', error);
+    return errorResponse(res, 500, 'Failed to fetch hostel rooms');
   }
 };
 
@@ -86,32 +61,13 @@ const getHostelRoomById = async (req, res) => {
     `, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Hostel room not found'
-      });
+      return errorResponse(res, 404, 'Hostel room not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Hostel room fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Hostel room fetched successfully', result.rows[0]);
   } catch (error) {
-    console.error('=== ERROR FETCHING HOSTEL ROOM BY ID ===');
-    console.error('Error:', error);
-    console.error('Error message:', error.message);
-    console.error('Error code:', error.code);
-    console.error('Error hint:', error.hint);
-    res.status(500).json({
-      status: 'ERROR',
-      message: process.env.NODE_ENV === 'production' ? 'Failed to fetch hostel room' : `Failed to fetch hostel room: ${error.message || 'Unknown error'}`,
-      error: process.env.NODE_ENV === 'development' ? {
-        code: error.code,
-        hint: error.hint,
-        detail: error.detail
-      } : undefined
-    });
+    console.error('Error fetching hostel room by id:', error);
+    return errorResponse(res, 500, 'Failed to fetch hostel room');
   }
 };
 
@@ -126,16 +82,6 @@ const updateHostelRoom = async (req, res) => {
       monthly_fees,
       cost_per_bed,
     } = req.body;
-
-    console.log('=== UPDATE HOSTEL ROOM REQUEST ===');
-    console.log('Params:', { id });
-    console.log('Body:', {
-      current_occupancy,
-      no_of_bed,
-      monthly_fee,
-      monthly_fees,
-      cost_per_bed,
-    });
 
     // Resolve bed count: prefer explicit current_occupancy, then no_of_bed
     let bedsRaw =
@@ -163,10 +109,7 @@ const updateHostelRoom = async (req, res) => {
     }
 
     if (beds === null && fee === null) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Nothing to update for hostel room',
-      });
+      return errorResponse(res, 400, 'Nothing to update for hostel room');
     }
 
     const updates = [];
@@ -198,24 +141,13 @@ const updateHostelRoom = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Hostel room not found',
-      });
+      return errorResponse(res, 404, 'Hostel room not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Hostel room updated successfully',
-      data: result.rows[0],
-    });
+    return success(res, 200, 'Hostel room updated successfully', result.rows[0]);
   } catch (error) {
-    console.error('=== ERROR UPDATING HOSTEL ROOM ===');
-    console.error('Error:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: process.env.NODE_ENV === 'production' ? 'Failed to update hostel room' : `Failed to update hostel room: ${error.message || 'Unknown error'}`,
-    });
+    console.error('Error updating hostel room:', error);
+    return errorResponse(res, 500, 'Failed to update hostel room');
   }
 };
 

@@ -55,7 +55,6 @@ const Login = () => {
       if (res.status === "SUCCESS" && res.data) {
         dispatch(
           setAuth({
-            token: res.data.token,
             user: res.data.user,
           })
         );

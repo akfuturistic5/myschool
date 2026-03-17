@@ -1,7 +1,6 @@
 const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const isDev = import.meta.env.DEV;
 const isProd = import.meta.env.PROD;
-const TOKEN_KEY = 'preskool_token';
 
 let cachedBaseUrl = null;
 
@@ -26,7 +25,14 @@ async function getApiBaseUrl() {
   return cachedBaseUrl;
 }
 
-const getToken = () => localStorage.getItem(TOKEN_KEY);
+function getCookie(name) {
+  try {
+    const m = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/[$()*+./?[\\\]^{|}-]/g, '\\$&')}=([^;]*)`));
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
 
 // Request deduplication: track ongoing requests to prevent duplicate simultaneous calls
 const pendingRequests = new Map();
@@ -70,9 +76,14 @@ class ApiService {
       ...(options.headers || {}),
     };
 
-    const token = getToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    // Cookie-only auth:
+    // - auth session is stored in httpOnly cookies (not accessible to JS)
+    // - CSRF uses double-submit cookie (readable) + header for unsafe methods
+    const method = (options.method || 'GET').toUpperCase();
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (unsafe) {
+      const csrf = getCookie('XSRF-TOKEN');
+      if (csrf) headers['X-XSRF-TOKEN'] = csrf;
     }
 
     try {
@@ -90,8 +101,6 @@ class ApiService {
 
       if (!response.ok) {
         if (response.status === 401) {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem('preskool_user');
           this.logout().catch(() => {});
           window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
         }

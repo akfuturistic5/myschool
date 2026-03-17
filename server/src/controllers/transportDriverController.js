@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 function getDriverDisplayName(row) {
   if (row.driver_name != null && String(row.driver_name).trim() !== '') return String(row.driver_name).trim();
@@ -26,18 +27,10 @@ const getAllDrivers = async (req, res) => {
   try {
     const result = await query('SELECT * FROM drivers ORDER BY id ASC');
     const data = result.rows.map(mapDriverRow);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Transport drivers fetched successfully',
-      data,
-      count: data.length
-    });
+    return success(res, 200, 'Transport drivers fetched successfully', data, { count: data.length });
   } catch (error) {
     console.error('Error fetching transport drivers:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch transport drivers',
-    });
+    return errorResponse(res, 500, 'Failed to fetch transport drivers');
   }
 };
 
@@ -46,19 +39,12 @@ const getDriverById = async (req, res) => {
     const { id } = req.params;
     const result = await query('SELECT * FROM drivers WHERE id = $1', [id]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ status: 'ERROR', message: 'Driver not found' });
+      return errorResponse(res, 404, 'Driver not found');
     }
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Transport driver fetched successfully',
-      data: mapDriverRow(result.rows[0])
-    });
+    return success(res, 200, 'Transport driver fetched successfully', mapDriverRow(result.rows[0]));
   } catch (error) {
     console.error('Error fetching transport driver:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch transport driver',
-    });
+    return errorResponse(res, 500, 'Failed to fetch transport driver');
   }
 };
 
@@ -67,10 +53,6 @@ const updateDriver = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, phone, license_number, address, is_active } = req.body;
-
-    console.log('=== UPDATE DRIVER REQUEST ===');
-    console.log('Params:', { id });
-    console.log('Body:', { name, phone, license_number, address, is_active, is_active_type: typeof is_active });
 
     // Convert is_active to boolean
     let isActiveBoolean = false;
@@ -82,10 +64,7 @@ const updateDriver = async (req, res) => {
 
     // Validate required fields
     if (!name) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Driver name is required'
-      });
+      return errorResponse(res, 400, 'Driver name is required');
     }
 
     const result = await query(`
@@ -101,23 +80,13 @@ const updateDriver = async (req, res) => {
     `, [name, phone || null, license_number || null, address || null, isActiveBoolean, id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Driver not found'
-      });
+      return errorResponse(res, 404, 'Driver not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Driver updated successfully',
-      data: mapDriverRow(result.rows[0])
-    });
+    return success(res, 200, 'Driver updated successfully', mapDriverRow(result.rows[0]));
   } catch (error) {
     console.error('Error updating driver:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: process.env.NODE_ENV === 'production' ? 'Failed to update driver' : `Failed to update driver: ${error.message || 'Unknown error'}`,
-    });
+    return errorResponse(res, 500, 'Failed to update driver');
   }
 };
 

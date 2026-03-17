@@ -11,6 +11,15 @@ const ROLES = {
   GUARDIAN: 5,
 };
 
+/** Any authenticated user (within a tenant) */
+const ALL_AUTHENTICATED_ROLES = [
+  ROLES.ADMIN,
+  ROLES.STUDENT,
+  ROLES.TEACHER,
+  ROLES.PARENT,
+  ROLES.GUARDIAN,
+];
+
 const ROLE_NAMES = {
   [ROLES.ADMIN]: 'Admin',
   [ROLES.STUDENT]: 'Student',
@@ -60,6 +69,7 @@ const PEOPLE_MANAGER_ROLES = [ROLES.ADMIN];
 
 module.exports = {
   ROLES,
+  ALL_AUTHENTICATED_ROLES,
   ROLE_NAMES,
   EVENT_MANAGER_ROLES,
   LEAVE_APPROVER_ROLES,

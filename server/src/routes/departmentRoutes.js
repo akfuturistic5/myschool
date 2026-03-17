@@ -1,4 +1,6 @@
 const express = require('express');
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getAllDepartments,
   getDepartmentById,
@@ -8,12 +10,12 @@ const {
 const router = express.Router();
 
 // GET /api/departments
-router.get('/', getAllDepartments);
+router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllDepartments);
 
 // GET /api/departments/:id
-router.get('/:id', getDepartmentById);
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getDepartmentById);
 
 // PUT /api/departments/:id
-router.put('/:id', updateDepartment);
+router.put('/:id', requireRole([ROLES.ADMIN]), updateDepartment);
 
 module.exports = router;

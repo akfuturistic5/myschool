@@ -3,8 +3,10 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const serverConfig = require('../config/server');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const crypto = require('crypto');
 
 const AUTH_COOKIE_NAME = 'auth_token';
+const SESSION_COOKIE_NAME = 'sid';
 
 /** Cookie options for HTTP-only auth cookie. SameSite=None for cross-origin (e.g. Render frontend/backend). */
 const getAuthCookieOptions = () => {
@@ -18,6 +20,36 @@ const getAuthCookieOptions = () => {
     path: '/',
   };
 };
+
+const getSessionCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+  const maxAgeMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: maxAgeMs,
+    path: '/',
+  };
+};
+
+// Double-submit CSRF cookie (readable by JS; paired with X-XSRF-TOKEN header)
+const getCsrfCookieOptions = () => {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: false,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+  };
+};
+
+function newOpaqueSessionToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+function sha256Hex(s) {
+  return crypto.createHash('sha256').update(String(s)).digest('hex');
+}
 
 /**
  * Login - authenticate user with username/phone and password
@@ -135,6 +167,8 @@ const login = async (req, res) => {
         username: user.username,
         role_id: user.role_id,
         role_name: user.role_name || 'User',
+        // NOTE: db_name is kept for backward compatibility but MUST NOT be trusted
+        // for tenant selection. Tenant selection is bound to the server-side session.
         db_name: targetDbName,
         school_id: school.id,
         school_name: school.school_name,
@@ -178,7 +212,41 @@ const login = async (req, res) => {
 
       res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 
+      // Bind tenant context to an opaque server-side session (prevents tenant switching with forged JWT).
+      const sessionToken = newOpaqueSessionToken();
+      const sessionHash = sha256Hex(sessionToken);
+      const now = Date.now();
+      const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+      const expiresAt = new Date(now + maxAgeMs);
+      try {
+        await masterQuery(
+          `
+          INSERT INTO tenant_sessions (session_hash, school_id, institute_number, db_name, tenant_user_id, expires_at, user_agent, ip_address)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `,
+          [
+            sessionHash,
+            school.id,
+            school.institute_number,
+            targetDbName,
+            user.id,
+            expiresAt,
+            String(req.headers['user-agent'] || '').slice(0, 2000) || null,
+            String(req.headers['x-forwarded-for'] || req.ip || '').slice(0, 100) || null,
+          ]
+        );
+      } catch (e) {
+        console.error('Failed to create tenant session in master_db:', e);
+        return errorResponse(res, 500, 'Login failed');
+      }
+      res.cookie(SESSION_COOKIE_NAME, sessionToken, getSessionCookieOptions());
+
+      // Ensure CSRF cookie exists for SPA; token is validated via header on unsafe methods.
+      const csrfToken = crypto.randomBytes(16).toString('base64url');
+      res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
+
       success(res, 200, 'Login successful', {
+        // Token is returned for backward compatibility; frontend uses cookies only.
         token,
         user: {
           id: user.id,
@@ -210,6 +278,11 @@ const login = async (req, res) => {
     if (!tokenUser || !tokenUser.id) {
       return errorResponse(res, 401, 'Not authenticated');
     }
+    // Ensure CSRF cookie exists for SPA after session restoration.
+    if (!req.cookies?.['XSRF-TOKEN']) {
+      const csrfToken = crypto.randomBytes(16).toString('base64url');
+      res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
+    }
     const result = await query(
       `SELECT 
         u.*,
@@ -239,6 +312,10 @@ const login = async (req, res) => {
       return errorResponse(res, 404, 'User not found');
     }
     const user = result.rows[0];
+    // Never expose password hashes or internal auth fields to clients.
+    if (user && Object.prototype.hasOwnProperty.call(user, 'password_hash')) {
+      delete user.password_hash;
+    }
     const hasStudent = user.student_id != null;
     const hasStaff = user.staff_id != null;
     const studentInactive = hasStudent && (user.student_is_active === false || user.student_is_active === 'f' || user.student_is_active === 0);
@@ -277,12 +354,28 @@ const login = async (req, res) => {
  * Logout - clear HTTP-only auth cookie
  */
 const logout = (req, res) => {
+  // Best-effort server-side session revocation (logout invalidation).
+  const sid = req.cookies?.[SESSION_COOKIE_NAME] || null;
+  if (sid) {
+    const sessionHash = sha256Hex(sid);
+    masterQuery(
+      `UPDATE tenant_sessions SET revoked_at = NOW() WHERE session_hash = $1 AND revoked_at IS NULL`,
+      [sessionHash]
+    ).catch(() => {});
+  }
   const opts = getAuthCookieOptions();
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: opts.httpOnly,
     secure: opts.secure,
     sameSite: opts.sameSite,
     path: opts.path,
+  });
+  const sopts = getSessionCookieOptions();
+  res.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: sopts.httpOnly,
+    secure: sopts.secure,
+    sameSite: sopts.sameSite,
+    path: sopts.path,
   });
   success(res, 200, 'Logged out successfully', null);
 };
@@ -484,6 +577,10 @@ const updateMe = async (req, res) => {
 
     // Compute display fields same as getMe
     const user = resultUser;
+    // Never expose password hashes or internal auth fields to clients.
+    if (user && Object.prototype.hasOwnProperty.call(user, 'password_hash')) {
+      delete user.password_hash;
+    }
     const hasStudent = user.student_id != null;
     const hasStaff = user.staff_id != null;
     const studentInactive = hasStudent && (user.student_is_active === false || user.student_is_active === 'f' || user.student_is_active === 0);

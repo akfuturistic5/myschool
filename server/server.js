@@ -82,15 +82,36 @@ const allowedOrigins = serverConfig.corsOrigin
   : [];
 const corsOptions = {
   origin: isProduction
-    ? (allowedOrigins.length > 0 ? allowedOrigins : defaultDevOrigins)
-    : defaultDevOrigins,
+    ? (allowedOrigins.length > 0 ? allowedOrigins : false)
+    : (allowedOrigins.length > 0 ? allowedOrigins : defaultDevOrigins),
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-XSRF-TOKEN', 'X-CSRF-TOKEN'],
 };
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// CSRF (double-submit cookie) for cookie-authenticated SPA.
+// Requires frontend to send X-XSRF-TOKEN header matching XSRF-TOKEN cookie for unsafe methods.
+const enforceCsrf = (req, res, next) => {
+  const method = (req.method || 'GET').toUpperCase();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return next();
+  // Public auth endpoints are exempt (login establishes cookies).
+  if (
+    req.path.startsWith('/api/auth/login') ||
+    req.path.startsWith('/api/auth/logout') ||
+    req.path.startsWith('/super-admin/api/auth/login') ||
+    req.path.startsWith('/super-admin/api/auth/logout')
+  ) return next();
+  const cookieToken = req.cookies?.['XSRF-TOKEN'];
+  const headerToken = req.headers['x-xsrf-token'] || req.headers['x-csrf-token'];
+  if (!cookieToken || !headerToken || String(cookieToken) !== String(headerToken)) {
+    return errorResponse(res, 403, 'CSRF validation failed');
+  }
+  return next();
+};
+app.use(enforceCsrf);
 
 // Login rate limiting - stricter (10 attempts per 15 min per IP)
 const loginLimiter = rateLimit({

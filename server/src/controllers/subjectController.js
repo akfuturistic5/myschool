@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 // Get all subjects
 const getAllSubjects = async (req, res) => {
@@ -21,18 +22,10 @@ const getAllSubjects = async (req, res) => {
       ORDER BY s.subject_name ASC
     `);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subjects fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subjects',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subjects');
   }
 };
 
@@ -60,23 +53,13 @@ const getSubjectById = async (req, res) => {
     `, [id]);
     
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Subject not found'
-      });
+      return errorResponse(res, 404, 'Subject not found');
     }
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subject fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Subject fetched successfully', result.rows[0]);
   } catch (error) {
     console.error('Error fetching subject:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subject',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subject');
   }
 };
 
@@ -104,18 +87,10 @@ const getSubjectsByClass = async (req, res) => {
       ORDER BY s.subject_name ASC
     `, [classId]);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subjects fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects by class:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subjects',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subjects');
   }
 };
 
@@ -125,16 +100,9 @@ const updateSubject = async (req, res) => {
     const { id } = req.params;
     const { subject_name, is_active } = req.body;
 
-    console.log('=== UPDATE SUBJECT REQUEST ===');
-    console.log('Params:', { id });
-    console.log('Body:', { subject_name, is_active, is_active_type: typeof is_active });
-
     // Validate required fields
     if (!subject_name || !subject_name.trim()) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Subject name is required'
-      });
+      return errorResponse(res, 400, 'Subject name is required');
     }
 
     // Convert is_active to boolean
@@ -155,23 +123,13 @@ const updateSubject = async (req, res) => {
     `, [subject_name.trim(), isActiveBoolean, id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Subject not found'
-      });
+      return errorResponse(res, 404, 'Subject not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subject updated successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Subject updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating subject:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: process.env.NODE_ENV === 'production' ? 'Failed to update subject' : `Failed to update subject: ${error.message || 'Unknown error'}`,
-    });
+    return errorResponse(res, 500, 'Failed to update subject');
   }
 };
 

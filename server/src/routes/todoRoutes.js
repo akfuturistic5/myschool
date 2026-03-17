@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getAllTodos,
   getTodoById,
@@ -8,10 +10,10 @@ const {
   deleteTodo
 } = require('../controllers/todoController');
 
-router.get('/', getAllTodos);
-router.get('/:id', getTodoById);
-router.post('/', createTodo);
-router.put('/:id', updateTodo);
-router.delete('/:id', deleteTodo);
+router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllTodos);
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getTodoById);
+router.post('/', requireRole(ALL_AUTHENTICATED_ROLES), createTodo);
+router.put('/:id', requireRole(ALL_AUTHENTICATED_ROLES), updateTodo);
+router.delete('/:id', requireRole(ALL_AUTHENTICATED_ROLES), deleteTodo);
 
 module.exports = router;

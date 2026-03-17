@@ -8,8 +8,11 @@ const serverConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: isProduction ? process.env.JWT_SECRET : (process.env.JWT_SECRET || 'dev-jwt-secret-change-in-production'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  // In production we require an explicit allowlist (no implicit localhost fallback).
+  corsOrigin: isProduction ? (process.env.CORS_ORIGIN || '') : (process.env.CORS_ORIGIN || 'http://localhost:5173'),
   logLevel: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
+  // Backward-compat: allow legacy Bearer auth only if explicitly enabled.
+  allowLegacyBearerAuth: String(process.env.ALLOW_LEGACY_BEARER_AUTH || '').toLowerCase() === 'true',
 };
 
 module.exports = serverConfig;

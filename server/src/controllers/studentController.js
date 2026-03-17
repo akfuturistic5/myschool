@@ -2,6 +2,7 @@ const { query, executeTransaction } = require('../config/database');
 const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
+const { canAccessStudent, parseId } = require('../utils/accessControl');
 const { createStudentUser, createParentUser, createGuardianUser } = require('../utils/createPersonUser');
 
 // Create new student
@@ -958,6 +959,10 @@ const getTeacherStudents = async (req, res) => {
 const getStudentById = async (req, res) => {
   try {
     const { id } = req.params;
+    const sid = parseId(id);
+    if (!sid) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
     const baseSelect = `
       s.id, s.admission_number, s.roll_number, s.first_name, s.last_name,
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
@@ -1005,7 +1010,7 @@ const getStudentById = async (req, res) => {
         ${fromAndJoins}
         LEFT JOIN religions r ON s.religion_id = r.id
         ${whereClause}
-      `, [id]);
+      `, [sid]);
     } catch (e) {
       const isReligionError = e.message && (e.message.includes('religion_id') || e.message.includes('religions') || e.message.includes('reigion'));
       const isMissingColsError = e.message && (e.message.includes('unique_student_ids') || e.message.includes('pen_number') || e.message.includes('aadhar_no') || e.message.includes('aadhaar_no'));
@@ -1023,7 +1028,7 @@ const getStudentById = async (req, res) => {
           ${fromAndJoins}
           ${relJoin}
           ${whereClause}
-        `, [id]);
+        `, [sid]);
       } else {
         throw e;
       }
@@ -1037,40 +1042,14 @@ const getStudentById = async (req, res) => {
     }
 
     const studentData = result.rows[0];
-    const studentId = parseInt(id, 10);
-
-    // Ownership check: non-Admin/Teacher can only view own/children/wards
-    const userId = req.user?.id;
-    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
-    if (roleId !== ROLES.ADMIN && roleId !== ROLES.TEACHER) {
-      if (roleId === ROLES.STUDENT) {
-        const studentUserId = studentData.user_id ? parseInt(studentData.user_id, 10) : null;
-        if (!userId || parseInt(userId, 10) !== studentUserId) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.PARENT) {
-        const { studentIds } = await getParentsForUser(userId).catch(() => ({ studentIds: [] }));
-        if (!studentIds || !studentIds.includes(studentId)) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.GUARDIAN) {
-        const gCheck = await query(
-          `SELECT 1 FROM guardians g
-           INNER JOIN users u ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email)) OR (g.phone = u.phone AND g.phone != ''))
-           WHERE u.id = $1 AND g.student_id = $2`,
-          [userId, studentId]
-        );
-        if (gCheck.rows.length === 0) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else {
-        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-      }
+    const access = await canAccessStudent(req, sid);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
     try {
       const extra = await query(
         'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information, vehicle_number FROM students WHERE id = $1',
-        [id]
+        [sid]
       );
       if (extra.rows.length > 0) {
         Object.assign(studentData, extra.rows[0]);
@@ -1102,7 +1081,7 @@ const getStudentById = async (req, res) => {
       try {
         const idRes = await query(
           'SELECT unique_student_ids, pen_number, aadhar_no FROM students WHERE id = $1',
-          [id]
+          [sid]
         );
         if (idRes.rows.length > 0) {
           const r = idRes.rows[0];
@@ -1142,7 +1121,7 @@ const getStudentById = async (req, res) => {
           LEFT JOIN hostel_rooms hr ON s.hostel_room_id = hr.id
           LEFT JOIN hostels h ON COALESCE(s.hostel_id, hr.hostel_id) = h.id
           WHERE s.id = $1
-        `, [id]);
+        `, [sid]);
         if (hostelExtra.rows.length > 0 && hostelExtra.rows[0]) {
           const row = hostelExtra.rows[0];
           studentData.hostel_name = row.hostel_name || null;
@@ -1238,8 +1217,8 @@ const getStudentById = async (req, res) => {
 //   - Guardian: only for their wards
 const getStudentLoginDetails = async (req, res) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (!id || Number.isNaN(id)) {
+    const id = parseId(req.params.id);
+    if (!id) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
 
@@ -1272,47 +1251,9 @@ const getStudentLoginDetails = async (req, res) => {
 
     const stu = stuResult.rows[0];
 
-    // Authorization / ownership check
-    const userId = req.user?.id;
-    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
-    const roleName = (req.user?.role_name || '').toString().trim().toLowerCase();
-    const isAdmin = roleId === ROLES.ADMIN || roleName === 'admin';
-    const isStudent = roleId === ROLES.STUDENT || roleName === 'student';
-    const isParent = roleId === ROLES.PARENT || roleName === 'parent';
-    const isGuardian = roleId === ROLES.GUARDIAN || roleName === 'guardian';
-
-    if (!isAdmin) {
-      if (!userId) {
-        return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
-      }
-
-      if (isStudent) {
-        const studentUserId = stu.user_id ? parseInt(stu.user_id, 10) : null;
-        if (!studentUserId || parseInt(userId, 10) !== studentUserId) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (isParent) {
-        const { studentIds } = await getParentsForUser(userId).catch(() => ({ studentIds: [] }));
-        if (!studentIds || !studentIds.includes(id)) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (isGuardian) {
-        const gCheck = await query(
-          `SELECT 1
-           FROM guardians g
-           INNER JOIN users u
-             ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email))
-                 OR (g.phone = u.phone AND g.phone != ''))
-           WHERE u.id = $1 AND g.student_id = $2`,
-          [userId, id]
-        );
-        if (gCheck.rows.length === 0) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else {
-        // Other roles (e.g. teacher) are not allowed by default
-        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-      }
+    const access = await canAccessStudent(req, id);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
     // Collect parent contact info for matching parent user accounts
@@ -1775,42 +1716,14 @@ const getStudentsByClass = async (req, res) => {
 // Get attendance for a student (from attendance table)
 const getStudentAttendance = async (req, res) => {
   try {
-    const studentId = parseInt(req.params.studentId, 10);
-    if (!studentId || Number.isNaN(studentId)) {
+    const studentId = parseId(req.params.studentId);
+    if (!studentId) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
 
-    // Ownership check: non-Admin/Teacher can only access own/children/wards
-    const userId = req.user?.id;
-    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
-    if (roleId !== ROLES.ADMIN && roleId !== ROLES.TEACHER) {
-      const studRow = await query('SELECT user_id, guardian_id FROM students WHERE id = $1', [studentId]);
-      if (studRow.rows.length === 0) {
-        return res.status(404).json({ status: 'ERROR', message: 'Student not found' });
-      }
-      const studentUserId = studRow.rows[0].user_id ? parseInt(studRow.rows[0].user_id, 10) : null;
-      if (roleId === ROLES.STUDENT) {
-        if (!userId || parseInt(userId, 10) !== studentUserId) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.PARENT) {
-        const { studentIds } = await getParentsForUser(userId).catch(() => ({ studentIds: [] }));
-        if (!studentIds || !studentIds.includes(studentId)) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.GUARDIAN) {
-        const gCheck = await query(
-          `SELECT 1 FROM guardians g
-           INNER JOIN users u ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email)) OR (g.phone = u.phone AND g.phone != ''))
-           WHERE u.id = $1 AND g.student_id = $2`,
-          [userId, studentId]
-        );
-        if (gCheck.rows.length === 0) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else {
-        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-      }
+    const access = await canAccessStudent(req, studentId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
     const result = await query(
@@ -1875,43 +1788,14 @@ const getStudentAttendance = async (req, res) => {
 // - Falls back gracefully to empty data if expected columns/tables are missing
 const getStudentExamResults = async (req, res) => {
   try {
-    const studentId = parseInt(req.params.studentId, 10);
-    if (!studentId || Number.isNaN(studentId)) {
+    const studentId = parseId(req.params.studentId);
+    if (!studentId) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
 
-    // Ownership / access check – mirror attendance/fees behaviour
-    const userId = req.user?.id;
-    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
-
-    if (roleId !== ROLES.ADMIN && roleId !== ROLES.TEACHER) {
-      const studRow = await query('SELECT user_id FROM students WHERE id = $1', [studentId]);
-      if (studRow.rows.length === 0) {
-        return res.status(404).json({ status: 'ERROR', message: 'Student not found' });
-      }
-      const studentUserId = studRow.rows[0].user_id ? parseInt(studRow.rows[0].user_id, 10) : null;
-      if (roleId === ROLES.STUDENT) {
-        if (!userId || parseInt(userId, 10) !== studentUserId) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.PARENT) {
-        const { studentIds } = await getParentsForUser(userId).catch(() => ({ studentIds: [] }));
-        if (!studentIds || !studentIds.includes(studentId)) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (roleId === ROLES.GUARDIAN) {
-        const gCheck = await query(
-          `SELECT 1 FROM guardians g
-           INNER JOIN users u ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email)) OR (g.phone = u.phone AND g.phone != ''))
-           WHERE u.id = $1 AND g.student_id = $2`,
-          [userId, studentId]
-        );
-        if (gCheck.rows.length === 0) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else {
-        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-      }
+    const access = await canAccessStudent(req, studentId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
     let rows = [];

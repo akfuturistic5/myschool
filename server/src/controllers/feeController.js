@@ -1,11 +1,16 @@
 const { query } = require('../config/database');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { ROLES } = require('../config/roles');
+const { canAccessStudent, getAuthContext, isAdmin, parseId } = require('../utils/accessControl');
 
 // Get fee collections list for Collect Fees page (students with fee summary)
 // Optional query: academic_year_id - filter students by academic year
 const getFeeCollectionsList = async (req, res) => {
   try {
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) {
+      return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+    }
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     const studentWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
@@ -84,75 +89,13 @@ const getFeeCollectionsList = async (req, res) => {
 // Auth: Admin can get any; Student can get own; Parent can get children's; Guardian can get ward's
 const getStudentFees = async (req, res) => {
   try {
-    const studentId = parseInt(req.params.studentId, 10);
-    if (!studentId || Number.isNaN(studentId)) {
+    const studentId = parseId(req.params.studentId);
+    if (!studentId) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
-    const userId = req.user?.id;
-    const roleId = req.user?.role_id != null ? parseInt(req.user.role_id, 10) : null;
-    const roleName = (req.user?.role_name || '').toString().trim().toLowerCase();
-    // Use role_name fallback when DB role_id differs from config (e.g. Student=6 vs ROLES.STUDENT=2)
-    const isAdmin = roleId === ROLES.ADMIN || roleName === 'admin';
-    const isStudent = roleId === ROLES.STUDENT || roleName === 'student';
-    const isParent = roleId === ROLES.PARENT || roleName === 'parent';
-    const isGuardian = roleId === ROLES.GUARDIAN || roleName === 'guardian';
-
-    if (!isAdmin) {
-      const studCheck = await query('SELECT user_id FROM students WHERE id = $1', [studentId]);
-      if (studCheck.rows.length === 0) {
-        return res.status(404).json({ status: 'ERROR', message: 'Student not found' });
-      }
-      const studentUserId = studCheck.rows[0].user_id;
-      if (isStudent) {
-        const userMatches = userId && (parseInt(userId, 10) === parseInt(studentUserId, 10));
-        if (!userMatches) {
-          if (!studentUserId) {
-            const userRow = await query('SELECT email, phone FROM users WHERE id = $1 AND is_active = true', [userId]);
-            if (userRow.rows.length > 0) {
-              const u = userRow.rows[0];
-              const userEmail = (u.email || '').toString().trim().toLowerCase();
-              const userPhone = (u.phone || '').toString().trim();
-              const matchCheck = await query(
-                `SELECT 1 FROM students s
-                 LEFT JOIN parents p ON s.parent_id = p.id
-                 WHERE s.id = $1 AND s.is_active = true
-                   AND (
-                     (LOWER(TRIM(COALESCE(s.email, ''))) = $2 AND $2 != '')
-                     OR (TRIM(COALESCE(s.phone, '')) = $3 AND $3 != '')
-                     OR (LOWER(TRIM(COALESCE(p.father_email, ''))) = $2 AND $2 != '')
-                     OR (LOWER(TRIM(COALESCE(p.mother_email, ''))) = $2 AND $2 != '')
-                     OR (TRIM(COALESCE(p.father_phone, '')) = $3 AND $3 != '')
-                     OR (TRIM(COALESCE(p.mother_phone, '')) = $3 AND $3 != '')
-                   )
-                 LIMIT 1`,
-                [studentId, userEmail, userPhone]
-              );
-              if (matchCheck.rows.length === 0) {
-                return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-              }
-            } else {
-              return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-            }
-          } else {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-          }
-        }
-      } else if (isParent) {
-        const { studentIds } = await getParentsForUser(userId).catch(() => ({ studentIds: [] }));
-        if (!studentIds || !studentIds.includes(studentId)) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else if (isGuardian) {
-        const guardianCheck = await query(
-          'SELECT id FROM guardians g INNER JOIN users u ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email)) OR (g.phone = u.phone AND g.phone != \'\')) WHERE u.id = $1 AND g.student_id = $2',
-          [userId, studentId]
-        );
-        if (guardianCheck.rows.length === 0) {
-          return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-        }
-      } else {
-        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
-      }
+    const access = await canAccessStudent(req, studentId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
     const result = await query(`
       WITH fee_due AS (
@@ -300,6 +243,10 @@ const getFeeStructures = async (req, res) => {
 // payment_method, transaction_id, receipt_number, is_active (and possibly notes, created_at)
 const createFeeCollection = async (req, res) => {
   try {
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) {
+      return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+    }
     const {
       student_id,
       fee_structure_id,
@@ -318,19 +265,25 @@ const createFeeCollection = async (req, res) => {
       });
     }
 
-    const studentId = parseInt(student_id, 10);
-    const feeStructureId = parseInt(fee_structure_id, 10);
+    const studentId = parseId(student_id);
+    const feeStructureId = parseId(fee_structure_id);
     const amount = parseFloat(amount_paid);
     const collectedBy = req.user?.id ? parseInt(req.user.id, 10) : null;
     const receiptNum = receipt_number ? String(receipt_number).trim() : null;
     const txnId = transaction_id ? String(transaction_id).trim() : receiptNum;
     const autoReceipt = receiptNum || `RCP-${Date.now()}`;
 
-    if (Number.isNaN(studentId) || Number.isNaN(feeStructureId) || Number.isNaN(amount) || amount <= 0) {
+    if (!studentId || !feeStructureId || Number.isNaN(amount) || amount <= 0) {
       return res.status(400).json({
         status: 'ERROR',
         message: 'Invalid student_id, fee_structure_id or amount_paid',
       });
+    }
+
+    // Ensure the student exists and is active inside this tenant
+    const studExists = await query('SELECT id FROM students WHERE id = $1 AND is_active = true LIMIT 1', [studentId]);
+    if (studExists.rows.length === 0) {
+      return res.status(404).json({ status: 'ERROR', message: 'Student not found' });
     }
 
     const paymentDate = payment_date

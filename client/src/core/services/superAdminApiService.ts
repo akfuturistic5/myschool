@@ -52,6 +52,18 @@ class SuperAdminApiService {
       ...(options.headers || {}),
     };
 
+    const method = String(options.method || 'GET').toUpperCase();
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (unsafe) {
+      try {
+        const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
+        const csrf = m ? decodeURIComponent(m[1]) : null;
+        if (csrf) (headers as any)['X-XSRF-TOKEN'] = csrf;
+      } catch {
+        // ignore
+      }
+    }
+
     try {
       const response = await fetch(url, {
         method: options.method || 'GET',

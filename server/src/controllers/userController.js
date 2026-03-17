@@ -1,5 +1,12 @@
 const { query } = require('../config/database');
 
+function stripSensitiveUserFields(row) {
+  if (!row || typeof row !== 'object') return row;
+  const copy = { ...row };
+  if (Object.prototype.hasOwnProperty.call(copy, 'password_hash')) delete copy.password_hash;
+  return copy;
+}
+
 // Get all users (optional: filter by role_id)
 // role_id: 1=admin, 2=student, 3=teacher, 4=parent, 5=guardian
 const getAllUsers = async (req, res) => {
@@ -89,7 +96,7 @@ const getAllUsers = async (req, res) => {
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Users fetched successfully',
-      data: result.rows,
+      data: (result.rows || []).map(stripSensitiveUserFields),
       count: result.rows.length,
     });
   } catch (error) {
@@ -145,6 +152,7 @@ const getUserById = async (req, res) => {
     }
 
     const user = result.rows[0];
+    const safeUser = stripSensitiveUserFields(user);
     
     // Determine user name and role based on available data
     let displayName = '';
@@ -168,7 +176,7 @@ const getUserById = async (req, res) => {
 
     // Add computed fields
     const userData = {
-      ...user,
+      ...safeUser,
       display_name: displayName,
       display_role: displayRole,
     };

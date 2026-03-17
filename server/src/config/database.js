@@ -5,11 +5,14 @@ require('dotenv').config();
 // Use DATABASE_URL in production (Render)
 // Fallback to local config only if DATABASE_URL not present
 // Cloud DBs (Render, Heroku, etc.) often use self-signed certs.
-// DATABASE_SSL_MODE: "require" = strict cert verification; default = allow self-signed
-let sslConfig = { rejectUnauthorized: false };
-if (process.env.DATABASE_SSL_MODE === 'require') {
-  sslConfig = { rejectUnauthorized: true };
-}
+// DATABASE_SSL_MODE:
+// - "require" => strict cert verification
+// - "allow-self-signed" => allow self-signed (development only)
+// Default: production is strict; development allows self-signed for convenience.
+const isProduction = process.env.NODE_ENV === 'production';
+let sslConfig = isProduction ? { rejectUnauthorized: true } : { rejectUnauthorized: false };
+if (process.env.DATABASE_SSL_MODE === 'require') sslConfig = { rejectUnauthorized: true };
+if (!isProduction && process.env.DATABASE_SSL_MODE === 'allow-self-signed') sslConfig = { rejectUnauthorized: false };
 
 const tenantContext = new AsyncLocalStorage();
 
@@ -182,6 +185,34 @@ const masterPool = (() => {
     return pool;
   }
   return createPoolForDb(masterDbName);
+})();
+
+// Ensure master_db has required tables for production auth/tenant isolation.
+// This is safe/idempotent and prevents runtime failures if init-master-database.js
+// wasn't run during deployment.
+(async () => {
+  try {
+    await masterPool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_sessions (
+        id SERIAL PRIMARY KEY,
+        session_hash VARCHAR(128) NOT NULL UNIQUE,
+        school_id INT NOT NULL,
+        institute_number VARCHAR(50) NOT NULL,
+        db_name VARCHAR(100) NOT NULL,
+        tenant_user_id INT NOT NULL,
+        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+        revoked_at TIMESTAMP WITHOUT TIME ZONE NULL,
+        user_agent TEXT NULL,
+        ip_address VARCHAR(100) NULL
+      );
+    `);
+    await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions(school_id);`);
+    await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_expires ON tenant_sessions(expires_at);`);
+  } catch (e) {
+    // Do not crash app at import time; auth middleware will fail closed if sessions can't be read.
+    console.error('Failed ensuring master_db.tenant_sessions:', e);
+  }
 })();
 
 function getCurrentTenantDbName() {

@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireRole } = require('../middleware/rbacMiddleware');
-const { EVENT_MANAGER_ROLES } = require('../config/roles');
+const { EVENT_MANAGER_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getAllEvents,
   getUpcomingEvents,
@@ -13,9 +13,9 @@ const {
 const router = express.Router();
 
 // All authenticated users can view events
-router.get('/', getAllEvents);
-router.get('/upcoming', getUpcomingEvents);
-router.get('/completed', getCompletedEvents);
+router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllEvents);
+router.get('/upcoming', requireRole(ALL_AUTHENTICATED_ROLES), getUpcomingEvents);
+router.get('/completed', requireRole(ALL_AUTHENTICATED_ROLES), getCompletedEvents);
 
 // Headmaster + Teacher only - create, update, delete
 router.post('/', requireRole(EVENT_MANAGER_ROLES), createEvent);

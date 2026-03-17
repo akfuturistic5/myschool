@@ -119,11 +119,40 @@ async function ensureSuperAdminUsersTable() {
   }
 }
 
+async function ensureTenantSessionsTable() {
+  const masterPool = makeMasterPool();
+  try {
+    // Opaque session store used for tenant binding + logout invalidation.
+    // We store a hash of the session token to avoid storing raw bearer tokens in DB.
+    await masterPool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_sessions (
+        id SERIAL PRIMARY KEY,
+        session_hash VARCHAR(128) NOT NULL UNIQUE,
+        school_id INT NOT NULL,
+        institute_number VARCHAR(50) NOT NULL,
+        db_name VARCHAR(100) NOT NULL,
+        tenant_user_id INT NOT NULL,
+        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+        revoked_at TIMESTAMP WITHOUT TIME ZONE NULL,
+        user_agent TEXT NULL,
+        ip_address VARCHAR(100) NULL
+      );
+    `);
+    await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions(school_id);`);
+    await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_expires ON tenant_sessions(expires_at);`);
+    console.log('✅ tenant_sessions table ensured in master_db.');
+  } finally {
+    await masterPool.end();
+  }
+}
+
 async function main() {
   try {
     await ensureMasterDb();
     await ensureSchoolsTable();
     await ensureSuperAdminUsersTable();
+    await ensureTenantSessionsTable();
     console.log('=== master_db initialization complete ===');
   } catch (err) {
     console.error('❌ Failed to initialize master_db:', err);
