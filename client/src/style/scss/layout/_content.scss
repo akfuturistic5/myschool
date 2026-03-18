@@ -28,6 +28,16 @@
         }
     }
 }
+
+// Desktop: when sidebar is collapsed (click toggle), shift content left
+// to remove the empty whitespace.
+@include mixins.respond-above(lg) {
+    body.sidebar-collapsed {
+        .page-wrapper {
+            margin-left: 0;
+        }
+    }
+}
 .page-header {
     display: -webkit-box;
     display: -ms-flexbox;
