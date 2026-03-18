@@ -143,16 +143,21 @@
                 white-space: nowrap;
             }
             @include mixins.respond-below(lg) {
-                text-align: center;
+                text-align: left;
                 width: 100%;
-                justify-content: center;
-                -webkit-justify-content: center;
-                -ms-flex-pack: center;
+                justify-content: flex-start;
+                -webkit-justify-content: flex-start;
+                -ms-flex-pack: start;
                 .logo-icon, img {
                     width: 32px;
                 }
                 .logo-school-name {
-                    display: none; // avoid overlap on very small screens; mobile shows badge with name+code
+                    display: inline-block;
+                    font-size: 14px;
+                    font-weight: 700;
+                    max-width: 160px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
             }
         }
@@ -194,9 +199,9 @@
             width: 100%;
             padding-left: 70px;  // leave space for hamburger (60px) + gap
             padding-right: 70px; // leave space for 3-dots menu (60px) + gap
-            justify-content: center;
-            -webkit-justify-content: center;
-            -ms-flex-pack: center;
+            justify-content: flex-start;
+            -webkit-justify-content: flex-start;
+            -ms-flex-pack: start;
             border-right: 0;
         }
     }
@@ -846,12 +851,13 @@
         display: none;
         position: absolute;
         top: 50%;
-        right: 70px; // leave space for the 3-dots menu (60px) + gap
+        right: 60px; // sit just left of 3-dots (60px)
         left: auto;
         max-width: calc(100% - 140px); // 60px hamburger + 60px 3-dots + gaps
         transform: translateY(-50%);
         text-align: right;
         pointer-events: none; // avoid blocking header clicks
+        z-index: 9; // ensure it stays above header-left but below 3-dots
         .badge {
             max-width: 100%;
             display: inline-block;
