@@ -28,19 +28,6 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
 
   const dashboardItem = ROLE_DASHBOARD_MAP[roleKey] || ROLE_DASHBOARD_MAP.Admin;
 
-  // For Parent role: add "My Profile" to view own parent details
-  const parentProfileItem = roleKey === "Parent"
-    ? [
-        {
-          label: "My Profile",
-          icon: "ti ti-user",
-          link: routes.parentList,
-          submenu: false,
-          showSubRoute: false,
-        },
-      ]
-    : [];
-
   // For non-admin: only MAIN section with single Dashboard link + Application
   return [
     {
@@ -56,7 +43,6 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
           submenu: false,
           showSubRoute: false,
         },
-        ...parentProfileItem,
         {
           label: "Application",
           icon: "ti ti-layout-list",
