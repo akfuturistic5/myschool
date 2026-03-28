@@ -3,6 +3,7 @@ const { login, getMe, updateMe, changePassword, logout } = require('../controlle
 const { authenticate } = require('../middleware/authMiddleware');
 const { validate } = require('../utils/validate');
 const { echoCsrfToken } = require('../utils/csrfEcho');
+const { strongPasswordJoi } = require('../utils/passwordPolicy');
 const Joi = require('joi');
 
 const router = express.Router();
@@ -39,7 +40,7 @@ router.post(
   validate(
     Joi.object({
       currentPassword: Joi.string().required(),
-      newPassword: Joi.string().min(6).max(200).required(),
+      newPassword: strongPasswordJoi().required(),
       confirmPassword: Joi.string().required(),
     })
       .custom((v, helpers) => {

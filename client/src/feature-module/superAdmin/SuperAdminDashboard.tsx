@@ -193,44 +193,61 @@ const SuperAdminDashboard = () => {
   };
 
   const handleDelete = async (school: School) => {
-    const result = await MySwal.fire({
+    const confirm = await MySwal.fire({
       icon: 'warning',
-      title: 'Delete School?',
+      title: 'Remove School from Platform?',
       html: `
         <p class="mb-1"><strong>${school.school_name}</strong> (Institute: <strong>${school.institute_number}</strong>)</p>
         <p class="mb-1">Database: <code>${school.db_name}</code></p>
-        <p class="mb-0 text-danger">This will permanently delete this school's database and all its data. This action cannot be undone.</p>
+        <p class="mb-0 text-danger">The school will be disabled and hidden. Tenant data is not destroyed automatically — contact operations for physical database removal if required.</p>
       `,
       showCancelButton: true,
-      confirmButtonText: 'Yes, delete permanently',
+      confirmButtonText: 'Continue',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#d33',
       cancelButtonColor: '#6c757d',
       focusCancel: true,
     });
 
-    if (!result.isConfirmed) return;
+    if (!confirm.isConfirmed) return;
+
+    const pwd = await MySwal.fire({
+      title: 'Super Admin password',
+      input: 'password',
+      inputLabel: 'Enter your password to confirm removal',
+      inputPlaceholder: 'Password',
+      showCancelButton: true,
+      confirmButtonText: 'Remove school',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#d33',
+      inputAttributes: {
+        autocapitalize: 'off',
+        autocorrect: 'off',
+      },
+    });
+
+    if (!pwd.isConfirmed || !pwd.value?.trim()) return;
 
     try {
-      const res = await superAdminApiService.deleteSchool(school.id);
+      const res = await superAdminApiService.deleteSchool(school.id, pwd.value);
       if (res.status === 'SUCCESS') {
         setSchools((prev) => prev.filter((s) => s.id !== school.id));
         await refreshAll();
         await MySwal.fire({
           icon: 'success',
-          title: 'School Deleted',
-          text: 'The school and its database have been removed from the system.',
+          title: 'School Removed',
+          text: 'The school has been removed from the platform list.',
           confirmButtonText: 'OK',
         });
       } else {
-        setSchoolsError(res.message || 'Failed to delete school');
+        setSchoolsError(res.message || 'Failed to remove school');
       }
     } catch (e: any) {
-      setSchoolsError(e?.message || 'Failed to delete school');
+      setSchoolsError(e?.message || 'Failed to remove school');
       await MySwal.fire({
         icon: 'error',
-        title: 'Delete Failed',
-        text: e?.message || 'Failed to delete school. Please check backend logs.',
+        title: 'Remove Failed',
+        text: e?.message || 'Failed to remove school. Please check backend logs.',
         confirmButtonText: 'OK',
       });
     }

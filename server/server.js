@@ -67,29 +67,33 @@ const app = express();
 // When running behind a proxy/load balancer (Render, Nginx, etc.),
 // trust the X-Forwarded-* headers so express-rate-limit can identify
 // the real client IP instead of the proxy IP.
-// This also fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR in production.
-app.set('trust proxy', 1);
+// Trust proxy hops: 1 = single LB (default). TRUST_PROXY=false disables. TRUST_PROXY_HOPS=N for chains.
+const trustProxyEnv = String(process.env.TRUST_PROXY || '').toLowerCase();
+if (trustProxyEnv === 'false' || trustProxyEnv === '0') {
+  app.set('trust proxy', false);
+} else {
+  const hops = parseInt(process.env.TRUST_PROXY_HOPS || '1', 10);
+  app.set('trust proxy', Number.isFinite(hops) && hops >= 0 ? hops : 1);
+}
 
-// Middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    useDefaults: true,
-    directives: {
-      defaultSrc: ["'self'"],
-      connectSrc: ["'self'", 'https:'],
-      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https:'],
-      frameAncestors: ["'none'"],
-      objectSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"],
+// JSON API: strict CSP (no script/eval). The React app sets its own CSP when served separately.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'none'"],
+      },
     },
-  },
-  frameguard: { action: 'deny' },
-  noSniff: true,
-  referrerPolicy: { policy: 'no-referrer' },
-})); // Security headers
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: { action: 'deny' },
+    noSniff: true,
+    referrerPolicy: { policy: 'no-referrer' },
+  })
+);
 app.use(cookieParser());
 const isProduction = process.env.NODE_ENV === 'production';
 // Logging: quieter and safer in production.
@@ -106,7 +110,14 @@ const corsOptions = {
     : devOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-XSRF-TOKEN', 'X-CSRF-TOKEN'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-XSRF-TOKEN',
+    'X-CSRF-TOKEN',
+    'X-Health-Check-Token',
+    'X-Tenant-Health-Token',
+  ],
 };
 app.use(cors(corsOptions));
 if (isProduction) {
@@ -114,8 +125,9 @@ if (isProduction) {
   const cp = secureCookieBase();
   console.log(`[cookies] SameSite=${cp.sameSite} Secure=${cp.secure} (COOKIE_SAME_SITE / CORS_ORIGIN affect session cookies)`);
 }
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+const bodyLimit = process.env.REQUEST_BODY_LIMIT || '2mb';
+app.use(express.json({ limit: bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
 // CSRF (double-submit cookie) for cookie-authenticated SPA.
 // Requires frontend to send X-XSRF-TOKEN header matching XSRF-TOKEN cookie for unsafe methods.
@@ -154,7 +166,7 @@ const limiter = rateLimit({
   message: { status: 'ERROR', message: 'Too many requests, please try again later' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path === '/api/health' || req.path === '/api/health/database'
+  skip: (req) => req.path.startsWith('/api/health'),
 });
 app.use('/api', limiter);
 app.use('/super-admin/api', limiter);
@@ -209,14 +221,9 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/school/profile', schoolProfileRoutes);
 
-// Lightweight public health check (no DB, no auth, always 200)
+// Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    service: 'backend',
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-  });
+  res.status(200).json({ status: 'ok' });
 });
 
 // Root endpoint

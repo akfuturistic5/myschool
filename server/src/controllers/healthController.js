@@ -31,101 +31,50 @@ async function testDbUrl(label, connectionString) {
     application_name: `myschool-health-${label}`,
   });
   try {
-    const r = await pool.query('SELECT current_database() AS db, current_user AS usr, NOW() AS now');
+    await pool.query('SELECT 1');
     return {
       ok: true,
       ms: Date.now() - started,
-      db: r.rows[0]?.db,
-      user: r.rows[0]?.usr,
     };
   } catch (e) {
     return {
       ok: false,
       ms: Date.now() - started,
-      error: e.message,
     };
   } finally {
     await pool.end().catch(() => {});
   }
 }
 
-const healthCheck = async (req, res) => {
-  try {
-    const uptime = process.uptime();
-    const memoryUsage = process.memoryUsage();
-    return res.status(200).json({
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      uptime: `${Math.floor(uptime / 60)} minutes ${Math.floor(uptime % 60)} seconds`,
-      memory: {
-        rss: `${Math.round(memoryUsage.rss / 1024 / 1024)} MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)} MB`,
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)} MB`,
-        external: `${Math.round(memoryUsage.external / 1024 / 1024)} MB`
-      },
-      environment: process.env.NODE_ENV || 'development'
-    });
-  } catch (error) {
-    console.error('Health check error:', error);
-    return res.status(500).json({
-      status: 'ERROR',
-      message: 'Health check failed'
-    });
-  }
-};
+const healthCheck = async (req, res) =>
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+  });
 
 const databaseTest = async (req, res) => {
   try {
-    const isProd = process.env.NODE_ENV === 'production';
-    if (isProd) {
-      const expected = (process.env.TENANT_HEALTH_TOKEN || '').toString().trim();
-      const got = (req.headers['x-tenant-health-token'] || '').toString().trim();
-      if (!expected || got !== expected) {
-        return res.status(401).json({ status: 'ERROR', message: 'Unauthorized' });
-      }
-    }
     const ok = await testConnection();
     return res.status(ok ? 200 : 503).json({
-      status: 'SUCCESS',
-      message: ok ? 'Database connectivity verified' : 'Database connectivity degraded'
+      status: ok ? 'SUCCESS' : 'ERROR',
     });
   } catch (error) {
     console.error('Database test error:', error);
-    return res.status(500).json({
-      status: 'ERROR',
-      message: 'Database test failed'
-    });
+    return res.status(500).json({ status: 'ERROR' });
   }
 };
 
-/**
- * Tenant DB connectivity test (for production verification without shell access).
- *
- * Security:
- * - In production requires header `x-tenant-health-token` matching env TENANT_HEALTH_TOKEN.
- * - In development it is allowed without token.
- */
+/** Tenant DB probes — no internal hostnames or roles exposed to clients. */
 const tenantDatabaseTest = async (req, res) => {
   try {
-    const isProd = process.env.NODE_ENV === 'production';
-    if (isProd) {
-      const expected = (process.env.TENANT_HEALTH_TOKEN || '').toString().trim();
-      const got = (req.headers['x-tenant-health-token'] || '').toString().trim();
-      if (!expected || got !== expected) {
-        return res.status(401).json({ status: 'ERROR', message: 'Unauthorized' });
-      }
-    }
-
     const results = {};
 
-    // Primary
     if (process.env.DATABASE_URL) {
       results.primary = await testDbUrl('primary', process.env.DATABASE_URL);
     } else {
-      results.primary = { ok: false, error: 'DATABASE_URL not set' };
+      results.primary = { ok: false, ms: 0 };
     }
 
-    // Master
     if (process.env.MASTER_DATABASE_URL) {
       results.master = await testDbUrl('master', process.env.MASTER_DATABASE_URL);
     } else if (process.env.DATABASE_URL) {
@@ -133,31 +82,33 @@ const tenantDatabaseTest = async (req, res) => {
       u.pathname = `/${process.env.MASTER_DB_NAME || 'master_db'}`;
       results.master = await testDbUrl('master-derived', u.toString());
     } else {
-      results.master = { ok: false, error: 'MASTER_DATABASE_URL and DATABASE_URL not set' };
+      results.master = { ok: false, ms: 0 };
     }
 
-    // Tenants (overrides)
     if (process.env.MILLAT_DATABASE_URL) {
       results.millat = await testDbUrl('millat', process.env.MILLAT_DATABASE_URL);
     } else {
-      results.millat = { ok: false, error: 'MILLAT_DATABASE_URL not set' };
+      results.millat = { ok: false, ms: 0 };
     }
 
     if (process.env.IQRA_DATABASE_URL) {
       results.iqra = await testDbUrl('iqra', process.env.IQRA_DATABASE_URL);
     } else {
-      results.iqra = { ok: false, error: 'IQRA_DATABASE_URL not set' };
+      results.iqra = { ok: false, ms: 0 };
     }
 
     const allOk = Object.values(results).every((r) => r && r.ok === true);
+    const publicShape = {};
+    for (const [k, v] of Object.entries(results)) {
+      publicShape[k] = { ok: !!(v && v.ok), ms: v && typeof v.ms === 'number' ? v.ms : undefined };
+    }
     return res.status(allOk ? 200 : 500).json({
       status: allOk ? 'SUCCESS' : 'ERROR',
-      data: results,
-      environment: process.env.NODE_ENV || 'development',
+      data: publicShape,
     });
   } catch (error) {
     console.error('Tenant DB test error:', error);
-    return res.status(500).json({ status: 'ERROR', message: 'Tenant DB test failed' });
+    return res.status(500).json({ status: 'ERROR' });
   }
 };
 

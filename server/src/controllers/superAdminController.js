@@ -7,6 +7,13 @@ const {
   createHeadmasterUserInTenant,
   getTemplateDbName,
 } = require('../services/tenantProvisioningService');
+const {
+  verifySuperAdminPassword,
+  signSchoolDeleteToken,
+  verifySchoolDeleteToken,
+  writeSuperAdminAudit,
+  DELETE_TOKEN_TTL_SEC,
+} = require('../utils/superAdminSecurity');
 
 /**
  * List all schools from master_db.schools.
@@ -15,15 +22,15 @@ const {
 const listSchools = async (req, res) => {
   try {
     const { status } = req.query || {};
-    const filters = [];
+    const filters = ['deleted_at IS NULL'];
     const params = [];
 
     if (status) {
-      filters.push('status = $1');
+      filters.push(`status = $${params.length + 1}`);
       params.push(String(status).trim());
     }
 
-    const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
 
     const result = await masterQuery(
       `
@@ -68,7 +75,7 @@ const getSchoolById = async (req, res) => {
           status,
           created_at
         FROM schools
-        WHERE id = $1
+        WHERE id = $1 AND deleted_at IS NULL
         LIMIT 1
       `,
       [id]
@@ -107,7 +114,7 @@ const updateSchoolStatus = async (req, res) => {
       `
         UPDATE schools
         SET status = $1
-        WHERE id = $2
+        WHERE id = $2 AND deleted_at IS NULL
         RETURNING
           id,
           school_name,
@@ -123,6 +130,15 @@ const updateSchoolStatus = async (req, res) => {
       return errorResponse(res, 404, 'School not found');
     }
 
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin?.id,
+      action: 'school_status_updated',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { status: normalizedStatus },
+      req,
+    });
+
     return success(res, 200, 'School status updated', result.rows[0]);
   } catch (err) {
     console.error('Super Admin updateSchoolStatus error:', err);
@@ -137,12 +153,14 @@ const updateSchoolStatus = async (req, res) => {
  */
 const getPlatformStats = async (req, res) => {
   try {
-    const totalRes = await masterQuery('SELECT COUNT(*)::INT AS total_schools FROM schools');
+    const totalRes = await masterQuery(
+      'SELECT COUNT(*)::INT AS total_schools FROM schools WHERE deleted_at IS NULL'
+    );
     const activeRes = await masterQuery(
-      `SELECT COUNT(*)::INT AS total_active_schools FROM schools WHERE status = 'active'`
+      `SELECT COUNT(*)::INT AS total_active_schools FROM schools WHERE deleted_at IS NULL AND status = 'active'`
     );
     const disabledRes = await masterQuery(
-      `SELECT COUNT(*)::INT AS total_disabled_schools FROM schools WHERE status = 'disabled'`
+      `SELECT COUNT(*)::INT AS total_disabled_schools FROM schools WHERE deleted_at IS NULL AND status = 'disabled'`
     );
 
     const data = {
@@ -186,7 +204,7 @@ const createSchool = async (req, res) => {
       `
       SELECT id, institute_number, db_name
       FROM schools
-      WHERE institute_number = $1
+      WHERE institute_number = $1 AND deleted_at IS NULL
       LIMIT 1
       `,
       [institute]
@@ -202,7 +220,7 @@ const createSchool = async (req, res) => {
 
   let existingDbNames = [];
   try {
-    const dbRes = await masterQuery('SELECT db_name FROM schools');
+    const dbRes = await masterQuery('SELECT db_name FROM schools WHERE deleted_at IS NULL');
     existingDbNames = (dbRes.rows || []).map((r) => r.db_name).filter(Boolean);
   } catch {
     /* ignore; use empty list */
@@ -214,7 +232,7 @@ const createSchool = async (req, res) => {
     await createTenantDatabase(dbName, name);
   } catch (err) {
     console.error('Super Admin createSchool: tenant DB creation failed:', err);
-    return errorResponse(res, 500, err.message || 'Failed to create tenant database');
+    return errorResponse(res, 500, 'Failed to create tenant database');
   }
 
   let schoolRow;
@@ -249,6 +267,15 @@ const createSchool = async (req, res) => {
     );
   }
 
+  await writeSuperAdminAudit({
+    superAdminId: req.superAdmin?.id,
+    action: 'school_created',
+    resourceType: 'school',
+    resourceId: String(schoolRow.id),
+    details: { school_name: schoolRow.school_name, institute_number: schoolRow.institute_number },
+    req,
+  });
+
   return success(res, 201, 'School created successfully', schoolRow);
 };
 
@@ -273,7 +300,7 @@ const updateSchoolMetadata = async (req, res) => {
       `
       SELECT id, school_name, institute_number, db_name, status, created_at
       FROM schools
-      WHERE id = $1
+      WHERE id = $1 AND deleted_at IS NULL
       LIMIT 1
       `,
       [id]
@@ -295,7 +322,7 @@ const updateSchoolMetadata = async (req, res) => {
         `
         SELECT 1
         FROM schools
-        WHERE institute_number = $1 AND id <> $2
+        WHERE institute_number = $1 AND id <> $2 AND deleted_at IS NULL
         LIMIT 1
         `,
         [nextInstitute, id]
@@ -310,11 +337,20 @@ const updateSchoolMetadata = async (req, res) => {
       UPDATE schools
       SET school_name = $1,
           institute_number = $2
-      WHERE id = $3
+      WHERE id = $3 AND deleted_at IS NULL
       RETURNING id, school_name, institute_number, db_name, status, created_at
       `,
       [nextName, nextInstitute, id]
     );
+
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin?.id,
+      action: 'school_metadata_updated',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { school_name: nextName, institute_number: nextInstitute },
+      req,
+    });
 
     // Keep tenant-local school_profile in sync for certificate/template reads.
     try {
@@ -350,62 +386,142 @@ const updateSchoolMetadata = async (req, res) => {
 };
 
 /**
- * Delete a school completely:
- * - Drop its tenant database
- * - Remove row from master_db.schools
- *
- * For safety, prevents deleting the primary template school (DB_NAME / DATABASE_URL db).
+ * Step 1: verify Super Admin password and issue a short-lived delete token (JWT).
  */
-const deleteSchool = async (req, res) => {
+const requestSchoolDeleteToken = async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (Number.isNaN(id)) {
       return errorResponse(res, 400, 'Invalid school id');
     }
+    const { password } = req.body || {};
+    if (!password || !String(password).trim()) {
+      return errorResponse(res, 400, 'Password is required');
+    }
+    const adminId = req.superAdmin?.id;
+    const pwdOk = await verifySuperAdminPassword(adminId, password);
+    if (!pwdOk) {
+      return errorResponse(res, 401, 'Invalid credentials');
+    }
 
     const schoolRes = await masterQuery(
       `
-      SELECT id, school_name, institute_number, db_name, status, created_at
+      SELECT id, school_name, institute_number, db_name, deleted_at
       FROM schools
       WHERE id = $1
       LIMIT 1
       `,
       [id]
     );
-    if (!schoolRes.rows || schoolRes.rows.length === 0) {
+    if (!schoolRes.rows?.length) {
       return errorResponse(res, 404, 'School not found');
     }
-    const school = schoolRes.rows[0];
+    if (schoolRes.rows[0].deleted_at) {
+      return errorResponse(res, 400, 'School is already removed');
+    }
 
     const templateDbName = getTemplateDbName();
-    if (school.db_name === templateDbName) {
-      return errorResponse(res, 400, 'Cannot delete primary template school');
+    if (schoolRes.rows[0].db_name === templateDbName) {
+      return errorResponse(res, 400, 'Cannot remove primary template school');
     }
 
+    const deleteToken = signSchoolDeleteToken(id, adminId);
+    await writeSuperAdminAudit({
+      superAdminId: adminId,
+      action: 'school_delete_token_issued',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { school_name: schoolRes.rows[0].school_name },
+      req,
+    });
+
+    return success(res, 200, 'Delete confirmation issued', {
+      deleteToken,
+      expiresInSeconds: DELETE_TOKEN_TTL_SEC,
+    });
+  } catch (err) {
+    console.error('Super Admin requestSchoolDeleteToken error:', err);
+    return errorResponse(res, 500, 'Unable to issue delete confirmation');
+  }
+};
+
+/**
+ * Step 2: confirm with password + token; soft-delete (no automatic DB drop — data retained for ops).
+ */
+const confirmDeleteSchool = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return errorResponse(res, 400, 'Invalid school id');
+    }
+    const { password, deleteToken } = req.body || {};
+    if (!password || !deleteToken) {
+      return errorResponse(res, 400, 'Password and delete token are required');
+    }
+
+    let payload;
     try {
-      await dropTenantDatabaseIfExists(school.db_name);
-    } catch (err) {
-      console.error('Super Admin deleteSchool: failed to drop tenant database:', err);
-      return errorResponse(
-        res,
-        500,
-        'Failed to drop tenant database for this school. Delete aborted to keep data consistent.'
-      );
+      payload = verifySchoolDeleteToken(deleteToken);
+    } catch {
+      return errorResponse(res, 400, 'Invalid or expired delete token');
+    }
+    if (payload.schoolId !== id || payload.superAdminId !== req.superAdmin?.id) {
+      return errorResponse(res, 403, 'Delete token does not match this request');
     }
 
-    const delRes = await masterQuery(
+    const pwdOk = await verifySuperAdminPassword(req.superAdmin.id, password);
+    if (!pwdOk) {
+      return errorResponse(res, 401, 'Invalid credentials');
+    }
+
+    const schoolRes = await masterQuery(
       `
-      DELETE FROM schools
+      SELECT id, school_name, institute_number, db_name, deleted_at
+      FROM schools
       WHERE id = $1
-      RETURNING id, school_name, institute_number, db_name, status, created_at
+      LIMIT 1
+      `,
+      [id]
+    );
+    if (!schoolRes.rows?.length) {
+      return errorResponse(res, 404, 'School not found');
+    }
+    if (schoolRes.rows[0].deleted_at) {
+      return errorResponse(res, 400, 'School already removed');
+    }
+
+    const templateDbName = getTemplateDbName();
+    if (schoolRes.rows[0].db_name === templateDbName) {
+      return errorResponse(res, 400, 'Cannot remove primary template school');
+    }
+
+    const upd = await masterQuery(
+      `
+      UPDATE schools
+      SET deleted_at = NOW(),
+          status = 'disabled'
+      WHERE id = $1 AND deleted_at IS NULL
+      RETURNING id, school_name, institute_number, db_name, status, created_at, deleted_at
       `,
       [id]
     );
 
-    return success(res, 200, 'School deleted successfully', delRes.rows[0]);
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin.id,
+      action: 'school_soft_deleted',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: {
+        school_name: schoolRes.rows[0].school_name,
+        db_name: schoolRes.rows[0].db_name,
+      },
+      req,
+    });
+
+    return success(res, 200, 'School removed from the platform', upd.rows[0]);
   } catch (err) {
-    console.error('Super Admin deleteSchool error:', err);
-    return errorResponse(res, 500, 'Failed to delete school');
+    console.error('Super Admin confirmDeleteSchool error:', err);
+    return errorResponse(res, 500, 'Failed to remove school');
   }
 };
 
@@ -416,6 +532,7 @@ module.exports = {
   getPlatformStats,
   createSchool,
   updateSchoolMetadata,
-  deleteSchool,
+  requestSchoolDeleteToken,
+  confirmDeleteSchool,
 };
 

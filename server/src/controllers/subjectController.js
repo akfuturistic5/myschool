@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { canAccessClass } = require('../utils/accessControl');
 
 // Get all subjects
 const getAllSubjects = async (req, res) => {
@@ -67,7 +68,12 @@ const getSubjectById = async (req, res) => {
 const getSubjectsByClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
+
     const result = await query(`
       SELECT
         s.id,

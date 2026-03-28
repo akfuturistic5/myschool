@@ -1,5 +1,7 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { sanitizeChatText } = require('../utils/htmlSanitize');
+const { isSafeFileOrLinkUrl } = require('../utils/safeUrl');
 
 // Get all chats for current user (both sent and received - so recipient sees chats too)
 const getAllChats = async (req, res) => {
@@ -39,7 +41,11 @@ const getAllChats = async (req, res) => {
       ORDER BY sub.other_user_id, sub.last_message_time DESC
     `, [userId]);
     
-    success(res, 200, 'Chats fetched successfully', result.rows);
+    const rows = (result.rows || []).map((row) => ({
+      ...row,
+      last_message: sanitizeChatText(row.last_message),
+    }));
+    success(res, 200, 'Chats fetched successfully', rows);
   } catch (error) {
     console.error('Error fetching chats:', error);
     errorResponse(res, 500, 'Failed to fetch chats');
@@ -67,8 +73,13 @@ const getChatById = async (req, res) => {
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Chat not found');
     }
-    
-    success(res, 200, 'Chat fetched successfully', result.rows[0]);
+
+    const row = result.rows[0];
+    success(res, 200, 'Chat fetched successfully', {
+      ...row,
+      message: sanitizeChatText(row.message),
+      file_url: row.file_url && isSafeFileOrLinkUrl(row.file_url) ? row.file_url : null,
+    });
   } catch (error) {
     console.error('Error fetching chat:', error);
     errorResponse(res, 500, 'Failed to fetch chat');
@@ -107,7 +118,11 @@ const getMessagesByRecipient = async (req, res) => {
       ORDER BY c.created_at ASC
     `, [userId, recipientId]);
 
-    success(res, 200, 'Messages fetched successfully', result.rows);
+    const rows = (result.rows || []).map((row) => ({
+      ...row,
+      message: sanitizeChatText(row.message),
+    }));
+    success(res, 200, 'Messages fetched successfully', rows);
   } catch (error) {
     console.error('Error fetching messages:', error);
     errorResponse(res, 500, 'Failed to fetch messages');
@@ -138,7 +153,11 @@ const getSharedMedia = async (req, res) => {
       ORDER BY c.created_at DESC
     `, [userId, recipientId, types]);
 
-    success(res, 200, 'Shared media fetched', result.rows);
+    const rows = (result.rows || []).map((row) => ({
+      ...row,
+      file_url: isSafeFileOrLinkUrl(row.file_url) ? row.file_url : null,
+    }));
+    success(res, 200, 'Shared media fetched', rows);
   } catch (error) {
     console.error('Error fetching shared media:', error);
     errorResponse(res, 500, 'Failed to fetch shared media');
@@ -169,7 +188,11 @@ const getConversations = async (req, res) => {
       ORDER BY c.recipient_id, c.created_at DESC
     `, [userId]);
     
-    success(res, 200, 'Conversations fetched successfully', result.rows);
+    const rows = (result.rows || []).map((row) => ({
+      ...row,
+      message: sanitizeChatText(row.message),
+    }));
+    success(res, 200, 'Conversations fetched successfully', rows);
   } catch (error) {
     console.error('Error fetching conversations:', error);
     errorResponse(res, 500, 'Failed to fetch conversations');
@@ -181,18 +204,29 @@ const createChat = async (req, res) => {
   try {
     const userId = req.user.id;
     const { recipient_id, message, message_type = 'text', file_url } = req.body;
-    
-    if (!recipient_id || !message) {
+
+    if (!recipient_id || message == null || !String(message).trim()) {
       return errorResponse(res, 400, 'Recipient ID and message are required');
     }
-    
+    const safeMessage = sanitizeChatText(message);
+    if (!safeMessage) {
+      return errorResponse(res, 400, 'Message is required');
+    }
+    if (file_url != null && file_url !== '' && !isSafeFileOrLinkUrl(file_url)) {
+      return errorResponse(res, 400, 'Invalid file URL');
+    }
+
     const result = await query(`
       INSERT INTO chats (user_id, recipient_id, message, message_type, file_url)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [userId, recipient_id, message, message_type, file_url || null]);
-    
-    success(res, 201, 'Chat created successfully', result.rows[0]);
+    `, [userId, recipient_id, safeMessage, message_type, file_url || null]);
+
+    const created = result.rows[0];
+    success(res, 201, 'Chat created successfully', {
+      ...created,
+      message: sanitizeChatText(created.message),
+    });
   } catch (error) {
     console.error('Error creating chat:', error);
     errorResponse(res, 500, 'Failed to create chat');
@@ -236,7 +270,12 @@ const updateChat = async (req, res) => {
       return errorResponse(res, 404, 'Chat not found');
     }
     
-    success(res, 200, 'Chat updated successfully', result.rows[0]);
+    const u = result.rows[0];
+    success(res, 200, 'Chat updated successfully', {
+      ...u,
+      message: sanitizeChatText(u.message),
+      file_url: u.file_url && isSafeFileOrLinkUrl(u.file_url) ? u.file_url : null,
+    });
   } catch (error) {
     console.error('Error updating chat:', error);
     errorResponse(res, 500, 'Failed to update chat');

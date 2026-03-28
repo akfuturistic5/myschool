@@ -12,9 +12,11 @@ const serverConfig = {
   // In production we require an explicit allowlist (no implicit localhost fallback).
   corsOrigin: isProduction ? (process.env.CORS_ORIGIN || '') : (process.env.CORS_ORIGIN || 'http://localhost:5173'),
   logLevel: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
-  // Backward-compat: allow legacy Bearer auth only if explicitly enabled.
-  allowLegacyBearerAuth: String(process.env.ALLOW_LEGACY_BEARER_AUTH || '').toLowerCase() === 'true',
-  allowSuperAdminBearerAuth: String(process.env.ALLOW_SUPER_ADMIN_BEARER_AUTH || '').toLowerCase() === 'true',
+  // Bearer tokens in headers are disabled in production (cookie-only) regardless of env flags.
+  allowLegacyBearerAuth:
+    !isProduction && String(process.env.ALLOW_LEGACY_BEARER_AUTH || '').toLowerCase() === 'true',
+  allowSuperAdminBearerAuth:
+    !isProduction && String(process.env.ALLOW_SUPER_ADMIN_BEARER_AUTH || '').toLowerCase() === 'true',
 };
 
 module.exports = serverConfig;

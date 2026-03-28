@@ -69,11 +69,7 @@ const superAdminLogin = async (req, res) => {
       );
     } catch (e) {
       console.error('Error querying master_db.super_admin_users:', e);
-      const isDev = process.env.NODE_ENV !== 'production';
-      const msg = isDev && e?.message
-        ? `Failed to authenticate: ${e.message}`
-        : 'Failed to authenticate';
-      return errorResponse(res, 500, msg);
+      return errorResponse(res, 500, 'Failed to authenticate');
     }
 
     if (!result.rows || result.rows.length === 0) {
@@ -166,11 +162,7 @@ const getSuperAdminProfile = async (req, res) => {
       );
     } catch (e) {
       console.error('Error querying master_db.super_admin_users profile:', e);
-      const isDev = process.env.NODE_ENV !== 'production';
-      const msg = isDev && e?.message
-        ? `Failed to fetch Super Admin profile: ${e.message}`
-        : 'Failed to fetch Super Admin profile';
-      return errorResponse(res, 500, msg);
+      return errorResponse(res, 500, 'Failed to fetch Super Admin profile');
     }
 
     if (!result.rows || result.rows.length === 0) {

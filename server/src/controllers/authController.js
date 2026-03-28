@@ -52,11 +52,11 @@ function sha256Hex(s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex');
 }
 
+const GENERIC_LOGIN_FAIL = 'Invalid credentials';
+
 /**
- * Login - authenticate user with username/phone and password
- * Uses bcrypt.compare with password_hash column.
- * Backward compat: if password_hash is empty, compares with phone and migrates hash on success.
- * Lookup by username, email, or phone.
+ * Login - authenticate user with username/phone and password (bcrypt password_hash).
+ * Lookup by username, email, or phone. Same error message for all auth failures (no user/institute enumeration).
  */
 const login = async (req, res) => {
   try {
@@ -67,27 +67,27 @@ const login = async (req, res) => {
       return errorResponse(res, 400, 'Institute number is required');
     }
 
-    // Resolve school and target DB from master_db
+    // Resolve school and target DB from master_db (ignore soft-deleted schools)
     let school;
     try {
       const schoolRes = await masterQuery(
-        `SELECT id, school_name, type, institute_number, db_name, status 
-         FROM schools 
-         WHERE institute_number = $1
+        `SELECT id, school_name, type, institute_number, db_name, status, deleted_at
+         FROM schools
+         WHERE institute_number = $1 AND deleted_at IS NULL
          LIMIT 1`,
         [institute]
       );
       if (schoolRes.rows.length === 0) {
-        return errorResponse(res, 400, 'Invalid institute number');
+        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
       const s = schoolRes.rows[0];
-      if (s.status && String(s.status).toLowerCase() === 'disabled') {
-        return errorResponse(res, 403, 'This school is currently disabled. Please contact the platform administrator.');
+      if (s.deleted_at || (s.status && String(s.status).toLowerCase() === 'disabled')) {
+        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
       school = s;
     } catch (e) {
       console.error('Error querying master_db.schools:', e);
-      return errorResponse(res, 500, 'Failed to resolve institute');
+      return errorResponse(res, 500, 'Login failed');
     }
 
     const targetDbName = school.db_name;
@@ -139,7 +139,7 @@ const login = async (req, res) => {
       }
 
       if (userResult.rows.length === 0) {
-        return errorResponse(res, 401, 'Invalid username or password');
+        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
 
       const user = userResult.rows[0];
@@ -147,7 +147,7 @@ const login = async (req, res) => {
       const passwordHash = user.password_hash;
 
       if (!storedPhone && !passwordHash) {
-        return errorResponse(res, 401, 'Account not configured for login. Please contact admin.');
+        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
 
       let passwordValid = false;
@@ -160,7 +160,7 @@ const login = async (req, res) => {
       }
 
       if (!passwordValid) {
-        return errorResponse(res, 401, 'Invalid username or password');
+        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
 
       const payload = {

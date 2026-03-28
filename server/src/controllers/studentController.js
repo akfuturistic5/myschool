@@ -2,7 +2,7 @@ const { query, executeTransaction } = require('../config/database');
 const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
-const { canAccessStudent, parseId } = require('../utils/accessControl');
+const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
 const { createStudentUser, createParentUser, createGuardianUser } = require('../utils/createPersonUser');
 
 // Create new student
@@ -1633,6 +1633,14 @@ const getCurrentStudent = async (req, res) => {
 const getStudentsByClass = async (req, res) => {
   try {
     const { classId } = req.params;
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({
+        status: 'ERROR',
+        message: access.message || 'Access denied',
+      });
+    }
 
     const result = await query(`
       SELECT

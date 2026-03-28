@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const { query } = require('../config/database');
+const { validateImageFileAtPath } = require('../utils/imageMagic');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getSchoolProfile, ensureSchoolProfile } = require('../services/schoolProfileService');
 
@@ -54,6 +55,15 @@ const uploadLogo = async (req, res) => {
   try {
     if (!req.file) {
       return errorResponse(res, 400, 'Logo file is required');
+    }
+
+    if (!validateImageFileAtPath(req.file.path)) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        /* ignore */
+      }
+      return errorResponse(res, 400, 'File content is not a valid PNG, JPEG, or WEBP image');
     }
 
     await ensureSchoolProfile(req.user?.school_name || null);

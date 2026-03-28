@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { canAccessClass } = require('../utils/accessControl');
 
 const getAllSections = async (req, res) => {
   try {
@@ -232,6 +233,15 @@ const getSectionById = async (req, res) => {
 const getSectionsByClass = async (req, res) => {
   try {
     const { classId } = req.params;
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({
+        status: 'ERROR',
+        message: access.message || 'Access denied',
+      });
+    }
+
     const result = await query(`
       SELECT
         s.id,

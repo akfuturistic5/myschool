@@ -160,11 +160,85 @@ async function resolveWardStudentIdsForUser(req) {
   return [];
 }
 
+/**
+ * Whether the authenticated user may read data scoped to a given class (roster, teachers, sections, subjects).
+ * Admin: always. Teacher: homeroom class or any class_schedules row. Student/parent/guardian: linked to a student in that class.
+ */
+async function canAccessClass(req, classId) {
+  const cid = parseId(classId);
+  if (!cid) return { ok: false, status: 400, message: 'Invalid class id' };
+
+  const ctx = getAuthContext(req);
+  if (!ctx.userId) return { ok: false, status: 401, message: 'Not authenticated' };
+
+  if (isAdmin(ctx)) return { ok: true };
+
+  if (ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher') {
+    const tRes = await query(
+      `SELECT t.id, t.class_id
+       FROM teachers t
+       INNER JOIN staff st ON t.staff_id = st.id
+       WHERE st.user_id = $1
+       LIMIT 1`,
+      [ctx.userId]
+    );
+    if (!tRes.rows.length) return { ok: false, status: 403, message: 'Access denied' };
+    const teacher = tRes.rows[0];
+    const teacherClassId = parseId(teacher.class_id);
+    if (teacherClassId && teacherClassId === cid) return { ok: true };
+
+    const cs = await query(
+      `SELECT 1
+       FROM class_schedules cs
+       WHERE cs.teacher_id = $1 AND cs.class_id = $2
+       LIMIT 1`,
+      [teacher.id, cid]
+    ).catch(() => ({ rows: [] }));
+    if (cs.rows && cs.rows.length > 0) return { ok: true };
+
+    return { ok: false, status: 403, message: 'Access denied' };
+  }
+
+  if (ctx.roleId === ROLES.STUDENT || ctx.roleName === 'student') {
+    const scope = await resolveStudentScopeForUser(ctx.userId);
+    if (scope && scope.classId === cid) return { ok: true };
+    return { ok: false, status: 403, message: 'Access denied' };
+  }
+
+  if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
+    const { studentIds } = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
+    const ids = Array.isArray(studentIds) ? studentIds.map(parseId).filter(Boolean) : [];
+    if (!ids.length) return { ok: false, status: 403, message: 'Access denied' };
+    const r = await query(
+      `SELECT 1 FROM students
+       WHERE id = ANY($1::int[]) AND class_id = $2 AND is_active = true
+       LIMIT 1`,
+      [ids, cid]
+    );
+    return r.rows.length ? { ok: true } : { ok: false, status: 403, message: 'Access denied' };
+  }
+
+  if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
+    const wardIds = await resolveWardStudentIdsForUser(req);
+    if (!wardIds.length) return { ok: false, status: 403, message: 'Access denied' };
+    const r = await query(
+      `SELECT 1 FROM students
+       WHERE id = ANY($1::int[]) AND class_id = $2 AND is_active = true
+       LIMIT 1`,
+      [wardIds, cid]
+    );
+    return r.rows.length ? { ok: true } : { ok: false, status: 403, message: 'Access denied' };
+  }
+
+  return { ok: false, status: 403, message: 'Access denied' };
+}
+
 module.exports = {
   parseId,
   getAuthContext,
   isAdmin,
   canAccessStudent,
+  canAccessClass,
   resolveTeacherIdForUser,
   resolveStudentScopeForUser,
   resolveWardStudentIdsForUser,

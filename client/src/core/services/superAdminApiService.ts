@@ -179,9 +179,21 @@ class SuperAdminApiService {
     });
   }
 
-  async deleteSchool(id: number) {
+  /**
+   * Two-step protected delete: password → short-lived token → soft-delete school record.
+   */
+  async deleteSchool(id: number, password: string) {
+    const challenge = await this.makeRequest(`/schools/${id}/delete-challenge`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    const deleteToken = (challenge as { data?: { deleteToken?: string } })?.data?.deleteToken;
+    if (!deleteToken) {
+      throw new Error('Delete confirmation was not issued');
+    }
     return this.makeRequest(`/schools/${id}`, {
       method: 'DELETE',
+      body: JSON.stringify({ password, deleteToken }),
     });
   }
 

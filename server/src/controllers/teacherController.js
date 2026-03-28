@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { ROLES } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { canAccessClass } = require('../utils/accessControl');
 
 // Get all teachers
 const getAllTeachers = async (req, res) => {
@@ -239,7 +240,15 @@ const getTeacherById = async (req, res) => {
 const getTeachersByClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({
+        status: 'ERROR',
+        message: access.message || 'Access denied',
+      });
+    }
+
     const result = await query(`
       SELECT
         t.id,

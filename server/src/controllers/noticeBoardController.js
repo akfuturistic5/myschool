@@ -1,4 +1,8 @@
 const { query } = require('../config/database');
+const {
+  sanitizeNoticeContent,
+  sanitizeNoticeTitle,
+} = require('../utils/htmlSanitize');
 
 function formatDate(val) {
   if (!val) return null;
@@ -20,9 +24,9 @@ const getAllNotices = async (req, res) => {
     );
     const data = result.rows.map((r) => ({
       id: r.id,
-      title: r.title || '',
-      content: r.content || '',
-      messageTo: r.message_to || 'All',
+      title: sanitizeNoticeTitle(r.title || ''),
+      content: sanitizeNoticeContent(r.content || ''),
+      messageTo: sanitizeNoticeTitle(r.message_to || 'All'),
       createdBy: r.created_by,
       created_at: r.created_at,
       modified_at: r.modified_at,
@@ -65,9 +69,9 @@ const getNoticeById = async (req, res) => {
       message: 'Notice fetched successfully',
       data: {
         id: r.id,
-        title: r.title || '',
-        content: r.content || '',
-        messageTo: r.message_to || 'All',
+        title: sanitizeNoticeTitle(r.title || ''),
+        content: sanitizeNoticeContent(r.content || ''),
+        messageTo: sanitizeNoticeTitle(r.message_to || 'All'),
         createdBy: r.created_by,
         created_at: r.created_at,
         modified_at: r.modified_at,
@@ -94,11 +98,17 @@ const createNotice = async (req, res) => {
         message: 'Title is required',
       });
     }
+    const safeTitle = sanitizeNoticeTitle(title);
+    const safeContent = sanitizeNoticeContent(content);
+    const safeTo = sanitizeNoticeTitle(message_to || 'All');
+    if (!safeTitle) {
+      return res.status(400).json({ status: 'ERROR', message: 'Title is required' });
+    }
     const result = await query(
       `INSERT INTO notice_board (title, content, message_to, created_by, created_at, modified_at)
        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
-      [title.trim(), content || null, message_to || 'All', userId || null]
+      [safeTitle, safeContent || null, safeTo || 'All', userId || null]
     );
     const r = result.rows[0];
     res.status(201).json({
@@ -106,9 +116,9 @@ const createNotice = async (req, res) => {
       message: 'Notice created successfully',
       data: {
         id: r.id,
-        title: r.title,
-        content: r.content,
-        messageTo: r.message_to,
+        title: sanitizeNoticeTitle(r.title || ''),
+        content: sanitizeNoticeContent(r.content || ''),
+        messageTo: sanitizeNoticeTitle(r.message_to || 'All'),
         created_at: r.created_at,
         modified_at: r.modified_at,
       },
@@ -131,15 +141,15 @@ const updateNotice = async (req, res) => {
     let i = 1;
     if (title !== undefined) {
       updates.push(`title = $${i++}`);
-      values.push(title.trim());
+      values.push(sanitizeNoticeTitle(title));
     }
     if (content !== undefined) {
       updates.push(`content = $${i++}`);
-      values.push(content || null);
+      values.push(sanitizeNoticeContent(content) || null);
     }
     if (message_to !== undefined) {
       updates.push(`message_to = $${i++}`);
-      values.push(message_to || 'All');
+      values.push(sanitizeNoticeTitle(message_to || 'All') || 'All');
     }
     if (updates.length === 0) {
       return res.status(400).json({
@@ -160,10 +170,16 @@ const updateNotice = async (req, res) => {
         message: 'Notice not found',
       });
     }
+    const ur = result.rows[0];
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Notice updated successfully',
-      data: result.rows[0],
+      data: {
+        ...ur,
+        title: sanitizeNoticeTitle(ur.title || ''),
+        content: sanitizeNoticeContent(ur.content || ''),
+        message_to: sanitizeNoticeTitle(ur.message_to || 'All'),
+      },
     });
   } catch (error) {
     console.error('Error updating notice:', error);

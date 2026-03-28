@@ -1,22 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-
-function isSafeFileUrl(u) {
-  if (u == null) return true;
-  const s = String(u).trim();
-  if (!s) return true;
-  // Allow relative paths used by the app (no scheme).
-  if (s.startsWith('/')) return true;
-  // Reject dangerous schemes.
-  const lower = s.toLowerCase();
-  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('file:')) return false;
-  try {
-    const url = new URL(s);
-    return url.protocol === 'https:' || url.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
+const { isSafeFileOrLinkUrl } = require('../utils/safeUrl');
 
 // Get all files for current user
 const getAllFiles = async (req, res) => {
@@ -96,7 +80,7 @@ const createFile = async (req, res) => {
     if (!name) {
       return errorResponse(res, 400, 'Name is required');
     }
-    if (!isSafeFileUrl(file_url)) {
+    if (!isSafeFileOrLinkUrl(file_url)) {
       return errorResponse(res, 400, 'Invalid file_url');
     }
     const sharedWithSafe = Array.isArray(shared_with)
@@ -143,7 +127,7 @@ const updateFile = async (req, res) => {
       values.push(sharedWithSafe);
     }
     if (file_url !== undefined) {
-      if (!isSafeFileUrl(file_url)) {
+      if (!isSafeFileOrLinkUrl(file_url)) {
         return errorResponse(res, 400, 'Invalid file_url');
       }
       updates.push(`file_url = $${paramCount++}`);

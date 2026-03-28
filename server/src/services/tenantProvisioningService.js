@@ -1,8 +1,12 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
+
+/** Application root (the `server` folder that contains `sql/`). */
+const SERVER_APP_ROOT = path.resolve(__dirname, '../..');
 
 // Provisioning creates an empty tenant DB and then imports schema/data
 // from a local SQL file (template_schema.sql). This avoids relying on
@@ -426,25 +430,49 @@ async function executeTemplateStatements(pool, sqlText) {
   await flushBatch();
 }
 
+function resolveProvisioningTemplatePath() {
+  const configured = (process.env.PROVISIONING_TEMPLATE_SQL_PATH || '').toString().trim();
+  const resolved = path.isAbsolute(configured)
+    ? path.normalize(configured)
+    : path.resolve(SERVER_APP_ROOT, configured || 'sql/template_schema.sql');
+  const rel = path.relative(SERVER_APP_ROOT, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error('Provisioning template path must be inside the server application directory');
+  }
+  return resolved;
+}
+
 function getTemplateSql() {
   if (cachedTemplateSql) return cachedTemplateSql;
-  const templatePath =
-    process.env.PROVISIONING_TEMPLATE_SQL_PATH ||
-    path.join(__dirname, '../../sql/template_schema.sql');
+  const templatePath = resolveProvisioningTemplatePath();
   let sql;
   try {
     sql = fs.readFileSync(templatePath, 'utf8');
   } catch (e) {
+    console.error('[provisioning] template read failed:', e.message);
     throw new Error(
-      `Template SQL file not found at "${templatePath}". Export schema/data from your template DB (e.g. school_template2) ` +
-      'to a plain .sql file and set PROVISIONING_TEMPLATE_SQL_PATH or place it at server/sql/template_schema.sql.'
+      'Template SQL file could not be read. Set PROVISIONING_TEMPLATE_SQL_PATH or place template at server/sql/template_schema.sql'
     );
   }
   if (!sql || !sql.trim()) {
-    throw new Error(
-      `Template SQL file at "${templatePath}" is empty. Export schema/data from your template DB before creating schools.`
-    );
+    throw new Error('Template SQL file is empty');
   }
+
+  const expectedSha = (process.env.PROVISIONING_TEMPLATE_SQL_SHA256 || '').toString().trim().toLowerCase();
+  const requireChecksum = String(process.env.PROVISIONING_REQUIRE_TEMPLATE_CHECKSUM || '').toLowerCase() === 'true';
+  const actualSha = crypto.createHash('sha256').update(sql, 'utf8').digest('hex');
+
+  if (expectedSha) {
+    if (actualSha !== expectedSha) {
+      console.error('[provisioning] template SQL SHA256 mismatch');
+      throw new Error('Template SQL integrity check failed');
+    }
+  } else if (requireChecksum) {
+    throw new Error('PROVISIONING_TEMPLATE_SQL_SHA256 is required when PROVISIONING_REQUIRE_TEMPLATE_CHECKSUM=true');
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn('[provisioning] Set PROVISIONING_TEMPLATE_SQL_SHA256 in production for template integrity verification');
+  }
+
   validateTemplateSql(sql);
   cachedTemplateSql = sql;
   return cachedTemplateSql;

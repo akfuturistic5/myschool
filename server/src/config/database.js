@@ -55,6 +55,9 @@ const baseLocalConfig = {
 
 const tenantPools = new Map();
 
+/** Cap distinct tenant pools to limit memory; primary DB pool is never evicted. */
+const TENANT_POOL_MAX_SCHOOLS = Math.max(10, parseInt(process.env.TENANT_POOL_MAX_SCHOOLS || '60', 10) || 60);
+
 const CONNECTION_TIMEOUT_MS = parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '10000', 10);
 
 /**
@@ -209,6 +212,30 @@ const masterPool = (() => {
     `);
     await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions(school_id);`);
     await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_expires ON tenant_sessions(expires_at);`);
+
+    await masterPool.query(
+      `ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;`
+    );
+    await masterPool.query(
+      `CREATE INDEX IF NOT EXISTS idx_schools_deleted_at ON schools(deleted_at);`
+    );
+
+    await masterPool.query(`
+      CREATE TABLE IF NOT EXISTS super_admin_audit_log (
+        id SERIAL PRIMARY KEY,
+        super_admin_id INT,
+        action VARCHAR(96) NOT NULL,
+        resource_type VARCHAR(64),
+        resource_id VARCHAR(128),
+        details JSONB,
+        ip_address VARCHAR(100),
+        user_agent TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await masterPool.query(
+      `CREATE INDEX IF NOT EXISTS idx_super_admin_audit_created ON super_admin_audit_log(created_at DESC);`
+    );
   } catch (e) {
     // Do not crash app at import time; auth middleware will fail closed if sessions can't be read.
     console.error('Failed ensuring master_db.tenant_sessions:', e);
@@ -232,6 +259,15 @@ function getTenantPool(dbName) {
     );
   }
   if (!tenantPools.has(key)) {
+    if (tenantPools.size >= TENANT_POOL_MAX_SCHOOLS) {
+      for (const k of [...tenantPools.keys()]) {
+        if (k === primaryDbName) continue;
+        const oldPool = tenantPools.get(k);
+        tenantPools.delete(k);
+        if (oldPool) oldPool.end().catch(() => {});
+        break;
+      }
+    }
     tenantPools.set(key, createPoolForDb(key));
   }
   return tenantPools.get(key);
