@@ -855,12 +855,10 @@ class ApiService {
   }
 
   async logout() {
-    const base = await getApiBaseUrl();
-    const url = `${base}/auth/logout`.replace(/([^:]\/)\/+/g, '$1');
-    await fetch(url, {
+    // Use makeRequest so POST gets X-XSRF-TOKEN (server enforces CSRF on unsafe methods).
+    return this.makeRequest('/auth/logout', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     });
   }
 
