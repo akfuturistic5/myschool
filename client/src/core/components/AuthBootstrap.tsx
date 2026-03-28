@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { apiService } from '../services/apiService';
-import { setAuthFromSession, setAuthChecked } from '../data/redux/authSlice';
+import { setAuthFromSession, setAuthChecked, clearAuth } from '../data/redux/authSlice';
 
 /** Paths where we skip /auth/me (avoids 401 loop and logout spam on login page) */
 const SKIP_GET_ME_PATHS = ['/login', '/register', '/forgot-password'];
@@ -10,7 +10,8 @@ const SKIP_GET_ME_PATHS = ['/login', '/register', '/forgot-password'];
 /**
  * Runs on app load to hydrate auth state from HTTP-only cookie.
  * Calls /auth/me with credentials:include; if valid session exists, sets user in Redux.
- * Skips getMe on login/register to prevent 401 → logout → re-check loop.
+ * Skips getMe on login/register (and `/` — root is the main Login route) to prevent
+ * 401 → global session handler → full-page redirect blink while on the sign-in screen.
  */
 export const AuthBootstrap = () => {
   const dispatch = useDispatch();
@@ -19,6 +20,7 @@ export const AuthBootstrap = () => {
   useEffect(() => {
     let cancelled = false;
     const skipGetMe =
+      pathname === '/' ||
       SKIP_GET_ME_PATHS.some((p) => pathname.startsWith(p) || pathname === p) ||
       pathname.startsWith('/super-admin');
 
@@ -60,8 +62,14 @@ export const AuthBootstrap = () => {
         } else {
           dispatch(setAuthChecked());
         }
-      } catch {
-        if (!cancelled) dispatch(setAuthChecked());
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const msg = String((err instanceof Error && err.message) || err || '');
+          if (msg.includes('401')) {
+            dispatch(clearAuth());
+          }
+          dispatch(setAuthChecked());
+        }
       }
     };
 

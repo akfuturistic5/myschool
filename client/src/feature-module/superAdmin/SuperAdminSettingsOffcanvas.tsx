@@ -208,10 +208,6 @@ const SuperAdminSettingsOffcanvas = ({ open, onClose }: Props) => {
 
           <section>
             <h6 className="text-muted text-uppercase small mb-3">Username</h6>
-            <p className="small text-body-secondary mb-3">
-              Stored in <code className="small">master_db.super_admin_users</code>. Current password is required to
-              save changes.
-            </p>
             <form onSubmit={handleUsernameSubmit} className="d-flex flex-column gap-3">
               {userError && (
                 <div className="alert alert-danger py-2 small mb-0" role="alert">

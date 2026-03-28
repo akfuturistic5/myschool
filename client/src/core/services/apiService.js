@@ -34,6 +34,22 @@ async function getApiBaseUrl() {
 // Request deduplication: track ongoing requests to prevent duplicate simultaneous calls
 const pendingRequests = new Map();
 
+/**
+ * Tenant API only: whether 401 should run logout + auth:sessionExpired (full app redirect).
+ * Skip /auth/login (wrong password is a normal 401) and /auth/me (session probe; AuthBootstrap clears Redux softly).
+ */
+function shouldGlobalSessionExpireOn401(requestUrl) {
+  let pathname = '';
+  try {
+    pathname = new URL(requestUrl).pathname;
+  } catch {
+    pathname = requestUrl;
+  }
+  if (pathname === '/api/auth/me' || pathname.endsWith('/api/auth/me')) return false;
+  if (pathname === '/api/auth/login' || pathname.endsWith('/api/auth/login')) return false;
+  return true;
+}
+
 class ApiService {
   async makeRequest(endpoint, options = {}) {
     const base = await getApiBaseUrl();
@@ -97,7 +113,7 @@ class ApiService {
       }
 
       if (!response.ok) {
-        if (response.status === 401) {
+        if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
           this.logout().catch(() => {});
           window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
         }
