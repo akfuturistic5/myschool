@@ -1,14 +1,14 @@
 const Joi = require('joi');
 
-/** Minimum length and complexity for production accounts (NIST-inspired: length + mixed character classes). */
-const MIN_LEN = 12;
-const MAX_LEN = 128;
+/** Minimum length and complexity for accounts (length + mixed character classes). */
+const MIN_LEN = 8;
+const MAX_LEN = 20;
 
 const STRONG_PASSWORD_REGEX =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{12,128}$/;
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).{8,20}$/;
 
 function strongPasswordMessage() {
-  return `Password must be ${MIN_LEN}–${MAX_LEN} characters and include uppercase, lowercase, a number, and a special character`;
+  return `Password must be ${MIN_LEN} to ${MAX_LEN} characters and include uppercase, lowercase, a number, and a special character`;
 }
 
 /** Joi schema for new passwords (change password, super-admin provisioned admin). */
@@ -20,6 +20,7 @@ function strongPasswordJoi() {
     .messages({
       'string.pattern.base': strongPasswordMessage(),
       'string.min': strongPasswordMessage(),
+      'string.max': strongPasswordMessage(),
     });
 }
 

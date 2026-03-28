@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Modal } from "bootstrap";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { all_routes } from "../../router/all_routes";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
@@ -7,6 +8,12 @@ import { useDispatch } from "react-redux";
 import { setAuthFromSession } from "../../../core/data/redux/authSlice";
 import { apiService } from "../../../core/services/apiService";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
+import {
+  validateStrongPassword,
+  showPasswordRequirementsAlert,
+  showPasswordSuccessAlert,
+} from "../../../core/utils/passwordPolicy";
+import { extractMessageFromApiError } from "../../../core/utils/apiErrorMessage";
 type PasswordField =
   | "oldPassword"
   | "newPassword"
@@ -37,8 +44,6 @@ const Profile = () => {
     confirmPassword: "",
   });
   const [pwdSaving, setPwdSaving] = useState(false);
-  const [pwdError, setPwdError] = useState<string | null>(null);
-  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
 
   const canEdit = useMemo(() => {
     // Basic guard; if account is disabled we still allow viewing
@@ -122,8 +127,33 @@ const Profile = () => {
   };
 
   const onChangePassword = async () => {
-    setPwdError(null);
-    setPwdSuccess(null);
+    if (!pwd.currentPassword.trim()) {
+      await showPasswordRequirementsAlert(
+        "Please enter your current password.",
+        "Change password"
+      );
+      return;
+    }
+    const policyMsg = validateStrongPassword(pwd.newPassword);
+    if (policyMsg) {
+      await showPasswordRequirementsAlert(policyMsg);
+      return;
+    }
+    if (pwd.newPassword !== pwd.confirmPassword) {
+      await showPasswordRequirementsAlert(
+        "New password and confirmation do not match.",
+        "Change password"
+      );
+      return;
+    }
+    if (pwd.currentPassword === pwd.newPassword) {
+      await showPasswordRequirementsAlert(
+        "New password must be different from your current password.",
+        "Change password"
+      );
+      return;
+    }
+
     setPwdSaving(true);
     try {
       const res = await apiService.changePassword(
@@ -132,12 +162,21 @@ const Profile = () => {
         pwd.confirmPassword
       );
       if (res?.status !== "SUCCESS") {
-        throw new Error(res?.message || "Failed to change password");
+        await showPasswordRequirementsAlert(
+          res?.message || "Failed to change password.",
+          "Cannot change password"
+        );
+        return;
       }
-      setPwdSuccess("Password changed successfully");
       setPwd({ currentPassword: "", newPassword: "", confirmPassword: "" });
-    } catch (e: any) {
-      setPwdError(e?.message || "Failed to change password");
+      await showPasswordSuccessAlert("Your password was updated successfully.");
+      const modalEl = document.getElementById("change_password");
+      if (modalEl) {
+        Modal.getOrCreateInstance(modalEl).hide();
+      }
+    } catch (e: unknown) {
+      const msg = extractMessageFromApiError(e);
+      await showPasswordRequirementsAlert(msg, "Cannot change password");
     } finally {
       setPwdSaving(false);
     }
@@ -219,16 +258,6 @@ const Profile = () => {
             {saveSuccess && (
               <div className="alert alert-success mt-3 mb-0" role="alert">
                 {saveSuccess}
-              </div>
-            )}
-            {pwdError && (
-              <div className="alert alert-danger mt-3 mb-0" role="alert">
-                {pwdError}
-              </div>
-            )}
-            {pwdSuccess && (
-              <div className="alert alert-success mt-3 mb-0" role="alert">
-                {pwdSuccess}
               </div>
             )}
             <div className="d-md-flex d-block mt-3">
@@ -708,6 +737,9 @@ const Profile = () => {
                               setPwd((p) => ({ ...p, newPassword: e.target.value }))
                             }
                             disabled={pwdSaving}
+                            minLength={8}
+                            maxLength={20}
+                            autoComplete="new-password"
                           />
                           <span
                             className={`ti toggle-passwords ${
@@ -736,6 +768,9 @@ const Profile = () => {
                               setPwd((p) => ({ ...p, confirmPassword: e.target.value }))
                             }
                             disabled={pwdSaving}
+                            minLength={8}
+                            maxLength={20}
+                            autoComplete="new-password"
                           />
                           <span
                             className={`ti toggle-passwords ${
@@ -767,7 +802,6 @@ const Profile = () => {
                       await onChangePassword();
                     }}
                     disabled={pwdSaving || meLoading}
-                    data-bs-dismiss="modal"
                   >
                     {pwdSaving ? "Saving..." : "Save Changes"}
                   </button>

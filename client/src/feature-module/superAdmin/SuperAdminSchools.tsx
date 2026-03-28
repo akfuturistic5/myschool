@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { superAdminApiService } from '../../core/services/superAdminApiService';
+import {
+  validateStrongPassword,
+  showPasswordRequirementsAlert,
+} from '../../core/utils/passwordPolicy';
 
 interface School {
   id: number;
@@ -63,6 +67,11 @@ const SuperAdminSchools = () => {
       setCreateError('All fields are required');
       return;
     }
+    const passwordIssue = validateStrongPassword(form.admin_password);
+    if (passwordIssue) {
+      await showPasswordRequirementsAlert(passwordIssue);
+      return;
+    }
     setCreating(true);
     try {
       const res = await superAdminApiService.createSchool({
@@ -85,7 +94,12 @@ const SuperAdminSchools = () => {
         setCreateError(res.message || 'Failed to create school');
       }
     } catch (e: any) {
-      setCreateError(e?.message || 'Failed to create school');
+      const m = e?.message || 'Failed to create school';
+      if (/password/i.test(m)) {
+        await showPasswordRequirementsAlert(m);
+      } else {
+        setCreateError(m);
+      }
     } finally {
       setCreating(false);
     }
@@ -171,6 +185,9 @@ const SuperAdminSchools = () => {
                   value={form.admin_password}
                   onChange={(e) => onChange('admin_password', e.target.value)}
                   disabled={creating}
+                  minLength={8}
+                  maxLength={20}
+                  autoComplete="new-password"
                 />
               </div>
               <div className="col-md-3 d-flex align-items-end">

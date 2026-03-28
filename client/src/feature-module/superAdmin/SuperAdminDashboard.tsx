@@ -8,6 +8,10 @@ import {
 } from '../../core/data/redux/superAdminAuthSlice';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
+import {
+  validateStrongPassword,
+  showPasswordRequirementsAlert,
+} from '../../core/utils/passwordPolicy';
 
 interface PlatformStats {
   total_schools: number;
@@ -143,6 +147,11 @@ const SuperAdminDashboard = () => {
       setCreateError('All fields are required');
       return;
     }
+    const passwordIssue = validateStrongPassword(createForm.admin_password);
+    if (passwordIssue) {
+      await showPasswordRequirementsAlert(passwordIssue);
+      return;
+    }
     setCreating(true);
     try {
       const res = await superAdminApiService.createSchool({
@@ -243,7 +252,7 @@ const SuperAdminDashboard = () => {
     await MySwal.fire({
       icon: 'success',
       title: 'School removed',
-      text: 'The school has been removed and you are still signed in.',
+      text: 'The school has been removed',
       confirmButtonText: 'OK',
     });
   };
@@ -463,6 +472,9 @@ const SuperAdminDashboard = () => {
                           value={createForm.admin_password}
                           onChange={(e) => onCreateChange('admin_password', e.target.value)}
                           disabled={creating}
+                          minLength={8}
+                          maxLength={20}
+                          autoComplete="new-password"
                         />
                       </div>
                     </div>
