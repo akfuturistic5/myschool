@@ -150,22 +150,42 @@ function slugFromSchoolName(schoolName) {
 
 /**
  * Generate tenant DB name from school name (e.g. anglo_db, aabid_db).
- * Falls back to school_{institute} if slug is empty or collision.
+ * Must be unique vs existingDbNames (include soft-deleted schools — db_name stays unique in master).
  */
 function generateTenantDbName(schoolName, instituteNumber, existingDbNames = []) {
   const institute = String(instituteNumber || '').replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
   const fallback = `school_${institute || 'school'}`;
 
   const slug = slugFromSchoolName(schoolName);
-  if (!slug) return fallback;
+  const taken = new Set(
+    (existingDbNames || []).map((d) => String(d || '').trim().toLowerCase()).filter(Boolean)
+  );
 
-  let base = `${slug}_db`;
-  if (base.length > 63) base = base.slice(0, 63);
+  const tryName = (raw) => {
+    const n = String(raw || '').trim().slice(0, 63);
+    return n && !taken.has(n.toLowerCase()) ? n : null;
+  };
 
-  const exists = existingDbNames.some((d) => d.toLowerCase() === base.toLowerCase());
-  if (exists) return `${slug}_${institute}_db`.slice(0, 63) || fallback;
+  if (slug) {
+    let candidate = tryName(`${slug}_db`);
+    if (candidate) return candidate;
 
-  return base;
+    if (institute) {
+      candidate = tryName(`${slug}_${institute}_db`);
+      if (candidate) return candidate;
+    }
+  }
+
+  let candidate = tryName(fallback);
+  if (candidate) return candidate;
+
+  const baseForSuffix = slug && institute ? `${slug}_${institute}` : slug || `school_${institute || 't'}`;
+  for (let n = 2; n < 10000; n += 1) {
+    candidate = tryName(`${baseForSuffix}_${n}_db`);
+    if (candidate) return candidate;
+  }
+
+  return tryName(`t_${Date.now()}_db`) || `t_${Date.now()}`.slice(0, 63);
 }
 
 /**

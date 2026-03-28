@@ -224,9 +224,12 @@ const createSchool = async (req, res) => {
     return errorResponse(res, 400, 'Institute number already exists');
   }
 
+  // Unique index on db_name applies to ALL rows (including soft-deleted); must not reuse names.
   let existingDbNames = [];
   try {
-    const dbRes = await masterQuery('SELECT db_name FROM schools WHERE deleted_at IS NULL');
+    const dbRes = await masterQuery(
+      'SELECT db_name FROM schools WHERE db_name IS NOT NULL AND TRIM(db_name) <> \'\''
+    );
     existingDbNames = (dbRes.rows || []).map((r) => r.db_name).filter(Boolean);
   } catch {
     /* ignore; use empty list */
@@ -258,6 +261,23 @@ const createSchool = async (req, res) => {
       await dropTenantDatabaseIfExists(dbName);
     } catch (dropErr) {
       console.error('Super Admin createSchool: failed to drop tenant DB after master insert error:', dropErr);
+    }
+    if (err && err.code === '23505') {
+      const detail = String(err.detail || '');
+      if (detail.includes('db_name')) {
+        return errorResponse(
+          res,
+          409,
+          'That database name is already registered (it may belong to a removed school). Change the school name or contact support to free the name.',
+          'DUPLICATE_DB_NAME'
+        );
+      }
+      return errorResponse(
+        res,
+        409,
+        'This school or institute conflicts with existing data. Check institute number and try again.',
+        'DUPLICATE_KEY'
+      );
     }
     return errorResponse(res, 500, 'Failed to register school in master database');
   }
