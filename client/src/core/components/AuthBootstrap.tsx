@@ -56,6 +56,7 @@ export const AuthBootstrap = () => {
               },
             })
           );
+          await apiService.ensureCsrfToken();
         } else {
           dispatch(setAuthChecked());
         }

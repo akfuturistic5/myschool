@@ -247,6 +247,7 @@ const login = async (req, res) => {
       res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
 
       success(res, 200, 'Login successful', {
+        csrfToken,
         user: {
           id: user.id,
           username: user.username,

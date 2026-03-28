@@ -1,3 +1,9 @@
+import {
+  resolveCsrfTokenForRequest,
+  setCachedCsrfToken,
+  clearCachedCsrfToken,
+} from '../utils/csrfClientStore.js';
+
 const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const isDev = import.meta.env.DEV;
 const isProd = import.meta.env.PROD;
@@ -23,15 +29,6 @@ async function getApiBaseUrl() {
   } catch (_) { }
   cachedBaseUrl = BUILD_API_URL;
   return cachedBaseUrl;
-}
-
-function getCookie(name) {
-  try {
-    const m = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/[$()*+./?[\\\]^{|}-]/g, '\\$&')}=([^;]*)`));
-    return m ? decodeURIComponent(m[1]) : null;
-  } catch {
-    return null;
-  }
 }
 
 // Request deduplication: track ongoing requests to prevent duplicate simultaneous calls
@@ -82,7 +79,7 @@ class ApiService {
     const method = (options.method || 'GET').toUpperCase();
     const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
     if (unsafe) {
-      const csrf = getCookie('XSRF-TOKEN');
+      const csrf = resolveCsrfTokenForRequest();
       if (csrf) headers['X-XSRF-TOKEN'] = csrf;
     }
 
@@ -830,10 +827,34 @@ class ApiService {
 
   // Auth
   async login(instituteNumber, username, password) {
-    return this.makeRequest('/auth/login', {
+    const data = await this.makeRequest('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ instituteNumber, username, password }),
     });
+    const token = data?.data?.csrfToken;
+    if (token) setCachedCsrfToken(token);
+    return data;
+  }
+
+  /** Load CSRF into memory when the cookie exists on the API host but JS cannot read it (cross-origin). */
+  async ensureCsrfToken() {
+    const base = await getApiBaseUrl();
+    const url = `${base}/auth/csrf-token`.replace(/([^:]\/)\/+/g, '$1');
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        mode: 'cors',
+        headers: { Accept: 'application/json' },
+      });
+      const text = await res.text();
+      if (!res.ok || !text) return;
+      const data = JSON.parse(text);
+      const token = data?.data?.csrfToken;
+      if (token) setCachedCsrfToken(token);
+    } catch {
+      // ignore
+    }
   }
 
   async getMe() {
@@ -855,11 +876,14 @@ class ApiService {
   }
 
   async logout() {
-    // Use makeRequest so POST gets X-XSRF-TOKEN (server enforces CSRF on unsafe methods).
-    return this.makeRequest('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    try {
+      return await this.makeRequest('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } finally {
+      clearCachedCsrfToken();
+    }
   }
 
   // Chats

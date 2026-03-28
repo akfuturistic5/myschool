@@ -21,6 +21,7 @@ import "../node_modules/bootstrap/dist/js/bootstrap.bundle.min.js";
 import { BrowserRouter } from 'react-router';
 import React from 'react';
 import ErrorBoundary from './core/components/ErrorBoundary';
+import { clearCachedCsrfToken } from './core/utils/csrfClientStore.js';
 
 // Fix Bootstrap 5 modal accessibility: use inert to avoid
 // "Blocked aria-hidden on an element because its descendant retained focus" warning
@@ -35,6 +36,7 @@ document.addEventListener('hide.bs.modal', (e: Event) => {
 
 // Handle session expiry (401) - clear auth and redirect to login
 window.addEventListener('auth:sessionExpired', () => {
+  clearCachedCsrfToken();
   store.dispatch(clearAuth());
   store.dispatch(clearSuperAdminAuth());
   window.location.href = `${base_path}login`;
@@ -42,6 +44,7 @@ window.addEventListener('auth:sessionExpired', () => {
 
 // Super Admin API returned 401 — clear client state so protected routes redirect cleanly
 window.addEventListener('super-admin:sessionInvalid', () => {
+  clearCachedCsrfToken();
   store.dispatch(clearSuperAdminAuth());
 });
 

@@ -2,6 +2,7 @@ const express = require('express');
 const { login, getMe, updateMe, changePassword, logout } = require('../controllers/authController');
 const { authenticate } = require('../middleware/authMiddleware');
 const { validate } = require('../utils/validate');
+const { echoCsrfToken } = require('../utils/csrfEcho');
 const Joi = require('joi');
 
 const router = express.Router();
@@ -13,6 +14,8 @@ const loginSchema = Joi.object({
 });
 
 router.post('/login', validate(loginSchema), login);
+// Cross-origin SPA: returns XSRF value in JSON (cookie stays on API host; JS cannot read it cross-site)
+router.get('/csrf-token', echoCsrfToken);
 router.get('/me', authenticate, getMe);
 router.patch(
   '/me',

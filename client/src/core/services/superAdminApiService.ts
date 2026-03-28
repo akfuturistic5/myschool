@@ -1,4 +1,9 @@
 import { isDev, isProd } from '../utils/runtimeEnv';
+import {
+  resolveCsrfTokenForRequest,
+  setCachedCsrfToken,
+  clearCachedCsrfToken,
+} from '../utils/csrfClientStore.js';
 
 const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -55,13 +60,8 @@ class SuperAdminApiService {
     const method = String(options.method || 'GET').toUpperCase();
     const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
     if (unsafe) {
-      try {
-        const m = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-        const csrf = m ? decodeURIComponent(m[1]) : null;
-        if (csrf) (headers as any)['X-XSRF-TOKEN'] = csrf;
-      } catch {
-        // ignore
-      }
+      const csrf = resolveCsrfTokenForRequest();
+      if (csrf) (headers as Record<string, string>)['X-XSRF-TOKEN'] = csrf;
     }
 
     try {
@@ -104,10 +104,34 @@ class SuperAdminApiService {
 
   // Auth
   async login(emailOrUsername: string, password: string) {
-    return this.makeRequest('/auth/login', {
+    const data = await this.makeRequest('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ emailOrUsername, password }),
     });
+    const token = (data as { data?: { csrfToken?: string } })?.data?.csrfToken;
+    if (token) setCachedCsrfToken(token);
+    return data;
+  }
+
+  /** Cross-origin SPA: sync XSRF into memory (cookie is on API host only). */
+  async ensureCsrfToken() {
+    const base = await getSuperAdminApiBaseUrl();
+    const url = `${base}/auth/csrf-token`.replace(/([^:]\/)\/+/g, '$1');
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        mode: 'cors',
+        headers: { Accept: 'application/json' },
+      });
+      const text = await res.text();
+      if (!res.ok || !text) return;
+      const data = JSON.parse(text) as { data?: { csrfToken?: string } };
+      const token = data?.data?.csrfToken;
+      if (token) setCachedCsrfToken(token);
+    } catch {
+      // ignore
+    }
   }
 
   async getProfile() {
@@ -115,10 +139,14 @@ class SuperAdminApiService {
   }
 
   async logout() {
-    return this.makeRequest('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
+    try {
+      return await this.makeRequest('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } finally {
+      clearCachedCsrfToken();
+    }
   }
 
   // Schools

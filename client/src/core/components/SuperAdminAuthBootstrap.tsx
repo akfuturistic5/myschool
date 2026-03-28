@@ -31,6 +31,8 @@ export const SuperAdminAuthBootstrap = () => {
         if (cancelled) return;
         if (res.status === 'SUCCESS' && res.data) {
           const d = res.data;
+          await superAdminApiService.ensureCsrfToken();
+          if (cancelled) return;
           dispatch(
             setSuperAdminAuthFromSession({
               user: {

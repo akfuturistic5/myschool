@@ -121,6 +121,7 @@ const superAdminLogin = async (req, res) => {
     res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
 
     return success(res, 200, 'Super Admin login successful', {
+      csrfToken,
       user: {
         id: admin.id,
         username: admin.username,
