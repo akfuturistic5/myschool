@@ -109,6 +109,11 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'X-XSRF-TOKEN', 'X-CSRF-TOKEN'],
 };
 app.use(cors(corsOptions));
+if (isProduction) {
+  const { secureCookieBase } = require('./src/utils/cookiePolicy');
+  const cp = secureCookieBase();
+  console.log(`[cookies] SameSite=${cp.sameSite} Secure=${cp.secure} (COOKIE_SAME_SITE / CORS_ORIGIN affect session cookies)`);
+}
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
