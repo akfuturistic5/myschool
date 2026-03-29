@@ -12,6 +12,64 @@
     left: 0;
     @include mixins.transition(all 0.5s ease);
     border-bottom: 1px solid variables.$light-900;
+
+    // Desktop: logo | centered search | right toolbar (auto-placed by DOM order of visible children).
+    @include mixins.respond-above(lg) {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        column-gap: 0.75rem;
+
+        .header-left {
+            float: none;
+        }
+
+        .header-user {
+            float: none;
+            justify-self: end;
+        }
+    }
+
+    .header-search-center {
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+
+        @include mixins.respond-above(lg) {
+            justify-self: center;
+            width: 100%;
+            max-width: 440px;
+
+            .nav-searchinputs {
+                margin: 0;
+                width: 100%;
+            }
+
+            .top-nav-search {
+                width: 100%;
+            }
+
+            .searchinputs {
+                width: 100%;
+
+                input {
+                    width: 100%;
+                    max-width: 100%;
+                }
+            }
+        }
+    }
+
+    .header-toolbar-nav {
+        @include mixins.respond-above(lg) {
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            width: auto;
+            margin: 0;
+            height: 100%;
+        }
+    }
+
     .flag-nav {
         > a {
             img {
@@ -438,7 +496,6 @@
     // Avoid display:contents (click bugs). Use float:right so the toolbar stays on the far right
     // like the original layout; inline-flex alone shrink-wraps and leaves empty space on the right.
     .header-user {
-        // With display:contents before, this padding did not create a box; keep vertical space from .header (56px) + .user-menu only.
         float: right;
         display: flex;
         align-items: center;
@@ -458,7 +515,7 @@
             position: relative;
             height: 100%;
             border-bottom: 0;
-            padding:0 24px;
+            padding: 0 24px;
             @include mixins.transition(all 0.5s ease);
             @include mixins.respond-below(lg) {
                 display: none;
