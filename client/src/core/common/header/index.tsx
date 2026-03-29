@@ -221,7 +221,7 @@ const Header = () => {
         <div className="header-user">
           <div className="nav user-menu">
             {/* Search */}
-            <div className="nav-item nav-search-inputs me-auto">
+            <div className="nav-item nav-searchinputs me-auto">
               <div className="top-nav-search">
                 <Link to="#" className="responsive-search">
                   <i className="fa fa-search" />

@@ -435,20 +435,25 @@
             margin-left: 10px;
         }
     }
-    // Avoid display:contents: it has caused hit-testing / interactive descendant bugs in several browsers.
+    // Avoid display:contents (click bugs). Use float:right so the toolbar stays on the far right
+    // like the original layout; inline-flex alone shrink-wraps and leaves empty space on the right.
     .header-user {
-        padding: 15px 24px;
-        display: inline-flex;
+        // With display:contents before, this padding did not create a box; keep vertical space from .header (56px) + .user-menu only.
+        float: right;
+        display: flex;
         align-items: center;
-        max-width: 100%;
         overflow: visible;
+        padding: 0;
+        @include mixins.respond-below(lg) {
+            display: none;
+        }
         .user-menu {
             align-items: center;
             -webkit-box-align: center;
             -ms-flex-align: center;
-            justify-content: center;
-            -webkit-justify-content: center;
-            -ms-flex-pack: center;
+            justify-content: flex-end;
+            -webkit-justify-content: flex-end;
+            -ms-flex-pack: end;
             margin: 0;
             position: relative;
             height: 100%;
