@@ -160,9 +160,13 @@ const enforceCsrf = (req, res, next) => {
   const method = (req.method || 'GET').toUpperCase();
   if (['GET', 'HEAD', 'OPTIONS'].includes(method)) return next();
   // Public auth endpoints are exempt (login establishes cookies).
+  // Logout is exempt so clients can clear session when CSRF header is not yet cached
+  // (e.g. 401 storm before ensureCsrfToken); logout is idempotent and low risk for CSRF abuse.
   if (
     req.path.startsWith('/api/auth/login') ||
-    req.path.startsWith('/super-admin/api/auth/login')
+    req.path.startsWith('/api/auth/logout') ||
+    req.path.startsWith('/super-admin/api/auth/login') ||
+    req.path.startsWith('/super-admin/api/auth/logout')
   ) return next();
   // Split SPA/API: XSRF cookie often does not attach cross-origin; Bearer auth does not need double-submit CSRF.
   const tenantBearerMode = String(process.env.TENANT_BEARER_AUTH || '').toLowerCase() === 'true';

@@ -108,10 +108,11 @@ class ApiService {
   }
 
   async _executeRequest(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
 
     const headers = {
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
       ...(options.headers || {}),
     };
 
@@ -124,7 +125,6 @@ class ApiService {
     // Cookie + optional Bearer (split-host); CSRF for unsafe when cookie mode:
     // - auth session is stored in httpOnly cookies (not accessible to JS)
     // - CSRF uses double-submit cookie (readable) + header for unsafe methods
-    const method = (options.method || 'GET').toUpperCase();
     const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method);
     if (unsafe) {
       const csrf = resolveCsrfTokenForRequest();
@@ -132,12 +132,13 @@ class ApiService {
     }
 
     try {
+      const { headers: _omit, ...restOptions } = options;
       const response = await fetch(url, {
-        method: 'GET',
+        method,
         headers,
         mode: 'cors',
         credentials: 'include',
-        ...options,
+        ...restOptions,
         // Required when API returns ETag/304 or intermediaries cache; 304 is not response.ok and breaks JSON auth flows
         cache: options.cache !== undefined ? options.cache : 'no-store',
       });
