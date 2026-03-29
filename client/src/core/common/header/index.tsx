@@ -12,7 +12,7 @@ import {
   setMobileSidebar,
   toggleMiniSidebar,
 } from "../../data/redux/sidebarSlice";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { all_routes } from "../../../feature-module/router/all_routes";
 import { getDashboardForRole } from "../../utils/roleUtils";
 import { useAcademicYears } from "../../hooks/useAcademicYears";
@@ -23,6 +23,8 @@ const Header = () => {
   const user = useSelector(selectUser);
 
   const handleLogout = async () => {
+    setUserProfileMenuOpen(false);
+    setMobileUserMenuOpen(false);
     try {
       const { apiService } = await import("../../services/apiService");
       await apiService.logout();
@@ -35,7 +37,35 @@ const Header = () => {
   const dataTheme = useSelector((state: any) => state.themeSetting.dataTheme);
   const dataLayout = useSelector((state: any) => state.themeSetting.dataLayout);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  /** React-controlled menus: avoids relying on Bootstrap's data-api (fragile with Vite/React + some browsers with display:contents ancestors). */
+  const [userProfileMenuOpen, setUserProfileMenuOpen] = useState(false);
+  const [mobileUserMenuOpen, setMobileUserMenuOpen] = useState(false);
+  const userProfileDropdownRef = useRef<HTMLDivElement>(null);
+  const mobileUserMenuRef = useRef<HTMLDivElement>(null);
   const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
+
+  useEffect(() => {
+    if (!userProfileMenuOpen && !mobileUserMenuOpen) return;
+    const closeOnOutside = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (userProfileMenuOpen && userProfileDropdownRef.current?.contains(t)) return;
+      if (mobileUserMenuOpen && mobileUserMenuRef.current?.contains(t)) return;
+      setUserProfileMenuOpen(false);
+      setMobileUserMenuOpen(false);
+    };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setUserProfileMenuOpen(false);
+        setMobileUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutside, true);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside, true);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [userProfileMenuOpen, mobileUserMenuOpen]);
 
   // Fetch academic years from API
   const { academicYears, loading, error } = useAcademicYears();
@@ -472,13 +502,14 @@ const Header = () => {
                   <i className="ti ti-maximize" />
                 </Link>
               </div>
-              <div className="dropdown ms-1">
+              <div className="dropdown ms-1" ref={userProfileDropdownRef}>
                 <button
                   type="button"
                   className="dropdown-toggle d-flex align-items-center p-0 border-0 bg-transparent"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
+                  aria-expanded={userProfileMenuOpen}
+                  aria-haspopup="menu"
                   aria-label="Open user menu"
+                  onClick={() => setUserProfileMenuOpen((o) => !o)}
                 >
                   <span className="avatar avatar-md rounded">
                     <ImageWithBasePath
@@ -488,7 +519,10 @@ const Header = () => {
                     />
                   </span>
                 </button>
-                <div className="dropdown-menu">
+                <div
+                  className={`dropdown-menu dropdown-menu-end${userProfileMenuOpen ? " show" : ""}`}
+                  role="menu"
+                >
                   <div className="d-block">
                     <div className="d-flex align-items-center p-2">
                       <span className="avatar avatar-md me-2 online avatar-rounded">
@@ -508,6 +542,8 @@ const Header = () => {
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
                       to={routes.profile}
+                      role="menuitem"
+                      onClick={() => setUserProfileMenuOpen(false)}
                     >
                       <i className="ti ti-user-circle me-2" />
                       My Profile
@@ -515,6 +551,8 @@ const Header = () => {
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
                       to={routes.securitysettings}
+                      role="menuitem"
+                      onClick={() => setUserProfileMenuOpen(false)}
                     >
                       <i className="ti ti-settings me-2" />
                       Settings
@@ -523,6 +561,7 @@ const Header = () => {
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
                       to="#"
+                      role="menuitem"
                       onClick={(e) => { e.preventDefault(); handleLogout(); }}
                     >
                       <i className="ti ti-login me-2" />
@@ -535,24 +574,43 @@ const Header = () => {
           </div>
         </div>
         {/* Mobile Menu */}
-        <div className="dropdown mobile-user-menu">
+        <div className="dropdown mobile-user-menu" ref={mobileUserMenuRef}>
           <button
             type="button"
             className="nav-link dropdown-toggle border-0 bg-transparent text-body"
-            data-bs-toggle="dropdown"
-            aria-expanded="false"
+            aria-expanded={mobileUserMenuOpen}
+            aria-haspopup="menu"
             aria-label="Open menu"
+            onClick={() => setMobileUserMenuOpen((o) => !o)}
           >
             <i className="fa fa-ellipsis-v" />
           </button>
-          <div className="dropdown-menu dropdown-menu-end">
-            <Link className="dropdown-item" to={routes.profile}>
+          <div
+            className={`dropdown-menu dropdown-menu-end${mobileUserMenuOpen ? " show" : ""}`}
+            role="menu"
+          >
+            <Link
+              className="dropdown-item"
+              to={routes.profile}
+              role="menuitem"
+              onClick={() => setMobileUserMenuOpen(false)}
+            >
               My Profile
             </Link>
-            <Link className="dropdown-item" to={routes.securitysettings}>
+            <Link
+              className="dropdown-item"
+              to={routes.securitysettings}
+              role="menuitem"
+              onClick={() => setMobileUserMenuOpen(false)}
+            >
               Settings
             </Link>
-            <Link className="dropdown-item" to="#" onClick={(e) => { e.preventDefault(); handleLogout(); }}>
+            <Link
+              className="dropdown-item"
+              to="#"
+              role="menuitem"
+              onClick={(e) => { e.preventDefault(); handleLogout(); }}
+            >
               Logout
             </Link>
           </div>

@@ -435,9 +435,13 @@
             margin-left: 10px;
         }
     }
+    // Avoid display:contents: it has caused hit-testing / interactive descendant bugs in several browsers.
     .header-user {
         padding: 15px 24px;
-        display: contents;
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        overflow: visible;
         .user-menu {
             align-items: center;
             -webkit-box-align: center;
