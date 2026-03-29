@@ -212,9 +212,9 @@ const Header = () => {
             <div className="d-flex align-items-center">
               {showAcademicYearDropdown && (
                 <div className="dropdown me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light fw-normal bg-white d-flex align-items-center p-2"
+                  <button
+                    type="button"
+                    className="btn btn-outline-light fw-normal bg-white d-flex align-items-center p-2 dropdown-toggle"
                     data-bs-toggle="dropdown"
                     aria-expanded="false"
                   >
@@ -228,7 +228,7 @@ const Header = () => {
                     ) : (
                       "No academic year"
                     )}
-                  </Link>
+                  </button>
                   <div className="dropdown-menu dropdown-menu-right">
                     {loading ? (
                       <div className="dropdown-item d-flex align-items-center">
@@ -313,14 +313,15 @@ const Header = () => {
                         Mark all as read
                       </Link>
                       <div className="dropdown">
-                        <Link
-                          to="#"
-                          className="bg-white dropdown-toggle"
+                        <button
+                          type="button"
+                          className="bg-white dropdown-toggle border-0"
                           data-bs-toggle="dropdown"
+                          aria-expanded="false"
                         >
                           <i className="ti ti-calendar-due me-1" />
                           Today
-                        </Link>
+                        </button>
                         <ul className="dropdown-menu mt-2 p-3">
                           <li>
                             <Link to="#" className="dropdown-item rounded-1">
@@ -472,10 +473,12 @@ const Header = () => {
                 </Link>
               </div>
               <div className="dropdown ms-1">
-                <Link
-                  to="#"
-                  className="dropdown-toggle d-flex align-items-center"
+                <button
+                  type="button"
+                  className="dropdown-toggle d-flex align-items-center p-0 border-0 bg-transparent"
                   data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  aria-label="Open user menu"
                 >
                   <span className="avatar avatar-md rounded">
                     <ImageWithBasePath
@@ -484,7 +487,7 @@ const Header = () => {
                       className="img-fluid"
                     />
                   </span>
-                </Link>
+                </button>
                 <div className="dropdown-menu">
                   <div className="d-block">
                     <div className="d-flex align-items-center p-2">
@@ -533,14 +536,15 @@ const Header = () => {
         </div>
         {/* Mobile Menu */}
         <div className="dropdown mobile-user-menu">
-          <Link
-            to="#"
-            className="nav-link dropdown-toggle"
+          <button
+            type="button"
+            className="nav-link dropdown-toggle border-0 bg-transparent text-body"
             data-bs-toggle="dropdown"
             aria-expanded="false"
+            aria-label="Open menu"
           >
             <i className="fa fa-ellipsis-v" />
-          </Link>
+          </button>
           <div className="dropdown-menu dropdown-menu-end">
             <Link className="dropdown-item" to={routes.profile}>
               My Profile

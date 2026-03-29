@@ -3,7 +3,8 @@
 
 .header {
     height: 56px;
-    z-index: 999;
+    // Above stacked dashboard widgets/cards; below Bootstrap modals (1055) / theme drawer (9999+)
+    z-index: 1030;
     background: variables.$white;
     position: fixed;
     top: 0;
