@@ -217,7 +217,7 @@ const SchoolSettings = () => {
                               <div className="mb-3">
                                 <input
                                   type="file"
-                                  accept="image/png,image/jpeg,image/webp"
+                                  accept="image/*"
                                   className="form-control"
                                   onChange={handleLogoChange}
                                   disabled={!isAdmin || uploading || loading}

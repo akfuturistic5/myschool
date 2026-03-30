@@ -178,7 +178,7 @@ const Header = () => {
             <input
               ref={logoFileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/jpg,image/webp"
+              accept="image/*"
               className="d-none"
               onChange={onSchoolLogoFileChange}
               aria-hidden

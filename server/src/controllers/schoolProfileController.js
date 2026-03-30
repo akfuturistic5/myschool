@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const { query, masterQuery } = require('../config/database');
-const { validateImageFileAtPath } = require('../utils/imageMagic');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getSchoolProfile, ensureSchoolProfile } = require('../services/schoolProfileService');
 
@@ -25,6 +24,26 @@ async function optimizeSchoolLogoInPlace(filePath) {
     await pipeline.png().toFile(tmpPath);
   }
   fs.renameSync(tmpPath, filePath);
+}
+
+async function validateLogoImageShape(filePath) {
+  const meta = await sharp(filePath).metadata();
+  const width = Number(meta.width || 0);
+  const height = Number(meta.height || 0);
+  if (!width || !height) {
+    const err = new Error('Could not read image dimensions.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // Reject banner-like images: logo should not be extremely wide.
+  // Allows most normal logos (square/portrait/moderately landscape).
+  const maxAspectRatio = 3;
+  if (width / height > maxAspectRatio) {
+    const err = new Error('Image is too wide for a logo. Please upload a logo-style image.');
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 function normalizeLogoUrl(filePath) {
@@ -79,13 +98,16 @@ const uploadLogo = async (req, res) => {
       return errorResponse(res, 400, 'Logo file is required');
     }
 
-    if (!validateImageFileAtPath(req.file.path)) {
+    try {
+      await validateLogoImageShape(req.file.path);
+    } catch (shapeErr) {
       try {
         fs.unlinkSync(req.file.path);
       } catch {
         /* ignore */
       }
-      return errorResponse(res, 400, 'File content is not a valid PNG, JPEG, or WEBP image');
+      const msg = shapeErr?.message || 'Invalid logo image';
+      return errorResponse(res, shapeErr.statusCode || 400, msg);
     }
 
     try {
@@ -100,17 +122,8 @@ const uploadLogo = async (req, res) => {
       return errorResponse(
         res,
         400,
-        'This image could not be processed. Try another PNG, JPG, or WEBP (max 5 MB). If it still fails, use a smaller resolution.'
+        'This image could not be processed. Please try another image (max 5 MB).'
       );
-    }
-
-    if (!validateImageFileAtPath(req.file.path)) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch {
-        /* ignore */
-      }
-      return errorResponse(res, 400, 'Processed file is not a valid image');
     }
 
     await ensureSchoolProfile(req.user?.school_name || null);

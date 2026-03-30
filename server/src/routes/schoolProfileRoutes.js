@@ -25,9 +25,10 @@ const upload = multer({
   storage: logoStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.mimetype);
+    const mime = String(file.mimetype || '').toLowerCase();
+    const ok = mime.startsWith('image/');
     if (!ok) {
-      const err = new Error('Only PNG, JPG, or WEBP images are allowed.');
+      const err = new Error('Only image files are allowed.');
       err.statusCode = 400;
       return cb(err);
     }
