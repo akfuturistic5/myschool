@@ -20,7 +20,7 @@ const createStudent = async (req, res) => {
       guardian_email, guardian_occupation, guardian_address,
       // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
-      unique_student_ids, pen_number, aadhaar_no,
+      unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
       sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
       is_transport_required, route_id, pickup_point_id, vehicle_number,
@@ -34,6 +34,14 @@ const createStudent = async (req, res) => {
       return res.status(400).json({
         status: 'ERROR',
         message: 'Admission number, first name, and last name are required'
+      });
+    }
+
+    const grNormCreate = (gr_number != null ? String(gr_number) : '').trim();
+    if (!grNormCreate) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'GR number is required'
       });
     }
 
@@ -63,6 +71,16 @@ const createStudent = async (req, res) => {
         throw err;
       }
 
+      const existingGr = await client.query(
+        'SELECT id FROM students WHERE TRIM(gr_number) = $1',
+        [grNormCreate]
+      );
+      if (existingGr.rows.length > 0) {
+        const err = new Error('Student with this GR number already exists');
+        err.statusCode = 400;
+        throw err;
+      }
+
       let result;
       await client.query('SAVEPOINT student_insert');
       try {
@@ -80,9 +98,9 @@ const createStudent = async (req, res) => {
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
-            unique_student_ids, pen_number, aadhar_no,
+            unique_student_ids, pen_number, aadhar_no, gr_number,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -103,7 +121,8 @@ const createStudent = async (req, res) => {
           bank_name || null, branch || null, ifsc || null,
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
-          unique_student_ids || null, pen_number || null, aadhaar_no || null
+          unique_student_ids || null, pen_number || null, aadhaar_no || null,
+          grNormCreate
         ]);
       } catch (e) {
         await client.query('ROLLBACK TO SAVEPOINT student_insert');
@@ -124,9 +143,9 @@ const createStudent = async (req, res) => {
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
-            unique_student_ids, pen_number, aadhar_no,
+            unique_student_ids, pen_number, aadhar_no, gr_number,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -145,7 +164,8 @@ const createStudent = async (req, res) => {
           bank_name || null, branch || null, ifsc || null,
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
-          unique_student_ids || null, pen_number || null, aadhaar_no || null
+          unique_student_ids || null, pen_number || null, aadhaar_no || null,
+          grNormCreate
         ]);
       }
 
@@ -330,7 +350,7 @@ const updateStudent = async (req, res) => {
       guardian_email, guardian_occupation, guardian_address,
       // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
-      unique_student_ids, pen_number, aadhaar_no,
+      unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
       sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
       is_transport_required, route_id, pickup_point_id, vehicle_number,
@@ -344,6 +364,14 @@ const updateStudent = async (req, res) => {
       return res.status(400).json({
         status: 'ERROR',
         message: 'Admission number, first name, and last name are required'
+      });
+    }
+
+    const grNormUpdate = (gr_number != null ? String(gr_number) : '').trim();
+    if (!grNormUpdate) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'GR number is required'
       });
     }
 
@@ -369,6 +397,16 @@ const updateStudent = async (req, res) => {
 
       if (existingStudent.rows.length > 0) {
         const err = new Error('Student with this admission number already exists');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const existingGrRow = await client.query(
+        'SELECT id FROM students WHERE TRIM(gr_number) = $1 AND id <> $2',
+        [grNormUpdate, id]
+      );
+      if (existingGrRow.rows.length > 0) {
+        const err = new Error('Student with this GR number already exists');
         err.statusCode = 400;
         throw err;
       }
@@ -422,8 +460,9 @@ const updateStudent = async (req, res) => {
             unique_student_ids = $42,
             pen_number = $43,
             aadhar_no = $44,
+            gr_number = $45,
             modified_at = NOW()
-          WHERE id = $45
+          WHERE id = $46
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -445,6 +484,7 @@ const updateStudent = async (req, res) => {
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
           unique_student_ids || null, pen_number || null, aadhaar_no || null,
+          grNormUpdate,
           id
         ]);
       } catch (e) {
@@ -495,8 +535,9 @@ const updateStudent = async (req, res) => {
                 unique_student_ids = $40,
                 pen_number = $41,
                 aadhar_no = $42,
+                gr_number = $43,
                 modified_at = NOW()
-              WHERE id = $43
+              WHERE id = $44
               RETURNING *
             `, [
               academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -516,6 +557,7 @@ const updateStudent = async (req, res) => {
               knownAllergiesVal, medicationsVal,
               medical_condition || null, other_information || null,
               unique_student_ids || null, pen_number || null, aadhaar_no || null,
+              grNormUpdate,
               id
             ]);
           } catch (e2) {
@@ -568,8 +610,9 @@ const updateStudent = async (req, res) => {
               unique_student_ids = $42,
               pen_number = $43,
               aadhar_no = $44,
+              gr_number = $45,
               modified_at = NOW()
-            WHERE id = $45
+            WHERE id = $46
             RETURNING *
           `, [
             academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -591,6 +634,7 @@ const updateStudent = async (req, res) => {
             knownAllergiesVal, medicationsVal,
             medical_condition || null, other_information || null,
             unique_student_ids || null, pen_number || null, aadhaar_no || null,
+            grNormUpdate,
             id
           ]);
         } else {
@@ -808,6 +852,7 @@ const getAllStudents = async (req, res) => {
         s.id,
         s.admission_number,
         s.roll_number,
+        s.gr_number,
         s.first_name,
         s.last_name,
         s.gender,
@@ -964,7 +1009,7 @@ const getStudentById = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
     const baseSelect = `
-      s.id, s.admission_number, s.roll_number, s.first_name, s.last_name,
+      s.id, s.admission_number, s.roll_number, s.gr_number, s.first_name, s.last_name,
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
@@ -1014,9 +1059,16 @@ const getStudentById = async (req, res) => {
     } catch (e) {
       const isReligionError = e.message && (e.message.includes('religion_id') || e.message.includes('religions') || e.message.includes('reigion'));
       const isMissingColsError = e.message && (e.message.includes('unique_student_ids') || e.message.includes('pen_number') || e.message.includes('aadhar_no') || e.message.includes('aadhaar_no'));
+      const isGrColError = e.message && e.message.includes('gr_number');
 
-      if (isReligionError || isMissingColsError) {
-        const safeBaseSelect = baseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+      if (isReligionError || isMissingColsError || isGrColError) {
+        let safeBaseSelect = baseSelect;
+        if (isGrColError) {
+          safeBaseSelect = safeBaseSelect.replace('s.roll_number, s.gr_number,', 's.roll_number,');
+        }
+        if (isMissingColsError) {
+          safeBaseSelect = safeBaseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+        }
         const relCol = isReligionError ? 's.reigion_id as religion_id' : 's.religion_id';
         const relJoin = isReligionError ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
         const relName = isReligionError ? 're.reigion_name as religion_name' : 'r.religion_name as religion_name';
@@ -1080,7 +1132,7 @@ const getStudentById = async (req, res) => {
       let idRow = null;
       try {
         const idRes = await query(
-          'SELECT unique_student_ids, pen_number, aadhar_no FROM students WHERE id = $1',
+          'SELECT unique_student_ids, pen_number, aadhar_no, gr_number FROM students WHERE id = $1',
           [sid]
         );
         if (idRes.rows.length > 0) {
@@ -1088,7 +1140,8 @@ const getStudentById = async (req, res) => {
           idRow = {
             unique_student_ids: r.unique_student_ids ?? null,
             pen_number: r.pen_number ?? null,
-            aadhaar_no: r.aadhar_no ?? null
+            aadhaar_no: r.aadhar_no ?? null,
+            gr_number: r.gr_number ?? null
           };
         }
       } catch (e1) {
@@ -1098,15 +1151,18 @@ const getStudentById = async (req, res) => {
         studentData.unique_student_ids = idRow.unique_student_ids ?? studentData.unique_student_ids ?? null;
         studentData.pen_number = idRow.pen_number ?? studentData.pen_number ?? null;
         studentData.aadhaar_no = idRow.aadhaar_no ?? studentData.aadhaar_no ?? null;
+        studentData.gr_number = idRow.gr_number ?? studentData.gr_number ?? null;
       } else {
         studentData.unique_student_ids = studentData.unique_student_ids ?? null;
         studentData.pen_number = studentData.pen_number ?? null;
         studentData.aadhaar_no = studentData.aadhaar_no ?? null;
+        studentData.gr_number = studentData.gr_number ?? null;
       }
     } catch (e) {
       studentData.unique_student_ids = studentData.unique_student_ids ?? null;
       studentData.pen_number = studentData.pen_number ?? null;
       studentData.aadhaar_no = studentData.aadhaar_no ?? null;
+      studentData.gr_number = studentData.gr_number ?? null;
     }
     try {
       if (studentData.hostel_id || studentData.hostel_room_id) {
@@ -1392,7 +1448,7 @@ const getCurrentStudent = async (req, res) => {
     }
 
     const baseSelect = `
-      s.id, s.admission_number, s.roll_number, s.first_name, s.last_name,
+      s.id, s.admission_number, s.roll_number, s.gr_number, s.first_name, s.last_name,
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
@@ -1442,9 +1498,16 @@ const getCurrentStudent = async (req, res) => {
     } catch (e) {
       const isReligionError = e.message && (e.message.includes('religion_id') || e.message.includes('religions') || e.message.includes('reigion'));
       const isMissingColsError = e.message && (e.message.includes('unique_student_ids') || e.message.includes('pen_number') || e.message.includes('aadhar_no') || e.message.includes('aadhaar_no'));
+      const isGrColError = e.message && e.message.includes('gr_number');
 
-      if (isReligionError || isMissingColsError) {
-        const safeBaseSelect = baseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+      if (isReligionError || isMissingColsError || isGrColError) {
+        let safeBaseSelect = baseSelect;
+        if (isGrColError) {
+          safeBaseSelect = safeBaseSelect.replace('s.roll_number, s.gr_number,', 's.roll_number,');
+        }
+        if (isMissingColsError) {
+          safeBaseSelect = safeBaseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+        }
         const relCol = isReligionError ? 's.reigion_id as religion_id' : 's.religion_id';
         const relJoin = isReligionError ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
         const relName = isReligionError ? 're.reigion_name as religion_name' : 'r.religion_name as religion_name';
@@ -1492,9 +1555,16 @@ const getCurrentStudent = async (req, res) => {
           } catch (fallbackErr) {
             const isMissingColsErrorFallback = fallbackErr.message && (fallbackErr.message.includes('unique_student_ids') || fallbackErr.message.includes('pen_number') || fallbackErr.message.includes('aadhar_no') || fallbackErr.message.includes('aadhaar_no'));
             const isReligErrorFallback = fallbackErr.message && (fallbackErr.message.includes('religion_id') || fallbackErr.message.includes('religions') || fallbackErr.message.includes('reigion'));
+            const isGrColErrorFallback = fallbackErr.message && fallbackErr.message.includes('gr_number');
 
-            if (isMissingColsErrorFallback || isReligErrorFallback) {
-              const safeBaseSelectFallback = baseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+            if (isMissingColsErrorFallback || isReligErrorFallback || isGrColErrorFallback) {
+              let safeBaseSelectFallback = baseSelect;
+              if (isGrColErrorFallback) {
+                safeBaseSelectFallback = safeBaseSelectFallback.replace('s.roll_number, s.gr_number,', 's.roll_number,');
+              }
+              if (isMissingColsErrorFallback) {
+                safeBaseSelectFallback = safeBaseSelectFallback.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
+              }
               const relCol = isReligErrorFallback ? 's.reigion_id as religion_id' : 's.religion_id';
               const relJoin = isReligErrorFallback ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
               const relName = isReligErrorFallback ? 're.reigion_name as religion_name' : 'r.religion_name as religion_name';

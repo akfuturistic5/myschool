@@ -464,9 +464,6 @@ const SuperAdminDashboard = () => {
                           maxLength={512}
                           autoComplete="off"
                         />
-                        <div className="form-text">
-                          Stored in master database (<code>schools.type</code>) and used on certificates and login context.
-                        </div>
                       </div>
                       <div className="col-md-6">
                         <label className="form-label">Admin Name</label>

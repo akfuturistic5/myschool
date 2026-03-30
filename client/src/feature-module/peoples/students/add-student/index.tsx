@@ -84,6 +84,7 @@ const AddStudent = () => {
     pen_number: string;
     aadhaar_no: string;
     admission_number: string;
+    gr_number: string;
     admission_date: dayjs.Dayjs | null;
     roll_number: string;
     status: string;
@@ -154,6 +155,7 @@ const AddStudent = () => {
     pen_number: '',
     aadhaar_no: '',
     admission_number: '',
+    gr_number: '',
     admission_date: null,
     roll_number: '',
     status: 'Active',
@@ -311,6 +313,7 @@ const AddStudent = () => {
         pen_number: String(raw.pen_number ?? raw.penNumber ?? ''),
         aadhaar_no: String(raw.aadhaar_no ?? raw.aadhar_no ?? raw.aadhaarNo ?? ''),
         admission_number: raw.admission_number || '',
+        gr_number: String(raw.gr_number ?? raw.grNumber ?? ''),
         admission_date: raw.admission_date ? dayjs(raw.admission_date) : null,
         roll_number: raw.roll_number || '',
         status: raw.is_active ? 'Active' : 'Inactive',
@@ -526,6 +529,7 @@ const AddStudent = () => {
         unique_student_ids: formData.unique_student_ids || null,
         pen_number: formData.pen_number || null,
         aadhaar_no: formData.aadhaar_no || null,
+        gr_number: (formData.gr_number || '').trim() || null,
         known_allergies: Array.isArray(owner1) ? owner1 : (owner1 ? String(owner1).split(',').map(s => s.trim()).filter(Boolean) : []),
         medications: Array.isArray(owner2) ? owner2 : (owner2 ? String(owner2).split(',').map(s => s.trim()).filter(Boolean) : [])
       };
@@ -700,6 +704,19 @@ const AddStudent = () => {
                               value={formData.admission_number}
                               onChange={(e) => handleInputChange('admission_number', e.target.value)}
                               required
+                            />
+                          </div>
+                        </div>
+                        <div className="col-xxl col-xl-3 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">GR Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={formData.gr_number}
+                              onChange={(e) => handleInputChange('gr_number', e.target.value)}
+                              required
+                              placeholder="General Register number (unique in this school)"
                             />
                           </div>
                         </div>

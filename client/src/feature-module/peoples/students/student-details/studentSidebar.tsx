@@ -6,6 +6,7 @@ interface StudentSidebarProps {
   student?: {
     id?: number;
     admission_number?: string;
+    gr_number?: string | null;
     roll_number?: string | null;
     first_name?: string;
     last_name?: string;
@@ -101,6 +102,8 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
           <div className="card-body">
             <h5 className="mb-3">Basic Information</h5>
             <dl className="row mb-0">
+              <dt className="col-6 fw-medium text-dark mb-3">GR Number</dt>
+              <dd className="col-6 mb-3">{student?.gr_number && String(student.gr_number).trim() ? String(student.gr_number).trim() : 'N/A'}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Roll No</dt>
               <dd className="col-6 mb-3">{rollNo}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Gender</dt>
