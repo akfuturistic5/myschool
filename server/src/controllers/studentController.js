@@ -5,6 +5,19 @@ const { getParentsForUser } = require('../utils/parentUserMatch');
 const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
 const { createStudentUser, createParentUser, createGuardianUser } = require('../utils/createPersonUser');
 
+const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
+
+// Generate next unique GR number for this tenant database (one school per DB).
+const generateNextGrNumber = async (client) => {
+  const maxRes = await client.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(TRIM(gr_number) FROM '([0-9]+)$') AS INTEGER)), 0) AS max_gr_seq
+     FROM students
+     WHERE TRIM(COALESCE(gr_number, '')) ~ '^[A-Za-z]*[0-9]+$'`
+  );
+  const maxSeq = Number(maxRes.rows?.[0]?.max_gr_seq || 0);
+  return formatGrNumber(maxSeq + 1);
+};
+
 // Create new student
 const createStudent = async (req, res) => {
   try {
@@ -37,13 +50,7 @@ const createStudent = async (req, res) => {
       });
     }
 
-    const grNormCreate = (gr_number != null ? String(gr_number) : '').trim();
-    if (!grNormCreate) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'GR number is required'
-      });
-    }
+    let grNormCreate = (gr_number != null ? String(gr_number) : '').trim();
 
     const hasParentInfo = father_name || father_email || father_phone || father_occupation ||
       mother_name || mother_email || mother_phone || mother_occupation;
@@ -71,10 +78,22 @@ const createStudent = async (req, res) => {
         throw err;
       }
 
-      const existingGr = await client.query(
+      if (!grNormCreate) {
+        grNormCreate = await generateNextGrNumber(client);
+      }
+
+      let existingGr = await client.query(
         'SELECT id FROM students WHERE TRIM(gr_number) = $1',
         [grNormCreate]
       );
+      if (existingGr.rows.length > 0 && (!gr_number || String(gr_number).trim() === '')) {
+        // If GR was auto-generated and collided due to concurrency, try one more deterministic step.
+        grNormCreate = await generateNextGrNumber(client);
+        existingGr = await client.query(
+          'SELECT id FROM students WHERE TRIM(gr_number) = $1',
+          [grNormCreate]
+        );
+      }
       if (existingGr.rows.length > 0) {
         const err = new Error('Student with this GR number already exists');
         err.statusCode = 400;
@@ -407,9 +426,7 @@ const updateStudent = async (req, res) => {
         }
       }
       if (!grNormUpdate) {
-        const err = new Error('GR number is required');
-        err.statusCode = 400;
-        throw err;
+        grNormUpdate = await generateNextGrNumber(client);
       }
 
       const existingGrRow = await client.query(

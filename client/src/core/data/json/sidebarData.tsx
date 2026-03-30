@@ -139,6 +139,7 @@ export const SidebarData = [
             subLink5: routes.studentTimeTable,
           },
           { label: "Student Promotion", link: routes.studentPromotion },
+          { label: "Bonafide", link: routes.bonafideGenerator },
         ],
       },
       {

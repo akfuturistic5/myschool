@@ -58,6 +58,7 @@ const feeRoutes = require('./src/routes/feeRoutes');
 const superAdminAuthRoutes = require('./src/routes/superAdminAuthRoutes');
 const superAdminRoutes = require('./src/routes/superAdminRoutes');
 const schoolProfileRoutes = require('./src/routes/schoolProfileRoutes');
+const bonafideRoutes = require('./src/routes/bonafideRoutes');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
 
@@ -255,6 +256,7 @@ app.use('/api/notice-board', noticeBoardRoutes);
 app.use('/api/events', eventsRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/school/profile', schoolProfileRoutes);
+app.use('/api/bonafide', bonafideRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {

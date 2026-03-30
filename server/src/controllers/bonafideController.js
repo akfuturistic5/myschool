@@ -61,64 +61,23 @@ function safeText(value, fallback = '-') {
 function drawCertificateLayout(doc, data) {
   const pageWidth = doc.page.width;
   const pageHeight = doc.page.height;
-  const margin = 50;
-  const usableWidth = pageWidth - margin * 2;
+  const margin = 52;
   const centerX = pageWidth / 2;
-  const bgCream = '#f8f5ef';
-  const deepBlue = '#29478a';
-  const lightGrey = '#e3e6ea';
-  const textColor = '#2f3147';
-  const lineColor = '#7d8191';
+  const textColor = '#111827';
+  const lineColor = '#4b5563';
   const rollNumber = safeText(data.rollNumber, data.admissionNumber);
 
-  // Background fill
-  doc.save().fillColor(bgCream).rect(0, 0, pageWidth, pageHeight).fill().restore();
+  doc.save().fillColor('#ffffff').rect(0, 0, pageWidth, pageHeight).fill().restore();
 
-  // Top-left and top-right blue diagonal triangles
-  doc
-    .save()
-    .fillColor(deepBlue)
-    .polygon([0, 0], [214, 0], [0, 214])
-    .fill()
-    .restore();
-  doc
-    .save()
-    .fillColor(deepBlue)
-    .polygon([pageWidth, 0], [pageWidth - 214, 0], [pageWidth, 214])
-    .fill()
-    .restore();
-
-  // Bottom-center light grey triangle
-  doc
-    .save()
-    .fillColor(lightGrey)
-    .polygon([centerX - 140, pageHeight], [centerX + 140, pageHeight], [centerX, pageHeight - 172])
-    .fill()
-    .restore();
-
-  // Centered title in serif style with text-width underline
+  const logoTop = margin;
   const title = 'BONAFIDE CERTIFICATE';
-  const titleY = margin + 95;
-  const titleSize = 25;
-  doc.fillColor('#1f2344').font('Times-Bold').fontSize(titleSize);
-  const titleWidth = doc.widthOfString(title);
-  const titleX = centerX - titleWidth / 2;
-  doc.text(title, titleX, titleY, { lineBreak: false });
-  const underlineY = titleY + 37;
-  doc
-    .save()
-    .lineWidth(1.4)
-    .strokeColor('#2f3f6f')
-    .moveTo(titleX, underlineY)
-    .lineTo(titleX + titleWidth, underlineY)
-    .stroke()
-    .restore();
+  let cursorY = logoTop;
 
-  // Optional school logo near top-center (kept subtle to preserve reference layout)
+  // Header with centered logo and school identity
   if (data.logoBuffer) {
     try {
-      const logoSize = 42;
-      doc.image(data.logoBuffer, centerX - logoSize / 2, margin + 22, {
+      const logoSize = 56;
+      doc.image(data.logoBuffer, centerX - logoSize / 2, cursorY, {
         fit: [logoSize, logoSize],
         align: 'center',
         valign: 'center',
@@ -127,38 +86,62 @@ function drawCertificateLayout(doc, data) {
       // Continue without logo if image decode fails.
     }
   }
+  cursorY += 66;
 
-  // Body paragraph as centered readable block with mixed bold emphasis
-  const bodyWidth = 402;
+  doc.fillColor(textColor).font('Helvetica-Bold').fontSize(19);
+  const schoolNameText = safeText(data.schoolName, 'School').toUpperCase();
+  doc.text(schoolNameText, margin, cursorY, { width: pageWidth - margin * 2, align: 'center' });
+  cursorY = doc.y + 4;
+
+  // Keep fixed subtitle line-height to avoid layout shifts between documents.
+  const subtitle = safeText(data.schoolSubtitle, '');
+  doc.fillColor('#4b5563').font('Helvetica').fontSize(12);
+  doc.text(subtitle || ' ', margin, cursorY, { width: pageWidth - margin * 2, align: 'center' });
+  cursorY = doc.y + 20; // Header -> Title exact spacing
+
+  // Title and underline
+  doc.fillColor(textColor).font('Helvetica-Bold').fontSize(23);
+  const titleWidth = doc.widthOfString(title);
+  const titleX = centerX - titleWidth / 2;
+  doc.text(title, titleX, cursorY, { lineBreak: false });
+  const underlineY = cursorY + 28;
+  doc
+    .save()
+    .lineWidth(1)
+    .strokeColor('#374151')
+    .moveTo(titleX, underlineY)
+    .lineTo(titleX + titleWidth, underlineY)
+    .stroke()
+    .restore();
+
+  // Body paragraph
+  const bodyWidth = 400;
   const bodyX = centerX - bodyWidth / 2;
-  const bodyY = underlineY + 48;
-  // Keep body inside a centered container and bold key dynamic values.
-  // Use left alignment within the centered block to avoid overlap with continued fragments.
-  const commonTextOptions = { width: bodyWidth, align: 'left', lineGap: 4.2, continued: true };
-  doc.fillColor(textColor).font('Helvetica').fontSize(17.5);
+  const bodyY = underlineY + 20; // Title -> Body exact spacing
+  const commonTextOptions = { width: bodyWidth, align: 'left', lineGap: 5, continued: true };
+  doc.fillColor(textColor).font('Helvetica').fontSize(13.5);
   doc.text('This is to certify that ', bodyX, bodyY, commonTextOptions);
   doc.font('Helvetica-Bold').text(`${data.studentName}, `, commonTextOptions);
   doc.font('Helvetica').text('S/O ', commonTextOptions);
   doc.font('Helvetica-Bold').text(`${data.parentName} `, commonTextOptions);
   doc.font('Helvetica').text(`bearing roll number ${rollNumber}, is a student of `, commonTextOptions);
-  doc.font('Helvetica-Bold').text(`class ${data.className} `, commonTextOptions);
+  const classLine = data.sectionName ? `${data.className} - ${data.sectionName}` : data.className;
+  doc.font('Helvetica-Bold').text(`class ${classLine} `, commonTextOptions);
   doc.font('Helvetica').text('for the academic year ', commonTextOptions);
   doc.font('Helvetica-Bold').text(`${data.academicYear}. `, commonTextOptions);
   doc.font('Helvetica').text('He is a bona fide student of ', commonTextOptions);
-  doc
-    .font('Helvetica-Bold')
-    .text(`${data.schoolName}.`, { width: bodyWidth, align: 'left', lineGap: 4.2, underline: true });
+  doc.font('Helvetica-Bold').text(`${data.schoolName}.`, { width: bodyWidth, align: 'left', lineGap: 5 });
 
-  // Footer group: signature/date on one baseline, then centered seal placeholder.
+  // Footer spacing tuned to align with UI preview rhythm.
   const bodyEndY = doc.y;
-  const footerLineY = Math.max(bodyEndY + 72, pageHeight - 318);
-  const leftLineX = margin + 26;
-  const lineWidth = 150;
-  const rightLineX = pageWidth - margin - 26 - lineWidth;
+  const footerLineY = Math.max(bodyEndY + 40, pageHeight - 198); // Body -> Footer exact spacing
+  const leftLineX = margin + 8;
+  const lineWidth = 160;
+  const rightLineX = pageWidth - margin - 8 - lineWidth;
 
   doc
     .save()
-    .lineWidth(1.1)
+    .lineWidth(1)
     .strokeColor(lineColor)
     .moveTo(leftLineX, footerLineY)
     .lineTo(leftLineX + lineWidth, footerLineY)
@@ -167,26 +150,16 @@ function drawCertificateLayout(doc, data) {
     .stroke()
     .restore();
 
-  doc.fillColor('#2f3147').font('Helvetica').fontSize(13);
+  doc.fillColor(textColor).font('Helvetica').fontSize(12);
   doc.text('Signature, Principal', leftLineX, footerLineY + 6, { width: lineWidth, align: 'left' });
-  doc.text('Date', rightLineX, footerLineY + 6, { width: lineWidth, align: 'left' });
+  doc.text(`Date: ${safeText(data.issueDate)}`, rightLineX, footerLineY + 6, { width: lineWidth, align: 'right' });
 
-  const sealBoxW = 92;
-  const sealBoxH = 92;
+  // Center-bottom blank area reserved for physical school seal.
+  const sealBoxW = 130;
+  const sealBoxH = 110;
   const sealBoxX = centerX - sealBoxW / 2;
-  const sealBoxY = footerLineY + 30;
-  doc
-    .save()
-    .lineWidth(0.5)
-    .strokeColor('#cfd4dc')
-    .rect(sealBoxX, sealBoxY, sealBoxW, sealBoxH)
-    .stroke()
-    .restore();
-
-  doc.fillColor('#2f3147').font('Helvetica').fontSize(12).text('School Seal', centerX - 42, sealBoxY + sealBoxH + 8, {
-    width: 84,
-    align: 'center',
-  });
+  const sealBoxY = footerLineY + 30; // Signature -> Seal exact spacing
+  doc.save().lineWidth(0.3).strokeColor('#ffffff').rect(sealBoxX, sealBoxY, sealBoxW, sealBoxH).stroke().restore();
 }
 
 const downloadBonafide = async (req, res) => {
@@ -289,6 +262,7 @@ const downloadBonafide = async (req, res) => {
     drawCertificateLayout(doc, {
       logoBuffer,
       schoolName,
+      schoolSubtitle: '',
       studentName,
       parentName,
       className: safeText(student.class_name),
@@ -306,7 +280,92 @@ const downloadBonafide = async (req, res) => {
   }
 };
 
+const fetchStudentForBonafide = async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const grNumber = String(req.body?.gr_number || '').trim();
+
+    if (!name || !grNumber) {
+      return errorResponse(res, 400, 'Name and GR number are required');
+    }
+
+    const studentRes = await query(
+      `SELECT
+         s.id,
+         s.first_name,
+         s.last_name,
+         s.gr_number,
+         s.admission_number,
+         s.date_of_birth,
+         c.id AS class_id,
+         c.class_name,
+         sec.id AS section_id,
+         sec.section_name,
+         ay.id AS academic_year_id,
+         ay.year_name AS academic_year_name,
+         p.id AS parent_id,
+         p.father_name,
+         p.mother_name
+       FROM students s
+       LEFT JOIN classes c ON s.class_id = c.id
+       LEFT JOIN sections sec ON s.section_id = sec.id
+       LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+       LEFT JOIN parents p ON s.parent_id = p.id
+       WHERE s.is_active = true
+         AND LOWER(TRIM(COALESCE(s.gr_number, ''))) = LOWER(TRIM($2))
+         AND (
+           LOWER(TRIM(CONCAT_WS(' ', COALESCE(s.first_name, ''), COALESCE(s.last_name, '')))) = LOWER(TRIM($1))
+           OR LOWER(TRIM(COALESCE(s.first_name, ''))) = LOWER(TRIM($1))
+         )
+       ORDER BY s.id DESC
+       LIMIT 1`,
+      [name, grNumber]
+    );
+
+    if (!studentRes.rows || studentRes.rows.length === 0) {
+      return errorResponse(res, 404, 'Student not found');
+    }
+
+    const row = studentRes.rows[0];
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student fetched successfully',
+      data: {
+        student: {
+          id: row.id,
+          first_name: row.first_name,
+          last_name: row.last_name,
+          gr_number: row.gr_number,
+          admission_number: row.admission_number,
+          date_of_birth: row.date_of_birth,
+        },
+        class: {
+          id: row.class_id,
+          class_name: row.class_name,
+        },
+        section: {
+          id: row.section_id,
+          section_name: row.section_name,
+        },
+        academic_year: {
+          id: row.academic_year_id,
+          year_name: row.academic_year_name,
+        },
+        parent: {
+          id: row.parent_id,
+          father_name: row.father_name,
+          mother_name: row.mother_name,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Bonafide fetch student error:', err);
+    return errorResponse(res, 500, 'Failed to fetch student details');
+  }
+};
+
 module.exports = {
   downloadBonafide,
+  fetchStudentForBonafide,
 };
 

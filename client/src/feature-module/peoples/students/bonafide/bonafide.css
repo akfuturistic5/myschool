@@ -1,0 +1,178 @@
+.bonafide-page .bonafide-form-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.bonafide-page .bonafide-action-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.bonafide-print-area {
+  width: min(100%, 800px);
+  margin: 0 auto;
+}
+
+.bonafide-certificate-sheet {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  width: 100%;
+  aspect-ratio: 1 / 1.4142;
+  min-height: 1100px;
+  padding: 46px 62px 56px;
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.bonafide-header {
+  text-align: center;
+  margin-bottom: 20px; /* Header -> Title */
+}
+
+.bonafide-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.bonafide-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.bonafide-school-name {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.25;
+}
+
+.bonafide-school-subtitle {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #4b5563;
+  min-height: 18px;
+}
+
+.bonafide-title-wrap {
+  text-align: center;
+  margin-bottom: 20px; /* Title -> Body */
+}
+
+.bonafide-title {
+  margin: 0 auto;
+  font-size: 23px;
+  letter-spacing: 1.1px;
+  font-weight: 700;
+  line-height: 1.2;
+  border-bottom: 1px solid #374151;
+  display: inline-block;
+  padding-bottom: 8px;
+}
+
+.bonafide-body-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.bonafide-body {
+  width: 100%;
+  max-width: 600px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+}
+
+.bonafide-footer {
+  margin-top: 40px; /* Body -> Footer */
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.bonafide-sign-block {
+  width: 210px;
+}
+
+.bonafide-sign-line {
+  border-top: 1px solid #4b5563;
+  margin-bottom: 8px;
+}
+
+.bonafide-sign-block p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.bonafide-date-block {
+  text-align: right;
+}
+
+.bonafide-seal-wrap {
+  margin-top: 30px; /* Signature -> Seal */
+  display: flex;
+  justify-content: center;
+}
+
+.bonafide-seal-space {
+  width: 130px;
+  height: 110px;
+}
+
+@media (max-width: 991px) {
+  .bonafide-certificate-sheet {
+    padding: 36px 28px 42px;
+    min-height: auto;
+    aspect-ratio: auto;
+  }
+
+  .bonafide-body {
+    font-size: 17px;
+  }
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #bonafide-print-area,
+  #bonafide-print-area * {
+    visibility: visible !important;
+  }
+
+  #bonafide-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .bonafide-certificate-sheet {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    min-height: auto !important;
+    aspect-ratio: auto !important;
+    padding: 0 !important;
+  }
+}

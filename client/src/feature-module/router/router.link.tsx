@@ -241,6 +241,7 @@ import Placeholder from "../uiInterface/base-ui/placeholder";
 import Alert from "../uiInterface/base-ui/alert";
 import Video from "../uiInterface/base-ui/video";
 import StudentGrid from "../peoples/students/student-grid/index.tsx";
+import BonafideGenerator from "../peoples/students/bonafide/BonafideGenerator";
 import Storage from "../settings/otherSettings/storage.tsx";
 import TeacherAttendance from "../hrm/attendance/teacher-attendance.tsx";
 
@@ -740,6 +741,11 @@ export const publicRoutes = [
   {
     path: routes.studentList,
     element: <StudentList />,
+    route: Route,
+  },
+  {
+    path: routes.bonafideGenerator,
+    element: <BonafideGenerator />,
     route: Route,
   },
   {

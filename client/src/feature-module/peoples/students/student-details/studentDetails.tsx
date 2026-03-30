@@ -33,7 +33,6 @@ const StudentDetails = () => {
     (isStudentRole && !studentId && currentStudentLoading)
   )
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [downloadingBonafide, setDownloadingBonafide] = useState(false)
 
   useEffect(() => {
     if (!studentId) {
@@ -118,26 +117,6 @@ const StudentDetails = () => {
   const previousSchool = student.previous_school ?? 'N/A'
   const previousSchoolAddress = student.previous_school_address ?? 'N/A'
 
-  const handleDownloadBonafide = async () => {
-    if (!student?.id || downloadingBonafide) return
-    try {
-      setDownloadingBonafide(true)
-      const blob = await apiService.downloadStudentBonafide(student.id)
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `bonafide_${student.admission_number || student.id}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      window.URL.revokeObjectURL(url)
-    } catch (e) {
-      setLoadError((e as Error)?.message || 'Failed to download bonafide')
-    } finally {
-      setDownloadingBonafide(false)
-    }
-  }
-
   return (
     <>
   {/* Page Wrapper */}
@@ -215,17 +194,6 @@ const StudentDetails = () => {
                 </li>
               </ul>
               {/* /List */}
-              <div className="mb-3">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleDownloadBonafide}
-                  disabled={downloadingBonafide}
-                >
-                  <i className="ti ti-download me-2" />
-                  {downloadingBonafide ? 'Generating Bonafide...' : 'Download Bonafide'}
-                </button>
-              </div>
               {/* Parents Information */}
               <div className="card">
                 <div className="card-header">

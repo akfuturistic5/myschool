@@ -341,6 +341,17 @@ class ApiService {
     return await response.blob();
   }
 
+  async fetchStudentForBonafide(payload) {
+    return this.makeRequest('/bonafide/fetch-student', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async downloadBonafideByStudentId(studentId) {
+    return this.downloadStudentBonafide(studentId);
+  }
+
   async getStudentLoginDetails(studentId) {
     return this.makeRequest(`/students/${studentId}/login-details`);
   }

@@ -206,6 +206,7 @@ export const all_routes = {
   studentResult: "/student/student-result",
   studentLibrary: "/student/student-library",
   studentList: "/student/student-list",
+  bonafideGenerator: "/bonafide",
   addStudent: "/student/add-student",
   editStudent: "/student/edit-student",
   teacherDetails: "/teacher/teacher-details",
