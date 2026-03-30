@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const PDFDocument = require('pdfkit');
 const { query, masterQuery, getCurrentTenantDbName } = require('../config/database');
 const { error: errorResponse } = require('../utils/responseHelper');
@@ -52,14 +53,30 @@ function resolveLogoPathOrUrl(logoUrl) {
   if (value.startsWith('/uploads/school-logos/')) {
     return path.join(process.cwd(), value.replace(/^\/+/, ''));
   }
+  if (value.startsWith('/assets/') || value.startsWith('assets/')) {
+    const rel = value.replace(/^\/+/, '');
+    const serverCwdPath = path.join(process.cwd(), '../client/public', rel);
+    if (fs.existsSync(serverCwdPath)) return serverCwdPath;
+    const repoRootPath = path.join(process.cwd(), 'client/public', rel);
+    if (fs.existsSync(repoRootPath)) return repoRootPath;
+    return null;
+  }
   return null;
 }
 
 async function getLogoBuffer(logoUrl) {
   const source = resolveLogoPathOrUrl(logoUrl);
   if (!source) return null;
-  if (fs.existsSync(source)) {
+  if (!fs.existsSync(source)) return null;
+  const ext = path.extname(source).toLowerCase();
+  if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
     return fs.readFileSync(source);
+  }
+  try {
+    // PDFKit is most reliable with PNG/JPEG; normalize others (svg/webp/bmp/gif) to PNG buffer.
+    return await sharp(source).png().toBuffer();
+  } catch {
+    return null;
   }
   return null;
 }
@@ -269,8 +286,8 @@ const downloadBonafide = async (req, res) => {
     try {
       // Keep tenant-safe local file resolution but add robust logo fallback sources.
       const logoUrlCandidate = safeText(
-        req.user?.school_logo || profile?.logo_url || logoUrlFromMaster,
-        ''
+        req.user?.school_logo || profile?.logo_url || logoUrlFromMaster || '/assets/img/logo-small.svg',
+        '/assets/img/logo-small.svg'
       );
       logoBuffer = await getLogoBuffer(logoUrlCandidate);
     } catch {
