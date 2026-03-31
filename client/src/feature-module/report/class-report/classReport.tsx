@@ -11,6 +11,13 @@ import { all_routes } from "../../router/all_routes";
 import { classstudentreport } from "../../../core/data/json/class_studentreport";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { classreport } from "../../../core/data/json/class_report";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
+
+const compareNumber = (left: unknown, right: unknown) =>
+  Number(left ?? 0) - Number(right ?? 0);
+
 const ClassReport = () => {
   const data = classreport;
   const data2 = classstudentreport;
@@ -19,32 +26,30 @@ const ClassReport = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (id: string) => (
         <>
           <Link to="#" className="link-primary">
-            {record.id}
+            {id}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.id, b?.id),
     },
 
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
     },
     {
       title: "Section",
       dataIndex: "section",
-      sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
     },
     {
       title: "No Of Students",
       dataIndex: "noOfStudents",
-      sorter: (a: TableData, b: TableData) =>
-        a.noOfStudents.length - b.noOfStudents.length,
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.noOfStudents, b?.noOfStudents),
     },
     {
       title: "Action",
@@ -55,8 +60,7 @@ const ClassReport = () => {
 				data-bs-target="#view_class_report">View Details</Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.action.length - b.action.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.action, b?.action),
     },
    
   ];
@@ -64,26 +68,25 @@ const ClassReport = () => {
     {
       title: "Admission No",
       dataIndex: "admissionNo",
-      render: ( record: any) => (
+      render: (admissionNo: string) => (
         <>
           <Link to="#" className="link-primary">
-            {record.admissionNo}
+            {admissionNo}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.admissionNo.length - b.admissionNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
     },
 
     {
       title: "Roll No",
       dataIndex: "rollNo",
-      sorter: (a: TableData, b: TableData) => a.rollNo.length - b.rollNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
       title: "Name",
       dataIndex: "name",
-      render: ( record: any) => (
+      render: (_text: string, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
@@ -101,28 +104,27 @@ const ClassReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
     },
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
     },
     {
       title: "Section",
       dataIndex: "section",
-      sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
     },
     {
       title: "Gender",
       dataIndex: "gender",
-      sorter: (a: TableData, b: TableData) => a.gender.length - b.gender.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.gender, b?.gender),
     },
     {
       title: "Parent",
       dataIndex: "parent",
-      render: ( record: any) => (
+      render: (_text: string, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
@@ -140,12 +142,12 @@ const ClassReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.parent.length - b.parent.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.parent, b?.parent),
     },
     {
       title: "DOB",
       dataIndex: "dob",
-      sorter: (a: TableData, b: TableData) => a.dob.length - b.dob.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.dob, b?.dob),
     },
     {
       title: "Status",
@@ -165,7 +167,7 @@ const ClassReport = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
     },
   ];
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);

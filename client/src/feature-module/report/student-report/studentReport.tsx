@@ -17,6 +17,9 @@ import {
 } from "../../../core/common/selectoption/selectoption";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
+
 const StudentReport = () => {
   const data = studentreport;
   const routes = all_routes;
@@ -24,21 +27,20 @@ const StudentReport = () => {
     {
       title: "Admission No",
       dataIndex: "admissionNo",
-      render: ( record: any) => (
+      render: (admissionNo: string) => (
         <>
           <Link to="#" className="link-primary">
-            {record.admissionNo}
+            {admissionNo}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.admissionNo.length - b.admissionNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
     },
 
     {
       title: "Roll No",
       dataIndex: "rollNo",
-      sorter: (a: TableData, b: TableData) => a.rollNo.length - b.rollNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
       title: "Name",
@@ -61,23 +63,22 @@ const StudentReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
     },
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
     },
     {
       title: "Section",
       dataIndex: "section",
-      sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
     },
     {
       title: "Gender",
       dataIndex: "gender",
-      sorter: (a: TableData, b: TableData) => a.gender.length - b.gender.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.gender, b?.gender),
     },
     {
       title: "Parent",
@@ -100,18 +101,17 @@ const StudentReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.parent.length - b.parent.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.parent, b?.parent),
     },
     {
       title: "Date Of Join",
       dataIndex: "dateOfJoin",
-      sorter: (a: TableData, b: TableData) =>
-        a.dateOfJoin.length - b.dateOfJoin.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.dateOfJoin, b?.dateOfJoin),
     },
     {
       title: "DOB",
       dataIndex: "dob",
-      sorter: (a: TableData, b: TableData) => a.dob.length - b.dob.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.dob, b?.dob),
     },
     {
       title: "Status",
@@ -131,7 +131,7 @@ const StudentReport = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
     },
   ];
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
