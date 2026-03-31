@@ -112,6 +112,8 @@ export const useLeaveApplications = (options = {}) => {
           return {
             key: row.id != null ? String(row.id) : `leave-${index}`,
             id: row.id,
+            studentId: row.student_id ?? null,
+            staffId: row.staff_id ?? null,
             name,
             leaveType,
             role,

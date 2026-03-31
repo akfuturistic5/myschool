@@ -1,7 +1,6 @@
 /* eslint-disable */
 import { useMemo, useRef } from "react";
 import { all_routes } from "../../router/all_routes";
-import { studentreport } from "../../../core/data/json/student_report";
 import Table from "../../../core/common/dataTable/index";
 import { Link } from "react-router-dom";
 import type { TableData } from "../../../core/data/interface";
@@ -16,20 +15,38 @@ import {
   studentName,
 } from "../../../core/common/selectoption/selectoption";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
+import { useStudents } from "../../../core/hooks/useStudents";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
 
 const StudentReport = () => {
+  const { students, loading, error } = useStudents();
+  const routes = all_routes;
   const data = useMemo(
     () =>
-      studentreport.map((row, index) => ({
-        ...row,
-        key: row.key ?? row.admissionNo ?? `student-report-${index}`,
+      (Array.isArray(students) ? students : []).map((student: any, index: number) => ({
+        key: student.admission_number || student.id || `student-report-${index}`,
+        studentId: student.id,
+        admissionNo: student.admission_number || "—",
+        rollNo: student.roll_number || "—",
+        name: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "—",
+        class: student.class_name || "—",
+        section: student.section_name || "—",
+        gender: student.gender || "—",
+        parent:
+          student.father_name ||
+          student.mother_name ||
+          [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(" ") ||
+          "—",
+        dateOfJoin: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
+        dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+        status: student.is_active ? "Active" : "Inactive",
+        imgSrc: student.photo_url || "",
+        parentImgSrc: "",
       })),
-    []
+    [students]
   );
-  const routes = all_routes;
   const columns = [
     {
       title: "Admission No",
@@ -57,9 +74,10 @@ const StudentReport = () => {
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
               <ImageWithBasePath
-                src={record.img}
+                src={record.imgSrc}
                 className="img-fluid rounded-circle"
                 alt="img"
+                gender={record.gender}
               />
             </Link>
             <div className="ms-2">
@@ -95,7 +113,7 @@ const StudentReport = () => {
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
               <ImageWithBasePath
-                src={record.parentimg}
+                src={record.parentImgSrc}
                 className="img-fluid rounded-circle"
                 alt="img"
               />
@@ -309,9 +327,25 @@ const StudentReport = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* Student List */}
-                <Table columns={columns} dataSource={data} Selection={true} />
-                {/* /Student List */}
+                {error && (
+                  <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                    {error}
+                  </div>
+                )}
+                {loading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0">Loading student report...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Student List */}
+                    <Table columns={columns} dataSource={data} Selection={true} />
+                    {/* /Student List */}
+                  </>
+                )}
               </div>
             </div>
             {/* /Student List */}

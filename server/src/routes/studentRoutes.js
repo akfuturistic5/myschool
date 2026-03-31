@@ -12,6 +12,8 @@ const {
   getStudentAttendance,
   getStudentLoginDetails,
   getStudentExamResults,
+  getGradeReport,
+  getAttendanceReport,
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
@@ -30,6 +32,10 @@ router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
 
 // Get students by class - Admin or Teacher
 router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsByClass);
+
+// Report endpoints - Admin/Administrative/Teacher
+router.get('/reports/grade', requireRole(STUDENT_LIST_ALL_ROLES), getGradeReport);
+router.get('/reports/attendance', requireRole(STUDENT_LIST_ALL_ROLES), getAttendanceReport);
 
 // Get login details (usernames) for a student
 // Auth is handled by protectApi globally; controller enforces ownership (admin / student / parent / guardian)

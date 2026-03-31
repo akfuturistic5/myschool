@@ -2130,6 +2130,398 @@ const getStudentExamResults = async (req, res) => {
   }
 };
 
+const normalizeAttendanceStatus = (s) => {
+  const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+  if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
+  if (v === 'absent' || v === 'absence' || v === 'a' || v === 'ab') return 'absent';
+  if (v === 'present' || v === 'p' || v === 'pres') return 'present';
+  if (v === 'late' || v === 'l') return 'late';
+  if (v === 'holiday' || v === 'h') return 'holiday';
+  return v || null;
+};
+
+const getSummaryGrade = (percentage) => {
+  const p = Number(percentage);
+  if (!Number.isFinite(p)) return null;
+  if (p >= 90) return 'O';
+  if (p >= 80) return 'A+';
+  if (p >= 70) return 'A';
+  if (p >= 60) return 'B+';
+  if (p >= 50) return 'B';
+  if (p >= 35) return 'C';
+  return 'F';
+};
+
+const getGradeReport = async (req, res) => {
+  try {
+    const classId = parseId(req.query.class_id);
+    const sectionId = parseId(req.query.section_id);
+    const academicYearId = parseId(req.query.academic_year_id);
+    const requestedExamId = parseId(req.query.exam_id);
+
+    if (!classId) {
+      return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
+    }
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({
+        status: 'ERROR',
+        message: access.message || 'Access denied',
+      });
+    }
+
+    const scopedStudentsWhere = ['s.class_id = $1', 's.is_active = true'];
+    const scopedStudentsParams = [classId];
+
+    if (sectionId) {
+      scopedStudentsParams.push(sectionId);
+      scopedStudentsWhere.push(`s.section_id = $${scopedStudentsParams.length}`);
+    }
+    if (academicYearId) {
+      scopedStudentsParams.push(academicYearId);
+      scopedStudentsWhere.push(`s.academic_year_id = $${scopedStudentsParams.length}`);
+    }
+
+    const scopedWhereSql = scopedStudentsWhere.join(' AND ');
+
+    const examsRes = await query(
+      `WITH scoped_students AS (
+         SELECT s.id
+         FROM students s
+         WHERE ${scopedWhereSql}
+       )
+       SELECT DISTINCT
+         er.exam_id AS exam_id,
+         COALESCE(e.exam_name, 'Exam') AS exam_name,
+         COALESCE(e.exam_type, '') AS exam_type,
+         COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date
+       FROM exam_results er
+       INNER JOIN scoped_students ss ON ss.id = er.student_id
+       LEFT JOIN exams e ON er.exam_id = e.id
+       WHERE er.exam_id IS NOT NULL
+       ORDER BY COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST, COALESCE(e.exam_name, 'Exam') ASC`,
+      scopedStudentsParams
+    );
+
+    const availableExams = examsRes.rows.map((row) => ({
+      examId: row.exam_id,
+      examName: row.exam_name,
+      examType: row.exam_type,
+      examDate: row.exam_date,
+    }));
+
+    const selectedExam = availableExams.find((exam) => Number(exam.examId) === Number(requestedExamId)) || availableExams[0] || null;
+
+    if (!selectedExam) {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Grade report fetched successfully',
+        data: {
+          selectedExam: null,
+          availableExams: [],
+          subjects: [],
+          rows: [],
+        },
+      });
+    }
+
+    const reportParams = [...scopedStudentsParams, selectedExam.examId];
+    const reportRes = await query(
+      `SELECT
+         s.id AS student_id,
+         s.admission_number,
+         s.roll_number,
+         s.first_name,
+         s.last_name,
+         s.photo_url,
+         s.gender,
+         s.section_id,
+         sec.section_name,
+         er.id AS exam_result_id,
+         er.exam_id,
+         er.subject_id,
+         er.marks_obtained,
+         er.obtained_marks,
+         er.marks,
+         er.marks_scored,
+         er.score,
+         er.max_marks,
+         er.max_mark,
+         er.total_marks,
+         er.full_marks,
+         er.total,
+         er.min_marks,
+         er.pass_marks,
+         er.min_mark,
+         er.min,
+         er.result,
+         er.result_status,
+         er.status,
+         er.grade,
+         er.is_absent,
+         sub.subject_name
+       FROM students s
+       LEFT JOIN sections sec ON s.section_id = sec.id
+       LEFT JOIN exam_results er ON er.student_id = s.id AND er.exam_id = $${reportParams.length}
+       LEFT JOIN subjects sub ON er.subject_id = sub.id
+       WHERE ${scopedWhereSql}
+       ORDER BY s.first_name ASC, s.last_name ASC, sub.subject_name ASC NULLS LAST`,
+      reportParams
+    );
+
+    const subjectMap = new Map();
+    const studentsMap = new Map();
+
+    reportRes.rows.forEach((row) => {
+      if (row.subject_id != null && !subjectMap.has(String(row.subject_id))) {
+        subjectMap.set(String(row.subject_id), {
+          subjectId: row.subject_id,
+          subjectName: row.subject_name || `Subject ${row.subject_id}`,
+        });
+      }
+
+      const studentKey = String(row.student_id);
+      if (!studentsMap.has(studentKey)) {
+        studentsMap.set(studentKey, {
+          studentId: row.student_id,
+          admissionNo: row.admission_number || '',
+          rollNo: row.roll_number || '',
+          studentName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Student',
+          avatar: row.photo_url || '',
+          gender: row.gender || '',
+          sectionId: row.section_id,
+          sectionName: row.section_name || '',
+          subjectMarks: {},
+        });
+      }
+
+      if (row.subject_id == null) return;
+
+      const student = studentsMap.get(studentKey);
+      const rawMax = row.max_marks ?? row.max_mark ?? row.total_marks ?? row.full_marks ?? row.total ?? null;
+      const rawMin = row.min_marks ?? row.pass_marks ?? row.min_mark ?? row.min ?? null;
+      const rawObtained = row.marks_obtained ?? row.obtained_marks ?? row.marks ?? row.marks_scored ?? row.score ?? null;
+
+      const maxMarks = rawMax != null ? Number(rawMax) : null;
+      const minMarks = rawMin != null ? Number(rawMin) : null;
+      const marksObtained = row.is_absent === true ? 0 : (rawObtained != null ? Number(rawObtained) : null);
+      let result = row.result || row.result_status || row.status || null;
+      if (!result && maxMarks != null && marksObtained != null) {
+        const threshold = minMarks != null && minMarks > 0 ? minMarks : Math.round(maxMarks * 0.35);
+        result = marksObtained >= threshold ? 'Pass' : 'Fail';
+      }
+
+      student.subjectMarks[String(row.subject_id)] = {
+        marksObtained,
+        maxMarks,
+        minMarks,
+        result,
+        grade: row.grade || null,
+        isAbsent: row.is_absent === true,
+      };
+    });
+
+    const subjects = Array.from(subjectMap.values());
+    const rows = Array.from(studentsMap.values()).map((student) => {
+      const subjectEntries = subjects.map((subject) => student.subjectMarks[String(subject.subjectId)]).filter(Boolean);
+      const totalObtained = subjectEntries.reduce((sum, entry) => sum + (Number(entry.marksObtained) || 0), 0);
+      const totalMax = subjectEntries.reduce((sum, entry) => sum + (Number(entry.maxMarks) || 0), 0);
+      const totalMin = subjectEntries.reduce((sum, entry) => sum + (Number(entry.minMarks) || 0), 0);
+      const percentage = totalMax > 0 ? Number(((totalObtained / totalMax) * 100).toFixed(2)) : null;
+      const overallResult = totalMax > 0 ? (totalObtained >= totalMin ? 'Pass' : 'Fail') : null;
+
+      return {
+        ...student,
+        summary: {
+          totalObtained,
+          totalMax,
+          totalMin,
+          percentage,
+          overallResult,
+          grade: getSummaryGrade(percentage),
+        },
+      };
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Grade report fetched successfully',
+      data: {
+        selectedExam,
+        availableExams,
+        subjects,
+        rows,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching grade report:', error);
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Grade report not available',
+      data: {
+        selectedExam: null,
+        availableExams: [],
+        subjects: [],
+        rows: [],
+      },
+    });
+  }
+};
+
+const getAttendanceReport = async (req, res) => {
+  try {
+    const classId = parseId(req.query.class_id);
+    const sectionId = parseId(req.query.section_id);
+    const academicYearId = parseId(req.query.academic_year_id);
+    const month = String(req.query.month || '').trim();
+
+    if (!classId) {
+      return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ status: 'ERROR', message: 'month must be in YYYY-MM format' });
+    }
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({
+        status: 'ERROR',
+        message: access.message || 'Access denied',
+      });
+    }
+
+    const monthStart = new Date(`${month}-01T00:00:00.000Z`);
+    if (Number.isNaN(monthStart.getTime())) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid month' });
+    }
+    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+
+    const rosterWhere = ['s.class_id = $1', 's.is_active = true'];
+    const rosterParams = [classId];
+
+    if (sectionId) {
+      rosterParams.push(sectionId);
+      rosterWhere.push(`s.section_id = $${rosterParams.length}`);
+    }
+    if (academicYearId) {
+      rosterParams.push(academicYearId);
+      rosterWhere.push(`s.academic_year_id = $${rosterParams.length}`);
+    }
+
+    const rosterRes = await query(
+      `SELECT
+         s.id,
+         s.admission_number,
+         s.roll_number,
+         s.first_name,
+         s.last_name,
+         s.photo_url,
+         s.gender,
+         s.section_id,
+         sec.section_name
+       FROM students s
+       LEFT JOIN sections sec ON s.section_id = sec.id
+       WHERE ${rosterWhere.join(' AND ')}
+       ORDER BY s.first_name ASC, s.last_name ASC`,
+      rosterParams
+    );
+
+    const attendanceParams = [...rosterParams, monthStart.toISOString().slice(0, 10), monthEnd.toISOString().slice(0, 10)];
+    const attendanceRes = await query(
+      `SELECT
+         a.student_id,
+         a.attendance_date,
+         a.status
+       FROM attendance a
+       INNER JOIN students s ON s.id = a.student_id
+       WHERE ${rosterWhere.join(' AND ')}
+         AND a.attendance_date >= $${attendanceParams.length - 1}
+         AND a.attendance_date < $${attendanceParams.length}
+       ORDER BY a.attendance_date ASC`,
+      attendanceParams
+    );
+
+    const days = [];
+    const cursor = new Date(monthStart);
+    while (cursor < monthEnd) {
+      days.push({
+        day: cursor.getUTCDate(),
+        date: cursor.toISOString().slice(0, 10),
+        weekdayShort: cursor.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }),
+      });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    const attendanceByStudent = new Map();
+    attendanceRes.rows.forEach((row) => {
+      const studentKey = String(row.student_id);
+      if (!attendanceByStudent.has(studentKey)) {
+        attendanceByStudent.set(studentKey, {});
+      }
+      attendanceByStudent.get(studentKey)[String(row.attendance_date).slice(0, 10)] = normalizeAttendanceStatus(row.status);
+    });
+
+    const rows = rosterRes.rows.map((student) => {
+      const daily = attendanceByStudent.get(String(student.id)) || {};
+      const summary = {
+        present: 0,
+        late: 0,
+        absent: 0,
+        halfDay: 0,
+        holiday: 0,
+        percentage: 0,
+      };
+
+      Object.values(daily).forEach((status) => {
+        if (status === 'present') summary.present += 1;
+        else if (status === 'late') summary.late += 1;
+        else if (status === 'absent') summary.absent += 1;
+        else if (status === 'half_day') summary.halfDay += 1;
+        else if (status === 'holiday') summary.holiday += 1;
+      });
+
+      const workedDays = summary.present + summary.late + summary.absent + summary.halfDay;
+      const effectivePresent = summary.present + summary.late + (summary.halfDay * 0.5);
+      summary.percentage = workedDays > 0 ? Number(((effectivePresent / workedDays) * 100).toFixed(2)) : 0;
+
+      return {
+        studentId: student.id,
+        admissionNo: student.admission_number || '',
+        rollNo: student.roll_number || '',
+        name: [student.first_name, student.last_name].filter(Boolean).join(' ') || 'Student',
+        img: student.photo_url || '',
+        gender: student.gender || '',
+        sectionId: student.section_id,
+        sectionName: student.section_name || '',
+        summary,
+        daily,
+      };
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Attendance report fetched successfully',
+      data: {
+        month,
+        days,
+        rows,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching attendance report:', error);
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Attendance report not available',
+      data: {
+        month: null,
+        days: [],
+        rows: [],
+      },
+    });
+  }
+};
+
 module.exports = {
   createStudent,
   updateStudent,
@@ -2141,4 +2533,6 @@ module.exports = {
   getStudentsByClass,
   getStudentAttendance,
   getStudentExamResults,
+  getGradeReport,
+  getAttendanceReport,
 };

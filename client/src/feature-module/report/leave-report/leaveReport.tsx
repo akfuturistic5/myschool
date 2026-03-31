@@ -1,8 +1,8 @@
-
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import Table from "../../../core/common/dataTable/index";
-import { leave_report_data } from "../../../core/data/json/leave_report_data";
+import { useSelector } from "react-redux";
 import type { TableData } from "../../../core/data/interface";
 import {
   classes,
@@ -12,10 +12,156 @@ import CommonSelect from "../../../core/common/commonSelect";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
+import { useStudents } from "../../../core/hooks/useStudents";
+import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
+import { apiService } from "../../../core/services/apiService";
+import { selectUser } from "../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
+
+const compareNumber = (left: unknown, right: unknown) =>
+  Number(left ?? 0) - Number(right ?? 0);
 
 const LeaveReport = () => {
-  const data = leave_report_data;
   const routes = all_routes;
+  const user = useSelector(selectUser);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const canUseAdminList = isHeadmasterRole(user) || isAdministrativeRole(user);
+  const { students, loading: studentsLoading, error: studentsError } = useStudents();
+  const {
+    leaveApplications,
+    loading: applicationsLoading,
+    error: applicationsError,
+  } = useLeaveApplications({
+    limit: 500,
+    canUseAdminList,
+    academicYearId,
+  });
+  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [leaveTypesLoading, setLeaveTypesLoading] = useState(true);
+  const [leaveTypesError, setLeaveTypesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchLeaveTypes = async () => {
+      try {
+        setLeaveTypesLoading(true);
+        setLeaveTypesError(null);
+        const res = await apiService.getLeaveTypes();
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        if (!cancelled) {
+          setLeaveTypes(rows);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setLeaveTypes([]);
+          setLeaveTypesError(err?.message || "Failed to fetch leave types");
+        }
+      } finally {
+        if (!cancelled) {
+          setLeaveTypesLoading(false);
+        }
+      }
+    };
+
+    fetchLeaveTypes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const leaveTypeConfig = useMemo(() => {
+    const defaults = {
+      medical: { title: "Medical Leave", max: 10 },
+      casual: { title: "Casual Leave", max: 12 },
+      maternity: { title: "Maternity Leave", max: 90 },
+      paternity: { title: "Paternity Leave", max: 15 },
+      special: { title: "Special Leave", max: 5 },
+    };
+
+    const byName = new Map<string, number>();
+    (Array.isArray(leaveTypes) ? leaveTypes : []).forEach((type: any) => {
+      const key = String(type.leave_type || "").trim().toLowerCase();
+      if (!key) return;
+      const max = Number(type.max_days_per_year ?? 0);
+      byName.set(key, Number.isFinite(max) && max > 0 ? max : 0);
+    });
+
+    return {
+      medical: { ...defaults.medical, max: byName.get("medical leave") || defaults.medical.max },
+      casual: { ...defaults.casual, max: byName.get("casual leave") || defaults.casual.max },
+      maternity: { ...defaults.maternity, max: byName.get("maternity leave") || defaults.maternity.max },
+      paternity: { ...defaults.paternity, max: byName.get("paternity leave") || defaults.paternity.max },
+      special: { ...defaults.special, max: byName.get("special leave") || defaults.special.max },
+    };
+  }, [leaveTypes]);
+
+  const data = useMemo(() => {
+    const applicationRows = Array.isArray(leaveApplications) ? leaveApplications : [];
+
+    const usageByStudent = new Map<
+      number,
+      { medical: number; casual: number; maternity: number; paternity: number; special: number }
+    >();
+
+    applicationRows.forEach((application: any) => {
+      const studentId = Number(application.studentId);
+      if (!Number.isFinite(studentId)) return;
+      const leaveType = String(application.leaveType || application.leave_type_name || "").toLowerCase();
+      const noOfDays = Number(application.noOfDays ?? application.no_of_days ?? 0);
+      const days = Number.isFinite(noOfDays) && noOfDays > 0 ? noOfDays : 0;
+      const usage = usageByStudent.get(studentId) || {
+        medical: 0,
+        casual: 0,
+        maternity: 0,
+        paternity: 0,
+        special: 0,
+      };
+
+      if (leaveType.includes("medical")) usage.medical += days;
+      if (leaveType.includes("casual")) usage.casual += days;
+      if (leaveType.includes("maternity")) usage.maternity += days;
+      if (leaveType.includes("paternity")) usage.paternity += days;
+      if (leaveType.includes("special")) usage.special += days;
+
+      usageByStudent.set(studentId, usage);
+    });
+
+    return (Array.isArray(students) ? students : []).map((student: any, index: number) => {
+      const usage = usageByStudent.get(Number(student.id)) || {
+        medical: 0,
+        casual: 0,
+        maternity: 0,
+        paternity: 0,
+        special: 0,
+      };
+
+      return {
+        key: student.admission_number || student.id || `leave-report-${index}`,
+        studentId: student.id,
+        admissionNo: student.admission_number || "—",
+        studentName: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "—",
+        rollNo: student.roll_number || "—",
+        avatar: student.photo_url || "",
+        gender: student.gender || "",
+        medicalUsed: usage.medical,
+        medicalAvailable: Math.max(leaveTypeConfig.medical.max - usage.medical, 0),
+        casualUsed: usage.casual,
+        casualAvailable: Math.max(leaveTypeConfig.casual.max - usage.casual, 0),
+        maternityUsed: usage.maternity,
+        maternityAvailable: Math.max(leaveTypeConfig.maternity.max - usage.maternity, 0),
+        paternityUsed: usage.paternity,
+        paternityAvailable: Math.max(leaveTypeConfig.paternity.max - usage.paternity, 0),
+        specialUsed: usage.special,
+        specialAvailable: Math.max(leaveTypeConfig.special.max - usage.special, 0),
+      };
+    });
+  }, [leaveApplications, leaveTypeConfig, students]);
   const columns = [
     {
       title: "",
@@ -24,8 +170,7 @@ const LeaveReport = () => {
           title: "Admission No",
           dataIndex: "admissionNo",
           key: "admissionNo",
-          sorter: (a: TableData, b: TableData) =>
-            a.admissionNo.length - b.admissionNo.length,
+          sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
           render: (text: any) => (
             <Link to="#" className="link-primary">
               {text}
@@ -44,7 +189,7 @@ const LeaveReport = () => {
           render: (text: any, record: any) => (
             <div className="d-flex align-items-center">
               <Link to={routes.studentDetail} className="avatar avatar-md">
-                <ImageWithBasePath src={record.avatar} alt="avatar" className="img-fluid rounded-circle" />
+                <ImageWithBasePath src={record.avatar} alt="avatar" className="img-fluid rounded-circle" gender={record.gender} />
               </Link>
               <div className="ms-2">
                 <p className="text-dark mb-0">
@@ -54,103 +199,92 @@ const LeaveReport = () => {
               </div>
             </div>
           ),
-          sorter: (a: TableData, b: TableData) =>
-            a.studentName.length - b.studentName.length,
+          sorter: (a: TableData, b: TableData) => compareText(a?.studentName, b?.studentName),
         },
       ],
     },
     {
-      title: "Medical Leave(10)",
+      title: `Medical Leave(${leaveTypeConfig.medical.max})`,
       children: [
         {
           title: "Used",
           dataIndex: "medicalUsed",
           key: "medicalUsed",
-          sorter: (a: TableData, b: TableData) =>
-            a.medicalUsed.length - b.medicalUsed.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.medicalUsed, b?.medicalUsed),
         },
         {
           title: "Available",
           dataIndex: "medicalAvailable",
           key: "medicalAvailable",
-          sorter: (a: TableData, b: TableData) =>
-            a.medicalAvailable.length - b.medicalAvailable.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.medicalAvailable, b?.medicalAvailable),
         },
       ],
     },
     {
-      title: "Casual Leave(12)",
+      title: `Casual Leave(${leaveTypeConfig.casual.max})`,
       children: [
         {
           title: "Used",
           dataIndex: "casualUsed",
           key: "casualUsed",
-          sorter: (a: TableData, b: TableData) =>
-            a.casualUsed.length - b.casualUsed.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.casualUsed, b?.casualUsed),
         },
         {
           title: "Available",
           dataIndex: "casualAvailable",
           key: "casualAvailable",
-          sorter: (a: TableData, b: TableData) =>
-            a.casualAvailable.length - b.casualAvailable.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.casualAvailable, b?.casualAvailable),
         },
       ],
     },
     {
-      title: "Maternity Leave(10)",
+      title: `Maternity Leave(${leaveTypeConfig.maternity.max})`,
       children: [
         {
           title: "Used",
           dataIndex: "maternityUsed",
           key: "maternityUsed",
-          sorter: (a: TableData, b: TableData) =>
-            a.maternityUsed.length - b.maternityUsed.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.maternityUsed, b?.maternityUsed),
         },
         {
           title: "Available",
           dataIndex: "maternityAvailable",
           key: "maternityAvailable",
-          sorter: (a: TableData, b: TableData) =>
-            a.maternityAvailable.length - b.maternityAvailable.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.maternityAvailable, b?.maternityAvailable),
         },
       ],
     },
     {
-      title: "Paternity Leave(10)",
+      title: `Paternity Leave(${leaveTypeConfig.paternity.max})`,
       children: [
         {
           title: "Used",
           dataIndex: "paternityUsed",
           key: "paternityUsed",
-          sorter: (a: TableData, b: TableData) =>
-            a.paternityUsed.length - b.paternityUsed.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.paternityUsed, b?.paternityUsed),
         },
         {
           title: "Available",
           dataIndex: "paternityAvailable",
           key: "paternityAvailable",
-          sorter: (a: TableData, b: TableData) =>
-            a.paternityAvailable.length - b.paternityAvailable.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.paternityAvailable, b?.paternityAvailable),
         },
       ],
     },
     {
-      title: "Special Leave(10)",
+      title: `Special Leave(${leaveTypeConfig.special.max})`,
       children: [
         {
           title: "Used",
           dataIndex: "specialUsed",
           key: "specialUsed",
-          sorter: (a: TableData, b: TableData) =>
-            a.specialUsed.length - b.specialUsed.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.specialUsed, b?.specialUsed),
         },
         {
           title: "Available",
           dataIndex: "specialAvailable",
           key: "specialAvailable",
-          sorter: (a: TableData, b: TableData) =>
-            a.specialAvailable.length - b.specialAvailable.length,
+          sorter: (a: TableData, b: TableData) => compareNumber(a?.specialAvailable, b?.specialAvailable),
         },
       ],
     },
@@ -278,9 +412,25 @@ const LeaveReport = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} />
-              {/* /Student List */}
+              {(studentsError || applicationsError || leaveTypesError) && (
+                <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                  {studentsError || applicationsError || leaveTypesError}
+                </div>
+              )}
+              {studentsLoading || applicationsLoading || leaveTypesLoading ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading leave report...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Student List */}
+                  <Table dataSource={data} columns={columns} />
+                  {/* /Student List */}
+                </>
+              )}
             </div>
           </div>
           {/* /Student List */}

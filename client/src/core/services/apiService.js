@@ -364,6 +364,26 @@ class ApiService {
     return this.makeRequest(`/students/${studentId}/exam-results`);
   }
 
+  async getGradeReport(params = {}) {
+    const search = new URLSearchParams();
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    if (params.examId != null) search.set('exam_id', String(params.examId));
+    const qs = search.toString();
+    return this.makeRequest(`/students/reports/grade${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAttendanceReport(params = {}) {
+    const search = new URLSearchParams();
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    if (params.month) search.set('month', String(params.month));
+    const qs = search.toString();
+    return this.makeRequest(`/students/reports/attendance${qs ? `?${qs}` : ''}`);
+  }
+
   async getCurrentStudent() {
     return this.makeRequest('/students/me');
   }

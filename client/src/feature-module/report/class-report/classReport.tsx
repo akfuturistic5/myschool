@@ -1,16 +1,18 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Table from "../../../core/common/dataTable/index";
 
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import type { TableData } from "../../../core/data/interface";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import TooltipOption from "../../../core/common/tooltipOption";
 import CommonSelect from "../../../core/common/commonSelect";
 import { classSection, classSylabus, studentsnumber } from "../../../core/common/selectoption/selectoption";
 import { all_routes } from "../../router/all_routes";
-import { classstudentreport } from "../../../core/data/json/class_studentreport";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import { classreport } from "../../../core/data/json/class_report";
+import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { apiService } from "../../../core/services/apiService";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -19,23 +21,91 @@ const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
 const ClassReport = () => {
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classesWithSections, loading, error } = useClassesWithSections(academicYearId);
+  const [selectedClassRow, setSelectedClassRow] = useState<any | null>(null);
+  const [classStudents, setClassStudents] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentsError, setStudentsError] = useState<string | null>(null);
   const data = useMemo(
     () =>
-      classreport.map((row, index) => ({
-        ...row,
-        key: row.key ?? row.id ?? `class-report-${index}`,
+      (Array.isArray(classesWithSections) ? classesWithSections : []).map((row: any, index: number) => ({
+        key: row.sectionId ?? `${row.classId}-${index}`,
+        id: row.classCode || row.classId || "—",
+        class: row.className || "—",
+        section: row.sectionName || "—",
+        noOfStudents: Number(row.noOfStudents ?? 0),
+        action: "View Details",
+        classId: row.classId,
+        sectionId: row.sectionId,
+        status: row.status || "Inactive",
       })),
-    []
+    [classesWithSections]
   );
   const data2 = useMemo(
     () =>
-      classstudentreport.map((row, index) => ({
-        ...row,
-        key: row.key ?? row.admissionNo ?? `class-student-report-${index}`,
+      classStudents.map((student: any, index: number) => ({
+        key: student.admission_number || student.id || `class-student-report-${index}`,
+        admissionNo: student.admission_number || "—",
+        rollNo: student.roll_number || "—",
+        name: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "—",
+        class: student.class_name || selectedClassRow?.class || "—",
+        section: student.section_name || "—",
+        gender: student.gender || "—",
+        parent:
+          student.father_name ||
+          student.mother_name ||
+          [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(" ") ||
+          "—",
+        dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+        status: student.is_active ? "Active" : "Inactive",
+        imgSrc: student.photo_url || "",
+        parentImgSrc: "",
       })),
-    []
+    [classStudents, selectedClassRow]
   );
   const routes = all_routes;
+
+  useEffect(() => {
+    if (!selectedClassRow?.classId) {
+      setClassStudents([]);
+      setStudentsError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchStudents = async () => {
+      try {
+        setStudentsLoading(true);
+        setStudentsError(null);
+        const response = await apiService.getStudentsByClass(selectedClassRow.classId);
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        const filteredRows = selectedClassRow.sectionId
+          ? rows.filter((student: any) => Number(student.section_id) === Number(selectedClassRow.sectionId))
+          : rows;
+        if (!cancelled) {
+          setClassStudents(filteredRows);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setStudentsError(err?.message || "Failed to fetch class students");
+          setClassStudents([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setStudentsLoading(false);
+        }
+      }
+    };
+
+    fetchStudents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassRow]);
+
   const columns = [
     {
       title: "ID",
@@ -68,10 +138,17 @@ const ClassReport = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (_text: string, record: any) => (
         <>
-        <Link to="#" className="btn btn-light view details" data-bs-toggle="modal"
-				data-bs-target="#view_class_report">View Details</Link>
+        <Link
+          to="#"
+          className="btn btn-light view details"
+          data-bs-toggle="modal"
+          data-bs-target="#view_class_report"
+          onClick={() => setSelectedClassRow(record)}
+        >
+          View Details
+        </Link>
         </>
       ),
       sorter: (a: TableData, b: TableData) => compareText(a?.action, b?.action),
@@ -337,9 +414,25 @@ const ClassReport = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* Student List */}
-                <Table columns={columns} dataSource={data} Selection={true} />
-                {/* /Student List */}
+                {error && (
+                  <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                    {error}
+                  </div>
+                )}
+                {loading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0">Loading class report...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Student List */}
+                    <Table columns={columns} dataSource={data} Selection={true} />
+                    {/* /Student List */}
+                  </>
+                )}
               </div>
             </div>
             {/* /Student List */}
@@ -353,9 +446,21 @@ const ClassReport = () => {
               <div className="modal-wrapper">
                 <div className="modal-body">
                   {/* Student List */}
-                 
-                  <Table columns={columns2} dataSource={data2} Selection={true} />
-                  
+                  {studentsError && (
+                    <div className="alert alert-danger mb-3" role="alert">
+                      {studentsError}
+                    </div>
+                  )}
+                  {studentsLoading ? (
+                    <div className="text-center py-5">
+                      <div className="spinner-border text-primary" role="status">
+                        <span className="visually-hidden">Loading...</span>
+                      </div>
+                      <p className="mt-2 mb-0">Loading class students...</p>
+                    </div>
+                  ) : (
+                    <Table columns={columns2} dataSource={data2} Selection={true} />
+                  )}
                   {/* /Student List */}
                 </div>
               </div>
