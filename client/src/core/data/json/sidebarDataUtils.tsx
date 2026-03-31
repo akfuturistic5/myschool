@@ -2,6 +2,7 @@ import { all_routes } from "../../../feature-module/router/all_routes";
 import { SidebarData } from "./sidebarData";
 
 const routes = all_routes;
+const ADMIN_ROLE_ALIASES = new Set(['admin', 'headmaster', 'administrative', 'administrator']);
 
 /**
  * Role-specific dashboard labels and links for non-admin users
@@ -21,8 +22,9 @@ const ROLE_DASHBOARD_MAP: Record<string, { label: string; link: string }> = {
 export function getSidebarDataForRole(role: string | undefined | null): typeof SidebarData {
   const normalizedRole = (role || "Admin").trim();
   const roleKey = normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1).toLowerCase();
+  const normalizedRoleLower = normalizedRole.toLowerCase();
 
-  if (normalizedRole.toLowerCase() === "admin") {
+  if (ADMIN_ROLE_ALIASES.has(normalizedRoleLower)) {
     return SidebarData;
   }
 

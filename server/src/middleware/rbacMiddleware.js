@@ -3,6 +3,25 @@
  * Use after authenticate/protectApi - req.user must have role_id
  */
 const { error: errorResponse } = require('../utils/responseHelper');
+const { ROLES, ADMIN_ROLE_IDS, ADMIN_ROLE_NAMES } = require('../config/roles');
+
+function parseRoleId(value) {
+  const roleId = value != null ? parseInt(value, 10) : null;
+  return Number.isInteger(roleId) ? roleId : null;
+}
+
+function parseRoleName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isAdminEquivalentUser(user) {
+  const roleId = parseRoleId(user?.role_id);
+  const roleName = parseRoleName(user?.role_name);
+  return (
+    (roleId != null && ADMIN_ROLE_IDS.includes(roleId)) ||
+    (roleName !== '' && ADMIN_ROLE_NAMES.includes(roleName))
+  );
+}
 
 /**
  * Require user to have one of the allowed role IDs
@@ -14,8 +33,18 @@ const requireRole = (allowedRoleIds) => {
     if (!user) {
       return errorResponse(res, 401, 'Not authenticated');
     }
-    const roleId = user.role_id != null ? parseInt(user.role_id, 10) : null;
-    if (roleId == null || !Array.isArray(allowedRoleIds) || !allowedRoleIds.includes(roleId)) {
+    const roleId = parseRoleId(user.role_id);
+    if (!Array.isArray(allowedRoleIds)) {
+      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+    }
+    const normalizedAllowedIds = allowedRoleIds
+      .map((id) => parseRoleId(id))
+      .filter((id) => id != null);
+    const allowsAdminEquivalent =
+      normalizedAllowedIds.includes(ROLES.ADMIN) || normalizedAllowedIds.includes(ROLES.ADMINISTRATIVE);
+    const isAllowedById = roleId != null && normalizedAllowedIds.includes(roleId);
+    const isAllowedByAdminAlias = allowsAdminEquivalent && isAdminEquivalentUser(user);
+    if (!isAllowedById && !isAllowedByAdminAlias) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
     next();
@@ -33,8 +62,14 @@ const requireRoleName = (allowedRoleNames) => {
     if (!user) {
       return errorResponse(res, 401, 'Not authenticated');
     }
-    const roleName = (user.role_name || '').toLowerCase();
-    if (!roleName || !normalized.includes(roleName)) {
+    const roleName = parseRoleName(user.role_name);
+    if (!roleName) {
+      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+    }
+    const allowsAdminEquivalent = normalized.includes('admin');
+    const isAllowedByName = normalized.includes(roleName);
+    const isAllowedByAdminAlias = allowsAdminEquivalent && isAdminEquivalentUser(user);
+    if (!isAllowedByName && !isAllowedByAdminAlias) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
     next();

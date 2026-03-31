@@ -1,6 +1,6 @@
 /**
  * Role-based access control configuration
- * role_id from user_roles: 1=Admin, 2=Student, 3=Teacher, 4=Parent, 5=Guardian
+ * role_id from user_roles: 1=Admin, 2=Student, 3=Teacher, 4=Parent, 5=Guardian, 6=Administrative
  * Use role names for flexibility (DB may have different IDs)
  */
 const ROLES = {
@@ -9,7 +9,15 @@ const ROLES = {
   TEACHER: 3,
   PARENT: 4,
   GUARDIAN: 5,
+  ADMINISTRATIVE: 6,
 };
+
+/**
+ * Admin-equivalent role IDs and names.
+ * Keep these centralized so RBAC remains stable if schools use different admin labels.
+ */
+const ADMIN_ROLE_IDS = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+const ADMIN_ROLE_NAMES = ['admin', 'headmaster', 'administrative', 'administrator'];
 
 /** Any authenticated user (within a tenant) */
 const ALL_AUTHENTICATED_ROLES = [
@@ -69,6 +77,8 @@ const PEOPLE_MANAGER_ROLES = [ROLES.ADMIN];
 
 module.exports = {
   ROLES,
+  ADMIN_ROLE_IDS,
+  ADMIN_ROLE_NAMES,
   ALL_AUTHENTICATED_ROLES,
   ROLE_NAMES,
   EVENT_MANAGER_ROLES,

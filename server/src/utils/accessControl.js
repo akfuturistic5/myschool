@@ -1,5 +1,5 @@
 const { query } = require('../config/database');
-const { ROLES } = require('../config/roles');
+const { ROLES, ADMIN_ROLE_IDS, ADMIN_ROLE_NAMES } = require('../config/roles');
 const { getParentsForUser } = require('./parentUserMatch');
 
 function parseId(value) {
@@ -16,7 +16,10 @@ function getAuthContext(req) {
 }
 
 function isAdmin(ctx) {
-  return ctx.roleId === ROLES.ADMIN || ctx.roleName === 'admin';
+  return (
+    (ctx.roleId != null && ADMIN_ROLE_IDS.includes(ctx.roleId)) ||
+    (ctx.roleName !== '' && ADMIN_ROLE_NAMES.includes(ctx.roleName))
+  );
 }
 
 async function canAccessStudent(req, studentId) {

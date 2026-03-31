@@ -7,16 +7,32 @@ import { all_routes } from '../../feature-module/router/all_routes';
 
 export type UserRole = 'Admin' | 'Teacher' | 'Student' | 'Parent' | 'Guardian';
 
+const ADMIN_ROLE_ALIASES = new Set([
+  'admin',
+  'headmaster',
+  'administrative',
+  'administrator',
+]);
+
+function normalizeRole(role: string | undefined | null): string {
+  return (role || '').trim().toLowerCase();
+}
+
+function isAdminLikeRole(role: string | undefined | null): boolean {
+  return ADMIN_ROLE_ALIASES.has(normalizeRole(role));
+}
+
 /**
  * Get dashboard route for a given role
  * role_name comes from user_roles table (case-sensitive: Admin, Student, Teacher, Parent, Guardian)
  */
 export function getDashboardForRole(role: string | undefined | null): string {
   if (!role) return all_routes.adminDashboard;
-  const normalized = (role || '').trim().toLowerCase();
+  const normalized = normalizeRole(role);
+  if (isAdminLikeRole(normalized)) {
+    return all_routes.adminDashboard;
+  }
   switch (normalized) {
-    case 'admin':
-      return all_routes.adminDashboard;
     case 'teacher':
       return all_routes.teacherDashboard;
     case 'student':
@@ -36,11 +52,9 @@ export function getDashboardForRole(role: string | undefined | null): string {
  */
 export function getPageTitleForRole(role: string | undefined | null): string {
   if (!role || typeof role !== 'string') return 'Preskool';
-  const normalized = role.trim().toLowerCase();
+  const normalized = normalizeRole(role);
+  if (isAdminLikeRole(normalized)) return 'Preskool Headmaster';
   switch (normalized) {
-    case 'admin':
-    case 'headmaster':
-      return "Preskool Headmaster";
     case 'teacher':
       return "Preskool Teacher";
     case 'student':
@@ -68,13 +82,11 @@ export function getTabTitleForSchoolRole(
   role: string | undefined | null
 ): string {
   const safeSchool = (schoolName ?? '').trim();
-  const normalized = (role ?? '').trim().toLowerCase();
+  const normalized = normalizeRole(role);
 
   const roleLabel = (() => {
+    if (isAdminLikeRole(normalized)) return 'Headmaster';
     switch (normalized) {
-      case 'admin':
-      case 'headmaster':
-        return 'Headmaster';
       case 'teacher':
         return 'Teacher';
       case 'student':
@@ -119,8 +131,7 @@ export function canAccessPath(path: string, role: string | undefined | null): bo
     return path === userDashboard;
   }
   // Admin-only paths: only Admin role can access
-  const normalizedRole = (role ?? '').trim().toLowerCase();
-  const isAdmin = normalizedRole === 'admin';
+  const isAdmin = isAdminLikeRole(role);
   if (ADMIN_ONLY_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) {
     return isAdmin;
   }
