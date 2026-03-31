@@ -99,8 +99,51 @@ app.use(
 );
 app.use(cookieParser());
 const isProduction = process.env.NODE_ENV === 'production';
-// Logging: quieter and safer in production.
-app.use(morgan(isProduction ? 'combined' : 'dev', { skip: (req) => req.method === 'OPTIONS' }));
+// Logging: keep dev verbose, but avoid noisy Apache-style access lines in production.
+const shouldSkipRequestLog = (req, res) => {
+  if (req.method === 'OPTIONS') return true;
+
+  if (!isProduction) return false;
+
+  const path = req.path || '';
+  const status = Number(res.statusCode || 0);
+  const isSuccess = status > 0 && status < 400;
+
+  // These endpoints are hit frequently by the SPA and add little value to production logs.
+  if (
+    isSuccess &&
+    (
+      path === '/api/auth/me' ||
+      path === '/api/auth/csrf-token' ||
+      path === '/super-admin/api/auth/csrf-token' ||
+      path === '/health' ||
+      path.startsWith('/api/school/profile/logo/')
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+morgan.token('real-ip', (req) => {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || '-';
+});
+
+morgan.token('tenant-user', (req) => req.user?.username || req.user?.id || '-');
+
+const productionLogFormat =
+  ':method :url :status :response-time ms ip=:real-ip user=:tenant-user len=:res[content-length]';
+
+app.use(
+  morgan(isProduction ? productionLogFormat : 'dev', {
+    skip: shouldSkipRequestLog,
+  })
+);
 // CORS: production = explicit origins from CORS_ORIGIN, dev = localhost
 const defaultDevOrigins = ['http://localhost:3000', 'http://localhost:5173'];
 const allowedOrigins = serverConfig.corsOrigin
