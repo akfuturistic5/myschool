@@ -32,7 +32,22 @@ export const useStudents = () => {
 
       let response;
       if (isTeacher) {
-        response = await apiService.getTeacherStudents(academicYearId);
+        try {
+          response = await apiService.getTeacherStudents(academicYearId);
+        } catch (teacherErr) {
+          const message = teacherErr instanceof Error ? teacherErr.message : '';
+          const isForbiddenTeacherRoute =
+            typeof message === 'string' &&
+            message.includes('status: 403');
+
+          if (!isForbiddenTeacherRoute) {
+            throw teacherErr;
+          }
+
+          // Some users can access student listings but are not allowed on the teacher-only route.
+          // Fall back to the shared students endpoint and let backend RBAC remain the source of truth.
+          response = await apiService.getStudents(academicYearId);
+        }
       } else {
         response = await apiService.getStudents(academicYearId);
       }

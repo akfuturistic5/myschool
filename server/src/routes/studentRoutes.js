@@ -21,8 +21,8 @@ const { createStudentSchema, updateStudentSchema } = require('../validations/stu
 
 const router = express.Router();
 
-// Get all students - Admin only
-router.get('/', requireRole([ROLES.ADMIN]), getAllStudents);
+// Get all students - Admin/Administrative/Teacher
+router.get('/', requireRole(STUDENT_LIST_ALL_ROLES), getAllStudents);
 
 // Get students for current teacher - Teacher only
 router.get('/teacher/students', requireRole([ROLES.TEACHER]), getTeacherStudents);
