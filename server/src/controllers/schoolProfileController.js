@@ -58,19 +58,15 @@ function normalizeLogoUrl(filePath) {
   return `/api/school/profile/logo/${tenant}/${filename}`;
 }
 
-function resolveFallbackLogoPath() {
-  const candidates = [
-    path.resolve(process.cwd(), '../client/public/assets/img/logo-small.svg'),
-    path.resolve(process.cwd(), 'client/public/assets/img/logo-small.svg'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) return candidate;
-    } catch {
-      // ignore candidate and continue
-    }
-  }
-  return null;
+function sendInlineFallbackLogo(res) {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="School logo fallback">
+      <rect width="128" height="128" rx="24" fill="#3D5EE1"/>
+      <circle cx="64" cy="44" r="18" fill="#ffffff" opacity="0.95"/>
+      <path d="M32 94c7-16 19-24 32-24s25 8 32 24" fill="#ffffff" opacity="0.95"/>
+    </svg>
+  `.trim();
+  return res.type('image/svg+xml').status(200).send(svg);
 }
 
 const getProfile = async (req, res) => {
@@ -227,11 +223,7 @@ const getLogo = async (req, res) => {
     }
     const filePath = resolveExistingLogoPath(tenant, filename);
     if (!fs.existsSync(filePath)) {
-      const fallbackPath = resolveFallbackLogoPath();
-      if (fallbackPath) {
-        return res.sendFile(fallbackPath);
-      }
-      return errorResponse(res, 404, 'Logo not found');
+      return sendInlineFallbackLogo(res);
     }
     return res.sendFile(filePath);
   } catch (err) {
