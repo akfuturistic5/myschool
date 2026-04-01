@@ -198,12 +198,6 @@ const getAllParents = async (req, res) => {
       const teacherId = parseId(teacherCheck.rows[0].id);
       const academicYearClause = hasYearFilter ? ' AND s.academic_year_id = $2' : '';
       const teacherParams = hasYearFilter ? [teacherId, academicYearId] : [teacherId];
-      const scheduleYearClause = hasYearFilter
-        ? ' AND COALESCE(cs.academic_year_id, c.academic_year_id, s.academic_year_id) = $2'
-        : '';
-      const teacherClassYearClause = hasYearFilter
-        ? ' AND COALESCE(c.academic_year_id, s.academic_year_id) = $2'
-        : '';
 
       const result = await query(
         `SELECT
@@ -238,12 +232,10 @@ const getAllParents = async (req, res) => {
               WHERE cs.teacher_id = $1
                 AND cs.class_id = s.class_id
                 AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-                ${scheduleYearClause}
             )
             OR EXISTS (
               SELECT 1 FROM teachers t
               WHERE t.id = $1 AND t.class_id = s.class_id
-                ${teacherClassYearClause}
             )
           )${academicYearClause}
         ORDER BY s.first_name ASC, s.last_name ASC`,

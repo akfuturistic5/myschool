@@ -359,7 +359,9 @@ const getTeacherRoutine = async (req, res) => {
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearClause = hasYearFilter ? ' AND COALESCE(cs.academic_year_id, c.academic_year_id) = $2' : '';
+    const yearClause = hasYearFilter
+      ? ' AND (cs.academic_year_id = $2 OR c.academic_year_id = $2 OR cs.academic_year_id IS NULL OR c.academic_year_id IS NULL)'
+      : '';
     const scheduleParams = hasYearFilter ? [id, academicYearId] : [id];
 
     // Get class schedules for this teacher
