@@ -1,6 +1,5 @@
-
 import { Link, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -8,6 +7,7 @@ import StudentBreadcrumb from "./studentBreadcrumb";
 import { apiService } from "../../../../core/services/apiService";
 import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { useStudentExamResults } from "../../../../core/hooks/useStudentExamResults";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -29,6 +29,8 @@ const StudentResult = () => {
     (!!studentId && !state?.student && !(isStudentRole && currentStudent)) ||
     (isStudentRole && !studentId && currentStudentLoading)
   );
+
+  const { data: examResultsData, loading: examLoading, error: examError } = useStudentExamResults(studentId ?? null);
 
   useEffect(() => {
     if (!studentId) {
@@ -59,6 +61,25 @@ const StudentResult = () => {
       .finally(() => setLoading(false));
   }, [studentId, state?.student, isStudentRole, currentStudent]);
 
+  const exams = useMemo(() => {
+    const list = Array.isArray(examResultsData?.exams) ? examResultsData.exams : [];
+    return list.filter((exam: any) => Array.isArray(exam.subjects) && exam.subjects.length > 0);
+  }, [examResultsData]);
+
+  const overallSummary = useMemo(() => {
+    if (exams.length === 0) {
+      return { totalExams: 0, passCount: 0, averagePercentage: null as number | null };
+    }
+    const passCount = exams.filter((exam: any) => String(exam.summary?.overallResult || "").toLowerCase() === "pass").length;
+    const percentages = exams
+      .map((exam: any) => Number(exam.summary?.percentage))
+      .filter((value: number) => Number.isFinite(value));
+    const averagePercentage = percentages.length
+      ? Number((percentages.reduce((sum, value) => sum + value, 0) / percentages.length).toFixed(2))
+      : null;
+    return { totalExams: exams.length, passCount, averagePercentage };
+  }, [exams]);
+
   const showLoading = loading || (isStudentRole && !student && !state?.student && currentStudentLoading);
   if (showLoading) {
     return (
@@ -77,22 +98,16 @@ const StudentResult = () => {
 
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
           <div className="row">
-            {/* Page Header */}
             <StudentBreadcrumb />
-            {/* /Page Header */}
           </div>
           <div className="row">
-            {/* Student Information */}
             <StudentSidebar student={student} />
-            {/* /Student Information */}
             <div className="col-xxl-9 col-xl-8">
               <div className="row">
                 <div className="col-md-12">
-                  {/* List */}
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
                       <Link
@@ -117,7 +132,7 @@ const StudentResult = () => {
                     <li>
                       <Link
                         to={routes.studentLeaves}
-                        className="nav-link "
+                        className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
                         <i className="ti ti-calendar-due me-2" />
@@ -127,7 +142,7 @@ const StudentResult = () => {
                     <li>
                       <Link
                         to={routes.studentFees}
-                        className="nav-link "
+                        className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
                         <i className="ti ti-report-money me-2" />
@@ -138,714 +153,162 @@ const StudentResult = () => {
                       <Link
                         to={routes.studentResult}
                         className="nav-link active"
+                        state={student ? { studentId: student.id, student } : undefined}
                       >
                         <i className="ti ti-bookmark-edit me-2" />
                         Exam &amp; Results
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={routes.studentLibrary}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-books me-2" />
-                        Library
-                      </Link>
-                    </li>
                   </ul>
-                  {/* /List */}
-                  <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                      <h4 className="mb-3">Exams &amp; Results</h4>
-                      <div className="d-flex align-items-center flex-wrap">
-                        <div className="dropdown mb-3 me-2">
-                          <Link
-                            to="#"
-                            className="btn btn-outline-light bg-white dropdown-toggle"
-                            data-bs-toggle="dropdown"
-                            data-bs-auto-close="outside"
-                          >
-                            <i className="ti ti-calendar-due me-2" />
-                            Year : 2024 / 2025
-                          </Link>
-                          <ul className="dropdown-menu p-3">
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2024 / 2025
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2023 / 2024
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2022 / 2023
-                              </Link>
-                            </li>
-                          </ul>
+
+                  <div className="row g-3 mb-3">
+                    <div className="col-md-4 d-flex">
+                      <div className="card flex-fill mb-0">
+                        <div className="card-body">
+                          <p className="text-muted mb-1">Total Exams</p>
+                          <h4 className="mb-0">{overallSummary.totalExams}</h4>
                         </div>
                       </div>
                     </div>
-                    <div className="card-body">
-                      <div
-                        className="accordions-items-seperate"
-                        id="accordionExample"
-                      >
-                        <div className="accordion-item">
-                          <h2 className="accordion-header">
-                            <button
-                              className="accordion-button"
-                              type="button"
-                              data-bs-toggle="collapse"
-                              data-bs-target="#collapseOne"
-                              aria-expanded="true"
-                              aria-controls="collapseOne"
-                            >
-                              <span className="avatar avatar-sm bg-success me-2">
-                                <i className="ti ti-checks" />
-                              </span>
-                              Monthly Test (May)
-                            </button>
-                          </h2>
-                          <div
-                            id="collapseOne"
-                            className="accordion-collapse collapse show"
-                            data-bs-parent="#accordionExample"
-                          >
-                            <div className="accordion-body">
-                              {/* Exam Result List */}
-                              <div className="table-responsive">
-                                <table className="table">
-                                  <thead className="thead-light">
-                                    <tr>
-                                      <th>Subject</th>
-                                      <th>Max Marks</th>
-                                      <th>Min Marks</th>
-                                      <th>Marks Obtained</th>
-                                      <th className="text-end">Result</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td>English (150)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>65</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Mathematics (214)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>73</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Physics (120)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>55</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Chemistry (110)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>90</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Spanish (140)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>88</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td className="bg-dark text-white">
-                                        Rank : 30
-                                      </td>
-                                      <td className="bg-dark text-white">
-                                        Total : 500
-                                      </td>
-                                      <td
-                                        className="bg-dark text-white"
-                                        colSpan={2}
-                                      >
-                                        Marks Obtained : 395
-                                      </td>
-                                      <td className="bg-dark text-white text-end">
-                                        <div className="d-flex align-items-center justify-content-end">
-                                          <span className="me-2">
-                                            Percentage : 79.50
-                                          </span>
-                                          <h6 className="fw-normal text-white">
-                                            Result :{" "}
-                                            <span className="text-success">
-                                              {" "}
-                                              Pass
-                                            </span>
-                                          </h6>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              {/* /Exam Resul List */}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="accordion-item">
-                          <h2 className="accordion-header">
-                            <button
-                              className="accordion-button collapsed"
-                              type="button"
-                              data-bs-toggle="collapse"
-                              data-bs-target="#collapseTwo"
-                              aria-expanded="false"
-                              aria-controls="collapseTwo"
-                            >
-                              <span className="avatar avatar-sm bg-success me-2">
-                                <i className="ti ti-checks" />
-                              </span>
-                              Monthly Test (Apr)
-                            </button>
-                          </h2>
-                          <div
-                            id="collapseTwo"
-                            className="accordion-collapse collapse"
-                            data-bs-parent="#accordionExample"
-                          >
-                            <div className="accordion-body">
-                              {/* Exam Result List */}
-                              <div className="table-responsive">
-                                <table className="table">
-                                  <thead className="thead-light">
-                                    <tr>
-                                      <th>Subject</th>
-                                      <th>Max Marks</th>
-                                      <th>Min Marks</th>
-                                      <th>Marks Obtained</th>
-                                      <th className="text-end">Result</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td>English (150)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>59</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Mathematics (214)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>69</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Physics (120)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>79</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Chemistry (110)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>89</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Spanish (140)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>99</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                      <td></td>
-                                    </tr>
-                                    <tr>
-                                      <td className="bg-dark text-white">
-                                        Rank : 30
-                                      </td>
-                                      <td className="bg-dark text-white">
-                                        Total : 500
-                                      </td>
-                                      <td
-                                        className="bg-dark text-white"
-                                        colSpan={2}
-                                      >
-                                        Marks Obtained : 400
-                                      </td>
-                                      <td className="bg-dark text-white text-end">
-                                        <div className="d-flex align-items-center justify-content-end">
-                                          <span className="me-2">
-                                            Percentage : 80.50
-                                          </span>
-                                          <h6 className="fw-normal text-white">
-                                            Result :{" "}
-                                            <span className="text-success">
-                                              {" "}
-                                              Pass
-                                            </span>
-                                          </h6>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              {/* /Exam Resul List */}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="accordion-item">
-                          <h2 className="accordion-header">
-                            <button
-                              className="accordion-button collapsed"
-                              type="button"
-                              data-bs-toggle="collapse"
-                              data-bs-target="#collapseThree"
-                              aria-expanded="false"
-                              aria-controls="collapseThree"
-                            >
-                              <span className="avatar avatar-sm bg-success me-2">
-                                <i className="ti ti-checks" />
-                              </span>
-                              Monthly Test (Mar)
-                            </button>
-                          </h2>
-                          <div
-                            id="collapseThree"
-                            className="accordion-collapse collapse"
-                            data-bs-parent="#accordionExample"
-                          >
-                            <div className="accordion-body">
-                              {/* Exam Result List */}
-                              <div className="table-responsive">
-                                <table className="table">
-                                  <thead className="thead-light">
-                                    <tr>
-                                      <th>Subject</th>
-                                      <th>Max Marks</th>
-                                      <th>Min Marks</th>
-                                      <th>Marks Obtained</th>
-                                      <th className="text-end">Result</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td>English (150)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>40</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Mathematics (214)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>45</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Physics (120)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>30</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Chemistry (110)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>28</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Spanish (140)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>50</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td className="bg-dark text-white">
-                                        Rank : 30
-                                      </td>
-                                      <td className="bg-dark text-white">
-                                        Total : 500
-                                      </td>
-                                      <td
-                                        className="bg-dark text-white"
-                                        colSpan={2}
-                                      >
-                                        Marks Obtained : 250
-                                      </td>
-                                      <td className="bg-dark text-white text-end">
-                                        <div className="d-flex align-items-center justify-content-end">
-                                          <span className="me-2">
-                                            Percentage : 50
-                                          </span>
-                                          <h6 className="text-white fw-normal">
-                                            Result :{" "}
-                                            <span className="text-danger">
-                                              {" "}
-                                              Fail
-                                            </span>
-                                          </h6>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              {/* /Exam Resul List */}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="accordion-item">
-                          <h2 className="accordion-header">
-                            <button
-                              className="accordion-button collapsed"
-                              type="button"
-                              data-bs-toggle="collapse"
-                              data-bs-target="#collapseFour"
-                              aria-expanded="false"
-                              aria-controls="collapseFour"
-                            >
-                              <span className="avatar avatar-sm bg-success me-2">
-                                <i className="ti ti-checks" />
-                              </span>
-                              Monthly Test (Feb)
-                            </button>
-                          </h2>
-                          <div
-                            id="collapseFour"
-                            className="accordion-collapse collapse"
-                            data-bs-parent="#accordionExample"
-                          >
-                            <div className="accordion-body">
-                              {/* Exam Result List */}
-                              <div className="table-responsive">
-                                <table className="table">
-                                  <thead className="thead-light">
-                                    <tr>
-                                      <th>Subject</th>
-                                      <th>Max Marks</th>
-                                      <th>Min Marks</th>
-                                      <th>Marks Obtained</th>
-                                      <th className="text-end">Result</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td>English (150)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>40</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Mathematics (214)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>45</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Physics (120)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>30</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-danger d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Fail
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Chemistry (110)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>28</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-danger d-inline-flex align-items-center ">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Fail
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Spanish (140)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>50</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td className="bg-dark text-white">
-                                        Rank : 30
-                                      </td>
-                                      <td className="bg-dark text-white">
-                                        Total : 500
-                                      </td>
-                                      <td
-                                        className="bg-dark text-white"
-                                        colSpan={2}
-                                      >
-                                        Marks Obtained : 250
-                                      </td>
-                                      <td className="bg-dark text-white text-end">
-                                        <div className="d-flex align-items-center justify-content-end">
-                                          <span className="me-2">
-                                            Percentage : 50
-                                          </span>
-                                          <h6 className="text-white">
-                                            Result :{" "}
-                                            <span className="text-danger">
-                                              {" "}
-                                              Fail
-                                            </span>
-                                          </h6>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              {/* /Exam Resul List */}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="accordion-item">
-                          <h2 className="accordion-header">
-                            <button
-                              className="accordion-button collapsed"
-                              type="button"
-                              data-bs-toggle="collapse"
-                              data-bs-target="#collapseFive"
-                              aria-expanded="false"
-                              aria-controls="collapseFive"
-                            >
-                              <span className="avatar avatar-sm bg-success me-2">
-                                <i className="ti ti-checks" />
-                              </span>
-                              Monthly Test (Jan)
-                            </button>
-                          </h2>
-                          <div
-                            id="collapseFive"
-                            className="accordion-collapse collapse"
-                            data-bs-parent="#accordionExample"
-                          >
-                            <div className="accordion-body">
-                              {/* Exam Result List */}
-                              <div className="table-responsive">
-                                <table className="table">
-                                  <thead className="thead-light">
-                                    <tr>
-                                      <th>Subject</th>
-                                      <th>Max Marks</th>
-                                      <th>Min Marks</th>
-                                      <th>Marks Obtained</th>
-                                      <th className="text-end">Result</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <tr>
-                                      <td>English (150)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>59</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Mathematics (214)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>69</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Physics (120)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>79</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Chemistry (110)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>89</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td>Spanish (140)</td>
-                                      <td>100</td>
-                                      <td>35</td>
-                                      <td>99</td>
-                                      <td className="text-end">
-                                        <span className="badge badge-soft-success d-inline-flex align-items-center">
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          Pass
-                                        </span>
-                                      </td>
-                                    </tr>
-                                    <tr>
-                                      <td className="bg-dark text-white">
-                                        Rank : 30
-                                      </td>
-                                      <td className="bg-dark text-white">
-                                        Total : 500
-                                      </td>
-                                      <td
-                                        className="bg-dark text-white"
-                                        colSpan={2}
-                                      >
-                                        Marks Obtained : 400
-                                      </td>
-                                      <td className="bg-dark text-white text-end">
-                                        <div className="d-flex align-items-center justify-content-end">
-                                          <span className="me-2">
-                                            Percentage : 80.50
-                                          </span>
-                                          <h6 className="fw-normal text-white">
-                                            Result :{" "}
-                                            <span className="text-success">
-                                              {" "}
-                                              Pass
-                                            </span>
-                                          </h6>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  </tbody>
-                                </table>
-                              </div>
-                              {/* /Exam Resul List */}
-                            </div>
-                          </div>
+                    <div className="col-md-4 d-flex">
+                      <div className="card flex-fill mb-0">
+                        <div className="card-body">
+                          <p className="text-muted mb-1">Passed Exams</p>
+                          <h4 className="mb-0">{overallSummary.passCount}</h4>
                         </div>
                       </div>
+                    </div>
+                    <div className="col-md-4 d-flex">
+                      <div className="card flex-fill mb-0">
+                        <div className="card-body">
+                          <p className="text-muted mb-1">Average Percentage</p>
+                          <h4 className="mb-0">
+                            {overallSummary.averagePercentage != null ? `${overallSummary.averagePercentage}%` : "N/A"}
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <div className="card-header">
+                      <h4 className="mb-0">Exam &amp; Results</h4>
+                    </div>
+                    <div className="card-body">
+                      {examError && (
+                        <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
+                          <i className="ti ti-alert-circle me-2 fs-18" />
+                          <span>{examError}</span>
+                        </div>
+                      )}
+
+                      {examLoading && (
+                        <div className="d-flex justify-content-center align-items-center p-4">
+                          <div className="spinner-border text-primary" role="status" />
+                          <span className="ms-2">Loading exam results...</span>
+                        </div>
+                      )}
+
+                      {!examLoading && exams.length === 0 && (
+                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No exam results are available yet.</span>
+                        </div>
+                      )}
+
+                      {!examLoading && exams.length > 0 && (
+                        <div className="accordion accordions-items-seperate" id="student-exam-results">
+                          {exams.map((exam: any, index: number) => {
+                            const collapseId = `student-exam-${exam.examId ?? index}`;
+                            const summary = exam.summary || {};
+                            const isPass = String(summary.overallResult || "").toLowerCase() === "pass";
+                            return (
+                              <div className="accordion-item" key={collapseId}>
+                                <h2 className="accordion-header">
+                                  <button
+                                    className={`accordion-button ${index === 0 ? "" : "collapsed"}`}
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target={`#${collapseId}`}
+                                    aria-expanded={index === 0}
+                                    aria-controls={collapseId}
+                                  >
+                                    <span className={`avatar avatar-sm ${isPass ? "bg-success" : "bg-danger"} me-2`}>
+                                      <i className={`ti ${isPass ? "ti-checks" : "ti-x"}`} />
+                                    </span>
+                                    <span className="me-3">{exam.examLabel || exam.examName || `Exam ${index + 1}`}</span>
+                                    <span className="text-muted small">
+                                      {exam.examDate
+                                        ? new Date(exam.examDate).toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                          })
+                                        : "Date not available"}
+                                    </span>
+                                  </button>
+                                </h2>
+                                <div
+                                  id={collapseId}
+                                  className={`accordion-collapse collapse ${index === 0 ? "show" : ""}`}
+                                  data-bs-parent="#student-exam-results"
+                                >
+                                  <div className="accordion-body">
+                                    <div className="table-responsive">
+                                      <table className="table">
+                                        <thead className="thead-light">
+                                          <tr>
+                                            <th>Subject</th>
+                                            <th>Max Marks</th>
+                                            <th>Min Marks</th>
+                                            <th>Marks Obtained</th>
+                                            <th className="text-end">Result</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {exam.subjects.map((subject: any, subjectIndex: number) => {
+                                            const subjectPass = String(subject.result || "").toLowerCase() === "pass";
+                                            return (
+                                              <tr key={`${collapseId}-subject-${subject.subjectId ?? subjectIndex}`}>
+                                                <td>{subject.subjectName || "Subject"}</td>
+                                                <td>{subject.maxMarks ?? "N/A"}</td>
+                                                <td>{subject.minMarks ?? "N/A"}</td>
+                                                <td>{subject.marksObtained ?? "N/A"}</td>
+                                                <td className="text-end">
+                                                  <span
+                                                    className={`badge ${subjectPass ? "badge-soft-success" : "badge-soft-danger"} d-inline-flex align-items-center`}
+                                                  >
+                                                    <i className="ti ti-circle-filled fs-5 me-1" />
+                                                    {subject.result || "N/A"}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                          <tr>
+                                            <td className="bg-dark text-white">Subjects : {exam.subjects.length}</td>
+                                            <td className="bg-dark text-white">Total : {summary.totalMax ?? "N/A"}</td>
+                                            <td className="bg-dark text-white">Passing : {summary.totalMin ?? "N/A"}</td>
+                                            <td className="bg-dark text-white">Obtained : {summary.totalObtained ?? "N/A"}</td>
+                                            <td className="bg-dark text-white text-end">
+                                              <div className="d-flex align-items-center justify-content-end gap-2">
+                                                <span>{summary.percentage != null ? `${summary.percentage}%` : "N/A"}</span>
+                                                <span className={isPass ? "text-success" : "text-danger"}>
+                                                  {summary.overallResult || "N/A"}
+                                                </span>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -854,7 +317,6 @@ const StudentResult = () => {
           </div>
         </div>
       </div>
-      {/* /Page Wrapper */}
       <StudentModals />
     </>
   );

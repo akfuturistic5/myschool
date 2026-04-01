@@ -1,6 +1,7 @@
 
 import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 
 interface StudentSidebarProps {
   student?: {
@@ -43,6 +44,9 @@ interface StudentSidebarProps {
 }
 
 const StudentSidebar = ({ student }: StudentSidebarProps) => {
+  const { user: currentUser } = useCurrentUser();
+  const role = String(currentUser?.role || "").trim().toLowerCase();
+  const canCollectFees = role === "admin" || role === "administrative";
   const displayName = student
     ? [student.first_name, student.last_name].filter(Boolean).join(" ") || "N/A"
     : "N/A";
@@ -130,14 +134,16 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
               <dt className="col-6 fw-medium text-dark mb-3">Class &amp; Section</dt>
               <dd className="col-6 mb-3">{classSection}</dd>
             </dl>
-            <Link
-              to="#"
-              data-bs-toggle="modal"
-              data-bs-target="#add_fees_collect"
-              className="btn btn-primary btn-sm w-100"
-            >
-              Add Fees
-            </Link>
+            {canCollectFees && (
+              <Link
+                to="#"
+                data-bs-toggle="modal"
+                data-bs-target="#add_fees_collect"
+                className="btn btn-primary btn-sm w-100"
+              >
+                Add Fees
+              </Link>
+            )}
           </div>
           {/* /Basic Information */}
         </div>

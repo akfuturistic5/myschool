@@ -184,6 +184,106 @@ function buildTeacherSidebar() {
   ];
 }
 
+function buildStudentSidebar() {
+  return [
+    {
+      label: "MAIN",
+      submenuOpen: true,
+      showSubRoute: false,
+      submenuHdr: "Main",
+      submenuItems: [
+        {
+          label: "Student Dashboard",
+          icon: "ti ti-layout-dashboard",
+          link: routes.studentDashboard,
+          submenu: false,
+          showSubRoute: false,
+        },
+      ],
+    },
+    {
+      label: "Academic",
+      submenuOpen: true,
+      showSubRoute: false,
+      submenuHdr: "Academic",
+      submenuItems: [
+        {
+          label: "My Profile",
+          icon: "ti ti-user-circle",
+          link: routes.studentDetail,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
+          label: "Time Table",
+          icon: "ti ti-table",
+          link: routes.studentTimeTable,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
+          label: "Leave & Attendance",
+          icon: "ti ti-calendar-share",
+          link: routes.studentLeaves,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
+          label: "Fees",
+          icon: "ti ti-report-money",
+          link: routes.studentFees,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
+          label: "Exam & Results",
+          icon: "ti ti-bookmark-edit",
+          link: routes.studentResult,
+          submenu: false,
+          showSubRoute: false,
+        },
+      ],
+    },
+    {
+      label: "Announcements",
+      submenuOpen: true,
+      showSubRoute: false,
+      submenuHdr: "Announcements",
+      submenuItems: [
+        {
+          label: "Notice Board",
+          link: routes.noticeBoard,
+          icon: "ti ti-note",
+          showSubRoute: false,
+          submenu: false,
+        },
+        {
+          label: "Events",
+          link: routes.events,
+          icon: "ti ti-speakerphone",
+          showSubRoute: false,
+          submenu: false,
+        },
+      ],
+    },
+    {
+      label: "Pages",
+      submenuOpen: true,
+      showSubRoute: false,
+      submenuHdr: "Pages",
+      submenuItems: [
+        {
+          label: "Profile",
+          icon: "ti ti-user",
+          link: routes.profile,
+          submenu: false,
+          showSubRoute: false,
+        },
+      ],
+    },
+  ];
+}
+
 function buildAdministrativeSidebar() {
   return SidebarData
     .filter((section) => ADMINISTRATIVE_VISIBLE_SECTIONS.has(section.label))
@@ -240,6 +340,10 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
 
   if (roleKey === "Teacher") {
     return buildTeacherSidebar();
+  }
+
+  if (roleKey === "Student") {
+    return buildStudentSidebar();
   }
 
   const dashboardItem = ROLE_DASHBOARD_MAP[roleKey] || ROLE_DASHBOARD_MAP.Admin;

@@ -490,7 +490,7 @@ const StudentDasboard = () => {
                             <span className="avatar avatar-md rounded bg-primary me-2">
                               <i className="ti ti-report-money fs-16" />
                             </span>
-                            <h6>Pay Fees</h6>
+                            <h6>My Fees</h6>
                           </div>
                         </div>
                       </Link>
@@ -522,7 +522,7 @@ const StudentDasboard = () => {
                             <span className="avatar avatar-md rounded bg-warning me-2">
                               <i className="ti ti-calendar fs-16" />
                             </span>
-                            <h6>Calendar</h6>
+                            <h6>Time Table</h6>
                           </div>
                         </div>
                       </Link>
@@ -538,7 +538,7 @@ const StudentDasboard = () => {
                             <span className="avatar avatar-md rounded bg-dark me-2">
                               <i className="ti ti-calendar-share fs-16" />
                             </span>
-                            <h6>Attendance</h6>
+                            <h6>Leave &amp; Attendance</h6>
                           </div>
                         </div>
                       </Link>

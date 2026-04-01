@@ -318,16 +318,6 @@ const StudentLeaves = () => {
                         Exam &amp; Results
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={routes.studentLibrary}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-books me-2" />
-                        Library
-                      </Link>
-                    </li>
                   </ul>
                   {/* /List */}
                   {/* Leave Nav*/}

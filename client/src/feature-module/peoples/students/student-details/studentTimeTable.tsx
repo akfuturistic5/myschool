@@ -1,66 +1,106 @@
-
-import { Link, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import ImageWithBasePath from '../../../../core/common/imageWithBasePath'
-import { all_routes } from '../../../router/all_routes'
-import StudentModals from '../studentModals'
-import StudentSidebar from './studentSidebar'
-import StudentBreadcrumb from './studentBreadcrumb'
-import { apiService } from '../../../../core/services/apiService'
-import { useCurrentStudent } from '../../../../core/hooks/useCurrentStudent'
-import { useCurrentUser } from '../../../../core/hooks/useCurrentUser'
+import { Link, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { all_routes } from "../../../router/all_routes";
+import StudentModals from "../studentModals";
+import StudentSidebar from "./studentSidebar";
+import StudentBreadcrumb from "./studentBreadcrumb";
+import { apiService } from "../../../../core/services/apiService";
+import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { useClassSchedules } from "../../../../core/hooks/useClassSchedules";
 
 interface StudentDetailsLocationState {
   studentId?: number;
   student?: any;
 }
 
-const StudentTimeTable = () => {
-  const routes = all_routes
-  const location = useLocation()
-  const state = location.state as StudentDetailsLocationState | null
-  const { user: currentUser } = useCurrentUser()
-  const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent()
-  const role = (currentUser?.role || '').toString().toLowerCase()
-  const isStudentRole = role === 'student'
+const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  const studentId = state?.studentId ?? state?.student?.id ?? (isStudentRole && currentStudent ? currentStudent.id : null)
-  const [student, setStudent] = useState<any>(state?.student ?? (isStudentRole ? currentStudent : null))
+const StudentTimeTable = () => {
+  const routes = all_routes;
+  const location = useLocation();
+  const state = location.state as StudentDetailsLocationState | null;
+  const { user: currentUser } = useCurrentUser();
+  const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent();
+  const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules();
+  const role = (currentUser?.role || "").toString().toLowerCase();
+  const isStudentRole = role === "student";
+
+  const studentId = state?.studentId ?? state?.student?.id ?? (isStudentRole && currentStudent ? currentStudent.id : null);
+  const [student, setStudent] = useState<any>(state?.student ?? (isStudentRole ? currentStudent : null));
   const [loading, setLoading] = useState(
     (!!studentId && !state?.student && !(isStudentRole && currentStudent)) ||
     (isStudentRole && !studentId && currentStudentLoading)
-  )
+  );
 
   useEffect(() => {
     if (!studentId) {
-      if (state?.student) setStudent(state.student)
-      else if (isStudentRole && currentStudent) setStudent(currentStudent)
-      return
+      if (state?.student) setStudent(state.student);
+      else if (isStudentRole && currentStudent) setStudent(currentStudent);
+      return;
     }
     if (state?.student && state.student.id === studentId) {
-      setStudent(state.student)
-      setLoading(false)
-      return
+      setStudent(state.student);
+      setLoading(false);
+      return;
     }
     if (isStudentRole && currentStudent?.id === studentId) {
-      setStudent(currentStudent)
-      setLoading(false)
-      return
+      setStudent(currentStudent);
+      setLoading(false);
+      return;
     }
-    setLoading(true)
+    setLoading(true);
     apiService
       .getStudentById(studentId)
       .then((res: any) => {
-        if (res?.data) setStudent(res.data)
-        else setStudent(null)
+        if (res?.data) setStudent(res.data);
+        else setStudent(null);
       })
       .catch(() => {
-        setStudent(null)
+        setStudent(null);
       })
-      .finally(() => setLoading(false))
-  }, [studentId, state?.student, isStudentRole, currentStudent])
+      .finally(() => setLoading(false));
+  }, [studentId, state?.student, isStudentRole, currentStudent]);
 
-  const showLoading = loading || (isStudentRole && !student && !state?.student && currentStudentLoading)
+  const weeklySchedule = useMemo(() => {
+    const className = String(student?.class_name || student?.class || "").trim().toLowerCase();
+    const sectionName = String(student?.section_name || student?.section || "").trim().toLowerCase();
+
+    if (!className || !sectionName || !Array.isArray(scheduleData)) {
+      return DAY_ORDER.map((day) => ({ day, classes: [] as any[] }));
+    }
+
+    const filtered = scheduleData.filter((item: any) => {
+      const itemClass = String(item.class || "").trim().toLowerCase();
+      const itemSection = String(item.section || "").trim().toLowerCase();
+      return itemClass === className && itemSection === sectionName;
+    });
+
+    return DAY_ORDER.map((day) => ({
+      day,
+      classes: filtered.filter((item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()),
+    }));
+  }, [scheduleData, student]);
+
+  const totalClasses = useMemo(
+    () => weeklySchedule.reduce((sum, entry) => sum + entry.classes.length, 0),
+    [weeklySchedule]
+  );
+
+  const totalSubjects = useMemo(() => {
+    const subjects = new Set<string>();
+    weeklySchedule.forEach((entry) => {
+      entry.classes.forEach((item: any) => {
+        const subject = String(item.subject || "").trim();
+        if (subject && subject !== "N/A") subjects.add(subject);
+      });
+    });
+    return subjects.size;
+  }, [weeklySchedule]);
+
+  const activeDays = weeklySchedule.filter((entry) => entry.classes.length > 0).length;
+  const showLoading = loading || (isStudentRole && !student && !state?.student && currentStudentLoading);
+
   if (showLoading) {
     return (
       <div className="page-wrapper">
@@ -73,972 +113,160 @@ const StudentTimeTable = () => {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <>
-  {/* Page Wrapper */}
-  <div className="page-wrapper">
-    <div className="content">
-      <div className="row">
-        {/* Page Header */}
-        <StudentBreadcrumb />
-        {/* /Page Header */}
-      </div>
-      <div className="row">
-        {/* Student Information */}
-        <StudentSidebar student={student} />
-        {/* /Student Information */}
-        <div className="col-xxl-9 col-xl-8">
-        <div className="row">
-            <div className="col-md-12">
-                {/* List */}
-                <ul className="nav nav-tabs nav-tabs-bottom mb-4">
-                <li>
-                  <Link
-                    to={routes.studentDetail}
-                    className="nav-link"
-                    state={student ? { studentId: student.id, student } : undefined}
-                  >
-                    <i className="ti ti-school me-2" />
-                    Student Details
-                  </Link>
-                </li>
-                <li>
-                  <Link to={routes.studentTimeTable} className="nav-link active">
-                    <i className="ti ti-table-options me-2" />
-                    Time Table
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to={routes.studentLeaves}
-                    className="nav-link"
-                    state={student ? { studentId: student.id, student } : undefined}
-                  >
-                    <i className="ti ti-calendar-due me-2" />
-                    Leave &amp; Attendance
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to={routes.studentFees}
-                    className="nav-link"
-                    state={student ? { studentId: student.id, student } : undefined}
-                  >
-                    <i className="ti ti-report-money me-2" />
-                    Fees
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to={routes.studentResult}
-                    className="nav-link"
-                    state={student ? { studentId: student.id, student } : undefined}
-                  >
-                    <i className="ti ti-bookmark-edit me-2" />
-                    Exam &amp; Results
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    to={routes.studentLibrary}
-                    className="nav-link"
-                    state={student ? { studentId: student.id, student } : undefined}
-                  >
-                    <i className="ti ti-books me-2" />
-                    Library
-                  </Link>
-                </li>
-              </ul>
-                {/* /List */}
-                <div className="card">
-                <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                    <h4 className="mb-3">Exams &amp; Results</h4>
-                    <div className="d-flex align-items-center flex-wrap">
-                    <div className="dropdown mb-3">
-                        <Link
-                        to="#"
-                        className="btn btn-outline-light border-white bg-white dropdown-toggle shadow-md"
-                        data-bs-toggle="dropdown"
-                        >
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="row">
+            <StudentBreadcrumb />
+          </div>
+          <div className="row">
+            <StudentSidebar student={student} />
+            <div className="col-xxl-9 col-xl-8">
+              <div className="row">
+                <div className="col-md-12">
+                  <ul className="nav nav-tabs nav-tabs-bottom mb-4">
+                    <li>
+                      <Link
+                        to={routes.studentDetail}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-school me-2" />
+                        Student Details
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={routes.studentTimeTable}
+                        className="nav-link active"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-table-options me-2" />
+                        Time Table
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={routes.studentLeaves}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
                         <i className="ti ti-calendar-due me-2" />
-                        This Year
-                        </Link>
-                        <ul className="dropdown-menu p-3">
-                        <li>
-                            <Link
-                            to="#"
-                            className="dropdown-item rounded-1"
-                            >
-                            This Year
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                            to="#"
-                            className="dropdown-item rounded-1"
-                            >
-                            This Month
-                            </Link>
-                        </li>
-                        <li>
-                            <Link
-                            to="#"
-                            className="dropdown-item rounded-1"
-                            >
-                            This Week
-                            </Link>
-                        </li>
-                        </ul>
-                    </div>
-                    </div>
-                </div>
-                <div className="card-body pb-0">
-                    <div className="d-flex flex-nowrap overflow-auto">
-                    <div className="d-flex flex-column me-4 flex-fill">
-                        <div className="mb-3">
-                        <h6>Monday</h6>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 03:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="d-flex flex-column me-4 flex-fill">
-                        <div className="mb-3">
-                        <h6>Tuesday</h6>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 03:00 PM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="d-flex flex-column me-4 flex-fill">
-                        <div className="mb-3">
-                        <h6>Wednesday</h6>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 03:00 PM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="d-flex flex-column me-4 flex-fill">
-                        <div className="mb-3">
-                        <h6>Thursday</h6>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 03:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="d-flex flex-column me-4 flex-fill">
-                        <div className="mb-3">
-                        <h6>Friday</h6>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 3:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="d-flex flex-column flex-fill">
-                        <div className="mb-3">
-                        <h6>Saturday</h6>
-                        </div>
-                        <div className="bg-transparent-primary rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:00 - 09:45 AM
-                        </p>
-                        <p className="text-dark">Subject : English</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Hellana
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-pending rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            09:45 - 10:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Spanish</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-03.jpg" alt="Img" />
-                            </span>
-                            Erickson
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-warning rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            10:45 - 11:30 AM
-                        </p>
-                        <p className="text-dark">Subject : Physics</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-01.jpg" alt="Img" />
-                            </span>
-                            Teresa
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-light rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            11:30 - 12:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Chemistry</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-06.jpg" alt="Img" />
-                            </span>
-                            Aaron
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-danger rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            01:30 - 02:15 PM
-                        </p>
-                        <p className="text-dark">Subject : Maths</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-07.jpg" alt="Img" />
-                            </span>
-                            Jacquelin
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-success rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            02:15 - 3:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Computer</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-02.jpg" alt="Img" />
-                            </span>
-                            Daniel
-                            </Link>
-                        </div>
-                        </div>
-                        <div className="bg-transparent-info rounded p-3 mb-4">
-                        <p className="d-flex align-items-center text-nowrap mb-1">
-                            <i className="ti ti-clock me-1" />
-                            03:15 - 04:00 PM
-                        </p>
-                        <p className="text-dark">Subject : Science</p>
-                        <div className="bg-white rounded p-1 mt-3">
-                            <Link
-                            to={routes.teacherDetails}
-                            className="text-muted d-flex align-items-center"
-                            >
-                            <span className="avatar avatar-sm me-2">
-                                <ImageWithBasePath src="assets/img/teachers/teacher-05.jpg" alt="Img" />
-                            </span>
-                            Morgan
-                            </Link>
-                        </div>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                <div className="card-footer border-0 pb-0">
-                    <div className="row">
-                    <div className="col-lg-4 col-xxl-4 col-xl-4 d-flex">
-                        <div className="card flex-fill">
-                        <div className="card-body">
-                            <span className="bg-primary badge badge-sm mb-2">
-                            Morning Break
-                            </span>
-                            <p className="text-dark">
-                            <i className="ti ti-clock me-1" />
-                            10:30 to 10 :45 AM
-                            </p>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="col-lg-4 col-xxl-3 d-flex">
-                        <div className="card flex-fill">
-                        <div className="card-body">
-                            <span className="bg-warning badge badge-sm mb-2">Lunch</span>
-                            <p className="text-dark">
-                            <i className="ti ti-clock me-1" />
-                            10:30 to 10 :45 AM
-                            </p>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="col-lg-4 col-xxl-3 d-flex">
-                        <div className="card flex-fill">
-                        <div className="card-body">
-                            <span className="bg-info badge badge-sm mb-2">
-                            Evening Break
-                            </span>
-                            <p className="text-dark">
-                            <i className="ti ti-clock me-1" />
-                            03:30 PM to 03:45 PM
-                            </p>
-                        </div>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                </div>
-            </div>
-        </div>
+                        Leave &amp; Attendance
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={routes.studentFees}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-report-money me-2" />
+                        Fees
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={routes.studentResult}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-bookmark-edit me-2" />
+                        Exam &amp; Results
+                      </Link>
+                    </li>
+                  </ul>
 
+                  <div className="card">
+                    <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
+                      <h4 className="mb-3">Weekly Time Table</h4>
+                      <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
+                        <span className="badge badge-soft-primary">Classes: {totalClasses}</span>
+                        <span className="badge badge-soft-success">Subjects: {totalSubjects}</span>
+                        <span className="badge badge-soft-info">Active Days: {activeDays}</span>
+                      </div>
+                    </div>
+                    <div className="card-body">
+                      {scheduleError && (
+                        <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
+                          <i className="ti ti-alert-circle me-2 fs-18" />
+                          <span>{scheduleError}</span>
+                        </div>
+                      )}
+
+                      {scheduleLoading && (
+                        <div className="d-flex justify-content-center align-items-center p-4">
+                          <div className="spinner-border text-primary" role="status" />
+                          <span className="ms-2">Loading timetable...</span>
+                        </div>
+                      )}
+
+                      {!scheduleLoading && totalClasses === 0 && (
+                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No timetable is available for your class and section yet.</span>
+                        </div>
+                      )}
+
+                      {!scheduleLoading && totalClasses > 0 && (
+                        <div className="row g-3">
+                          {weeklySchedule.map((entry) => (
+                            <div className="col-12 col-xl-6" key={entry.day}>
+                              <div className="border rounded h-100">
+                                <div className="d-flex align-items-center justify-content-between border-bottom px-3 py-2">
+                                  <h6 className="mb-0">{entry.day}</h6>
+                                  <span className="badge badge-soft-primary">
+                                    {entry.classes.length} Class{entry.classes.length === 1 ? "" : "es"}
+                                  </span>
+                                </div>
+                                <div className="p-3">
+                                  {entry.classes.length === 0 ? (
+                                    <p className="text-muted mb-0">No classes scheduled.</p>
+                                  ) : (
+                                    <div className="d-flex flex-column gap-3">
+                                      {entry.classes.map((cls: any) => (
+                                        <div key={cls.id} className="bg-light rounded p-3">
+                                          <div className="d-flex align-items-start justify-content-between gap-3">
+                                            <div>
+                                              <h6 className="mb-1">{cls.subject || "Subject"}</h6>
+                                              <p className="mb-1 text-dark">
+                                                <i className="ti ti-clock me-1" />
+                                                {cls.startTime || "N/A"} - {cls.endTime || "N/A"}
+                                              </p>
+                                              <p className="mb-0 text-muted">
+                                                <i className="ti ti-user me-1" />
+                                                {cls.teacher || "Teacher not assigned"}
+                                              </p>
+                                            </div>
+                                            <span className="badge badge-soft-secondary">
+                                              {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-  {/* /Page Wrapper */}
-  <StudentModals />
-</>
+      <StudentModals />
+    </>
+  );
+};
 
-  )
-}
-
-export default StudentTimeTable
+export default StudentTimeTable;

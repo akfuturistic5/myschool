@@ -116,6 +116,13 @@ const StudentDetails = () => {
   const permanentAddress = student.permanent_address ?? 'N/A'
   const previousSchool = student.previous_school ?? 'N/A'
   const previousSchoolAddress = student.previous_school_address ?? 'N/A'
+  const bankName = (student.bank_name ?? student.bankName) ?? 'N/A'
+  const branchName = (student.branch ?? student.branchName) ?? 'N/A'
+  const ifscCode = (student.ifsc ?? student.ifscCode) ?? 'N/A'
+  const knownAllergies = student.known_allergies ?? student.knownAllergies ?? null
+  const medications = student.medications ?? student.medicationsList ?? null
+  const medicalCondition = student.medical_condition ?? student.medicalCondition ?? null
+  const otherInformation = student.other_information ?? student.otherInformation ?? null
 
   return (
     <>
@@ -182,16 +189,6 @@ const StudentDetails = () => {
                     Exam &amp; Results
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    to={routes.studentLibrary}
-                    className="nav-link"
-                    state={{ studentId: student.id, student }}
-                  >
-                    <i className="ti ti-books me-2" />
-                    Library
-                  </Link>
-                </li>
               </ul>
               {/* /List */}
               {/* Parents Information */}
@@ -225,21 +222,9 @@ const StudentDetails = () => {
                           </div>
                         </div>
                         <div className="col-sm-6 col-lg-4">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <div className="mb-3 overflow-hidden me-3">
-                              <p className="text-dark fw-medium mb-1">Email</p>
-                              <p className="text-truncate">{student.father_email ?? 'N/A'}</p>
-                            </div>
-                            <Link
-                              to="#"
-                              data-bs-toggle="tooltip"
-                              data-bs-placement="top"
-                              aria-label="Print"
-                              data-bs-original-title="Reset Password"
-                              className="btn btn-dark btn-icon btn-sm mb-3"
-                            >
-                              <i className="ti ti-lock-x" />
-                            </Link>
+                          <div className="mb-3 overflow-hidden me-3">
+                            <p className="text-dark fw-medium mb-1">Email</p>
+                            <p className="text-truncate">{student.father_email ?? 'N/A'}</p>
                           </div>
                         </div>
                       </div>
@@ -270,21 +255,9 @@ const StudentDetails = () => {
                           </div>
                         </div>
                         <div className="col-lg-4 col-sm-6">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <div className="mb-3 overflow-hidden me-3">
-                              <p className="text-dark fw-medium mb-1">Email</p>
-                              <p className="text-truncate">{student.mother_email ?? 'N/A'}</p>
-                            </div>
-                            <Link
-                              to="#"
-                              data-bs-toggle="tooltip"
-                              data-bs-placement="top"
-                              aria-label="Print"
-                              data-bs-original-title="Reset Password"
-                              className="btn btn-dark btn-icon btn-sm mb-3"
-                            >
-                              <i className="ti ti-lock-x" />
-                            </Link>
+                          <div className="mb-3 overflow-hidden me-3">
+                            <p className="text-dark fw-medium mb-1">Email</p>
+                            <p className="text-truncate">{student.mother_email ?? 'N/A'}</p>
                           </div>
                         </div>
                       </div>
@@ -315,21 +288,9 @@ const StudentDetails = () => {
                           </div>
                         </div>
                         <div className="col-lg-4 col-sm-6">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <div className="mb-3 overflow-hidden me-3">
-                              <p className="text-dark fw-medium mb-1">Email</p>
-                              <p className="text-truncate">{student.guardian_email ?? 'N/A'}</p>
-                            </div>
-                            <Link
-                              to="#"
-                              data-bs-toggle="tooltip"
-                              data-bs-placement="top"
-                              aria-label="Print"
-                              data-bs-original-title="Reset Password"
-                              className="btn btn-dark btn-icon btn-sm mb-3"
-                            >
-                              <i className="ti ti-lock-x" />
-                            </Link>
+                          <div className="mb-3 overflow-hidden me-3">
+                            <p className="text-dark fw-medium mb-1">Email</p>
+                            <p className="text-truncate">{student.guardian_email ?? 'N/A'}</p>
                           </div>
                         </div>
                       </div>
@@ -343,49 +304,8 @@ const StudentDetails = () => {
               </div>
               {/* /Parents Information */}
             </div>
-            {/* Documents */}
-            <div className="col-xxl-6 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header">
-                  <h5>Documents</h5>
-                </div>
-                <div className="card-body">
-                  <div className="bg-light-300 border rounded d-flex align-items-center justify-content-between mb-3 p-2">
-                    <div className="d-flex align-items-center overflow-hidden">
-                      <span className="avatar avatar-md bg-white rounded flex-shrink-0 text-default">
-                        <i className="ti ti-pdf fs-15" />
-                      </span>
-                      <div className="ms-2">
-                        <p className="text-truncate fw-medium text-dark">
-                          BirthCertificate.pdf
-                        </p>
-                      </div>
-                    </div>
-                    <Link to="#" className="btn btn-dark btn-icon btn-sm">
-                      <i className="ti ti-download" />
-                    </Link>
-                  </div>
-                  <div className="bg-light-300 border rounded d-flex align-items-center justify-content-between p-2">
-                    <div className="d-flex align-items-center overflow-hidden">
-                      <span className="avatar avatar-md bg-white rounded flex-shrink-0 text-default">
-                        <i className="ti ti-pdf fs-15" />
-                      </span>
-                      <div className="ms-2">
-                        <p className="text-truncate fw-medium text-dark">
-                          Transfer Certificate.pdf
-                        </p>
-                      </div>
-                    </div>
-                    <Link to="#" className="btn btn-dark btn-icon btn-sm">
-                      <i className="ti ti-download" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* /Documents */}
             {/* Address */}
-            <div className="col-xxl-6 d-flex">
+            <div className="col-xxl-12 d-flex">
               <div className="card flex-fill">
                 <div className="card-header">
                   <h5>Address</h5>
@@ -457,19 +377,19 @@ const StudentDetails = () => {
                     <div className="col-md-4">
                       <div className="mb-3">
                         <p className="text-dark fw-medium mb-1">Bank Name</p>
-                        <p>{(student.bank_name ?? student.bankName) ?? 'N/A'}</p>
+                        <p>{bankName}</p>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <p className="text-dark fw-medium mb-1">Branch</p>
-                        <p>{(student.branch ?? student.branchName) ?? 'N/A'}</p>
+                        <p>{branchName}</p>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <p className="text-dark fw-medium mb-1">IFSC</p>
-                        <p>{(student.ifsc ?? student.ifscCode) ?? 'N/A'}</p>
+                        <p>{ifscCode}</p>
                       </div>
                     </div>
                   </div>
@@ -490,8 +410,8 @@ const StudentDetails = () => {
                         <p className="text-dark fw-medium mb-1">
                           Known Allergies
                         </p>
-                        {(student.known_allergies ?? student.knownAllergies) ? (
-                          <span className="badge bg-light text-dark">{student.known_allergies ?? student.knownAllergies}</span>
+                        {knownAllergies ? (
+                          <span className="badge bg-light text-dark">{knownAllergies}</span>
                         ) : (
                           <p className="mb-0">N/A</p>
                         )}
@@ -500,7 +420,13 @@ const StudentDetails = () => {
                     <div className="col-md-6">
                       <div className="mb-3">
                         <p className="text-dark fw-medium mb-1">Medications</p>
-                        <p>{(student.medications ?? student.medicationsList) ?? 'N/A'}</p>
+                        <p>{medications ?? 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <p className="text-dark fw-medium mb-1">Medical Condition</p>
+                        <p>{medicalCondition ?? 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -515,13 +441,7 @@ const StudentDetails = () => {
                   <h5>Other Info</h5>
                 </div>
                 <div className="card-body">
-                  <p>
-                    Depending on the specific needs of your organization or
-                    system, additional information may be collected or tracked.
-                    It's important to ensure that any data collected complies
-                    with privacy regulations and policies to protect students'
-                    sensitive information.
-                  </p>
+                  <p className="mb-0">{otherInformation ?? 'No additional student information available.'}</p>
                 </div>
               </div>
             </div>
