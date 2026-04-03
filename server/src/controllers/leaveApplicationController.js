@@ -452,9 +452,22 @@ const getGuardianWardLeaves = async (req, res) => {
   }
 };
 
+function parseLeaveDateQuery(q, keys) {
+  if (!q || !keys) return null;
+  for (let k = 0; k < keys.length; k += 1) {
+    const key = keys[k];
+    const val = q[key];
+    if (val == null || val === '') continue;
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  }
+  return null;
+}
+
 // Get leave applications for dashboard (e.g. pending or recent).
 // Optional filters: ?student_id=X, ?staff_id=X (for admin viewing specific student/teacher).
 // Optional: ?academic_year_id=X - filter student leaves by academic year.
+// Optional: ?leave_from=&leave_to= or ?from_date=&to_date= (YYYY-MM-DD) — overlap filter on leave range.
 const getLeaveApplications = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
@@ -462,20 +475,36 @@ const getLeaveApplications = async (req, res) => {
     const staffId = req.query.staff_id ? parseInt(req.query.staff_id, 10) : null;
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+    const leaveFrom = parseLeaveDateQuery(req.query, ['leave_from', 'from_date']);
+    const leaveTo = parseLeaveDateQuery(req.query, ['leave_to', 'to_date']);
 
-    let whereClause = '';
+    const conditions = [];
     const params = [];
-    if (studentId) {
-      whereClause = ' WHERE la.student_id = $1';
+    let i = 1;
+
+    if (studentId && !Number.isNaN(studentId)) {
+      conditions.push(`la.student_id = $${i++}`);
       params.push(studentId);
-    } else if (staffId) {
-      whereClause = ' WHERE la.staff_id = $1';
+    } else if (staffId && !Number.isNaN(staffId)) {
+      conditions.push(`la.staff_id = $${i++}`);
       params.push(staffId);
     } else if (hasYearFilter) {
-      whereClause = ' WHERE (la.student_id IS NULL OR st.academic_year_id = $1)';
+      conditions.push(`(la.student_id IS NULL OR st.academic_year_id = $${i++})`);
       params.push(academicYearId);
     }
+
+    if (leaveFrom) {
+      conditions.push(`la.end_date >= $${i++}::date`);
+      params.push(leaveFrom);
+    }
+    if (leaveTo) {
+      conditions.push(`la.start_date <= $${i++}::date`);
+      params.push(leaveTo);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);
+    const limitIdx = i;
 
     const result = await query(
       `
@@ -493,7 +522,7 @@ const getLeaveApplications = async (req, res) => {
       LEFT JOIN students st ON la.student_id = st.id
       ${whereClause}
       ORDER BY la.start_date DESC NULLS LAST
-      LIMIT $${params.length}
+      LIMIT $${limitIdx}
       `,
       params
     );
