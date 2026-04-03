@@ -39,7 +39,7 @@ const ROLE_NAMES = {
 };
 
 /** Roles that can approve/reject leave applications */
-const LEAVE_APPROVER_ROLES = [ROLES.ADMIN];
+const LEAVE_APPROVER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can manage fee collection (create, list all) */
 const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
@@ -47,8 +47,8 @@ const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can manage notice board (create, update, delete) */
 const NOTICE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
-/** Roles that can access admin dashboard stats (full system counts) */
-const ADMIN_DASHBOARD_ROLES = [ROLES.ADMIN];
+/** Roles that can access dashboard operational stats */
+const ADMIN_DASHBOARD_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can manage users */
 const USER_MANAGER_ROLES = [ROLES.ADMIN];
