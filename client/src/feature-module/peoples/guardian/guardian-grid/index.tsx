@@ -1,4 +1,5 @@
 import  { useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
 import { Link } from "react-router-dom";
@@ -12,13 +13,19 @@ import { Modal } from "react-bootstrap";
 import GuardianModal from "../guardianModal";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useGuardians } from "../../../../core/hooks/useGuardians";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
 const GuardianGrid = () => {
   const [show, setShow] = useState(false);
   const [selectedGuardian, setSelectedGuardian] = useState<any>(null);
+  const [guardianToEdit, setGuardianToEdit] = useState<any>(null);
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { guardians, loading, error, refetch } = useGuardians();
+  const user = useSelector(selectUser);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const isGuardian = (user?.role || "").toLowerCase() === "guardian";
+  const { guardians, loading, error, refetch } = useGuardians({ academicYearId: isGuardian ? null : academicYearId });
 
   // useGuardians already returns transformed guardian objects in the exact
   // shape expected by this grid and the View Details modal.
@@ -48,11 +55,18 @@ const GuardianGrid = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <Link
+                to={isGuardian ? routes.guardianDashboard : routes.guardiansList}
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </Link>
               <h3 className="page-title mb-1">Guardian</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
+                    <Link to={isGuardian ? routes.guardianDashboard : routes.adminDashboard}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">Peoples</li>
                   <li className="breadcrumb-item active" aria-current="page">
@@ -64,17 +78,19 @@ const GuardianGrid = () => {
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
               <TooltipOption />
 
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary d-flex align-items-center"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_guardian"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Guardian
-                </Link>
-              </div>
+              {!isGuardian && (
+                <div className="mb-2">
+                  <Link
+                    to="#"
+                    className="btn btn-primary d-flex align-items-center"
+                    data-bs-toggle="modal"
+                    data-bs-target="#add_guardian"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Guardian
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}
@@ -252,6 +268,7 @@ const GuardianGrid = () => {
                               to="#"
                               data-bs-toggle="modal"
                               data-bs-target="#edit_guardian"
+                              onClick={() => setGuardianToEdit(guardian)}
                             >
                               <i className="ti ti-edit-circle me-2" />
                               Edit
@@ -310,6 +327,7 @@ const GuardianGrid = () => {
                       <div className="d-flex align-items-center">
                         <Link
                           to={routes.studentDetail}
+                          state={guardian.student_id != null ? { studentId: guardian.student_id } : undefined}
                           className="avatar avatar-md flex-shrink-0 p-0 me-2"
                         >
                           <ImageWithBasePath
@@ -345,7 +363,7 @@ const GuardianGrid = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <GuardianModal />
+      <GuardianModal guardianToEdit={guardianToEdit} refetch={refetch} />
 
       <Modal show={show} onHide={handleClose} centered size="lg">
         <div className="modal-header">
@@ -405,7 +423,11 @@ const GuardianGrid = () => {
               </div>
               <div className="d-flex align-items-center justify-content-between flex-wrap">
                 <div className="d-flex align-items-center mb-3">
-                  <Link to={routes.studentDetail} className="avatar">
+                  <Link
+                    to={routes.studentDetail}
+                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    className="avatar"
+                  >
                     <ImageWithBasePath
                       src={selectedGuardian.ChildImage}
                       className="img-fluid rounded-circle"
@@ -414,7 +436,12 @@ const GuardianGrid = () => {
                   </Link>
                   <div className="ms-2">
                     <p className="mb-0">
-                      <Link to={routes.studentDetail}>{selectedGuardian.Child}</Link>
+                      <Link
+                        to={routes.studentDetail}
+                        state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                      >
+                        {selectedGuardian.Child}
+                      </Link>
                     </p>
                     <span>{selectedGuardian.class}</span>
                   </div>
@@ -439,6 +466,7 @@ const GuardianGrid = () => {
                   </Link>
                   <Link
                     to={routes.studentDetail}
+                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
                     className="btn btn-primary mb-3"
                   >
                     View Details

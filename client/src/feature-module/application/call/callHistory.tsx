@@ -1,13 +1,39 @@
 
 import { Link } from "react-router-dom";
-import { callhistorydata } from "../../../core/data/json/callHistoryData";
+import { useCalls } from "../../../core/hooks/useCalls";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import Table from "../../../core/common/dataTable/index";
-import { all_routes } from "../../router/all_routes";
+
+const formatCallType = (type: string) => {
+  if (!type) return 'Unknown';
+  const t = String(type).toLowerCase();
+  if (t === 'incoming') return 'Incoming Call';
+  if (t === 'outgoing') return 'Outgoing Call';
+  if (t === 'missed') return 'Missed Call';
+  return type;
+};
 
 const CallHistory = () => {
-  const routes = all_routes;
-  const data = callhistorydata;
+  const { calls, loading, error } = useCalls();
+  
+  // Transform API data to match table format - only real calls from DB
+  const data = (calls || []).map((call: any) => ({
+    id: call.id,
+    checkbox: true,
+    username: call.recipient_username || [call.recipient_first_name, call.recipient_last_name].filter(Boolean).join(' ') || 'Unknown',
+    phone_number: call.phone_number || call.recipient_phone || 'N/A',
+    call_type: formatCallType(call.call_type),
+    duration: call.duration ? `${Math.floor(call.duration / 60)}:${String(call.duration % 60).padStart(2, '0')}` : '00:00',
+    date_time: call.call_date ? new Date(call.call_date).toLocaleString('en-GB', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }) : 'N/A',
+    image_url: call.recipient_photo_url || "assets/img/users/user-01.jpg",
+    key: call.id.toString()
+  }));
   const columns = [
     {
       title: "UserName",
@@ -33,13 +59,6 @@ const CallHistory = () => {
       dataIndex: "call_type",
       sorter: (a: any, b: any) => a.call_type.length - b.call_type.length,
     },
-
-    {
-      title: "Phone",
-      dataIndex: "phone",
-      sorter: (a: any, b: any) => a.phone.length - b.phone.length,
-    },
-
     {
       title: "Duration",
       dataIndex: "duration",
@@ -99,115 +118,42 @@ const CallHistory = () => {
           <div className="page-header menu">
             <div className="page-title">
               <h4>Call History</h4>
-              <h6>Manage your products</h6>
+              <h6>View your call history. Calls appear here when you make or receive them.</h6>
             </div>
           </div>
         </div>
-        {/* /product list */}
         <div className="card table-list-card">
           <div className="card-body">
-            {/* /Filter */}
-            <div className="table-responsive product-list">
-              <Table columns={columns} dataSource={data} />
-            </div>
+            {loading ? (
+              <div className="text-center p-4">Loading...</div>
+            ) : error ? (
+              <div className="text-center p-4 text-danger">Error: {error}</div>
+            ) : data.length === 0 ? (
+              <div className="text-center p-5 empty-state">
+                <div className="empty-state-icon mb-3">
+                  <i className="bx bx-phone-call" style={{ fontSize: '48px', color: '#ccc' }} />
+                </div>
+                <h5 className="text-muted">No calls yet</h5>
+                <p className="text-muted mb-0">Your call history will appear here when you make or receive calls.</p>
+              </div>
+            ) : (
+              <div className="table-responsive product-list">
+                <Table columns={columns} dataSource={data} />
+              </div>
+            )}
           </div>
         </div>
-        {/* /product list */}
       </div>
-      {/* details popup */}
+      {/* details popup - shows when user clicks action on a call row */}
       <div className="modal fade" id="user-profile-new">
         <div className="modal-dialog history-modal-profile">
           <div className="modal-content">
-            <div className="page-wrapper details-blk">
-              <div className="content">
-                <div className="text-center right-sidebar-profile mb-3">
-                  <figure className="avatar">
-                    <ImageWithBasePath
-                      src="assets/img/users/user-23.jpg"
-                      alt="img"
-                    />
-                  </figure>
-                  <div className="chat-options chat-option-profile">
-                    <ul className="list-inline">
-                      <li className="list-inline-item">
-                        <Link
-                          to={routes.audioCall}
-                          className="btn btn-outline-light "
-                          data-bs-toggle="tooltip"
-                          data-bs-placement="bottom"
-                          title=""
-                          data-bs-original-title="Voice Call"
-                        >
-                          <i className="bx bx-phone" />
-                        </Link>
-                      </li>
-                      <li className="list-inline-item">
-                        <Link
-                          to={routes.chat}
-                          className="btn btn-outline-light"
-                          data-bs-toggle="tooltip"
-                          data-bs-placement="bottom"
-                          title=""
-                          data-bs-original-title="Chat"
-                        >
-                          <i className="bx bx-message-square-dots" />
-                        </Link>
-                      </li>
-                      <li className="list-inline-item ">
-                        <Link
-                          to={routes.videoCall}
-                          className="btn btn-outline-light profile-open"
-                          data-bs-toggle="tooltip"
-                          data-bs-placement="bottom"
-                          title=""
-                          data-bs-original-title="Video Call"
-                        >
-                          <i className="bx bx-video" />
-                        </Link>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="modal-profile-detail">
-                  <div className="row">
-                    <div className="col-lg-6">
-                      <div className="modal-userlist">
-                        <ul>
-                          <li>
-                            Name<span>Thomas</span>
-                          </li>
-                          <li>
-                            Phone<span>+1 25182 94528</span>
-                          </li>
-                          <li>
-                            Email<span>thomas@example.com</span>
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                    <div className="col-lg-6">
-                      <div className="modal-userlist d-flex justify-content-center">
-                        <ul>
-                          <li>
-                            Total Calls<span>20</span>
-                          </li>
-                          <li>
-                            Average Call Timing<span>0.30</span>
-                          </li>
-                          <li>
-                            Average Waiting Time<span>00.5</span>
-                          </li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="modal-body text-center py-4">
+              <p className="text-muted mb-0">Call details and quick actions will appear here when you select a call.</p>
             </div>
           </div>
         </div>
       </div>
-      {/* /details popup */}
       <div
         className="modal custom-modal fade"
         id="delete_campaign"

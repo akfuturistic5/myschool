@@ -1,140 +1,234 @@
-
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import Table from "../../../core/common/dataTable/index";
-import { grade_report_data } from "../../../core/data/json/grade_report_data";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { all_routes } from "../../router/all_routes";
 import type { TableData } from "../../../core/data/interface";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  classes,
-  examtwo,
-  sections,
-} from "../../../core/common/selectoption/selectoption";
 import TooltipOption from "../../../core/common/tooltipOption";
+import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
+import { apiService } from "../../../core/services/apiService";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
+
+const compareNumber = (left: unknown, right: unknown) =>
+  Number(left ?? 0) - Number(right ?? 0);
 
 const GradeReport = () => {
   const routes = all_routes;
-  const data = grade_report_data;
-  const columns = [
-    {
-      title: "Admission No",
-      dataIndex: "admissionNo",
-      key: "admissionNo",
-      sorter: (a: TableData, b: TableData) =>
-        a.admissionNo.length - b.admissionNo.length,
-      render: (text: any) => (
-        <Link to="#" className="link-primary">
-          {text}
-        </Link>
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classesWithSections } = useClassesWithSections(academicYearId);
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [reportData, setReportData] = useState<any>({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const classOptions = useMemo(() => {
+    const seen = new Map<string, { value: string; label: string }>();
+    (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
+      if (row?.classId == null || seen.has(String(row.classId))) return;
+      seen.set(String(row.classId), {
+        value: String(row.classId),
+        label: row.className || `Class ${row.classId}`,
+      });
+    });
+    return Array.from(seen.values());
+  }, [classesWithSections]);
+
+  const sectionOptions = useMemo(() => {
+    const base = [{ value: "", label: "All Sections" }];
+    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
+      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
+      .filter((row: any) => row?.sectionId != null)
+      .map((row: any) => ({
+        value: String(row.sectionId),
+        label: row.sectionName || `Section ${row.sectionId}`,
+      }));
+
+    const seen = new Set<string>();
+    return base.concat(
+      items.filter((item) => {
+        if (seen.has(item.value)) return false;
+        seen.add(item.value);
+        return true;
+      })
+    );
+  }, [classesWithSections, selectedClassId]);
+
+  const examOptions = useMemo(
+    () =>
+      [{ value: "", label: "Latest Exam" }].concat(
+        (Array.isArray(reportData.availableExams) ? reportData.availableExams : []).map((exam: any) => ({
+          value: String(exam.examId),
+          label: [exam.examName, exam.examType].filter(Boolean).join(" - ") || `Exam ${exam.examId}`,
+        }))
       ),
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      key: "studentName",
-      sorter: (a: TableData, b: TableData) =>
-        a.studentName.length - b.studentName.length,
-      render: (text: any, record: any) => (
-        <div className="d-flex align-items-center">
-          <Link to={routes.studentDetail} className="avatar avatar-md">
-            <ImageWithBasePath
-              src={record.avatar}
-              className="img-fluid rounded-circle"
-              alt="img"
-            />
-          </Link>
-          <div className="ms-2">
-            <p className="text-dark mb-0">
-              <Link to={routes.studentDetail}>{text}</Link>
-            </p>
-            <span className="fs-12">Roll No : {record.rollNo}</span>
+    [reportData.availableExams]
+  );
+
+  useEffect(() => {
+    if (!selectedClassId && classOptions.length > 0) {
+      setSelectedClassId(classOptions[0].value);
+    }
+  }, [classOptions, selectedClassId]);
+
+  useEffect(() => {
+    if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
+      setSelectedSectionId("");
+    }
+  }, [sectionOptions, selectedSectionId]);
+
+  useEffect(() => {
+    if (!selectedClassId) {
+      setReportData({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchReport = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiService.getGradeReport({
+          classId: selectedClassId,
+          sectionId: selectedSectionId || null,
+          academicYearId,
+          examId: selectedExamId || null,
+        });
+        const payload = res?.data || { selectedExam: null, availableExams: [], subjects: [], rows: [] };
+        if (!cancelled) {
+          setReportData(payload);
+          const nextExamId = payload?.selectedExam?.examId != null ? String(payload.selectedExam.examId) : "";
+          if ((selectedExamId || "") !== nextExamId) {
+            setSelectedExamId(nextExamId);
+          }
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to fetch grade report");
+          setReportData({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchReport();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId, selectedClassId, selectedSectionId, selectedExamId]);
+
+  const data = useMemo(
+    () =>
+      (Array.isArray(reportData.rows) ? reportData.rows : []).map((row: any, index: number) => ({
+        key: row.studentId ?? `grade-report-${index}`,
+        ...row,
+      })),
+    [reportData.rows]
+  );
+
+  const subjectColumns = useMemo(
+    () =>
+      (Array.isArray(reportData.subjects) ? reportData.subjects : []).map((subject: any) => ({
+        title: subject.subjectName || `Subject ${subject.subjectId}`,
+        key: `subject-${subject.subjectId}`,
+        render: (_text: any, record: any) => {
+          const marks = record.subjectMarks?.[String(subject.subjectId)];
+          if (!marks) return "—";
+          if (marks.isAbsent) return "AB";
+          return marks.marksObtained ?? "—";
+        },
+        sorter: (a: any, b: any) =>
+          compareNumber(
+            a?.subjectMarks?.[String(subject.subjectId)]?.marksObtained,
+            b?.subjectMarks?.[String(subject.subjectId)]?.marksObtained
+          ),
+      })),
+    [reportData.subjects]
+  );
+
+  const columns = useMemo(
+    () => [
+      {
+        title: "Admission No",
+        dataIndex: "admissionNo",
+        key: "admissionNo",
+        sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
+        render: (text: any) => <Link to="#" className="link-primary">{text || "—"}</Link>,
+      },
+      {
+        title: "Student Name",
+        dataIndex: "studentName",
+        key: "studentName",
+        sorter: (a: TableData, b: TableData) => compareText(a?.studentName, b?.studentName),
+        render: (text: any, record: any) => (
+          <div className="d-flex align-items-center">
+            <Link to={routes.studentDetail} className="avatar avatar-md">
+              <ImageWithBasePath
+                src={record.avatar}
+                className="img-fluid rounded-circle"
+                alt="img"
+                gender={record.gender}
+              />
+            </Link>
+            <div className="ms-2">
+              <p className="text-dark mb-0">
+                <Link to={routes.studentDetail}>{text || "—"}</Link>
+              </p>
+              <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
+            </div>
           </div>
-        </div>
-      ),
-    },
-    {
-      title: "English",
-      dataIndex: "english",
-      key: "english",
-      sorter: (a: TableData, b: TableData) =>
-        a.english.length - b.english.length,
-    },
-    {
-      title: "Spanish",
-      dataIndex: "spanish",
-      key: "spanish",
-      sorter: (a: TableData, b: TableData) =>
-        a.spanish.length - b.spanish.length,
-    },
-    {
-      title: "Physics",
-      dataIndex: "physics",
-      key: "physics",
-      sorter: (a: TableData, b: TableData) =>
-        a.physics.length - b.physics.length,
-    },
-    {
-      title: "Chemistry",
-      dataIndex: "chemistry",
-      key: "chemistry",
-      sorter: (a: TableData, b: TableData) =>
-        a.chemistry.length - b.chemistry.length,
-    },
-    {
-      title: "Maths",
-      dataIndex: "maths",
-      key: "maths",
-      sorter: (a: TableData, b: TableData) => a.maths.length - b.maths.length,
-    },
-    {
-      title: "Computer",
-      dataIndex: "computer",
-      key: "computer",
-      sorter: (a: TableData, b: TableData) =>
-        a.computer.length - b.computer.length,
-    },
-    {
-      title: "Env Science",
-      dataIndex: "envScience",
-      key: "envScience",
-      sorter: (a: TableData, b: TableData) =>
-        a.envScience.length - b.envScience.length,
-    },
-    {
-      title: "Total",
-      dataIndex: "total",
-      key: "total",
-      sorter: (a: TableData, b: TableData) => a.total.length - b.total.length,
-    },
-    {
-      title: "Percent(%)",
-      dataIndex: "percent",
-      key: "percent",
-      sorter: (a: TableData, b: TableData) =>
-        a.percent.length - b.percent.length,
-    },
-    {
-      title: "Grade",
-      dataIndex: "grade",
-      key: "grade",
-      sorter: (a: TableData, b: TableData) => a.grade.length - b.grade.length,
-      render: (text: any, record: any) => (
-        <span className={record.textColor ? `text-${record.textColor}` : ""}>
-          {text}
-        </span>
-      ),
-    },
-  ];
+        ),
+      },
+      ...subjectColumns,
+      {
+        title: "Total",
+        key: "total",
+        render: (_text: any, record: any) => record.summary?.totalObtained ?? "—",
+        sorter: (a: any, b: any) => compareNumber(a?.summary?.totalObtained, b?.summary?.totalObtained),
+      },
+      {
+        title: "Percent(%)",
+        key: "percent",
+        render: (_text: any, record: any) => record.summary?.percentage ?? "—",
+        sorter: (a: any, b: any) => compareNumber(a?.summary?.percentage, b?.summary?.percentage),
+      },
+      {
+        title: "Grade",
+        key: "grade",
+        render: (_text: any, record: any) => {
+          const grade = record.summary?.grade || "—";
+          const textColor = grade === "F" ? "text-danger" : "";
+          return <span className={textColor}>{grade}</span>;
+        },
+        sorter: (a: any, b: any) => compareText(a?.summary?.grade, b?.summary?.grade),
+      },
+    ],
+    [routes.studentDetail, subjectColumns]
+  );
+
+  const handleApply = (e: React.MouseEvent | React.FormEvent) => {
+    e.preventDefault();
+    if (dropdownMenuRef.current) {
+      dropdownMenuRef.current.classList.remove("show");
+    }
+  };
 
   return (
     <div>
-      {" "}
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Grade Report</h3>
@@ -153,18 +247,21 @@ const GradeReport = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-             <TooltipOption />
+              <TooltipOption />
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Student List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Grade Report List</h4>
+              <div className="mb-3">
+                <h4 className="mb-1">Grade Report List</h4>
+                {reportData.selectedExam && (
+                  <p className="text-muted mb-0">
+                    Showing {reportData.selectedExam.examName || "Latest Exam"}
+                  </p>
+                )}
+              </div>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -175,7 +272,7 @@ const GradeReport = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width">
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -187,8 +284,9 @@ const GradeReport = () => {
                               <label className="form-label">Class</label>
                               <CommonSelect
                                 className="select"
-                                options={classes}
-                                defaultValue={classes[0]}
+                                options={classOptions}
+                                value={selectedClassId}
+                                onChange={(value) => setSelectedClassId(value)}
                               />
                             </div>
                           </div>
@@ -197,78 +295,66 @@ const GradeReport = () => {
                               <label className="form-label">Section</label>
                               <CommonSelect
                                 className="select"
-                                options={sections}
-                                defaultValue={sections[0]}
+                                options={sectionOptions}
+                                value={selectedSectionId ?? ""}
+                                onChange={(value) => setSelectedSectionId(value ?? "")}
                               />
                             </div>
                           </div>
                           <div className="col-md-12">
                             <div className="mb-0">
-                              <label className="form-label">Exam Type</label>
+                              <label className="form-label">Exam</label>
                               <CommonSelect
                                 className="select"
-                                options={examtwo}
-                                defaultValue={examtwo[0]}
+                                options={examOptions}
+                                value={selectedExamId ?? ""}
+                                onChange={(value) => setSelectedExamId(value ?? "")}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link
+                          to="#"
+                          className="btn btn-light me-3"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setSelectedSectionId("");
+                            setSelectedExamId("");
+                          }}
+                        >
                           Reset
                         </Link>
-                        <button type="submit" className="btn btn-primary">
+                        <button type="submit" className="btn btn-primary" onClick={handleApply}>
                           Apply
                         </button>
                       </div>
                     </form>
                   </div>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} Selection={true} />
-              {/* /Student List */}
+              {error && (
+                <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
+              {loading ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading grade report...</p>
+                </div>
+              ) : (
+                <Table dataSource={data} columns={columns} Selection={true} />
+              )}
             </div>
           </div>
-          {/* /Student List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
     </div>
   );
 };

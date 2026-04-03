@@ -7,10 +7,9 @@ interface TagInputProps {
 }
 
 const TagInput: React.FC<TagInputProps> = ({ initialTags = [], onTagsChange }) => {
-  const {  } = theme.useToken();
   const [tags, setTags] = useState<string[]>(initialTags);
   const [inputValue, setInputValue] = useState('');
-  const [inputVisible, ] = useState(false);
+  const [inputVisible,] = useState(false);
   const inputRef = useRef<InputRef | null>(null);
 
   useEffect(() => {

@@ -4,10 +4,12 @@ import NotesContent from "./notesContent";
 import NotesModal from "./notesModal";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
+import { useNotes } from "../../core/hooks/useNotes";
 
 const Notes = () => {
   const [isOpen, setOpen] = useState(false);
   const routes = all_routes;
+  const { notes } = useNotes();
   return (
     <>
       <div className="page-wrapper">
@@ -82,7 +84,7 @@ const Notes = () => {
                         aria-selected="true"
                       >
                         <i className="ti ti-inbox me-2" />
-                        All Notes<span className="ms-2">1</span>
+                        All Notes<span className="ms-2">{notes.length}</span>
                       </button>
                       <button
                         className="d-flex text-start align-items-center fw-semibold fs-15 nav-link mb-1"
@@ -95,7 +97,7 @@ const Notes = () => {
                         aria-selected="false"
                       >
                         <i className="ti ti-star me-2" />
-                        Important
+                        Important <span className="ms-2">{notes.filter((n: any) => n.is_important).length}</span>
                       </button>
                       <button
                         className="d-flex text-start align-items-center fw-semibold fs-15 nav-link mb-0"
@@ -108,7 +110,7 @@ const Notes = () => {
                         aria-selected="false"
                       >
                         <i className="ti ti-trash me-2" />
-                        Trash
+                        Trash <span className="ms-2">{notes.filter((n: any) => n.is_deleted).length}</span>
                       </button>
                     </div>
                   </div>

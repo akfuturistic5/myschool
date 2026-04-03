@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -12,12 +12,17 @@ import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import { useTransportPickupPoints } from "../../../core/hooks/useTransportPickupPoints";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportPickupPoints = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, fallbackData } = useTransportPickupPoints();
+  const { data: apiData, loading, fallbackData, refetch } = useTransportPickupPoints();
   const data = apiData?.length ? apiData : fallbackData;
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState<any>(null);
+  const [editPickupAddress, setEditPickupAddress] = useState('');
+  const [editPickupStatus, setEditPickupStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -27,32 +32,32 @@ const TransportPickupPoints = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: string) => (
+      render: (text: any, record: any) => (
         <Link to="#" className="link-primary">
-          {text}
+          {text || record.id || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id).length - String(b.id).length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Pickup Point",
       dataIndex: "pickupPoint",
-      
+
       sorter: (a: TableData, b: TableData) =>
         a.pickupPoint.length - b.pickupPoint.length,
     },
     {
-        title: "Status",
-        dataIndex: "status",
-        render: (text: string) => (
-          <>
-            {text === "Active" ? (
-              <span
-                className="badge badge-soft-success d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            ):
+      title: "Status",
+      dataIndex: "status",
+      render: (text: string) => (
+        <>
+          {text === "Active" ? (
+            <span
+              className="badge badge-soft-success d-inline-flex align-items-center"
+            >
+              <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
+            </span>
+          ) :
             (
               <span
                 className="badge badge-soft-danger d-inline-flex align-items-center"
@@ -60,22 +65,22 @@ const TransportPickupPoints = () => {
                 <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
               </span>
             )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) =>
-          a.status.length - b.status.length,
-      },
+        </>
+      ),
+      sorter: (a: TableData, b: TableData) =>
+        a.status.length - b.status.length,
+    },
     {
       title: "Added On",
       dataIndex: "addedOn",
       sorter: (a: TableData, b: TableData) =>
         a.addedOn.length - b.addedOn.length,
     },
-    
+
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -92,8 +97,36 @@ const TransportPickupPoints = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_pickup"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Set form data from record
+                      const pickup = record.originalData || record;
+                      // Use address from originalData, or fallback to mapped pickupPoint property
+                      const pickupAddress = pickup.address || record.pickupPoint || '';
+                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+                      // Fallback to status string if is_active is not available
+                      let pickupStatus = true; // default to active
+                      if (Object.prototype.hasOwnProperty.call(pickup, 'is_active')) {
+                        pickupStatus = pickup.is_active === true || pickup.is_active === 1 || pickup.is_active === 'true';
+                      } else if (record.status) {
+                        pickupStatus = record.status === 'Active';
+                      }
+
+                      setEditPickupAddress(pickupAddress);
+                      setEditPickupStatus(pickupStatus);
+                      setSelectedPickupPoint(record);
+
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_pickup');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -135,7 +168,7 @@ const TransportPickupPoints = () => {
                     <Link to="#">Management</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Pickup Points
+                    Pickup Points
                   </li>
                 </ol>
               </nav>
@@ -183,7 +216,7 @@ const TransportPickupPoints = () => {
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
-                      <div className="row">
+                        <div className="row">
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Pickup Points</label>
@@ -272,7 +305,54 @@ const TransportPickupPoints = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TransportModal />
+      <TransportModal
+        selectedPickupPoint={selectedPickupPoint}
+        editPickupAddress={editPickupAddress}
+        setEditPickupAddress={setEditPickupAddress}
+        editPickupStatus={editPickupStatus}
+        setEditPickupStatus={setEditPickupStatus}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onPickupUpdate={async () => {
+          const pickupId = selectedPickupPoint?.originalData?.id || selectedPickupPoint?.id;
+          if (!pickupId || isUpdating) return;
+
+          setIsUpdating(true);
+          try {
+            const updateData = {
+              address: editPickupAddress.trim(),
+              is_active: editPickupStatus
+            };
+
+            const response = await apiService.updateTransportPickupPoint(pickupId, updateData);
+
+            if (response && response.status === 'SUCCESS') {
+              // Close modal
+              const modalElement = document.getElementById('edit_pickup');
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              // Refetch list
+              await refetch();
+              // Reset form
+              setSelectedPickupPoint(null);
+              setEditPickupAddress('');
+              setEditPickupStatus(true);
+            } else {
+              alert(response?.message || 'Failed to update pickup point');
+            }
+          } catch (error: any) {
+            console.error('Error updating pickup point:', error);
+            alert(error?.message || 'Failed to update pickup point. Please try again.');
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

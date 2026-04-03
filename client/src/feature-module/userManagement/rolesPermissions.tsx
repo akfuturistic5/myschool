@@ -1,4 +1,5 @@
 
+import { useState } from "react";
 import Table from "../../core/common/dataTable/index";
 import type { TableData } from "../../core/data/interface";
 import PredefinedDateRanges from "../../core/common/datePicker";
@@ -11,6 +12,7 @@ const RolesPermissions = () => {
   const routes = all_routes;
   const { userRoles, loading, error, refetch } = useUserRoles();
   const data = userRoles;
+  const [selectedRole, setSelectedRole] = useState<any>(null);
   const columns = [
     {
       title: "Role Name",
@@ -28,14 +30,26 @@ const RolesPermissions = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <Link
               to="#"
               className="btn btn-outline-light bg-white btn-icon d-flex align-items-center justify-content-center rounded-circle  p-0 me-2"
-              data-bs-toggle="modal"
-              data-bs-target="#edit_role"
+              onClick={(e) => {
+                e.preventDefault();
+                setSelectedRole(record);
+                setTimeout(() => {
+                  const modalElement = document.getElementById('edit_role');
+                  if (modalElement) {
+                    const bootstrap = (window as any).bootstrap;
+                    if (bootstrap && bootstrap.Modal) {
+                      const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                      modal.show();
+                    }
+                  }
+                }, 100);
+              }}
             >
               <i className="ti ti-edit-circle text-primary" />
             </Link>
@@ -245,7 +259,8 @@ const RolesPermissions = () => {
                         <input
                           type="text"
                           className="form-control"
-                          defaultValue="Admin"
+                          defaultValue={selectedRole?.originalData?.role_name || selectedRole?.originalData?.roleName || selectedRole?.roleName || ""}
+                          key={`role-name-${selectedRole?.key || 'new'}`}
                         />
                       </div>
                     </div>

@@ -1,6 +1,10 @@
 import  { useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import ParentModal from "../parentModal";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { getDashboardForRole } from "../../../../core/utils/roleUtils";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
 import { Link } from "react-router-dom";
 import { all_routes } from "../../../router/all_routes";
@@ -16,9 +20,16 @@ import { useParents } from "../../../../core/hooks/useParents";
 const ParentGrid = () => {
   const [show, setShow] = useState(false);
   const [selectedParent, setSelectedParent] = useState<any>(null);
+  const [parentToEdit, setParentToEdit] = useState<any>(null);
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { parents, loading, error, refetch } = useParents();
+  const user = useSelector(selectUser);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const role = user?.role || "Admin";
+  const isParentRole = (role || "").toLowerCase() === "parent";
+  const canManageParents = ["admin", "headmaster", "administrative", "administrator"].includes((role || "").toLowerCase());
+  const { parents, loading, error, refetch } = useParents({ forCurrentUser: isParentRole, academicYearId: isParentRole ? null : academicYearId });
+  const dashboardRoute = getDashboardForRole(role);
 
   // useParents already returns transformed parent objects in the exact
   // shape expected by this grid and the View Details modal.
@@ -48,11 +59,18 @@ const ParentGrid = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <Link
+                to={dashboardRoute}
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </Link>
               <h3 className="page-title mb-1">Parents</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
+                    <Link to={dashboardRoute}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">Peoples</li>
                   <li className="breadcrumb-item active" aria-current="page">
@@ -64,17 +82,19 @@ const ParentGrid = () => {
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
             <TooltipOption />
 
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary d-flex align-items-center"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_parent"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Parent
-                </Link>
-              </div>
+              {canManageParents && (
+                <div className="mb-2">
+                  <Link
+                    to="#"
+                    className="btn btn-primary d-flex align-items-center"
+                    data-bs-toggle="modal"
+                    data-bs-target="#add_parent"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Parent
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}
@@ -240,24 +260,39 @@ const ParentGrid = () => {
                             <Link
                               className="dropdown-item rounded-1"
                               to="#"
-                              data-bs-toggle="modal"
-                              data-bs-target="#edit_parent"
+                              onClick={() => handleViewParent(parent)}
                             >
-                              <i className="ti ti-edit-circle me-2" />
-                              Edit
+                              <i className="ti ti-menu me-2" />
+                              View Parent
                             </Link>
                           </li>
-                          <li>
-                            <Link
-                              className="dropdown-item rounded-1"
-                              to="#"
-                              data-bs-toggle="modal"
-                              data-bs-target="#delete-modal"
-                            >
-                              <i className="ti ti-trash-x me-2" />
-                              Delete
-                            </Link>
-                          </li>
+                        {canManageParents && (
+                            <>
+                              <li>
+                                <Link
+                                  className="dropdown-item rounded-1"
+                                  to="#"
+                                  data-bs-toggle="modal"
+                                  data-bs-target="#edit_parent"
+                                  onClick={() => setParentToEdit(parent)}
+                                >
+                                  <i className="ti ti-edit-circle me-2" />
+                                  Edit
+                                </Link>
+                              </li>
+                              <li>
+                                <Link
+                                  className="dropdown-item rounded-1"
+                                  to="#"
+                                  data-bs-toggle="modal"
+                                  data-bs-target="#delete-modal"
+                                >
+                                  <i className="ti ti-trash-x me-2" />
+                                  Delete
+                                </Link>
+                              </li>
+                            </>
+                          )}
                         </ul>
                       </div>
                     </div>
@@ -300,6 +335,7 @@ const ParentGrid = () => {
                       <div className="d-flex align-items-center">
                         <Link
                           to={routes.studentDetail}
+                          state={parent.student_id != null ? { studentId: parent.student_id } : undefined}
                           className="avatar avatar-md flex-shrink-0 p-0 me-2"
                         >
                           <ImageWithBasePath
@@ -336,7 +372,7 @@ const ParentGrid = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <ParentModal />
+      <ParentModal parentToEdit={parentToEdit} refetch={refetch} />
 
       <Modal show={show} onHide={handleClose} centered size="lg">
         <div className="modal-header">
@@ -396,7 +432,11 @@ const ParentGrid = () => {
               </div>
               <div className="d-flex align-items-center justify-content-between flex-wrap">
                 <div className="d-flex align-items-center mb-3">
-                  <Link to={routes.studentDetail} className="avatar">
+                  <Link
+                    to={routes.studentDetail}
+                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                    className="avatar"
+                  >
                     <ImageWithBasePath
                       src={selectedParent.ChildImage}
                       className="img-fluid rounded-circle"
@@ -405,7 +445,12 @@ const ParentGrid = () => {
                   </Link>
                   <div className="ms-2">
                     <p className="mb-0">
-                      <Link to={routes.studentDetail}>{selectedParent.Child}</Link>
+                      <Link
+                        to={routes.studentDetail}
+                        state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                      >
+                        {selectedParent.Child}
+                      </Link>
                     </p>
                     <span>{selectedParent.class}</span>
                   </div>
@@ -430,6 +475,7 @@ const ParentGrid = () => {
                   </Link>
                   <Link
                     to={routes.studentDetail}
+                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
                     className="btn btn-primary mb-3"
                   >
                     View Details

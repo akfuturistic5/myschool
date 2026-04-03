@@ -46,12 +46,6 @@ const Notificationssettings = () => {
             <div className="col-xxl-2 col-xl-3">
               <div className="pt-3 d-flex flex-column list-group mb-4">
                 <Link
-                  to={routes.profilesettings}
-                  className="d-block rounded p-2"
-                >
-                  Profile Settings
-                </Link>
-                <Link
                   to={routes.securitysettings}
                   className="d-block rounded p-2"
                 >

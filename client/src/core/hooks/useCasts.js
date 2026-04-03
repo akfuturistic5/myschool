@@ -10,9 +10,7 @@ export const useCasts = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching casts...');
       const response = await apiService.getCasts();
-      console.log('Casts response:', response);
       setCasts(response.data);
     } catch (err) {
       console.error('Error fetching casts:', err);

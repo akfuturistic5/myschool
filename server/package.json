@@ -5,7 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "node --watch server.js",
+    "provisioning:template-hash": "node scripts/provisioningTemplateHash.js",
+    "db:init": "node scripts/run-init-migration.js",
+    "db:init:reset": "node scripts/run-init-migration.js --reset-tenant",
+    "db:verify": "node scripts/run-init-migration.js --verify-only",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -18,24 +22,24 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.11.0",
-    "bcrypt": "^6.0.0",
+    "axios": "^1.13.6",
     "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-rate-limit": "^8.2.1",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.3.1",
     "helmet": "^7.1.0",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "node": "^25.6.0",
-    "pg": "^8.11.3"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "multer": "^2.1.1",
+    "pdfkit": "^0.18.0",
+    "pg": "^8.11.3",
+    "sanitize-html": "^2.13.0",
+    "sharp": "^0.33.5"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }

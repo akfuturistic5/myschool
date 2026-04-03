@@ -1,4 +1,14 @@
 const { query } = require('../config/database');
+const { ADMIN_ROLE_IDS } = require('../config/roles');
+
+const getAuthContext = (req) => {
+  const user = req.user || {};
+  const userId = user.id != null ? parseInt(user.id, 10) : null;
+  const roleId = user.role_id != null ? parseInt(user.role_id, 10) : null;
+  return { userId, roleId };
+};
+
+const isAdminManager = (roleId) => roleId != null && ADMIN_ROLE_IDS.includes(roleId);
 
 // Create new address
 const createAddress = async (req, res) => {
@@ -11,8 +21,25 @@ const createAddress = async (req, res) => {
       person_id
     } = req.body;
 
+    const { userId: authUserId, roleId: authRoleId } = getAuthContext(req);
+    if (!authUserId || !authRoleId) {
+      return res.status(401).json({
+        status: 'ERROR',
+        message: 'Not authenticated',
+      });
+    }
+
+    let targetUserId = user_id;
+    let targetRoleId = role_id;
+
+    // Non-admin users can only create/update addresses for themselves
+    if (!isAdminManager(authRoleId)) {
+      targetUserId = authUserId;
+      targetRoleId = authRoleId;
+    }
+
     // Validate required fields
-    if (!current_address || !permanent_address || !user_id || !role_id) {
+    if (!current_address || !permanent_address || !targetUserId || !targetRoleId) {
       return res.status(400).json({
         status: 'ERROR',
         message: 'Current address, permanent address, user_id, and role_id are required'
@@ -25,7 +52,7 @@ const createAddress = async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, NOW())
       RETURNING *
     `, [
-      current_address, permanent_address, user_id, role_id, person_id || null
+      current_address, permanent_address, targetUserId, targetRoleId, person_id || null
     ]);
 
     res.status(201).json({
@@ -54,13 +81,44 @@ const updateAddress = async (req, res) => {
       person_id
     } = req.body;
 
-    // Validate required fields
-    if (!current_address || !permanent_address || !user_id || !role_id) {
-      return res.status(400).json({
+    const { userId: authUserId, roleId: authRoleId } = getAuthContext(req);
+    if (!authUserId || !authRoleId) {
+      return res.status(401).json({
         status: 'ERROR',
-        message: 'Current address, permanent address, user_id, and role_id are required'
+        message: 'Not authenticated',
       });
     }
+
+    // Validate required fields
+    if (!current_address || !permanent_address) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Current address and permanent address are required'
+      });
+    }
+
+    // Load existing address to enforce ownership
+    const existing = await query(
+      'SELECT id, user_id, role_id FROM addresses WHERE id = $1',
+      [id]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        status: 'ERROR',
+        message: 'Address not found'
+      });
+    }
+    const existingAddress = existing.rows[0];
+
+    if (!isAdminManager(authRoleId) && parseInt(existingAddress.user_id, 10) !== authUserId) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Access denied'
+      });
+    }
+
+    const targetUserId = isAdminManager(authRoleId) ? (user_id || existingAddress.user_id) : existingAddress.user_id;
+    const targetRoleId = isAdminManager(authRoleId) ? (role_id || existingAddress.role_id) : existingAddress.role_id;
 
     const result = await query(`
       UPDATE addresses SET
@@ -72,15 +130,8 @@ const updateAddress = async (req, res) => {
       WHERE id = $6
       RETURNING *
     `, [
-      current_address, permanent_address, user_id, role_id, person_id || null, id
+      current_address, permanent_address, targetUserId, targetRoleId, person_id || null, id
     ]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Address not found'
-      });
-    }
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -135,6 +186,7 @@ const getAllAddresses = async (req, res) => {
 const getAddressById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userId: authUserId, roleId: authRoleId } = getAuthContext(req);
     
     const result = await query(`
       SELECT
@@ -159,11 +211,20 @@ const getAddressById = async (req, res) => {
         message: 'Address not found'
       });
     }
+
+    const address = result.rows[0];
+
+    if (!isAdminManager(authRoleId) && parseInt(address.user_id, 10) !== authUserId) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Access denied'
+      });
+    }
     
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Address fetched successfully',
-      data: result.rows[0]
+      data: address
     });
   } catch (error) {
     console.error('Error fetching address:', error);
@@ -178,6 +239,22 @@ const getAddressById = async (req, res) => {
 const getAddressesByUserId = async (req, res) => {
   try {
     const { userId } = req.params;
+    const { userId: authUserId, roleId: authRoleId } = getAuthContext(req);
+
+    const requestedUserId = parseInt(userId, 10);
+    if (!requestedUserId) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Invalid user ID'
+      });
+    }
+
+    if (!isAdminManager(authRoleId) && requestedUserId !== authUserId) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Access denied'
+      });
+    }
     
     const result = await query(`
       SELECT
@@ -195,7 +272,7 @@ const getAddressesByUserId = async (req, res) => {
       LEFT JOIN user_roles ur ON a.role_id = ur.id
       WHERE a.user_id = $1
       ORDER BY a.created_at DESC
-    `, [userId]);
+    `, [requestedUserId]);
     
     res.status(200).json({
       status: 'SUCCESS',
@@ -216,6 +293,27 @@ const getAddressesByUserId = async (req, res) => {
 const deleteAddress = async (req, res) => {
   try {
     const { id } = req.params;
+    const { userId: authUserId, roleId: authRoleId } = getAuthContext(req);
+
+    // Load address first to enforce ownership
+    const existing = await query(
+      'SELECT id, user_id FROM addresses WHERE id = $1',
+      [id]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        status: 'ERROR',
+        message: 'Address not found'
+      });
+    }
+    const address = existing.rows[0];
+
+    if (!isAdminManager(authRoleId) && parseInt(address.user_id, 10) !== authUserId) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Access denied'
+      });
+    }
 
     // Check if address is being used by any students
     const studentsUsingAddress = await query(
@@ -234,13 +332,6 @@ const deleteAddress = async (req, res) => {
       'DELETE FROM addresses WHERE id = $1 RETURNING *',
       [id]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Address not found'
-      });
-    }
 
     res.status(200).json({
       status: 'SUCCESS',

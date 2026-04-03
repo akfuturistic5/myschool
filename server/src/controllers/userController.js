@@ -1,27 +1,102 @@
 const { query } = require('../config/database');
 
-// Get all users
+function stripSensitiveUserFields(row) {
+  if (!row || typeof row !== 'object') return row;
+  const copy = { ...row };
+  if (Object.prototype.hasOwnProperty.call(copy, 'password_hash')) delete copy.password_hash;
+  return copy;
+}
+
+// Get all users (optional: filter by role_id)
+// role_id: 1=admin, 2=student, 3=teacher, 4=parent, 5=guardian
 const getAllUsers = async (req, res) => {
   try {
-    // Use exact table name: users (plural)
-    // JOIN with classes and sections if user is a student
-    const result = await query(`
-      SELECT 
-        u.*,
-        c.class_name,
-        sec.section_name
-      FROM users u
-      LEFT JOIN students s ON u.id = s.user_id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      WHERE u.is_active = true
-      ORDER BY u.id ASC
-    `);
+    const { role_id } = req.query;
+
+    let result;
+    if (role_id) {
+      // Filter by role - join with role-specific tables for extra data
+      const roleNum = parseInt(role_id, 10);
+      if (roleNum === 2) {
+        // Students: users + students + class + section
+        result = await query(`
+          SELECT 
+            u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
+            u.role_id, u.is_active, u.created_at,
+            s.id as student_id, s.admission_number, s.roll_number, s.gender,
+            s.date_of_birth, s.admission_date, s.photo_url,
+            c.class_name, sec.section_name
+          FROM users u
+          LEFT JOIN students s ON u.id = s.user_id AND s.is_active = true
+          LEFT JOIN classes c ON s.class_id = c.id
+          LEFT JOIN sections sec ON s.section_id = sec.id
+          WHERE u.is_active = true AND u.role_id = $1
+          ORDER BY u.first_name ASC, u.last_name ASC
+        `, [roleNum]);
+      } else if (roleNum === 3) {
+        // Teachers: users + staff + teachers + class + subject
+        result = await query(`
+          SELECT 
+            u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
+            u.role_id, u.is_active, u.created_at,
+            st.id as staff_id, st.employee_code, st.joining_date, st.photo_url,
+            st.designation_id, st.department_id,
+            t.id as teacher_id, t.status as teacher_status,
+            c.class_name, sub.subject_name, d.designation_name
+          FROM users u
+          LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
+          LEFT JOIN teachers t ON st.id = t.staff_id
+          LEFT JOIN classes c ON t.class_id = c.id
+          LEFT JOIN subjects sub ON t.subject_id = sub.id
+          LEFT JOIN designations d ON st.designation_id = d.id
+          WHERE u.is_active = true AND u.role_id = $1
+          ORDER BY u.first_name ASC, u.last_name ASC
+        `, [roleNum]);
+      } else if (roleNum === 4 || roleNum === 5) {
+        // Parents (4) and Guardians (5): users table only
+        result = await query(`
+          SELECT 
+            u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
+            u.role_id, u.is_active, u.created_at
+          FROM users u
+          WHERE u.is_active = true AND u.role_id = $1
+          ORDER BY u.first_name ASC, u.last_name ASC
+        `, [roleNum]);
+      } else {
+        // Other roles (e.g. admin) - basic user data
+        result = await query(`
+          SELECT 
+            u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
+            u.role_id, u.is_active, u.created_at,
+            c.class_name, sec.section_name
+          FROM users u
+          LEFT JOIN students s ON u.id = s.user_id
+          LEFT JOIN classes c ON s.class_id = c.id
+          LEFT JOIN sections sec ON s.section_id = sec.id
+          WHERE u.is_active = true AND u.role_id = $1
+          ORDER BY u.id ASC
+        `, [roleNum]);
+      }
+    } else {
+      // No filter - all users
+      result = await query(`
+        SELECT 
+          u.*,
+          c.class_name,
+          sec.section_name
+        FROM users u
+        LEFT JOIN students s ON u.id = s.user_id
+        LEFT JOIN classes c ON s.class_id = c.id
+        LEFT JOIN sections sec ON s.section_id = sec.id
+        WHERE u.is_active = true
+        ORDER BY u.id ASC
+      `);
+    }
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Users fetched successfully',
-      data: result.rows,
+      data: (result.rows || []).map(stripSensitiveUserFields),
       count: result.rows.length,
     });
   } catch (error) {
@@ -63,7 +138,7 @@ const getUserById = async (req, res) => {
       LEFT JOIN sections sec ON s.section_id = sec.id
       LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
-      LEFT JOIN user_roles ur ON u.user_role_id = ur.id
+      LEFT JOIN user_roles ur ON u.role_id = ur.id
       WHERE u.id = $1 AND u.is_active = true
     `,
       [id]
@@ -77,6 +152,7 @@ const getUserById = async (req, res) => {
     }
 
     const user = result.rows[0];
+    const safeUser = stripSensitiveUserFields(user);
     
     // Determine user name and role based on available data
     let displayName = '';
@@ -100,7 +176,7 @@ const getUserById = async (req, res) => {
 
     // Add computed fields
     const userData = {
-      ...user,
+      ...safeUser,
       display_name: displayName,
       display_role: displayRole,
     };

@@ -5,35 +5,94 @@ import {
   setDataTheme,
 } from "../../data/redux/themeSettingSlice";
 import { clearAuth, selectUser } from "../../data/redux/authSlice";
+import { setSelectedAcademicYear, selectSelectedAcademicYearId } from "../../data/redux/academicYearSlice";
 import ImageWithBasePath from "../imageWithBasePath";
+import SchoolLogoImage from "../schoolLogoImage";
 import {
   setExpandMenu,
   setMobileSidebar,
+  toggleMiniSidebar,
 } from "../../data/redux/sidebarSlice";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { all_routes } from "../../../feature-module/router/all_routes";
+import { getDashboardForRole, getDisplayRoleLabel, isAdministrativeRole, isHeadmasterRole } from "../../utils/roleUtils";
+import { getSchoolLogoSrc, isMillatStyleLogoPath } from "../../utils/schoolLogo";
 import { useAcademicYears } from "../../hooks/useAcademicYears";
+import { useSchoolLogoUpload } from "../../hooks/useSchoolLogoUpload";
 const Header = () => {
   const routes = all_routes;
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user = useSelector(selectUser);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    setUserProfileMenuOpen(false);
+    setMobileUserMenuOpen(false);
+    try {
+      const { apiService } = await import("../../services/apiService");
+      await apiService.logout();
+    } catch {
+      // ignore
+    }
     dispatch(clearAuth());
     navigate(routes.login);
   };
   const dataTheme = useSelector((state: any) => state.themeSetting.dataTheme);
   const dataLayout = useSelector((state: any) => state.themeSetting.dataLayout);
   const [notificationVisible, setNotificationVisible] = useState(false);
-  
+  /** React-controlled menus: avoids relying on Bootstrap's data-api (fragile with Vite/React + some browsers with display:contents ancestors). */
+  const [userProfileMenuOpen, setUserProfileMenuOpen] = useState(false);
+  const [mobileUserMenuOpen, setMobileUserMenuOpen] = useState(false);
+  const userProfileDropdownRef = useRef<HTMLDivElement>(null);
+  const mobileUserMenuRef = useRef<HTMLDivElement>(null);
+  const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
+
+  useEffect(() => {
+    if (!userProfileMenuOpen && !mobileUserMenuOpen) return;
+    const closeOnOutside = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (userProfileMenuOpen && userProfileDropdownRef.current?.contains(t)) return;
+      if (mobileUserMenuOpen && mobileUserMenuRef.current?.contains(t)) return;
+      setUserProfileMenuOpen(false);
+      setMobileUserMenuOpen(false);
+    };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setUserProfileMenuOpen(false);
+        setMobileUserMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutside, true);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside, true);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [userProfileMenuOpen, mobileUserMenuOpen]);
+
   // Fetch academic years from API
   const { academicYears, loading, error } = useAcademicYears();
-  const currentAcademicYear = academicYears?.find(year => year.is_current === true) || academicYears?.[0]; // Get current academic year or first one as fallback
+  const academicYearsList = academicYears ?? [];
+  const currentAcademicYear = academicYearsList.find((year: { is_current?: boolean }) => year.is_current === true) || academicYearsList[0];
+  const selectedYear = selectedAcademicYearId != null
+    ? academicYearsList.find((y: { id: number }) => y.id === selectedAcademicYearId)
+    : currentAcademicYear || academicYearsList[0];
+  const displayYear = selectedYear || currentAcademicYear;
 
-  // Debug: Log academic years data
-  console.log('Header - Academic years:', academicYears);
-  console.log('Header - Current academic year:', currentAcademicYear);
+  // Show Academic Year dropdown only for Admin (Headmaster) and Teacher
+  const roleNorm = (user?.role ?? '').trim().toLowerCase();
+  const showAcademicYearDropdown =
+    isHeadmasterRole(user) || isAdministrativeRole(user) || roleNorm === 'teacher';
+
+  // Bootstrap: when years load and no selection stored, set to current year
+  useEffect(() => {
+    if (!showAcademicYearDropdown) return;
+    if (academicYearsList.length > 0 && selectedAcademicYearId == null && currentAcademicYear?.id) {
+      dispatch(setSelectedAcademicYear(currentAcademicYear.id));
+    }
+  }, [showAcademicYearDropdown, academicYearsList.length, selectedAcademicYearId, currentAcademicYear?.id, dispatch]);
+
+  const dashboardRoute = getDashboardForRole(user);
 
   const mobileSidebar = useSelector(
     (state: any) => state.sidebarSlice.mobileSidebar
@@ -44,18 +103,22 @@ const Header = () => {
   };
 
   const onMouseEnter = () => {
-    dispatch(setExpandMenu(true));
+    if (dataLayout === "mini_layout") dispatch(setExpandMenu(true));
   };
   const onMouseLeave = () => {
-    dispatch(setExpandMenu(false));
+    if (dataLayout === "mini_layout") dispatch(setExpandMenu(false));
   };
   const handleToggleMiniSidebar = () => {
-    if (dataLayout === "mini_layout") {
-      dispatch(setDataLayout("default_layout"));
-      localStorage.setItem("dataLayout", "default_layout");
-    } else {
-      dispatch(setDataLayout("mini_layout"));
-      localStorage.setItem("dataLayout", "mini_layout");
+    // Desktop-only: collapse/expand sidebar without changing page-wrapper width.
+    // We explicitly do NOT toggle mini_layout here (mini_layout changes content width and uses hover-expand).
+    dispatch(setExpandMenu(false));
+    if (dataLayout === "mini_layout") dispatch(setDataLayout("default_layout"));
+    dispatch(toggleMiniSidebar());
+    try {
+      const prev = localStorage.getItem("miniSidebar") === "true";
+      localStorage.setItem("miniSidebar", String(!prev));
+    } catch {
+      // ignore
     }
   };
 
@@ -92,6 +155,16 @@ const Header = () => {
     }
   };
 
+  const schoolLogoSrc = getSchoolLogoSrc(user);
+  const isMillatLogo = isMillatStyleLogoPath(schoolLogoSrc);
+  const {
+    isHeadmaster: canChangeSchoolLogo,
+    uploading: logoUploading,
+    inputRef: logoFileInputRef,
+    openFilePicker: openSchoolLogoPicker,
+    onFileChange: onSchoolLogoFileChange,
+  } = useSchoolLogoUpload();
+
   return (
     <>
       {/* Header */}
@@ -102,16 +175,91 @@ const Header = () => {
           onMouseEnter={onMouseEnter}
           onMouseLeave={onMouseLeave}
         >
-          <Link to={routes.adminDashboard} className="logo logo-normal">
-            <ImageWithBasePath src="assets/img/logo.svg" alt="Logo" />
-          </Link>
-          <Link to={routes.adminDashboard} className="logo-small">
-            <ImageWithBasePath src="assets/img/logo-small.svg" alt="Logo" />
-          </Link>
-          <Link to={routes.adminDashboard} className="dark-logo">
-            <ImageWithBasePath src="assets/img/logo-dark.svg" alt="Logo" />
-          </Link>
-          <Link id="toggle_btn" to="#" onClick={handleToggleMiniSidebar}>
+          {canChangeSchoolLogo && (
+            <input
+              ref={logoFileInputRef}
+              type="file"
+              accept="image/*"
+              className="d-none"
+              onChange={onSchoolLogoFileChange}
+              aria-hidden
+            />
+          )}
+          {canChangeSchoolLogo ? (
+            <>
+              <div
+                className={`logo ${dataTheme === "default_data_theme" ? "logo-normal" : "dark-logo"} d-flex align-items-center`}
+              >
+                <button
+                  type="button"
+                  className="btn p-0 border-0 bg-transparent shadow-none d-flex align-items-center"
+                  onClick={openSchoolLogoPicker}
+                  disabled={logoUploading}
+                  title="Change school logo"
+                  aria-label="Change school logo"
+                  style={{ cursor: logoUploading ? "wait" : "pointer" }}
+                >
+                  <SchoolLogoImage
+                    src={schoolLogoSrc}
+                    alt="School Logo"
+                    className={`logo-icon ${isMillatLogo ? "logo-icon--large" : ""}`}
+                  />
+                </button>
+                <Link
+                  to={dashboardRoute}
+                  className="logo-school-name text-decoration-none text-reset ms-0"
+                >
+                  {user?.school_name || "PreSkool"}
+                </Link>
+              </div>
+              <div className="logo-small">
+                <button
+                  type="button"
+                  className="btn p-0 border-0 bg-transparent shadow-none w-100 d-flex justify-content-center"
+                  onClick={openSchoolLogoPicker}
+                  disabled={logoUploading}
+                  title="Change school logo"
+                  aria-label="Change school logo"
+                  style={{ cursor: logoUploading ? "wait" : "pointer" }}
+                >
+                  <SchoolLogoImage
+                    src={schoolLogoSrc}
+                    alt="School Logo"
+                    className={isMillatLogo ? "logo-icon--large" : undefined}
+                  />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Link
+                to={dashboardRoute}
+                className={`logo ${dataTheme === "default_data_theme" ? "logo-normal" : "dark-logo"} d-flex align-items-center`}
+              >
+                <SchoolLogoImage
+                  src={schoolLogoSrc}
+                  alt="School Logo"
+                  className={`logo-icon ${isMillatLogo ? "logo-icon--large" : ""}`}
+                />
+                <span className="logo-school-name">{user?.school_name || "PreSkool"}</span>
+              </Link>
+              <Link to={dashboardRoute} className="logo-small">
+                <SchoolLogoImage
+                  src={schoolLogoSrc}
+                  alt="School Logo"
+                  className={isMillatLogo ? "logo-icon--large" : undefined}
+                />
+              </Link>
+            </>
+          )}
+          <Link
+            id="toggle_btn"
+            to="#"
+            onClick={(e) => {
+              e.preventDefault();
+              handleToggleMiniSidebar();
+            }}
+          >
             <i className="ti ti-menu-deep" />
           </Link>
         </div>
@@ -128,217 +276,97 @@ const Header = () => {
             <span />
           </span>
         </Link>
-        <div className="header-user">
-          <div className="nav user-menu">
-            {/* Search */}
-            <div className="nav-item nav-search-inputs me-auto">
-              <div className="top-nav-search">
-                <Link to="#" className="responsive-search">
-                  <i className="fa fa-search" />
-                </Link>
-                <form action="#" className="dropdown">
-                  <div className="searchinputs" id="dropdownMenuClickable">
-                    <input type="text" placeholder="Search" />
-                    <div className="search-addon">
-                      <button type="submit">
-                        <i className="ti ti-command" />
-                      </button>
-                    </div>
+        {user?.school_name && (
+          <div className="mobile-show mobile-school-badge">
+            <span className="badge bg-primary-subtle text-primary fw-semibold">
+              {user.school_name} ({user.institute_number || "----"})
+            </span>
+          </div>
+        )}
+        <div className="header-search-center d-none d-lg-flex">
+          <div className="nav-item nav-searchinputs w-100">
+            <div className="top-nav-search w-100">
+              <Link to="#" className="responsive-search">
+                <i className="fa fa-search" />
+              </Link>
+              <form action="#" className="dropdown">
+                <div className="searchinputs" id="dropdownMenuClickable">
+                  <input type="text" placeholder="Search" aria-label="Search" />
+                  <div className="search-addon">
+                    <button type="submit" aria-label="Submit search">
+                      <i className="ti ti-command" />
+                    </button>
                   </div>
-                </form>
-              </div>
+                </div>
+              </form>
             </div>
-            {/* /Search */}
+          </div>
+        </div>
+        <div className="header-user">
+          <div className="nav user-menu header-toolbar-nav">
             <div className="d-flex align-items-center">
-              <div className="dropdown me-2">
-                <Link
-                  to="#"
-                  className="btn btn-outline-light fw-normal bg-white d-flex align-items-center p-2"
-                  data-bs-toggle="dropdown"
-                  aria-expanded="false"
-                >
-                  <i className="ti ti-calendar-due me-1" />
-                  {loading ? (
-                    "Loading..."
-                  ) : error ? (
-                    "Error loading years"
-                  ) : currentAcademicYear ? (
-                    `Academic Year : ${currentAcademicYear.year_name}`
-                  ) : (
-                    "No academic year"
-                  )}
-                </Link>
-                <div className="dropdown-menu dropdown-menu-right">
-                  {loading ? (
-                    <div className="dropdown-item d-flex align-items-center">
-                      <i className="ti ti-loader ti-spin me-2"></i>
-                      Loading academic years...
-                    </div>
-                  ) : error ? (
-                    <div className="dropdown-item d-flex align-items-center text-danger">
-                      <i className="ti ti-alert-circle me-2"></i>
-                      Error: {error}
-                    </div>
-                  ) : academicYears.length > 0 ? (
-                    academicYears.map((year) => (
-                      <Link
-                        key={year.id}
-                        to="#"
-                        className="dropdown-item d-flex align-items-center"
-                      >
-                        Academic Year : {year.year_name}
-                      </Link>
-                    ))
-                  ) : (
-                    <div className="dropdown-item d-flex align-items-center">
-                      No academic years available
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="pe-1 ms-1">
-                <div className="dropdown">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white btn-icon d-flex align-items-center me-1 p-2"
+              {showAcademicYearDropdown && (
+                <div className="dropdown me-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline-light fw-normal bg-white d-flex align-items-center p-2 dropdown-toggle"
                     data-bs-toggle="dropdown"
                     aria-expanded="false"
                   >
-                    <ImageWithBasePath
-                      src="assets/img/flags/us.png"
-                      alt="Language"
-                      className="img-fluid rounded-pill"
-                    />
-                  </Link>
+                    <i className="ti ti-calendar-due me-1" />
+                    {loading ? (
+                      "Loading..."
+                    ) : error ? (
+                      "Error loading years"
+                    ) : displayYear ? (
+                      `Academic Year : ${displayYear.year_name}`
+                    ) : (
+                      "No academic year"
+                    )}
+                  </button>
                   <div className="dropdown-menu dropdown-menu-right">
-                    <Link
-                      to="#"
-                      className="dropdown-item active d-flex align-items-center"
-                    >
-                      <ImageWithBasePath
-                        className="me-2 rounded-pill"
-                        src="assets/img/flags/us.png"
-                        alt="Img"
-                        height={22}
-                        width={22}
-                      />{" "}
-                      English
-                    </Link>
-                    <Link
-                      to="#"
-                      className="dropdown-item d-flex align-items-center"
-                    >
-                      <ImageWithBasePath
-                        className="me-2 rounded-pill"
-                        src="assets/img/flags/fr.png"
-                        alt="Img"
-                        height={22}
-                        width={22}
-                      />{" "}
-                      French
-                    </Link>
-                    <Link
-                      to="#"
-                      className="dropdown-item d-flex align-items-center"
-                    >
-                      <ImageWithBasePath
-                        className="me-2 rounded-pill"
-                        src="assets/img/flags/es.png"
-                        alt="Img"
-                        height={22}
-                        width={22}
-                      />{" "}
-                      Spanish
-                    </Link>
-                    <Link
-                      to="#"
-                      className="dropdown-item d-flex align-items-center"
-                    >
-                      <ImageWithBasePath
-                        className="me-2 rounded-pill"
-                        src="assets/img/flags/de.png"
-                        alt="Img"
-                        height={22}
-                        width={22}
-                      />{" "}
-                      German
-                    </Link>
-                  </div>
-                </div>
-              </div>
-              <div className="pe-1">
-                <div className="dropdown">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white btn-icon me-1"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                  >
-                    <i className="ti ti-square-rounded-plus" />
-                  </Link>
-                  <div className="dropdown-menu dropdown-menu-right border shadow-sm dropdown-md">
-                    <div className="p-3 border-bottom">
-                      <h5>Add New</h5>
-                    </div>
-                    <div className="p-3 pb-0">
-                      <div className="row gx-2">
-                        <div className="col-6">
-                          <Link
-                            to={routes.addStudent}
-                            className="d-block bg-primary-transparent ronded p-2 text-center mb-3 class-hover"
-                          >
-                            <div className="avatar avatar-lg mb-2">
-                              <span className="d-inline-flex align-items-center justify-content-center w-100 h-100 bg-primary rounded-circle">
-                                <i className="ti ti-school" />
-                              </span>
-                            </div>
-                            <p className="text-dark">Students</p>
-                          </Link>
-                        </div>
-                        <div className="col-6">
-                          <Link
-                            to={routes.addTeacher}
-                            className="d-block bg-success-transparent ronded p-2 text-center mb-3 class-hover"
-                          >
-                            <div className="avatar avatar-lg mb-2">
-                              <span className="d-inline-flex align-items-center justify-content-center w-100 h-100 bg-success rounded-circle">
-                                <i className="ti ti-users" />
-                              </span>
-                            </div>
-                            <p className="text-dark">Teachers</p>
-                          </Link>
-                        </div>
-                        <div className="col-6">
-                          <Link
-                            to={routes.addStaff}
-                            className="d-block bg-warning-transparent ronded p-2 text-center mb-3 class-hover"
-                          >
-                            <div className="avatar avatar-lg rounded-circle mb-2">
-                              <span className="d-inline-flex align-items-center justify-content-center w-100 h-100 bg-warning rounded-circle">
-                                <i className="ti ti-users-group" />
-                              </span>
-                            </div>
-                            <p className="text-dark">Staffs</p>
-                          </Link>
-                        </div>
-                        <div className="col-6">
-                          <Link
-                            to={routes.addInvoice}
-                            className="d-block bg-info-transparent ronded p-2 text-center mb-3 class-hover"
-                          >
-                            <div className="avatar avatar-lg mb-2">
-                              <span className="d-inline-flex align-items-center justify-content-center w-100 h-100 bg-info rounded-circle">
-                                <i className="ti ti-license" />
-                              </span>
-                            </div>
-                            <p className="text-dark">Invoice</p>
-                          </Link>
-                        </div>
+                    {loading ? (
+                      <div className="dropdown-item d-flex align-items-center">
+                        <i className="ti ti-loader ti-spin me-2"></i>
+                        Loading academic years...
                       </div>
-                    </div>
+                    ) : error ? (
+                      <div className="dropdown-item d-flex align-items-center text-danger">
+                        <i className="ti ti-alert-circle me-2"></i>
+                        Error: {error}
+                      </div>
+                    ) : academicYearsList.length > 0 ? (
+                      academicYearsList.map((year: { id: number; year_name?: string }) => (
+                        <Link
+                          key={year.id}
+                          to="#"
+                          className="dropdown-item d-flex align-items-center"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (selectedAcademicYearId !== year.id) {
+                              dispatch(setSelectedAcademicYear(year.id));
+                              window.location.reload();
+                            }
+                          }}
+                        >
+                          Academic Year : {year.year_name}
+                        </Link>
+                      ))
+                    ) : (
+                      <div className="dropdown-item d-flex align-items-center">
+                        No academic years available
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
+              )}
+              {user?.school_name && (
+                <div className="pe-2">
+                  <span className="badge bg-primary-subtle text-primary fw-semibold">
+                    {user.school_name} ({user.institute_number || "----"})
+                  </span>
+                </div>
+              )}
               <div className="pe-1">
                 {!location.pathname.includes("layout-dark") && (
                   <Link
@@ -380,14 +408,15 @@ const Header = () => {
                         Mark all as read
                       </Link>
                       <div className="dropdown">
-                        <Link
-                          to="#"
-                          className="bg-white dropdown-toggle"
+                        <button
+                          type="button"
+                          className="bg-white dropdown-toggle border-0"
                           data-bs-toggle="dropdown"
+                          aria-expanded="false"
                         >
                           <i className="ti ti-calendar-due me-1" />
                           Today
-                        </Link>
+                        </button>
                         <ul className="dropdown-menu mt-2 p-3">
                           <li>
                             <Link to="#" className="dropdown-item rounded-1">
@@ -530,14 +559,6 @@ const Header = () => {
               </div>
               <div className="pe-1">
                 <Link
-                  to="#"
-                  className="btn btn-outline-light bg-white btn-icon me-1"
-                >
-                  <i className="ti ti-chart-bar" />
-                </Link>
-              </div>
-              <div className="pe-1">
-                <Link
                   onClick={toggleFullscreen}
                   to="#"
                   className="btn btn-outline-light bg-white btn-icon me-1"
@@ -546,11 +567,14 @@ const Header = () => {
                   <i className="ti ti-maximize" />
                 </Link>
               </div>
-              <div className="dropdown ms-1">
-                <Link
-                  to="#"
-                  className="dropdown-toggle d-flex align-items-center"
-                  data-bs-toggle="dropdown"
+              <div className="dropdown ms-1" ref={userProfileDropdownRef}>
+                <button
+                  type="button"
+                  className="dropdown-toggle d-flex align-items-center p-0 border-0 bg-transparent"
+                  aria-expanded={userProfileMenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Open user menu"
+                  onClick={() => setUserProfileMenuOpen((o) => !o)}
                 >
                   <span className="avatar avatar-md rounded">
                     <ImageWithBasePath
@@ -559,8 +583,11 @@ const Header = () => {
                       className="img-fluid"
                     />
                   </span>
-                </Link>
-                <div className="dropdown-menu">
+                </button>
+                <div
+                  className={`dropdown-menu dropdown-menu-end dropdown-menu-profile${userProfileMenuOpen ? " show" : ""}`}
+                  role="menu"
+                >
                   <div className="d-block">
                     <div className="d-flex align-items-center p-2">
                       <span className="avatar avatar-md me-2 online avatar-rounded">
@@ -571,28 +598,37 @@ const Header = () => {
                       </span>
                       <div>
                         <h6>{user?.displayName || "User"}</h6>
-                        <p className="text-primary mb-0">{user?.role || "Administrator"}</p>
+                        <p className="text-primary mb-0">
+                          {getDisplayRoleLabel(user)}
+                        </p>
                       </div>
                     </div>
                     <hr className="m-0" />
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
                       to={routes.profile}
+                      role="menuitem"
+                      onClick={() => setUserProfileMenuOpen(false)}
                     >
                       <i className="ti ti-user-circle me-2" />
                       My Profile
                     </Link>
-                    <Link
-                      className="dropdown-item d-inline-flex align-items-center p-2"
-                      to={routes.profilesettings}
-                    >
-                      <i className="ti ti-settings me-2" />
-                      Settings
-                    </Link>
+                    {isHeadmasterRole(user) && (
+                      <Link
+                        className="dropdown-item d-inline-flex align-items-center p-2"
+                        to={routes.securitysettings}
+                        role="menuitem"
+                        onClick={() => setUserProfileMenuOpen(false)}
+                      >
+                        <i className="ti ti-settings me-2" />
+                        Settings
+                      </Link>
+                    )}
                     <hr className="m-0" />
                     <Link
                       className="dropdown-item d-inline-flex align-items-center p-2"
                       to="#"
+                      role="menuitem"
                       onClick={(e) => { e.preventDefault(); handleLogout(); }}
                     >
                       <i className="ti ti-login me-2" />
@@ -605,23 +641,45 @@ const Header = () => {
           </div>
         </div>
         {/* Mobile Menu */}
-        <div className="dropdown mobile-user-menu">
-          <Link
-            to="#"
-            className="nav-link dropdown-toggle"
-            data-bs-toggle="dropdown"
-            aria-expanded="false"
+        <div className="dropdown mobile-user-menu" ref={mobileUserMenuRef}>
+          <button
+            type="button"
+            className="nav-link dropdown-toggle border-0 bg-transparent text-body"
+            aria-expanded={mobileUserMenuOpen}
+            aria-haspopup="menu"
+            aria-label="Open menu"
+            onClick={() => setMobileUserMenuOpen((o) => !o)}
           >
             <i className="fa fa-ellipsis-v" />
-          </Link>
-          <div className="dropdown-menu dropdown-menu-end">
-            <Link className="dropdown-item" to={routes.profile}>
+          </button>
+          <div
+            className={`dropdown-menu dropdown-menu-end${mobileUserMenuOpen ? " show" : ""}`}
+            role="menu"
+          >
+            <Link
+              className="dropdown-item"
+              to={routes.profile}
+              role="menuitem"
+              onClick={() => setMobileUserMenuOpen(false)}
+            >
               My Profile
             </Link>
-            <Link className="dropdown-item" to={routes.profilesettings}>
-              Settings
-            </Link>
-            <Link className="dropdown-item" to="#" onClick={(e) => { e.preventDefault(); handleLogout(); }}>
+            {isHeadmasterRole(user) && (
+              <Link
+                className="dropdown-item"
+                to={routes.securitysettings}
+                role="menuitem"
+                onClick={() => setMobileUserMenuOpen(false)}
+              >
+                Settings
+              </Link>
+            )}
+            <Link
+              className="dropdown-item"
+              to="#"
+              role="menuitem"
+              onClick={(e) => { e.preventDefault(); handleLogout(); }}
+            >
               Logout
             </Link>
           </div>

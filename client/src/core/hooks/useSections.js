@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
@@ -10,20 +11,21 @@ export const useSections = (classId = null) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching sections...');
-      
+
       let response;
       if (classId) {
         response = await apiService.getSectionsByClass(classId);
       } else {
         response = await apiService.getSections();
       }
-      
-      console.log('Sections response:', response);
-      setSections(response.data);
+
+      // Handle both { data: [...] } and direct array (for different API shapes)
+      const raw = response?.data ?? (Array.isArray(response) ? response : null);
+      setSections(Array.isArray(raw) ? raw : []);
     } catch (err) {
       console.error('Error fetching sections:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch sections');
+      setSections([]);
     } finally {
       setLoading(false);
     }

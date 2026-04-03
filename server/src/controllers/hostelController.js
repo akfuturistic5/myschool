@@ -11,6 +11,16 @@ const getAllHostels = async (req, res) => {
       ORDER BY hostel_name ASC
     `);
     
+    // Log the actual data structure for debugging
+    console.log('=== HOSTELS BACKEND DEBUG ===');
+    console.log('Total hostels:', result.rows.length);
+    if (result.rows.length > 0) {
+      console.log('First hostel data:', result.rows[0]);
+      console.log('First hostel columns:', Object.keys(result.rows[0]));
+      console.log('Intake value:', result.rows[0].intake, 'Type:', typeof result.rows[0].intake);
+      console.log('Description value:', result.rows[0].description, 'Type:', typeof result.rows[0].description);
+    }
+    
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Hostels fetched successfully',

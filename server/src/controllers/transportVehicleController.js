@@ -1,7 +1,9 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 function getDriverDisplayName(driverRow) {
   if (!driverRow) return null;
+  if (driverRow.driver_name != null && String(driverRow.driver_name).trim() !== '') return String(driverRow.driver_name).trim();
   if (driverRow.name != null && String(driverRow.name).trim() !== '') return String(driverRow.name).trim();
   const first = driverRow.first_name != null ? String(driverRow.first_name).trim() : '';
   const last = driverRow.last_name != null ? String(driverRow.last_name).trim() : '';
@@ -105,18 +107,10 @@ const getAllVehicles = async (req, res) => {
     }
 
     const data = vehiclesResult.rows.map((row) => mapVehicleRow(row, driverMap, routeMap, pickupMap));
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Transport vehicles fetched successfully',
-      data,
-      count: data.length
-    });
+    return success(res, 200, 'Transport vehicles fetched successfully', data, { count: data.length });
   } catch (error) {
     console.error('Error fetching transport vehicles:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch transport vehicles',
-    });
+    return errorResponse(res, 500, 'Failed to fetch transport vehicles');
   }
 };
 
@@ -125,7 +119,7 @@ const getVehicleById = async (req, res) => {
     const { id } = req.params;
     const vehiclesResult = await query('SELECT * FROM vehicles WHERE id = $1', [id]);
     if (vehiclesResult.rows.length === 0) {
-      return res.status(404).json({ status: 'ERROR', message: 'Vehicle not found' });
+      return errorResponse(res, 404, 'Vehicle not found');
     }
     const row = vehiclesResult.rows[0];
     let driverMap = {};
@@ -155,18 +149,44 @@ const getVehicleById = async (req, res) => {
         }
       }
     }
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Transport vehicle fetched successfully',
-      data: mapVehicleRow(row, driverMap, routeMap, pickupMap)
-    });
+    return success(res, 200, 'Transport vehicle fetched successfully', mapVehicleRow(row, driverMap, routeMap, pickupMap));
   } catch (error) {
     console.error('Error fetching transport vehicle:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch transport vehicle',
-    });
+    return errorResponse(res, 500, 'Failed to fetch transport vehicle');
   }
 };
 
-module.exports = { getAllVehicles, getVehicleById };
+// Update vehicle (currently only updates status flag)
+const updateVehicle = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    // Convert is_active to boolean
+    let isActiveBoolean = false;
+    if (is_active === true || is_active === 'true' || is_active === 1 || is_active === 't' || is_active === 'T') {
+      isActiveBoolean = true;
+    } else if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'f' || is_active === 'F') {
+      isActiveBoolean = false;
+    }
+
+    const result = await query(`
+      UPDATE vehicles
+      SET is_active = $1,
+          modified_at = NOW()
+      WHERE id = $2
+      RETURNING *
+    `, [isActiveBoolean, id]);
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, 404, 'Vehicle not found');
+    }
+
+    return success(res, 200, 'Vehicle updated successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error updating vehicle:', error);
+    return errorResponse(res, 500, 'Failed to update vehicle');
+  }
+};
+
+module.exports = { getAllVehicles, getVehicleById, updateVehicle };

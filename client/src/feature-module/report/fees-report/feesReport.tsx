@@ -1,4 +1,4 @@
-
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
@@ -9,56 +9,112 @@ import {
 import TooltipOption from "../../../core/common/tooltipOption";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import Table from "../../../core/common/dataTable/index";
-import { fees_report_data } from "../../../core/data/json/fees_report_data";
 import type { TableData } from "../../../core/data/interface";
 import { all_routes } from "../../router/all_routes";
+import { useFeeCollections } from "../../../core/hooks/useFeeCollections";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
+
+const compareNumber = (left: unknown, right: unknown) =>
+  Number(left ?? 0) - Number(right ?? 0);
 
 const FeesReport = () => {
-  const data = fees_report_data;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { data: feeRows, loading, error } = useFeeCollections({ academicYearId });
+  const data = useMemo(
+    () =>
+      (Array.isArray(feeRows) ? feeRows : []).map((row: any, index: number) => {
+        const amount = Number(row.amount ?? 0);
+        const paid = Number(row.totalPaid ?? 0);
+        const balance = Math.max(amount - paid, 0);
+        const statusText = row.status || (balance <= 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid");
+
+        return {
+          key: row.key ?? row.id ?? `fees-report-${index}`,
+          admissionNo: row.admNo || "—",
+          rollNo: row.rollNo || "—",
+          student: row.student || "—",
+          class: row.class || "—",
+          section: row.section || "—",
+          amount,
+          paid,
+          balance,
+          status: statusText,
+        };
+      }),
+    [feeRows]
+  );
   const routes = all_routes; 
 
   const columns = [
     {
-      title: "Fees Group",
-      dataIndex: "feesGroup",
-      key: "feesGroup",
-      sorter: (a: TableData, b: TableData) =>
-        a.feesGroup.length - b.feesGroup.length,
-      render: (text: any, record: any) => (
-        <p className="link-primary">
+      title: "Admission No",
+      dataIndex: "admissionNo",
+      key: "admissionNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
+      render: (text: any) => (
+        <Link to="#" className="link-primary">
           {text}
-          <span className="d-block">{record.feesDescription}</span>
-        </p>
+        </Link>
       ),
     },
     {
-      title: "Fees Code",
-      dataIndex: "feesCode",
-      key: "feesCode",
-      sorter: (a: TableData, b: TableData) =>
-        a.feesCode.length - b.feesCode.length,
+      title: "Roll No",
+      dataIndex: "rollNo",
+      key: "rollNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
-      title: "Due Date",
-      dataIndex: "dueDate",
-      key: "dueDate",
-      sorter: (a: TableData, b: TableData) =>
-        a.dueDate.length - b.dueDate.length,
+      title: "Student",
+      dataIndex: "student",
+      key: "student",
+      sorter: (a: TableData, b: TableData) => compareText(a?.student, b?.student),
     },
     {
-      title: "Amount $",
+      title: "Class",
+      dataIndex: "class",
+      key: "class",
+      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
+    },
+    {
+      title: "Section",
+      dataIndex: "section",
+      key: "section",
+      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
+    },
+    {
+      title: "Total Due",
       dataIndex: "amount",
       key: "amount",
-      sorter: (a: TableData, b: TableData) => a.amount.length - b.amount.length,
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.amount, b?.amount),
+      render: (amount: number) => Number(amount ?? 0).toFixed(2),
+    },
+    {
+      title: "Paid",
+      dataIndex: "paid",
+      key: "paid",
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.paid, b?.paid),
+      render: (paid: number) => Number(paid ?? 0).toFixed(2),
     },
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
       render: (status: any) =>
         status ? (
-          <span className="badge badge-soft-success d-inline-flex align-items-center">
+          <span
+            className={`badge d-inline-flex align-items-center ${
+              String(status).toLowerCase() === "paid"
+                ? "badge-soft-success"
+                : String(status).toLowerCase() === "partial"
+                  ? "badge-soft-warning"
+                  : "badge-soft-danger"
+            }`}
+          >
             <i className="ti ti-circle-filled fs-5 me-1" />
             {status}
           </span>
@@ -67,43 +123,11 @@ const FeesReport = () => {
         ),
     },
     {
-      title: "Ref ID",
-      dataIndex: "refId",
-      key: "refId",
-      sorter: (a: TableData, b: TableData) => a.refId.length - b.refId.length,
-    },
-    {
-      title: "Mode",
-      dataIndex: "mode",
-      key: "mode",
-      sorter: (a: TableData, b: TableData) => a.mode.length - b.mode.length,
-    },
-    {
-      title: "Date Paid",
-      dataIndex: "datePaid",
-      key: "datePaid",
-      sorter: (a: TableData, b: TableData) =>
-        a.datePaid.length - b.datePaid.length,
-    },
-    {
-      title: "Discount ($)",
-      dataIndex: "discount",
-      key: "discount",
-      sorter: (a: TableData, b: TableData) =>
-        a.discount.length - b.discount.length,
-    },
-    {
-      title: "Fine ($)",
-      dataIndex: "fine",
-      key: "fine",
-      sorter: (a: TableData, b: TableData) => a.fine.length - b.fine.length,
-    },
-    {
-      title: "Balance ($)",
+      title: "Balance",
       dataIndex: "balance",
       key: "balance",
-      sorter: (a: TableData, b: TableData) =>
-        a.balance.length - b.balance.length,
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.balance, b?.balance),
+      render: (balance: number) => Number(balance ?? 0).toFixed(2),
     },
   ];
 
@@ -238,9 +262,25 @@ const FeesReport = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} Selection={true} />
-              {/* /Student List */}
+              {error && (
+                <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
+              {loading ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading fees report...</p>
+                </div>
+              ) : (
+                <>
+                  {/* Student List */}
+                  <Table dataSource={data} columns={columns} Selection={true} />
+                  {/* /Student List */}
+                </>
+              )}
             </div>
           </div>
           {/* /Student List */}

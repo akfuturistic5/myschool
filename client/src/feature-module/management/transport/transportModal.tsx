@@ -1,4 +1,5 @@
 
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { driverName, PickupPoint2, routesList, VehicleNumber } from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -6,21 +7,193 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import dayjs from "dayjs";
 import { DatePicker } from "antd";
 
-const TransportModal = () => {
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = String(today.getMonth() + 1).padStart(2, '0') // Month is zero-based, so we add 1
-    const day = String(today.getDate()).padStart(2, '0')
-    const formattedDate = `${month}-${day}-${year}`
-    const defaultValue = dayjs(formattedDate);
-    const getModalContainer = () => {
-     const modalElement = document.getElementById('modal-datepicker');
-     return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
-   };
-    const getModalContainer2 = () => {
-     const modalElement = document.getElementById('modal-datepicker2');
-     return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
-   };
+interface TransportModalProps {
+  selectedRoute?: any;
+  selectedPickupPoint?: any;
+  selectedDriver?: any;
+  selectedAssignment?: any;
+  selectedVehicle?: any;
+  editRouteName?: string;
+  setEditRouteName?: (value: string) => void;
+  editRouteStatus?: boolean;
+  setEditRouteStatus?: (value: boolean) => void;
+  editPickupAddress?: string;
+  setEditPickupAddress?: (value: string) => void;
+  editPickupStatus?: boolean;
+  setEditPickupStatus?: (value: boolean) => void;
+  editDriverName?: string;
+  setEditDriverName?: (value: string) => void;
+  editDriverPhone?: string;
+  setEditDriverPhone?: (value: string) => void;
+  editDriverLicense?: string;
+  setEditDriverLicense?: (value: string) => void;
+  editDriverAddress?: string;
+  setEditDriverAddress?: (value: string) => void;
+  editDriverStatus?: boolean;
+  setEditDriverStatus?: (value: boolean) => void;
+  editAssignStatus?: boolean;
+  setEditAssignStatus?: (value: boolean) => void;
+  editVehicleStatus?: boolean;
+  setEditVehicleStatus?: (value: boolean) => void;
+  isUpdating?: boolean;
+  setIsUpdating?: (value: boolean) => void;
+  onRouteUpdate?: () => Promise<void>;
+  onPickupUpdate?: () => Promise<void>;
+  onDriverUpdate?: () => Promise<void>;
+  onAssignUpdate?: () => Promise<void>;
+  onVehicleUpdate?: () => Promise<void>;
+}
+
+const TransportModal = ({
+  selectedRoute,
+  selectedPickupPoint,
+  selectedDriver,
+  selectedAssignment,
+  selectedVehicle,
+  editRouteName = '',
+  setEditRouteName,
+  editRouteStatus = true,
+  setEditRouteStatus,
+  editPickupAddress = '',
+  setEditPickupAddress,
+  editPickupStatus = true,
+  setEditPickupStatus,
+  editDriverName = '',
+  setEditDriverName,
+  editDriverPhone = '',
+  setEditDriverPhone,
+  editDriverLicense = '',
+  setEditDriverLicense,
+  editDriverAddress = '',
+  setEditDriverAddress,
+  editDriverStatus = true,
+  setEditDriverStatus,
+  editAssignStatus = true,
+  setEditAssignStatus,
+  editVehicleStatus = true,
+  setEditVehicleStatus,
+  isUpdating = false,
+  setIsUpdating,
+  onRouteUpdate,
+  onPickupUpdate,
+  onDriverUpdate,
+  onAssignUpdate,
+  onVehicleUpdate
+}: TransportModalProps) => {
+  // Update form fields when selectedRoute changes
+  useEffect(() => {
+    if (selectedRoute && setEditRouteName && setEditRouteStatus) {
+      const route = selectedRoute.originalData || selectedRoute;
+      // Use route_name from originalData, or fallback to mapped routes property
+      const routeName = route.route_name || selectedRoute.routes || '';
+      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+      // Fallback to status string if is_active is not available
+      let routeStatus = true; // default to active
+      if (Object.prototype.hasOwnProperty.call(route, 'is_active')) {
+        routeStatus = route.is_active === true || route.is_active === 1 || route.is_active === 'true';
+      } else if (selectedRoute.status) {
+        routeStatus = selectedRoute.status === 'Active';
+      }
+
+      setEditRouteName(routeName);
+      setEditRouteStatus(routeStatus);
+    }
+  }, [selectedRoute, setEditRouteName, setEditRouteStatus]);
+
+  // Update form fields when selectedPickupPoint changes
+  useEffect(() => {
+    if (selectedPickupPoint && setEditPickupAddress && setEditPickupStatus) {
+      const pickup = selectedPickupPoint.originalData || selectedPickupPoint;
+      // Use address from originalData, or fallback to mapped pickupPoint property
+      const pickupAddress = pickup.address || selectedPickupPoint.pickupPoint || '';
+      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+      // Fallback to status string if is_active is not available
+      let pickupStatus = true; // default to active
+      if (Object.prototype.hasOwnProperty.call(pickup, 'is_active')) {
+        pickupStatus = pickup.is_active === true || pickup.is_active === 1 || pickup.is_active === 'true';
+      } else if (selectedPickupPoint.status) {
+        pickupStatus = selectedPickupPoint.status === 'Active';
+      }
+
+      setEditPickupAddress(pickupAddress);
+      setEditPickupStatus(pickupStatus);
+    }
+  }, [selectedPickupPoint, setEditPickupAddress, setEditPickupStatus]);
+
+  // Update status when selectedAssignment changes (assign vehicle page)
+  useEffect(() => {
+    if (selectedAssignment && setEditAssignStatus) {
+      const assignment = selectedAssignment.originalData || selectedAssignment;
+      let status = true;
+      if (assignment && Object.prototype.hasOwnProperty.call(assignment, "is_active")) {
+        status =
+          assignment.is_active === true ||
+          assignment.is_active === 1 ||
+          assignment.is_active === "true";
+      } else if (selectedAssignment.status) {
+        status = selectedAssignment.status === "Active";
+      }
+      setEditAssignStatus(status);
+    }
+  }, [selectedAssignment, setEditAssignStatus]);
+
+  // Update status when selectedVehicle changes
+  useEffect(() => {
+    if (selectedVehicle && setEditVehicleStatus) {
+      const vehicle = selectedVehicle.originalData || selectedVehicle;
+      let status = true;
+      if (vehicle && Object.prototype.hasOwnProperty.call(vehicle, "is_active")) {
+        status =
+          vehicle.is_active === true ||
+          vehicle.is_active === 1 ||
+          vehicle.is_active === "true";
+      } else if (selectedVehicle.status) {
+        status = selectedVehicle.status === "Active";
+      }
+      setEditVehicleStatus(status);
+    }
+  }, [selectedVehicle, setEditVehicleStatus]);
+
+  // Update form fields when selectedDriver changes
+  useEffect(() => {
+    if (selectedDriver && setEditDriverName && setEditDriverPhone && setEditDriverLicense && setEditDriverAddress && setEditDriverStatus) {
+      const driver = selectedDriver.originalData || selectedDriver;
+      // Get driver name (could be from name, driver_name, or first_name + last_name)
+      const driverName = driver.name || driver.driver_name || selectedDriver.name || '';
+      const driverPhone = driver.phone || selectedDriver.phone || '';
+      const driverLicense = driver.license_number || selectedDriver.driverLicenseNo || '';
+      const driverAddress = driver.address || selectedDriver.address || '';
+      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+      // Fallback to status string if is_active is not available
+      let driverStatus = true; // default to active
+      if (Object.prototype.hasOwnProperty.call(driver, 'is_active')) {
+        driverStatus = driver.is_active === true || driver.is_active === 1 || driver.is_active === 'true';
+      } else if (selectedDriver.status) {
+        driverStatus = selectedDriver.status === 'Active';
+      }
+
+      setEditDriverName(driverName);
+      setEditDriverPhone(driverPhone);
+      setEditDriverLicense(driverLicense);
+      setEditDriverAddress(driverAddress);
+      setEditDriverStatus(driverStatus);
+    }
+  }, [selectedDriver, setEditDriverName, setEditDriverPhone, setEditDriverLicense, setEditDriverAddress, setEditDriverStatus]);
+
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0') // Month is zero-based, so we add 1
+  const day = String(today.getDate()).padStart(2, '0')
+  const formattedDate = `${month}-${day}-${year}`
+  const defaultValue = dayjs(formattedDate);
+  const getModalContainer = () => {
+    const modalElement = document.getElementById('modal-datepicker');
+    return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
+  };
+  const getModalContainer2 = () => {
+    const modalElement = document.getElementById('modal-datepicker2');
+    return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
+  };
   return (
     <>
       <>
@@ -108,7 +281,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Route Name"
-                          defaultValue="Seattle"
+                          value={editRouteName || ''}
+                          onChange={(e) => setEditRouteName && setEditRouteName(e.target.value)}
                         />
                       </div>
                     </div>
@@ -122,7 +296,8 @@ const TransportModal = () => {
                           type="checkbox"
                           id="user2"
                           className="check"
-                          defaultChecked
+                          checked={editRouteStatus}
+                          onChange={(e) => setEditRouteStatus && setEditRouteStatus(e.target.checked)}
                         />
                         <label htmlFor="user2" className="checktoggle">
                           {" "}
@@ -141,10 +316,25 @@ const TransportModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onRouteUpdate) {
+                        await onRouteUpdate();
+                      } else {
+                        // Fallback: just close modal
+                        const modalElement = document.getElementById('edit_routes');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Save Changes
+                    {isUpdating ? 'Updating...' : 'Save Changes'}
                   </Link>
                 </div>
               </form>
@@ -248,7 +438,8 @@ const TransportModal = () => {
                         <CommonSelect
                           className="select"
                           options={routesList}
-                          defaultValue={routesList[0]}
+                          defaultValue={selectedAssignment?.originalData?.route || selectedAssignment?.route ? routesList.find((r: any) => r.value === selectedAssignment.originalData?.route || r.label === selectedAssignment.route) || routesList[0] : routesList[0]}
+                          key={`assign-route-${selectedAssignment?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -258,7 +449,8 @@ const TransportModal = () => {
                         <CommonSelect
                           className="select"
                           options={PickupPoint2}
-                          defaultValue={PickupPoint2[0]}
+                          defaultValue={selectedAssignment?.originalData?.pickup_point || selectedAssignment?.pickupPoint ? PickupPoint2.find((p: any) => p.value === selectedAssignment.originalData?.pickup_point || p.label === selectedAssignment.pickupPoint) || PickupPoint2[0] : PickupPoint2[0]}
+                          key={`assign-pickup-${selectedAssignment?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -266,7 +458,8 @@ const TransportModal = () => {
                         <CommonSelect
                           className="select"
                           options={VehicleNumber}
-                          defaultValue={VehicleNumber[0]}
+                          defaultValue={selectedAssignment?.originalData?.vehicle_number || selectedAssignment?.vehicle ? VehicleNumber.find((v: any) => v.value === selectedAssignment.originalData?.vehicle_number || v.label === selectedAssignment.vehicle) || VehicleNumber[0] : VehicleNumber[0]}
+                          key={`assign-vehicle-${selectedAssignment?.id || 'new'}`}
                         />
                       </div>
                       <div className="assigned-driver">
@@ -274,14 +467,32 @@ const TransportModal = () => {
                         <div className="assigned-driver-info">
                           <span className="driver-img">
                             <ImageWithBasePath
-                              src="assets/img/parents/parent-01.jpg"
+                              src={selectedAssignment?.originalData?.driver_photo_url || selectedAssignment?.originalData?.photo_url || selectedAssignment?.img || "assets/img/parents/parent-01.jpg"}
                               alt="Img"
                             />
                           </span>
                           <div>
-                            <h5>Thomas</h5>
-                            <span>+1 64044 748904</span>
+                            <h5>{selectedAssignment?.originalData?.driver_name || selectedAssignment?.name || "N/A"}</h5>
+                            <span>{selectedAssignment?.originalData?.driver_phone || selectedAssignment?.phone || "N/A"}</span>
                           </div>
+                        </div>
+                      </div>
+                      <div className="modal-satus-toggle d-flex align-items-center justify-content-between mt-2">
+                        <div className="status-title">
+                          <h5>Status</h5>
+                          <p>Change the Status by toggle </p>
+                        </div>
+                        <div className="status-toggle modal-status">
+                          <input
+                            type="checkbox"
+                            id="assign-status"
+                            className="check"
+                            checked={editAssignStatus}
+                            onChange={(e) => setEditAssignStatus && setEditAssignStatus(e.target.checked)}
+                          />
+                          <label htmlFor="assign-status" className="checktoggle">
+                            {" "}
+                          </label>
                         </div>
                       </div>
                     </div>
@@ -297,10 +508,24 @@ const TransportModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onAssignUpdate) {
+                        await onAssignUpdate();
+                      } else {
+                        const modalElement = document.getElementById('edit_assign_vehicle');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Assign Now
+                    {isUpdating ? 'Updating...' : 'Assign Now'}
                   </Link>
                 </div>
               </form>
@@ -394,7 +619,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Pickup Point"
-                          defaultValue="2603 Wood Duck Drive Marquette, MI"
+                          value={editPickupAddress || ''}
+                          onChange={(e) => setEditPickupAddress && setEditPickupAddress(e.target.value)}
                         />
                       </div>
                     </div>
@@ -406,11 +632,12 @@ const TransportModal = () => {
                       <div className="status-toggle modal-status">
                         <input
                           type="checkbox"
-                          id="user2"
+                          id="pickup-status"
                           className="check"
-                          defaultChecked
+                          checked={editPickupStatus}
+                          onChange={(e) => setEditPickupStatus && setEditPickupStatus(e.target.checked)}
                         />
-                        <label htmlFor="user2" className="checktoggle">
+                        <label htmlFor="pickup-status" className="checktoggle">
                           {" "}
                         </label>
                       </div>
@@ -427,10 +654,25 @@ const TransportModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onPickupUpdate) {
+                        await onPickupUpdate();
+                      } else {
+                        // Fallback: just close modal
+                        const modalElement = document.getElementById('edit_pickup');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Save Changes
+                    {isUpdating ? 'Updating...' : 'Save Changes'}
                   </Link>
                 </div>
               </form>
@@ -542,7 +784,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Name"
-                          defaultValue="Thomas"
+                          value={editDriverName || ''}
+                          onChange={(e) => setEditDriverName && setEditDriverName(e.target.value)}
                         />
                       </div>
                       <div className="mb-3">
@@ -551,7 +794,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Phone Number"
-                          defaultValue="+1 64044 74890"
+                          value={editDriverPhone || ''}
+                          onChange={(e) => setEditDriverPhone && setEditDriverPhone(e.target.value)}
                         />
                       </div>
                       <div className="mb-3">
@@ -562,7 +806,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Driving License Number"
-                          defaultValue="LC7899456689"
+                          value={editDriverLicense || ''}
+                          onChange={(e) => setEditDriverLicense && setEditDriverLicense(e.target.value)}
                         />
                       </div>
                       <div className="mb-3">
@@ -571,7 +816,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Address"
-                          defaultValue="2233 Wood Street, Slidell, LA"
+                          value={editDriverAddress || ''}
+                          onChange={(e) => setEditDriverAddress && setEditDriverAddress(e.target.value)}
                         />
                       </div>
                     </div>
@@ -583,11 +829,12 @@ const TransportModal = () => {
                       <div className="status-toggle modal-status">
                         <input
                           type="checkbox"
-                          id="user2"
+                          id="driver-status"
                           className="check"
-                          defaultChecked
+                          checked={editDriverStatus}
+                          onChange={(e) => setEditDriverStatus && setEditDriverStatus(e.target.checked)}
                         />
-                        <label htmlFor="user2" className="checktoggle">
+                        <label htmlFor="driver-status" className="checktoggle">
                           {" "}
                         </label>
                       </div>
@@ -604,10 +851,25 @@ const TransportModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onDriverUpdate) {
+                        await onDriverUpdate();
+                      } else {
+                        // Fallback: just close modal
+                        const modalElement = document.getElementById('edit_driver');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Save Changes
+                    {isUpdating ? 'Updating...' : 'Save Changes'}
                   </Link>
                 </div>
               </form>
@@ -618,7 +880,7 @@ const TransportModal = () => {
       </>
       <>
         {/* Add New Vehicle */}
-        <div className="modal fade"  id="add_vehicle">
+        <div className="modal fade" id="add_vehicle">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
@@ -653,16 +915,16 @@ const TransportModal = () => {
                           <div className="mb-3">
                             <label className="form-label">Made of Year</label>
                             <div className="date-pic">
-                            <DatePicker
+                              <DatePicker
                                 className="form-control datetimepicker"
                                 format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
+                                  format: "DD-MM-YYYY",
+                                  type: "mask",
                                 }}
                                 getPopupContainer={getModalContainer}
                                 defaultValue=""
                                 placeholder="16 May 2024"
-                                />
+                              />
                               <span className="cal-icon">
                                 <i className="ti ti-calendar" />
                               </span>
@@ -761,8 +1023,8 @@ const TransportModal = () => {
               <div className="modal-header align-items-center">
                 <div className="d-flex align-items-center">
                   <h4 className="modal-title">Edit Vehicle</h4>
-                  <span className="badge badge-soft-primary ms-2">
-                    ID : BB0482
+                  <span className="badge badge-soft-primary ms-2" key={`edit-vehicle-id-${selectedVehicle?.id || 'new'}`}>
+                    ID : {selectedVehicle?.originalData?.vehicle_code ?? selectedVehicle?.id ?? '—'}
                   </span>
                 </div>
                 <button
@@ -786,7 +1048,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Vehicle No"
-                              defaultValue={8930}
+                              defaultValue={selectedVehicle?.originalData?.vehicle_number ?? selectedVehicle?.vehicleNo ?? ''}
+                              key={`edit-vehicle-no-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -797,7 +1060,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Vehicle Model"
-                              defaultValue="Scania"
+                              defaultValue={selectedVehicle?.originalData?.vehicle_model ?? selectedVehicle?.vehicleModel ?? ''}
+                              key={`edit-vehicle-model-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -805,16 +1069,17 @@ const TransportModal = () => {
                           <div className="mb-3">
                             <label className="form-label">Made of Year</label>
                             <div className="date-pic">
-                            <DatePicker
-                      className="form-control datetimepicker"
-                      format={{
-                        format: "DD-MM-YYYY",
-                        type: "mask",
-                      }}
-                      getPopupContainer={getModalContainer2}
-                      defaultValue={defaultValue}
-                      placeholder="16 May 2024"
-                    />
+                              <DatePicker
+                                className="form-control datetimepicker"
+                                format={{
+                                  format: "DD-MM-YYYY",
+                                  type: "mask",
+                                }}
+                                getPopupContainer={getModalContainer2}
+                                defaultValue={selectedVehicle?.originalData?.year || selectedVehicle?.madeofYear ? dayjs(`${selectedVehicle?.originalData?.year ?? selectedVehicle?.madeofYear}-01-01`) : defaultValue}
+                                placeholder="16 May 2024"
+                                key={`edit-vehicle-year-${selectedVehicle?.id || 'new'}`}
+                              />
                               <span className="cal-icon">
                                 <i className="ti ti-calendar" />
                               </span>
@@ -830,7 +1095,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Registration No"
-                              defaultValue="US1A3545"
+                              defaultValue={selectedVehicle?.originalData?.registration_number ?? selectedVehicle?.registrationNo ?? ''}
+                              key={`edit-vehicle-reg-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -840,7 +1106,8 @@ const TransportModal = () => {
                             <input
                               type="text"
                               className="form-control"
-                              defaultValue={32546665456}
+                              defaultValue={selectedVehicle?.originalData?.chassis_number ?? selectedVehicle?.chassisNo ?? ''}
+                              key={`edit-vehicle-chassis-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -851,6 +1118,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Seat Capacity"
+                              defaultValue={selectedVehicle?.originalData?.seat_capacity ?? ''}
+                              key={`edit-vehicle-seat-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -861,7 +1130,8 @@ const TransportModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter GPS Tracking ID"
-                          defaultValue="GPS7899456689"
+                          defaultValue={selectedVehicle?.originalData?.gps_device_id ?? selectedVehicle?.gps ?? ''}
+                          key={`edit-vehicle-gps-${selectedVehicle?.id || 'new'}`}
                         />
                       </div>
                       <hr />
@@ -873,7 +1143,8 @@ const TransportModal = () => {
                         <CommonSelect
                           className="select"
                           options={driverName}
-                          defaultValue={driverName[1]}
+                          defaultValue={selectedVehicle?.originalData?.driver_name || selectedVehicle?.name ? driverName.find((d: any) => d.label === (selectedVehicle?.originalData?.driver_name ?? selectedVehicle?.name) || d.value === (selectedVehicle?.originalData?.driver_name ?? selectedVehicle?.name)) || driverName[0] : driverName[0]}
+                          key={`edit-vehicle-driver-${selectedVehicle?.id || 'new'}`}
                         />
                       </div>
                       <div className="row">
@@ -884,7 +1155,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Driver License"
-                              defaultValue="LC7899456689"
+                              defaultValue={selectedVehicle?.originalData?.driver_license ?? ''}
+                              key={`edit-vehicle-license-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -897,7 +1169,8 @@ const TransportModal = () => {
                               type="text"
                               className="form-control"
                               placeholder="Enter Driver Contact No"
-                              defaultValue="+1 64044 74890"
+                              defaultValue={selectedVehicle?.originalData?.driver_phone ?? selectedVehicle?.phone ?? ''}
+                              key={`edit-vehicle-phone-${selectedVehicle?.id || 'new'}`}
                             />
                           </div>
                         </div>
@@ -909,8 +1182,27 @@ const TransportModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Driver Address"
-                        defaultValue="2233 Wood Street, Slidell, LA"
+                        defaultValue={selectedVehicle?.originalData?.driver_address ?? ''}
+                        key={`edit-vehicle-address-${selectedVehicle?.id || 'new'}`}
                       />
+                    </div>
+                  </div>
+                  <div className="modal-satus-toggle d-flex align-items-center justify-content-between mt-3">
+                    <div className="status-title">
+                      <h5>Status</h5>
+                      <p>Change the Status by toggle </p>
+                    </div>
+                    <div className="status-toggle modal-status">
+                      <input
+                        type="checkbox"
+                        id="vehicle-status"
+                        className="check"
+                        checked={editVehicleStatus}
+                        onChange={(e) => setEditVehicleStatus && setEditVehicleStatus(e.target.checked)}
+                      />
+                      <label htmlFor="vehicle-status" className="checktoggle">
+                        {" "}
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -924,10 +1216,24 @@ const TransportModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onVehicleUpdate) {
+                        await onVehicleUpdate();
+                      } else {
+                        const modalElement = document.getElementById('edit_vehicle');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Save Vehicle
+                    {isUpdating ? 'Updating...' : 'Save Vehicle'}
                   </Link>
                 </div>
               </form>

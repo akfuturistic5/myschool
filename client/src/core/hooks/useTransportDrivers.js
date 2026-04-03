@@ -17,7 +17,7 @@ export const useTransportDrivers = () => {
       const list = Array.isArray(response) ? response : (response?.data ?? []);
       if (Array.isArray(list)) {
         const mapped = list.map((row, index) => {
-          const displayName = row.name ?? [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+          const displayName = row.name ?? row.driver_name ?? [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
           return {
           key: String(row.id ?? index + 1),
           id: row.driver_code ?? String(row.id),
@@ -28,6 +28,7 @@ export const useTransportDrivers = () => {
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           img: row.photo_url || defaultImg,
+          originalData: row, // Store original data for edit modal
         };
         });
         setData(mapped);

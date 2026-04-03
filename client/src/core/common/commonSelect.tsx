@@ -16,6 +16,15 @@ export interface SelectProps {
 }
 
 const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, className }) => {
+  const safeOptions = Array.isArray(options)
+    ? options.filter(
+        (option): option is Option =>
+          !!option &&
+          typeof option === "object" &&
+          typeof option.value === "string" &&
+          typeof option.label === "string"
+      )
+    : [];
   const [selectedOption, setSelectedOption] = useState<Option | undefined>(defaultValue);
 
   // const customStyles = {
@@ -39,26 +48,32 @@ const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onC
     }
   };
 
-  // Update selectedOption when value prop changes
+  // Update selectedOption when value prop changes (controlled mode)
+  // Only run when value is explicitly passed - when undefined, use defaultValue (uncontrolled)
   useEffect(() => {
-    if (value) {
-      const option = options.find(opt => opt.value === value);
-      setSelectedOption(option);
-    } else {
-      setSelectedOption(undefined);
+    if (value !== undefined) {
+      if (value) {
+        const option = safeOptions.find(opt => opt.value === value);
+        setSelectedOption(option ?? undefined);
+      } else {
+        setSelectedOption(undefined);
+      }
     }
-  }, [value, options]);
+  }, [value, safeOptions]);
 
+  // Only sync defaultValue when in uncontrolled mode (value not passed)
   useEffect(() => {
-    setSelectedOption(defaultValue || undefined);
-  }, [defaultValue])
+    if (value === undefined) {
+      setSelectedOption(defaultValue || undefined);
+    }
+  }, [defaultValue, value]);
   
   return (
     <Select
      classNamePrefix="react-select"
       className={className}
       // styles={customStyles}
-      options={options}
+      options={safeOptions}
       value={selectedOption}
       onChange={handleChange}
       placeholder="Select"

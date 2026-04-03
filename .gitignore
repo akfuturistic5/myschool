@@ -3,10 +3,12 @@ server/.env
 # Node
 node_modules/
 
-# Env (keep .env.production committed so Render gets VITE_API_URL for build)
+# Env (keep client/.env.production committed so Render gets VITE_API_URL for build)
 .env
 .env.local
 .env.development
+client/.env
+server/uploads/
 
 # Logs
 npm-debug.log*

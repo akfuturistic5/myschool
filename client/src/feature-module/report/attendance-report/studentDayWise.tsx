@@ -1,46 +1,169 @@
-import { useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
-import {
-  allClass,
-  allSection,
-  date,
-} from "../../../core/common/selectoption/selectoption";
-
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import { studentDayWiseData } from "../../../core/data/json/student_day_wise";
+import { DatePicker } from "antd";
+import dayjs, { Dayjs } from "dayjs";
+import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
+import { apiService } from "../../../core/services/apiService";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
 
 const StudentDayWise = () => {
   const routes = all_routes;
-
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classesWithSections } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const classOptions = useMemo(() => {
+    const seen = new Map<string, { value: string; label: string }>();
+    (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
+      if (row?.classId == null || seen.has(String(row.classId))) return;
+      seen.set(String(row.classId), {
+        value: String(row.classId),
+        label: row.className || `Class ${row.classId}`,
+      });
+    });
+    return Array.from(seen.values());
+  }, [classesWithSections]);
+
+  const sectionOptions = useMemo(() => {
+    const base = [{ value: "", label: "All Sections" }];
+    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
+      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
+      .filter((row: any) => row?.sectionId != null)
+      .map((row: any) => ({
+        value: String(row.sectionId),
+        label: row.sectionName || `Section ${row.sectionId}`,
+      }));
+    const seen = new Set<string>();
+    return base.concat(
+      items.filter((item) => {
+        if (seen.has(item.value)) return false;
+        seen.add(item.value);
+        return true;
+      })
+    );
+  }, [classesWithSections, selectedClassId]);
+
+  useEffect(() => {
+    if (!selectedClassId && classOptions.length > 0) {
+      setSelectedClassId(classOptions[0].value);
+    }
+  }, [classOptions, selectedClassId]);
+
+  useEffect(() => {
+    if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
+      setSelectedSectionId("");
+    }
+  }, [sectionOptions, selectedSectionId]);
+
+  useEffect(() => {
+    if (!selectedClassId) {
+      setReportData({ month: null, days: [], rows: [] });
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchReport = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiService.getAttendanceReport({
+          classId: selectedClassId,
+          sectionId: selectedSectionId || null,
+          academicYearId,
+          month: dayjs(selectedDate).format("YYYY-MM"),
+        });
+        if (!cancelled) {
+          setReportData(res?.data || { month: null, days: [], rows: [] });
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to fetch student day wise report");
+          setReportData({ month: null, days: [], rows: [] });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchReport();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId, selectedClassId, selectedSectionId, selectedDate]);
+
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
-  const data = studentDayWiseData;
+
+  const data = useMemo(() => {
+    const dayKey = dayjs(selectedDate).format("YYYY-MM-DD");
+    return (Array.isArray(reportData.rows) ? reportData.rows : [])
+      .map((row: any, index: number) => {
+        const status = row.daily?.[dayKey];
+        if (!status) return null;
+        const label =
+          status === "present" ? "Present" :
+          status === "late" ? "Late" :
+          status === "absent" ? "Absent" :
+          status === "half_day" ? "Half Day" :
+          status === "holiday" ? "Holiday" : "—";
+        const badgeClass =
+          status === "present" ? "badge-soft-success" :
+          status === "late" ? "badge-soft-warning" :
+          status === "absent" ? "badge-soft-danger" :
+          status === "half_day" ? "badge-soft-primary" :
+          "badge-soft-info";
+
+        return {
+          key: String(index + 1),
+          admissionNo: row.admissionNo || "—",
+          rollNo: row.rollNo || "—",
+          name: row.name || "—",
+          img: row.img || "",
+          gender: row.gender || "",
+          attendance: label,
+          badgeClass,
+        };
+      })
+      .filter(Boolean);
+  }, [reportData.rows, selectedDate]);
 
   const columns = [
     {
       title: "S.No",
       dataIndex: "key",
-      sorter: (a: TableData, b: TableData) => a.key.length - b.key.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.key, b?.key),
     },
     {
       title: " Adminssion No",
-      dataIndex: "id",
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      dataIndex: "admissionNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
     },
     {
       title: " Roll No",
       dataIndex: "rollNo",
-      sorter: (a: TableData, b: TableData) => a.rollNo.length - b.rollNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
       title: " Name",
@@ -52,6 +175,7 @@ const StudentDayWise = () => {
               src={record.img}
               className="img-fluid rounded-circle"
               alt="img"
+              gender={record.gender}
             />
           </Link>
           <div className="ms-2">
@@ -61,18 +185,17 @@ const StudentDayWise = () => {
           </div>
         </div>
       ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
     },
     {
       title: " Attendance",
       dataIndex: "attendance",
       render: (text: string, record: any) => (
-        <span className={`${record.class} d-inline-flex align-items-center`}>
+        <span className={`badge ${record.badgeClass} d-inline-flex align-items-center`}>
           <i className="ti ti-circle-filled fs-5 me-1"></i>{text}
         </span>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.attendance.length - b.attendance.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.attendance, b?.attendance),
     },
   ];
   return (
@@ -201,8 +324,9 @@ const StudentDayWise = () => {
 
                               <CommonSelect
                                 className="select"
-                                options={allClass}
-                                defaultValue={undefined}
+                                options={classOptions}
+                                value={selectedClassId}
+                                onChange={(value) => setSelectedClassId(value)}
                               />
                             </div>
                           </div>
@@ -211,8 +335,9 @@ const StudentDayWise = () => {
                               <label className="form-label">Section</label>
                               <CommonSelect
                                 className="select"
-                                options={allSection}
-                                defaultValue={undefined}
+                                options={sectionOptions}
+                                value={selectedSectionId ?? ""}
+                                onChange={(value) => setSelectedSectionId(value ?? "")}
                               />
                             </div>
                           </div>
@@ -221,11 +346,12 @@ const StudentDayWise = () => {
                               <label className="form-label">
                                 Attendance Date
                               </label>
-
-                              <CommonSelect
-                                className="select"
-                                options={date}
-                                defaultValue={undefined}
+                              <DatePicker
+                                className="form-control datetimepicker"
+                                value={dayjs(selectedDate)}
+                                onChange={(value: Dayjs | null) => setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))}
+                                allowClear={false}
+                                format="DD-MM-YYYY"
                               />
                             </div>
                           </div>
@@ -281,9 +407,21 @@ const StudentDayWise = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} Selection={false} />
-              {/* /Student List */}
+              {error && (
+                <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
+              {loading ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading student day wise report...</p>
+                </div>
+              ) : (
+                <Table dataSource={data} columns={columns} Selection={false} />
+              )}
             </div>
           </div>
           {/* /Attendance List */}

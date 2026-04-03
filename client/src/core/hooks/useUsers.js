@@ -54,6 +54,7 @@ export const useUsers = () => {
             section,
             dateOfJoined,
             status,
+            originalData: user, // Store original data for edit modal
           };
         });
 

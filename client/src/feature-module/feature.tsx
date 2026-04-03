@@ -2,17 +2,30 @@ import { useSelector } from "react-redux";
 import { Outlet, useLocation } from "react-router";
 import Header from "../core/common/header";
 import Sidebar from "../core/common/sidebar";
+import DashboardGuard from "../core/components/DashboardGuard";
+import RoleGuard from "../core/components/RoleGuard";
+import InactiveAccountScreen from "../core/components/InactiveAccountScreen";
 import ThemeSettings from "../core/common/theme-settings";
 import { useEffect, useState } from "react";
 import { all_routes } from "./router/all_routes";
+import { useCurrentUser } from "../core/hooks/useCurrentUser";
+import { selectUser } from "../core/data/redux/authSlice";
+import { getTabTitleForSchoolRole } from "../core/utils/roleUtils";
 
 const Feature = () => {
   const routes = all_routes;
   const [showLoader, setShowLoader] = useState(true);
+  const reduxUser = useSelector(selectUser);
+  const { user: currentUser } = useCurrentUser();
+  const accountDisabled =
+    reduxUser?.accountDisabled === true ||
+    (currentUser as Record<string, unknown> | null)?.account_disabled === true;
+
   const mobileSidebar = useSelector(
     (state: any) => state.sidebarSlice.mobileSidebar
   );
 
+  const miniSidebar = useSelector((state: any) => state.sidebarSlice.miniSidebar);
   const expandMenu = useSelector((state: any) => state.sidebarSlice.expandMenu);
 
   const dataLayout = useSelector((state: any) => state.themeSetting.dataLayout);
@@ -103,9 +116,11 @@ const Feature = () => {
   useEffect(() => {
     if (
       location.pathname === routes.adminDashboard ||
+      location.pathname === routes.administrativeDashboard ||
       location.pathname === routes.teacherDashboard ||
       location.pathname === routes.studentDashboard ||
-      location.pathname === routes.parentDashboard
+      location.pathname === routes.parentDashboard ||
+      location.pathname === routes.guardianDashboard
     ) {
       // Show the loader when navigating to a new route
       setShowLoader(true);
@@ -164,11 +179,25 @@ const Feature = () => {
   //   ${dataColor === "red_data_color" ? "red-data-color" : ""}
   // `.replace(/\s+/g, ' ').trim();
 
+  // Set browser tab title by role (headmaster/teacher/student/parent/guardian)
+  const roleForTitle =
+    reduxUser?.role ??
+    (currentUser as { role?: string } | null)?.role ??
+    '';
+  const schoolNameForTitle =
+    (currentUser as { school_name?: string } | null)?.school_name ??
+    reduxUser?.school_name ??
+    '';
+  useEffect(() => {
+    document.title = getTabTitleForSchoolRole(schoolNameForTitle, roleForTitle);
+  }, [schoolNameForTitle, roleForTitle]);
+
   useEffect(() => {
     // Remove any lingering unwanted classes
     const unwanted = ['default-layout', 'expand-menu'];
     unwanted.forEach(cls => document.body.classList.remove(cls));
     let bodyClass = layoutClass;
+    if (miniSidebar) bodyClass += " sidebar-collapsed";
     if (dataTheme === "dark_data_theme") {
       bodyClass += " dark-data-theme";
     }
@@ -190,7 +219,17 @@ const Feature = () => {
       "data-sidebarbg",
       sidebarBgMap[dataSidebarBg] || ""
     );
-  }, [layoutClass, dataSidebarBg, dataLayout, expandMenu, dataTheme]);
+  }, [layoutClass, miniSidebar, dataSidebarBg, dataLayout, expandMenu, dataTheme]);
+
+  if (accountDisabled) {
+    return (
+      <div>
+        <InactiveAccountScreen />
+        <div className="sidebar-overlay"></div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {showLoader ? (
@@ -202,7 +241,11 @@ const Feature = () => {
           >
             <Header />
             <Sidebar />
-            <Outlet />
+            <RoleGuard>
+              <DashboardGuard>
+                <Outlet />
+              </DashboardGuard>
+            </RoleGuard>
             {!location.pathname.includes("layout") && <ThemeSettings />}
           </div>
         </>
@@ -214,7 +257,11 @@ const Feature = () => {
           >
             <Header />
             <Sidebar />
-            <Outlet />
+            <RoleGuard>
+              <DashboardGuard>
+                <Outlet />
+              </DashboardGuard>
+            </RoleGuard>
             {!location.pathname.includes("layout") && <ThemeSettings />}
           </div>
         </>

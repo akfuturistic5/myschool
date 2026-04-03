@@ -30,14 +30,14 @@ const Staff = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (text: any, record: any) => (
         <>
           <Link to={routes.staffDetails} className="link-primary">
-            {record.id}
+            {text || record.id || 'N/A'}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Name",
@@ -91,7 +91,7 @@ const Staff = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (_: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -117,6 +117,7 @@ const Staff = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to={routes.editStaff}
+                    state={{ staff: record }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit

@@ -1,13 +1,18 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+if (!process.env.DB_PASSWORD) {
+  throw new Error('DB_PASSWORD is required to run this script');
+}
+
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'schooldb',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'password',
+  password: process.env.DB_PASSWORD,
 });
+
 
 async function analyzeStudentsTable() {
   try {

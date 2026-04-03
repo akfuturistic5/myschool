@@ -31,7 +31,7 @@ export const useClassSchedules = () => {
       if (Array.isArray(list)) {
         const mapped = list.map((row, index) => ({
           key: String(row.id ?? index + 1),
-          id: row.id ?? `RT${row.id ?? index + 1}`,
+          id: row.id?.toString() || `RT${String(index + 1).padStart(6, '0')}`,
           class: row.class ?? 'N/A',
           section: row.section ?? 'N/A',
           teacher: row.teacher ?? 'N/A',
@@ -40,6 +40,8 @@ export const useClassSchedules = () => {
           startTime: formatTimeDisplay(row.startTime) ?? 'N/A',
           endTime: formatTimeDisplay(row.endTime) ?? 'N/A',
           classRoom: row.classRoom ?? 'N/A',
+          // Store original data for edit modal
+          originalData: row
         }));
         setData(mapped);
       } else {

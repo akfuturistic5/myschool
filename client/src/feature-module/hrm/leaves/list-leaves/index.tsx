@@ -1,5 +1,4 @@
-import { useRef } from "react";
-import { leave } from "../../../../core/data/json/list_leaves";
+import { useRef, useMemo } from "react";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
@@ -8,98 +7,93 @@ import { activeList, leaveType } from "../../../../core/common/selectoption/sele
 import { Link } from "react-router-dom";
 import { all_routes } from "../../../router/all_routes";
 import TooltipOption from "../../../../core/common/tooltipOption";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
+import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 
 const ListLeaves = () => {
   const routes = all_routes;
-    const data = leave;
-    const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const { user: currentUser } = useCurrentUser();
+  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
+    limit: 50,
+    canUseAdminList,
+  });
+
+  const data = useMemo(() => {
+    if (!Array.isArray(leaveApplications)) return [];
+    return leaveApplications.map((row) => ({
+      key: row.key ?? String(row.id),
+      id: row.id,
+      submittedBy: row.name ?? "—",
+      leaveType: row.leaveType ?? "—",
+      role: row.role ?? "—",
+      leaveDate: row.leaveRange ?? row.leaveDate ?? "—",
+      noofDays: row.noOfDays ?? "—",
+      appliedOn: row.applyOn ?? "—",
+      status: row.status ?? "Pending",
+    }));
+  }, [leaveApplications]);
+
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
-    const columns = [
-      {
-        title: "ID",
-        dataIndex: "id",
-        render: ( record: any) => (
-          <>
-           <Link to="#" className="link-primary">{record.id}</Link>
-          </>
-        ),
+
+  const columns = [
+    {
+      title: "ID",
+      dataIndex: "id",
+      render: (id: number) => (
+        <Link to="#" className="link-primary">{id ?? "—"}</Link>
+      ),
+    },
+    {
+      title: "Submitted By",
+      dataIndex: "submittedBy",
+      sorter: (a: TableData, b: TableData) => String(a?.submittedBy ?? "").localeCompare(String(b?.submittedBy ?? "")),
+    },
+    {
+      title: "Leave Type",
+      dataIndex: "leaveType",
+      sorter: (a: TableData, b: TableData) => String(a?.leaveType ?? "").length - String(b?.leaveType ?? "").length,
+    },
+    {
+      title: "Role",
+      dataIndex: "role",
+    },
+    {
+      title: "Leave Date",
+      dataIndex: "leaveDate",
+    },
+    {
+      title: "No of Days",
+      dataIndex: "noofDays",
+    },
+    {
+      title: "Applied On",
+      dataIndex: "appliedOn",
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      render: (text: string) => {
+        const t = (text ?? "").toString();
+        const isApproved = t.toLowerCase().includes("approv");
+        const isRejected = t.toLowerCase().includes("reject") || t.toLowerCase().includes("declin");
+        const badgeClass = isApproved ? "badge-soft-success" : isRejected ? "badge-soft-danger" : "badge-soft-pending";
+        return (
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {t || "Pending"}
+          </span>
+        );
       },
-  
-      {
-        title: "Leave Type",
-        dataIndex: "leaveType",
-        sorter: (a: TableData, b: TableData) => a.leaveType.length - b.leaveType.length,
-      },
-      {
-        title: "Status",
-        dataIndex: "status",
-        render: (text: string) => (
-            <>
-            {text === "Active" ? (
-              <span
-                className="badge badge-soft-success d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            ):
-            (
-              <span
-                className="badge badge-soft-danger d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            )}
-          </>
-        ),
-        sorter: (a: any, b: any) => a.status.length - b.status.length,
-      },
-      {
-        title: "Action",
-        dataIndex: "action",
-        render: () => (
-          <>
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_leaves"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </>
-        ),
-      },
-    ];
+      sorter: (a: any, b: any) => String(a?.status ?? "").length - String(b?.status ?? "").length,
+    },
+  ];
   return (
     <div>
       <>
@@ -109,7 +103,7 @@ const ListLeaves = () => {
             {/* Page Header */}
             <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
               <div className="my-auto mb-2">
-                <h3 className="page-title mb-1">Leave</h3>
+                <h3 className="page-title mb-1">List of Leaves</h3>
                 <nav>
                   <ol className="breadcrumb mb-0">
                     <li className="breadcrumb-item">
@@ -119,24 +113,13 @@ const ListLeaves = () => {
                       <Link to="#">HRM</Link>
                     </li>
                     <li className="breadcrumb-item active" aria-current="page">
-                      Leave Type
+                      List of Leaves
                     </li>
                   </ol>
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-                <div className="mb-2">
-                  <Link
-                    to="#"
-                    className="btn btn-primary d-flex align-items-center"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_leaves"
-                  >
-                    <i className="ti ti-square-rounded-plus me-2" />
-                    Add Leave Type
-                  </Link>
-                </div>
+                <TooltipOption />
               </div>
             </div>
             {/* /Page Header */}
@@ -248,9 +231,25 @@ const ListLeaves = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* List Leaves List */}
-                  <Table columns={columns} dataSource={data} Selection={true}/>
-                {/* / List Leaves List */}
+                {leaveError && (
+                  <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                    {leaveError}
+                  </div>
+                )}
+                {leaveLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0">Loading leave applications...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* List Leaves List */}
+                    <Table columns={columns} dataSource={data} Selection={true} />
+                    {/* / List Leaves List */}
+                  </>
+                )}
               </div>
             </div>
           </div>

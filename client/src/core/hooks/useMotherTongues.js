@@ -10,9 +10,7 @@ export const useMotherTongues = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching mother tongues...');
       const response = await apiService.getMotherTongues();
-      console.log('Mother tongues response:', response);
       setMotherTongues(response.data);
     } catch (err) {
       console.error('Error fetching mother tongues:', err);

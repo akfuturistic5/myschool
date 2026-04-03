@@ -1,11 +1,128 @@
-
-import { names } from "../../../core/common/selectoption/selectoption";
+import { useState, useEffect } from "react";
 import { Select } from "antd";
 import { Link } from "react-router-dom";
+import { apiService } from "../../../core/services/apiService";
+import { useStudents } from "../../../core/hooks/useStudents";
 
+export interface GuardianToEditShape {
+  id?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  Child?: string;
+  student_id?: number;
+}
 
+interface GuardianModalProps {
+  guardianToEdit?: GuardianToEditShape | null;
+  refetch?: () => void;
+}
 
-const GuardianModal = () => {
+const GuardianModal = ({ guardianToEdit = null, refetch }: GuardianModalProps) => {
+  const { students = [] } = useStudents();
+  const [addName, setAddName] = useState("");
+  const [addPhone, setAddPhone] = useState("");
+  const [addEmail, setAddEmail] = useState("");
+  const [addStudentId, setAddStudentId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editStudentId, setEditStudentId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const studentOptions = students.map((s: any) => ({
+    value: s.id,
+    label: `${s.first_name || ""} ${s.last_name || ""}`.trim() || `Student #${s.id}`,
+  }));
+
+  useEffect(() => {
+    if (guardianToEdit) {
+      setEditName(guardianToEdit.name ?? "");
+      setEditPhone(guardianToEdit.phone ?? "");
+      setEditEmail(guardianToEdit.email ?? "");
+      setEditStudentId(guardianToEdit.student_id ?? null);
+    }
+  }, [guardianToEdit]);
+
+  const hideModal = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const Modal = (window as any).bootstrap?.Modal;
+      if (Modal) {
+        const instance = Modal.getInstance(el);
+        if (instance) instance.hide();
+      }
+    }
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const parts = addName.trim().split(/\s+/);
+      const first_name = parts[0] || "Guardian";
+      const last_name = parts.slice(1).join(" ") || "";
+      if (!addPhone.trim()) {
+        setError("Phone is required");
+        setSubmitting(false);
+        return;
+      }
+      if (!addStudentId) {
+        setError("Please select a child/student");
+        setSubmitting(false);
+        return;
+      }
+      await apiService.createGuardian({
+        student_id: addStudentId,
+        first_name,
+        last_name,
+        phone: addPhone.trim(),
+        email: addEmail.trim() || null,
+      });
+      setAddName("");
+      setAddPhone("");
+      setAddEmail("");
+      setAddStudentId(null);
+      refetch?.();
+      hideModal("add_guardian");
+    } catch (err: any) {
+      setError(err?.message || "Failed to add guardian");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guardianToEdit?.id) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const parts = editName.trim().split(/\s+/);
+      const first_name = parts[0] || "Guardian";
+      const last_name = parts.slice(1).join(" ") || "";
+      if (!editPhone.trim()) {
+        setError("Phone is required");
+        setSubmitting(false);
+        return;
+      }
+      await apiService.updateGuardian(guardianToEdit.id, {
+        student_id: editStudentId ?? guardianToEdit.student_id,
+        first_name,
+        last_name,
+        phone: editPhone.trim(),
+        email: editEmail.trim() || null,
+      });
+      refetch?.();
+      hideModal("edit_guardian");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update guardian");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const getModalContainer = () => {
     const modalElement = document.getElementById("modal-tag");
@@ -33,7 +150,12 @@ const GuardianModal = () => {
                 <i className="ti ti-x" />
               </button>
             </div>
-            <form >
+            <form onSubmit={handleAddSubmit}>
+              {error && (
+                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
               <div id="modal-tag2" className="modal-body">
                 <div className="row">
                   <div className="col-md-12">
@@ -63,51 +185,67 @@ const GuardianModal = () => {
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Name</label>
-                      <input type="text" className="form-control" />
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addName}
+                        onChange={(e) => setAddName(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Phone Number</label>
-                      <input type="text" className="form-control" />
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addPhone}
+                        onChange={(e) => setAddPhone(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Email Address</label>
-                      <input type="text" className="form-control" />
+                      <input
+                        type="email"
+                        className="form-control"
+                        value={addEmail}
+                        onChange={(e) => setAddEmail(e.target.value)}
+                      />
                     </div>
                     <div className="mb-0">
                       <label className="form-label">Child</label>
-                     
-                       <Select
-                        mode="multiple"
+                      <Select
                         allowClear
                         className="select"
                         getPopupContainer={getModalContainer2}
                         style={{ width: "100%" }}
-                        placeholder="Please select"
-                        defaultValue={[]}
-                        options={names}
+                        placeholder="Please select a student"
+                        value={addStudentId}
+                        onChange={(v) => setAddStudentId(v ?? null)}
+                        options={studentOptions}
                       />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="modal-footer">
-                <Link
-                  to="#"
+                <button
+                  type="button"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
                 >
                   Cancel
-                </Link>
-                <Link to="#"  data-bs-dismiss="modal" className="btn btn-primary">
-                  Add Guardian
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Adding..." : "Add Guardian"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       </div>
       {/* /Add Parent */}
-      {/* Edit Parent */}
+      {/* Edit Guardian */}
       <div className="modal fade" id="edit_guardian">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
@@ -122,7 +260,12 @@ const GuardianModal = () => {
                 <i className="ti ti-x" />
               </button>
             </div>
-            <form>
+            <form key={guardianToEdit?.id ?? "edit-form"} onSubmit={handleEditSubmit}>
+              {error && (
+                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
               <div id="modal-tag" className="modal-body ">
                 <div className="row">
                   <div className="col-md-12">
@@ -156,7 +299,9 @@ const GuardianModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Name"
-                        defaultValue="Thomas"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        required
                       />
                     </div>
                     <div className="mb-3">
@@ -165,52 +310,54 @@ const GuardianModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Phone Number"
-                        defaultValue="+1 65738 58937"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        required
                       />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Email Address</label>
                       <input
-                        type="text"
+                        type="email"
                         className="form-control"
                         placeholder="Enter Email Address"
-                        defaultValue="thomas@example.com"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
                       />
                     </div>
                     <div className="mb-0">
                       <label className="form-label">Child</label>
-                      
                       <Select
-                        mode="multiple"
                         allowClear
                         className="select"
                         getPopupContainer={getModalContainer}
                         style={{ width: "100%" }}
-                        placeholder="Please select"
-                        defaultValue={["Tim", "Jammy"]}
-                        options={names}
+                        placeholder="Please select a student"
+                        value={editStudentId}
+                        onChange={(v) => setEditStudentId(v ?? null)}
+                        options={studentOptions}
                       />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="modal-footer">
-                <Link
-                  to="#"
+                <button
+                  type="button"
                   className="btn btn-light me-2"
                   data-bs-dismiss="modal"
                 >
                   Cancel
-                </Link>
-                <Link to="#" className="btn btn-primary">
-                  Save Changes
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Saving..." : "Save Changes"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       </div>
-      {/* /Edit Parent */}
+      {/* /Edit Guardian */}
       
       {/* Delete Modal */}
       <div className="modal fade" id="delete-modal">

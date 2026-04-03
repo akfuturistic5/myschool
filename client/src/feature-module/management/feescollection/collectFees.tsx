@@ -1,6 +1,8 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
@@ -14,15 +16,25 @@ import {
 } from "../../../core/common/selectoption/selectoption";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
-import { collectFessData } from "../../../core/data/json/collectFees";
+import { useFeeCollections } from "../../../core/hooks/useFeeCollections";
 import StudentModals from "../../peoples/students/studentModals";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import TooltipOption from "../../../core/common/tooltipOption";
 
 const CollectFees = () => {
   const routes = all_routes;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const data = collectFessData;
+  const { data, loading, error, refetch } = useFeeCollections({ academicYearId });
+  const [selectedStudentForFee, setSelectedStudentForFee] = useState<{
+    id: number;
+    admission_number?: string;
+    first_name?: string;
+    last_name?: string;
+    class_name?: string;
+    section_name?: string;
+    photo_url?: string | null;
+  } | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -49,7 +61,7 @@ const CollectFees = () => {
       dataIndex: "student",
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link to={routes.studentDetail} className="avatar avatar-md">
+          <Link to={record.id ? `${routes.studentDetail}/${record.id}` : routes.studentDetail} state={record.id ? { studentId: record.id } : undefined} className="avatar avatar-md">
             <ImageWithBasePath
               src={record.studentImage}
               className="img-fluid rounded-circle"
@@ -58,7 +70,7 @@ const CollectFees = () => {
           </Link>
           <div className="ms-2">
             <p className="text-dark mb-0">
-              <Link to={routes.studentDetail}>{text}</Link>
+              <Link to={record.id ? `${routes.studentDetail}/${record.id}` : routes.studentDetail} state={record.id ? { studentId: record.id } : undefined}>{text}</Link>
             </p>
             <span className="fs-12">{record.studentClass}</span>
           </div>
@@ -114,21 +126,37 @@ const CollectFees = () => {
     {
       title: "Action",
       dataIndex: "status",
-      render: (text: string) => (
+      render: (text: string, record: any) => (
         <>
           {text === "Paid" ? (
-            <Link to={routes.studentFees} className="btn btn-light">
+            <Link to={routes.studentFees} state={record.id ? { studentId: record.id } : undefined} className="btn btn-light">
               View Details
             </Link>
           ) : (
-            <Link
-              to="#"
+            <button
+              type="button"
               className="btn btn-light"
-              data-bs-toggle="modal"
-              data-bs-target="#add_fees_collect"
+              onClick={() => {
+                const parts = (record.student || "").trim().split(/\s+/);
+                const firstName = parts[0] || "";
+                const lastName = parts.slice(1).join(" ") || "";
+                setSelectedStudentForFee({
+                  id: record.id,
+                  admission_number: record.admNo,
+                  first_name: firstName,
+                  last_name: lastName,
+                  class_name: record.class,
+                  section_name: record.section,
+                  photo_url: record.studentImage || null,
+                });
+                setTimeout(() => {
+                  const el = document.getElementById("add_fees_collect");
+                  if (el) (window as any).bootstrap?.Modal?.getOrCreateInstance(el).show();
+                }, 0);
+              }}
             >
               Collect Fees
-            </Link>
+            </button>
           )}
         </>
       ),
@@ -313,8 +341,20 @@ const CollectFees = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} Selection={true} />
+              {loading && (
+                <div className="d-flex justify-content-center align-items-center p-4">
+                  <div className="spinner-border text-primary" role="status" />
+                  <span className="ms-2">Loading...</span>
+                </div>
+              )}
+              {error && (
+                <div className="alert alert-warning m-3" role="alert">
+                  {error}
+                </div>
+              )}
+              {!loading && !error && (
+                <Table dataSource={data} columns={columns} Selection={true} />
+              )}
               {/* /Student List */}
             </div>
           </div>
@@ -322,7 +362,13 @@ const CollectFees = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <StudentModals />
+      <StudentModals
+        student={selectedStudentForFee}
+        onFeeCollected={() => {
+          setSelectedStudentForFee(null);
+          refetch();
+        }}
+      />
     </>
   );
 };

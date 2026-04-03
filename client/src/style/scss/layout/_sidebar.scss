@@ -34,6 +34,23 @@
     }
     .sidebar-menu{
         padding: 15px;
+        .school-card {
+            gap: 10px;
+            .school-card__name {
+                flex: 1 1 auto;
+                min-width: 0;
+                line-height: 1.2;
+                overflow: hidden;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                word-break: break-word;
+            }
+            img {
+                object-fit: contain;
+                background: variables.$white;
+            }
+        }
         .clinicdropdown{
             margin-bottom: 24px;
            > a {
@@ -643,6 +660,13 @@
 
 
 @include mixins.respond-above(lg) {
+    // Desktop: collapse sidebar via click toggle without affecting main content width.
+    // Keeps .page-wrapper margin stable; only slides the sidebar out of view.
+    body.sidebar-collapsed {
+        .sidebar {
+            transform: translateX(-252px);
+        }
+    }
     .mini-sidebar {
         .page-wrapper {
             margin-left: 80px;

@@ -14,18 +14,25 @@ import {
   VehicleNumber,
 } from "../../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../../core/common/commonSelect";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { all_routes } from "../../../router/all_routes";
 import { DatePicker } from "antd";
+import dayjs from "dayjs";
 import TagInput from "../../../../core/common/Taginput";
 
 
 const EditStaff = () => {
   const routes = all_routes;
+  const location = useLocation();
+  const staffRecord = location.state?.staff;
+  const o = staffRecord?.originalData ?? staffRecord;
   const [owner, setOwner] = useState<string[]>([]);
    const handleTagsChange = (newTags: string[]) => {
     setOwner(newTags);
   };
+  const defaultDept = o?.department_name ?? o?.department ?? o?.dept_name ?? o?.department;
+  const defaultDesig = o?.designation_name ?? o?.designation ?? o?.title ?? o?.designation;
+  const staffKey = staffRecord?.key ?? staffRecord?.id ?? "new";
   return (
     <div>
       <>
@@ -99,7 +106,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="Kevin"
+                                defaultValue={o?.first_name ?? ""}
+                                key={`edit-first-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -109,7 +117,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="Larry"
+                                defaultValue={o?.last_name ?? ""}
+                                key={`edit-last-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -120,7 +129,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={staffrole}
-                                defaultValue={staffrole[0]}
+                                defaultValue={staffrole.find((r: any) => r.label === (o?.role ?? o?.role_name) || r.value === (o?.role ?? o?.role_name)) ?? staffrole[0]}
+                                key={`edit-role-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -130,7 +140,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={staffDepartment}
-                                defaultValue={staffDepartment[0]}
+                                defaultValue={staffDepartment.find((d: any) => d.label === defaultDept || d.value === defaultDept) ?? staffDepartment[0]}
+                                key={`edit-dept-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -140,7 +151,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={staffrole}
-                                defaultValue={staffrole[0]}
+                                defaultValue={staffrole.find((r: any) => r.label === defaultDesig || r.value === defaultDesig) ?? staffrole[0]}
+                                key={`edit-designation-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -150,7 +162,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={gender}
-                                defaultValue={gender[1]}
+                                defaultValue={gender.find((g: any) => g.label === (o?.gender ?? o?.gender_name) || g.value === (o?.gender ?? o?.gender_name)) ?? gender[0]}
+                                key={`edit-gender-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -162,7 +175,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="+1 63423 72397"
+                                defaultValue={o?.phone ?? staffRecord?.phone ?? ""}
+                                key={`edit-phone-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -174,7 +188,8 @@ const EditStaff = () => {
                               <input
                                 type="email"
                                 className="form-control"
-                                defaultValue="kevin@example.com"
+                                defaultValue={o?.email ?? staffRecord?.email ?? ""}
+                                key={`edit-email-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -184,7 +199,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={bloodGroup}
-                                defaultValue={bloodGroup[0]}
+                                defaultValue={bloodGroup.find((b: any) => b.label === (o?.blood_group ?? o?.blood_group_name) || b.value === (o?.blood_group ?? o?.blood_group_name)) ?? bloodGroup[0]}
+                                key={`edit-blood-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -196,7 +212,8 @@ const EditStaff = () => {
                               <CommonSelect
                                 className="select"
                                 options={Marital}
-                                defaultValue={Marital[0]}
+                                defaultValue={Marital.find((m: any) => m.label === (o?.marital_status ?? o?.marital_status_name) || m.value === (o?.marital_status ?? o?.marital_status_name)) ?? Marital[0]}
+                                key={`edit-marital-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -208,7 +225,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="Janet"
+                                defaultValue={o?.father_name ?? o?.fathers_name ?? ""}
+                                key={`edit-father-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -220,7 +238,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="Daniel"
+                                defaultValue={o?.mother_name ?? o?.mothers_name ?? ""}
+                                key={`edit-mother-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -240,6 +259,8 @@ const EditStaff = () => {
                                     type: "mask",
                                   }}
                                   placeholder="Select Date"
+                                  defaultValue={o?.date_of_birth ?? o?.dob ? dayjs(o.date_of_birth ?? o.dob) : undefined}
+                                  key={`edit-dob-${staffKey}`}
                                 />
                               </div>
                             </div>
@@ -260,6 +281,8 @@ const EditStaff = () => {
                                     type: "mask",
                                   }}
                                   placeholder="Select Date"
+                                  defaultValue={o?.joining_date ?? o?.date_of_join ?? o?.date_of_joining ? dayjs(o.joining_date ?? o.date_of_join ?? o.date_of_joining) : undefined}
+                                  key={`edit-doj-${staffKey}`}
                                 />
                               </div>
                             </div>
@@ -283,7 +306,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="M.Sc"
+                                defaultValue={o?.qualification ?? ""}
+                                key={`edit-qual-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -295,7 +319,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue={5}
+                                defaultValue={o?.work_experience ?? o?.experience ?? ""}
+                                key={`edit-exp-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -305,7 +330,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="Description"
+                                defaultValue={o?.note ?? o?.notes ?? ""}
+                                key={`edit-note-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -315,7 +341,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="3495 Red Hawk Road, Buffalo Lake, MN 55314"
+                                defaultValue={o?.address ?? o?.current_address ?? ""}
+                                key={`edit-address-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -327,7 +354,8 @@ const EditStaff = () => {
                               <input
                                 type="text"
                                 className="form-control"
-                                defaultValue="3495 Red Hawk Road, Buffalo Lake, MN 55314"
+                                defaultValue={o?.permanent_address ?? o?.permanent_address_line ?? ""}
+                                key={`edit-perm-address-${staffKey}`}
                               />
                             </div>
                           </div>
@@ -450,7 +478,8 @@ const EditStaff = () => {
                             <input
                               type="text"
                               className="form-control"
-                              defaultValue="Kevin"
+                              defaultValue={o?.account_name ?? (o?.first_name ? `${o.first_name} ${o.last_name || ''}`.trim() : '')}
+                              key={`edit-account-name-${staffKey}`}
                             />
                           </div>
                         </div>
@@ -460,7 +489,8 @@ const EditStaff = () => {
                             <input
                               type="text"
                               className="form-control"
-                              defaultValue={178849035684}
+                              defaultValue={o?.account_number ?? o?.bank_account_number ?? ''}
+                              key={`edit-account-num-${staffKey}`}
                             />
                           </div>
                         </div>
@@ -470,7 +500,8 @@ const EditStaff = () => {
                             <input
                               type="text"
                               className="form-control"
-                              defaultValue="Bank of America"
+                              defaultValue={o?.bank_name ?? ''}
+                              key={`edit-bank-name-${staffKey}`}
                             />
                           </div>
                         </div>
@@ -490,7 +521,8 @@ const EditStaff = () => {
                             <input
                               type="text"
                               className="form-control"
-                              defaultValue="Cincinnati"
+                              defaultValue={o?.branch_name ?? o?.bank_branch ?? ''}
+                              key={`edit-branch-${staffKey}`}
                             />
                           </div>
                         </div>

@@ -10,9 +10,7 @@ export const useAcademicYears = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching academic years...');
       const response = await apiService.getAcademicYears();
-      console.log('Academic years response:', response);
       setAcademicYears(response.data);
     } catch (err) {
       console.error('Error fetching academic years:', err);

@@ -1,7 +1,6 @@
 /* eslint-disable */
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { all_routes } from "../../router/all_routes";
-import { studentreport } from "../../../core/data/json/student_report";
 import Table from "../../../core/common/dataTable/index";
 import { Link } from "react-router-dom";
 import type { TableData } from "../../../core/data/interface";
@@ -16,29 +15,56 @@ import {
   studentName,
 } from "../../../core/common/selectoption/selectoption";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
+import { useStudents } from "../../../core/hooks/useStudents";
+
+const compareText = (left: unknown, right: unknown) =>
+  String(left ?? "").localeCompare(String(right ?? ""));
 
 const StudentReport = () => {
-  const data = studentreport;
+  const { students, loading, error } = useStudents();
   const routes = all_routes;
+  const data = useMemo(
+    () =>
+      (Array.isArray(students) ? students : []).map((student: any, index: number) => ({
+        key: student.admission_number || student.id || `student-report-${index}`,
+        studentId: student.id,
+        admissionNo: student.admission_number || "—",
+        rollNo: student.roll_number || "—",
+        name: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "—",
+        class: student.class_name || "—",
+        section: student.section_name || "—",
+        gender: student.gender || "—",
+        parent:
+          student.father_name ||
+          student.mother_name ||
+          [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(" ") ||
+          "—",
+        dateOfJoin: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
+        dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+        status: student.is_active ? "Active" : "Inactive",
+        imgSrc: student.photo_url || "",
+        parentImgSrc: "",
+      })),
+    [students]
+  );
   const columns = [
     {
       title: "Admission No",
       dataIndex: "admissionNo",
-      render: ( record: any) => (
+      render: (admissionNo: string) => (
         <>
           <Link to="#" className="link-primary">
-            {record.admissionNo}
+            {admissionNo}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.admissionNo.length - b.admissionNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
     },
 
     {
       title: "Roll No",
       dataIndex: "rollNo",
-      sorter: (a: TableData, b: TableData) => a.rollNo.length - b.rollNo.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
       title: "Name",
@@ -48,9 +74,10 @@ const StudentReport = () => {
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
               <ImageWithBasePath
-                src={record.img}
+                src={record.imgSrc}
                 className="img-fluid rounded-circle"
                 alt="img"
+                gender={record.gender}
               />
             </Link>
             <div className="ms-2">
@@ -61,23 +88,22 @@ const StudentReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
     },
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
     },
     {
       title: "Section",
       dataIndex: "section",
-      sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
     },
     {
       title: "Gender",
       dataIndex: "gender",
-      sorter: (a: TableData, b: TableData) => a.gender.length - b.gender.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.gender, b?.gender),
     },
     {
       title: "Parent",
@@ -87,7 +113,7 @@ const StudentReport = () => {
           <div className="d-flex align-items-center">
             <Link to="#" className="avatar avatar-md">
               <ImageWithBasePath
-                src={record.parentimg}
+                src={record.parentImgSrc}
                 className="img-fluid rounded-circle"
                 alt="img"
               />
@@ -100,18 +126,17 @@ const StudentReport = () => {
           </div>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.parent.length - b.parent.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.parent, b?.parent),
     },
     {
       title: "Date Of Join",
       dataIndex: "dateOfJoin",
-      sorter: (a: TableData, b: TableData) =>
-        a.dateOfJoin.length - b.dateOfJoin.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.dateOfJoin, b?.dateOfJoin),
     },
     {
       title: "DOB",
       dataIndex: "dob",
-      sorter: (a: TableData, b: TableData) => a.dob.length - b.dob.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.dob, b?.dob),
     },
     {
       title: "Status",
@@ -131,7 +156,7 @@ const StudentReport = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
     },
   ];
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
@@ -302,9 +327,25 @@ const StudentReport = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* Student List */}
-                <Table columns={columns} dataSource={data} Selection={true} />
-                {/* /Student List */}
+                {error && (
+                  <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                    {error}
+                  </div>
+                )}
+                {loading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0">Loading student report...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Student List */}
+                    <Table columns={columns} dataSource={data} Selection={true} />
+                    {/* /Student List */}
+                  </>
+                )}
               </div>
             </div>
             {/* /Student List */}

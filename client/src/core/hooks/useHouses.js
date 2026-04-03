@@ -10,9 +10,7 @@ export const useHouses = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching houses...');
       const response = await apiService.getHouses();
-      console.log('Houses response:', response);
       setHouses(response.data);
     } catch (err) {
       console.error('Error fetching houses:', err);

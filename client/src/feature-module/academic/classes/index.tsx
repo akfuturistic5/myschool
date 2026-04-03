@@ -1,5 +1,8 @@
-import  { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
+import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import {
@@ -13,10 +16,89 @@ import { Link } from "react-router-dom";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 
+type EditRow = {
+  classId: number;
+  sectionId: number | null;
+  className: string;
+  sectionName: string;
+  noOfStudents: number;
+  noOfSubjects: number;
+  status: string;
+};
+
 const Classes = () => {
-  const { classesWithSections, loading, error } = useClassesWithSections();
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classesWithSections, loading, error, refetch } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  
+  const editModalRef = useRef<HTMLDivElement | null>(null);
+  const [editingRow, setEditingRow] = useState<EditRow | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editForm, setEditForm] = useState({ className: "", sectionName: "", noOfStudents: "", noOfSubjects: "", isActive: true });
+
+  useEffect(() => {
+    if (editingRow) {
+      setEditForm({
+        className: editingRow.className,
+        sectionName: editingRow.sectionName,
+        noOfStudents: String(editingRow.noOfStudents),
+        noOfSubjects: String(editingRow.noOfSubjects),
+        isActive: editingRow.status === "Active",
+      });
+    }
+  }, [editingRow]);
+
+  const handleEditClick = (record: EditRow) => {
+    setEditingRow(record);
+    const el = document.getElementById("edit_class");
+    if (el) {
+      const modal = (window as any).bootstrap?.Modal?.getOrCreateInstance(el);
+      if (modal) modal.show();
+    }
+  };
+
+  const closeEditModalAndCleanup = () => {
+    const el = document.getElementById("edit_class");
+    if (el) {
+      const modal = (window as any).bootstrap?.Modal?.getInstance(el);
+      if (modal) modal.hide();
+    }
+    setEditingRow(null);
+    // Fix: Remove leftover modal backdrop/overlay that blocks screen
+    setTimeout(() => {
+      document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    }, 150);
+  };
+
+  const handleEditSave = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!editingRow) return;
+    setSaving(true);
+    try {
+      if (editingRow.sectionId) {
+        await apiService.updateSection(editingRow.sectionId, {
+          section_name: editForm.sectionName,
+          no_of_students: parseInt(editForm.noOfStudents, 10) || 0,
+          is_active: editForm.isActive,
+        });
+      } else {
+        await apiService.updateClass(editingRow.classId, {
+          class_name: editForm.className,
+          no_of_students: parseInt(editForm.noOfStudents, 10) || null,
+          is_active: editForm.isActive,
+        });
+      }
+      await refetch();
+      closeEditModalAndCleanup();
+    } catch (err) {
+      console.error("Failed to save:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -25,26 +107,30 @@ const Classes = () => {
   
   const route = all_routes;
 
-  // Transform API data to match table structure
+  // Transform API data to match table structure (id = classes table ID)
   const transformedData = classesWithSections.map((item: any, index: number) => ({
     key: (index + 1).toString(),
-    id: item.sectionId ? `${item.classCode}-${item.sectionName}` : item.classCode || `C${item.classId}`,
+    id: item.classId,
     class: item.className || 'N/A',
     section: item.sectionName || 'N/A',
     noOfStudents: item.noOfStudents || 0,
     noOfSubjects: item.noOfSubjects || 0,
     status: item.status || 'Active',
-    action: ''
+    action: '',
+    classId: item.classId,
+    sectionId: item.sectionId ?? null,
+    className: item.className || 'N/A',
+    sectionName: item.sectionName || 'N/A',
   }));
 
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (value: string) => (
         <>
           <Link to="#" className="link-primary">
-            {record.id}
+            {value || "-"}
           </Link>
         </>
       ),
@@ -95,7 +181,7 @@ const Classes = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (_: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -112,8 +198,10 @@ const Classes = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_class"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleEditClick(record as EditRow);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -403,7 +491,7 @@ const Classes = () => {
         </div>
         {/* /Add Classes */}
         {/* Edit Classes */}
-        <div className="modal fade" id="edit_class">
+        <div className="modal fade" id="edit_class" ref={editModalRef}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
@@ -417,7 +505,7 @@ const Classes = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form onSubmit={(e) => e.preventDefault()}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -427,15 +515,20 @@ const Classes = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Class Name"
-                          defaultValue="I"
+                          value={editForm.className}
+                          onChange={(e) => setEditForm((f) => ({ ...f, className: e.target.value }))}
+                          readOnly={!!editingRow?.sectionId}
                         />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Section</label>
-                        <CommonSelect
-                          className="select"
-                          options={classSection}
-                          defaultValue={classSection[0]}
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Enter Section"
+                          value={editForm.sectionName}
+                          onChange={(e) => setEditForm((f) => ({ ...f, sectionName: e.target.value }))}
+                          readOnly={!editingRow?.sectionId}
                         />
                       </div>
                       <div className="mb-3">
@@ -444,7 +537,8 @@ const Classes = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter no of Students"
-                          defaultValue={30}
+                          value={editForm.noOfStudents}
+                          onChange={(e) => setEditForm((f) => ({ ...f, noOfStudents: e.target.value }))}
                         />
                       </div>
                       <div className="mb-3">
@@ -453,7 +547,8 @@ const Classes = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter no of Subjects"
-                          // defaultValue={03}
+                          value={editForm.noOfSubjects}
+                          onChange={(e) => setEditForm((f) => ({ ...f, noOfSubjects: e.target.value }))}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
@@ -467,6 +562,8 @@ const Classes = () => {
                             type="checkbox"
                             role="switch"
                             id="switch-sm2"
+                            checked={editForm.isActive}
+                            onChange={(e) => setEditForm((f) => ({ ...f, isActive: e.target.checked }))}
                           />
                         </div>
                       </div>
@@ -481,9 +578,14 @@ const Classes = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#"  className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
-                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleEditSave}
+                    disabled={saving}
+                  >
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>

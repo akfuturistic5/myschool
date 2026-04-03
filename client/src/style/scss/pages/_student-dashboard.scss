@@ -125,31 +125,45 @@
         }
     }
 }
-.bg-dark.position-relative {
-    z-index: 1;
+// Profile hero: do NOT elevate the whole card (z-index), or it stacks above sibling cards in the
+// same column and the decorative layer can block clicks on filters/dropdowns below.
+.card.bg-dark.position-relative {
+    overflow: hidden;
+    .card-body {
+        position: relative;
+    }
+    .card-body > *:not(.student-card-bg) {
+        position: relative;
+        z-index: 1;
+    }
 }
 .student-card-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
     img {
         position: absolute;
         &:first-child {
             left: 0;
             top: 0;
-            z-index: -1;
+            z-index: 0;
         }
         &:nth-child(2) {
             right: 0;
             top: 0;
-            z-index: -1;
+            z-index: 0;
         }
         &:nth-child(3) {
             right: 20%;
             top: 20%;
-            z-index: -1;
+            z-index: 0;
         }
         &:last-child {
             left: 5px;
             bottom: 30%;
-            z-index: -1;
+            z-index: 0;
         }
     }
 }

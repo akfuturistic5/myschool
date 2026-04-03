@@ -569,6 +569,11 @@ div.rc-slider-handle-dragging.rc-slider-handle-dragging.rc-slider-handle-draggin
   display: block;
 }
 
+[data-theme="dark"] .header .header-left .logo .logo-school-name,
+[data-theme="dark"] .header .header-left .dark-logo .logo-school-name {
+  color: #fff;
+}
+
 [data-theme="dark"] .chat-footer form {
   background-color: #28283e;
 }
@@ -1650,5 +1655,25 @@ body.app-chat {
   }
   .custome-tag-input{
     border: 1px solid #1b1632 !important;
+  }
+}
+
+/* Super Admin: settings drawer + readable tables in dark (works with data-bs-theme on html) */
+.super-admin-settings-offcanvas.offcanvas {
+  width: min(100vw - 1rem, 420px);
+  z-index: 1055;
+}
+
+[data-bs-theme="dark"] {
+  .super-admin-dashboard,
+  .super-admin-school-edit {
+    .table {
+      --bs-table-striped-bg: rgba(255, 255, 255, 0.04);
+      --bs-table-hover-bg: rgba(255, 255, 255, 0.07);
+      color: var(--bs-body-color);
+    }
+    .table > :not(caption) > * > * {
+      border-bottom-color: var(--bs-border-color);
+    }
   }
 }

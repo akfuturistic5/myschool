@@ -1,10 +1,15 @@
-
 import { all_routes } from '../../router/all_routes';
 import { Link } from 'react-router-dom';
 import { OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { useCurrentUser } from '../../../core/hooks/useCurrentUser';
 
 const Securitysettings = () => {
   const routes = all_routes;
+  const { user, loading, error, refetch } = useCurrentUser();
+
+  const displayEmail = user?.email?.trim() || null;
+  const displayPhone = user?.phone?.trim() || null;
+
   return (
     <div>
       <div className="page-wrapper">
@@ -35,6 +40,10 @@ const Securitysettings = () => {
                 <Link
                   to="#"
                   className="btn btn-outline-light bg-white btn-icon me-1"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    refetch();
+                  }}
                 >
                   <i className="ti ti-refresh" />
                 </Link>
@@ -45,12 +54,6 @@ const Securitysettings = () => {
           <div className="row">
             <div className="col-xxl-2 col-xl-3">
               <div className="pt-3 d-flex flex-column list-group mb-4">
-                <Link
-                  to={routes.profilesettings}
-                  className="d-block rounded p-2"
-                >
-                  Profile Settings
-                </Link>
                 <Link to={routes.securitysettings} className="d-block rounded p-2 active">
                   Security Settings
                 </Link>
@@ -70,9 +73,19 @@ const Securitysettings = () => {
                 <div className="d-flex align-items-center justify-content-between flex-wrap border-bottom mb-3 pt-3">
                   <div className="mb-3">
                     <h5>Security Settings</h5>
-                    <p>Upload your photo &amp; personal details here</p>
+                    <p>Manage your account security and contact details</p>
                   </div>
                 </div>
+                {loading && (
+                  <div className="alert alert-info mb-3" role="alert">
+                    Loading your security settings...
+                  </div>
+                )}
+                {error && (
+                  <div className="alert alert-warning mb-3" role="alert">
+                    {error}
+                  </div>
+                )}
                 <div className="d-block">
                   <div className="d-flex justify-content-between align-items-center rounded flex-wrap bg-white border rounded p-3 pb-0 mb-3">
                     <div className="mb-3">
@@ -80,8 +93,8 @@ const Securitysettings = () => {
                       <p>Set a unique password to protect the account</p>
                     </div>
                     <div className="mb-3">
-                      <Link to="#" className="btn btn-outline-primary">
-                        Change Pasword
+                      <Link to={routes.profile} className="btn btn-outline-primary">
+                        Change Password
                       </Link>
                     </div>
                   </div>
@@ -97,6 +110,7 @@ const Securitysettings = () => {
                           type="checkbox"
                           role="switch"
                           id="switch-sm"
+                          disabled
                         />
                       </div>
                     </div>
@@ -107,9 +121,9 @@ const Securitysettings = () => {
                       <p>Connect to Google</p>
                     </div>
                     <div className="d-flex align-items-center mb-3">
-                      <span className="badge badge-soft-success me-3">
+                      <span className="badge badge-soft-secondary me-3">
                         <i className="ti ti-circle-filled fs-5 me-1" />
-                        Connected
+                        Not connected
                       </span>
                       <div className="form-check form-switch">
                         <input
@@ -117,6 +131,7 @@ const Securitysettings = () => {
                           type="checkbox"
                           role="switch"
                           id="switch-sm2"
+                          disabled
                         />
                       </div>
                     </div>
@@ -127,12 +142,12 @@ const Securitysettings = () => {
                       <p>The Phone Number associated with the account</p>
                     </div>
                     <div className="d-flex align-items-center flex-wrap">
-                      <p className="mb-3 me-3">+1 73649 72648</p>
-                      <span className="badge badge-soft-success me-3 mb-3">
-                        <i className="ti ti-checks me-1" />
-                        Verified
+                      <p className="mb-3 me-3">{displayPhone || '—'}</p>
+                      <span className={`badge me-3 mb-3 ${displayPhone ? 'badge-soft-success' : 'badge-soft-secondary'}`}>
+                        <i className={`ti ${displayPhone ? 'ti-checks' : 'ti-circle-x'} me-1`} />
+                        {displayPhone ? 'Verified' : 'Not set'}
                       </span>
-                      <Link to="#" className="btn btn-light mb-3">
+                      <Link to={routes.profile} className="btn btn-light mb-3">
                         <i className="ti ti-edit me-2" />
                         Edit
                       </Link>
@@ -144,12 +159,12 @@ const Securitysettings = () => {
                       <p>The email address associated with the account</p>
                     </div>
                     <div className="d-flex align-items-center flex-wrap">
-                      <p className="mb-3 me-3">admin@example.com</p>
-                      <span className="badge badge-soft-success me-3 mb-3">
-                        <i className="ti ti-checks me-1" />
-                        Verified
+                      <p className="mb-3 me-3">{displayEmail || '—'}</p>
+                      <span className={`badge me-3 mb-3 ${displayEmail ? 'badge-soft-success' : 'badge-soft-secondary'}`}>
+                        <i className={`ti ${displayEmail ? 'ti-checks' : 'ti-circle-x'} me-1`} />
+                        {displayEmail ? 'Verified' : 'Not set'}
                       </span>
-                      <Link to="#" className="btn btn-light mb-3">
+                      <Link to={routes.profile} className="btn btn-light mb-3">
                         <i className="ti ti-edit me-2" />
                         Edit
                       </Link>

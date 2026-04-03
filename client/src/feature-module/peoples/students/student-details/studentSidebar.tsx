@@ -1,11 +1,14 @@
 
 import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../../../core/data/redux/authSlice";
 
 interface StudentSidebarProps {
   student?: {
     id?: number;
     admission_number?: string;
+    gr_number?: string | null;
     roll_number?: string | null;
     first_name?: string;
     last_name?: string;
@@ -25,15 +28,26 @@ interface StudentSidebarProps {
     sibiling_2?: string | null;
     sibiling_1_class?: string | null;
     sibiling_2_class?: string | null;
+    unique_student_ids?: string | null;
+    pen_number?: string | null;
+    aadhaar_no?: string | null;
     hostel_id?: number | null;
     hostel_room_id?: number | null;
     hostel_name?: string | null;
     floor?: string | null;
     hostel_room_number?: string | null;
+    route_id?: number | null;
+    pickup_point_id?: number | null;
+    route_name?: string | null;
+    pickup_point_name?: string | null;
+    vehicle_number?: string | null;
   } | null;
 }
 
 const StudentSidebar = ({ student }: StudentSidebarProps) => {
+  const currentUser = useSelector(selectUser);
+  const role = String(currentUser?.role || "").trim().toLowerCase();
+  const canCollectFees = role === "admin" || role === "administrative";
   const displayName = student
     ? [student.first_name, student.last_name].filter(Boolean).join(" ") || "N/A"
     : "N/A";
@@ -93,6 +107,8 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
           <div className="card-body">
             <h5 className="mb-3">Basic Information</h5>
             <dl className="row mb-0">
+              <dt className="col-6 fw-medium text-dark mb-3">GR Number</dt>
+              <dd className="col-6 mb-3">{student?.gr_number && String(student.gr_number).trim() ? String(student.gr_number).trim() : 'N/A'}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Roll No</dt>
               <dd className="col-6 mb-3">{rollNo}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Gender</dt>
@@ -102,25 +118,33 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
               <dt className="col-6 fw-medium text-dark mb-3">Blood Group</dt>
               <dd className="col-6 mb-3">{bloodGroup}</dd>
               {/* House removed as per requirements; address section already shows location */}
-              <dt className="col-6 fw-medium text-dark mb-3">Reigion</dt>
+              <dt className="col-6 fw-medium text-dark mb-3">Religion</dt>
               <dd className="col-6 mb-3">{religion}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Caste</dt>
               <dd className="col-6 mb-3">{caste}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Category</dt>
-              <dd className="col-6 mb-3">N/A</dd>
+              <dd className="col-6 mb-3">{caste}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Mother tongue</dt>
               <dd className="col-6 mb-3">{motherTongue}</dd>
+              <dt className="col-6 fw-medium text-dark mb-3">Unique Student ID (Saral)</dt>
+              <dd className="col-6 mb-3">{student?.unique_student_ids ?? 'N/A'}</dd>
+              <dt className="col-6 fw-medium text-dark mb-3">Pen Number (UDISE)</dt>
+              <dd className="col-6 mb-3">{student?.pen_number ?? 'N/A'}</dd>
+              <dt className="col-6 fw-medium text-dark mb-3">Aadhar Number</dt>
+              <dd className="col-6 mb-3">{student?.aadhaar_no ?? 'N/A'}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Class &amp; Section</dt>
               <dd className="col-6 mb-3">{classSection}</dd>
             </dl>
-            <Link
-              to="#"
-              data-bs-toggle="modal"
-              data-bs-target="#add_fees_collect"
-              className="btn btn-primary btn-sm w-100"
-            >
-              Add Fees
-            </Link>
+            {canCollectFees && (
+              <Link
+                to="#"
+                data-bs-toggle="modal"
+                data-bs-target="#add_fees_collect"
+                className="btn btn-primary btn-sm w-100"
+              >
+                Add Fees
+              </Link>
+            )}
           </div>
           {/* /Basic Information */}
         </div>
@@ -229,29 +253,35 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                 )}
               </div>
               <div className="tab-pane fade" id="transport">
-                <div className="d-flex align-items-center mb-3">
-                  <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                    <i className="ti ti-bus fs-16" />
-                  </span>
-                  <div>
-                    <span className="fs-12 mb-1">Route</span>
-                    <p className="text-dark">Newyork</p>
-                  </div>
-                </div>
-                <div className="row">
-                  <div className="col-sm-6">
-                    <div className="mb-3">
-                      <span className="fs-12 mb-1">Bus Number</span>
-                      <p className="text-dark">AM 54548</p>
+                {(student?.route_name || student?.pickup_point_name || student?.vehicle_number || student?.route_id || student?.pickup_point_id) ? (
+                  <>
+                    <div className="d-flex align-items-center mb-3">
+                      <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
+                        <i className="ti ti-bus fs-16" />
+                      </span>
+                      <div>
+                        <span className="fs-12 mb-1">Route</span>
+                        <p className="text-dark">{student.route_name ?? 'N/A'}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="col-sm-6">
-                    <div className="mb-3">
-                      <span className="fs-12 mb-1">Pickup Point</span>
-                      <p className="text-dark">Cincinatti</p>
+                    <div className="row">
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Bus Number</span>
+                          <p className="text-dark">{student.vehicle_number ?? 'N/A'}</p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Pickup Point</span>
+                          <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <p className="text-muted mb-0">No transport information available</p>
+                )}
               </div>
             </div>
           </div>

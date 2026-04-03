@@ -253,6 +253,60 @@ const getClassScheduleById = async (req, res) => {
   }
 };
 
+// Create class schedule
+const createClassSchedule = async (req, res) => {
+  try {
+    const { teacher_id, class_id, section_id, subject_id, day_of_week, class_room_id, room_number, time_slot_id } = req.body;
+
+    if (!teacher_id || !class_id || !section_id) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Teacher, Class, and Section are required'
+      });
+    }
+
+    let slotId = time_slot_id || null;
+    if (!slotId) {
+      const slotRes = await query('SELECT id FROM time_slots ORDER BY id ASC LIMIT 1');
+      slotId = slotRes.rows.length > 0 ? slotRes.rows[0].id : null;
+    }
+
+    const roomVal = room_number || class_room_id || null;
+    let tableName = 'class_schedules';
+    try {
+      await query(`SELECT 1 FROM ${tableName} LIMIT 1`);
+    } catch (e) {
+      tableName = 'class_schedule';
+    }
+
+    const result = await query(`
+      INSERT INTO ${tableName} (teacher_id, class_id, section_id, subject_id, time_slot_id, day_of_week, room_number)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+    `, [
+      teacher_id,
+      class_id,
+      section_id || null,
+      subject_id || null,
+      slotId,
+      day_of_week || 'Monday',
+      roomVal != null ? String(roomVal) : null
+    ]);
+
+    res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Class routine added successfully',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating class schedule:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to add class routine'
+    });
+  }
+};
+
 // Debug: raw counts and sample rows (no DB writes). Helps verify table/column names.
 const getClassSchedulesDebug = async (req, res) => {
   try {
@@ -291,4 +345,4 @@ const getClassSchedulesDebug = async (req, res) => {
   }
 };
 
-module.exports = { getAllClassSchedules, getClassScheduleById, getClassSchedulesDebug };
+module.exports = { getAllClassSchedules, getClassScheduleById, createClassSchedule, getClassSchedulesDebug };

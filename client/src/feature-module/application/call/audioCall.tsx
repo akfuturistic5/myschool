@@ -1,10 +1,19 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import PerfectScrollbar from "react-perfect-scrollbar";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import "../../../../node_modules/react-perfect-scrollbar/dist/css/styles.css";
 
 const AudioCall = () => {
+  const location = useLocation();
+  const recipient = (location.state as any)?.recipient;
+  const currentUser = useSelector(selectUser);
+  const myName = currentUser ? [currentUser.first_name, currentUser.last_name].filter(Boolean).join(" ") || currentUser.username || "You" : "You";
+  const myAvatar = "assets/img/profiles/avatar-01.jpg";
+  const otherName = recipient ? (recipient.recipient_username || [recipient.recipient_first_name, recipient.recipient_last_name].filter(Boolean).join(" ") || "Unknown") : "Incoming call...";
+  const otherAvatar = recipient?.recipient_photo_url || "assets/img/profiles/avatar-01.jpg";
   const [addClass, setAddClass] = useState(false);
   const [mute, setMute] = useState(false);
   const handleShowClass = () => {
@@ -37,7 +46,7 @@ const AudioCall = () => {
                             <li className="active">
                               <div className="avatar ">
                                 <ImageWithBasePath
-                                  src="assets/img/profiles/avatar-02.jpg"
+                                  src={myAvatar}
                                   className="rounded-circle"
                                   alt="image"
                                 />
@@ -48,13 +57,13 @@ const AudioCall = () => {
                                 </div>
                               </div>
                               <div className="user-audio-call">
-                                <h5>Mark Villiams</h5>
+                                <h5>{myName}</h5>
                               </div>
                             </li>
                             <li>
                               <div className="avatar ">
                                 <ImageWithBasePath
-                                  src="assets/img/users/user-16.jpg"
+                                  src={otherAvatar}
                                   className="rounded-circle"
                                   alt="image"
                                 />
@@ -65,7 +74,7 @@ const AudioCall = () => {
                                 </div>
                               </div>
                               <div className="user-audio-call">
-                                <h5>Benjamin</h5>
+                                <h5>{otherName}</h5>
                               </div>
                             </li>
                           </ul>

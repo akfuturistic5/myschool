@@ -1,5 +1,6 @@
-import { useRef } from "react";
-import { classSection } from "../../../core/data/json/class-section";
+import { useRef, useState, useEffect } from "react";
+import { useSections } from "../../../core/hooks/useSections";
+import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import {
   activeList,
@@ -16,48 +17,258 @@ import { all_routes } from "../../router/all_routes";
 
 const ClassSection = () => {
   const routes = all_routes;
-
-  const data = classSection;
+  const { sections, loading, error, refetch } = useSections();
+  const [selectedSection, setSelectedSection] = useState<any>(null);
+  const [editSectionName, setEditSectionName] = useState<string>('');
+  const [editSectionStatus, setEditSectionStatus] = useState<boolean>(true);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const editModalRef = useRef<HTMLDivElement | null>(null);
+  
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
 
+  // Handle edit button click
+  const handleEditClick = (section: any) => {
+    setSelectedSection(section);
+    setEditSectionName(section?.section_name || '');
+    // Handle is_active - Backend should normalize to boolean, but be defensive
+    let isActive = false;
+    if (section?.is_active === true || section?.is_active === 'true' || section?.is_active === 1 || section?.is_active === 't' || section?.is_active === 'T') {
+      isActive = true;
+    } else {
+      // Everything else is false
+      isActive = false;
+    }
+    setEditSectionStatus(isActive);
+    
+    // Show modal using Bootstrap
+    const modalElement = document.getElementById('edit_class_section');
+    if (modalElement) {
+      // Use Bootstrap 5 modal API
+      const bootstrap = (window as any).bootstrap;
+      if (bootstrap && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+          modal.show();
+        } else {
+          const newModal = new bootstrap.Modal(modalElement);
+          newModal.show();
+        }
+      }
+    }
+  };
+
+  // Handle delete button click
+  const handleDeleteClick = (section: any) => {
+    setSelectedSection(section);
+    const modalElement = document.getElementById('delete-modal');
+    if (modalElement) {
+      const bootstrap = (window as any).bootstrap;
+      if (bootstrap && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+          modal.show();
+        } else {
+          const newModal = new bootstrap.Modal(modalElement);
+          newModal.show();
+        }
+      }
+    }
+  };
+
+  // Handle save edit form submission
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedSection || !selectedSection.id) {
+      console.error('No section selected for editing');
+      alert('No section selected for editing');
+      return;
+    }
+
+    if (!editSectionName || editSectionName.trim() === '') {
+      alert('Section name is required');
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+
+      const updateData = {
+        section_name: editSectionName.trim(),
+        is_active: editSectionStatus
+      };
+
+      const response = await apiService.updateSection(selectedSection.id, updateData);
+
+      if (response && response.status === 'SUCCESS') {
+        // Close modal
+        const modalElement = document.getElementById('edit_class_section');
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) {
+              modal.hide();
+            }
+          }
+        }
+
+        await refetch();
+
+        // Reset form
+        setSelectedSection(null);
+        setEditSectionName('');
+        setEditSectionStatus(true);
+      } else {
+        const errorMsg = response?.message || 'Failed to update section';
+        console.error('Update failed:', errorMsg);
+        alert(errorMsg);
+      }
+    } catch (err: any) {
+      console.error('=== ERROR UPDATING SECTION ===');
+      console.error('Error:', err);
+      console.error('Error message:', err?.message);
+      console.error('Error stack:', err?.stack);
+      
+      let errorMessage = 'Failed to update section. Please try again.';
+      if (err?.message) {
+        errorMessage = `Error: ${err.message}`;
+      }
+      alert(errorMessage);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Reset edit form when modal is closed
+  useEffect(() => {
+    const editModalElement = document.getElementById('edit_class_section');
+    if (editModalElement) {
+      const handleModalHidden = () => {
+        setSelectedSection(null);
+        setEditSectionName('');
+        setEditSectionStatus(true);
+      };
+      
+      editModalElement.addEventListener('hidden.bs.modal', handleModalHidden);
+      
+      return () => {
+        editModalElement.removeEventListener('hidden.bs.modal', handleModalHidden);
+      };
+    }
+  }, []);
+
+  // Transform API data to match table structure
+  const transformedData = sections.map((section: any, index: number) => {
+    const rawValue = section.is_active;
+    
+    // Convert to boolean - backend should already normalize, but be defensive
+    let isActive = false;
+    
+    // Primary check: boolean true
+    if (rawValue === true) {
+      isActive = true;
+    }
+    // Primary check: boolean false
+    else if (rawValue === false) {
+      isActive = false;
+    }
+    // String check
+    else if (typeof rawValue === 'string') {
+      const lowerVal = rawValue.toLowerCase().trim();
+      if (lowerVal === 'true' || lowerVal === 't' || lowerVal === '1') {
+        isActive = true;
+      } else {
+        isActive = false;
+      }
+    }
+    // Number check
+    else if (typeof rawValue === 'number') {
+      isActive = rawValue === 1 || rawValue > 0;
+    }
+    // Null/undefined check - default to false
+    else if (rawValue === null || rawValue === undefined) {
+      isActive = false;
+    }
+    // Fallback - default to false
+    else {
+      isActive = false;
+    }
+    
+    // Ensure status is always a string
+    const status: string = isActive === true ? 'Active' : 'Inactive';
+    
+    return {
+      key: section.id?.toString() || (index + 1).toString(),
+      id: section.id?.toString() || `SE${String(index + 1).padStart(6, '0')}`,
+      sectionName: section.section_name || 'N/A',
+      status: status,
+      sectionData: {
+        ...section,
+        is_active: isActive // Ensure sectionData also has normalized boolean
+      }
+    };
+  });
+
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (text: any, record: any) => (
         <>
-         <Link to="#" className="link-primary">{record.id}</Link>
+          <Link to="#" className="link-primary">{text || record.id || 'N/A'}</Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => {
+        const idA = a.id?.toString() || '';
+        const idB = b.id?.toString() || '';
+        return idA.localeCompare(idB);
+      },
     },
 
     {
       title: "Section Name",
       dataIndex: "sectionName",
-      sorter: (a: TableData, b: TableData) => a.sectionName.length - b.sectionName.length,
+      sorter: (a: TableData, b: TableData) => {
+        const nameA = a.sectionName?.toString() || '';
+        const nameB = b.sectionName?.toString() || '';
+        return nameA.localeCompare(nameB);
+      },
     },
     {
       title: "Status",
       dataIndex: "status",
-      render: () => (
+      render: (text: string) => (
         <>
-         <span className="badge badge-soft-success d-inline-flex align-items-center"><i
-					className="ti ti-circle-filled fs-5 me-1"></i>Active</span>
+          {text === "Active" ? (
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {text}
+            </span>
+          ) : (
+            <span className="badge badge-soft-danger d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {text}
+            </span>
+          )}
         </>
       ),
-       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,      
+      sorter: (a: TableData, b: TableData) => {
+        const statusA = a.status?.toString() || '';
+        const statusB = b.status?.toString() || '';
+        return statusA.localeCompare(statusB);
+      },
     },
 
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: string, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -74,8 +285,10 @@ const ClassSection = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_class_section"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleEditClick(record.sectionData);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -85,8 +298,10 @@ const ClassSection = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDeleteClick(record.sectionData);
+                    }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -249,9 +464,26 @@ const ClassSection = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* Guardians List */}
-                <Table columns={columns} dataSource={data} Selection={true} />
-                {/* /Guardians List */}
+                {/* Sections List */}
+                {loading ? (
+                  <div className="d-flex justify-content-center align-items-center p-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <span className="ms-2">Loading sections...</span>
+                  </div>
+                ) : error ? (
+                  <div className="text-center p-5">
+                    <p className="text-danger">Error loading sections: {error}</p>
+                  </div>
+                ) : transformedData.length === 0 ? (
+                  <div className="text-center p-5">
+                    <p className="text-muted">No sections found.</p>
+                  </div>
+                ) : (
+                  <Table columns={columns} dataSource={transformedData} Selection={true} />
+                )}
+                {/* /Sections List */}
               </div>
             </div>
             {/* /Guardians List */}
@@ -318,7 +550,7 @@ const ClassSection = () => {
         </div>
         {/* /Add Class Section */}
         {/* Edit Class Section */}
-        <div className="modal fade" id="edit_class_section">
+        <div className="modal fade" id="edit_class_section" ref={editModalRef}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
@@ -332,7 +564,7 @@ const ClassSection = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form onSubmit={handleSaveEdit}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -342,7 +574,10 @@ const ClassSection = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Section"
-                          defaultValue="A"
+                          value={editSectionName}
+                          onChange={(e) => setEditSectionName(e.target.value)}
+                          key={`section-input-${selectedSection?.id || 'new'}`}
+                          required
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
@@ -356,6 +591,9 @@ const ClassSection = () => {
                             type="checkbox"
                             role="switch"
                             id="switch-sm2"
+                            checked={editSectionStatus}
+                            onChange={(e) => setEditSectionStatus(e.target.checked)}
+                            key={`status-input-${selectedSection?.id || 'new'}`}
                           />
                         </div>
                       </div>
@@ -363,17 +601,21 @@ const ClassSection = () => {
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
+                    disabled={isUpdating}
                   >
                     Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal"
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary"
+                    disabled={isUpdating}
                   >
-                    Save Changes
-                  </Link>
+                    {isUpdating ? 'Saving...' : 'Save Changes'}
+                  </button>
                 </div>
               </form>
             </div>

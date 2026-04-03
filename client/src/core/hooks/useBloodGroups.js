@@ -10,9 +10,7 @@ export const useBloodGroups = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching blood groups...');
       const response = await apiService.getBloodGroups();
-      console.log('Blood groups response:', response);
       setBloodGroups(response.data);
     } catch (err) {
       console.error('Error fetching blood groups:', err);

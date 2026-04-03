@@ -1,7 +1,11 @@
 import  { useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import ParentModal from "../parentModal";
 import { all_routes } from "../../../router/all_routes";
 import { Link } from "react-router-dom";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { getDashboardForRole } from "../../../../core/utils/roleUtils";
 import { Modal } from "react-bootstrap";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
@@ -20,9 +24,16 @@ import { useParents } from "../../../../core/hooks/useParents";
 const ParentList = () => {
   const [show, setShow] = useState(false);
   const [selectedParent, setSelectedParent] = useState<any>(null);
+  const [parentToEdit, setParentToEdit] = useState<any>(null);
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { parents, loading, error, refetch } = useParents();
+  const user = useSelector(selectUser);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const role = user?.role || "Admin";
+  const isParentRole = (role || "").toLowerCase() === "parent";
+  const canManageParents = ["admin", "headmaster", "administrative", "administrator"].includes((role || "").toLowerCase());
+  const { parents, loading, error, refetch } = useParents({ forCurrentUser: isParentRole, academicYearId: isParentRole ? null : academicYearId });
+  const dashboardRoute = getDashboardForRole(role);
 
   // useParents already returns parent records transformed into the
   // exact shape expected by this table and the View Details modal.
@@ -81,14 +92,18 @@ const ParentList = () => {
           </div>
         </div>
       ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => (String(a?.name ?? '').length) - (String(b?.name ?? '').length),
     },
     {
       title: "Child",
       dataIndex: "Child",
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link to={routes.studentDetail} className="avatar avatar-md">
+          <Link
+            to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.parentList}
+            state={record.student_id != null ? { studentId: record.student_id } : undefined}
+            className="avatar avatar-md"
+          >
             <ImageWithBasePath
               src={record.ChildImage}
               className="img-fluid rounded-circle"
@@ -97,23 +112,28 @@ const ParentList = () => {
           </Link>
           <div className="ms-2">
             <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
+              <Link
+                to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.parentList}
+                state={record.student_id != null ? { studentId: record.student_id } : undefined}
+              >
+                {text}
+              </Link>
             </p>
             <span className="fs-12">{record.class}</span>
           </div>
         </div>
       ),
-      sorter: (a: TableData, b: TableData) => a.Child.length - b.Child.length,
+      sorter: (a: TableData, b: TableData) => (String(a?.Child ?? '').length) - (String(b?.Child ?? '').length),
     },
     {
       title: "Phone",
       dataIndex: "phone",
-      sorter: (a: TableData, b: TableData) => a.phone.length - b.phone.length,
+      sorter: (a: TableData, b: TableData) => (String(a?.phone ?? '').length) - (String(b?.phone ?? '').length),
     },
     {
       title: "Email",
       dataIndex: "email",
-      sorter: (a: TableData, b: TableData) => a.email.length - b.email.length,
+      sorter: (a: TableData, b: TableData) => (String(a?.email ?? '').length) - (String(b?.email ?? '').length),
     },
     {
       title: "Action",
@@ -141,28 +161,33 @@ const ParentList = () => {
                     View Parent
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_parent"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
+                {canManageParents && (
+                  <>
+                    <li>
+                      <Link
+                        className="dropdown-item rounded-1"
+                        to="#"
+                        data-bs-toggle="modal"
+                        data-bs-target="#edit_parent"
+                        onClick={() => setParentToEdit(record)}
+                      >
+                        <i className="ti ti-edit-circle me-2" />
+                        Edit
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        className="dropdown-item rounded-1"
+                        to="#"
+                        data-bs-toggle="modal"
+                        data-bs-target="#delete-modal"
+                      >
+                        <i className="ti ti-trash-x me-2" />
+                        Delete
+                      </Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
           </div>
@@ -178,11 +203,18 @@ const ParentList = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <Link
+                to={dashboardRoute}
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </Link>
               <h3 className="page-title mb-1">Parents</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
+                    <Link to={dashboardRoute}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">
                     <Link to="#">People</Link>
@@ -196,17 +228,19 @@ const ParentList = () => {
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
             <TooltipOption />
 
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_parent"
-                  className="btn btn-primary"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Parent
-                </Link>
-              </div>
+              {canManageParents && (
+                <div className="mb-2">
+                  <Link
+                    to="#"
+                    data-bs-toggle="modal"
+                    data-bs-target="#add_parent"
+                    className="btn btn-primary"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Parent
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}
@@ -382,7 +416,7 @@ const ParentList = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <ParentModal />
+      <ParentModal parentToEdit={parentToEdit} refetch={refetch} />
       <Modal show={show} onHide={handleClose} centered size="lg">
         <div className="modal-header">
           <h4 className="modal-title">View Details</h4>
@@ -441,7 +475,11 @@ const ParentList = () => {
               </div>
               <div className="d-flex align-items-center justify-content-between flex-wrap">
                 <div className="d-flex align-items-center mb-3">
-                  <Link to={routes.studentDetail} className="avatar">
+                  <Link
+                    to={selectedParent.student_id != null ? `${routes.studentDetail}/${selectedParent.student_id}` : routes.parentList}
+                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                    className="avatar"
+                  >
                     <ImageWithBasePath
                       src={selectedParent.ChildImage}
                       className="img-fluid rounded-circle"
@@ -450,7 +488,12 @@ const ParentList = () => {
                   </Link>
                   <div className="ms-2">
                     <p className="mb-0">
-                      <Link to={routes.studentDetail}>{selectedParent.Child}</Link>
+                      <Link
+                        to={selectedParent.student_id != null ? `${routes.studentDetail}/${selectedParent.student_id}` : routes.parentList}
+                        state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                      >
+                        {selectedParent.Child}
+                      </Link>
                     </p>
                     <span>{selectedParent.class}</span>
                   </div>
@@ -474,7 +517,8 @@ const ParentList = () => {
                     Add Fees
                   </Link>
                   <Link
-                    to={routes.studentDetail}
+                    to={selectedParent.student_id != null ? `${routes.studentDetail}/${selectedParent.student_id}` : routes.parentList}
+                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
                     className="btn btn-primary mb-3"
                   >
                     View Details

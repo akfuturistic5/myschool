@@ -5,11 +5,13 @@ import type { DatatableProps } from "../../data/interface"; // Ensure correct pa
  // Ensure correct path
 
 
-const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }) => {
+const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection }) => {
+  const safeData = Array.isArray(dataSource) ? dataSource : [];
+  const safeColumns = Array.isArray(columns) ? columns : [];
   const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
   const [searchText, setSearchText] = useState<string>("");
   const [Selections, setSelections] = useState<any>(true);
-  const [filteredDataSource, setFilteredDataSource] = useState(dataSource);
+  const [filteredDataSource, setFilteredDataSource] = useState(safeData);
 
   const onSelectChange = (newSelectedRowKeys: any[], _selectedRows: any[]) => {
     setSelectedRowKeys(newSelectedRowKeys);
@@ -17,7 +19,7 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
 
   const handleSearch = (value: string) => {
     setSearchText(value);
-    const filteredData = dataSource.filter((record) =>
+    const filteredData = safeData.filter((record) =>
       Object.values(record).some((field) =>
         String(field).toLowerCase().includes(value.toLowerCase())
       )
@@ -28,13 +30,16 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
   const rowSelection = {
     selectedRowKeys,
     onChange: onSelectChange,
-    getCheckboxProps: (_record: any) => ({
-      // Add any custom checkbox props here if needed
-    }),
+    getCheckboxProps: (_record: any) => ({ disabled: false }),
   };
   useEffect(() => {
-    return setSelections(Selection);
-  }, [Selection])
+    setSelections(Selection);
+  }, [Selection]);
+
+  useEffect(() => {
+    setFilteredDataSource(safeData);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSource]);
   
   
   return (
@@ -49,10 +54,10 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
      {!Selections ?
       <Table
       className="table datanew dataTable no-footer"
-      rowKey={(record) => record.key || record.id || Math.random().toString()}
-      columns={columns}
+      rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
+      columns={safeColumns}
       rowHoverable={false}
-      dataSource={filteredDataSource}
+      dataSource={filteredDataSource ?? safeData}
       pagination={{
         locale: { items_per_page: "" },
         nextIcon: <span>Next</span>,
@@ -65,11 +70,11 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource , Selection }
     /> : 
     <Table
         className="table datanew dataTable no-footer"
-        rowKey={(record) => record.key || record.id || Math.random().toString()}
+        rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
         rowSelection={rowSelection}
-        columns={columns}
+        columns={safeColumns}
         rowHoverable={false}
-        dataSource={filteredDataSource}
+        dataSource={filteredDataSource ?? safeData}
         pagination={{
           locale: { items_per_page: "" },
           nextIcon: <span>Next</span>,

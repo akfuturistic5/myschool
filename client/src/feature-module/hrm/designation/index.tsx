@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -8,21 +8,26 @@ import { Link } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { useDesignations } from "../../../core/hooks/useDesignations";
+import { apiService } from "../../../core/services/apiService";
 
 const Designation = () => {
   const routes = all_routes;
   const { designations, loading, error, refetch } = useDesignations();
   const data = designations;
+  const [selectedDesignation, setSelectedDesignation] = useState<any>(null);
+  const [editDesignationName, setEditDesignationName] = useState('');
+  const [editDesignationStatus, setEditDesignationStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
     const columns = [
       {
         title: "ID",
         dataIndex: "id",
-        render: (record: any) => (
+        render: (text: any, record: any) => (
           <>
-           <Link to="#" className="link-primary">{record.id}</Link>
+           <Link to="#" className="link-primary">{text || record.id || 'N/A'}</Link>
           </>
         ),
-        sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+        sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
       },
   
       {
@@ -56,7 +61,7 @@ const Designation = () => {
       {
         title: "Action",
         dataIndex: "action",
-        render: () => (
+        render: (text: any, record: any) => (
           <>
             <div className="dropdown">
               <Link
@@ -72,8 +77,38 @@ const Designation = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_designation"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const desig = record.originalData || record;
+                      const name =
+                        desig.designation_name ||
+                        desig.designation ||
+                        desig.name ||
+                        record.designation ||
+                        '';
+                      let status = true;
+                      if (desig && Object.prototype.hasOwnProperty.call(desig, 'is_active')) {
+                        status =
+                          desig.is_active === true ||
+                          desig.is_active === 1 ||
+                          desig.is_active === 'true';
+                      } else if (record.status) {
+                        status = record.status === 'Active';
+                      }
+                      setEditDesignationName(name);
+                      setEditDesignationStatus(status);
+                      setSelectedDesignation(record);
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_designation');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -368,7 +403,8 @@ const Designation = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Designation"
-                          defaultValue="Teacher"
+                          value={editDesignationName}
+                          onChange={(e) => setEditDesignationName(e.target.value)}
                         />
                       </div>
                     </div>
@@ -383,6 +419,8 @@ const Designation = () => {
                           type="checkbox"
                           role="switch"
                           id="switch-sm2"
+                          checked={editDesignationStatus}
+                          onChange={(e) => setEditDesignationStatus(e.target.checked)}
                         />
                       </div>
                     </div>
@@ -396,8 +434,50 @@ const Designation = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
+                  <Link
+                    to="#"
+                    className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      const id = selectedDesignation?.originalData?.id || selectedDesignation?.id;
+                      if (!id || isUpdating) return;
+
+                      const name = editDesignationName.trim();
+                      if (!name) {
+                        alert('Designation name is required');
+                        return;
+                      }
+
+                      setIsUpdating(true);
+                      try {
+                        const payload = {
+                          designation_name: name,
+                          is_active: editDesignationStatus,
+                        };
+                        const response = await apiService.updateDesignation(id, payload);
+                        if (response && response.status === 'SUCCESS') {
+                          const modalElement = document.getElementById('edit_designation');
+                          if (modalElement) {
+                            const bootstrap = (window as any).bootstrap;
+                            if (bootstrap && bootstrap.Modal) {
+                              const modal = bootstrap.Modal.getInstance(modalElement);
+                              if (modal) modal.hide();
+                            }
+                          }
+                          await refetch();
+                          setSelectedDesignation(null);
+                        } else {
+                          alert(response?.message || 'Failed to update designation');
+                        }
+                      } catch (err: any) {
+                        console.error('Error updating designation:', err);
+                        alert(err?.message || 'Failed to update designation. Please try again.');
+                      } finally {
+                        setIsUpdating(false);
+                      }
+                    }}
+                  >
+                    {isUpdating ? 'Updating...' : 'Save Changes'}
                   </Link>
                 </div>
               </form>

@@ -556,7 +556,7 @@ body {
 
 [data-sidebar="light"]  [data-sidebarbg="sidebarbg1"]{
     .sidebar {
-        background-image: url(../../../../public/assets/img/theme/bg-01.jpg);
+        background-image: url(/assets/img/theme/bg-01.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -569,7 +569,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg1"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-01.jpg);
+        background-image: url(/assets/img/theme/bg-01.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -577,7 +577,7 @@ body {
 }
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg1"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-01.jpg);
+        background-image: url(/assets/img/theme/bg-01.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -585,7 +585,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg1"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-01.jpg);
+        background-image: url(/assets/img/theme/bg-01.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -593,7 +593,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg1"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-01.jpg);
+        background-image: url(/assets/img/theme/bg-01.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }
@@ -603,7 +603,7 @@ body {
 
 [data-sidebar="light"] [data-sidebarbg="sidebarbg2"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-02.jpg);
+        background-image: url(/assets/img/theme/bg-02.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -616,7 +616,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg2"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-02.jpg);
+        background-image: url(/assets/img/theme/bg-02.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -625,7 +625,7 @@ body {
 
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg2"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-02.jpg);
+        background-image: url(/assets/img/theme/bg-02.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -633,7 +633,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg2"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-02.jpg);
+        background-image: url(/assets/img/theme/bg-02.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -641,7 +641,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg2"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-02.jpg);
+        background-image: url(/assets/img/theme/bg-02.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }
@@ -650,7 +650,7 @@ body {
 
 [data-sidebar="light"] [data-sidebarbg="sidebarbg3"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-03.jpg);
+        background-image: url(/assets/img/theme/bg-03.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -664,7 +664,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg3"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-03.jpg);
+        background-image: url(/assets/img/theme/bg-03.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -673,7 +673,7 @@ body {
 
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg3"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-03.jpg);
+        background-image: url(/assets/img/theme/bg-03.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -681,7 +681,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg3"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-03.jpg);
+        background-image: url(/assets/img/theme/bg-03.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -689,7 +689,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg3"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-03.jpg);
+        background-image: url(/assets/img/theme/bg-03.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }
@@ -698,7 +698,7 @@ body {
 
 [data-sidebar="light"] [data-sidebarbg="sidebarbg4"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -712,7 +712,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg4"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -721,7 +721,7 @@ body {
 
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg4"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -729,7 +729,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg4"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -737,7 +737,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg4"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }
@@ -746,7 +746,7 @@ body {
 
 [data-sidebar="light"] [data-sidebarbg="sidebarbg5"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-05.jpg);
+        background-image: url(/assets/img/theme/bg-05.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -760,7 +760,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg5"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-04.jpg);
+        background-image: url(/assets/img/theme/bg-04.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -769,7 +769,7 @@ body {
 
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg5"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-05.jpg);
+        background-image: url(/assets/img/theme/bg-05.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -777,7 +777,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg5"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-05.jpg);
+        background-image: url(/assets/img/theme/bg-05.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -785,7 +785,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg5"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-05.jpg);
+        background-image: url(/assets/img/theme/bg-05.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }
@@ -793,7 +793,7 @@ body {
 }
 [data-sidebar="light"] [data-sidebarbg="sidebarbg6"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-06.jpg);
+        background-image: url(/assets/img/theme/bg-06.jpg);
         background-repeat: no-repeat;
         background-size: cover;
         background-position: 50% 50%;
@@ -807,7 +807,7 @@ body {
 
 [data-sidebar="dark"] [data-sidebarbg="sidebarbg6"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-06.jpg);
+        background-image: url(/assets/img/theme/bg-06.jpg);
         .sidebar-menu{
             background: rgba(0,0,0,0.85);
         }
@@ -816,7 +816,7 @@ body {
 
 [data-sidebar="primary"] [data-sidebarbg="sidebarbg6"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-06.jpg);
+        background-image: url(/assets/img/theme/bg-06.jpg);
         .sidebar-menu{
             background: rgba(80,110,228,0.85);
         }
@@ -824,7 +824,7 @@ body {
 }
 [data-sidebar="darkblack"] [data-sidebarbg="sidebarbg6"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-06.jpg);
+        background-image: url(/assets/img/theme/bg-06.jpg);
         .sidebar-menu{
             background: rgba(7,57,109,0.85);
         }
@@ -832,7 +832,7 @@ body {
 }
 [data-sidebar="darkblue"] [data-sidebarbg="sidebarbg6"]{
     .sidebar {
-        background-image: url(/public/assets/img/theme/bg-06.jpg);
+        background-image: url(/assets/img/theme/bg-06.jpg);
         .sidebar-menu{
             background: rgba(57,67,95,0.85);
         }

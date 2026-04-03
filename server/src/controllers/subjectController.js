@@ -1,4 +1,6 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
+const { canAccessClass } = require('../utils/accessControl');
 
 // Get all subjects
 const getAllSubjects = async (req, res) => {
@@ -18,22 +20,13 @@ const getAllSubjects = async (req, res) => {
         s.is_active,
         s.created_at
       FROM subjects s
-      WHERE s.is_active = true
       ORDER BY s.subject_name ASC
     `);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subjects fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subjects',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subjects');
   }
 };
 
@@ -57,27 +50,17 @@ const getSubjectById = async (req, res) => {
         s.is_active,
         s.created_at
       FROM subjects s
-      WHERE s.id = $1 AND s.is_active = true
+      WHERE s.id = $1
     `, [id]);
     
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Subject not found'
-      });
+      return errorResponse(res, 404, 'Subject not found');
     }
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subject fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Subject fetched successfully', result.rows[0]);
   } catch (error) {
     console.error('Error fetching subject:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subject',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subject');
   }
 };
 
@@ -85,7 +68,12 @@ const getSubjectById = async (req, res) => {
 const getSubjectsByClass = async (req, res) => {
   try {
     const { classId } = req.params;
-    
+
+    const access = await canAccessClass(req, classId);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
+
     const result = await query(`
       SELECT
         s.id,
@@ -101,27 +89,59 @@ const getSubjectsByClass = async (req, res) => {
         s.is_active,
         s.created_at
       FROM subjects s
-      WHERE s.class_id = $1 AND s.is_active = true
+      WHERE s.class_id = $1
       ORDER BY s.subject_name ASC
     `, [classId]);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Subjects fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects by class:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch subjects',
-    });
+    return errorResponse(res, 500, 'Failed to fetch subjects');
+  }
+};
+
+// Update subject (name + status)
+const updateSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subject_name, is_active } = req.body;
+
+    // Validate required fields
+    if (!subject_name || !subject_name.trim()) {
+      return errorResponse(res, 400, 'Subject name is required');
+    }
+
+    // Convert is_active to boolean
+    let isActiveBoolean = true; // default keep active
+    if (is_active === true || is_active === 'true' || is_active === 1 || is_active === 't' || is_active === 'T') {
+      isActiveBoolean = true;
+    } else if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'f' || is_active === 'F') {
+      isActiveBoolean = false;
+    }
+
+    const result = await query(`
+      UPDATE subjects
+      SET subject_name = $1,
+          is_active = $2,
+          modified_at = NOW()
+      WHERE id = $3
+      RETURNING *
+    `, [subject_name.trim(), isActiveBoolean, id]);
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, 404, 'Subject not found');
+    }
+
+    return success(res, 200, 'Subject updated successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error updating subject:', error);
+    return errorResponse(res, 500, 'Failed to update subject');
   }
 };
 
 module.exports = {
   getAllSubjects,
   getSubjectById,
-  getSubjectsByClass
+  getSubjectsByClass,
+  updateSubject
 };

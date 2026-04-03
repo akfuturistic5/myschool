@@ -1,0 +1,337 @@
+School Management System
+Official Project Manual and Testing Guide.
+
+Project Index
+
+1 Project Introduction
+2 System Architecture
+3 System Components
+4 Multi Tenant Architecture
+5 Schools In The System
+6 User Roles And Permissions
+7 Site Map
+8 Login And Authentication Flow
+9 Dashboard Flow
+10 Module Flows
+11 Database Overview
+12 API And Backend Processing
+13 Security And Access Control
+14 Error Handling And Logging
+15 Testing Reference Guide
+16 End To End System Flow
+17 Appendix
+
+This document is the official manual for the school management application. It is intended for management, developers, and the application testing team. It describes the complete system regardless of which school is using it.
+
+
+SECTION 1 PROJECT INTRODUCTION
+
+The system is a full school management web application. Its purpose is to help schools manage daily operations including students, teachers, staff, attendance, classes, fees, announcements, events, and reports.
+
+The application is a multi school management platform. It supports multiple schools using a multi tenant architecture. Each school uses the same application code but has its own database. This means data from one school never mixes with data from another school.
+
+Main features of the system include the following. User login and authentication with role based access. Headmaster or admin dashboard with school wide statistics. Student management including adding, editing, and viewing students and their details. Teacher management and staff management. Parent and guardian management linked to students. Class and section management. Subject and syllabus management. Attendance for students, teachers, and staff. Leave applications and approval. Fee management and fee collection. Notice board and events. Reports for attendance, classes, students, grades, leaves, fees, and staff. Profile and settings. Application modules such as chat, calendar, email, todo, and notes.
+
+The system helps schools manage their operations in one place. Headmasters can see overview statistics and manage people and academic data. Teachers can view their classes and mark attendance. Students and parents can view their own or their childrens information. Guardians can view ward information. All users see only the data they are allowed to see based on their role and their school.
+
+
+SECTION 2 SYSTEM ARCHITECTURE
+
+The system has a high level architecture with four main layers. These are the frontend, the API layer, the backend server, and the database.
+
+The frontend is a web application built with React. It runs in the user browser. It is responsible for displaying the user interface, handling user actions such as clicks and form submissions, and sending requests to the backend API. The frontend uses React Router for navigation. It uses Redux for storing user state and authentication. It uses a central API service to call backend endpoints. The frontend sends the authentication token with each request so the backend knows who is making the request.
+
+The backend is a Node.js server using Express. It receives HTTP requests from the frontend. It is responsible for verifying the user identity, checking permissions, running business logic, and reading or writing data in the database. The backend uses middleware for authentication and role checks. Controllers handle each type of request and call the database when needed. The backend returns JSON responses to the frontend.
+
+The database layer stores all school data. The system uses PostgreSQL. Each school has its own database. There is also a master database that stores which schools exist and which database belongs to each school. The backend connects to the correct school database based on the logged in user.
+
+The communication flow works as follows. The user performs an action in the frontend such as clicking a button or opening a page. The frontend sends an API request to the backend. The request includes the endpoint path, the HTTP method, and often a JSON body. The request also includes the authentication token in a cookie or in the Authorization header. The API endpoint receives the request. The backend runs authentication middleware to verify the token and attach the user to the request. For protected routes the backend then runs role middleware or controller logic to ensure the user is allowed to perform the action. The backend controller processes the request. It may validate input, run business logic, and call the database. The database reads or writes data using SQL queries. Tables are queried, and records may be inserted, updated, or deleted. The backend prepares a JSON response with status and data. The backend sends the response back to the frontend. The frontend receives the response and updates the interface. It may display new data, show a success message, or redirect the user.
+
+This flow is the same for every operation in the system. The frontend never talks to the database directly. All data goes through the backend API.
+
+
+SECTION 3 SYSTEM COMPONENTS
+
+This section describes the main system components and how they interact with each other in daily operation.
+
+Frontend application. The frontend application is built with React and runs in the web browser of the user. It renders screens such as login, dashboards, student lists, forms, and reports. It handles user actions such as clicks and form submissions. It manages local state such as currently selected student, filters, and pagination. It uses a shared API service to send HTTP requests to the backend. It also stores the authentication token after login so that it can be sent with every request.
+
+Backend server. The backend server is a Node.js application built on Express. It exposes API endpoints under a common path. It receives all requests from the frontend, verifies the user identity, checks permissions, runs business logic, and accesses the database. It uses middleware to apply common logic such as authentication, tenant routing, rate limiting, and active account checks. Every functional area such as students, teachers, dashboard, and fees has its own controller file that contains the request handlers.
+
+API layer. The API layer is the contract between frontend and backend. On the frontend it is represented by the API service which knows all endpoint paths and HTTP methods. On the backend it is represented by Express routes that map URL paths and methods to controllers. The API layer ensures that the frontend never accesses the database directly. All reads and writes pass through structured requests and responses.
+
+Authentication system. The authentication system is responsible for logging users in and out and for validating every protected request. It includes the login endpoint on the backend, the JWT token generation and verification logic, and the middleware that reads the token from cookies or headers. On the frontend it includes the login form, token storage, and logic to redirect unauthenticated users to the login page. The authentication system ensures that only valid users can reach protected parts of the application.
+
+Tenant routing system. The tenant routing system is the mechanism that binds each request to the correct school database. At login time the backend looks up the school in the master database using institute number and retrieves the database name. It then runs the login logic inside a tenant context for that database name. The JWT token stores the database name. For every protected request afterwards the authentication middleware reads the database name from the token and uses the tenant context helper so that all database queries for that request run against the correct school database.
+
+Database layer. The database layer consists of PostgreSQL databases. There is one master database that holds the list of schools and their database names. There are separate tenant databases for each school. The backend uses connection pools for each database and chooses the correct pool based on the tenant routing system. All tables such as users, students, teachers, parents, guardians, attendance, leave applications, fees, and reports live in the tenant databases. The database layer is responsible for durable storage and for enforcing relationships between entities.
+
+These components work together so that when a user performs an action the frontend captures it, the API layer sends it to the backend, the backend authenticates and routes it to the right tenant, controllers apply business rules, the database stores or reads records, and the result flows back through the same path to update the user interface.
+
+
+SECTION 4 MULTI TENANT ARCHITECTURE
+
+The system supports multiple schools by using a multi tenant design. Each school has its own database. The application code is the same for all schools. Only the data is different.
+
+The master database stores school registry information. It has a table called schools. This table holds the institute number, the school name, the school type, and the database name for each school. The database name is the key. It tells the system which PostgreSQL database to use when that school is selected.
+
+When a user logs in they enter an institute number. The institute number is a unique identifier for each school. For example Preskool uses 1111, Millat uses 2222, and Iqra uses 3333. The backend first checks the master database. It runs a query on the schools table using the institute number. From the result it gets the database name for that school. The system then connects to that school database for all subsequent operations during that session.
+
+After the school database is identified the system connects to that database. The connection is managed by the backend. Every API request after login carries a token. The token contains the database name. The authentication middleware reads the token and sets the current tenant context to that database name. All database queries for that request use the tenant database. So when a Preskool user is logged in all reads and writes go to the Preskool database. When a Millat user is logged in all reads and writes go to the Millat database.
+
+User authentication is verified inside the school database. The users table and related tables such as students, staff, and user roles exist in each school database. The backend looks up the user by username or phone in that database and checks the password. So each school has its own users and credentials.
+
+This design ensures that data from different schools remains isolated. Preskool never sees Millat data. Millat never sees Iqra data. The only shared component is the master database which only stores which schools exist and which database name belongs to each. No student, teacher, or attendance data is stored in the master database.
+
+
+SECTION 5 SCHOOLS IN THE SYSTEM
+
+The system is currently configured with three schools.
+
+Preskool school uses institute number 1111. When a user enters 1111 at login the system uses the Preskool database for that session.
+
+Millat school uses institute number 2222. When a user enters 2222 at login the system uses the Millat database. The Millat database may be hosted on the same server or on a separate cloud database depending on environment configuration.
+
+Iqra school uses institute number 3333. When a user enters 3333 at login the system uses the Iqra database. Like Millat the Iqra database can be configured to use a separate connection string in production.
+
+All three schools use the same application interface. The same login page, the same dashboard layout, and the same menu structure. The only difference is the data. Each school sees only its own students, teachers, classes, attendance, notices, and events. The routes and pages are identical. The backend ensures that once a user is logged in with a given institute number all API calls use that schools database.
+
+
+SECTION 6 USER ROLES AND PERMISSIONS
+
+The system has five user roles. These are Headmaster, Teacher, Student, Parent, and Guardian. Each role has different responsibilities and permissions.
+
+Headmaster is also called Admin in the system. The Headmaster manages the full school. Permissions include managing teachers, managing students, managing parents and guardians, managing classes and sections, viewing and managing attendance, managing announcements and notice board, creating and managing events, managing fee collection and viewing fee reports, approving or rejecting leave applications, viewing all reports including attendance reports, class reports, student reports, grade reports, leave reports, and fees reports, accessing settings including general settings, website settings, app settings, system settings, financial settings, and academic settings, and managing user accounts and roles. The Headmaster sees the full navigation menu and the admin dashboard with school wide statistics.
+
+Teacher role can view their assigned classes and students, view and manage attendance for their classes, view students list for their classes, view their timetable or routine, apply for their own leave, view notice board and events, and update their own profile and password. Teachers do not see the full admin menu. They see the Teacher Dashboard and the Application submenu. They cannot create or edit students or other teachers. They cannot approve leaves or manage fees. The backend restricts teacher API calls to their own data or their assigned classes.
+
+Student role can view their own profile, view their own attendance, view their timetable, view their exam results, view their fee information, apply for their own leave, view notice board and events, and update their own profile and password. Students see only the Student Dashboard and the Application submenu. They cannot see other students or any admin pages. The backend ensures that when a student requests their attendance, fees, or exam results they receive only their own records.
+
+Parent role can view their linked children, select a child and view that childs profile, view that childs attendance, view that childs exam results, view that childs fees, apply for leave on behalf of a child, view notice board and events, and update their own profile and password. Parents see the Parent Dashboard and the Application submenu. Parents may also see a My Profile link to view their own parent record. The backend checks the parent child relationship. A parent can only see data for students who are linked to them in the parents and students tables.
+
+Guardian role can view their linked wards, view ward leave applications, view ward student details when the guardian is linked to that student, apply for leave on behalf of a ward, view notice board and events, and update their own profile and password. Guardians see the Guardian Dashboard and the Application submenu. The backend enforces the guardian ward relationship so guardians only access data for students linked to them.
+
+Role based access is enforced in two places. On the frontend the sidebar menu is built by role. A utility function getSidebarDataForRole takes the user role. For Admin it returns the full sidebar. For Teacher, Student, Parent, and Guardian it returns only the relevant dashboard link and the Application submenu. So non admin users never see links to admin only pages. On the backend every protected route can use role middleware. The requireRole middleware checks that the user role id is in the list of allowed roles. Controllers also perform ownership checks. For example when a parent requests a students fees the controller verifies that the student is linked to that parent before returning data.
+
+
+SECTION 7 SITE MAP
+
+The following site map describes the hierarchical navigation structure of the application. Not all sections are visible to all roles. Headmaster sees the full structure. Other roles see only their own dashboard and the Application tools.
+
+Main navigation. The Main area contains the primary Dashboard and the Application tools. Headmaster Teacher Student Parent and Guardian each see their own dashboard. Headmaster sees Admin Dashboard. Teacher sees Teacher Dashboard. Student sees Student Dashboard. Parent sees Parent Dashboard. Guardian sees Guardian Dashboard. All roles with a dashboard also see the Application tools section which contains Chat Call Calendar Email To Do Notes and File Manager.
+
+People management. The People management area is visible only to Headmaster. It includes Students, Parents, Guardians, and Teachers. Under Students there are All Students, Students List, and Students Details with further links to student library, results, fees, leaves, and timetable as well as Student Promotion. Under Parents there are All Parents and Parents List. Under Guardians there are All Guardians and Guardians List. Under Teachers there are All Teachers, Teacher List, Teacher Details with library, salary, and leave information, and Routine for class schedules.
+
+Academic management. The Academic area is visible only to Headmaster. It contains Classes with All Classes and Schedule, Class Room, Class Routine, Section, Subject, Syllabus, Time Table, Home Work, and Examinations. Examinations include Exam, Exam Schedule, Grade, Exam Attendance, and Exam Results. Reasons is available for academic reasons configuration.
+
+Operational management. Operational management is visible only to Headmaster. Under Fees Collection there are Fees Group, Fees Type, Fees Master, Fees Assign, and Collect Fees. Under Library there are Library Members, Books, Issue Book, and Return. Under Sports there are Sports and Players. Under Hostel there are Hostel List, Hostel Rooms, and Room Type. Under Transport there are Routes, Pickup Points, Vehicle Drivers, Vehicle, and Assign Vehicle.
+
+Human resource management. The Human resource area is visible only to Headmaster. It includes Staff, Departments, Designation, Attendance, Leaves, Holidays, and Payroll. Attendance contains Student Attendance, Teacher Attendance, and Staff Attendance screens. Leaves contains List of leaves and Approve Request for leave approval. These sections allow the Headmaster to manage staff records and working information.
+
+Reports. The Reports section is visible only to Headmaster. It contains Attendance Report, Class Report, Student Report, Grade Report, Leave Report, and Fees Report. Each report screen focuses on one domain and allows the Headmaster to filter and view detailed reports for that area.
+
+Finance and accounts. The Finance and accounts area is visible only to Headmaster. It includes Accounts with Expenses, Expense Category, Income, Invoices, Invoice View, and Transactions. These screens allow tracking of income and expenses across the school.
+
+System settings. System settings are visible only to Headmaster. General Settings includes Security Settings, Notifications Settings, and Connected Apps. Website Settings includes Company Settings, Localization, Prefixes, Preference, Social Authentication, and Language. App Settings includes Invoice Settings and Custom Fields. System Settings includes Email Settings, Email Templates, SMS Settings, OTP settings, and GDPR Cookies. Financial Settings includes Payment Gateway and Tax Rates. Academic Settings includes School Settings and Religion. Other Settings includes Storage and Ban IP Address. These pages control configuration that affects the whole school system.
+
+User and membership management. User Management is visible only to Headmaster and includes Users, Roles and Permission, and Delete Account Request. Membership contains Membership Plans, Membership Addons, and Membership Transactions and is also primarily for Headmaster. Content contains Pages, Blog with All Blogs, Categories, Comments, and Tags, Location with Countries, States, and Cities, Testimonials, and FAQ. Pages also includes Profile for all users plus Authentication related and error pages mostly used in login flows.
+
+Only Headmaster can access People management, Academic management, Operational management, Human resource management, Reports, Finance and accounts, System settings, User management, Membership, and Content. Non admin roles access their own dashboard, Application tools, and Profile. This structure gives Headmaster full control while keeping the interface focused for Teachers, Students, Parents, and Guardians.
+
+
+SECTION 8 LOGIN AND AUTHENTICATION FLOW
+
+The login system works as follows.
+
+Frontend. The user opens the login page. The login page shows three fields. Institute number, Username or mobile, and Password. The user enters the institute number that identifies their school. The user enters their username or phone number as configured in the school database. The user enters their password. The user clicks Sign In. The frontend may perform basic validation such as non empty fields. The frontend then calls the API service login method with institute number, username, and password.
+
+API. The frontend sends a POST request to the authentication endpoint. The endpoint path is api auth login. The request body is JSON containing instituteNumber, username, and password. No token is sent at login because the user is not yet authenticated. The request is sent with credentials include so that when the server sets an HTTP only cookie the browser will store it.
+
+Backend. The auth routes are mounted at api auth. The login route runs validation middleware to check the request body. Then the login controller runs. The controller first reads the institute number from the body. It queries the master database schools table for a row where institute number matches. If no row is found the backend returns invalid institute number. If found the backend gets the school name and database name. The backend then runs the rest of the login inside a tenant context set to that database name. Inside the tenant database the controller queries the users table joined with user roles and staff. It looks for a user where username, email, or phone matches the input and is active. If no user is found it returns invalid username or password. If found it compares the provided password with the password hash stored in the user record using bcrypt. If the password does not match it returns invalid username or password. If it matches the backend builds a JWT payload with user id, username, role id, role name, database name, school id, school name, and institute number. It signs the token with the server JWT secret and sets an expiration. It sets an HTTP only cookie named auth token with the token value. It also returns the token and user summary in the JSON response so the frontend can store the token in localStorage for the Authorization header. The response includes user id, username, display name, role, staff id if any, school name, and an account disabled flag.
+
+Database. The master database schools table is read to get the school and db name. The school database users table is read to get the user and password hash. The user roles table is joined to get role name. The staff table is optionally joined to get staff id and names. No write occurs at login except the cookie on the response.
+
+Frontend after login. The frontend receives the success response. It stores the token in localStorage under the key used by the API service. It may store the user object in Redux or localStorage. It then redirects the user to the correct dashboard based on role. A role utility getDashboardForRole returns the path for Admin, Teacher, Student, Parent, or Guardian. So the user is sent to index for admin, teacher dashboard for teacher, student dashboard for student, parent dashboard for parent, or guardian dashboard for guardian.
+
+If login fails the frontend displays the error message returned by the backend. The user remains on the login page. Common errors are invalid institute number, invalid username or password, and too many login attempts when rate limiting applies.
+
+
+SECTION 9 DASHBOARD FLOW
+
+When a user logs in successfully they are redirected to their role specific dashboard. The dashboard flow is as follows.
+
+Frontend. The dashboard page component loads. For Headmaster the Admin Dashboard component loads. For Teacher the Teacher Dashboard component loads. For Student the Student Dashboard component loads. For Parent the Parent Dashboard component loads. For Guardian the Guardian Dashboard component loads. Each dashboard component requests the data it needs. For example the Admin Dashboard may request dashboard stats, upcoming events, class routine, notice board, fee stats, and recent activity. The Teacher Dashboard may request current teacher profile, teacher routine, class attendance, syllabus, leave applications, and events. The Student Dashboard may request current student profile, attendance, schedules, syllabus, leaves, fees, exam results, todos, and events. The Parent Dashboard may request parent profile, children list, and for the selected child leaves, fees, exam results, attendance, schedules, and events. The Guardian Dashboard may request guardian profile and ward leave applications. The dashboard components use custom hooks or direct API calls to fetch this data. When data is received the components render cards, tables, and lists.
+
+API. The dashboard components trigger multiple API requests. For admin dashboard the frontend calls getDashboardStats with optional academic year id, getDashboardUpcomingEvents, getDashboardClassRoutine, getDashboardNoticeBoard, getDashboardFeeStats, getDashboardFinanceSummary, getDashboardRecentActivity, and possibly getDashboardBestPerformers, getDashboardStarStudents, getDashboardPerformanceSummary, getDashboardTopSubjects. For teacher dashboard the frontend calls getCurrentTeacher, getTeacherRoutine for the current teacher, getTeacherClassAttendance, getClassSyllabus, getMyLeaveApplications, getEvents or getUpcomingEvents. For student dashboard the frontend calls getCurrentStudent, getStudentAttendance for the current student, getClassSchedules, getClassSyllabus, getMyLeaveApplications, getStudentFees for the current student, getStudentExamResults for the current student, getTodos, getEvents. For parent dashboard the frontend calls getMyParents or parent profile, getParentChildrenLeaves, getStudentFees and getStudentExamResults and getStudentAttendance for the selected child, getClassSchedules, getEvents. Each of these maps to a backend endpoint.
+
+Backend. The dashboard routes are under api dashboard. The stats endpoint is restricted to admin role. It reads from the tenant database. It counts students total active and inactive optionally filtered by academic year. It counts teachers and staff total active and inactive. It counts subjects. It returns these counts as the dashboard stats. The upcoming events endpoint may read from calendar events or events table depending on implementation. The class routine endpoint reads class schedules. The notice board endpoint reads the notice board table. The fee stats and finance summary read fee and payment data. Recent activity may read from a mix of tables. All these queries run in the tenant context so they only see the current school data. For teacher and student dashboards the backend uses the user id from the token to fetch only that teacher or that student and their related data.
+
+Database. The dashboard stats use the students table, teachers table joined with staff, staff table, and subjects table. Counts are computed with SQL. The events and notice board and fee data come from events, notice board, fee structures, fee collections, and related tables. All reads use the tenant database connection. No data from other schools is ever read.
+
+
+SECTION 10 MODULE FLOWS
+
+Student management module. Frontend. The user opens the Students area from the sidebar under People management. They can open All Students or Students List. The page displays a table of students with columns such as name, class, section, and admission number. The Headmaster can click Add Student to open the add student form, or click a student row and then Edit to update details, or open a student details view to see attendance, exam results, or fees. API. The list view triggers a GET request to the students endpoint to fetch all students, optionally filtered by academic year. The add action triggers a POST request to the students endpoint with form data. The edit action triggers a PUT request to the students endpoint with the student id. Views for attendance, exam results, and fees trigger GET requests to the student attendance, exam results, and student fees endpoints using the selected student id. Backend. The student routes use role checks so that only Headmaster can list all students and create or update students. Teachers can access only students assigned to their classes through teacher specific endpoints. Controllers validate input, check for duplicate admission numbers, and enforce ownership rules so that Student, Parent, and Guardian roles can only access their own or their linked students. Database. The students table stores core student data. The parents and guardians tables store related adult records. The users and user_roles tables provide login and role information. The classes, sections, and academic_years tables link students to the academic structure. Foreign keys ensure that each student belongs to valid classes and related records.
+
+Teacher management module. Frontend. The Headmaster opens the Teachers area from the People management section. All Teachers and Teacher List views show a table of teacher records with staff details, class, subject, and status. The Headmaster can open Teacher Details to see full information or open Routine to see teaching schedule. The Teacher Dashboard for a teacher user shows their own profile and assigned classes. API. Teacher lists trigger GET requests to the teachers endpoint. The Teacher Dashboard triggers GET to the current teacher endpoint to fetch the teacher linked to the logged in user. Routine screens trigger GET requests to the teacher routine endpoint and teacher class attendance endpoint with the teacher id. Update operations trigger PUT requests to the teachers endpoint with the teacher id. Backend. Teacher routes enforce that only Headmaster can list or update all teachers. The getCurrentTeacher controller uses the user id from the token to find the matching staff and teacher record. Routine and class attendance controllers ensure that a teacher can only see schedules and attendance for their own classes. Database. The teachers table links each teacher to a staff record and possibly to a class and subject. The staff table links to users and contains employment data such as designation and department. Classes and subjects tables describe the academic structure. These relationships ensure that a teacher record always points to a valid staff and teaching assignment.
+
+Parent and guardian module. Frontend. The Headmaster opens Parents or Guardians from the People management section to manage adult records linked to students. These screens show tables of parents or guardians and allow viewing details. Parents and Guardians themselves usually access their own dashboard and do not see the full lists. On the Parent Dashboard a parent sees a list of their children and can select a child to view that childs attendance, fees, and exam results. On the Guardian Dashboard the guardian sees wards and their leave information. API. Headmaster lists use GET requests to the parents and guardians endpoints. Parent and Guardian dashboards use GET to the parent profile or guardian profile endpoints and to parent children leaves, guardian ward leaves, and student data endpoints for selected students. Backend. List endpoints for parents and guardians are restricted to Headmaster roles. Profile endpoints use the user id from the token to find the linked parent or guardian. Controllers that return student attendance, exam results, or fees for a parent or guardian verify that the requested student id is in the set of students linked to that adult. Database. The parents table links to students by student id and may link to users by user id. The guardians table also links to students and may link indirectly to users by matching email or phone. These links are used to enforce data ownership.
+
+Attendance module. Frontend. The Headmaster opens HRM then Attendance and selects Student Attendance, Teacher Attendance, or Staff Attendance. These pages show lists of people for a selected date and allow marking presence or absence. A student may view their own attendance in their dashboard. A teacher may view class attendance summaries in their dashboard. API. The attendance marking screens call list endpoints such as students by class or teacher students to populate rows, then call dedicated attendance endpoints or reuse existing endpoints to submit records. Student dashboards call the student attendance endpoint with the student id. Backend. The getStudentAttendance controller returns attendance records for a given student but checks that the requester is either the student, the parent or guardian of that student, or the Headmaster. Attendance write operations are typically limited to Headmaster or authorised staff. Database. Attendance data is stored in tables that record student or staff id, date, and status. Foreign keys link attendance rows to students or staff and ensure that no attendance record exists without a valid person record.
+
+Class and section module. Frontend. The Headmaster opens Academic and uses the Classes, Section, Class Room, Class Routine, Subject, Syllabus, and Time Table pages to define academic structure. Each page presents a list view and forms for creating or editing records. For example Classes shows all classes and allows adding a new class with name and academic year. Class Routine and Time Table show schedules for classes across periods. API. These pages use GET requests to classes, sections, class rooms, schedules, class schedules, subjects, and class syllabus endpoints to read data. They use POST requests to the same base paths to create records and PUT requests to update existing ones. Backend. Academic controllers validate that referenced academic years, classes, sections, and subjects exist before inserting or updating records. Routes are protected so that only Headmaster or authorised roles can modify academic data. Database. The classes table is linked to academic_years. The sections table links to classes. The class_rooms table stores rooms. The schedules table defines time slots. The class_schedules table links classes, subjects, and schedule entries. The class_syllabus table links classes and subjects to syllabus documents or descriptions. Foreign keys maintain consistency across these tables.
+
+Announcement module. Frontend. The Headmaster opens Notice Board or Events under Announcements. Notice Board shows a list of notices with title, audience, and creation date and provides forms for creating or editing notices. Events shows school events and allows creation, editing, and deletion for Headmaster and Teachers. All roles may see notices and events on their dashboards. API. Notice Board uses GET requests to the notice board endpoint to list notices and GET with id to fetch one notice. Creating, updating, and deleting notices use POST, PUT, and DELETE requests to the notice board endpoint. Events use GET to list and to fetch upcoming events, and POST, PUT, DELETE for managing event records. Backend. The notice board controller allows any authenticated user to read notices but restricts create, update, and delete actions to Headmaster roles. The events controller allows Headmaster and Teacher roles to manage events. Both controllers read and write data through the database helper and respect tenant context so notices and events are school specific. Database. Notices are stored in the notice_board table with fields for title, content, audience, creator, and timestamps. Events are stored in the events table with titles, descriptions, dates, and optional metadata. These tables are read by dashboards for all roles.
+
+Report module. Frontend. The Headmaster opens the Reports section and chooses Attendance Report, Class Report, Student Report, Grade Report, Leave Report, or Fees Report. Each report page presents filter controls such as academic year, class, date range, or status and then shows summary tables or charts once data is loaded. API. Report pages call dedicated report endpoints where they exist or reuse existing dashboard and domain endpoints. For example Attendance Report may call dashboard attendance report endpoints while Fees Report may call fee statistics and collections list endpoints. Backend. Report controllers aggregate data across multiple tables, applying filters and grouping logic. They are typically restricted to Headmaster because they expose system wide information. Database. Reporting queries read from students, teachers, staff, attendance, leave_applications, fee_structures, fee_collections, and related tables. They do not usually modify data and depend on referential links between entities to compute accurate counts and summaries.
+
+Profile module. Frontend. Any authenticated user can open the Profile page from the sidebar or header. The page shows the current user name, display role, email, phone, addresses, and school information. Users can update their contact details and addresses and can open a separate form to change their password. API. The profile page uses a GET request to the auth me endpoint to fetch the current user profile. Saving changes uses a PATCH request to the auth me endpoint with updated fields. Changing password uses a POST request to the auth change password endpoint with current and new passwords. Backend. The getMe controller uses the user id from the token to join users with students or staff plus related tables such as classes, sections, and designations so that it can build a full profile view. The updateMe controller validates fields and updates only allowed columns in users and linked student or staff records. The changePassword controller verifies the existing password against the stored hash and writes a new hash when valid. Database. Profile operations read and update the users table and may also update students or staff for name consistency. They may read from classes, sections, designations, and addresses to populate additional profile fields.
+
+
+SECTION 11 DATABASE OVERVIEW
+
+The main database structure is as follows. Each school database has the same schema. The data in each database is different and belongs only to that school.
+
+users. Stores login and profile. Columns typically include id, username, email, phone, password_hash, first_name, last_name, role_id, is_active, and possibly current_address, permanent_address. role_id is a foreign key to user_roles.
+
+user_roles. Lookup table for roles. id and role_name. Typical roles are Admin, Student, Teacher, Parent, Guardian.
+
+students. Core student data. id, admission_number, admission_date, roll_number, first_name, last_name, class_id, section_id, gender, date_of_birth, blood_group_id, house_id, religion_id, cast_id, phone, email, user_id, parent_id, is_active, and many optional fields for address, transport, hostel, medical, etc. class_id and section_id are foreign keys to classes and sections. user_id links to users for login. parent_id links to parents.
+
+classes. id, class_name, academic_year_id, and related. academic_year_id links to academic_years.
+
+sections. id, section_name, class_id. class_id links to classes.
+
+parents. id, student_id, father_name, father_email, father_phone, mother_name, mother_email, mother_phone, and related. student_id links to students. Parents may have user_id for login.
+
+guardians. id, student_id, first_name, last_name, relation, phone, email, and related. student_id links to students. Guardians may be linked to users for login via email or phone match.
+
+teachers. id, staff_id, class_id, subject_id, and other teacher specific fields. staff_id links to staff.
+
+staff. id, user_id, employee_code, first_name, last_name, gender, date_of_birth, designation_id, department_id, joining_date, is_active, etc. user_id links to users. designations and departments are separate tables.
+
+subjects. id, subject_name, is_active.
+
+academic_years. id, name, start date, end date, etc.
+
+leave_types. id, leave_type, description, max_days_per_year.
+
+leave_applications. id, leave_type_id, student_id or staff_id, start_date, end_date, reason, status, created by, etc. student_id links to students. staff_id links to staff.
+
+notice_board. id, title, content, message_to, created_by, created_at, modified_at.
+
+events. id, title, description, start_date, end_date, and related.
+
+fee_structures. Links to classes or global. Defines fee amount per type.
+
+fee_collections. student_id, amount_paid, date, etc. Links to students.
+
+addresses. user_id, current_address, permanent_address. Optional table for user addresses.
+
+attendance. Tables for student attendance, teacher attendance, staff attendance with date and status.
+
+class_schedules. Links class, subject, schedule for timetable.
+
+schedules. Time slots with start time and end time.
+
+Foreign keys and relationships. users to user_roles via role_id. students to classes and sections. students to users via user_id. students to parents via parent_id. parents to students via student_id. guardians to students via student_id. teachers to staff via staff_id. staff to users via user_id. leave_applications to students or staff. fee_collections to students. All these ensure referential integrity and allow the application to join data correctly. Each school database contains the same schema but different data. The master database only has the schools table with institute_number and db_name to route each school to its database.
+
+
+Student relationships. Each student row in the students table is linked to exactly one class and one section through class_id and section_id. It may also be linked to an academic year through academic_year_id. Each student may have a user_id that points to the users table for login credentials. The parent_id column links a student to a record in the parents table. This means that from a student record the system can reach the user account, class and section, and the primary parent record.
+
+Teacher relationships. Each teacher record is linked to a staff record through staff_id. The staff record is then linked to a user account through user_id. Through optional class_id and subject_id fields the teacher record may also link to the class and subject that the teacher is primarily responsible for. This chain allows the system to start from a logged in user, find the staff record, then find the teacher record and its teaching assignment.
+
+Parent relationships. Each parent record in the parents table has a student_id that points to a student. A parent record may also be linked to a user account through user_id. This allows parent dashboards to use the user id from the token to locate the parent row and then the related student rows. The same logic is used when verifying that a parent is allowed to view or edit information for a given student.
+
+Guardian relationships. Each guardian record in the guardians table has a student_id that points to a student. Guardians may be associated to a user either through a direct user_id or through matching of email or phone values. When a guardian logs in the backend uses these relationships to determine which student records they can access. This ensures that guardians can only see data for students explicitly linked to them.
+
+Foreign key constraints between these tables enforce referential integrity. A student cannot reference a non existent class or parent. A teacher cannot reference a non existent staff record. A fee collection row cannot reference a non existent student. These rules prevent orphaned records and ensure that joins between entities always produce meaningful results.
+
+
+SECTION 12 API AND BACKEND PROCESSING
+
+The backend server processes requests as follows.
+
+All API requests under api except auth login and health go through the protectApi middleware. protectApi skips public paths such as auth login and health. For all other paths it runs the authenticate middleware.
+
+authenticate reads the token from the cookie auth_token or from the Authorization header Bearer token. If no token is present it returns 401 Access denied. If the token is invalid or expired it returns 401 with an appropriate message. If valid it decodes the JWT and attaches the decoded payload to req.user. The payload includes id, username, role_id, role_name, db_name, school_id, school_name, institute_number. Then it calls runWithTenant with the db_name from the token. runWithTenant sets the tenant context so that all subsequent database calls in that request use the tenant database pool. So every protected request is bound to the correct school database.
+
+After protectApi the requireActiveAccount middleware runs. It checks if the user is a student or staff and whether the linked student or staff record is active. If the user is inactive it returns 403 with a message that the account is disabled. It skips this check for auth me so that disabled users can still fetch their profile and see that they are disabled.
+
+Routes are mounted by path. For example api students uses the student routes. api teachers uses the teacher routes. api dashboard uses the dashboard routes. api auth uses the auth routes. Within each route file the HTTP method and path define which controller runs. Many routes use requireRole with an array of allowed role ids. For example GET api students may use requireRole with Admin only. So only users with role_id equal to Admin can list all students. If a Teacher or Student calls that endpoint they get 403 Access denied.
+
+Controllers receive req and res. They read req.user for the current user and req.params and req.body for input. They validate input when needed. They run business logic. For example createStudent validates required fields, checks duplicate admission number, then runs a transaction that inserts into students, optionally parents, guardians, users, and addresses. They call the database via the query or executeTransaction helper. The query helper uses getCurrentPool which returns the pool for the current tenant from the request context. So all queries automatically run against the correct school database. Controllers then call success or errorResponse to send a JSON response with status and message and data.
+
+Data isolation between schools is guaranteed because the token carries db_name. That db_name is set at login from the master database lookup. Every subsequent request uses that same token until logout or expiry. So the tenant context never changes during a session. There is no way for a Preskool user to run a query against the Millat database because the pool is chosen by the token.
+
+Role based authorization is applied at the route level with requireRole and at the controller level with ownership checks. requireRole ensures that only the right roles can call certain endpoints. Ownership checks ensure that when a user requests a specific students data the backend verifies that the user is that student, or the parent or guardian of that student, or Admin. The same pattern applies to fees, attendance, exam results, and leave applications.
+
+
+SECTION 13 SECURITY AND ACCESS CONTROL
+
+The security and access control design ensures that only authorised users can access school data and that each school remains isolated from others.
+
+Authentication uses JSON Web Tokens that contain user id, role information, and tenant database name. On successful login the backend signs a token and sends it to the browser. The token is stored in an HTTP only cookie to protect it from direct access by frontend scripts. The frontend also stores a copy for use in the Authorization header so that API requests can be authenticated even when cookies are not relied upon.
+
+Role based authorization is implemented using both middleware and controller logic. The middleware checks the role id on the token against lists of allowed roles for each route. For example only Headmaster can access student creation and fee collection list endpoints. Controller logic further checks ownership so that even when an endpoint is open to multiple roles users can only see their own or related records. This pattern is used for student attendance, exam results, and fees where Student, Parent, and Guardian roles are all supported but limited to specific students.
+
+Tenant database isolation is enforced by including the database name in the token and using a tenant context helper that selects the correct connection pool for each request. Every protected endpoint reads from the tenant specific pool. This guarantees that queries for Preskool cannot reach tables in Millat or Iqra, and vice versa. The master database is used only to resolve institute numbers to database names during login and does not hold operational data.
+
+Ownership verification ensures that personal data is visible only to the correct user. For example when a Parent requests a childs fees the backend checks the parent child relationship in the parents table before returning data. When a Student attempts to view attendance the controller ensures that the requested student id matches the user or is linked to the user through relationships. Guardians are validated in a similar way using guardian and student relationships. These checks prevent users from viewing data for students they are not linked to.
+
+API access restrictions combine these mechanisms. Endpoints are grouped by domain and most of them require both a valid token and a permitted role. Additional checks such as requireActiveAccount prevent disabled student or staff accounts from using the system even if their credentials are valid. Together these layers protect the confidentiality and integrity of school data.
+
+
+SECTION 14 ERROR HANDLING AND LOGGING
+
+The system includes structured error handling and logging so that problems can be detected, reported, and diagnosed.
+
+Invalid login attempts are handled directly in the authentication controller. When the institute number is not found in the master database, when the username or phone does not match any active user, or when the password comparison fails, the backend returns an error response with a clear message and status code. A login rate limiter also reduces brute force attempts by limiting the number of login requests per time window for each client.
+
+Unauthorized API access is handled by the authentication and role based middleware. When a request is made without a token, with an invalid token, or with an expired token, the middleware returns a response indicating that authentication failed and uses an appropriate status code. When the user is authenticated but does not have the required role for a route, the role middleware returns a forbidden response. These responses inform the frontend that the user is not allowed to perform the requested action.
+
+Input validation failures are handled by a validation layer that uses schemas for request bodies. If a required field is missing or a field does not match expected format the validation middleware rejects the request before it reaches the controller. It returns a response with details of the validation errors. This prevents invalid data from reaching the business logic and the database.
+
+Database errors such as connection failures, constraint violations, or syntax errors are caught in controllers or in a global error handler. When such errors occur the system logs the technical details on the server for developers to review but returns only a generic error message to the client so that internal information is not exposed. Transactions are rolled back when an error occurs during a multi step operation so the database is not left in a partial state.
+
+Unexpected server errors are captured by a global error handler registered at the end of the Express middleware chain. This handler logs the full error, including stack trace in development, and returns a standard error response. Logging is typically done using the built in console logger and HTTP request logging middleware. These logs provide a history of requests, responses, and errors that can be examined when debugging issues in production or testing environments.
+
+
+SECTION 15 TESTING REFERENCE GUIDE
+
+The testing team should verify system behaviour as follows.
+
+Login functionality for different schools. Test login with institute number 1111 and valid Preskool credentials. Confirm that the user is redirected to the correct dashboard and that the header or profile shows Preskool or the correct school name. Test login with institute number 2222 and valid Millat credentials. Confirm redirect and that only Millat data appears in the dashboard and menus. Test login with institute number 3333 and valid Iqra credentials. Same checks. Test with invalid institute number. Confirm error message and no redirect. Test with valid institute number but wrong username or password. Confirm invalid credentials message. Test that after login the token is stored and that subsequent API calls include the token. Test logout and confirm that the token is cleared and the user is redirected to login.
+
+Role based access. Log in as Headmaster. Confirm full sidebar with Peoples, Academic, Management, HRM, Finance, Announcements, Reports, Settings, etc. Open Students and add a student. Confirm success. Log in as Teacher. Confirm sidebar shows only Teacher Dashboard and Application. Try to open the direct URL for student list. The sidebar should not show it. If the route is protected the user may be redirected or see access denied. Log in as Student. Confirm only Student Dashboard and Application. View own profile, attendance, fees. Confirm only own data. Log in as Parent. Confirm Parent Dashboard and Application. Select a child and view child attendance and fees. Confirm only that childs data. Log in as Guardian. Confirm Guardian Dashboard and Application. View ward leaves. Confirm only ward data. For each role attempt to call an API that is restricted to another role. For example as Student call GET api students. The backend should return 403. As Parent call GET api students. Same 403.
+
+Tenant isolation testing. Create a new student while logged in as Headmaster of Preskool using institute number 1111. After saving confirm that the student appears in the Preskool student list. Then log out and log in as Headmaster of Millat using institute number 2222. Confirm that the newly created Preskool student does not appear in the Millat student list. Repeat the check while logged in as Headmaster of Iqra using institute number 3333. The absence of the Preskool student from Millat and Iqra lists confirms that student data created in one school is not visible in other schools and that tenant database isolation is working correctly.
+
+Student creation. As Headmaster open Add Student. Fill required fields including admission number, first name, last name. Submit. Confirm success and that the new student appears in the list. Confirm that with institute 1111 the student is created in Preskool database. Log in to Preskool and verify the student. Log in to Millat and confirm the student does not appear in the list. This also verifies tenant isolation.
+
+Attendance marking. As Headmaster open Student Attendance. Select class and date. Mark some students present and absent. Save. Confirm that the attendance is saved. View attendance for a specific student. As Teacher open the dashboard or attendance and mark attendance for their class. Confirm only their class is available. As Student view own attendance. Confirm only own records.
+
+Data visibility. In each school database insert or use existing data. Log in as Headmaster of Preskool. List students. Confirm only Preskool students. List teachers. Confirm only Preskool teachers. Open notice board. Confirm only Preskool notices. Log in as Headmaster of Millat. Confirm only Millat students, teachers, notices. Log in as Parent in Preskool with two children. Confirm both children appear in the selector. Select child one. View attendance and fees. Confirm only child ones data. Switch to child two. Confirm only child twos data. This verifies that each school only sees its own data and that parents only see their linked children.
+
+API and backend. Use a tool to send requests. Send POST to api auth login with Preskool institute number and credentials. Copy the token from the response. Send GET to api auth me with Authorization Bearer and the token. Confirm 200 and user profile. Send GET to api students without token. Confirm 401. Send GET to api students with token as Student role. Confirm 403. Send GET to api dashboard stats with Admin token. Confirm 200 and stats object. Send GET to api dashboard stats with Teacher token. Confirm 403 or restricted data depending on implementation. This verifies authentication and role enforcement at the API level.
+
+
+SECTION 16 END TO END SYSTEM FLOW
+
+A complete high level explanation of how the system works from user interaction to database storage and response rendering is as follows.
+
+The user opens the application in the browser. The frontend loads. If the user is not logged in they are shown the login page. The user performs an action in the frontend such as entering institute number, username, and password and clicking Sign In. The frontend login handler runs. It calls the API service login method which sends a POST request to the backend auth login endpoint with the credentials. The backend receives the request. It validates the body. It queries the master database to find the school by institute number. It gets the school database name. It runs the rest of the login inside the tenant context for that database. It queries the school database users table to find the user and verifies the password with bcrypt. It builds a JWT with user id, role, and database name. It sets the auth cookie and returns the token and user in the response. The frontend receives the response. It stores the token. It redirects the user to the role specific dashboard. The user now sees the dashboard. The dashboard component mounts. It sends several API requests to load stats, events, notices, and other data. Each request includes the token. The frontend sends each API request. The backend protectApi middleware runs. It reads the token from the cookie or header. It verifies the token and attaches the user to the request. It sets the tenant context to the database name from the token. The requireActiveAccount middleware runs and allows the request. The request reaches the dashboard route. The dashboard controller runs. It may check that the user role is allowed to see stats. It runs database queries using the query helper. The query helper uses the current tenant pool so all queries hit the correct school database. The database reads from the students, teachers, staff, notice board, events, and other tables. The database returns rows. The backend prepares the response. It formats the data and sends a JSON response with status SUCCESS and the data. The frontend receives the response. The frontend updates the interface. The dashboard displays the cards and lists. If the user then performs another action such as opening the Students page the frontend navigates to that route. The Students component loads. It sends a GET request to api students. The backend authenticates the request and checks that the user role is Admin. The student controller getAllStudents runs. It queries the students table in the tenant database. It returns the list. The frontend updates the interface and shows the student list. If the user creates a student the frontend sends POST to api students with the form data. The backend validates the input and runs createStudent. The controller runs a transaction. It inserts into the students table. It may insert into parents, guardians, users, and addresses. It commits the transaction. The database now has the new records. The backend returns success and the created student. The frontend shows a success message and refreshes or redirects. So from user action to frontend function to API request to backend authentication and validation to database read or write to backend response to frontend update the flow is consistent. The tenant context set at login ensures that every database operation in that session uses the correct school database. Role checks and ownership checks ensure that each user only sees and changes what they are allowed to. The result is a multi tenant school management system where multiple schools share one application but their data stays separate and secure.
+
+
+SECTION 17 APPENDIX
+
+This appendix describes important terminology, system concepts, and environment considerations used in the school management system.
+
+Terminology. Headmaster refers to the main administrator of a school and is mapped to the Admin role in the system. Teacher refers to staff responsible for teaching classes. Student refers to learners enrolled in classes. Parent refers to a guardian who is a mother or father and is directly linked to student records. Guardian refers to an additional responsible adult who may not be a parent but has access to student information. Dashboard refers to the main landing page for a role. Tenant refers to a single school and its dedicated database.
+
+Key system concepts. Multi tenancy means that multiple schools share one application code base but each school has its own database. Role based access control means that actions and pages are allowed or blocked based on the role assigned to a user. Ownership based access means that even within a role users can only view or change records that are linked to them such as their own student record or their children. The tenant context is the runtime selection of a specific school database for each request.
+
+Environment configuration overview. The backend uses environment variables to configure database connections and security settings. There is a primary database connection used for the main school database. Additional variables specify connection strings for the master database that stores the schools table and for optional separate databases for Millat and Iqra. A secret key is used to sign authentication tokens. Frontend configuration includes the base URL of the API. For production deployments these environment settings are provided by the hosting platform and must be kept secure. Together these configuration values determine how the application connects to databases, how tenants are resolved, and how authentication is secured.
+
+
+END OF DOCUMENT

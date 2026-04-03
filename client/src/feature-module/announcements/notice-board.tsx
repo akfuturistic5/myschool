@@ -9,9 +9,11 @@ import {
 } from "../../core/common/selectoption/selectoption";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
+import { useNoticeBoard } from "../../core/hooks/useNoticeBoard";
 
 const NoticeBoard = () => {
   const routes = all_routes;
+  const { notices, loading, error, refetch } = useNoticeBoard();
   return (
     <>
       {" "}
@@ -112,7 +114,17 @@ const NoticeBoard = () => {
             </div>
           </div>
           {/* Notice Board List */}
-          <div className="card board-hover mb-3">
+          {loading && (
+            <p className="mb-3 text-muted">Loading notices...</p>
+          )}
+          {!loading && error && (
+            <p className="mb-3 text-danger">{error}</p>
+          )}
+          {!loading && !error && notices.length === 0 && (
+            <p className="mb-3 text-muted">No notices yet. Run the notice_board migration and add notices.</p>
+          )}
+          {!loading && !error && notices.map((notice) => (
+          <div key={notice.id} className="card board-hover mb-3">
             <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
               <div className="d-flex align-items-center mb-3">
                 <div className="form-check form-check-md me-2">
@@ -127,13 +139,14 @@ const NoticeBoard = () => {
                       to="#"
                       data-bs-toggle="modal"
                       data-bs-target="#view_details"
+                      data-notice-id={notice.id}
                     >
-                      Classes Preparation
+                      {notice.title}
                     </Link>
                   </h6>
                   <p>
                     <i className="ti ti-calendar me-1" />
-                    Added on : 24 May 2024
+                    {notice.modified_at ? `Modified on: ${notice.modifiedOn}` : `Added on: ${notice.addedOn}`}
                   </p>
                 </div>
               </div>
@@ -157,430 +170,7 @@ const NoticeBoard = () => {
               </div>
             </div>
           </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Fees Reminder
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 12 May 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Parents Teacher Meeting
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 10 May 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      New Academic Session For Admission (2024-25)
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 28 Apr 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Staff Meeting
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 23 Apr 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      World Environment Day Program.....!!!
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 21 Apr 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      New Syllabus Instructions
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 11 Mar 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Exam Preparation Notification!
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 18 Mar 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Gandhi Jayanti Programmed
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 16 Feb 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
-          {/* Notice Board List */}
-          <div className="card board-hover mb-3">
-            <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-              <div className="d-flex align-items-center mb-3">
-                <div className="form-check form-check-md me-2">
-                  <input className="form-check-input" type="checkbox" />
-                </div>
-                <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
-                  <i className="ti ti-notification fs-16" />
-                </span>
-                <div>
-                  <h6 className="mb-1 fw-semibold">
-                    <Link
-                      to="#"
-                      data-bs-toggle="modal"
-                      data-bs-target="#view_details"
-                    >
-                      Republic Day Celebration
-                    </Link>
-                  </h6>
-                  <p>
-                    <i className="ti ti-calendar me-1" />
-                    Added on : 24 Jan 2024
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center board-action mb-3">
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_message"
-                  className="text-primary border rounded p-1 badge me-1 primary-btn-hover"
-                >
-                  <i className="ti ti-edit-circle fs-16" />
-                </Link>
-                <Link
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                  className="text-danger border rounded p-1 badge danger-btn-hover"
-                >
-                  <i className="ti ti-trash-x fs-16" />
-                </Link>
-              </div>
-            </div>
-          </div>
-          {/* Notice Board List */}
+          ))}
           <div className="text-center">
             <Link to="#" className="btn btn-primary">
               <i className="ti ti-loader-3 me-2" />

@@ -1,8 +1,9 @@
-
 /* eslint-disable */
 import  { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import {  Phone, } from "react-feather";
@@ -34,6 +35,14 @@ type VideoStatusType = {
 };
 
 const Videocall = () => {
+  const location = useLocation();
+  const recipient = (location.state as any)?.recipient;
+  const currentUser = useSelector(selectUser);
+  const myName = currentUser ? [currentUser.first_name, currentUser.last_name].filter(Boolean).join(" ") || currentUser.username || "You" : "You";
+  const myInitial = (myName && myName[0]) || "Y";
+  const otherName = recipient ? (recipient.recipient_username || [recipient.recipient_first_name, recipient.recipient_last_name].filter(Boolean).join(" ") || "Unknown") : null;
+  const otherAvatar = recipient?.recipient_photo_url || "assets/img/profiles/avatar-01.jpg";
+
   const [videoStatus, setVideoStatus] = useState<VideoStatusType>({
     video1: false,
     video2: false,
@@ -216,15 +225,15 @@ const Videocall = () => {
                     <div className="join-contents horizontal-view fade-whiteboard d-block">
                       <div className="join-video user-active">
                         <ImageWithBasePath
-                          src="assets/img/join-call.jpg"
+                          src="assets/img/profiles/avatar-01.jpg"
                           className="img-fluid"
-                          alt="Logo"
+                          alt={myName}
                         />
                         <div
                           className={`video-avatar ${isMuted ? "active" : ""}`}
                         >
                           <div className="text-avatar">
-                            <div className="text-box">S</div>
+                            <div className="text-box">{myInitial}</div>
                           </div>
                         </div>
                         <div className="record-time">
@@ -266,12 +275,12 @@ const Videocall = () => {
                       <Slider {...settings} className="video-slide d-flex">
                         <div className="join-video single-user">
                           <ImageWithBasePath
-                            src="assets/img/users/user-01.jpg"
+                            src={otherAvatar}
                             className="img-fluid"
                             alt="Logo"
                           />
                           <div className="part-name sub-part-name">
-                            <h4>Barbara</h4>
+                            <h4>{otherName || "Incoming..."}</h4>
                           </div>
                           <div className="more-icon">
                             <Link
@@ -425,13 +434,13 @@ const Videocall = () => {
                               <div className="user-list-item">
                                 <div className="avatar ">
                                   <ImageWithBasePath
-                                    src="assets/img/users/user-02.jpg"
+                                    src={otherAvatar}
                                     alt="image"
                                   />
                                 </div>
                                 <div className="users-list-body">
                                   <div className="name-list-user out-going-call">
-                                    <h5>Maybelle</h5>
+                                    <h5>{otherName || myName}</h5>
                                   </div>
                                   <div className="last-call-time">
                                     <div className="call-recent recent-part me-1">
@@ -480,13 +489,13 @@ const Videocall = () => {
                               <div className="user-list-item">
                                 <div className="avatar ">
                                   <ImageWithBasePath
-                                    src="assets/img/users/user-03.jpg"
+                                    src="assets/img/profiles/avatar-01.jpg"
                                     alt="image"
                                   />
                                 </div>
                                 <div className="users-list-body">
                                   <div className="name-list-user out-going-call">
-                                    <h5>Benjamin</h5>
+                                    <h5>{otherName ? myName : "Benjamin"}</h5>
                                   </div>
                                   <div className="last-call-time">
                                     <div className="call-recent recent-part me-1">

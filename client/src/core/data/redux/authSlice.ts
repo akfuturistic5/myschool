@@ -1,26 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 
-const TOKEN_KEY = 'preskool_token';
-const USER_KEY = 'preskool_user';
-
-const getStoredToken = () => {
-  try {
-    return typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null;
-  } catch {
-    return null;
-  }
-};
-const getStoredUser = () => {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    const u = localStorage.getItem(USER_KEY);
-    return u ? JSON.parse(u) : null;
-  } catch {
-    return null;
-  }
-};
-
 interface AuthUser {
   id: number;
   username: string;
@@ -28,43 +8,64 @@ interface AuthUser {
   role: string;
   user_role_id?: number;
   staff_id?: number;
+  accountDisabled?: boolean;
+  school_name?: string;
+  school_type?: string;
+  /** Public URL or app-relative path from master_db.schools.logo */
+  school_logo?: string | null;
+  institute_number?: string;
 }
 
 interface AuthState {
   token: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
+  authChecked: boolean;
 }
 
 const initialState: AuthState = {
-  token: getStoredToken(),
-  user: getStoredUser(),
-  isAuthenticated: !!getStoredToken(),
+  token: null,
+  user: null,
+  isAuthenticated: false,
+  authChecked: false,
 };
 
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    setAuth: (state, action: PayloadAction<{ token: string; user: AuthUser }>) => {
-      state.token = action.payload.token;
+    setAuth: (state, action: PayloadAction<{ token?: string; user: AuthUser }>) => {
       state.user = action.payload.user;
       state.isAuthenticated = true;
-      localStorage.setItem(TOKEN_KEY, action.payload.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(action.payload.user));
+      state.authChecked = true;
+      state.token = action.payload.token ?? null;
+    },
+    setAuthFromSession: (state, action: PayloadAction<{ user: AuthUser }>) => {
+      state.user = action.payload.user;
+      state.isAuthenticated = true;
+      state.authChecked = true;
+    },
+    patchAuthUser: (state, action: PayloadAction<Partial<AuthUser>>) => {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+      }
+    },
+    setAuthChecked: (state) => {
+      state.authChecked = true;
     },
     clearAuth: (state) => {
       state.token = null;
       state.user = null;
       state.isAuthenticated = false;
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
+      state.authChecked = true;
     },
   },
 });
 
-export const { setAuth, clearAuth } = authSlice.actions;
+export const { setAuth, setAuthFromSession, setAuthChecked, clearAuth, patchAuthUser } =
+  authSlice.actions;
 export const selectToken = (state: { auth: AuthState }) => state.auth.token;
 export const selectUser = (state: { auth: AuthState }) => state.auth.user;
 export const selectIsAuthenticated = (state: { auth: AuthState }) => state.auth.isAuthenticated;
+export const selectAuthChecked = (state: { auth: AuthState }) => state.auth.authChecked;
 export default authSlice.reducer;

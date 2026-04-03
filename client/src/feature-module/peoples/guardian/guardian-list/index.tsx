@@ -1,4 +1,5 @@
 import  { useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
 import { Link } from "react-router-dom";
@@ -16,13 +17,19 @@ import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useGuardians } from "../../../../core/hooks/useGuardians";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
 const GuardianList = () => {
   const [show, setShow] = useState(false);
   const [selectedGuardian, setSelectedGuardian] = useState<any>(null);
+  const [guardianToEdit, setGuardianToEdit] = useState<any>(null);
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { guardians, loading, error, refetch } = useGuardians();
+  const user = useSelector(selectUser);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const isGuardian = (user?.role || "").toLowerCase() === "guardian";
+  const { guardians, loading, error, refetch } = useGuardians({ academicYearId: isGuardian ? null : academicYearId });
 
   // useGuardians already returns guardian records transformed into the
   // exact shape expected by this table and the View Details modal.
@@ -53,7 +60,7 @@ const GuardianList = () => {
           {text}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => (Number(a.id) || 0) - (Number(b.id) || 0),
     },
     {
       title: "Guardian Name",
@@ -88,7 +95,11 @@ const GuardianList = () => {
       dataIndex: "Child",
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link to={routes.studentDetail} className="avatar avatar-md">
+          <Link
+            to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.guardiansList}
+            state={record.student_id != null ? { studentId: record.student_id } : undefined}
+            className="avatar avatar-md"
+          >
             <ImageWithBasePath
               src={record.ChildImage}
               className="img-fluid rounded-circle"
@@ -97,7 +108,12 @@ const GuardianList = () => {
           </Link>
           <div className="ms-2">
             <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
+              <Link
+                to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.guardiansList}
+                state={record.student_id != null ? { studentId: record.student_id } : undefined}
+              >
+                {text}
+              </Link>
             </p>
             <span className="fs-12">{record.class}</span>
           </div>
@@ -147,6 +163,7 @@ const GuardianList = () => {
                     to="#"
                     data-bs-toggle="modal"
                     data-bs-target="#edit_guardian"
+                    onClick={() => setGuardianToEdit(record)}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -178,11 +195,18 @@ const GuardianList = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <Link
+                to={isGuardian ? routes.guardianDashboard : routes.guardiansGrid}
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </Link>
               <h3 className="page-title mb-1">Guardian</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
+                    <Link to={isGuardian ? routes.guardianDashboard : routes.adminDashboard}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">Peoples</li>
                   <li className="breadcrumb-item active" aria-current="page">
@@ -194,17 +218,19 @@ const GuardianList = () => {
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
             <TooltipOption />
 
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary d-flex align-items-center"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_guardian"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Guardian
-                </Link>
-              </div>
+              {!isGuardian && (
+                <div className="mb-2">
+                  <Link
+                    to="#"
+                    className="btn btn-primary d-flex align-items-center"
+                    data-bs-toggle="modal"
+                    data-bs-target="#add_guardian"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Guardian
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}
@@ -379,7 +405,7 @@ const GuardianList = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <GuardianModal />
+      <GuardianModal guardianToEdit={guardianToEdit} refetch={refetch} />
 
       <Modal show={show} onHide={handleClose} centered size="lg">
         <div className="modal-header">
@@ -439,7 +465,11 @@ const GuardianList = () => {
               </div>
               <div className="d-flex align-items-center justify-content-between flex-wrap">
                 <div className="d-flex align-items-center mb-3">
-                  <Link to={routes.studentDetail} className="avatar">
+                  <Link
+                    to={routes.studentDetail}
+                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    className="avatar"
+                  >
                     <ImageWithBasePath
                       src={selectedGuardian.ChildImage}
                       className="img-fluid rounded-circle"
@@ -448,7 +478,12 @@ const GuardianList = () => {
                   </Link>
                   <div className="ms-2">
                     <p className="mb-0">
-                      <Link to={routes.studentDetail}>{selectedGuardian.Child}</Link>
+                      <Link
+                        to={selectedGuardian.student_id != null ? `${routes.studentDetail}/${selectedGuardian.student_id}` : routes.guardiansList}
+                        state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                      >
+                        {selectedGuardian.Child}
+                      </Link>
                     </p>
                     <span>{selectedGuardian.class}</span>
                   </div>
@@ -472,7 +507,8 @@ const GuardianList = () => {
                     Add Fees
                   </Link>
                   <Link
-                    to={routes.studentDetail}
+                    to={selectedGuardian.student_id != null ? `${routes.studentDetail}/${selectedGuardian.student_id}` : routes.guardiansList}
+                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
                     className="btn btn-primary mb-3"
                   >
                     View Details

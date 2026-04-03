@@ -1,9 +1,128 @@
-
-import { names } from "../../../core/common/selectoption/selectoption";
-import { Select } from "antd";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { Select } from "antd";
+import { apiService } from "../../../core/services/apiService";
+import { useStudents } from "../../../core/hooks/useStudents";
 
-const ParentModal = () => {
+export interface ParentToEditShape {
+  id?: string;
+  name?: string;
+  phone?: string;
+  email?: string;
+  Child?: string;
+  student_id?: number;
+}
+
+interface ParentModalProps {
+  parentToEdit?: ParentToEditShape | null;
+  refetch?: () => void;
+}
+
+const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
+  const { students = [] } = useStudents();
+  const [addFatherName, setAddFatherName] = useState("");
+  const [addPhone, setAddPhone] = useState("");
+  const [addEmail, setAddEmail] = useState("");
+  const [addStudentId, setAddStudentId] = useState<number | null>(null);
+  const [editFatherName, setEditFatherName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const studentOptions = students.map((s: any) => ({
+    value: s.id,
+    label: `${s.first_name || ""} ${s.last_name || ""}`.trim() || `Student #${s.id}`,
+  }));
+
+  useEffect(() => {
+    if (parentToEdit) {
+      setEditFatherName(parentToEdit.name ?? "");
+      setEditPhone(parentToEdit.phone ?? "");
+      setEditEmail(parentToEdit.email ?? "");
+    }
+  }, [parentToEdit]);
+
+  const hideModal = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const Modal = (window as any).bootstrap?.Modal;
+      if (Modal) {
+        const instance = Modal.getInstance(el);
+        if (instance) instance.hide();
+      }
+    }
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      if (!addFatherName.trim()) {
+        setError("Name is required");
+        setSubmitting(false);
+        return;
+      }
+      if (!addPhone.trim()) {
+        setError("Phone is required");
+        setSubmitting(false);
+        return;
+      }
+      if (!addStudentId) {
+        setError("Please select a child/student");
+        setSubmitting(false);
+        return;
+      }
+      await apiService.createParent({
+        student_id: addStudentId,
+        father_name: addFatherName.trim(),
+        father_phone: addPhone.trim(),
+        father_email: addEmail.trim() || null,
+      });
+      setAddFatherName("");
+      setAddPhone("");
+      setAddEmail("");
+      setAddStudentId(null);
+      refetch?.();
+      hideModal("add_parent");
+    } catch (err: any) {
+      setError(err?.message || "Failed to add parent");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parentToEdit?.id) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      if (!editFatherName.trim()) {
+        setError("Name is required");
+        setSubmitting(false);
+        return;
+      }
+      if (!editPhone.trim()) {
+        setError("Phone is required");
+        setSubmitting(false);
+        return;
+      }
+      await apiService.updateParent(parentToEdit.id, {
+        father_name: editFatherName.trim(),
+        father_phone: editPhone.trim(),
+        father_email: editEmail.trim() || null,
+      });
+      refetch?.();
+      hideModal("edit_parent");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update parent");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const getModalContainer = () => {
     const modalElement = document.getElementById("modal-tag");
     return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
@@ -30,7 +149,12 @@ const ParentModal = () => {
                 <i className="ti ti-x" />
               </button>
             </div>
-            <form >
+            <form onSubmit={handleAddSubmit}>
+              {error && (
+                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
               <div id="modal-tag2" className="modal-body">
                 <div className="row">
                   <div className="col-md-12">
@@ -48,56 +172,65 @@ const ParentModal = () => {
                               multiple
                             />
                           </div>
-                          <Link
-                            to="#"
-                            className="btn btn-primary mb-3"
-                          >
+                          <a href="#" className="btn btn-primary mb-3" onClick={(e) => e.preventDefault()}>
                             Remove
-                          </Link>
+                          </a>
                         </div>
                         <p>Upload image size 4MB, Format JPG, PNG, SVG</p>
                       </div>
                     </div>
                     <div className="mb-3">
-                      <label className="form-label">Name</label>
-                      <input type="text" className="form-control" />
+                      <label className="form-label">Name (Father)</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addFatherName}
+                        onChange={(e) => setAddFatherName(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Phone Number</label>
-                      <input type="text" className="form-control" />
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addPhone}
+                        onChange={(e) => setAddPhone(e.target.value)}
+                        required
+                      />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Email Address</label>
-                      <input type="text" className="form-control" />
+                      <input
+                        type="email"
+                        className="form-control"
+                        value={addEmail}
+                        onChange={(e) => setAddEmail(e.target.value)}
+                      />
                     </div>
                     <div className="mb-0">
                       <label className="form-label">Child</label>
-                     
-                       <Select
-                        mode="multiple"
+                      <Select
                         allowClear
                         className="select"
                         getPopupContainer={getModalContainer2}
                         style={{ width: "100%" }}
-                        placeholder="Please select"
-                        defaultValue={[]}
-                        options={names}
+                        placeholder="Please select a student"
+                        value={addStudentId}
+                        onChange={(v) => setAddStudentId(v ?? null)}
+                        options={studentOptions}
                       />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="modal-footer">
-                <Link
-                  to="#"
-                  className="btn btn-light me-2"
-                  data-bs-dismiss="modal"
-                >
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
                   Cancel
-                </Link>
-                <Link to="#"  data-bs-dismiss="modal" className="btn btn-primary">
-                  Add Parent
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Adding..." : "Add Parent"}
+                </button>
               </div>
             </form>
           </div>
@@ -119,7 +252,12 @@ const ParentModal = () => {
                 <i className="ti ti-x" />
               </button>
             </div>
-            <form>
+            <form key={parentToEdit?.id ?? "edit-form"} onSubmit={handleEditSubmit}>
+              {error && (
+                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
+                  {error}
+                </div>
+              )}
               <div id="modal-tag" className="modal-body ">
                 <div className="row">
                   <div className="col-md-12">
@@ -137,23 +275,22 @@ const ParentModal = () => {
                               multiple
                             />
                           </div>
-                          <Link
-                            to="#"
-                            className="btn btn-primary mb-3"
-                          >
+                          <a href="#" className="btn btn-primary mb-3" onClick={(e) => e.preventDefault()}>
                             Remove
-                          </Link>
+                          </a>
                         </div>
                         <p>Upload image size 4MB, Format JPG, PNG, SVG</p>
                       </div>
                     </div>
                     <div className="mb-3">
-                      <label className="form-label">Name</label>
+                      <label className="form-label">Name (Father)</label>
                       <input
                         type="text"
                         className="form-control"
                         placeholder="Enter Name"
-                        defaultValue="Thomas"
+                        value={editFatherName}
+                        onChange={(e) => setEditFatherName(e.target.value)}
+                        required
                       />
                     </div>
                     <div className="mb-3">
@@ -162,46 +299,43 @@ const ParentModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Phone Number"
-                        defaultValue="+1 65738 58937"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        required
                       />
                     </div>
                     <div className="mb-3">
                       <label className="form-label">Email Address</label>
                       <input
-                        type="text"
+                        type="email"
                         className="form-control"
                         placeholder="Enter Email Address"
-                        defaultValue="thomas@example.com"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
                       />
                     </div>
                     <div className="mb-0">
                       <label className="form-label">Child</label>
-                      
                       <Select
-                        mode="multiple"
-                        allowClear
                         className="select"
                         getPopupContainer={getModalContainer}
                         style={{ width: "100%" }}
-                        placeholder="Please select"
-                        defaultValue={["Tim", "Jammy"]}
-                        options={names}
+                        placeholder="Student (read-only)"
+                        value={parentToEdit?.student_id}
+                        options={studentOptions}
+                        disabled
                       />
                     </div>
                   </div>
                 </div>
               </div>
               <div className="modal-footer">
-                <Link
-                  to="#"
-                  className="btn btn-light me-2"
-                  data-bs-dismiss="modal"
-                >
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
                   Cancel
-                </Link>
-                <Link to="#" className="btn btn-primary">
-                  Save Changes
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Saving..." : "Save Changes"}
+                </button>
               </div>
             </form>
           </div>

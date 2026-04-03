@@ -11,22 +11,8 @@ export const useCurrentUser = () => {
       setLoading(true);
       setError(null);
 
-      // Get user ID from localStorage (common pattern for auth)
-      // Try different possible keys
-      const userId = 
-        localStorage.getItem('user_id') ||
-        localStorage.getItem('userId') ||
-        localStorage.getItem('current_user_id') ||
-        localStorage.getItem('loggedInUserId');
-
-      if (!userId) {
-        console.warn('No user ID found in localStorage');
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      const response = await apiService.getUserById(userId);
+      // Use /auth/me - works for all roles. Auth via cookie or Bearer token.
+      const response = await apiService.getMe();
 
       if (response.status === 'SUCCESS' && response.data) {
         const userData = response.data;
@@ -51,6 +37,7 @@ export const useCurrentUser = () => {
           id: userData.id,
           name,
           role,
+          account_disabled: userData.account_disabled === true,
           ...userData,
         });
       } else {

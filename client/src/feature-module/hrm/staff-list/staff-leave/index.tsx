@@ -1,24 +1,65 @@
 
+import { useState } from "react";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import Table from "../../../../core/common/dataTable/index";
-import { staffleave } from "../../../../core/data/json/staff-leave";
 import type { TableData } from "../../../../core/data/interface";
 import { Link } from "react-router-dom";
 import { all_routes } from "../../../router/all_routes";
-import CommonSelect from "../../../../core/common/commonSelect";
-import { leaveType } from "../../../../core/common/selectoption/selectoption";
 import { DatePicker } from "antd";
+import type { Dayjs } from "dayjs";
+import Select from "react-select";
+import type { SingleValue } from "react-select";
+import { apiService } from "../../../../core/services/apiService";
+import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
+import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
 
 const StaffLeave = () => {
-  const data = staffleave;
+  const { leaveApplications, loading: leaveLoading, refetch } = useLeaveApplications({ limit: 100, studentOnly: true });
+  const data = leaveApplications.map((l) => ({ ...l, leaveDate: l.leaveRange }));
   const routes = all_routes;
-  const getModalContainer = () => {
-    const modalElement = document.getElementById('modal-datepicker');
-    return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
+  const { leaveTypes } = useLeaveTypes();
+  const [applyType, setApplyType] = useState<SingleValue<{ value: string; label: string }>>(null);
+  const [applyFrom, setApplyFrom] = useState<Dayjs | null>(null);
+  const [applyTo, setApplyTo] = useState<Dayjs | null>(null);
+  const [applyReason, setApplyReason] = useState("");
+  const [applySubmitting, setApplySubmitting] = useState(false);
+
+  const getModalContainer = () => document.body;
+
+  const hideModal = () => {
+    const el = document.getElementById("apply_leave_staff");
+    if (el) (window as any).bootstrap?.Modal?.getInstance(el)?.hide();
   };
-   const getModalContainer2 = () => {
-    const modalElement = document.getElementById('modal-datepicker2');
-    return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
+
+  const handleApplySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const typeId = applyType?.value;
+    if (!typeId) { alert("Select Leave Type"); return; }
+    if (!applyFrom || !applyTo) { alert("Select From and To dates"); return; }
+    const fromStr = applyFrom.format("YYYY-MM-DD");
+    const toStr = applyTo.format("YYYY-MM-DD");
+    if (toStr < fromStr) { alert("To date must be on or after From date"); return; }
+    setApplySubmitting(true);
+    try {
+      const res = await apiService.createLeaveApplication({
+        leave_type_id: Number(typeId),
+        start_date: fromStr,
+        end_date: toStr,
+        reason: applyReason.trim() || null,
+      });
+      if (res?.status === "SUCCESS") {
+        refetch();
+        hideModal();
+        setApplyType(null);
+        setApplyFrom(null);
+        setApplyTo(null);
+        setApplyReason("");
+      } else alert(res?.message || "Failed to apply leave");
+    } catch (err: any) {
+      alert(err?.message || "Failed to apply leave");
+    } finally {
+      setApplySubmitting(false);
+    }
   };
   const columns = [
     {
@@ -353,7 +394,7 @@ const StaffLeave = () => {
                         <h4 className="mb-3">Leaves</h4>
                         <Link
                           to="#"
-                          data-bs-target="#apply_leave"
+                          data-bs-target="#apply_leave_staff"
                           data-bs-toggle="modal"
                           className="btn btn-primary d-inline-flex align-items-center mb-3"
                         >
@@ -362,11 +403,14 @@ const StaffLeave = () => {
                         </Link>
                       </div>
                       <div className="card-body p-0 py-3">
-                        <Table
-                          columns={columns}
-                          dataSource={data}
-                          Selection={true}
-                        />
+                        {leaveLoading && <div className="p-4 text-center text-muted">Loading...</div>}
+                        {!leaveLoading && (
+                          <Table
+                            columns={columns}
+                            dataSource={data}
+                            Selection={true}
+                          />
+                        )}
                       </div>
                       {/* /Leaves List */}
                     </div>
@@ -378,128 +422,76 @@ const StaffLeave = () => {
         </div>
         {/* /Page Wrapper */}
         {/* Apply Leave */}
-        <div className="modal fade" id="apply_leave">
+        <div className="modal fade" id="apply_leave_staff">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Apply Leave</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
+                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
-                <div className="modal-body">
+              <form onSubmit={handleApplySubmit}>
+                <div id="modal-datepicker-staff" className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-4">
-                        <label className="form-label">Leave Date</label>
-                        <div className="date-pic">
-                        <DatePicker
-                                className="form-control datetimepicker"
-                                format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                }}
-                                getPopupContainer={getModalContainer}
-                                defaultValue=""
-                                placeholder="16 May 2024"
-                                />
-                          <span className="cal-icon">
-                            <i className="ti ti-calendar" />
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mb-4">
                         <label className="form-label">Leave Type</label>
-                       
-                        <CommonSelect
-                                  className="select"
-                                  options={leaveType}
-                                />
+                        <Select
+                          classNamePrefix="react-select"
+                          className="select"
+                          options={leaveTypes}
+                          value={applyType}
+                          onChange={setApplyType}
+                          placeholder="Select Leave Type"
+                        />
                       </div>
                       <div className="mb-4">
-                        <label className="form-label">Leave From date</label>
+                        <label className="form-label">Leave From Date</label>
                         <div className="date-pic">
-                        <DatePicker
-                                className="form-control datetimepicker"
-                                format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                }}
-                                getPopupContainer={getModalContainer2}
-                                defaultValue=""
-                                placeholder="16 May 2024"
-                                />
-                          <span className="cal-icon">
-                            <i className="ti ti-calendar" />
-                          </span>
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="DD-MM-YYYY"
+                            getPopupContainer={getModalContainer}
+                            value={applyFrom}
+                            onChange={(d) => setApplyFrom(d)}
+                            placeholder="Select date"
+                          />
+                          <span className="cal-icon"><i className="ti ti-calendar" /></span>
                         </div>
                       </div>
                       <div className="mb-4">
-                        <label className="form-label">Leave to Date</label>
+                        <label className="form-label">Leave To Date</label>
                         <div className="date-pic">
-                        <DatePicker
-                                className="form-control datetimepicker"
-                                format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                }}
-                                getPopupContainer={getModalContainer}
-                                defaultValue=""
-                                placeholder="16 May 2024"
-                                />
-                          <span className="cal-icon">
-                            <i className="ti ti-calendar" />
-                          </span>
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="DD-MM-YYYY"
+                            getPopupContainer={getModalContainer}
+                            value={applyTo}
+                            onChange={(d) => setApplyTo(d)}
+                            placeholder="Select date"
+                          />
+                          <span className="cal-icon"><i className="ti ti-calendar" /></span>
                         </div>
-                      </div>
-                      <div className="mb-4">
-                        <label className="form-label">Leave Days</label>
-                        <div className="d-flex align-items-center check-radio-group">
-                          <label className="custom-radio">
-                            {/* <input type="radio" name="radio" defaultChecked="" /> */}
-                            <span className="checkmark" />
-                            Full day
-                          </label>
-                          <label className="custom-radio">
-                            <input type="radio" name="radio" />
-                            <span className="checkmark" />
-                            First Half
-                          </label>
-                          <label className="custom-radio">
-                            <input type="radio" name="radio" />
-                            <span className="checkmark" />
-                            Second Half
-                          </label>
-                        </div>
-                      </div>
-                      <div className="mb-4">
-                        <label className="form-label">No of Days</label>
-                        <input type="text" className="form-control" />
                       </div>
                       <div className="mb-0">
                         <label className="form-label">Reason</label>
-                        <input type="text" className="form-control" />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Optional"
+                          value={applyReason}
+                          onChange={(e) => setApplyReason(e.target.value)}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary"  data-bs-dismiss="modal"> 
-                    Apply Leave
-                  </Link>
+                  <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={applySubmitting}>
+                    {applySubmitting ? "Submitting..." : "Apply Leave"}
+                  </button>
                 </div>
               </form>
             </div>

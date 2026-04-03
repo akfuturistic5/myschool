@@ -17,14 +17,14 @@ const Manageusers = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (text: any, record: any) => (
         <>
           <Link to="#" className="link-primary">
-            {record.id}
+            {text || record.id || 'N/A'}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
 
     {

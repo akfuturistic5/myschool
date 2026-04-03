@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
-export const useClassesWithSections = () => {
+export const useClassesWithSections = (academicYearId = null) => {
   const [classesWithSections, setClassesWithSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,29 +10,36 @@ export const useClassesWithSections = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching classes with sections...');
-      
-      // Fetch both classes and sections
-      const [classesResponse, sectionsResponse] = await Promise.all([
-        apiService.getClasses(),
-        apiService.getSections()
+
+      const classesPromise = academicYearId
+        ? apiService.getClassesByAcademicYear(academicYearId)
+        : apiService.getClasses();
+
+      // Fetch classes, sections, and subjects
+      const [classesResponse, sectionsResponse, subjectsResponse] = await Promise.all([
+        classesPromise,
+        apiService.getSections(),
+        apiService.getSubjects()
       ]);
       
-      console.log('Classes response:', classesResponse);
-      console.log('Sections response:', sectionsResponse);
-      
-      // Combine classes with their sections
       const classes = classesResponse.data || [];
       const sections = sectionsResponse.data || [];
+      const subjects = subjectsResponse.data || [];
+      
+      // Build subject count per class (subjects have class_id)
+      const subjectCountByClass = {};
+      subjects.forEach(sub => {
+        const cid = sub.class_id;
+        if (cid) subjectCountByClass[cid] = (subjectCountByClass[cid] || 0) + 1;
+      });
       
       const combinedData = [];
       
       classes.forEach(classItem => {
-        // Find sections for this class
+        const noOfSubjects = subjectCountByClass[classItem.id] || 0;
         const classSections = sections.filter(section => section.class_id === classItem.id);
         
         if (classSections.length > 0) {
-          // Create a row for each section
           classSections.forEach(section => {
             combinedData.push({
               classId: classItem.id,
@@ -41,7 +48,7 @@ export const useClassesWithSections = () => {
               sectionId: section.id,
               sectionName: section.section_name,
               noOfStudents: section.no_of_students || 0,
-              noOfSubjects: 0, // Placeholder for future implementation
+              noOfSubjects,
               status: section.is_active ? 'Active' : 'Inactive',
               classStatus: classItem.is_active,
               teacherFirstName: section.teacher_first_name,
@@ -50,7 +57,6 @@ export const useClassesWithSections = () => {
             });
           });
         } else {
-          // If no sections, still show the class
           combinedData.push({
             classId: classItem.id,
             classCode: classItem.class_code,
@@ -58,7 +64,7 @@ export const useClassesWithSections = () => {
             sectionId: null,
             sectionName: 'N/A',
             noOfStudents: classItem.no_of_students || 0,
-            noOfSubjects: 0,
+            noOfSubjects,
             status: classItem.is_active ? 'Active' : 'Inactive',
             classStatus: classItem.is_active,
             teacherFirstName: classItem.teacher_first_name,
@@ -79,7 +85,7 @@ export const useClassesWithSections = () => {
 
   useEffect(() => {
     fetchClassesWithSections();
-  }, []);
+  }, [academicYearId]);
 
   return {
     classesWithSections,

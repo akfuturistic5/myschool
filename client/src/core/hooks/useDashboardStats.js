@@ -8,7 +8,8 @@ const defaultStats = {
   subjects: { total: 0, active: 0, inactive: 0 },
 };
 
-export const useDashboardStats = () => {
+export const useDashboardStats = (options = {}) => {
+  const { academicYearId } = options;
   const [stats, setStats] = useState(defaultStats);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,7 +18,7 @@ export const useDashboardStats = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getDashboardStats();
+      const response = await apiService.getDashboardStats({ academicYearId });
       if (response.status === 'SUCCESS' && response.data) {
         setStats({
           students: response.data.students || defaultStats.students,
@@ -36,7 +37,7 @@ export const useDashboardStats = () => {
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [academicYearId]);
 
   return {
     stats,

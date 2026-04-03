@@ -1,5 +1,8 @@
-const { query } = require('../config/database');
+const { query, executeTransaction } = require('../config/database');
 const { parsePagination } = require('../utils/pagination');
+const { createParentUser } = require('../utils/createPersonUser');
+const { getParentsForUser } = require('../utils/parentUserMatch');
+const { getAuthContext, isAdmin, parseId } = require('../utils/accessControl');
 
 // Create new parent
 const createParent = async (req, res) => {
@@ -30,24 +33,43 @@ const createParent = async (req, res) => {
       });
     }
 
-    const result = await query(`
-      INSERT INTO parents (
-        student_id, father_name, father_email, father_phone, father_occupation, father_image_url,
-        mother_name, mother_email, mother_phone, mother_occupation, mother_image_url,
-        created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-      RETURNING *
-    `, [
-      student_id, father_name || null, father_email || null, father_phone || null, 
-      father_occupation || null, father_image_url || null, mother_name || null, 
-      mother_email || null, mother_phone || null, mother_occupation || null, 
-      mother_image_url || null
-    ]);
+    const parentRow = await executeTransaction(async (client) => {
+      const result = await client.query(`
+        INSERT INTO parents (
+          student_id, father_name, father_email, father_phone, father_occupation, father_image_url,
+          mother_name, mother_email, mother_phone, mother_occupation, mother_image_url,
+          created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+        RETURNING *
+      `, [
+        student_id, father_name || null, father_email || null, father_phone || null,
+        father_occupation || null, father_image_url || null, mother_name || null,
+        mother_email || null, mother_phone || null, mother_occupation || null,
+        mother_image_url || null
+      ]);
+      const row = result.rows[0];
+      const parentEmail = (father_email || mother_email || '').toString().trim();
+      const parentPhone = (father_phone || mother_phone || '').toString().trim();
+      if (parentEmail || parentPhone) {
+        try {
+          const parentUserId = await createParentUser(client, {
+            father_name, father_email, father_phone, mother_name, mother_email, mother_phone, student_id
+          });
+          if (parentUserId) {
+            await client.query('UPDATE parents SET user_id = $1, updated_at = NOW() WHERE id = $2', [parentUserId, row.id]);
+            row.user_id = parentUserId;
+          }
+        } catch (e) {
+          console.warn('createParent: could not create parent user:', e.message);
+        }
+      }
+      return row;
+    });
 
     res.status(201).json({
       status: 'SUCCESS',
       message: 'Parent created successfully',
-      data: result.rows[0]
+      data: parentRow
     });
   } catch (error) {
     console.error('Error creating parent:', error);
@@ -110,50 +132,220 @@ const updateParent = async (req, res) => {
   }
 };
 
-// Get all parents
+// Get parents for current logged-in user (Parent role)
+// Uses parentUserMatch: 1) username+@email.com (unique), 2) email, 3) phone
+const getMyParents = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        status: 'ERROR',
+        message: 'Not authenticated'
+      });
+    }
+
+    const { parents } = await getParentsForUser(userId);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Parents fetched successfully',
+      data: parents,
+      count: parents.length,
+      pagination: { page: 1, limit: parents.length, total: parents.length, totalPages: 1 }
+    });
+  } catch (error) {
+    console.error('Error fetching my parents:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch parents',
+    });
+  }
+};
+
+// Get all parents (optional query: academic_year_id - only parents whose student is in that year)
 const getAllParents = async (req, res) => {
   try {
     const { page, limit, offset } = parsePagination(req.query);
+    const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
+    const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+    const ctx = getAuthContext(req);
+    const isTeacherRole = ctx.roleId === 3 || ctx.roleName === 'teacher';
 
-    const countResult = await query(`
-      SELECT COUNT(*)::int as total
-      FROM parents p
-      LEFT JOIN students s ON p.student_id = s.id
-      WHERE s.is_active = true
-    `);
+    if (isTeacherRole) {
+      if (!ctx.userId) {
+        return res.status(401).json({
+          status: 'ERROR',
+          message: 'Not authenticated',
+        });
+      }
+
+      const teacherCheck = await query(
+        `SELECT t.id
+         FROM teachers t
+         INNER JOIN staff st ON t.staff_id = st.id
+         WHERE st.user_id = $1 AND st.is_active = true
+         LIMIT 1`,
+        [ctx.userId]
+      );
+
+      if (!teacherCheck.rows.length) {
+        return res.status(403).json({
+          status: 'ERROR',
+          message: 'Access denied. User is not an active teacher.',
+        });
+      }
+
+      const teacherId = parseId(teacherCheck.rows[0].id);
+      const academicYearClause = hasYearFilter ? ' AND s.academic_year_id = $2' : '';
+      const teacherParams = hasYearFilter ? [teacherId, academicYearId] : [teacherId];
+
+      const result = await query(
+        `SELECT
+          p.id,
+          p.student_id,
+          p.father_name,
+          p.father_email,
+          p.father_phone,
+          p.father_occupation,
+          p.father_image_url,
+          p.mother_name,
+          p.mother_email,
+          p.mother_phone,
+          p.mother_occupation,
+          p.mother_image_url,
+          p.created_at,
+          p.updated_at,
+          s.first_name as student_first_name,
+          s.last_name as student_last_name,
+          s.admission_number,
+          s.roll_number,
+          c.class_name,
+          sec.section_name
+        FROM parents p
+        INNER JOIN students s ON p.student_id = s.id
+        LEFT JOIN classes c ON s.class_id = c.id
+        LEFT JOIN sections sec ON s.section_id = sec.id
+        WHERE s.is_active = true
+          AND (
+            EXISTS (
+              SELECT 1 FROM class_schedules cs
+              WHERE cs.teacher_id = $1
+                AND cs.class_id = s.class_id
+                AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+            )
+            OR EXISTS (
+              SELECT 1 FROM teachers t
+              WHERE t.id = $1 AND t.class_id = s.class_id
+            )
+          )${academicYearClause}
+        ORDER BY s.first_name ASC, s.last_name ASC`,
+        teacherParams
+      );
+
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Parents fetched successfully',
+        data: result.rows,
+        count: result.rows.length,
+        pagination: { page: 1, limit: result.rows.length, total: result.rows.length, totalPages: 1 },
+      });
+    }
+
+    if (!isAdmin(ctx)) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Access denied',
+      });
+    }
+
+    const yearWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
+    const countParams = hasYearFilter ? [academicYearId] : [];
+    const listParams = hasYearFilter ? [academicYearId, limit, offset] : [limit, offset];
+    const limitOffsetPlaceholders = hasYearFilter ? 'LIMIT $2 OFFSET $3' : 'LIMIT $1 OFFSET $2';
+
+    let countResult;
+    let result;
+    try {
+      countResult = await query(
+        `SELECT COUNT(*)::int as total
+        FROM parents p
+        LEFT JOIN students s ON p.student_id = s.id
+        WHERE s.is_active = true${yearWhere}`,
+        countParams
+      );
+      result = await query(
+        `SELECT
+          p.id,
+          p.student_id,
+          p.father_name,
+          p.father_email,
+          p.father_phone,
+          p.father_occupation,
+          p.father_image_url,
+          p.mother_name,
+          p.mother_email,
+          p.mother_phone,
+          p.mother_occupation,
+          p.mother_image_url,
+          p.created_at,
+          p.updated_at,
+          s.first_name as student_first_name,
+          s.last_name as student_last_name,
+          s.admission_number,
+          s.roll_number,
+          c.class_name,
+          sec.section_name
+        FROM parents p
+        LEFT JOIN students s ON p.student_id = s.id
+        LEFT JOIN classes c ON s.class_id = c.id
+        LEFT JOIN sections sec ON s.section_id = sec.id
+        WHERE s.is_active = true${yearWhere}
+        ORDER BY s.first_name ASC, s.last_name ASC
+        ${limitOffsetPlaceholders}`,
+        listParams
+      );
+    } catch (queryErr) {
+      // Fallback: simpler query if classes/sections tables are missing or have schema issues
+      console.warn('Parent list full query failed, using fallback:', queryErr.message);
+      countResult = await query(
+        `SELECT COUNT(*)::int as total
+        FROM parents p
+        LEFT JOIN students s ON p.student_id = s.id
+        WHERE s.is_active = true${yearWhere}`,
+        countParams
+      );
+      result = await query(
+        `SELECT
+          p.id,
+          p.student_id,
+          p.father_name,
+          p.father_email,
+          p.father_phone,
+          p.father_occupation,
+          p.father_image_url,
+          p.mother_name,
+          p.mother_email,
+          p.mother_phone,
+          p.mother_occupation,
+          p.mother_image_url,
+          p.created_at,
+          p.updated_at,
+          s.first_name as student_first_name,
+          s.last_name as student_last_name,
+          s.admission_number,
+          s.roll_number,
+          NULL::text as class_name,
+          NULL::text as section_name
+        FROM parents p
+        LEFT JOIN students s ON p.student_id = s.id
+        WHERE s.is_active = true${yearWhere}
+        ORDER BY s.first_name ASC, s.last_name ASC
+        ${limitOffsetPlaceholders}`,
+        listParams
+      );
+    }
+
     const total = countResult.rows[0].total;
-
-    const result = await query(`
-      SELECT
-        p.id,
-        p.student_id,
-        p.father_name,
-        p.father_email,
-        p.father_phone,
-        p.father_occupation,
-        p.father_image_url,
-        p.mother_name,
-        p.mother_email,
-        p.mother_phone,
-        p.mother_occupation,
-        p.mother_image_url,
-        p.created_at,
-        p.updated_at,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
-        s.admission_number,
-        s.roll_number,
-        c.class_name,
-        sec.section_name
-      FROM parents p
-      LEFT JOIN students s ON p.student_id = s.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      WHERE s.is_active = true
-      ORDER BY s.first_name ASC, s.last_name ASC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
-    
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Parents fetched successfully',
@@ -174,6 +366,11 @@ const getAllParents = async (req, res) => {
 const getParentById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { canAccessStudent, parseId, isAdmin, getAuthContext } = require('../utils/accessControl');
+    const pid = parseId(id);
+    if (!pid) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid parent ID' });
+    }
     
     const result = await query(`
       SELECT
@@ -202,13 +399,22 @@ const getParentById = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       WHERE p.id = $1 AND s.is_active = true
-    `, [id]);
+    `, [pid]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
         message: 'Parent not found'
       });
+    }
+
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) {
+      const sid = result.rows[0]?.student_id;
+      const access = await canAccessStudent(req, sid);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
+      }
     }
     
     res.status(200).json({
@@ -228,7 +434,16 @@ const getParentById = async (req, res) => {
 // Get parent by student ID
 const getParentByStudentId = async (req, res) => {
   try {
-    const { studentId } = req.params;
+    const { canAccessStudent, parseId } = require('../utils/accessControl');
+    const studentId = parseId(req.params.studentId);
+    if (!studentId) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
+
+    const access = await canAccessStudent(req, studentId);
+    if (!access.ok) {
+      return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
+    }
     
     const result = await query(`
       SELECT
@@ -284,6 +499,7 @@ module.exports = {
   createParent,
   updateParent,
   getAllParents,
+  getMyParents,
   getParentById,
   getParentByStudentId
 };

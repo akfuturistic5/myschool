@@ -7,7 +7,31 @@ import {
 import CommonSelect from "../../../core/common/commonSelect";
 import { Link } from "react-router-dom";
 
-const HostelModal = () => {
+interface HostelModalProps {
+  selectedHostel?: any;
+  selectedRoom?: any;
+  selectedRoomType?: any;
+  editRoomBeds?: string;
+  setEditRoomBeds?: (value: string) => void;
+  editRoomCost?: string;
+  setEditRoomCost?: (value: string) => void;
+  isUpdating?: boolean;
+  setIsUpdating?: (value: boolean) => void;
+  onRoomUpdate?: () => Promise<void>;
+}
+
+const HostelModal = ({
+  selectedHostel,
+  selectedRoom,
+  selectedRoomType,
+  editRoomBeds = "",
+  setEditRoomBeds,
+  editRoomCost = "",
+  setEditRoomCost,
+  isUpdating = false,
+  setIsUpdating,
+  onRoomUpdate,
+}: HostelModalProps) => {
   return (
     <>
       <>
@@ -107,7 +131,8 @@ const HostelModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Room No"
-                          defaultValue="A1"
+                          defaultValue={selectedRoom?.originalData?.room_number || selectedRoom?.roomNo || ""}
+                          key={`room-no-${selectedRoom?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -116,7 +141,8 @@ const HostelModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Hostel Name"
-                          defaultValue="Phoenix Residence"
+                          defaultValue={selectedRoom?.originalData?.hostel_name || selectedRoom?.hostelName || ""}
+                          key={`room-hostel-name-${selectedRoom?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -124,7 +150,8 @@ const HostelModal = () => {
                         <CommonSelect
                           className="select"
                           options={roomtype}
-                          defaultValue={roomtype[0]}
+                          defaultValue={selectedRoom?.originalData?.room_type || selectedRoom?.roomType ? roomtype.find((t: any) => t.value === selectedRoom.originalData?.room_type || t.label === selectedRoom.roomType) || roomtype[0] : roomtype[0]}
+                          key={`room-type-${selectedRoom?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -132,7 +159,8 @@ const HostelModal = () => {
                         <CommonSelect
                           className="select"
                           options={bedcount}
-                          defaultValue={bedcount[0]}
+                          value={editRoomBeds || undefined}
+                          onChange={(val) => setEditRoomBeds && setEditRoomBeds(val || "")}
                         />
                       </div>
                       <div className="mb-0">
@@ -141,7 +169,8 @@ const HostelModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Cost per Bed"
-                          defaultValue="$200"
+                          value={editRoomCost}
+                          onChange={(e) => setEditRoomCost && setEditRoomCost(e.target.value)}
                         />
                       </div>
                     </div>
@@ -157,10 +186,24 @@ const HostelModal = () => {
                   </Link>
                   <Link
                     to="#"
-                    data-bs-dismiss="modal"
                     className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      if (onRoomUpdate) {
+                        await onRoomUpdate();
+                      } else {
+                        const modalElement = document.getElementById("edit_hostel_rooms");
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) modal.hide();
+                          }
+                        }
+                      }
+                    }}
                   >
-                    Save Changes
+                    {isUpdating ? "Updating..." : "Save Changes"}
                   </Link>
                 </div>
               </form>
@@ -251,18 +294,18 @@ const HostelModal = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Room Type"
-                          defaultValue="Two Bed"
+                          defaultValue={selectedRoomType?.originalData?.room_type || selectedRoomType?.originalData?.type_name || selectedRoomType?.roomType || ""}
+                          key={`room-type-name-${selectedRoomType?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-0">
-                        <label className="form-label">Cost per Bed</label>
+                        <label className="form-label">Description</label>
                         <textarea
                           className="form-control"
-                          placeholder="text"
+                          placeholder="Enter Description"
                           rows={4}
-                          defaultValue={
-                            "Enjoy serene solitude in our one-bed room, your tranquil retreat for focused studying"
-                          }
+                          defaultValue={selectedRoomType?.originalData?.description || selectedRoomType?.description || ""}
+                          key={`room-type-desc-${selectedRoomType?.id || 'new'}`}
                         />
                       </div>
                     </div>
@@ -387,7 +430,8 @@ const HostelModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Hostel Name"
-                        value={"Phoenix Residence"}
+                        defaultValue={selectedHostel?.originalData?.hostel_name || selectedHostel?.hostelName || ""}
+                        key={`hostel-name-${selectedHostel?.id || 'new'}`}
                       />
                     </div>
                     <div className="mb-4">
@@ -395,7 +439,8 @@ const HostelModal = () => {
                       <CommonSelect
                         className="select"
                         options={hostelType}
-                        defaultValue={hostelType[0]}
+                        defaultValue={selectedHostel?.originalData?.hostel_type || selectedHostel?.hostelType ? hostelType.find((t: any) => t.value === selectedHostel.originalData?.hostel_type || t.label === selectedHostel.hostelType) || hostelType[0] : hostelType[0]}
+                        key={`hostel-type-${selectedHostel?.id || 'new'}`}
                       />
                     </div>
                     <div className="mb-3">
@@ -404,7 +449,8 @@ const HostelModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Intake"
-                        defaultValue={150}
+                        defaultValue={selectedHostel?.originalData?.intake || selectedHostel?.inTake || ""}
+                        key={`hostel-intake-${selectedHostel?.id || 'new'}`}
                       />
                     </div>
                     <div className="mb-3">
@@ -413,7 +459,8 @@ const HostelModal = () => {
                         type="text"
                         className="form-control"
                         placeholder="Enter Address"
-                        defaultValue="25 Crowfield Road, Phoenix	1"
+                        defaultValue={selectedHostel?.originalData?.address || selectedHostel?.address || ""}
+                        key={`hostel-address-${selectedHostel?.id || 'new'}`}
                       />
                     </div>
                     <div className="mb-0">
@@ -421,7 +468,8 @@ const HostelModal = () => {
                       <textarea
                         className="form-control"
                         rows={4}
-                        defaultValue={"Rising to nurture young minds"}
+                        defaultValue={selectedHostel?.originalData?.description || selectedHostel?.description || ""}
+                        key={`hostel-description-${selectedHostel?.id || 'new'}`}
                       />
                     </div>
                   </div>

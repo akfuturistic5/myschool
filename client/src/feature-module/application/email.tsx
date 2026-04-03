@@ -1,9 +1,32 @@
 
 import { Link } from 'react-router-dom'
 import { all_routes } from '../router/all_routes'
+import { useEmails } from '../../core/hooks/useEmails'
+import { useState } from 'react'
 
 const  Email = () => {
   const routes =all_routes
+  const [folder, setFolder] = useState('inbox')
+  const { emails, loading, error } = useEmails(folder)
+  
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffTime = Math.abs(now.getTime() - date.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) {
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    } else if (diffDays === 1) {
+      return 'Yesterday'
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    }
+  }
+  
   return (
     <div className="page-wrapper">
     <div className="content">
@@ -34,25 +57,37 @@ const  Email = () => {
             </Link>
           </div>
           <div className="list-group list-group-flush mb-4">
-            <Link to="#" className="list-group-item list-group-item-action active">
+            <Link 
+              to="#" 
+              className={`list-group-item list-group-item-action ${folder === 'inbox' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); setFolder('inbox'); }}
+            >
               <i className="ti ti-download me-2" />
-              Inbox (5)
+              Inbox ({emails.filter(e => !e.is_read).length})
             </Link>
-            <Link to="#" className="list-group-item list-group-item-action">
-              <i className="ti ti-star me-2" />
-              Important
-            </Link>
-            <Link to="#" className="list-group-item list-group-item-action">
+            <Link 
+              to="#" 
+              className={`list-group-item list-group-item-action ${folder === 'sent' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); setFolder('sent'); }}
+            >
               <i className="ti ti-send me-2" />
               Sent Mail
             </Link>
-            <Link to="#" className="list-group-item list-group-item-action">
+            <Link 
+              to="#" 
+              className={`list-group-item list-group-item-action ${folder === 'drafts' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); setFolder('drafts'); }}
+            >
               <i className="ti ti-file-database me-2" />
               Drafts
             </Link>
-            <Link to="#" className="list-group-item list-group-item-action">
+            <Link 
+              to="#" 
+              className={`list-group-item list-group-item-action ${folder === 'trash' ? 'active' : ''}`}
+              onClick={(e) => { e.preventDefault(); setFolder('trash'); }}
+            >
               <i className="ti ti-trash me-2" />
-              Drafts
+              Trash
             </Link>
           </div>
         </div>
@@ -209,7 +244,7 @@ const  Email = () => {
                         </Link>
                       </div>
                       <span className="text-muted d-none d-md-inline-block mb-2">
-                        Showing 10 of 112
+                        Showing {emails.length} of {emails.length}
                       </span>
                     </div>
                   </div>
@@ -232,188 +267,52 @@ const  Email = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="fas fa-star starred" />
-                          </span>
-                        </td>
-                        <td className="text-dark fw-semibold">John Doe</td>
-                        <td className="text-dark fw-semibold">
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td>
-                          <i className="fas fa-paperclip" />
-                        </td>
-                        <td className="text-dark fw-semibold">13:14</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td className="text-dark fw-semibold">Envato Account</td>
-                        <td className="text-dark fw-semibold">
-                          Important account security update from Envato
-                        </td>
-                        <td />
-                        <td className="text-dark fw-semibold">8:42</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td>Twitter</td>
-                        <td>HRMS Bootstrap Admin Template</td>
-                        <td />
-                        <td>30 Nov</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td>Richard Parker</td>
-                        <td>
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td />
-                        <td>18 Sep</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td>John Smith</td>
-                        <td>
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td />
-                        <td>21 Aug</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td>me, Robert Smith (3)</td>
-                        <td>
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td />
-                        <td>1 Aug</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td className="text-dark fw-semibold">Codecanyon</td>
-                        <td className="text-dark fw-semibold">
-                          Welcome To Codecanyon
-                        </td>
-                        <td />
-                        <td className="text-dark fw-semibold">Jul 13</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td>Richard Miles</td>
-                        <td>
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td>
-                          <i className="fas fa-paperclip" />
-                        </td>
-                        <td>May 14</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star" />
-                          </span>
-                        </td>
-                        <td className="text-dark fw-semibold">John Smith</td>
-                        <td className="text-dark fw-semibold">
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td />
-                        <td className="text-dark fw-semibold">11/11/16</td>
-                      </tr>
-                      <tr className="clickable-row">
-                        <td>
-                          <div className="form-check form-check-md">
-                            <input className="form-check-input" type="checkbox" />
-                          </div>
-                        </td>
-                        <td>
-                          <span className="mail-important">
-                            <i className="far fa-star starred" />
-                          </span>
-                        </td>
-                        <td className="text-dark fw-semibold">Mike Litorus</td>
-                        <td className="text-dark fw-semibold">
-                          Lorem ipsum dolor sit amet, consectetuer adipiscing elit
-                        </td>
-                        <td />
-                        <td className="text-dark fw-semibold">10/31/16</td>
-                      </tr>
+                      {loading ? (
+                        <tr>
+                          <td colSpan={6} className="text-center p-4">
+                            Loading...
+                          </td>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={6} className="text-center p-4 text-danger">
+                            Error: {error}
+                          </td>
+                        </tr>
+                      ) : emails.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center p-4 text-muted">
+                            No emails found
+                          </td>
+                        </tr>
+                      ) : (
+                        emails.map((email: any) => (
+                          <tr key={email.id} className={`clickable-row ${!email.is_read ? 'fw-semibold' : ''}`}>
+                            <td>
+                              <div className="form-check form-check-md">
+                                <input className="form-check-input" type="checkbox" />
+                              </div>
+                            </td>
+                            <td>
+                              <span className="mail-important">
+                                <i className={`fas fa-star ${email.is_starred ? 'starred' : ''}`} />
+                              </span>
+                            </td>
+                            <td className={email.is_read ? '' : 'text-dark fw-semibold'}>
+                              {email.sender_username || email.sender_email || 'Unknown'}
+                            </td>
+                            <td className={email.is_read ? '' : 'text-dark fw-semibold'}>
+                              {email.subject}
+                            </td>
+                            <td>
+                              {email.has_attachment && <i className="fas fa-paperclip" />}
+                            </td>
+                            <td className={email.is_read ? '' : 'text-dark fw-semibold'}>
+                              {formatDate(email.sent_at)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

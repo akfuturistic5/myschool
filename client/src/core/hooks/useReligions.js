@@ -10,9 +10,7 @@ export const useReligions = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching religions...');
       const response = await apiService.getReligions();
-      console.log('Religions response:', response);
       setReligions(response.data);
     } catch (err) {
       console.error('Error fetching religions:', err);

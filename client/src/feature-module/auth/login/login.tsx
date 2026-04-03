@@ -3,13 +3,17 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { Link, useNavigate } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import { useDispatch, useSelector } from "react-redux";
-import { setAuth } from "../../../core/data/redux/authSlice";
+import { setAuth, selectUser } from "../../../core/data/redux/authSlice";
 import { apiService } from "../../../core/services/apiService";
+import { getDashboardForRole } from "../../../core/utils/roleUtils";
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
 
 const Login = () => {
   const routes = all_routes;
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const [instituteNumber, setInstituteNumber] = useState("1111");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,41 +24,65 @@ const Login = () => {
     setPasswordVisible((prevState) => !prevState);
   };
   const isAuthenticated = useSelector((state: any) => state.auth?.isAuthenticated);
+  const user = useSelector(selectUser);
+
+  const MySwal = withReactContent(Swal);
 
   useEffect(() => {
     localStorage.setItem("menuOpened", "Dashboard");
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user) {
+      const role = user.role || "Admin";
+      const dashboard = getDashboardForRole(role);
+      navigate(dashboard);
+    } else if (isAuthenticated) {
       navigate(routes.adminDashboard);
     }
-  }, [isAuthenticated, navigate, routes.adminDashboard]);
+  }, [isAuthenticated, user, navigate, routes.adminDashboard]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!username.trim() || !password) {
-      setError("Please enter username and password");
+    if (!instituteNumber.trim() || !username.trim() || !password) {
+      setError("Please enter institute number, username and password");
       return;
     }
     setLoading(true);
     try {
-      const res = await apiService.login(username.trim(), password);
+      const res = await apiService.login(instituteNumber.trim(), username.trim(), password);
       if (res.status === "SUCCESS" && res.data) {
         dispatch(
           setAuth({
-            token: res.data.token,
             user: res.data.user,
+            token: res.data.accessToken ?? undefined,
           })
         );
-        navigate(routes.adminDashboard);
+        const role = res.data.user?.role || "Admin";
+        const dashboard = getDashboardForRole(role);
+        navigate(dashboard);
       } else {
         setError(res.message || "Login failed");
       }
     } catch (err: any) {
       const msg = err?.message || "Login failed. Please try again.";
-      setError(msg.includes("401") ? "Invalid username or password" : msg);
+
+      // Handle disabled school (403) with a SweetAlert-style popup
+      if (msg.includes("status: 403") && msg.includes("This school is currently disabled")) {
+        setError("");
+        MySwal.fire({
+          icon: "warning",
+          title: "School Disabled",
+          text: "This school is currently disabled. Please contact the platform administrator.",
+          confirmButtonText: "Go to Login",
+          confirmButtonColor: "#3085d6",
+        }).then(() => {
+          navigate(routes.login);
+        });
+      } else {
+        setError(msg.includes("401") ? "Invalid username or password" : msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -208,6 +236,20 @@ const Login = () => {
                           </div>
                         )}
                         <div className="mb-3 ">
+                          <label className="form-label">Institute Number</label>
+                          <div className="input-icon mb-3 position-relative">
+                            <span className="input-icon-addon">
+                              <i className="ti ti-building-school" />
+                            </span>
+                            <input
+                              type="text"
+                              value={instituteNumber}
+                              onChange={(e) => setInstituteNumber(e.target.value)}
+                              className="form-control"
+                              placeholder="Enter institute number (e.g. 1111)"
+                              disabled={loading}
+                            />
+                          </div>
                           <label className="form-label">Username or Phone</label>
                           <div className="input-icon mb-3 position-relative">
                             <span className="input-icon-addon">

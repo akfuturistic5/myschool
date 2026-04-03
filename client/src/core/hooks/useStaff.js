@@ -61,6 +61,7 @@ export const useStaff = () => {
             email,
             dateOfJoin,
             img,
+            originalData: staff, // Store original data for edit modal
           };
         });
 

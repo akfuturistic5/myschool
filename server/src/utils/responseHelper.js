@@ -5,6 +5,7 @@
 
 const success = (res, statusCode = 200, message = 'Success', data = null, extra = {}) => {
   const body = {
+    success: true,
     status: 'SUCCESS',
     message,
     ...extra
@@ -15,11 +16,16 @@ const success = (res, statusCode = 200, message = 'Success', data = null, extra 
   return res.status(statusCode).json(body);
 };
 
-const error = (res, statusCode = 500, message = 'Something went wrong') => {
+const error = (res, statusCode = 500, message = 'Something went wrong', code = 'ERROR') => {
   return res.status(statusCode).json({
+    success: false,
     status: 'ERROR',
+    code,
     message
   });
 };
 
-module.exports = { success, error };
+// Alias for error function (used in controllers)
+const errorResponse = error;
+
+module.exports = { success, error, errorResponse };

@@ -2,7 +2,13 @@ import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
   mobileSidebar: false,
-  miniSidebar: false,
+  miniSidebar: (() => {
+    try {
+      return localStorage.getItem("miniSidebar") === "true";
+    } catch {
+      return false;
+    }
+  })(),
   expandMenu: false,
 };
 const sidebarSlice = createSlice({

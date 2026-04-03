@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -17,12 +17,16 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportAssignments } from "../../../core/hooks/useTransportAssignments";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportAssignVehicle = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, error, fallbackData } = useTransportAssignments();
+  const { data: apiData, loading, error, fallbackData, refetch } = useTransportAssignments();
   const data = apiData?.length ? apiData : fallbackData;
+  const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
+  const [editAssignStatus, setEditAssignStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -32,12 +36,12 @@ const TransportAssignVehicle = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: string) => (
+      render: (text: any, record: any) => (
         <Link to="#" className="link-primary">
-          {text}
+          {text || record.id || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Route",
@@ -103,7 +107,7 @@ const TransportAssignVehicle = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -120,8 +124,32 @@ const TransportAssignVehicle = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_assign_vehicle"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const assignment = record.originalData || record;
+                      // Determine current status from is_active or status text
+                      let status = true;
+                      if (assignment && Object.prototype.hasOwnProperty.call(assignment, "is_active")) {
+                        status =
+                          assignment.is_active === true ||
+                          assignment.is_active === 1 ||
+                          assignment.is_active === "true";
+                      } else if (record.status) {
+                        status = record.status === "Active";
+                      }
+                      setEditAssignStatus(status);
+                      setSelectedAssignment(record);
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_assign_vehicle');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -348,7 +376,46 @@ const TransportAssignVehicle = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TransportModal />
+      <TransportModal
+        selectedAssignment={selectedAssignment}
+        editAssignStatus={editAssignStatus}
+        setEditAssignStatus={setEditAssignStatus}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onAssignUpdate={async () => {
+          const vehicleId = selectedAssignment?.originalData?.id || selectedAssignment?.id;
+          if (!vehicleId || isUpdating) return;
+
+          setIsUpdating(true);
+          try {
+            const updateData = {
+              is_active: editAssignStatus,
+            };
+
+            const response = await apiService.updateTransportVehicle(vehicleId, updateData);
+
+            if (response && response.status === "SUCCESS") {
+              const modalElement = document.getElementById("edit_assign_vehicle");
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              await refetch();
+              setSelectedAssignment(null);
+            } else {
+              alert(response?.message || "Failed to update assignment");
+            }
+          } catch (err: any) {
+            console.error("Error updating assignment:", err);
+            alert(err?.message || "Failed to update assignment. Please try again.");
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

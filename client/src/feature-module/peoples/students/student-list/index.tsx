@@ -1,5 +1,6 @@
-import  { useRef } from "react";
-import { Link } from "react-router-dom";
+import { useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
 import type { TableData } from "../../../../core/data/interface";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
@@ -16,10 +17,37 @@ import {
 import CommonSelect from "../../../../core/common/commonSelect";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useStudents } from "../../../../core/hooks/useStudents";
+import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { getDashboardForRole } from "../../../../core/utils/roleUtils";
+
+const transformStudentToRow = (student: any) => ({
+  key: student.admission_number || student.id,
+  studentId: student.id,
+  student,
+  AdmissionNo: student.admission_number,
+  RollNo: student.roll_number || "",
+  name: `${student.first_name || ""} ${student.last_name || ""}`.trim(),
+  imgSrc: student.photo_url || "",
+  gender: student.gender || "",
+  class: student.class_name || "N/A",
+  section: student.section_name || "N/A",
+  status: student.is_active ? "Active" : "Inactive",
+  DateofJoin: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "",
+  DOB: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "",
+  action: ""
+});
 
 const StudentList = () => {
   const routes = all_routes;
+  const navigate = useNavigate();
+  const user = useSelector(selectUser);
+  const role = (user?.role || "").toLowerCase();
+  const isStudentRole = role === "student";
+
   const { students, loading, error } = useStudents();
+  const { student: currentStudent, loading: currentStudentLoading, error: currentStudentError } = useCurrentStudent();
+
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
 
   const handleApplyClick = () => {
@@ -28,24 +56,25 @@ const StudentList = () => {
     }
   };
 
+  // For Student role: show only logged-in student's data; otherwise show all students
+  const studentsToShow = isStudentRole
+    ? currentStudent ? [currentStudent] : []
+    : students;
+
+  const listLoading = isStudentRole ? currentStudentLoading : loading;
+  const listError = isStudentRole ? currentStudentError : error;
+  const fallbackBackTo = getDashboardForRole(user || role);
+
+  const handleBackClick = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackBackTo);
+  };
 
   // Transform API data to match existing table structure
-  const transformedData = students.map((student: any) => ({
-    key: student.admission_number, // Add unique key for checkbox selection
-    studentId: student.id, // Add student ID for edit functionality
-    student, // Pass full student for detail page state
-    AdmissionNo: student.admission_number,
-    RollNo: student.roll_number || '',
-    name: `${student.first_name} ${student.last_name}`,
-    imgSrc: student.photo_url || '', // Let ImageWithBasePath handle the fallback
-    gender: student.gender || '',
-    class: student.class_name || 'N/A',
-    section: student.section_name || 'N/A',
-    status: student.is_active ? 'Active' : 'Inactive',
-    DateofJoin: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : '',
-    DOB: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : '',
-    action: ''
-  }));
+  const transformedData = studentsToShow.map((student: any) => transformStudentToRow(student));
 
   const columns = [
     {
@@ -53,8 +82,8 @@ const StudentList = () => {
       dataIndex: "AdmissionNo",
       render: (text: string, record: any) => (
         <Link
-          to={routes.studentDetail}
-          state={{ studentId: record.studentId, student: record.student }}
+          to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+          state={record.student ? { student: record.student } : undefined}
           className="link-primary"
         >
           {text}
@@ -74,8 +103,8 @@ const StudentList = () => {
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
           <Link
-            to={routes.studentDetail}
-            state={{ studentId: record.studentId, student: record.student }}
+            to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+            state={record.student ? { student: record.student } : undefined}
             className="avatar avatar-md"
           >
             <ImageWithBasePath
@@ -88,8 +117,8 @@ const StudentList = () => {
           <div className="ms-2">
             <p className="text-dark mb-0">
               <Link
-                to={routes.studentDetail}
-                state={{ studentId: record.studentId, student: record.student }}
+                to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+                state={record.student ? { student: record.student } : undefined}
               >
                 {text}
               </Link>
@@ -192,8 +221,8 @@ const StudentList = () => {
                 <li>
                   <Link
                     className="dropdown-item rounded-1"
-                    to={routes.studentDetail}
-                    state={{ studentId: record.studentId, student: record.student }}
+                    to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+                    state={record.student ? { student: record.student } : undefined}
                   >
                     <i className="ti ti-menu me-2" />
                     View Student
@@ -260,6 +289,14 @@ const StudentList = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <button
+                type="button"
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+                onClick={handleBackClick}
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </button>
               <h3 className="page-title mb-1">Students List</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
@@ -433,18 +470,18 @@ const StudentList = () => {
             </div>
             <div className="card-body p-0 py-3">
               {/* Student List */}
-              {loading ? (
+              {listLoading ? (
                 <div className="text-center p-4">
                   <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>
                   </div>
                   <p className="mt-2">Loading students...</p>
                 </div>
-              ) : error ? (
+              ) : listError ? (
                 <div className="text-center p-4">
                   <div className="alert alert-danger" role="alert">
                     <i className="ti ti-alert-circle me-2"></i>
-                    {error}
+                    {listError}
                   </div>
                 </div>
               ) : (

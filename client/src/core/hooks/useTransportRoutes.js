@@ -26,6 +26,7 @@ export const useTransportRoutes = () => {
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           addedOn: formatAddedOn(row.created_at),
+          originalData: row, // Store original data for edit modal
         }));
         setData(mapped);
       } else {

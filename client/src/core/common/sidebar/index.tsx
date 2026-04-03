@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-
-import { SidebarData } from "../../data/json/sidebarData";
-import ImageWithBasePath from "../imageWithBasePath";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../data/redux/authSlice";
+import { getSidebarDataForRole } from "../../data/json/sidebarDataUtils";
+import SchoolLogoImage from "../schoolLogoImage";
 import "../../../style/icon/tabler-icons/webfont/tabler-icons.css";
 import { setExpandMenu } from "../../data/redux/sidebarSlice";
 import { useDispatch } from "react-redux";
@@ -11,6 +12,10 @@ import {
   setDataLayout,
 } from "../../data/redux/themeSettingSlice";
 import usePreviousRoute from "./usePreviousRoute";
+import { getSchoolLogoSrc, isMillatStyleLogoPath } from "../../utils/schoolLogo";
+import { useSchoolLogoUpload } from "../../hooks/useSchoolLogoUpload";
+import { getDashboardForRole } from "../../utils/roleUtils";
+import { all_routes } from "../../../feature-module/router/all_routes";
 
 import "../../../../node_modules/react-perfect-scrollbar/dist/css/styles.css";
 import PerfectScrollbar from "react-perfect-scrollbar";
@@ -18,6 +23,20 @@ import "../../../../node_modules/react-perfect-scrollbar/dist/css/styles.css";
 
 const Sidebar = () => {
   const Location = useLocation();
+  const user = useSelector(selectUser);
+  const role = user?.role || "Admin";
+  const SidebarData = useMemo(() => getSidebarDataForRole(role), [role]);
+
+  const schoolLogoSrc = useMemo(() => getSchoolLogoSrc(user), [user?.school_logo, user?.school_name]);
+  const isMillatLogo = isMillatStyleLogoPath(schoolLogoSrc);
+  const {
+    isHeadmaster: canChangeSchoolLogo,
+    uploading: logoUploading,
+    inputRef: logoFileInputRef,
+    openFilePicker: openSchoolLogoPicker,
+    onFileChange: onSchoolLogoFileChange,
+  } = useSchoolLogoUpload();
+  const dashboardLink = getDashboardForRole(user);
 
   const [subOpen, setSubopen] = useState<any>("");
   const [subsidebar, setSubsidebar] = useState("");
@@ -68,6 +87,7 @@ const Sidebar = () => {
   };
   const location = useLocation();
   const dispatch = useDispatch();
+  const dataLayout = useSelector((state: any) => state.themeSetting.dataLayout);
   const previousLocation = usePreviousRoute();
 
   useEffect(() => {
@@ -117,10 +137,10 @@ const Sidebar = () => {
   }, [Location.pathname]);
 
   const onMouseEnter = () => {
-    dispatch(setExpandMenu(true));
+    if (dataLayout === "mini_layout") dispatch(setExpandMenu(true));
   };
   const onMouseLeave = () => {
-    dispatch(setExpandMenu(false));
+    if (dataLayout === "mini_layout") dispatch(setExpandMenu(false));
   };
   return (
     <>
@@ -135,19 +155,52 @@ const Sidebar = () => {
             <div id="sidebar-menu" className="sidebar-menu">
               <ul>
                 <li>
-                  <Link
-                    to="#"
-                    className="d-flex align-items-center border bg-white rounded p-2 mb-4"
-                  >
-                    <ImageWithBasePath
-                      src="assets/img/icons/global-img.svg"
-                      className="avatar avatar-md img-fluid rounded"
-                      alt="Profile"
+                  {canChangeSchoolLogo && (
+                    <input
+                      ref={logoFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="d-none"
+                      onChange={onSchoolLogoFileChange}
+                      aria-hidden
                     />
-                    <span className="text-dark ms-2 fw-normal">
-                      Global International
-                    </span>
-                  </Link>
+                  )}
+                  {canChangeSchoolLogo ? (
+                    <button
+                      type="button"
+                      className="school-card d-flex align-items-center border bg-white rounded p-2 mb-4 w-100 text-start"
+                      onClick={openSchoolLogoPicker}
+                      disabled={logoUploading}
+                      title="Change school logo"
+                      aria-label="Change school logo"
+                      style={{ cursor: logoUploading ? "wait" : "pointer" }}
+                    >
+                      <SchoolLogoImage
+                        src={schoolLogoSrc}
+                        className="avatar avatar-md img-fluid rounded"
+                        alt="School Logo"
+                        style={isMillatLogo ? { width: 44, height: 44 } : undefined}
+                      />
+                      <span className="school-card__name text-dark ms-2 fw-normal">
+                        {`${user?.school_name || ""} ${user?.school_type || ""}`.trim() || "—"}
+                      </span>
+                    </button>
+                  ) : (
+                    <Link
+                      to={dashboardLink || all_routes.adminDashboard}
+                      className="school-card d-flex align-items-center border bg-white rounded p-2 mb-4"
+                    >
+                      <SchoolLogoImage
+                        src={schoolLogoSrc}
+                        className="avatar avatar-md img-fluid rounded"
+                        alt="School Logo"
+                        style={isMillatLogo ? { width: 44, height: 44 } : undefined}
+                      />
+                      <span className="school-card__name text-dark ms-2 fw-normal">
+                        {`${user?.school_name || ""} ${user?.school_type || ""}`.trim() || "—"}
+                      </span>
+                    </Link>
+                  )}
                 </li>
               </ul>
 

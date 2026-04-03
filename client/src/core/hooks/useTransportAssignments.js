@@ -28,6 +28,7 @@ export const useTransportAssignments = () => {
           phone: row.driver_phone ?? 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
+          originalData: row, // Store original data for edit modal
         }));
         setData(mapped);
       } else {

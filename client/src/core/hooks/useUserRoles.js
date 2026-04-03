@@ -35,6 +35,7 @@ export const useUserRoles = () => {
             key: role.id != null ? String(role.id) : String(index + 1),
             roleName,
             createdOn,
+            originalData: role, // Store original data for edit modal
           };
         });
 

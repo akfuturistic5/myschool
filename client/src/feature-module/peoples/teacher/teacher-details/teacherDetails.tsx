@@ -94,7 +94,7 @@ const TeacherDetails = () => {
     <div className="content">
       <div className="row">
         {/* Page Header */}
-        <TeacherBreadcrumb />
+        <TeacherBreadcrumb teacherId={teacher.id} teacher={teacher} />
         {/* /Page Header */}
         {/* Teacher Information */}
         <TeacherSidebar teacher={teacher} />

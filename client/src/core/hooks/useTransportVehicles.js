@@ -30,6 +30,7 @@ export const useTransportVehicles = () => {
           phone: row.driver_phone ?? 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
+          originalData: row,
         }));
         setData(mapped);
       } else {

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -17,12 +17,16 @@ import TransportModal from "./transportModal";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { Link } from "react-router-dom";
 import { useTransportVehicles } from "../../../core/hooks/useTransportVehicles";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportVehicle = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, error, fallbackData } = useTransportVehicles();
+  const { data: apiData, loading, error, fallbackData, refetch } = useTransportVehicles();
   const data = apiData?.length ? apiData : fallbackData;
+  const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+  const [editVehicleStatus, setEditVehicleStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -138,7 +142,7 @@ const TransportVehicle = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -155,8 +159,31 @@ const TransportVehicle = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_vehicle"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const vehicle = record.originalData || record;
+                      let status = true;
+                      if (vehicle && Object.prototype.hasOwnProperty.call(vehicle, "is_active")) {
+                        status =
+                          vehicle.is_active === true ||
+                          vehicle.is_active === 1 ||
+                          vehicle.is_active === "true";
+                      } else if (record.status) {
+                        status = record.status === "Active";
+                      }
+                      setEditVehicleStatus(status);
+                      setSelectedVehicle(record);
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_vehicle');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -391,7 +418,46 @@ const TransportVehicle = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TransportModal />
+      <TransportModal
+        selectedVehicle={selectedVehicle}
+        editVehicleStatus={editVehicleStatus}
+        setEditVehicleStatus={setEditVehicleStatus}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onVehicleUpdate={async () => {
+          const vehicleId = selectedVehicle?.originalData?.id || selectedVehicle?.id;
+          if (!vehicleId || isUpdating) return;
+
+          setIsUpdating(true);
+          try {
+            const updateData = {
+              is_active: editVehicleStatus,
+            };
+
+            const response = await apiService.updateTransportVehicle(vehicleId, updateData);
+
+            if (response && response.status === "SUCCESS") {
+              const modalElement = document.getElementById("edit_vehicle");
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              await refetch();
+              setSelectedVehicle(null);
+            } else {
+              alert(response?.message || "Failed to update vehicle");
+            }
+          } catch (err: any) {
+            console.error("Error updating vehicle:", err);
+            alert(err?.message || "Failed to update vehicle. Please try again.");
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

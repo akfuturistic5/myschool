@@ -1,37 +1,60 @@
 const express = require('express');
-const { 
-  getAllStudents, 
-  getStudentById, 
-  getStudentsByClass, 
+const { requireRole } = require('../middleware/rbacMiddleware');
+const { ROLES, STUDENT_LIST_ALL_ROLES, PEOPLE_MANAGER_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
+const {
+  getAllStudents,
+  getTeacherStudents,
+  getStudentById,
+  getCurrentStudent,
+  getStudentsByClass,
   createStudent,
-  updateStudent
+  updateStudent,
+  getStudentAttendance,
+  getStudentLoginDetails,
+  getStudentExamResults,
+  getGradeReport,
+  getAttendanceReport,
 } = require('../controllers/studentController');
+const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
 const { createStudentSchema, updateStudentSchema } = require('../validations/studentValidation');
 
 const router = express.Router();
 
-// Debug middleware - only in development
-if (process.env.NODE_ENV === 'development') {
-  router.use((req, res, next) => {
-    console.log(`[DEBUG] ${req.method} ${req.path} - ${new Date().toISOString()}`);
-    next();
-  });
-}
+// Get all students - Admin/Administrative/Teacher
+router.get('/', requireRole(STUDENT_LIST_ALL_ROLES), getAllStudents);
 
-// Get all students
-router.get('/', getAllStudents);
+// Get students for current teacher - Teacher only
+router.get('/teacher/students', requireRole([ROLES.TEACHER]), getTeacherStudents);
 
-// Get students by class (specific route before parameterized route)
-router.get('/class/:classId', getStudentsByClass);
+// Get current logged-in student (must be before /:id)
+router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
 
-// Get student by ID (parameterized route)
-router.get('/:id', getStudentById);
+// Get students by class - Admin or Teacher
+router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsByClass);
 
-// Create new student
-router.post('/', validate(createStudentSchema), createStudent);
+// Report endpoints - Admin/Administrative/Teacher
+router.get('/reports/grade', requireRole(STUDENT_LIST_ALL_ROLES), getGradeReport);
+router.get('/reports/attendance', requireRole(STUDENT_LIST_ALL_ROLES), getAttendanceReport);
 
-// Update student
-router.put('/:id', validate(updateStudentSchema), updateStudent);
+// Get login details (usernames) for a student
+// Auth is handled by protectApi globally; controller enforces ownership (admin / student / parent / guardian)
+router.get('/:id/login-details', requireRole(ALL_AUTHENTICATED_ROLES), getStudentLoginDetails);
+
+// Download dynamic Bonafide certificate (PDF)
+router.get('/:id/bonafide', requireRole(ALL_AUTHENTICATED_ROLES), downloadBonafide);
+
+// Get student attendance
+router.get('/:studentId/attendance', requireRole(ALL_AUTHENTICATED_ROLES), getStudentAttendance);
+
+// Get student exam results (read-only, DB-backed)
+router.get('/:studentId/exam-results', requireRole(ALL_AUTHENTICATED_ROLES), getStudentExamResults);
+
+// Get student by ID
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
+
+// Create/Update student - Admin only
+router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);
+router.put('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(updateStudentSchema), updateStudent);
 
 module.exports = router;

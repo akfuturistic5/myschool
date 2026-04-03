@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -12,12 +12,17 @@ import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import { useTransportRoutes } from "../../../core/hooks/useTransportRoutes";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportRoutes = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, error, fallbackData } = useTransportRoutes();
+  const { data: apiData, loading, error, fallbackData, refetch } = useTransportRoutes();
   const data = apiData?.length ? apiData : fallbackData;
+  const [selectedRoute, setSelectedRoute] = useState<any>(null);
+  const [editRouteName, setEditRouteName] = useState('');
+  const [editRouteStatus, setEditRouteStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -27,32 +32,32 @@ const TransportRoutes = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: string) => (
+      render: (text: any, record: any) => (
         <Link to="#" className="link-primary">
-          {text}
+          {text || record.id || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id).length - String(b.id).length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Routes",
       dataIndex: "routes",
-      
+
       sorter: (a: TableData, b: TableData) =>
         a.routes.length - b.routes.length,
     },
     {
-        title: "Status",
-        dataIndex: "status",
-        render: (text: string) => (
-          <>
-            {text === "Active" ? (
-              <span
-                className="badge badge-soft-success d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            ):
+      title: "Status",
+      dataIndex: "status",
+      render: (text: string) => (
+        <>
+          {text === "Active" ? (
+            <span
+              className="badge badge-soft-success d-inline-flex align-items-center"
+            >
+              <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
+            </span>
+          ) :
             (
               <span
                 className="badge badge-soft-danger d-inline-flex align-items-center"
@@ -60,22 +65,22 @@ const TransportRoutes = () => {
                 <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
               </span>
             )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) =>
-          a.status.length - b.status.length,
-      },
+        </>
+      ),
+      sorter: (a: TableData, b: TableData) =>
+        a.status.length - b.status.length,
+    },
     {
       title: "Added On",
       dataIndex: "addedOn",
       sorter: (a: TableData, b: TableData) =>
         a.addedOn.length - b.addedOn.length,
     },
-    
+
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -92,8 +97,36 @@ const TransportRoutes = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_routes"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Set form data from record
+                      const route = record.originalData || record;
+                      // Use route_name from originalData, or fallback to mapped routes property
+                      const routeName = route.route_name || record.routes || '';
+                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+                      // Fallback to status string if is_active is not available
+                      let routeStatus = true; // default to active
+                      if (Object.prototype.hasOwnProperty.call(route, 'is_active')) {
+                        routeStatus = route.is_active === true || route.is_active === 1 || route.is_active === 'true';
+                      } else if (record.status) {
+                        routeStatus = record.status === 'Active';
+                      }
+
+                      setEditRouteName(routeName);
+                      setEditRouteStatus(routeStatus);
+                      setSelectedRoute(record);
+
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_routes');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -135,7 +168,7 @@ const TransportRoutes = () => {
                     <Link to="#">Management</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Routes
+                    Routes
                   </li>
                 </ol>
               </nav>
@@ -277,7 +310,54 @@ const TransportRoutes = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TransportModal />
+      <TransportModal
+        selectedRoute={selectedRoute}
+        editRouteName={editRouteName}
+        setEditRouteName={setEditRouteName}
+        editRouteStatus={editRouteStatus}
+        setEditRouteStatus={setEditRouteStatus}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onRouteUpdate={async () => {
+          const routeId = selectedRoute?.originalData?.id || selectedRoute?.id;
+          if (!routeId || isUpdating) return;
+
+          setIsUpdating(true);
+          try {
+            const updateData = {
+              route_name: editRouteName.trim(),
+              is_active: editRouteStatus
+            };
+
+            const response = await apiService.updateTransportRoute(routeId, updateData);
+
+            if (response && response.status === 'SUCCESS') {
+              // Close modal
+              const modalElement = document.getElementById('edit_routes');
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              // Refetch list
+              await refetch();
+              // Reset form
+              setSelectedRoute(null);
+              setEditRouteName('');
+              setEditRouteStatus(true);
+            } else {
+              alert(response?.message || 'Failed to update route');
+            }
+          } catch (error: any) {
+            console.error('Error updating route:', error);
+            alert(error?.message || 'Failed to update route. Please try again.');
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

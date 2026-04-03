@@ -3,7 +3,8 @@
 
 .header {
     height: 56px;
-    z-index: 999;
+    // Above stacked dashboard widgets/cards; below Bootstrap modals (1055) / theme drawer (9999+)
+    z-index: 1030;
     background: variables.$white;
     position: fixed;
     top: 0;
@@ -11,6 +12,64 @@
     left: 0;
     @include mixins.transition(all 0.5s ease);
     border-bottom: 1px solid variables.$light-900;
+
+    // Desktop: logo | centered search | right toolbar (auto-placed by DOM order of visible children).
+    @include mixins.respond-above(lg) {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        column-gap: 0.75rem;
+
+        .header-left {
+            float: none;
+        }
+
+        .header-user {
+            float: none;
+            justify-self: end;
+        }
+    }
+
+    .header-search-center {
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+
+        @include mixins.respond-above(lg) {
+            justify-self: center;
+            width: 100%;
+            max-width: 440px;
+
+            .nav-searchinputs {
+                margin: 0;
+                width: 100%;
+            }
+
+            .top-nav-search {
+                width: 100%;
+            }
+
+            .searchinputs {
+                width: 100%;
+
+                input {
+                    width: 100%;
+                    max-width: 100%;
+                }
+            }
+        }
+    }
+
+    .header-toolbar-nav {
+        @include mixins.respond-above(lg) {
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            width: auto;
+            margin: 0;
+            height: 100%;
+        }
+    }
+
     .flag-nav {
         > a {
             img {
@@ -97,6 +156,25 @@
         @include mixins.transform(translateY(0));
         @include mixins.transition(all 0.4s ease);
     }
+
+    // User avatar menu: must sit under the toggle. Global rule above uses top:85px for legacy header dropdowns;
+    // that value is wrong for small .dropdown parents (positions far below the avatar).
+    .dropdown-menu.dropdown-menu-profile {
+        @include mixins.respond-above(lg) {
+            top: calc(100% + 0.35rem) !important;
+            left: auto !important;
+            right: 0 !important;
+            margin-top: 0 !important;
+            transform: none !important;
+            z-index: 1055;
+        }
+    }
+    .dropdown-menu.dropdown-menu-profile.show {
+        @include mixins.respond-above(lg) {
+            margin-top: 0 !important;
+            transform: none !important;
+        }
+    }
     .header-left {
         display: -webkit-box;
         display: -ms-flexbox;
@@ -118,25 +196,74 @@
         @include mixins.transition(all 0.5s ease);
         border-right: 1px solid variables.$light-900;
         .logo {
-            display: inline-block;
-            line-height: 0;
-            img{
-                width: 130px;
+            display: inline-flex;
+            align-items: center;
+            line-height: 1.2;
+            gap: 8px;
+            .logo-icon, img {
+                width: 32px;
+                height: 32px;
+                flex-shrink: 0;
+                object-fit: contain;
+                background: variables.$white;
+                border-radius: 8px;
+                padding: 2px;
+            }
+            .logo-icon--large {
+                width: 44px;
+                height: 44px;
+                padding: 2px;
+            }
+            .logo-school-name {
+                font-size: 1.25rem;
+                font-weight: 700;
+                color: variables.$dark;
+                white-space: nowrap;
             }
             @include mixins.respond-below(lg) {
-                text-align: center;
+                text-align: left;
                 width: 100%;
-                img{
-                    width: 140px;
+                justify-content: flex-start;
+                -webkit-justify-content: flex-start;
+                -ms-flex-pack: start;
+                .logo-icon, img {
+                    width: 32px;
+                }
+                .logo-school-name {
+                    display: inline-block;
+                    font-size: 16px;
+                    font-weight: 800;
+                    max-width: 160px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
             }
         }
         .dark-logo {
+            .logo-icon, img {
+                width: 32px;
+                height: 32px;
+                object-fit: contain;
+                background: variables.$white;
+                border-radius: 8px;
+                padding: 2px;
+            }
+            .logo-icon--large {
+                width: 44px;
+                height: 44px;
+                padding: 2px;
+            }
+            .logo-school-name {
+                font-size: 1.25rem;
+                font-weight: 700;
+                color: variables.$dark;
+                white-space: nowrap;
+            }
             @include mixins.respond-below(lg) {
                 text-align: center;
                 width: 100%;
-                img{
-                    width: 140px;
+                img {
+                    width: 32px;
                 }
             }
         }
@@ -145,7 +272,15 @@
         }
         @include mixins.respond-below(lg) {
             position: absolute;
-            width:100%;
+            left: 0;
+            right: 0;
+            width: 100%;
+            padding-left: 70px;  // leave space for hamburger (60px) + gap
+            padding-right: 70px; // leave space for 3-dots menu (60px) + gap
+            justify-content: flex-start;
+            -webkit-justify-content: flex-start;
+            -ms-flex-pack: start;
+            border-right: 0;
         }
     }
 
@@ -377,21 +512,29 @@
             margin-left: 10px;
         }
     }
+    // Avoid display:contents (click bugs). Use float:right so the toolbar stays on the far right
+    // like the original layout; inline-flex alone shrink-wraps and leaves empty space on the right.
     .header-user {
-        padding: 15px 24px;
-        display: contents;
+        float: right;
+        display: flex;
+        align-items: center;
+        overflow: visible;
+        padding: 0;
+        @include mixins.respond-below(lg) {
+            display: none;
+        }
         .user-menu {
             align-items: center;
             -webkit-box-align: center;
             -ms-flex-align: center;
-            justify-content: center;
-            -webkit-justify-content: center;
-            -ms-flex-pack: center;
+            justify-content: flex-end;
+            -webkit-justify-content: flex-end;
+            -ms-flex-pack: end;
             margin: 0;
             position: relative;
             height: 100%;
             border-bottom: 0;
-            padding:0 24px;
+            padding: 0 24px;
             @include mixins.transition(all 0.5s ease);
             @include mixins.respond-below(lg) {
                 display: none;
@@ -556,7 +699,7 @@
                                 color: variables.$white;
                             }
                             &.active,&:hover{
-                                background: #F7F7F7 url(../../../../public/assets/img/icons/check.svg) no-repeat calc(100% - 12px) center;
+                                background: #F7F7F7 url(/assets/img/icons/check.svg) no-repeat calc(100% - 12px) center;
                             }
                         }
                         a{
@@ -784,6 +927,58 @@
                 color:variables.$gray-800;
                 line-height: 40px; 
                 padding:  0 10px;
+            }
+        }
+    }
+
+    // Mobile-only school label (e.g. Preskool (1111)).
+    // Desktop already shows this inside .user-menu, but .user-menu is hidden below lg.
+    .mobile-school-badge {
+        display: none;
+        position: absolute;
+        top: 50%;
+        right: 64px; // sit just left of 3-dots (60px) with small gap
+        left: auto;
+        max-width: calc(100% - 160px); // keep it compact on small screens
+        transform: translateY(-50%);
+        text-align: right;
+        pointer-events: none; // avoid blocking header clicks
+        z-index: 9; // ensure it stays above header-left but below 3-dots
+        .badge {
+            max-width: 100%;
+            display: inline-block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 11px;
+            padding: 0.25rem 0.45rem;
+            border-radius: 8px;
+            line-height: 1.1;
+        }
+        @include mixins.respond-below(lg) {
+            display: block;
+        }
+    }
+}
+
+// Desktop: when sidebar is collapsed (click toggle),
+// also collapse the header-left "school logo + name" area.
+@include mixins.respond-above(lg) {
+    body.sidebar-collapsed {
+        .header {
+            .header-left {
+                width: 60px;
+                padding: 0;
+                justify-content: center;
+                border-right: 0;
+                .logo,
+                .logo-small {
+                    display: none !important;
+                }
+                #toggle_btn {
+                    display: flex;
+                    opacity: 1;
+                }
             }
         }
     }

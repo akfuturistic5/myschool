@@ -10,10 +10,8 @@ export const useTeachers = () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching teachers...');
       const response = await apiService.getTeachers();
-      console.log('Teachers response:', response);
-      setTeachers(response.data);
+      setTeachers(response.data || []);
     } catch (err) {
       console.error('Error fetching teachers:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch teachers');

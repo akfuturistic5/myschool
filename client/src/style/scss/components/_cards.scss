@@ -33,6 +33,11 @@
         @include mixins.respond-below(md) {
           padding: 15px;
         }
+        // Keep Bootstrap dropdown / filter controls above decorative layers in sibling cards
+        .dropdown {
+            position: relative;
+            z-index: 6;
+        }
         .card-title {
             margin-bottom: 0rem;
         }

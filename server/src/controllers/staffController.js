@@ -1,4 +1,6 @@
 const { query } = require('../config/database');
+const { ADMIN_ROLE_IDS } = require('../config/roles');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 // Get all staff members
 const getAllStaff = async (req, res) => {
@@ -18,18 +20,10 @@ const getAllStaff = async (req, res) => {
       ORDER BY s.first_name ASC, s.last_name ASC
     `);
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Staff fetched successfully',
-      data: result.rows,
-      count: result.rows.length,
-    });
+    return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching staff:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch staff',
-    });
+    return errorResponse(res, 500, 'Failed to fetch staff');
   }
 };
 
@@ -37,12 +31,18 @@ const getAllStaff = async (req, res) => {
 const getStaffById = async (req, res) => {
   try {
     const { id } = req.params;
+    const requester = req.user;
+    const roleId = requester?.role_id != null ? parseInt(requester.role_id, 10) : null;
+    if (!requester?.id || roleId == null) {
+      return errorResponse(res, 401, 'Not authenticated');
+    }
 
     // JOIN with departments and designations tables to get names
     const result = await query(
       `
       SELECT 
         s.*,
+        s.user_id,
         d.department_name as department_name,
         d.department_name as department,
         des.designation_name as designation_name,
@@ -56,23 +56,20 @@ const getStaffById = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Staff not found',
-      });
+      return errorResponse(res, 404, 'Staff not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Staff fetched successfully',
-      data: result.rows[0],
-    });
+    const row = result.rows[0];
+    const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
+    const isSelf = String(row.user_id) === String(requester.id);
+    if (!isAdmin && !isSelf) {
+      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+    }
+
+    return success(res, 200, 'Staff fetched successfully', row);
   } catch (error) {
     console.error('Error fetching staff by ID:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch staff',
-    });
+    return errorResponse(res, 500, 'Failed to fetch staff');
   }
 };
 

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -14,12 +14,20 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportDrivers } from "../../../core/hooks/useTransportDrivers";
+import { apiService } from "../../../core/services/apiService";
 
 const TransportVehicleDrivers = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, fallbackData } = useTransportDrivers();
+  const { data: apiData, loading, fallbackData, refetch } = useTransportDrivers();
   const data = apiData?.length ? apiData : fallbackData;
+  const [selectedDriver, setSelectedDriver] = useState<any>(null);
+  const [editDriverName, setEditDriverName] = useState('');
+  const [editDriverPhone, setEditDriverPhone] = useState('');
+  const [editDriverLicense, setEditDriverLicense] = useState('');
+  const [editDriverAddress, setEditDriverAddress] = useState('');
+  const [editDriverStatus, setEditDriverStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -29,12 +37,12 @@ const TransportVehicleDrivers = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: string) => (
+      render: (text: any, record: any) => (
         <Link to="#" className="link-primary">
-          {text}
+          {text || record.id || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Driver",
@@ -98,7 +106,7 @@ const TransportVehicleDrivers = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -115,8 +123,42 @@ const TransportVehicleDrivers = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_driver"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Set form data from record
+                      const driver = record.originalData || record;
+                      // Get driver name (could be from name, driver_name, or first_name + last_name)
+                      const driverName = driver.name || driver.driver_name || record.name || '';
+                      const driverPhone = driver.phone || record.phone || '';
+                      const driverLicense = driver.license_number || record.driverLicenseNo || '';
+                      const driverAddress = driver.address || record.address || '';
+                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
+                      // Fallback to status string if is_active is not available
+                      let driverStatus = true; // default to active
+                      if (Object.prototype.hasOwnProperty.call(driver, 'is_active')) {
+                        driverStatus = driver.is_active === true || driver.is_active === 1 || driver.is_active === 'true';
+                      } else if (record.status) {
+                        driverStatus = record.status === 'Active';
+                      }
+
+                      setEditDriverName(driverName);
+                      setEditDriverPhone(driverPhone);
+                      setEditDriverLicense(driverLicense);
+                      setEditDriverAddress(driverAddress);
+                      setEditDriverStatus(driverStatus);
+                      setSelectedDriver(record);
+
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_driver');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -304,7 +346,66 @@ const TransportVehicleDrivers = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TransportModal />
+      <TransportModal
+        selectedDriver={selectedDriver}
+        editDriverName={editDriverName}
+        setEditDriverName={setEditDriverName}
+        editDriverPhone={editDriverPhone}
+        setEditDriverPhone={setEditDriverPhone}
+        editDriverLicense={editDriverLicense}
+        setEditDriverLicense={setEditDriverLicense}
+        editDriverAddress={editDriverAddress}
+        setEditDriverAddress={setEditDriverAddress}
+        editDriverStatus={editDriverStatus}
+        setEditDriverStatus={setEditDriverStatus}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onDriverUpdate={async () => {
+          const driverId = selectedDriver?.originalData?.id || selectedDriver?.id;
+          if (!driverId || isUpdating) return;
+
+          setIsUpdating(true);
+          try {
+            const updateData = {
+              name: editDriverName.trim(),
+              phone: editDriverPhone.trim() || null,
+              license_number: editDriverLicense.trim() || null,
+              address: editDriverAddress.trim() || null,
+              is_active: editDriverStatus
+            };
+
+            const response = await apiService.updateTransportDriver(driverId, updateData);
+
+            if (response && response.status === 'SUCCESS') {
+              // Close modal
+              const modalElement = document.getElementById('edit_driver');
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              // Refetch list
+              await refetch();
+              // Reset form
+              setSelectedDriver(null);
+              setEditDriverName('');
+              setEditDriverPhone('');
+              setEditDriverLicense('');
+              setEditDriverAddress('');
+              setEditDriverStatus(true);
+            } else {
+              alert(response?.message || 'Failed to update driver');
+            }
+          } catch (error: any) {
+            console.error('Error updating driver:', error);
+            alert(error?.message || 'Failed to update driver. Please try again.');
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

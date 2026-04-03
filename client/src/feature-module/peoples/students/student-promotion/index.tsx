@@ -9,6 +9,8 @@ import { promotion, allClass } from '../../../../core/common/selectoption/select
 import PredefinedDateRanges from '../../../../core/common/datePicker';
 import TooltipOption from '../../../../core/common/tooltipOption';
 import { useAcademicYears } from '../../../../core/hooks/useAcademicYears';
+import { useSelector } from 'react-redux';
+import { selectSelectedAcademicYearId } from '../../../../core/data/redux/academicYearSlice';
 import { useClasses } from '../../../../core/hooks/useClasses';
 import { useSections } from '../../../../core/hooks/useSections';
 import { useStudents } from '../../../../core/hooks/useStudents';
@@ -39,7 +41,8 @@ const StudentPromotion = () => {
     const { academicYears, loading: academicYearsLoading, error: academicYearsError } = useAcademicYears();
 
     // Fetch classes from API
-    const { classes, loading: classesLoading, error: classesError } = useClasses();
+    const academicYearId = useSelector(selectSelectedAcademicYearId);
+    const { classes, loading: classesLoading, error: classesError } = useClasses(academicYearId);
 
     // Fetch sections from API
     const { sections, loading: sectionsLoading, error: sectionsError } = useSections();
@@ -288,11 +291,11 @@ const StudentPromotion = () => {
                       ) : (
                         <CommonSelect
                           className="select"
-                          options={academicYears.map(year => ({
+                          options={(academicYears ?? []).map(year => ({
                             value: year.id.toString(),
                             label: year.year_name
                           }))}
-                          defaultValue={academicYears.length > 0 ? academicYears[0].id.toString() : undefined}
+                          defaultValue={academicYears?.[0]?.id?.toString()}
                         />
                       )}
                     </div>

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -14,12 +14,17 @@ import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import HostelModal from "./hostelModal";
 import { useHostelRooms } from "../../../core/hooks/useHostelRooms";
+import { apiService } from "../../../core/services/apiService";
 
 const HostelRooms = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const { hostelRooms, loading, error, refetch } = useHostelRooms();
   const data = hostelRooms;
+  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const [editRoomBeds, setEditRoomBeds] = useState<string>('');
+  const [editRoomCost, setEditRoomCost] = useState<string>('');
+  const [isUpdating, setIsUpdating] = useState(false);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -29,12 +34,12 @@ const HostelRooms = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: string) => (
+      render: (text: any, record: any) => (
         <Link to="#" className="link-primary">
-          {text}
+          {text || record.id || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Room No",
@@ -71,7 +76,7 @@ const HostelRooms = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -88,8 +93,44 @@ const HostelRooms = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_hostel_rooms"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const room = record.originalData || record;
+
+                      // Beds from current_occupancy
+                      const bedsRaw = room.current_occupancy ?? room.no_of_bed ?? record.noofBed;
+                      const bedsStr =
+                        bedsRaw !== undefined && bedsRaw !== null && bedsRaw !== 'N/A'
+                          ? String(bedsRaw)
+                          : '';
+                      setEditRoomBeds(bedsStr);
+
+                      // Cost from monthly_fee / monthly_fees
+                      const costRaw = room.monthly_fee ?? room.monthly_fees ?? null;
+                      const costStr =
+                        costRaw !== null && costRaw !== undefined
+                          ? (() => {
+                              if (typeof costRaw === 'number') return String(costRaw);
+                              const n = Number(String(costRaw).replace(/[^\d.]/g, ''));
+                              return !Number.isNaN(n) ? String(n) : '';
+                            })()
+                          : '';
+                      setEditRoomCost(costStr);
+
+                      setSelectedRoom(record);
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_hostel_rooms');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal =
+                              bootstrap.Modal.getInstance(modalElement) ||
+                              new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -310,7 +351,61 @@ const HostelRooms = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <HostelModal />
+      <HostelModal
+        selectedRoom={selectedRoom}
+        editRoomBeds={editRoomBeds}
+        setEditRoomBeds={setEditRoomBeds}
+        editRoomCost={editRoomCost}
+        setEditRoomCost={setEditRoomCost}
+        isUpdating={isUpdating}
+        setIsUpdating={setIsUpdating}
+        onRoomUpdate={async () => {
+          const roomId = selectedRoom?.originalData?.id || selectedRoom?.id;
+          if (!roomId || isUpdating) return;
+
+          // Prepare payload
+          const beds =
+            editRoomBeds !== undefined && editRoomBeds !== null && editRoomBeds !== ''
+              ? Number(editRoomBeds)
+              : undefined;
+          const cost =
+            editRoomCost !== undefined && editRoomCost !== null && editRoomCost !== ''
+              ? Number(editRoomCost)
+              : undefined;
+
+          setIsUpdating(true);
+          try {
+            const payload: any = {};
+            if (!Number.isNaN(beds as any) && beds !== undefined) {
+              payload.current_occupancy = beds;
+            }
+            if (!Number.isNaN(cost as any) && cost !== undefined) {
+              payload.monthly_fee = cost;
+            }
+
+            const response = await apiService.updateHostelRoom(roomId, payload);
+            if (response && response.status === 'SUCCESS') {
+              const modalElement = document.getElementById('edit_hostel_rooms');
+              if (modalElement) {
+                const bootstrap = (window as any).bootstrap;
+                if (bootstrap && bootstrap.Modal) {
+                  const modal = bootstrap.Modal.getInstance(modalElement);
+                  if (modal) modal.hide();
+                }
+              }
+              await refetch();
+              setSelectedRoom(null);
+            } else {
+              alert(response?.message || 'Failed to update hostel room');
+            }
+          } catch (err: any) {
+            console.error('Error updating hostel room:', err);
+            alert(err?.message || 'Failed to update hostel room. Please try again.');
+          } finally {
+            setIsUpdating(false);
+          }
+        }}
+      />
     </>
   );
 };

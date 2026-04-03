@@ -11,10 +11,33 @@ import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import "bootstrap-daterangepicker/daterangepicker.css";
 import PredefinedDateRanges from "../../core/common/datePicker";
-import { filesData } from "../../core/data/json/file_data";
+import { useFiles } from "../../core/hooks/useFiles";
+import { useState } from "react";
 
 
 const FileContent = () => {
+  const [parentFolderId, setParentFolderId] = useState<string | undefined>(undefined);
+  const { files, loading, error } = useFiles({ parent_folder_id: parentFolderId || 'null' });
+  
+  // Transform API data to match table format
+  const formatFileSize = (bytes: number) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+  
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
   const folderSlider = {
     loop: true,
     margin: 15,
@@ -118,7 +141,28 @@ const FileContent = () => {
     { value: "lastModified", label: "Last Modified" },
     { value: "lastModifiedByMe", label: "Last Modified by me" },
   ];
-  const data = filesData;
+  
+  // Transform API data to match table format
+  const data = files.map((file: any) => ({
+    id: file.id,
+    name: file.name,
+    imgSrc: file.is_folder 
+      ? "assets/img/icons/folder.svg" 
+      : file.mime_type?.startsWith('image/') 
+        ? file.file_url || "assets/img/icons/image.svg"
+        : file.mime_type === 'application/pdf' 
+          ? "assets/img/icons/pdf-02.svg"
+          : "assets/img/icons/file.svg",
+    lastModified: formatDate(file.updated_at || file.created_at),
+    size: file.is_folder ? '-' : formatFileSize(file.size || 0),
+    ownedMember: 'Me', // Current user owns the file
+    ownedMemberImgSrc: "assets/img/users/user-01.jpg",
+    action: "Delete, Edit",
+    key: file.id.toString(),
+    is_folder: file.is_folder,
+    file_url: file.file_url
+  }));
+  
   const columns = [
     {
       title: "Name",
@@ -150,8 +194,10 @@ const FileContent = () => {
     {
       title: "Size",
       dataIndex: "size",
-      sorter: (a: TableData, b: TableData) =>
-        parseFloat(a.size) - parseFloat(b.size),
+      sorter: (a: TableData, b: TableData) => {
+        if (a.size === '-' || b.size === '-') return 0;
+        return parseFloat(a.size) - parseFloat(b.size);
+      },
     },
     {
       title: "Owned Member",
@@ -178,7 +224,7 @@ const FileContent = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: string) => (
+      render: (text: string, record: any) => (
         <div className="dropdown">
           <Link
             to="#"
@@ -192,13 +238,13 @@ const FileContent = () => {
             <li>
               <Link className="dropdown-item rounded-1" to="#">
                 <i className="ti ti-trash me-2"></i>
-                {text.split(", ")[0]}
+                Delete
               </Link>
             </li>
             <li>
               <Link className="dropdown-item rounded-1" to="#">
                 <i className="ti ti-edit-circle me-2"></i>
-                {text.split(", ")[1]}
+                Edit
               </Link>
             </li>
           </ul>
@@ -356,814 +402,221 @@ const FileContent = () => {
             <h4>Folders</h4>
             <div className="owl-nav slide-nav6 text-end nav-control ms-3" />
           </div>
+          {loading ? (
+            <div className="text-center p-4">Loading folders...</div>
+          ) : error ? (
+            <div className="text-center p-4 text-danger">Error: {error}</div>
+          ) : files.filter((f: any) => f.is_folder).length === 0 ? (
+            <div className="text-center p-4 text-muted">No folders found</div>
+          ) : (
           <Slider
             {...folderSlider}
             className="owl-carousel folders-carousel owl-theme"
           >
-            <div className="p-3 border p-3 bg-white rounded">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/folder.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Project Details</Link>
-                  </h5>
-                </div>
-                <div className="dropdown">
-                  <Link
-                    to="#"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                    className="dropset"
-                  >
-                    <i className="fa fa-ellipsis-v" />
-                  </Link>
-                  <ul className="dropdown-menu">
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Details
+            {files.filter((f: any) => f.is_folder).map((folder: any) => (
+              <div key={folder.id} className="p-3 border p-3 bg-white rounded">
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center">
+                    <ImageWithBasePath
+                      src="assets/img/icons/folder.svg"
+                      alt="Folder"
+                      className="me-2"
+                    />
+                    <h5 className="text-nowrap">
+                      <Link to="#" onClick={() => setParentFolderId(folder.id.toString())}>
+                        {folder.name}
                       </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Share
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Copy
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Move
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Download
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Rename
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Archeived
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Delete
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start my-3">
-                <p className="text-primary mb-0 me-2 pe-1">Project plan</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  27 MB
-                </span>
-                <span className="d-flex align-items-center fw-semibold">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  208 Files
-                </span>
-              </div>
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="avatar-list-stacked avatar-group-sm">
-                  <span className="avatar border-0">
+                    </h5>
+                  </div>
+                  <div className="dropdown">
                     <Link
                       to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 1"
-                      data-bs-original-title="Member 1"
+                      data-bs-toggle="dropdown"
+                      aria-expanded="false"
+                      className="dropset"
                     >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-02.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
+                      <i className="fa fa-ellipsis-v" />
                     </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 2"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-01.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="fw-semibold mt-2">
-                    <Link className="text-success ms-3" to="#">
-                      2 Members
-                    </Link>
+                    <ul className="dropdown-menu">
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Details
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Share
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Copy
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Move
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Download
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Rename
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Archive
+                        </Link>
+                      </li>
+                      <li>
+                        <Link to="#" className="dropdown-item">
+                          Delete
+                        </Link>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="d-flex align-items-center justify-content-start my-3">
+                  <p className="text-primary mb-0 me-2 pe-1">Folder</p>
+                  <span className="d-flex align-items-center fw-semibold me-2">
+                    <i className="ti ti-circle-filled fs-5 me-2" />
+                    {formatFileSize(folder.size || 0)}
                   </span>
                 </div>
-                <Link to="#">
-                  <i className="ti ti-star fs-16" />
-                </Link>
-              </div>
-            </div>
-            <div className="p-3 border p-3 bg-white rounded">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/folder.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Website Backup</Link>
-                  </h5>
-                </div>
-                <div className="dropdown">
-                  <Link
-                    to="#"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                    className="dropset"
-                  >
-                    <i className="fa fa-ellipsis-v" />
-                  </Link>
-                  <ul className="dropdown-menu">
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Details
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="avatar-list-stacked avatar-group-sm">
+                    <span className="fw-semibold mt-2">
+                      <Link className="text-success ms-3" to="#">
+                        My Folder
                       </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Share
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Copy
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Move
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Download
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Rename
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Archeived
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Delete
-                      </Link>
-                    </li>
-                  </ul>
+                    </span>
+                  </div>
+                  {folder.is_shared && (
+                    <Link to="#">
+                      <i className="ti ti-star fs-16" />
+                    </Link>
+                  )}
                 </div>
               </div>
-              <div className="d-flex align-items-center justify-content-start my-3">
-                <p className="text-primary mb-0 me-2 pe-1">Important</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  600 MB
-                </span>
-                <span className="d-flex align-items-center fw-semibold">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  48 Files
-                </span>
-              </div>
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="avatar-list-stacked avatar-group-sm">
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 1"
-                      data-bs-original-title="Member 1"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-11.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 2"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-12.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 3"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-03.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 3"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-04.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="fw-semibold mt-2">
-                    <Link className="text-success ms-3" to="#">
-                      4 Members
-                    </Link>
-                  </span>
-                </div>
-                <Link to="#">
-                  <i className="ti ti-star fs-16" />
-                </Link>
-              </div>
-            </div>
-            <div className="p-3 border p-3 bg-white rounded">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/folder.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Number_Proj Photos</Link>
-                  </h5>
-                </div>
-                <div className="dropdown">
-                  <Link
-                    to="#"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                    className="dropset"
-                  >
-                    <i className="fa fa-ellipsis-v" />
-                  </Link>
-                  <ul className="dropdown-menu">
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Details
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Share
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Copy
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Move
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Download
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Rename
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Archeived
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item">
-                        Delete
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start my-3">
-                <p className="text-primary mb-0 me-2 pe-1">Project plan</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  150 MB
-                </span>
-                <span className="d-flex align-items-center fw-semibold">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  208 Files
-                </span>
-              </div>
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="avatar-list-stacked avatar-group-sm">
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 1"
-                      data-bs-original-title="Member 1"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-05.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 2"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-10.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="avatar border-0">
-                    <Link
-                      to="#"
-                      data-bs-toggle="tooltip"
-                      data-bs-placement="right"
-                      aria-label="Member 2"
-                      data-bs-original-title="Member 3"
-                    >
-                      <ImageWithBasePath
-                        src="assets/img/profiles/avatar-07.jpg"
-                        className="rounded-circle"
-                        alt="Avatar"
-                      />
-                    </Link>
-                  </span>
-                  <span className="fw-semibold mt-2">
-                    <Link className="text-success ms-3" to="#">
-                      + 3 Members
-                    </Link>
-                  </span>
-                </div>
-                <Link to="#">
-                  <i className="ti ti-star fs-16" />
-                </Link>
-              </div>
-            </div>
+            ))}
           </Slider>
+          )}
         </div>
         <div className="mb-4 pb-4 border-bottom">
           <div className="d-flex align-items-center mb-3">
             <h4>Files</h4>
             <div className="owl-nav slide-nav7 text-end nav-control ms-3" />
           </div>
+          {loading ? (
+            <div className="text-center p-4">Loading files...</div>
+          ) : error ? (
+            <div className="text-center p-4 text-danger">Error: {error}</div>
+          ) : files.filter((f: any) => !f.is_folder).length === 0 ? (
+            <div className="text-center p-4 text-muted">No files found</div>
+          ) : (
           <Slider
             {...fileSlider}
             className="owl-carousel files-carousel owl-theme"
           >
-            <div className="border rounded-3 bg-white p-3">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/pdf-02.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">hsa.pdf</Link>
-                  </h5>
-                </div>
-                <div className="d-flex align-items-center">
-                  <Link to="#">
-                    <i className="fa fa-star me-2" />
-                  </Link>
-                  <div className="dropdown">
-                    <Link
-                      to="#"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                      className="dropset"
-                    >
-                      <i className="fa fa-ellipsis-v" />
-                    </Link>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Details
+            {files.filter((f: any) => !f.is_folder).slice(0, 6).map((file: any) => {
+              const getFileIcon = () => {
+                if (file.mime_type === 'application/pdf') return "assets/img/icons/pdf-02.svg";
+                if (file.mime_type?.startsWith('image/')) return "assets/img/icons/image.svg";
+                if (file.mime_type?.includes('excel') || file.mime_type?.includes('spreadsheet')) return "assets/img/icons/xls.svg";
+                if (file.mime_type?.startsWith('video/')) return "assets/img/icons/video.svg";
+                return "assets/img/icons/file.svg";
+              };
+              
+              return (
+                <div key={file.id} className="border rounded-3 bg-white p-3">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-items-center">
+                      <ImageWithBasePath
+                        src={getFileIcon()}
+                        alt="File"
+                        className="me-2"
+                      />
+                      <h5 className="text-nowrap">
+                        <Link to="#">{file.name}</Link>
+                      </h5>
+                    </div>
+                    <div className="d-flex align-items-center">
+                      {file.is_shared && (
+                        <Link to="#">
+                          <i className="fa fa-star me-2" />
                         </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Share
+                      )}
+                      <div className="dropdown">
+                        <Link
+                          to="#"
+                          data-bs-toggle="dropdown"
+                          aria-expanded="false"
+                          className="dropset"
+                        >
+                          <i className="fa fa-ellipsis-v" />
                         </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Copy
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Move
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Download
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Rename
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Archeived
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Delete
-                        </Link>
-                      </li>
-                    </ul>
+                        <ul className="dropdown-menu">
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Details
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Share
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Copy
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Move
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Download
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Rename
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Archive
+                            </Link>
+                          </li>
+                          <li>
+                            <Link to="#" className="dropdown-item">
+                              Delete
+                            </Link>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-center justify-content-start mt-3">
+                    <p className="text-primary mb-0 me-2">Last edited {formatDate(file.updated_at || file.created_at)}</p>
+                    <span className="d-flex align-items-center fw-semibold me-2">
+                      <i className="ti ti-circle-filled fs-5 me-2" />
+                      {formatFileSize(file.size || 0)}
+                    </span>
                   </div>
                 </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start mt-3">
-                <p className="text-primary mb-0 me-2">Last edited 14 Jul</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  150 MB
-                </span>
-              </div>
-            </div>
-            <div className="border rounded-3 bg-white p-3">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/pdf-02.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Haird.pdf</Link>
-                  </h5>
-                </div>
-                <div className="d-flex align-items-center">
-                  <Link to="#">
-                    <i className="fa fa-star me-2" />
-                  </Link>
-                  <div className="dropdown">
-                    <Link
-                      to="#"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                      className="dropset"
-                    >
-                      <i className="fa fa-ellipsis-v" />
-                    </Link>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Details
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Share
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Copy
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Move
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Download
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Rename
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Archeived
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Delete
-                        </Link>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start mt-3">
-                <p className="text-primary mb-0 me-2">Last edited 15 Jul</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  200 MB
-                </span>
-              </div>
-            </div>
-            <div className="border rounded-3 bg-white p-3">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/xls.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Estimation.xls</Link>
-                  </h5>
-                </div>
-                <div className="d-flex align-items-center">
-                  <Link to="#">
-                    <i className="fa fa-star me-2" />
-                  </Link>
-                  <div className="dropdown">
-                    <Link
-                      to="#"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                      className="dropset"
-                    >
-                      <i className="fa fa-ellipsis-v" />
-                    </Link>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Details
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Share
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Copy
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Move
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Download
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Rename
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Archeived
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Delete
-                        </Link>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start mt-3">
-                <p className="text-primary mb-0 me-2">Last edited 16 Jul</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  500 KB
-                </span>
-              </div>
-            </div>
-            <div className="border rounded-3 bg-white p-3">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/pdf-02.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Haird.pdf</Link>
-                  </h5>
-                </div>
-                <div className="d-flex align-items-center">
-                  <Link to="#">
-                    <i className="fa fa-star me-2" />
-                  </Link>
-                  <div className="dropdown">
-                    <Link
-                      to="#"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                      className="dropset"
-                    >
-                      <i className="fa fa-ellipsis-v" />
-                    </Link>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Details
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Share
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Copy
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Move
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Download
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Rename
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Archeived
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Delete
-                        </Link>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start mt-3">
-                <p className="text-primary mb-0 me-2">Last edited 15 Jul</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  200 MB
-                </span>
-              </div>
-            </div>
-            <div className="border rounded-3 bg-white p-3">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="d-flex align-items-center">
-                  <ImageWithBasePath
-                    src="assets/img/icons/xls.svg"
-                    alt="Folder"
-                    className="me-2"
-                  />
-                  <h5 className="text-nowrap">
-                    <Link to="#">Estimation.xls</Link>
-                  </h5>
-                </div>
-                <div className="d-flex align-items-center">
-                  <Link to="#">
-                    <i className="fa fa-star me-2" />
-                  </Link>
-                  <div className="dropdown">
-                    <Link
-                      to="#"
-                      data-bs-toggle="dropdown"
-                      aria-expanded="false"
-                      className="dropset"
-                    >
-                      <i className="fa fa-ellipsis-v" />
-                    </Link>
-                    <ul className="dropdown-menu">
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Details
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Share
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Copy
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Move
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Download
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Rename
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Archeived
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item">
-                          Delete
-                        </Link>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <div className="d-flex align-items-center justify-content-start mt-3">
-                <p className="text-primary mb-0 me-2">Last edited 16 Jul</p>
-                <span className="d-flex align-items-center fw-semibold me-2">
-                  <i className="ti ti-circle-filled fs-5 me-2" />
-                  500 KB
-                </span>
-              </div>
-            </div>
+              );
+            })}
           </Slider>
+          )}
         </div>
         <div className="mb-4 pb-4 border-bottom">
           <div className="d-flex align-items-center mb-3">
@@ -1503,7 +956,13 @@ const FileContent = () => {
         </div>
         <div className="card-body p-0 py-3">
           {/* Student List */}
+          {loading ? (
+            <div className="text-center p-4">Loading...</div>
+          ) : error ? (
+            <div className="text-center p-4 text-danger">Error: {error}</div>
+          ) : (
             <Table dataSource={data} columns={columns} Selection={true} />
+          )}
           {/* /Student List */}
         </div>
       </div>

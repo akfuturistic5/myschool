@@ -15,7 +15,6 @@ const Rating = () => {
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      console.log("Rating submitted:", newRating);
     }, 2000);
   };
   const handleStarHover = () => {

@@ -11,15 +11,9 @@ export const SidebarData = [
       {
         label: "Dashboard",
         icon: "ti ti-layout-dashboard",
-        submenu: true,
+        link: routes.adminDashboard,
+        submenu: false,
         showSubRoute: false,
-
-        submenuItems: [
-          { label: "Admin Dashboard", link: routes.adminDashboard },
-          { label: "Teacher Dashboard", link: routes.teacherDashboard },
-          { label: "Student Dashboard", link: routes.studentDashboard },
-          { label: "Parent Dashboard", link: routes.parentDashboard },
-        ],
       },
       {
         label: "Application",
@@ -34,7 +28,7 @@ export const SidebarData = [
           },
           {
             label: "Call",
-            link: routes.audioCall,
+            link: routes.callHistory,
             showSubRoute: false,
           },
           {
@@ -137,7 +131,7 @@ export const SidebarData = [
           { label: "Students List", link: routes.studentList },
           {
             label: "Students Details",
-            link: routes.studentDetail,
+            link: routes.studentList,
             subLink1: routes.studentLibrary,
             subLink2: routes.studentResult,
             subLink3: routes.studentFees,
@@ -145,6 +139,7 @@ export const SidebarData = [
             subLink5: routes.studentTimeTable,
           },
           { label: "Student Promotion", link: routes.studentPromotion },
+          { label: "Bonafide", link: routes.bonafideGenerator },
         ],
       },
       {
@@ -811,7 +806,6 @@ export const SidebarData = [
         showSubRoute: false,
         icon: "ti ti-shield-cog",
         submenuItems: [
-          { label: "Profile Settings", link: routes.profilesettings },
           { label: "Security Settings", link: routes.securitysettings },
           {
             label: "Notifications Settings",

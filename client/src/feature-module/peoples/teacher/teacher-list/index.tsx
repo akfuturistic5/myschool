@@ -1,5 +1,6 @@
 import  { useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
 import CommonSelect from "../../../../core/common/commonSelect";
 import {
@@ -14,19 +15,37 @@ import type { TableData } from "../../../../core/data/interface";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useTeachers } from "../../../../core/hooks/useTeachers.js";
+import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher.js";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { getDashboardForRole } from "../../../../core/utils/roleUtils";
 
 const TeacherList = () => {
   const routes = all_routes;
-  const { teachers, loading, error } = useTeachers();
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const location = useLocation();
+  const user = useSelector(selectUser);
+  const role = (user?.role || "").toLowerCase();
+  const isTeacherRole = role === "teacher";
 
+  const { teachers, loading, error, refetch } = useTeachers();
+  const { teacher: currentTeacher, loading: currentTeacherLoading, error: currentTeacherError } = useCurrentTeacher();
+
+  // For Teacher role: show only logged-in teacher's data; otherwise show all teachers
+  const teachersToShow = isTeacherRole
+    ? (currentTeacher ? [currentTeacher] : [])
+    : teachers;
+
+  const listLoading = isTeacherRole ? currentTeacherLoading : loading;
+  const listError = isTeacherRole ? currentTeacherError : error;
+  const backTo = isTeacherRole ? getDashboardForRole(role) : routes.teacherGrid;
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  
   // Transform API data to match existing table structure
-  const transformedData = teachers.map((teacher: any, index: number) => ({
-    key: (index + 1).toString(),
+  const transformedData = teachersToShow.map((teacher: any) => ({
+    key: teacher.id,
     teacherId: teacher.id,
     teacher,
-    img: teacher.photo_url || `assets/img/teachers/teacher-0${(index % 8) + 1}.jpg`, // Fallback to default images
-    id: teacher.employee_code || `T${teacher.id}`,
+    img: teacher.photo_url || `assets/img/teachers/teacher-0${(teacher.id % 8) + 1}.jpg`, // Fallback to default images
+    id: teacher.id,
     name: `${teacher.first_name} ${teacher.last_name}`,
     class: teacher.class_name || 'N/A',
     subject: teacher.subject_name || 'N/A',
@@ -37,8 +56,10 @@ const TeacherList = () => {
       month: 'short',
       year: 'numeric'
     }) : 'N/A',
-    status: teacher.status || (teacher.is_active ? 'Active' : 'Inactive'),
-    statusclass: (teacher.status === 'Active' || teacher.is_active) 
+    status: teacher.status === 'Active' || teacher.is_active === true || teacher.is_active === 1 
+      ? 'Active' 
+      : 'Inactive',
+    statusclass: (teacher.status === 'Active' || teacher.is_active === true || teacher.is_active === 1) 
       ? "badge badge-soft-success" 
       : "badge badge-soft-danger",
     action: ''
@@ -57,7 +78,7 @@ const TeacherList = () => {
           {text}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => (Number(a.id) || 0) - (Number(b.id) || 0),
     },
     {
       title: "Name",
@@ -168,6 +189,7 @@ const TeacherList = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to={routes.editTeacher}
+                    state={{ teacherId: record.teacherId, teacher: record.teacher }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -216,7 +238,7 @@ const TeacherList = () => {
   };
 
   // Show loading state
-  if (loading) {
+  if (listLoading) {
     return (
       <div className="page-wrapper">
         <div className="content">
@@ -231,13 +253,13 @@ const TeacherList = () => {
   }
 
   // Show error state
-  if (error) {
+  if (listError) {
     return (
       <div className="page-wrapper">
         <div className="content">
           <div className="alert alert-danger m-3" role="alert">
             <h4 className="alert-heading">Error Loading Teachers</h4>
-            <p>{error}</p>
+            <p>{listError}</p>
             <hr />
             <p className="mb-0">Please try refreshing the page or contact support if the problem persists.</p>
           </div>
@@ -254,6 +276,13 @@ const TeacherList = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
+              <Link
+                to={backTo}
+                className="btn btn-outline-secondary mb-2 d-inline-flex align-items-center"
+              >
+                <i className="ti ti-arrow-left me-1" />
+                Back
+              </Link>
               <h3 className="page-title mb-1">Teacher List</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
@@ -271,15 +300,17 @@ const TeacherList = () => {
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
               <TooltipOption />
-              <div className="mb-2">
-                <Link
-                  to={routes.addTeacher}
-                  className="btn btn-primary d-flex align-items-center"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Teacher
-                </Link>
-              </div>
+              {!isTeacherRole && (
+                <div className="mb-2">
+                  <Link
+                    to={routes.addTeacher}
+                    className="btn btn-primary d-flex align-items-center"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Teacher
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}

@@ -397,8 +397,9 @@ export const roomNO = [
 
 ];
 export const paymentType = [
-  { value: "Paytm", label: "Paytm" },
-  { value: "Cash On Delivery", label: "Cash On Delivery" },
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
 ];
 export const feesTypes = [
   { value: "Tuition Fees", label: "Tuition Fees" },

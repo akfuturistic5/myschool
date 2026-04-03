@@ -1,6 +1,5 @@
-import { useRef } from "react";
+import { useRef, useMemo, useState } from "react";
 import { all_routes } from "../../../router/all_routes";
-import { approveRequest } from "../../../../core/data/json/approve_request";
 import { Link } from "react-router-dom";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
@@ -8,127 +7,166 @@ import PredefinedDateRanges from "../../../../core/common/datePicker";
 import CommonSelect from "../../../../core/common/commonSelect";
 import { activeList, leaveType, MonthDate, Role } from "../../../../core/common/selectoption/selectoption";
 import TooltipOption from "../../../../core/common/tooltipOption";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
+import { apiService } from "../../../../core/services/apiService";
+import { isHeadmasterRole } from "../../../../core/utils/roleUtils";
 
 const ApproveRequest = () => {
   const routes = all_routes;
-  const data = approveRequest;
-  const columns = [
-    {
-      title: "Submitted By",
-      dataIndex: "submittedBy",
-      sorter: (a: TableData, b: TableData) =>
-        a.submittedBy.length - b.submittedBy.length,
-    },
-    {
-      title: "Leave Type",
-      dataIndex: "leaveType",
-      sorter: (a: TableData, b: TableData) =>
-        a.leaveType.length - b.leaveType.length,
-    },
-    {
-      title: "Role",
-      dataIndex: "role",
-      sorter: (a: TableData, b: TableData) => a.role.length - b.role.length,
-    },
-    {
-      title: "Leave Date",
-      dataIndex: "leaveDate",
-      sorter: (a: TableData, b: TableData) =>
-        a.leaveDate.length - b.leaveDate.length,
-    },
-    {
-      title: "No of Days",
-      dataIndex: "noofDays",
-      sorter: (a: TableData, b: TableData) =>
-        a.noofDays.length - b.noofDays.length,
-    },
-    {
-      title: "Applied On",
-      dataIndex: "appliedOn",
-      sorter: (a: TableData, b: TableData) =>
-        a.appliedOn.length - b.appliedOn.length,
-    },
-    {
-      title: "Authority",
-      dataIndex: "authority",
-      sorter: (a: TableData, b: TableData) =>
-        a.authority.length - b.authority.length,
-    },
+  const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
+  const { user: currentUser } = useCurrentUser();
+  const canUseAdminList = isHeadmasterRole(currentUser);
+  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
+    limit: 50,
+    canUseAdminList,
+  });
 
-    {
-      title: "Status",
-      dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Approved" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : text === "Pending" ? (
-            <span className="badge badge-soft-pending d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
-    },
-    {
-      title: "Action",
-      dataIndex: "action",
-      render: () => (
-        <>
-          <div className="dropdown">
-            <Link
-              to="#"
-              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
-            >
-              <i className="ti ti-dots-vertical fs-14" />
-            </Link>
-            <ul className="dropdown-menu dropdown-menu-right p-3">
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#leave_request"
-                >
-                  <i className="ti ti-menu me-2" />
-                  Leave Request
-                </Link>
-              </li>
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                >
-                  <i className="ti ti-trash-x me-2" />
-                  Delete
-                </Link>
-              </li>
-            </ul>
-          </div>
-        </>
-      ),
-    },
-  ];
+  const data = useMemo(() => {
+    if (!Array.isArray(leaveApplications)) return [];
+    const approvedOnly = leaveApplications.filter((row) =>
+      String(row?.status ?? "").toLowerCase().includes("approv")
+    );
+    return approvedOnly.map((row) => ({
+      key: row.key ?? String(row.id),
+      id: row.id,
+      submittedBy: row.name ?? "—",
+      leaveType: row.leaveType ?? "—",
+      role: row.role ?? "—",
+      leaveDate: row.leaveRange ?? row.leaveDate ?? "—",
+      noofDays: row.noOfDays ?? "—",
+      appliedOn: row.applyOn ?? "—",
+      authority: "—",
+      status: row.status ?? "Pending",
+    }));
+  }, [leaveApplications]);
+
+  const handleApprove = async (id: number) => {
+    if (leaveActionId != null) return;
+    setLeaveActionId(id);
+    try {
+      const res = await apiService.updateLeaveApplicationStatus(id, "approved");
+      if (res?.status === "SUCCESS") refetchLeaves();
+    } catch (_) {
+      // ignore
+    } finally {
+      setLeaveActionId(null);
+    }
+  };
+
+  const handleReject = async (id: number) => {
+    if (leaveActionId != null) return;
+    setLeaveActionId(id);
+    try {
+      const res = await apiService.updateLeaveApplicationStatus(id, "rejected");
+      if (res?.status === "SUCCESS") refetchLeaves();
+    } catch (_) {
+      // ignore
+    } finally {
+      setLeaveActionId(null);
+    }
+  };
+
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const columns = [
+    {
+      title: "Submitted By",
+      dataIndex: "submittedBy",
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.submittedBy ?? "").localeCompare(String(b?.submittedBy ?? "")),
+    },
+    {
+      title: "Leave Type",
+      dataIndex: "leaveType",
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.leaveType ?? "").localeCompare(String(b?.leaveType ?? "")),
+    },
+    {
+      title: "Role",
+      dataIndex: "role",
+      sorter: (a: TableData, b: TableData) => String(a?.role ?? "").localeCompare(String(b?.role ?? "")),
+    },
+    {
+      title: "Leave Date",
+      dataIndex: "leaveDate",
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.leaveDate ?? "").localeCompare(String(b?.leaveDate ?? "")),
+    },
+    {
+      title: "No of Days",
+      dataIndex: "noofDays",
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.noofDays ?? "").localeCompare(String(b?.noofDays ?? "")),
+    },
+    {
+      title: "Applied On",
+      dataIndex: "appliedOn",
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.appliedOn ?? "").localeCompare(String(b?.appliedOn ?? "")),
+    },
+    {
+      title: "Authority",
+      dataIndex: "authority",
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      render: (text: string) => {
+        const t = (text ?? "").toString();
+        const isApproved = t.toLowerCase().includes("approv");
+        const isRejected = t.toLowerCase().includes("reject") || t.toLowerCase().includes("declin");
+        const badgeClass = isApproved ? "badge-soft-success" : isRejected ? "badge-soft-danger" : "badge-soft-pending";
+        return (
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {t || "Pending"}
+          </span>
+        );
+      },
+      sorter: (a: TableData, b: TableData) =>
+        String(a?.status ?? "").localeCompare(String(b?.status ?? "")),
+    },
+    {
+      title: "Action",
+      dataIndex: "id",
+      render: (_: unknown, record: { id?: number; status?: string }) => {
+        const id = record?.id;
+        const statusLower = (record?.status ?? "").toString().toLowerCase();
+        const isApproved = statusLower.includes("approv");
+        const isRejected = statusLower.includes("reject") || statusLower.includes("declin");
+        const disabled = leaveActionId != null || isApproved || isRejected;
+        if (id == null) return null;
+        return (
+          <div className="d-flex gap-1">
+            <button
+              type="button"
+              className="avatar avatar-xs p-0 btn btn-success"
+              onClick={() => handleApprove(Number(id))}
+              disabled={disabled}
+              title="Approve"
+            >
+              <i className="ti ti-checks" />
+            </button>
+            <button
+              type="button"
+              className="avatar avatar-xs p-0 btn btn-danger"
+              onClick={() => handleReject(Number(id))}
+              disabled={disabled}
+              title="Reject"
+            >
+              <i className="ti ti-x" />
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
   return (
     <div>
       <>
@@ -286,9 +324,25 @@ const ApproveRequest = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
-                {/* Approve List */}
-                  <Table dataSource={data} columns={columns} Selection={true} />
-                {/* /Approve List */}
+                {leaveError && (
+                  <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
+                    {leaveError}
+                  </div>
+                )}
+                {leaveLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0">Loading leave applications...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Approve List */}
+                    <Table dataSource={data} columns={columns} Selection={true} />
+                    {/* /Approve List */}
+                  </>
+                )}
               </div>
             </div>
           </div>

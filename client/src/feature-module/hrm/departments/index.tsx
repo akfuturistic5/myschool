@@ -1,4 +1,4 @@
-import  { useRef } from 'react'
+import  { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Table from "../../../core/common/dataTable/index";
 import { activeList, departmentSelect } from '../../../core/common/selectoption/selectoption';
@@ -8,11 +8,16 @@ import CommonSelect from '../../../core/common/commonSelect';
 import { all_routes } from '../../router/all_routes';
 import TooltipOption from '../../../core/common/tooltipOption';
 import { useDepartments } from '../../../core/hooks/useDepartments';
+import { apiService } from '../../../core/services/apiService';
 
 const Departments = () => {
   const routes = all_routes;
   const { departments, loading, error, refetch } = useDepartments();
   const data = departments;
+  const [selectedDepartment, setSelectedDepartment] = useState<any>(null);
+  const [editDepartmentName, setEditDepartmentName] = useState<string>('');
+  const [editDepartmentStatus, setEditDepartmentStatus] = useState<boolean>(true);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -23,12 +28,12 @@ const Departments = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (text: any, record: any) => (
         <>
-          <Link to="#" className="link-primary">{record.id}</Link>
+          <Link to="#" className="link-primary">{text || record.id || 'N/A'}</Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
       title: "Department",
@@ -63,7 +68,7 @@ const Departments = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -80,8 +85,23 @@ const Departments = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_department"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSelectedDepartment(record);
+                      const dept = record.originalData || record;
+                      setEditDepartmentName(dept.department_name || dept.department || '');
+                      setEditDepartmentStatus(dept.is_active !== false && dept.status !== 'Inactive');
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_department');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -371,7 +391,9 @@ const Departments = () => {
                     type="text"
                     className="form-control"
                     placeholder="Enter Department Name"
-                    defaultValue="Admin"
+                    value={editDepartmentName}
+                    onChange={(e) => setEditDepartmentName(e.target.value)}
+                    key={`dept-name-${selectedDepartment?.id || 'new'}`}
                   />
                 </div>
               </div>
@@ -386,6 +408,9 @@ const Departments = () => {
                     type="checkbox"
                     role="switch"
                     id="switch-sm2"
+                    checked={editDepartmentStatus}
+                    onChange={(e) => setEditDepartmentStatus(e.target.checked)}
+                    key={`dept-status-${selectedDepartment?.id || 'new'}`}
                   />
                 </div>
               </div>
@@ -395,8 +420,59 @@ const Departments = () => {
             <Link to="#" className="btn btn-light me-2" data-bs-dismiss="modal">
               Cancel
             </Link>
-            <Link to="#"  className="btn btn-primary" data-bs-dismiss="modal">
-              Save Changes
+            <Link
+              to="#"
+              className="btn btn-primary"
+              onClick={async (e) => {
+                e.preventDefault();
+                if (isUpdating) return;
+                if (!selectedDepartment) return;
+
+                const id =
+                  selectedDepartment?.originalData?.id ?? selectedDepartment?.id;
+
+                if (!id) {
+                  console.error('No department id found for update');
+                  return;
+                }
+
+                try {
+                  setIsUpdating(true);
+
+                  const payload = {
+                    department_name: editDepartmentName,
+                    is_active: editDepartmentStatus,
+                  };
+
+                  await apiService.updateDepartment(id, payload);
+
+                  // Close modal programmatically after successful update
+                  const modalElement = document.getElementById('edit_department');
+                  if (modalElement) {
+                    const bootstrap = (window as any).bootstrap;
+                    if (bootstrap && bootstrap.Modal) {
+                      const modal =
+                        bootstrap.Modal.getInstance(modalElement) ||
+                        new bootstrap.Modal(modalElement);
+                      modal.hide();
+                    }
+                  }
+
+                  // Refresh data
+                  await refetch();
+
+                  // Reset local state
+                  setSelectedDepartment(null);
+                  setEditDepartmentName('');
+                  setEditDepartmentStatus(true);
+                } catch (err) {
+                  console.error('Failed to update department', err);
+                } finally {
+                  setIsUpdating(false);
+                }
+              }}
+            >
+              {isUpdating ? 'Saving...' : 'Save Changes'}
             </Link>
           </div>
         </form>

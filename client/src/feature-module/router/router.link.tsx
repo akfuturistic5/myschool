@@ -1,4 +1,5 @@
 import { Navigate, Route } from "react-router";
+import React from "react";
 import { all_routes } from "./all_routes";
 import Login from "../auth/login/login";
 import Register from "../auth/register/register";
@@ -23,12 +24,15 @@ import LockScreen from "../auth/lockScreen";
 import EmailVerification2 from "../auth/emailVerification/emailVerification-2";
 import EmailVerification3 from "../auth/emailVerification/emailVerification-3";
 import AdminDashboard from "../mainMenu/adminDashboard";
+import AdministrativeDashboard from "../mainMenu/administrativeDashboard";
 import ParentDashboard from "../mainMenu/parentDashboard";
+import GuardianDashboard from "../mainMenu/guardianDashboard";
 import TeacherDashboard from "../mainMenu/teacherDashboard";
-import StudentDasboard from "../mainMenu/studentDashboard";
+const StudentDasboard = React.lazy(() => import("../mainMenu/studentDashboard"));
 import AudioCall from "../application/call/audioCall";
 import CallHistory from "../application/call/callHistory";
 import Videocall from "../application/call/videoCall";
+import ConferenceCall from "../application/call/conferenceCall";
 import Chat from "../application/chat";
 import Email from "../application/email";
 import FileManager from "../application/fileManager";
@@ -118,8 +122,8 @@ import NotificationActivities from "../pages/profile/activities";
 import UnderMaintenance from "../pages/underMaintenance";
 import GuardianGrid from "../peoples/guardian/guardian-grid";
 import GuardianList from "../peoples/guardian/guardian-list";
-import ParentGrid from "../peoples/parent/parent-grid";
-import ParentList from "../peoples/parent/parent-list";
+import ParentGridPage from "../peoples/parent/parent-grid/ParentGridPage";
+import ParentListPage from "../peoples/parent/parent-list/ParentListPage";
 import AddStudent from "../peoples/students/add-student";
 import StudentDetails from "../peoples/students/student-details/studentDetails";
 import StudentFees from "../peoples/students/student-details/studentFees";
@@ -158,7 +162,6 @@ import PaymentGateways from "../settings/financialSettings/paymentGateways";
 import TaxRates from "../settings/financialSettings/taxRates";
 import ConnectedApps from "../settings/generalSettings/connectedApps";
 import Notificationssettings from "../settings/generalSettings/notifications";
-import Profilesettings from "../settings/generalSettings/profile";
 import Securitysettings from "../settings/generalSettings/security";
 import BanIpAddress from "../settings/otherSettings/banIpaddress";
 import Emailtemplates from "../settings/systemSettings/email-templates";
@@ -239,6 +242,7 @@ import Placeholder from "../uiInterface/base-ui/placeholder";
 import Alert from "../uiInterface/base-ui/alert";
 import Video from "../uiInterface/base-ui/video";
 import StudentGrid from "../peoples/students/student-grid/index.tsx";
+import BonafideGenerator from "../peoples/students/bonafide/BonafideGenerator";
 import Storage from "../settings/otherSettings/storage.tsx";
 import TeacherAttendance from "../hrm/attendance/teacher-attendance.tsx";
 
@@ -257,6 +261,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.administrativeDashboard,
+    element: <AdministrativeDashboard />,
+    route: Route,
+  },
+  {
     path: routes.teacherDashboard,
     element: <TeacherDashboard />,
     route: Route,
@@ -272,6 +281,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.guardianDashboard,
+    element: <GuardianDashboard />,
+    route: Route,
+  },
+  {
     path: routes.audioCall,
     element: <AudioCall />,
     route: Route,
@@ -281,12 +295,6 @@ export const publicRoutes = [
     element: <CallHistory />,
     route: Route,
   },
-  {
-    path: routes.callHistory,
-    element: <CallHistory />,
-    route: Route,
-  },
-
   {
     path: routes.connectedApps,
     element: <ConnectedApps />,
@@ -323,11 +331,6 @@ export const publicRoutes = [
   {
     path: routes.notes,
     element: <Notes />,
-  },
-  {
-    path: routes.countries,
-    element: <Countries />,
-    route: Route,
   },
   {
     path: routes.customFields,
@@ -518,6 +521,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.conferenceCall,
+    element: <ConferenceCall />,
+    route: Route,
+  },
+  {
     path: routes.chat,
     element: <Chat />,
     route: Route,
@@ -594,12 +602,7 @@ export const publicRoutes = [
     element: <Apexchart />,
     route: Route,
   },
- 
-  {
-    path: routes.fantawesome,
-    element: <FontawesomeIcons />,
-    route: Route,
-  },
+
   {
     path: routes.fantawesome,
     element: <FontawesomeIcons />,
@@ -615,7 +618,7 @@ export const publicRoutes = [
     element: <PE7Icons />,
     route: Route,
   },
- 
+
   {
     path: routes.themifyIcon,
     element: <ThemifyIcons />,
@@ -738,706 +741,711 @@ export const publicRoutes = [
   // Peoples Module
   {
     path: routes.studentGrid,
-    element: <StudentGrid/>,
+    element: <StudentGrid />,
     route: Route,
   },
   {
     path: routes.studentList,
     element: <StudentList />,
-       route: Route,
+    route: Route,
+  },
+  {
+    path: routes.bonafideGenerator,
+    element: <BonafideGenerator />,
+    route: Route,
   },
   {
     path: routes.addStudent,
     element: <AddStudent />,
-       route: Route,
+    route: Route,
   },
   {
     path: `${routes.editStudent}/:id`,
     element: <AddStudent />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentLibrary,
     element: <StudentLibrary />,
-       route: Route,
+    route: Route,
+  },
+  {
+    path: `${routes.studentDetail}/:id`,
+    element: <StudentDetails />,
+    route: Route,
   },
   {
     path: routes.studentDetail,
     element: <StudentDetails />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentFees,
     element: <StudentFees />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentLeaves,
     element: <StudentLeaves />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentResult,
     element: <StudentResult />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentTimeTable,
     element: <StudentTimeTable />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentPromotion,
     element: <StudentPromotion />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.AcademicReason,
     element: <AcademicReason />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classSyllabus,
     element: <ClassSyllabus />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classSubject,
     element: <ClassSubject />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classSection,
     element: <ClassSection />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classRoom,
     element: <ClassRoom />,
-       route: Route,
-    
+    route: Route,
+
   },
   {
     path: routes.classRoutine,
     element: <ClassRoutine />,
-       route: Route,
-    
+    route: Route,
+
   },
   {
     path: routes.sheduleClasses,
     element: <ScheduleClasses />,
-       route: Route,
+    route: Route,
   },
-  
+
   {
     path: routes.exam,
     element: <Exam />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.examSchedule,
     element: <ExamSchedule />,
-       route: Route,
-    
+    route: Route,
+
   },
   {
     path: routes.grade,
     element: <Grade />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staff,
     element: <Staff />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.departments,
     element: <Departments />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classes,
     element: <Classes />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classHomeWork,
     element: <ClassHomeWork />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.examResult,
     element: <ExamResult />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.examAttendance,
     element: <ExamAttendance />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherGrid,
     element: <TeacherGrid />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherList,
     element: <TeacherList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.addTeacher,
     element: <TeacherForm />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.editTeacher,
     element: <TeacherForm />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherDetails,
     element: <TeacherDetails />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teachersRoutine,
     element: <TeachersRoutine />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherSalary,
     element: <TeacherSalary />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherLeaves,
     element: <TeacherLeave />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherLibrary,
     element: <TeacherLibrary />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.parentGrid,
-    element: <ParentGrid />,
-       route: Route,
+    element: <ParentGridPage />,
+    route: Route,
   },
   {
     path: routes.parentList,
-    element: <ParentList />,
-       route: Route,
+    element: <ParentListPage />,
+    route: Route,
   },
   {
     path: routes.classTimetable,
     element: <ClassTimetable />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.payroll,
     element: <Payroll />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.holidays,
     element: <Holiday />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.designation,
     element: <Designation />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.listLeaves,
     element: <ListLeaves />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffDetails,
     element: <StaffDetails />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffPayroll,
     element: <StaffPayRoll />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffLeave,
     element: <StaffLeave />,
-       route: Route,
+    route: Route,
   },
 
   {
     path: routes.layoutDefault,
     element: <AdminDashboard />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.layoutMini,
     element: <AdminDashboard />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.layoutRtl,
     element: <AdminDashboard />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.layoutBox,
     element: <AdminDashboard />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.layoutDark,
     element: <AdminDashboard />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.guardiansGrid,
     element: <GuardianGrid />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.guardiansList,
     element: <GuardianList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.feesGroup,
     element: <FeesGroup />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.feesType,
     element: <FeesTypes />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.feesMaster,
     element: <FeesMaster />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.feesAssign,
     element: <FeesAssign />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.collectFees,
     element: <CollectFees />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.libraryMembers,
     element: <LibraryMember />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.libraryBooks,
     element: <Books />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.libraryIssueBook,
     element: <IssueBook />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.libraryReturn,
     element: <ReturnBook />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.sportsList,
     element: <SportsList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.playerList,
     element: <PlayersList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.hostelRoom,
     element: <HostelRooms />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.hostelType,
     element: <HostelType />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.hostelList,
     element: <HostelList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.transportRoutes,
     element: <TransportRoutes />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.transportAssignVehicle,
     element: <TransportAssignVehicle />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.transportPickupPoints,
     element: <TransportPickupPoints />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.transportVehicleDrivers,
     element: <TransportVehicleDrivers />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.transportVehicle,
     element: <TransportVehicle />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.approveRequest,
     element: <ApproveRequest />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentAttendance,
     element: <StudentAttendance />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherAttendance,
     element: <TeacherAttendance />,
-       route: Route,
+    route: Route,
   },
 
 
   {
     path: routes.staffAttendance,
     element: <StaffAttendance />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffsAttendance,
     element: <StaffsAttendance />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.addStaff,
     element: <AddStaff />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.editStaff,
     element: <EditStaff />,
-       route: Route,
+    route: Route,
   },
 
   {
     path: routes.accountsIncome,
     element: <AccountsIncome />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.accountsInvoices,
     element: <AccountsInvoices />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.accountsTransactions,
     element: <AccountsTransactions />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.addInvoice,
     element: <AddInvoice />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.editInvoice,
     element: <EditInvoice />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.guardiansList,
     element: <GuardianList />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.expense,
     element: <Expense />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.expenseCategory,
     element: <ExpensesCategory />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.invoice,
     element: <Invoice />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.events,
     element: <Events />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.noticeBoard,
     element: <NoticeBoard />,
-       route: Route,
+    route: Route,
   },
 
   //Settings
 
   {
-    path: routes.profilesettings,
-    element: <Profilesettings />,
-       route: Route,
-  },
-  {
     path: routes.securitysettings,
     element: <Securitysettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.notificationssettings,
     element: <Notificationssettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.connectedApps,
     element: <ConnectedApps />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.companySettings,
     element: <CompanySettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.localization,
     element: <Localization />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.prefixes,
     element: <Prefixes />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.socialAuthentication,
     element: <Socialauthentication />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.language,
     element: <Languagesettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.invoiceSettings,
     element: <InvoiceSettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.customFields,
     element: <CustomFields />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.emailSettings,
     element: <EmailSettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.emailTemplates,
     element: <Emailtemplates />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.smsSettings,
     element: <SmsSettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.optSettings,
     element: <OtpSettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.gdprCookies,
     element: <GdprCookies />,
-       route: Route,
+    route: Route,
   },
 
   {
     path: routes.paymentGateways,
     element: <PaymentGateways />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.taxRates,
     element: <TaxRates />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.schoolSettings,
     element: <SchoolSettings />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.religion,
     element: <Religion />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.storage,
     element: <Storage />,
-       route: Route,
+    route: Route,
   },
-  
+
   {
     path: routes.rolesPermissions,
     element: <RolesPermissions />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.permissions,
     element: <Permission />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.manageusers,
     element: <Manageusers />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.allBlogs,
     element: <AllBlogs />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.blogCategories,
     element: <BlogCategories />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.blogComments,
     element: <BlogComments />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.blogTags,
     element: <BlogTags />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.tickets,
     element: <Tickets />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.ticketGrid,
     element: <TicketGrid />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.ticketDetails,
     element: <TicketDetails />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.feesReport,
     element: <FeesReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.leaveReport,
     element: <LeaveReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.gradeReport,
     element: <GradeReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentReport,
     element: <StudentReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.classReport,
     element: <ClassReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.attendanceReport,
     element: <AttendanceReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentAttendanceType,
     element: <StudentAttendanceType />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.dailyAttendance,
     element: <DailyAttendance />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.studentDayWise,
     element: <StudentDayWise />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherDayWise,
     element: <TeacherDayWise />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffDayWise,
     element: <StaffDayWise />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.teacherReport,
     element: <TeacherReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.staffReport,
     element: <StaffReport />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.contactMessages,
     element: <ContactMessages />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.events,
     element: <Events />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.profile,
     element: <Profile />,
-       route: Route,
+    route: Route,
   },
   {
     path: routes.activity,
     element: <NotificationActivities />,
-       route: Route,
+    route: Route,
   },
 ];
 

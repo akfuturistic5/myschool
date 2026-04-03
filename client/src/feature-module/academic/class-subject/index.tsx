@@ -1,4 +1,4 @@
-import  { useRef } from "react";
+import  { useRef, useState } from "react";
 import Table from "../../../core/common/dataTable/index";
 
 import {
@@ -14,19 +14,28 @@ import { Link } from "react-router-dom";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 import { useSubjects } from "../../../core/hooks/useSubjects";
+import { apiService } from "../../../core/services/apiService";
 
 const ClassSubject = () => {
   const routes = all_routes;
   const { subjects, loading, error, refetch } = useSubjects();
+  
+  // State for edit modal
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
+  const [editSubjectName, setEditSubjectName] = useState('');
+  const [editSubjectStatus, setEditSubjectStatus] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Transform API data to match table structure
   const data = (subjects ?? []).map((subject: any, index: number) => ({
-    key: (index + 1).toString(),
-    id: subject.subject_code || `SU${subject.id}`,
+    key: subject.id?.toString() || (index + 1).toString(),
+    id: subject.id?.toString() || subject.subject_code || `SU${String(index + 1).padStart(6, '0')}`,
     name: subject.subject_name || 'N/A',
     code: subject.subject_code || 'N/A',
     type: (subject.practical_hours && subject.practical_hours > 0) ? 'Practical' : 'Theory',
-    status: subject.is_active ? 'Active' : 'Inactive'
+    status: subject.is_active ? 'Active' : 'Inactive',
+    // Store original data for edit modal
+    originalData: subject
   }));
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
@@ -38,14 +47,18 @@ const ClassSubject = () => {
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (text: any, record: any) => (
         <>
           <Link to="#" className="link-primary">
-            {record.id}
+            {text || record.id || 'N/A'}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => {
+        const idA = String(a.id || '').length;
+        const idB = String(b.id || '').length;
+        return idA - idB;
+      },
     },
 
     {
@@ -87,7 +100,7 @@ const ClassSubject = () => {
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
+      render: (text: any, record: any) => (
         <>
           <div className="d-flex align-items-center">
             <div className="dropdown">
@@ -104,8 +117,35 @@ const ClassSubject = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_subject"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      // Populate edit form state from selected record
+                      const subject = record.originalData || record;
+                      const name = subject.subject_name || record.name || '';
+                      let status = true;
+                      if (subject && Object.prototype.hasOwnProperty.call(subject, 'is_active')) {
+                        status =
+                          subject.is_active === true ||
+                          subject.is_active === 1 ||
+                          subject.is_active === 'true';
+                      } else if (record.status) {
+                        status = record.status === 'Active';
+                      }
+
+                      setEditSubjectName(name);
+                      setEditSubjectStatus(status);
+                      setSelectedSubject(record);
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('edit_subject');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 100);
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -397,7 +437,7 @@ const ClassSubject = () => {
         {/* /Add Subject */}
         {/* Edit Subject */}
         <div className="modal fade" id="edit_subject">
-          <div className="modal-dialog modal-dialog-centere">
+          <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Edit Subject</h4>
@@ -420,7 +460,8 @@ const ClassSubject = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Name"
-                          defaultValue="English"
+                          value={editSubjectName}
+                          onChange={(e) => setEditSubjectName(e.target.value)}
                         />
                       </div>
                       <div className="mb-3">
@@ -428,8 +469,8 @@ const ClassSubject = () => {
                         <CommonSelect
                           className="select"
                           options={count}
-                          defaultValue={count[0]}
-                          
+                          defaultValue={selectedSubject?.originalData?.subject_code || selectedSubject?.code ? count.find((c: any) => c.value === (selectedSubject?.originalData?.subject_code || selectedSubject?.code) || c.label === (selectedSubject?.originalData?.subject_code || selectedSubject?.code)) || count[0] : count[0]}
+                          key={`code-${selectedSubject?.id || 'new'}`}
                         />
                       </div>
                       <div className="mb-3">
@@ -437,8 +478,8 @@ const ClassSubject = () => {
                         <CommonSelect
                           className="select"
                           options={typetheory}
-                          defaultValue={typetheory[0]}
-                          
+                          defaultValue={selectedSubject?.type === 'Practical' ? typetheory.find((t: any) => t.label === 'Practical') || typetheory[0] : typetheory.find((t: any) => t.label === 'Theory') || typetheory[0]}
+                          key={`type-${selectedSubject?.id || 'new'}`}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
@@ -452,6 +493,8 @@ const ClassSubject = () => {
                             type="checkbox"
                             role="switch"
                             id="switch-sm2"
+                            checked={editSubjectStatus}
+                            onChange={(e) => setEditSubjectStatus(e.target.checked)}
                           />
                         </div>
                       </div>
@@ -466,8 +509,50 @@ const ClassSubject = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
+                  <Link
+                    to="#"
+                    className="btn btn-primary"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      const id = selectedSubject?.originalData?.id || selectedSubject?.id;
+                      if (!id || isUpdating) return;
+
+                      const name = editSubjectName.trim();
+                      if (!name) {
+                        alert('Subject name is required');
+                        return;
+                      }
+
+                      setIsUpdating(true);
+                      try {
+                        const payload = {
+                          subject_name: name,
+                          is_active: editSubjectStatus,
+                        };
+                        const response = await apiService.updateSubject(id, payload);
+                        if (response && response.status === 'SUCCESS') {
+                          const modalElement = document.getElementById('edit_subject');
+                          if (modalElement) {
+                            const bootstrap = (window as any).bootstrap;
+                            if (bootstrap && bootstrap.Modal) {
+                              const modal = bootstrap.Modal.getInstance(modalElement);
+                              if (modal) modal.hide();
+                            }
+                          }
+                          await refetch();
+                          setSelectedSubject(null);
+                        } else {
+                          alert(response?.message || 'Failed to update subject');
+                        }
+                      } catch (err: any) {
+                        console.error('Error updating subject:', err);
+                        alert(err?.message || 'Failed to update subject. Please try again.');
+                      } finally {
+                        setIsUpdating(false);
+                      }
+                    }}
+                  >
+                    {isUpdating ? 'Updating...' : 'Save Changes'}
                   </Link>
                 </div>
               </form>

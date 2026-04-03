@@ -1,47 +1,242 @@
-import  { useState } from 'react'
-import { all_routes } from '../../router/all_routes'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import Select from "react-select";
+import type { SingleValue } from 'react-select';
 import { DatePicker, TimePicker } from 'antd';
-const AdminDashboardModal = () => {
+import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
+import { apiService } from '../../../core/services/apiService';
+import { selectUser } from '../../../core/data/redux/authSlice';
+import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice';
+
+type SelectOption = { value: string; label: string };
+
+interface AdminDashboardModalProps {
+  refetchRoutine?: () => void;
+  refetchEvents?: () => void;
+}
+
+const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardModalProps) => {
+    const user = useSelector(selectUser);
+    const academicYearId = useSelector(selectSelectedAcademicYearId);
+    const isTeacherRole = (user?.role ?? '').trim().toLowerCase() === 'teacher';
     const [activeContent, setActiveContent] = useState('');
-    const routes = all_routes
-    const handleContentChange = (event:any) => {
+    const [allTeacher, setAllTeacher] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
+    const [allSection, setAllSection] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
+    const [allClass, setAllClass] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
+    const [allClassRoom, setAllClassRoom] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
+
+    // Add Class Routine form state
+    const [routineTeacher, setRoutineTeacher] = useState<SingleValue<SelectOption>>(null);
+    const [routineClass, setRoutineClass] = useState<SingleValue<SelectOption>>(null);
+    const [routineSection, setRoutineSection] = useState<SingleValue<SelectOption>>(null);
+    const [routineDay, setRoutineDay] = useState<SingleValue<SelectOption>>(null);
+    const [routineClassRoom, setRoutineClassRoom] = useState<SingleValue<SelectOption>>(null);
+    const [routineSubmitting, setRoutineSubmitting] = useState(false);
+
+    // Add Event form state
+    const [eventTitle, setEventTitle] = useState('');
+    const [eventCategory, setEventCategory] = useState<SingleValue<SelectOption>>(null);
+    const [eventStartDate, setEventStartDate] = useState<Dayjs | null>(null);
+    const [eventEndDate, setEventEndDate] = useState<Dayjs | null>(null);
+    const [eventStartTime, setEventStartTime] = useState<Dayjs | null>(null);
+    const [eventEndTime, setEventEndTime] = useState<Dayjs | null>(null);
+    const [eventMessage, setEventMessage] = useState('');
+    const [eventSubmitting, setEventSubmitting] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const fetchTeachers = async () => {
+                    if (isTeacherRole) {
+                        try {
+                            const me = await apiService.getCurrentTeacher();
+                            if (me?.status === 'SUCCESS' && me.data) {
+                                const t = me.data as { id: number; first_name?: string; last_name?: string };
+                                return { status: 'SUCCESS' as const, data: [t] };
+                            }
+                        } catch {
+                            // Teacher but no record - fall back to full list
+                        }
+                    }
+                    return apiService.getTeachers();
+                };
+                const fetchClasses = () =>
+                    academicYearId != null
+                        ? apiService.getClassesByAcademicYear(academicYearId)
+                        : apiService.getClasses();
+                const [tRes, cRes, sRes, rRes] = await Promise.all([
+                    fetchTeachers(),
+                    fetchClasses(),
+                    apiService.getSections(),
+                    apiService.getClassRooms(),
+                ]);
+                if (tRes?.status === 'SUCCESS' && Array.isArray(tRes.data)) {
+                    setAllTeacher([
+                        { value: "", label: "Select Teacher" },
+                        ...tRes.data.map((t: { id: number; first_name?: string; last_name?: string }) => ({
+                            value: String(t.id),
+                            label: [t.first_name, t.last_name].filter(Boolean).join(' ') || `Teacher ${t.id}`,
+                        })),
+                    ]);
+                }
+                if (cRes?.status === 'SUCCESS' && Array.isArray(cRes.data)) {
+                    setAllClass([
+                        { value: "", label: "Select Class" },
+                        ...cRes.data.map((c: { id: number; class_name?: string; name?: string }) => ({
+                            value: String(c.id),
+                            label: c.class_name || c.name || `Class ${c.id}`,
+                        })),
+                    ]);
+                }
+                if (sRes?.status === 'SUCCESS' && Array.isArray(sRes.data)) {
+                    setAllSection([
+                        { value: "", label: "Select Section" },
+                        ...sRes.data.map((s: { id: number; section_name?: string; name?: string }) => ({
+                            value: String(s.id),
+                            label: s.section_name || s.name || `Section ${s.id}`,
+                        })),
+                    ]);
+                }
+                if (rRes?.status === 'SUCCESS' && Array.isArray(rRes.data)) {
+                    setAllClassRoom(
+                        rRes.data.map((r: { id: number; room_no?: string }) => ({
+                            value: String(r.id),
+                            label: r.room_no || `Room ${r.id}`,
+                        }))
+                    );
+                    if (rRes.data.length === 0) setAllClassRoom([{ value: "", label: "No rooms" }]);
+                }
+            } catch {
+                setAllTeacher([{ value: "", label: "Select Teacher" }]);
+                setAllClass([{ value: "", label: "Select Class" }]);
+                setAllSection([{ value: "", label: "Select Section" }]);
+                setAllClassRoom([{ value: "", label: "No rooms" }]);
+            }
+        })();
+    }, [isTeacherRole, academicYearId]);
+
+    const handleContentChange = (event: any) => {
         setActiveContent(event.target.value);
-      };
+    };
+
+    const hideModal = (id: string) => {
+        const el = document.getElementById(id);
+        if (el) {
+            const bsModal = (window as any).bootstrap?.Modal?.getInstance(el);
+            if (bsModal) bsModal.hide();
+        }
+    };
+
+    const handleRoutineSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const teacherId = routineTeacher?.value;
+        const classId = routineClass?.value;
+        const sectionId = routineSection?.value;
+        const dayOfWeek = routineDay?.value || 'Monday';
+        const classRoomId = routineClassRoom?.value;
+        if (!teacherId || !classId || !sectionId) {
+            alert('Please select Teacher, Class, and Section');
+            return;
+        }
+        setRoutineSubmitting(true);
+        try {
+            const res = await apiService.createClassSchedule({
+                teacher_id: Number(teacherId),
+                class_id: Number(classId),
+                section_id: Number(sectionId),
+                day_of_week: dayOfWeek,
+                class_room_id: classRoomId ? Number(classRoomId) : null,
+            });
+            if (res?.status === 'SUCCESS') {
+                refetchRoutine?.();
+                hideModal('add_class_routine');
+                setRoutineTeacher(null);
+                setRoutineClass(null);
+                setRoutineSection(null);
+                setRoutineDay(null);
+                setRoutineClassRoom(null);
+            } else {
+                alert(res?.message || 'Failed to add class routine');
+            }
+        } catch (err: any) {
+            alert(err?.message || 'Failed to add class routine');
+        } finally {
+            setRoutineSubmitting(false);
+        }
+    };
+
+    const handleEventSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!eventTitle.trim()) {
+            alert('Please enter Event Title');
+            return;
+        }
+        if (!eventStartDate) {
+            alert('Please select Start Date');
+            return;
+        }
+        setEventSubmitting(true);
+        try {
+            let startDate: string;
+            let endDate: string | null = null;
+            const isAllDay = !eventStartTime && !eventEndTime;
+            if (isAllDay) {
+                startDate = eventStartDate.startOf('day').toISOString();
+                endDate = (eventEndDate || eventStartDate).endOf('day').toISOString();
+            } else {
+                const st = eventStartTime || dayjs().hour(9).minute(0);
+                const et = eventEndTime || dayjs().hour(10).minute(0);
+                const startDt = eventStartDate.clone().hour(st.hour()).minute(st.minute()).second(0).millisecond(0);
+                const endDt = (eventEndDate || eventStartDate).clone().hour(et.hour()).minute(et.minute()).second(0).millisecond(0);
+                startDate = startDt.toISOString();
+                endDate = endDt.toISOString();
+            }
+            const categoryToColor: Record<string, string> = {
+                Celebration: 'bg-warning',
+                Training: 'bg-info',
+                Meeting: 'bg-primary',
+                Holidays: 'bg-danger',
+            };
+            const eventColor = eventCategory?.value ? (categoryToColor[eventCategory.value] || 'bg-primary') : 'bg-primary';
+            const res = await apiService.createEvent({
+                title: eventTitle.trim(),
+                description: eventMessage.trim() || null,
+                start_date: startDate,
+                end_date: endDate,
+                event_color: eventColor,
+                is_all_day: isAllDay,
+                event_category: eventCategory?.value || null,
+                event_for: 'all',
+            });
+            if (res?.status === 'SUCCESS') {
+                refetchEvents?.();
+                hideModal('add_event');
+                setEventTitle('');
+                setEventCategory(null);
+                setEventStartDate(null);
+                setEventEndDate(null);
+                setEventStartTime(null);
+                setEventEndTime(null);
+                setEventMessage('');
+            } else {
+                alert(res?.message || 'Failed to add event');
+            }
+        } catch (err: any) {
+            alert(err?.message || 'Failed to add event');
+        } finally {
+            setEventSubmitting(false);
+        }
+    };
+
     const eventoption = [
-        { value: "Select", label: "Select" },
+        { value: "", label: "Select" },
         { value: "Celebration", label: "Celebration" },
         { value: "Training", label: "Training" },
         { value: "Meeting", label: "Meeting" },
         { value: "Holidays", label: "Holidays" },
       ];
-    const allTeacher = [
-        { value: "All Teacher", label: "All Teacher" },
-        { value: "James", label: "James" },
-        { value: "Joseph", label: "Joseph" },
-        { value: "Mori", label: "Mori" },
-        { value: "Erickson", label: "Erickson" },
-      ];
-    const allSection = [
-        { value: "All Sections", label: "All Sections" },
-        { value: "A", label: "A" },
-        { value: "B", label: "B" },
-      ];
-    const allClass = [
-        { value: "All Classes", label: "All Classes" },
-        { value: "I", label: "I" },
-        { value: "II", label: "II" },
-        { value: "III", label: "III" },
-        { value: "IV", label: "IV" },
-      ];
-    const allClassRoom = [
-        { value: "101", label: "101" },
-        { value: "102", label: "102" },
-        { value: "103", label: "103" },
-        { value: "104", label: "104" },
-        { value: "105", label: "105" },
-      ];
+
     const allDay = [
         { value: "Monday", label: "Monday" },
         { value: "Tuesday", label: "Tuesday" },
@@ -77,42 +272,49 @@ const AdminDashboardModal = () => {
                 <i className="ti ti-x" />
                 </button>
             </div>
-            <form >
+            <form onSubmit={handleRoutineSubmit}>
                 <div  id='modal_datepicker' className="modal-body">
                 <div className="row">
                     <div className="col-md-12">
                     <div className="mb-3">
                         <label className="form-label">Teacher</label>
-                    
                         <Select classNamePrefix="react-select"
                         className="select"
                         options={allTeacher}
-                        defaultValue={allTeacher[0]}
+                        value={routineTeacher}
+                        onChange={setRoutineTeacher}
+                        placeholder="Select Teacher"
                         />
                     </div>
                     <div className="mb-3">
                         <label className="form-label">Class</label>
                         <Select classNamePrefix="react-select"
-                className="select"
-                options={allClass}
-                defaultValue={allClass[0]}
-                />
+                        className="select"
+                        options={allClass}
+                        value={routineClass}
+                        onChange={setRoutineClass}
+                        placeholder="Select Class"
+                        />
                     </div>
                     <div className="mb-3">
                         <label className="form-label">Section</label>
                         <Select classNamePrefix="react-select"
-                className="select"
-                options={allSection}
-                defaultValue={allSection[0]}
-                />
+                        className="select"
+                        options={allSection}
+                        value={routineSection}
+                        onChange={setRoutineSection}
+                        placeholder="Select Section"
+                        />
                     </div>
                     <div className="mb-3">
                         <label className="form-label">Day</label>
                         <Select classNamePrefix="react-select"
-                className="select"
-                options={allDay}
-                defaultValue={allDay[0]}
-                />
+                        className="select"
+                        options={allDay}
+                        value={routineDay}
+                        onChange={setRoutineDay}
+                        placeholder="Select Day"
+                        />
                     </div>
                     <div className="row">
                         <div className="col-md-6">
@@ -143,7 +345,9 @@ const AdminDashboardModal = () => {
                         <Select classNamePrefix="react-select"
                         className="select"
                         options={allClassRoom}
-                        defaultValue={allClassRoom[0]}
+                        value={routineClassRoom}
+                        onChange={setRoutineClassRoom}
+                        placeholder="Select Room"
                         />
                     </div>
                     <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
@@ -162,16 +366,12 @@ const AdminDashboardModal = () => {
                 </div>
                 </div>
                 <div className="modal-footer">
-                <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                >
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
                     Cancel
-                </Link>
-                <Link data-bs-dismiss="modal" to={routes.adminDashboard} className="btn btn-primary">
-                    Add Class Routine
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={routineSubmitting}>
+                    {routineSubmitting ? 'Adding...' : 'Add Class Routine'}
+                </button>
                 </div>
             </form>
             </div>
@@ -194,7 +394,7 @@ const AdminDashboardModal = () => {
                 <i className="ti ti-x" />
             </button>
             </div>
-            <form>
+            <form onSubmit={handleEventSubmit}>
             <div  id='modal-datepicker' className="modal-body">
                 <div className="row">
                 <div className="col-md-12">
@@ -339,22 +539,25 @@ const AdminDashboardModal = () => {
                     type="text"
                     className="form-control"
                     placeholder="Enter Title"
+                    value={eventTitle}
+                    onChange={(e) => setEventTitle(e.target.value)}
                     />
                 </div>
                 <div className="mb-3">
                     <label className="form-label">Event Category</label>
-                    
                     <Select classNamePrefix="react-select"
-                className="select"
-                options={eventoption}
-                defaultValue={eventoption[0]}
-                />
+                    className="select"
+                    options={eventoption}
+                    value={eventCategory}
+                    onChange={setEventCategory}
+                    placeholder="Select Category"
+                    />
                 </div>
                 <div className="col-md-6">
                     <div className="mb-3">
                     <label className="form-label">Start Date</label>
-                    <div  className="date-pic">
-                        <DatePicker getPopupContainer={getModalContainer} className="form-control datetimepicker"  placeholder="15 May 2024" />
+                    <div className="date-pic">
+                        <DatePicker getPopupContainer={getModalContainer} className="form-control datetimepicker" placeholder="15 May 2024" value={eventStartDate} onChange={(d) => setEventStartDate(d)} />
                         <span className="cal-icon">
                         <i className="ti ti-calendar" />
                         </span>
@@ -365,7 +568,7 @@ const AdminDashboardModal = () => {
                     <div className="mb-3">
                     <label className="form-label">End Date</label>
                     <div className="date-pic">
-                    <DatePicker getPopupContainer={getModalContainer} className="form-control datetimepicker"  placeholder="15 May 2024" />
+                        <DatePicker getPopupContainer={getModalContainer} className="form-control datetimepicker" placeholder="15 May 2024" value={eventEndDate} onChange={(d) => setEventEndDate(d)} />
                         <span className="cal-icon">
                         <i className="ti ti-calendar" />
                         </span>
@@ -376,7 +579,7 @@ const AdminDashboardModal = () => {
                     <div className="mb-3">
                     <label className="form-label">Start Time</label>
                     <div className="date-pic">
-                        <TimePicker getPopupContainer={getModalContainer}  use12Hours placeholder="09:10 AM" format="h:mm A" className="form-control timepicker" />
+                        <TimePicker getPopupContainer={getModalContainer} use12Hours placeholder="09:10 AM" format="h:mm A" className="form-control timepicker" value={eventStartTime} onChange={(t) => setEventStartTime(t)} />
                         <span className="cal-icon">
                         <i className="ti ti-clock" />
                         </span>
@@ -387,7 +590,7 @@ const AdminDashboardModal = () => {
                     <div className="mb-3">
                     <label className="form-label">End Time</label>
                     <div className="date-pic">
-                    <TimePicker getPopupContainer={getModalContainer}  use12Hours placeholder="09:10 AM" format="h:mm A" className="form-control timepicker" />
+                        <TimePicker getPopupContainer={getModalContainer} use12Hours placeholder="09:10 AM" format="h:mm A" className="form-control timepicker" value={eventEndTime} onChange={(t) => setEventEndTime(t)} />
                         <span className="cal-icon">
                         <i className="ti ti-clock" />
                         </span>
@@ -420,21 +623,21 @@ const AdminDashboardModal = () => {
                     <textarea
                         className="form-control"
                         rows={4}
-                        defaultValue={
-                        "Meeting with Staffs on the Quality Improvement s and completion of syllabus before the August,  enhance the students health issue"
-                        }
+                        placeholder="Enter event description..."
+                        value={eventMessage}
+                        onChange={(e) => setEventMessage(e.target.value)}
                     />
                     </div>
                 </div>
                 </div>
             </div>
             <div className="modal-footer">
-                <Link to="#" className="btn btn-light me-2" data-bs-dismiss="modal">
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
                 Cancel
-                </Link>
-                <Link to={routes.adminDashboard} data-bs-dismiss="modal" className="btn btn-primary">
-                Save Changes
-                </Link>
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={eventSubmitting}>
+                {eventSubmitting ? 'Saving...' : 'Save Changes'}
+                </button>
             </div>
             </form>
         </div>

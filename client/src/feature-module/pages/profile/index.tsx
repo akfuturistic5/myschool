@@ -1,8 +1,18 @@
-import  { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { all_routes } from "../../router/all_routes";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
+import { useDispatch } from "react-redux";
+import { setAuthFromSession } from "../../../core/data/redux/authSlice";
+import { apiService } from "../../../core/services/apiService";
+import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
+import {
+  validateStrongPassword,
+  showPasswordRequirementsAlert,
+  showPasswordSuccessAlert,
+} from "../../../core/utils/passwordPolicy";
+import { extractMessageFromApiError } from "../../../core/utils/apiErrorMessage";
 type PasswordField =
   | "oldPassword"
   | "newPassword"
@@ -11,6 +21,167 @@ type PasswordField =
 
 const Profile = () => {
   const route = all_routes;
+  const dispatch = useDispatch();
+  const { user, loading: meLoading, error: meError, refetch } = useCurrentUser();
+
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    username: "",
+    current_address: "",
+    permanent_address: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  const [pwd, setPwd] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [pwdSaving, setPwdSaving] = useState(false);
+
+  const canEdit = useMemo(() => {
+    // Basic guard; if account is disabled we still allow viewing
+    return !!user && user.account_disabled !== true;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    setForm((prev) => ({
+      ...prev,
+      first_name: (user.first_name || "").toString(),
+      last_name: (user.last_name || "").toString(),
+      email: (user.email || "").toString(),
+      phone: (user.phone || "").toString(),
+      username: (user.username || "").toString(),
+      current_address: (user.current_address || "").toString(),
+      permanent_address: (user.permanent_address || "").toString(),
+    }));
+  }, [user?.id]);
+
+  const setField = (key: keyof typeof form, value: string) => {
+    setForm((p) => ({ ...p, [key]: value }));
+  };
+
+  const hydrateReduxFromMe = async () => {
+    const res = await apiService.getMe();
+    if (res?.status === "SUCCESS" && res.data) {
+      const d = res.data;
+      const displayName =
+        d.display_name ||
+        [d.student_first_name, d.student_last_name].filter(Boolean).join(" ") ||
+        [d.staff_first_name, d.staff_last_name].filter(Boolean).join(" ") ||
+        [d.first_name, d.last_name].filter(Boolean).join(" ") ||
+        d.username ||
+        "User";
+      const role = d.display_role || d.role_name || "User";
+      dispatch(
+        setAuthFromSession({
+          user: {
+            id: d.id,
+            username: d.username,
+            displayName,
+            role,
+            user_role_id: d.role_id,
+            staff_id: d.staff_id,
+            accountDisabled: d.account_disabled === true,
+            school_name: d.school_name,
+            school_type: d.school_type,
+            school_logo: d.school_logo ?? null,
+            institute_number: d.institute_number,
+          },
+        })
+      );
+    }
+  };
+
+  const onSave = async () => {
+    setSaveError(null);
+    setSaveSuccess(null);
+    setSaving(true);
+    try {
+      const payload = {
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        current_address: form.current_address.trim(),
+        permanent_address: form.permanent_address.trim(),
+      };
+      const res = await apiService.updateMe(payload);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to save profile");
+      }
+      setSaveSuccess("Profile saved");
+      await hydrateReduxFromMe();
+      await refetch();
+    } catch (e: any) {
+      setSaveError(e?.message || "Failed to save profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onChangePassword = async () => {
+    if (!pwd.currentPassword.trim()) {
+      await showPasswordRequirementsAlert(
+        "Please enter your current password.",
+        "Change password"
+      );
+      return;
+    }
+    const policyMsg = validateStrongPassword(pwd.newPassword);
+    if (policyMsg) {
+      await showPasswordRequirementsAlert(policyMsg);
+      return;
+    }
+    if (pwd.newPassword !== pwd.confirmPassword) {
+      await showPasswordRequirementsAlert(
+        "New password and confirmation do not match.",
+        "Change password"
+      );
+      return;
+    }
+    if (pwd.currentPassword === pwd.newPassword) {
+      await showPasswordRequirementsAlert(
+        "New password must be different from your current password.",
+        "Change password"
+      );
+      return;
+    }
+
+    setPwdSaving(true);
+    try {
+      const res = await apiService.changePassword(
+        pwd.currentPassword,
+        pwd.newPassword,
+        pwd.confirmPassword
+      );
+      if (res?.status !== "SUCCESS") {
+        await showPasswordRequirementsAlert(
+          res?.message || "Failed to change password.",
+          "Cannot change password"
+        );
+        return;
+      }
+      setPwd({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      await showPasswordSuccessAlert("Your password was updated successfully.");
+      const modalEl = document.getElementById("change_password");
+      if (modalEl && window.bootstrap?.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+      }
+    } catch (e: unknown) {
+      const msg = extractMessageFromApiError(e);
+      await showPasswordRequirementsAlert(msg, "Cannot change password");
+    } finally {
+      setPwdSaving(false);
+    }
+  };
+
   const [passwordVisibility, setPasswordVisibility] = useState({
     oldPassword: false,
     newPassword: false,
@@ -56,6 +227,12 @@ const Profile = () => {
                     <Link
                       to="#"
                       className="btn btn-outline-light bg-white btn-icon me-1"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSaveSuccess(null);
+                        setSaveError(null);
+                        refetch();
+                      }}
                     >
                       <i className="ti ti-refresh" />
                     </Link>
@@ -63,6 +240,26 @@ const Profile = () => {
                 </div>
               </div>
             </div>
+            {(meLoading || saving) && (
+              <div className="alert alert-info mt-3 mb-0" role="alert">
+                {meLoading ? "Loading your profile..." : "Saving your changes..."}
+              </div>
+            )}
+            {meError && (
+              <div className="alert alert-warning mt-3 mb-0" role="alert">
+                {meError}
+              </div>
+            )}
+            {saveError && (
+              <div className="alert alert-danger mt-3 mb-0" role="alert">
+                {saveError}
+              </div>
+            )}
+            {saveSuccess && (
+              <div className="alert alert-success mt-3 mb-0" role="alert">
+                {saveSuccess}
+              </div>
+            )}
             <div className="d-md-flex d-block mt-3">
               <div className="settings-right-sidebar me-md-3 border-0">
                 <div className="card">
@@ -78,7 +275,10 @@ const Profile = () => {
                         />
                       </span>
                       <div className="title-upload">
-                        <h5>Edit Your Photo</h5>
+                        <h5>{user?.display_name || user?.name || "User"}</h5>
+                        <p className="mb-0 text-primary">
+                          {user?.display_role || user?.role || "User"}
+                        </p>
                         <Link to="#" className="me-2">
                           Delete{" "}
                         </Link>
@@ -134,6 +334,9 @@ const Profile = () => {
                                 type="text"
                                 className="form-control"
                                 placeholder="Enter First Name"
+                                value={form.first_name}
+                                onChange={(e) => setField("first_name", e.target.value)}
+                                disabled={!canEdit || saving}
                               />
                             </div>
                             <div className="mb-3 flex-fill">
@@ -142,6 +345,9 @@ const Profile = () => {
                                 type="text"
                                 className="form-control"
                                 placeholder="Enter Last Name"
+                                value={form.last_name}
+                                onChange={(e) => setField("last_name", e.target.value)}
+                                disabled={!canEdit || saving}
                               />
                             </div>
                           </div>
@@ -151,25 +357,43 @@ const Profile = () => {
                               type="email"
                               className="form-control"
                               placeholder="Enter Email"
+                              value={form.email}
+                              onChange={(e) => setField("email", e.target.value)}
+                              disabled={!canEdit || saving}
                             />
                           </div>
                           <div className="d-block d-xl-flex">
                             <div className="mb-3 flex-fill me-xl-3 me-0">
                               <label className="form-label">User Name</label>
                               <input
-                                type="email"
+                                type="text"
                                 className="form-control"
                                 placeholder="Enter User Name"
+                                value={form.username}
+                                disabled
                               />
                             </div>
                             <div className="mb-3 flex-fill">
                               <label className="form-label">Phone Number</label>
                               <input
-                                type="email"
+                                type="text"
                                 className="form-control"
                                 placeholder="Enter Phone Number"
+                                value={form.phone}
+                                onChange={(e) => setField("phone", e.target.value)}
+                                disabled={!canEdit || saving}
                               />
                             </div>
+                          </div>
+                          <div className="d-flex justify-content-end pb-3">
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={onSave}
+                              disabled={!canEdit || saving || meLoading}
+                            >
+                              Save
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -188,50 +412,36 @@ const Profile = () => {
                         </div>
                         <div className="card-body pb-0">
                           <div className="mb-3">
-                            <label className="form-label">Address</label>
-                            <input
-                              type="text"
+                            <label className="form-label">Current Address</label>
+                            <textarea
                               className="form-control"
-                              placeholder="Enter Address"
+                              placeholder="Enter Current Address"
+                              value={form.current_address}
+                              onChange={(e) => setField("current_address", e.target.value)}
+                              disabled={!canEdit || saving}
+                              rows={3}
                             />
                           </div>
-                          <div className="d-block d-xl-flex">
-                            <div className="mb-3 flex-fill me-xl-3 me-0">
-                              <label className="form-label">Country</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                placeholder="Enter Country"
-                              />
-                            </div>
-                            <div className="mb-3 flex-fill">
-                              <label className="form-label">
-                                State / Province
-                              </label>
-                              <input
-                                type="email"
-                                className="form-control"
-                                placeholder="Enter State"
-                              />
-                            </div>
+                          <div className="mb-3">
+                            <label className="form-label">Permanent Address</label>
+                            <textarea
+                              className="form-control"
+                              placeholder="Enter Permanent Address"
+                              value={form.permanent_address}
+                              onChange={(e) => setField("permanent_address", e.target.value)}
+                              disabled={!canEdit || saving}
+                              rows={3}
+                            />
                           </div>
-                          <div className="d-block d-xl-flex">
-                            <div className="mb-3 flex-fill me-xl-3 me-0">
-                              <label className="form-label">City</label>
-                              <input
-                                type="email"
-                                className="form-control"
-                                placeholder="City"
-                              />
-                            </div>
-                            <div className="mb-3 flex-fill">
-                              <label className="form-label">Postal Code</label>
-                              <input
-                                type="email"
-                                className="form-control"
-                                placeholder="Enter Postal Code"
-                              />
-                            </div>
+                          <div className="d-flex justify-content-end pb-3">
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={onSave}
+                              disabled={!canEdit || saving || meLoading}
+                            >
+                              Save
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -361,13 +571,17 @@ const Profile = () => {
                   >
                     Cancel
                   </Link>
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-primary"
+                    onClick={async () => {
+                      await onSave();
+                    }}
                     data-bs-dismiss="modal"
+                    disabled={!canEdit || saving || meLoading}
                   >
                     Save Changes
-                  </Link>
+                  </button>
                 </div>
               </form>
             </div>
@@ -444,13 +658,17 @@ const Profile = () => {
                   >
                     Cancel
                   </Link>
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-primary"
+                    onClick={async () => {
+                      await onSave();
+                    }}
                     data-bs-dismiss="modal"
+                    disabled={!canEdit || saving || meLoading}
                   >
                     Save Changes
-                  </Link>
+                  </button>
                 </div>
               </form>
             </div>
@@ -486,6 +704,11 @@ const Profile = () => {
                                 : "password"
                             }
                             className="pass-input form-control"
+                            value={pwd.currentPassword}
+                            onChange={(e) =>
+                              setPwd((p) => ({ ...p, currentPassword: e.target.value }))
+                            }
+                            disabled={pwdSaving}
                           />
                           <span
                             className={`ti toggle-passwords ${
@@ -509,6 +732,14 @@ const Profile = () => {
                                 : "password"
                             }
                             className="pass-input form-control"
+                            value={pwd.newPassword}
+                            onChange={(e) =>
+                              setPwd((p) => ({ ...p, newPassword: e.target.value }))
+                            }
+                            disabled={pwdSaving}
+                            minLength={8}
+                            maxLength={20}
+                            autoComplete="new-password"
                           />
                           <span
                             className={`ti toggle-passwords ${
@@ -532,6 +763,14 @@ const Profile = () => {
                                 : "password"
                             }
                             className="pass-input form-control"
+                            value={pwd.confirmPassword}
+                            onChange={(e) =>
+                              setPwd((p) => ({ ...p, confirmPassword: e.target.value }))
+                            }
+                            disabled={pwdSaving}
+                            minLength={8}
+                            maxLength={20}
+                            autoComplete="new-password"
                           />
                           <span
                             className={`ti toggle-passwords ${
@@ -556,13 +795,16 @@ const Profile = () => {
                   >
                     Cancel
                   </Link>
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-primary"
-                    data-bs-dismiss="modal"
+                    onClick={async () => {
+                      await onChangePassword();
+                    }}
+                    disabled={pwdSaving || meLoading}
                   >
-                    Save Changes
-                  </Link>
+                    {pwdSaving ? "Saving..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>

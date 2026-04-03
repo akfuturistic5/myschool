@@ -19,6 +19,7 @@ export const useRoomTypes = () => {
           id: `RT${roomType.id}` || `RT${index + 1}`,
           roomType: roomType.room_type || roomType.type_name || 'N/A',
           description: roomType.description || 'N/A',
+          originalData: roomType, // Store original data for edit modal
         }));
         
         setRoomTypes(transformedData);

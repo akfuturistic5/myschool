@@ -44,8 +44,8 @@ const Events = () => {
   const handleAddEventClose = () => setShowAddEventModal(false);
   const handleEventDetailsClose = () => setShowEventDetailsModal(false);
 
-  const onChange = (time: Dayjs, timeString: string | string[]) => {
-    console.log(time, timeString);
+  const onChange = (_time: Dayjs, _timeString: string | string[]) => {
+    // Time picker change handler - no-op for now
   };
 
   const events = [

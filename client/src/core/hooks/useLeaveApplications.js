@@ -26,7 +26,7 @@ function getBadgeClass(leaveTypeName) {
 }
 
 export const useLeaveApplications = (options = {}) => {
-  const { limit = 20 } = options;
+  const { limit = 20, studentOnly = false, parentChildren = false, studentId = null, staffId = null, canUseAdminList = false, academicYearId = null } = options;
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -35,10 +35,51 @@ export const useLeaveApplications = (options = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getLeaveApplications({ limit });
+      let response;
+      if (parentChildren) {
+        response = await apiService.getParentChildrenLeaves({ limit });
+      } else if (studentOnly) {
+        response = await apiService.getMyLeaveApplications({ limit });
+      } else if (studentId != null) {
+        // Admin-only endpoint - only call when role is confirmed (avoids 403 when role loading)
+        if (!canUseAdminList) {
+          setList([]);
+          setLoading(false);
+          return;
+        }
+        response = await apiService.getLeaveApplications({ limit, student_id: studentId, academic_year_id: academicYearId });
+      } else if (staffId != null) {
+        if (!canUseAdminList) {
+          setList([]);
+          setLoading(false);
+          return;
+        }
+        response = await apiService.getLeaveApplications({ limit, staff_id: staffId, academic_year_id: academicYearId });
+      } else if (canUseAdminList) {
+        response = await apiService.getLeaveApplications({ limit, academic_year_id: academicYearId });
+      } else {
+        // Role loading or non-admin - skip admin API to avoid 403
+        setList([]);
+        setLoading(false);
+        return;
+      }
 
-      if (response.status === 'SUCCESS' && Array.isArray(response.data)) {
-        const mapped = response.data.map((row, index) => {
+      const rawData = response?.data;
+      const dataArr = Array.isArray(rawData) ? rawData : (Array.isArray(rawData?.data) ? rawData.data : rawData?.items) || [];
+      if (response.status === 'SUCCESS' && Array.isArray(dataArr)) {
+        let rows = dataArr;
+        if (parentChildren && studentId != null) {
+          rows = rows.filter((r) => Number(r.student_id) === Number(studentId));
+        }
+        // Safety: when viewing a specific student's leaves, filter to only that student_id
+        if (!parentChildren && !studentOnly && studentId != null) {
+          rows = rows.filter((r) => r.student_id != null && Number(r.student_id) === Number(studentId));
+        }
+        // Safety: when viewing a specific staff's leaves, filter to only that staff_id
+        if (!parentChildren && !studentOnly && staffId != null) {
+          rows = rows.filter((r) => r.staff_id != null && Number(r.staff_id) === Number(staffId));
+        }
+        const mapped = rows.map((row, index) => {
           const name =
             [row.applicant_first_name, row.applicant_last_name].filter(Boolean).join(' ') ||
             [row.staff_first_name, row.staff_last_name].filter(Boolean).join(' ') ||
@@ -63,16 +104,29 @@ export const useLeaveApplications = (options = {}) => {
             row.photo_url ||
             'assets/img/profiles/avatar-14.jpg';
 
+          const statusVal = row.status || row.leave_status || 'Pending';
+          const statusLower = String(statusVal).toLowerCase();
+
+          const noOfDays = row.no_of_days ?? row.noOfDays ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
+
           return {
             key: row.id != null ? String(row.id) : `leave-${index}`,
             id: row.id,
+            studentId: row.student_id ?? null,
+            staffId: row.staff_id ?? null,
             name,
             leaveType,
             role,
             leaveRange,
+            leaveDate: leaveRange,
+            startDate,
+            endDate,
+            noOfDays: String(noOfDays),
             applyOn,
             photoUrl,
             badgeClass: getBadgeClass(leaveType),
+            status: statusVal,
+            statusBadgeClass: statusLower.includes('approv') ? 'bg-success' : statusLower.includes('declin') || statusLower.includes('reject') ? 'bg-danger' : 'bg-skyblue',
           };
         });
         setList(mapped);
@@ -90,7 +144,7 @@ export const useLeaveApplications = (options = {}) => {
 
   useEffect(() => {
     fetchList();
-  }, [limit]);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId]);
 
   return {
     leaveApplications: list,

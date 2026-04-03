@@ -1,10 +1,9 @@
 
 import { Link, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { all_routes } from "../../../router/all_routes";
 import Table from "../../../../core/common/dataTable/index";
 import type { TableData } from "../../../../core/data/interface";
-import { leaveData } from "../../../../core/data/json/leaveData";
 import { Attendance } from "../../../../core/data/json/attendance";
 import TeacherSidebar from "./teacherSidebar";
 import TeacherBreadcrumb from "./teacherBreadcrumb";
@@ -37,7 +36,18 @@ const TeacherLeave = () => {
         .finally(() => setLoading(false));
     }
   }, [teacherId]);
-  const data = leaveData;
+  const staffId = teacher?.staff_id ?? teacher?.staffId ?? null;
+  const { leaveApplications, loading: leaveDataLoading, refetch: refetchLeaves } = useLeaveApplications({
+    limit: 50,
+    staffId: staffId ?? undefined,
+    canUseAdminList: true, // Teacher leave page is admin-only
+  });
+  const data = useMemo(() => {
+    return leaveApplications.map((l) => ({
+      ...l,
+      leaveDate: l.leaveRange,
+    }));
+  }, [leaveApplications]);
   const data2 = Attendance;
   const columns = [
     {
@@ -486,7 +496,7 @@ const TeacherLeave = () => {
                           <h4 className="mb-3">Leaves</h4>
                           <Link
                             to="#"
-                            data-bs-target="#apply_leave"
+                            data-bs-target="#apply_leave_teacher"
                             data-bs-toggle="modal"
                             className="btn btn-primary d-inline-flex align-items-center mb-3"
                           >
@@ -496,11 +506,16 @@ const TeacherLeave = () => {
                         </div>
                         {/* Leaves List */}
                         <div className="card-body p-0 py-3">
-                          <Table
-                            dataSource={data}
-                            columns={columns}
-                            Selection={false}
-                          />
+                          {leaveDataLoading && (
+                            <div className="p-4 text-center text-muted">Loading leave data...</div>
+                          )}
+                          {!leaveDataLoading && (
+                            <Table
+                              dataSource={data}
+                              columns={columns}
+                              Selection={false}
+                            />
+                          )}
                         </div>
                         {/* /Leaves List */}
                       </div>
@@ -746,7 +761,7 @@ const TeacherLeave = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <TeacherModal />
+      <TeacherModal staffId={staffId} onLeaveApplied={refetchLeaves} />
     </>
   );
 };

@@ -1,7 +1,9 @@
 export const all_routes = {
 // dashboard routes
   adminDashboard: "/index",
+  administrativeDashboard: "/administrative-dashboard",
   parentDashboard: "/parent-dashboard",
+  guardianDashboard: "/guardian-dashboard",
   studentDashboard: "/student-dashboard",
   teacherDashboard: "/teacher-dashboard",
 
@@ -117,7 +119,7 @@ export const all_routes = {
   uiCards: "/ui-cards",
   uiCarousel: "/ui-carousel",
   uiColor: "/ui-color",
-  uiDropdowns: "ui-dropdowns",
+  uiDropdowns: "/ui-dropdowns",
 
   // pages routes
   error404: "/error-404",
@@ -137,7 +139,6 @@ export const all_routes = {
 
   connectedApps: "/general-settings/connected-apps",
   notificationssettings: "/general-settings/notifications-settings",
-  profilesettings: "/general-settings/profile-settings",
   securitysettings: "/general-settings/security-settings",
 
   banIpAddress: "/other-settings/ban-ip-address",
@@ -160,8 +161,9 @@ export const all_routes = {
   todo: "/application/todo",
   email: "/application/email",
   videoCall: "/application/video-call",
-  chat: "/application/chat",
   audioCall: "/application/audio-call",
+  conferenceCall: "/application/conference-call",
+  chat: "/application/chat",
   callHistory: "/application/call-history",
   fileManager: "/application/file-manager",
 
@@ -205,6 +207,7 @@ export const all_routes = {
   studentResult: "/student/student-result",
   studentLibrary: "/student/student-library",
   studentList: "/student/student-list",
+  bonafideGenerator: "/bonafide",
   addStudent: "/student/add-student",
   editStudent: "/student/edit-student",
   teacherDetails: "/teacher/teacher-details",
@@ -318,4 +321,10 @@ export const all_routes = {
   //page module
   profile:"/pages/profile",
   activity:"/pages/activities"
+,
+
+  // Super Admin
+  superAdminLogin: "/super-admin/login",
+  superAdminDashboard: "/super-admin/dashboard",
+  superAdminSchools: "/super-admin/schools",
 };
