@@ -38,8 +38,8 @@ const ROLE_NAMES = {
   [ROLES.GUARDIAN]: 'Guardian',
 };
 
-/** Roles that can approve/reject leave applications (Headmaster / Admin only) */
-const LEAVE_APPROVER_ROLES = [ROLES.ADMIN];
+/** Roles that can approve/reject leave applications (includes Administrative) */
+const LEAVE_APPROVER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can manage fee collection (create, list all) */
 const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];

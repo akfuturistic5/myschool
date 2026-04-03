@@ -544,7 +544,7 @@ const getDashboardStudentActivity = async (req, res) => {
       const leaveYear = hasYearFilter ? 'AND st.academic_year_id = $1' : '';
       const leaveRes = await query(
         `SELECT la.id, st.first_name, st.last_name, lt.leave_type AS leave_type_name,
-                COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) AS sort_date
+                COALESCE(la.applied_at, la.created_at, la.modified_at, la.start_date::timestamp) AS sort_date
          FROM leave_applications la
          INNER JOIN students st ON la.student_id = st.id
          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
