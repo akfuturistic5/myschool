@@ -464,6 +464,15 @@ async function executeTemplateStatements(pool, sqlText) {
   for (const stmt of statements) {
     if (!stmt) continue;
 
+    // COPY ... FROM stdin must be the only command in a simple query; never batch with other statements.
+    const isCopyStdin = /\bCOPY\b[\s\S]*\bFROM\s+stdin\s*;/i.test(stmt);
+
+    if (isCopyStdin) {
+      await flushBatch();
+      await pool.query(stmt);
+      continue;
+    }
+
     if (stmt.length >= largeStmtChars) {
       await flushBatch();
       await pool.query(stmt);
@@ -732,5 +741,7 @@ module.exports = {
   dropTenantDatabaseIfExists,
   createHeadmasterUserInTenant,
   getTemplateDbName,
+  splitSqlStatements,
+  executeTemplateStatements,
 };
 

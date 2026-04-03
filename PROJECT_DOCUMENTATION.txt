@@ -49,7 +49,7 @@ Classes and academic foundation are mostly implemented. The live academic struct
 
 Attendance and leave are partly to mostly implemented. Attendance data is already used by dashboards and reporting. Leave application and approval related functionality is also present in the backend.
 
-Fee related operations are partly implemented. Fee related routes exist, fee information appears on dashboards, and selected fee reporting is available. However, not every fee screen is fully connected to production workflows.
+Fee related operations are partly implemented with real backend APIs. The backend supports fee collections list, student fee details, fee structures list, and fee collection create actions. Fee information also appears on dashboards and report screens. However, fees group, fees type, fees master, and fees assign screens are not yet fully connected to complete production workflows.
 
 Notice board is implemented in a practical form. Notices can be stored and displayed through backend support. Event support exists, but event related screens are not equally complete.
 
@@ -63,7 +63,7 @@ Partial features
 
 Reports are mixed. Some reports use real data and practical filters. Other report screens still behave like placeholders or partly connected pages.
 
-Communication and productivity tools are mixed. Chat, email, notes, todo, file manager, calendar, and call related screens exist. Some are connected to backend routes, while others are still basic utility style pages rather than complete business workflows.
+Communication and productivity tools are mixed. Chat, email, notes, todo, file manager, calendar, and call history have active backend APIs with create, read, update, and delete support. Notice board and events also have active backend routes. At the same time, some communication interface pages are still utility or template style and are not yet complete end to end business workflows.
 
 Exams are partial. Student exam results and related reporting exist in connected areas. However, full exam administration screens are not complete across the module.
 
@@ -273,11 +273,11 @@ This module manages fee related school operations and financial visibility.
 
 Features
 
-The current implementation includes fee routes, fee data on dashboards, student fee related access, and selected fee reporting. Some fee management screens are active, while others still need full business wiring.
+The current implementation includes active fee APIs for fee collections list, student fee details, fee structures list, and fee collection create actions. Fee data is also used in dashboard and report areas. Some fee management screens are active, while others still need full business wiring.
 
 Actions available
 
-Authorized users can review fee related information, inspect student fee status, and use fee data in reports and dashboards. Full finance and accounting workflows are not yet complete.
+Authorized users can review fee related information, inspect student fee status, collect fees through backend supported flow, and use fee data in reports and dashboards. Full finance and accounting workflows are not yet complete.
 
 Attendance
 
@@ -301,7 +301,7 @@ This module is intended to manage examinations, grading, results, and exam revie
 
 Features
 
-The current live capability includes student exam result access and related report usage. Full exam management pages are not yet complete across the system.
+The current live capability includes backend supported student exam result access and grade report usage based on exam result data. Full exam management pages such as complete exam setup, schedule administration, and broad result administration are not yet complete across the system.
 
 Actions available
 
@@ -315,11 +315,11 @@ This module supports school communication and day to day productivity tools.
 
 Features
 
-The current module includes notice board, event related screens, chat, email, notes, todo, file manager, calendar, and call related pages. Notice board has stronger backend support than some of the other communication areas.
+The current module includes notice board, event related screens, chat, email, notes, todo, file manager, calendar, and call related pages. Backend APIs are active for notice board, events, chat, email, notes, todo, files, calendar, and calls. Some pages are fully connected, while some still need deeper business workflow completion.
 
 Actions available
 
-Users can view notices, use selected communication tools, and work with utility features according to role and current implementation level.
+Users can view and manage notices and events where role allows, and can use chat, email, notes, todo, files, calendar, and call tools through active backend APIs. Some advanced communication workflows are still partial.
 
 Reports
 
@@ -329,11 +329,11 @@ This module supports management review and operational analysis.
 
 Features
 
-The application includes attendance, fee, grade, class, leave, and student report screens. Some reports are connected to real data flows, while others still need backend completion or interface refinement.
+The application includes attendance, fee, grade, class, leave, and student report screens. Backend APIs actively support attendance reports, grade reports, fee collection reporting, and dashboard reporting endpoints. Some report screens are connected to real data flows, while others still need backend completion or interface refinement.
 
 Actions available
 
-Users can open report screens, apply available filters, and review operational outputs in the reports that are currently connected to live data.
+Users can open report screens, apply available filters, and review operational outputs in reports connected to live APIs. This includes attendance and grade reporting from student report endpoints and fee related outputs from fee APIs.
 
 Transport hostel library
 
@@ -544,13 +544,13 @@ The completed foundation includes tenant aware authentication, Super Admin login
 
 Features not yet fully built
 
-The following areas exist but are not fully complete as production modules. These include full exam administration, many reports, much of the library module, sports, deeper finance and accounts workflows, broader HRM operations, advanced user management, support pages, membership features, and many non school profile settings pages.
+The following areas exist but are not fully complete as production modules. These include full exam administration, several report screens, much of the library module, sports, deeper finance and accounts workflows, broader HRM operations, advanced user management, support pages, membership features, and many non school profile settings pages.
 
-Some of these areas already have backend routes but incomplete user interface wiring. Other areas have interface screens but no full backend implementation yet. These sections should not be treated as complete production scope.
+Some of these areas already have backend routes but incomplete user interface wiring. This includes communication APIs, fee APIs, and key report APIs that are live but not fully matched by every screen. Other areas have interface screens but no full backend implementation yet. These sections should not be treated as complete production scope.
 
 Features planned for future
 
-Planned future work should focus on full exam workflows, complete fee workflow coverage, stronger attendance operations, full report implementation, mature transport and hostel administration, complete library management, expanded HRM, stronger user and role administration, richer communication features, and broader school and platform settings.
+Planned future work should focus on full exam workflows, complete fee workflow coverage across all fee screens, stronger attendance operations, completion of remaining report screens, mature transport and hostel administration, complete library management, expanded HRM, stronger user and role administration, richer communication features, and broader school and platform settings.
 
 Administrative UI as planned feature
 
@@ -662,7 +662,7 @@ Current system status
 
 The system has a strong technical foundation and a meaningful set of live school management functions. Completed areas include multi tenant provisioning, platform school management, tenant authentication, role based access, dashboards, student management, teacher management, parent and guardian access, academic structure, school profile settings, notice board support, bonafide generation, and selected fee, attendance, transport, and hostel capability.
 
-Partially implemented areas include deeper fee workflows, exam administration, reports, communication tools, transport expansion, hostel expansion, and several management pages that still need full business completion.
+Partially implemented areas include deeper fee workflows, exam administration, report screen completion, communication workflow completion, transport expansion, hostel expansion, and several management pages that still need full business completion.
 
 Planned areas include advanced Administrative UI, broader finance and accounts, full library operations, sports, expanded HRM, stronger user and permission management, broader settings coverage, support features, and membership related functions.
 

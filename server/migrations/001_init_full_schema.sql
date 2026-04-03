@@ -1,3 +1,96 @@
+-- =============================================================================
+-- MYSCHOOL — FULL INITIAL SCHEMA (master + tenant template)
+-- =============================================================================
+--
+-- !! DO NOT RUN THIS FILE IN pgAdmin, DBeaver SQL editor, or "Execute" on a
+-- !! selection. The tenant section uses PostgreSQL COPY ... FROM stdin (pg_dump
+-- !! format). GUI tools split statements and treat data lines (e.g. "2 2023-24")
+-- !! as SQL → ERROR: syntax error at or near "2".
+--
+-- Run it correctly using ONE of:
+--   1) cd server && npm run db:init     (uses Node + pg; recommended)
+--   2) psql (see server/migrations/README.md or scripts/run-init-psql.ps1)
+--
+-- Master-only Part A (no COPY) can be run in pgAdmin if you paste only from
+-- the top through the line BEFORE the "TENANT_SCHEMA_BEGIN" banner (see below).
+--
+-- =============================================================================
+
+SET statement_timeout = 0;
+SET client_encoding = 'UTF8';
+
+-- ---------------------------------------------------------------------------
+-- MASTER TABLES — school registry, platform admin, tenant session binding
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS schools (
+    id SERIAL PRIMARY KEY,
+    school_name VARCHAR(255) NOT NULL,
+    institute_number VARCHAR(50) NOT NULL UNIQUE,
+    db_name VARCHAR(100) NOT NULL UNIQUE,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    type VARCHAR(512) NULL,
+    logo TEXT NULL,
+    deleted_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_schools_deleted_at ON schools (deleted_at);
+
+CREATE TABLE IF NOT EXISTS super_admin_users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(150) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'super_admin',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tenant_sessions (
+    id SERIAL PRIMARY KEY,
+    session_hash VARCHAR(128) NOT NULL UNIQUE,
+    school_id INT NOT NULL REFERENCES schools (id) ON DELETE CASCADE,
+    institute_number VARCHAR(50) NOT NULL,
+    db_name VARCHAR(100) NOT NULL,
+    tenant_user_id INT NOT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    revoked_at TIMESTAMP WITHOUT TIME ZONE NULL,
+    user_agent TEXT NULL,
+    ip_address VARCHAR(100) NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions (school_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_sessions_expires ON tenant_sessions (expires_at);
+
+CREATE TABLE IF NOT EXISTS super_admin_audit_log (
+    id SERIAL PRIMARY KEY,
+    super_admin_id INT,
+    action VARCHAR(96) NOT NULL,
+    resource_type VARCHAR(64),
+    resource_id VARCHAR(128),
+    details JSONB,
+    ip_address VARCHAR(100),
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_super_admin_audit_created ON super_admin_audit_log (created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- MASTER — end (tenant schema follows)
+-- ---------------------------------------------------------------------------
+
+
+-- ##############################################################################
+-- === TENANT_SCHEMA_BEGIN ===
+-- ##############################################################################
+-- TENANT TABLES — use npm run db:init or psql (NOT pgAdmin): COPY stdin below.
+-- Connect to a school/tenant database (or school_template on Neon).
+-- ##############################################################################
+
 -- Dumped from database version 17.8 (6108b59)
 -- Dumped by pg_dump version 18.1
 
@@ -3478,6 +3571,8 @@ ALTER TABLE ONLY public.vehicles ALTER COLUMN id SET DEFAULT nextval('public.veh
 -- TOC entry 4360 (class 0 OID 214519)
 -- Dependencies: 217
 -- Data for Name: academic_years; Type: TABLE DATA; Schema: public; Owner: neondb_owner
+--
+-- STOP: pgAdmin / GUI "Execute" — lines after COPY are DATA, not SQL. Use: npm run db:init
 --
 
 COPY public.academic_years (id, year_name, start_date, end_date, is_current, is_active, created_at, created_by, modified_at) FROM stdin;

@@ -7,6 +7,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "provisioning:template-hash": "node scripts/provisioningTemplateHash.js",
+    "db:init": "node scripts/run-init-migration.js",
+    "db:init:reset": "node scripts/run-init-migration.js --reset-tenant",
+    "db:verify": "node scripts/run-init-migration.js --verify-only",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
