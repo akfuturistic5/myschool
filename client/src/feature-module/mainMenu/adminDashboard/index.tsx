@@ -190,6 +190,7 @@ const AdminDashboard = () => {
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 10,
     canUseAdminList: true,
+    pendingOnly: true,
     academicYearId,
     leaveFrom: leaveWindow.from ?? undefined,
     leaveTo: leaveWindow.to ?? undefined,

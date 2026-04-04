@@ -785,6 +785,9 @@ class ApiService {
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.leave_from != null && params.leave_from !== '') searchParams.set('leave_from', params.leave_from);
     if (params.leave_to != null && params.leave_to !== '') searchParams.set('leave_to', params.leave_to);
+    if (params.pending_only === true || params.pending_only === 1 || params.pending_only === '1') {
+      searchParams.set('pending_only', '1');
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications${qs ? `?${qs}` : ''}`);
   }

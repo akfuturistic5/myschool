@@ -36,6 +36,7 @@ export const useLeaveApplications = (options = {}) => {
     academicYearId = null,
     leaveFrom = null,
     leaveTo = null,
+    pendingOnly = false,
   } = options;
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +84,7 @@ export const useLeaveApplications = (options = {}) => {
           academic_year_id: academicYearId,
           leave_from: leaveFrom || undefined,
           leave_to: leaveTo || undefined,
+          ...(pendingOnly ? { pending_only: true } : {}),
         });
       } else {
         // Role loading or non-admin - skip admin API to avoid 403
@@ -171,7 +173,7 @@ export const useLeaveApplications = (options = {}) => {
 
   useEffect(() => {
     fetchList();
-  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId, leaveFrom, leaveTo]);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId, leaveFrom, leaveTo, pendingOnly]);
 
   return {
     leaveApplications: list,
