@@ -306,18 +306,38 @@ const getDashboardStats = async (req, res) => {
       console.warn('Dashboard: students count failed', e.message);
     }
 
-    // Teachers: always school-wide counts (matches People → Teachers grid: GET /teachers has no academic_year filter).
-    // Many classes use NULL academic_year_id; year-scoped EXISTS here produced 0 while the grid still listed teachers.
+    // Teachers: school-wide when no year; with year = linked to that year via timetable OR class teacher OR assigned class
     try {
-      const teachersTotal = await query(`SELECT COUNT(*)::int as total FROM teachers`);
-      stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
-      const teachersActive = await query(`
+      if (hasYearFilter) {
+        const yearTeacherScope = sqlTeacherInAcademicYear('t', 1);
+        const teachersTotal = await query(
+          `SELECT COUNT(DISTINCT t.id)::int AS total
+           FROM teachers t
+           INNER JOIN staff s ON t.staff_id = s.id
+           WHERE ${yearTeacherScope}`,
+          [academicYearId]
+        );
+        stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
+        const teachersActive = await query(
+          `SELECT COUNT(DISTINCT t.id)::int AS active
+           FROM teachers t
+           INNER JOIN staff s ON t.staff_id = s.id
+           WHERE t.status = 'Active' AND s.is_active = true
+             AND ${yearTeacherScope}`,
+          [academicYearId]
+        );
+        stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
+      } else {
+        const teachersTotal = await query(`SELECT COUNT(*)::int as total FROM teachers`);
+        stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
+        const teachersActive = await query(`
         SELECT COUNT(*)::int as active
         FROM teachers t
         INNER JOIN staff s ON t.staff_id = s.id
         WHERE t.status = 'Active' AND s.is_active = true
       `);
-      stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
+        stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
+      }
       stats.teachers.inactive = Math.max(0, stats.teachers.total - stats.teachers.active);
     } catch (e) {
       console.warn('Dashboard: teachers count failed', e.message);
