@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
@@ -9,12 +9,12 @@ import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import { apiService } from "../../../core/services/apiService";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
-import { useDebouncedValue } from "../../../core/hooks/useDebouncedValue";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
 import { downloadLibraryBooksImportTemplate, parseBooksImportFile } from "./libraryImportBooks";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
+import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
 
 const Books = () => {
   const routes = all_routes;
@@ -27,8 +27,6 @@ const Books = () => {
   const [selected, setSelected] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState("");
-  const debouncedSearch = useDebouncedValue(searchInput, 350);
   const [appliedFilters, setAppliedFilters] = useState({
     category_id: "",
     book_code: "",
@@ -36,6 +34,9 @@ const Books = () => {
     date_to: "",
   });
   const [filterDraft, setFilterDraft] = useState({ ...appliedFilters });
+  /** Title sort from toolbar; API already returns title ASC — default matches server. */
+  const [bookTitleSort, setBookTitleSort] = useState<"asc" | "desc">("asc");
+  const sortDropdownRef = useRef<HTMLUListElement | null>(null);
   const [exportBusy, setExportBusy] = useState(false);
   const [importModalFile, setImportModalFile] = useState<File | null>(null);
   const [importModalBusy, setImportModalBusy] = useState(false);
@@ -69,7 +70,6 @@ const Books = () => {
     try {
       const [booksRes, catRes] = await Promise.all([
         apiService.getLibraryBooks({
-          search: debouncedSearch.trim() || undefined,
           category_id: appliedFilters.category_id || undefined,
           book_code: appliedFilters.book_code.trim() || undefined,
           date_from: appliedFilters.date_from || undefined,
@@ -96,7 +96,17 @@ const Books = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, appliedFilters, academicYearId]);
+  }, [appliedFilters, academicYearId]);
+
+  const sortedRows = useMemo(() => {
+    if (!rows.length) return rows;
+    return [...rows].sort((a, b) => {
+      const ta = String(a.book_title ?? "").toLowerCase();
+      const tb = String(b.book_title ?? "").toLowerCase();
+      const c = ta.localeCompare(tb, undefined, { sensitivity: "base" });
+      return bookTitleSort === "asc" ? c : -c;
+    });
+  }, [rows, bookTitleSort]);
 
   useEffect(() => {
     load();
@@ -130,7 +140,7 @@ const Books = () => {
   ];
 
   const buildBookExportRows = () =>
-    rows.map((r) => [
+    sortedRows.map((r) => [
       r.id,
       r.book_title,
       r.book_code || r.isbn || "",
@@ -336,7 +346,7 @@ const Books = () => {
     }
   };
 
-  const tableData = rows.map((r) => ({
+  const tableData = sortedRows.map((r) => ({
     ...r,
     bookName: r.book_title,
     bookNo: r.book_code || r.isbn || "—",
@@ -530,16 +540,6 @@ const Books = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Books</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="mb-3 me-2" style={{ minWidth: 200 }}>
-                  <input
-                    type="search"
-                    className="form-control"
-                    placeholder="Search title, author, ISBN…"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    aria-label="Search books"
-                  />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -550,7 +550,12 @@ const Books = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                  <div
+                    className="dropdown-menu drop-width"
+                    ref={dropdownMenuRef}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{ overflow: "visible" }}
+                  >
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -601,6 +606,7 @@ const Books = () => {
                                 className="w-100"
                                 format="DD-MM-YYYY"
                                 allowClear
+                                getPopupContainer={getFilterDropdownPopupContainer}
                                 value={
                                   filterDraft.date_from
                                     ? dayjs(filterDraft.date_from, "YYYY-MM-DD")
@@ -622,6 +628,7 @@ const Books = () => {
                                 className="w-100"
                                 format="DD-MM-YYYY"
                                 allowClear
+                                getPopupContainer={getFilterDropdownPopupContainer}
                                 value={
                                   filterDraft.date_to
                                     ? dayjs(filterDraft.date_to, "YYYY-MM-DD")
@@ -663,20 +670,37 @@ const Books = () => {
                     to="#"
                     className="btn btn-outline-light bg-white dropdown-toggle"
                     data-bs-toggle="dropdown"
+                    onClick={(e) => e.preventDefault()}
                   >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
+                    <i
+                      className={`ti me-2 ${bookTitleSort === "asc" ? "ti-sort-ascending-2" : "ti-sort-descending-2"}`}
+                    />
+                    {bookTitleSort === "asc" ? "Sort: A–Z" : "Sort: Z–A"}
                   </Link>
-                  <ul className="dropdown-menu p-3">
+                  <ul className="dropdown-menu p-3" ref={sortDropdownRef}>
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
+                      <button
+                        type="button"
+                        className={`dropdown-item rounded-1 text-start w-100 border-0 bg-transparent ${bookTitleSort === "asc" ? "active" : ""}`}
+                        onClick={() => {
+                          setBookTitleSort("asc");
+                          sortDropdownRef.current?.classList.remove("show");
+                        }}
+                      >
+                        Ascending (A–Z)
+                      </button>
                     </li>
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
+                      <button
+                        type="button"
+                        className={`dropdown-item rounded-1 text-start w-100 border-0 bg-transparent ${bookTitleSort === "desc" ? "active" : ""}`}
+                        onClick={() => {
+                          setBookTitleSort("desc");
+                          sortDropdownRef.current?.classList.remove("show");
+                        }}
+                      >
+                        Descending (Z–A)
+                      </button>
                     </li>
                   </ul>
                 </div>

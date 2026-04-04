@@ -10,11 +10,11 @@ import Table from "../../../core/common/dataTable/index";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
 import { formatDateDMY, toYmdString } from "../../../core/utils/dateDisplay";
-import { useDebouncedValue } from "../../../core/hooks/useDebouncedValue";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
+import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
 
 const LibraryMember = () => {
   const routes = all_routes;
@@ -28,8 +28,6 @@ const LibraryMember = () => {
   const [selected, setSelected] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState("");
-  const debouncedSearch = useDebouncedValue(searchInput, 350);
   const [appliedFilters, setAppliedFilters] = useState({
     member_type: "" as "" | "student" | "staff",
     member_id: "",
@@ -77,7 +75,6 @@ const LibraryMember = () => {
     setLoadError(null);
     try {
       const res = await apiService.getLibraryMembers({
-        search: debouncedSearch.trim() || undefined,
         member_type: appliedFilters.member_type || undefined,
         member_id: appliedFilters.member_id.trim() || undefined,
         date_from: appliedFilters.date_from || undefined,
@@ -98,7 +95,7 @@ const LibraryMember = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, appliedFilters, academicYearId]);
+  }, [appliedFilters, academicYearId]);
 
   useEffect(() => {
     loadPeople();
@@ -400,15 +397,6 @@ const LibraryMember = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Library Members List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="mb-3 me-2" style={{ minWidth: 200 }}>
-                  <input
-                    type="search"
-                    className="form-control"
-                    placeholder="Search name, card, email…"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                  />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -419,7 +407,12 @@ const LibraryMember = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                  <div
+                    className="dropdown-menu drop-width"
+                    ref={dropdownMenuRef}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{ overflow: "visible" }}
+                  >
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -470,6 +463,7 @@ const LibraryMember = () => {
                                 className="w-100"
                                 format="DD-MM-YYYY"
                                 allowClear
+                                getPopupContainer={getFilterDropdownPopupContainer}
                                 value={
                                   filterDraft.date_from
                                     ? dayjs(filterDraft.date_from, "YYYY-MM-DD")
@@ -491,6 +485,7 @@ const LibraryMember = () => {
                                 className="w-100"
                                 format="DD-MM-YYYY"
                                 allowClear
+                                getPopupContainer={getFilterDropdownPopupContainer}
                                 value={
                                   filterDraft.date_to
                                     ? dayjs(filterDraft.date_to, "YYYY-MM-DD")
