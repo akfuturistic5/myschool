@@ -1233,9 +1233,28 @@ const promoteStudents = async (req, res) => {
 // Get all students
 const getAllStudents = async (req, res) => {
   try {
-    const { page, limit, offset } = parsePagination(req.query);
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+
+    // When scoped to an academic year, client screens (e.g. Student Promotion) need the full roster
+    // for that year — not only the first page (default 50 / max 100 from parsePagination).
+    let page;
+    let limit;
+    let offset;
+    if (hasAcademicYearFilter) {
+      page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const rawLimit = parseInt(req.query.limit, 10);
+      limit =
+        Number.isNaN(rawLimit) || rawLimit < 1
+          ? 5000
+          : Math.min(10000, rawLimit);
+      offset = (page - 1) * limit;
+    } else {
+      const p = parsePagination(req.query);
+      page = p.page;
+      limit = p.limit;
+      offset = p.offset;
+    }
 
     const countWhere = hasAcademicYearFilter ? ' WHERE academic_year_id = $1' : '';
     const countParams = hasAcademicYearFilter ? [academicYearId] : [];
