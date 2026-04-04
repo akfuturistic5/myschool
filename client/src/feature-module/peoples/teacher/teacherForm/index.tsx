@@ -33,11 +33,42 @@ import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useDepartments } from "../../../../core/hooks/useDepartments";
+import { useDesignations } from "../../../../core/hooks/useDesignations";
 
 interface TeacherLocationState {
   teacherId?: number;
   teacher?: any;
   returnTo?: string;
+}
+
+const CLIENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const isValidClientEmail = (s: string) => {
+  const t = s.trim();
+  return t.length > 0 && t.length <= 100 && CLIENT_EMAIL_RE.test(t);
+};
+
+const isValidClientPhone = (s: string) => {
+  const d = s.replace(/\D/g, "");
+  return d.length >= 7 && d.length <= 15;
+};
+
+/** Extract server `message` from apiService HTTP error string when body is JSON */
+function parseTeacherApiErrorMessage(err: unknown, fallback: string): string {
+  if (!(err instanceof Error)) return fallback;
+  const msg = err.message;
+  const marker = "message: ";
+  const idx = msg.indexOf(marker);
+  if (idx === -1) return msg || fallback;
+  const jsonPart = msg.slice(idx + marker.length).trim();
+  try {
+    const j = JSON.parse(jsonPart) as { message?: string };
+    if (typeof j.message === "string" && j.message.trim()) return j.message;
+  } catch {
+    /* ignore */
+  }
+  return msg || fallback;
 }
 
 const TeacherForm = () => {
@@ -52,19 +83,24 @@ const TeacherForm = () => {
   const [teacherData, setTeacherData] = useState<any>(null);
   const [loadingTeacher, setLoadingTeacher] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [owner, setOwner] = useState<string[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [selectedGender, setSelectedGender] = useState<string | null>(null);
   const [selectedMaritalStatus, setSelectedMaritalStatus] = useState<string | null>(null);
-  const [selectedBloodGroup, setSelectedBloodGroup] = useState<string | null>(null);
+  const [selectedBloodGroupId, setSelectedBloodGroupId] = useState<string | null>(null);
+  const [selectedDesignationId, setSelectedDesignationId] = useState<string | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [selectedContractType, setSelectedContractType] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const handleTagsChange = (newTags: string[]) => {
     setOwner(newTags);
   };
 
-  const [defaultDate, setDefaultDate] = useState<dayjs.Dayjs | null>(null);
+  const [dobDate, setDobDate] = useState<dayjs.Dayjs | null>(null);
+  const [joiningDate, setJoiningDate] = useState<dayjs.Dayjs | null>(null);
+  const [leavingDate, setLeavingDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('Active');
 
   // Lookup data from API (real data for dropdowns)
@@ -77,6 +113,8 @@ const TeacherForm = () => {
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
   const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
+  const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
+  const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
 
   useEffect(() => {
     if (location.pathname === routes.editTeacher) {
@@ -100,10 +138,31 @@ const TeacherForm = () => {
   }, [location.pathname, teacherId]);
 
   useEffect(() => {
+    if (location.pathname === "/teacher/add-teacher") {
+      setSelectedClassId(null);
+      setSelectedSubjectId(null);
+      setSelectedGender(null);
+      setSelectedMaritalStatus(null);
+      setSelectedBloodGroupId(null);
+      setSelectedDesignationId(null);
+      setSelectedDepartmentId(null);
+      setSelectedContractType(null);
+      setSelectedShift(null);
+      setSelectedStatus("Active");
+      setOwner(["English"]);
+      setDobDate(null);
+      setJoiningDate(null);
+      setLeavingDate(null);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
     if (teacherData && isEdit) {
       const jd = teacherData.joining_date ? dayjs(teacherData.joining_date) : null;
       const dob = teacherData.date_of_birth ? dayjs(teacherData.date_of_birth) : null;
-      setDefaultDate(dob || jd);
+      setDobDate(dob);
+      setJoiningDate(jd);
+      setLeavingDate(null);
       if (teacherData.languages_known) {
         const tags = typeof teacherData.languages_known === "string"
           ? teacherData.languages_known.split(",").map((s: string) => s.trim()).filter(Boolean)
@@ -112,7 +171,6 @@ const TeacherForm = () => {
       } else {
         setOwner(["English"]);
       }
-      // Set status based on teacher data
       const currentStatus = teacherData.status === 'Active' || teacherData.is_active === true || teacherData.is_active === 1 
         ? 'Active' 
         : 'Inactive';
@@ -121,7 +179,15 @@ const TeacherForm = () => {
       setSelectedSubjectId(teacherData.subject_id ? String(teacherData.subject_id) : null);
       setSelectedGender(teacherData.gender ?? null);
       setSelectedMaritalStatus(teacherData.marital_status ?? null);
-      setSelectedBloodGroup(teacherData.blood_group ?? null);
+      setSelectedBloodGroupId(
+        teacherData.blood_group_id != null ? String(teacherData.blood_group_id) : null
+      );
+      setSelectedDesignationId(
+        teacherData.designation_id != null ? String(teacherData.designation_id) : null
+      );
+      setSelectedDepartmentId(
+        teacherData.department_id != null ? String(teacherData.department_id) : null
+      );
       setSelectedContractType(teacherData.contract_type ?? null);
       setSelectedShift(teacherData.shift ?? null);
     }
@@ -198,24 +264,13 @@ const TeacherForm = () => {
                               <i className="ti ti-photo-plus fs-16" />
                             </div>
                             <div className="profile-upload">
-                              <div className="profile-uploader d-flex align-items-center">
-                                <div className="drag-upload-btn mb-3">
-                                  Upload
-                                  <input
-                                    type="file"
-                                    className="form-control image-sign"
-                                    multiple
-                                  />
-                                </div>
-                                <Link
-                                  to="#"
-                                  className="btn btn-primary mb-3"
-                                >
-                                  Remove
-                                </Link>
+                              <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
+                                <button type="button" className="btn btn-light mb-3" disabled title="Not available yet">
+                                  Upload photo
+                                </button>
                               </div>
-                              <p className="fs-12">
-                                Upload image size 4MB, Format JPG, PNG, SVG
+                              <p className="text-muted small mb-0">
+                                Photo upload is not available in this version. Profile image can be set later from staff settings.
                               </p>
                             </div>
                           </div>
@@ -226,9 +281,12 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Teacher ID</label>
                             <input
+                              name="employee_code"
                               type="text"
                               className="form-control"
+                              placeholder={isEdit ? undefined : "Optional — auto-generated if empty"}
                               defaultValue={isEdit && t ? (t.employee_code ?? "") : undefined}
+                              readOnly={isEdit}
                             />
                           </div>
                         </div>
@@ -276,9 +334,8 @@ const TeacherForm = () => {
                                 }))}
                                 value={selectedClassId}
                                 onChange={(value) => {
-                                  if (isEdit) {
-                                    setSelectedClassId(value);
-                                  }
+                                  setSelectedClassId(value);
+                                  setSelectedSubjectId(null);
                                 }}
                               />
                             )}
@@ -310,9 +367,7 @@ const TeacherForm = () => {
                                   }))}
                                 value={selectedSubjectId}
                                 onChange={(value) => {
-                                  if (isEdit) {
-                                    setSelectedSubjectId(value);
-                                  }
+                                  setSelectedSubjectId(value);
                                 }}
                               />
                             )}
@@ -331,10 +386,9 @@ const TeacherForm = () => {
                                     ) || gender[0]
                                   : undefined
                               }
+                              value={selectedGender}
                               onChange={(value: string | null) => {
-                                if (isEdit) {
-                                  setSelectedGender(value);
-                                }
+                                setSelectedGender(value);
                               }}
                             />
                           </div>
@@ -380,14 +434,12 @@ const TeacherForm = () => {
                               <CommonSelect
                                 className="select"
                                 options={(bloodGroups || []).map((bg: any) => ({
-                                  value: bg.blood_group ?? '',
+                                  value: String(bg.id ?? ''),
                                   label: bg.blood_group ?? ''
                                 }))}
-                                value={selectedBloodGroup}
+                                value={selectedBloodGroupId}
                                 onChange={(value: string | null) => {
-                                  if (isEdit) {
-                                    setSelectedBloodGroup(value);
-                                  }
+                                  setSelectedBloodGroupId(value);
                                 }}
                               />
                             )}
@@ -399,13 +451,16 @@ const TeacherForm = () => {
                               Date of Joining
                             </label>
                             <div className="input-icon position-relative">
+                              <DatePicker
+                                className="form-control datetimepicker"
+                                format={{ format: "DD-MM-YYYY", type: "mask" }}
+                                value={joiningDate}
+                                onChange={(d) => setJoiningDate(d)}
+                                placeholder="Select date"
+                              />
                               <span className="input-icon-addon">
                                 <i className="ti ti-calendar" />
                               </span>
-                              <input
-                                type="text"
-                                className="form-control datetimepicker"
-                              />
                             </div>
                           </div>
                         </div>
@@ -435,24 +490,13 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Date of Birth</label>
                             <div className="input-icon position-relative">
-                              {isEdit? <DatePicker
+                              <DatePicker
                                 className="form-control datetimepicker"
-                                format={{
-                                  format: "DD-MM-YYYY",
-                                  type: "mask",
-                                }}
-                                value={defaultDate}
-                                placeholder="Select Date"
-                              /> : <DatePicker
-                              className="form-control datetimepicker"
-                              format={{
-                                format: "DD-MM-YYYY",
-                                type: "mask",
-                              }}
-                              defaultValue=""
-                              placeholder="Select Date"
-                            />}
-                              
+                                format={{ format: "DD-MM-YYYY", type: "mask" }}
+                                value={dobDate}
+                                onChange={(d) => setDobDate(d)}
+                                placeholder="Select date"
+                              />
                               <span className="input-icon-addon">
                                 <i className="ti ti-calendar" />
                               </span>
@@ -472,10 +516,9 @@ const TeacherForm = () => {
                                     ) || Marital[0]
                                   : undefined
                               }
+                              value={selectedMaritalStatus}
                               onChange={(value: string | null) => {
-                                if (isEdit) {
-                                  setSelectedMaritalStatus(value);
-                                }
+                                setSelectedMaritalStatus(value);
                               }}
                             />
                           </div>
@@ -615,12 +658,10 @@ const TeacherForm = () => {
                                     return s.value === currentStatus;
                                   }) || status[0]
                                 : undefined}
-                              value={isEdit ? selectedStatus : null}
-                              key={isEdit && t ? `status-${t.id}-${selectedStatus}` : 'status-new'}
+                              value={selectedStatus}
+                              key={isEdit && t ? `status-${t.id}-${selectedStatus}` : 'status-add'}
                               onChange={(value: string | null) => {
-                                if (isEdit) {
-                                  setSelectedStatus(value || 'Active');
-                                }
+                                setSelectedStatus(value || 'Active');
                               }}
                             />
                           </div>
@@ -693,10 +734,9 @@ const TeacherForm = () => {
                                     ) || Contract[0]
                                   : undefined
                               }
+                              value={selectedContractType}
                               onChange={(value: string | null) => {
-                                if (isEdit) {
-                                  setSelectedContractType(value);
-                                }
+                                setSelectedContractType(value);
                               }}
                             />
                           </div>
@@ -714,10 +754,9 @@ const TeacherForm = () => {
                                     ) || Shift[0]
                                   : undefined
                               }
+                              value={selectedShift}
                               onChange={(value: string | null) => {
-                                if (isEdit) {
-                                  setSelectedShift(value);
-                                }
+                                setSelectedShift(value);
                               }}
                             />
                           </div>
@@ -739,27 +778,67 @@ const TeacherForm = () => {
                               Date of Leaving
                             </label>
                             <div className="input-icon position-relative">
-                            {isEdit? <DatePicker
+                              <DatePicker
                                 className="form-control datetimepicker"
-                                format={{
-                                  format: "DD-MM-YYYY",
-                                  type: "mask",
-                                }}
-                                value={defaultDate}
-                                placeholder="Select Date"
-                              /> : <DatePicker
-                              className="form-control datetimepicker"
-                              format={{
-                                format: "DD-MM-YYYY",
-                                type: "mask",
-                              }}
-                              defaultValue=""
-                              placeholder="Select Date"
-                            />}
+                                format={{ format: "DD-MM-YYYY", type: "mask" }}
+                                value={leavingDate}
+                                onChange={(d) => setLeavingDate(d)}
+                                placeholder="Optional"
+                              />
                               <span className="input-icon-addon">
                                 <i className="ti ti-calendar" />
                               </span>
                             </div>
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Designation</label>
+                            {designationsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading…
+                              </div>
+                            ) : designationsError ? (
+                              <div className="form-control text-danger">{designationsError}</div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={(designations || [])
+                                  .filter((d: any) => d.originalData?.id != null)
+                                  .map((d: any) => ({
+                                    value: String(d.originalData.id),
+                                    label: d.designation ?? "",
+                                  }))}
+                                value={selectedDesignationId}
+                                onChange={(value) => setSelectedDesignationId(value)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Department</label>
+                            {departmentsLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2" />
+                                Loading…
+                              </div>
+                            ) : departmentsError ? (
+                              <div className="form-control text-danger">{departmentsError}</div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={(departments || [])
+                                  .filter((d: any) => d.originalData?.id != null)
+                                  .map((d: any) => ({
+                                    value: String(d.originalData.id),
+                                    label: d.department ?? "",
+                                  }))}
+                                value={selectedDepartmentId}
+                                onChange={(value) => setSelectedDepartmentId(value)}
+                              />
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1180,7 +1259,7 @@ const TeacherForm = () => {
                     </div>
                   </div>
                   {/* /Documents */}
-                  {/* Password */}
+                  {/* Password — create: sets login password; edit: not supported via this API */}
                   <div className="card">
                     <div className="card-header bg-light">
                       <div className="d-flex align-items-center">
@@ -1191,22 +1270,31 @@ const TeacherForm = () => {
                       </div>
                     </div>
                     <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">New Password</label>
-                            <input type="password" className="form-control" />
+                      {!isEdit ? (
+                        <>
+                          <p className="text-muted small">
+                            Optional. If left blank, the teacher can log in using their phone number as the initial password. Otherwise set a password and confirm it below.
+                          </p>
+                          <div className="row">
+                            <div className="col-md-6">
+                              <div className="mb-3">
+                                <label className="form-label">Password</label>
+                                <input name="new_password" type="password" className="form-control" autoComplete="new-password" />
+                              </div>
+                            </div>
+                            <div className="col-md-6">
+                              <div className="mb-3">
+                                <label className="form-label">Confirm password</label>
+                                <input name="confirm_password" type="password" className="form-control" autoComplete="new-password" />
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Confirm Password
-                            </label>
-                            <input type="password" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
+                        </>
+                      ) : (
+                        <p className="text-muted small mb-0">
+                          Password cannot be changed from this screen. Use the user account / security settings elsewhere if your school supports it.
+                        </p>
+                      )}
                     </div>
                   </div>
                   {/* /Password */}
@@ -1216,6 +1304,7 @@ const TeacherForm = () => {
                   <button 
                     type="button" 
                     className="btn btn-light me-3"
+                    disabled={isUpdating || isCreating}
                     onClick={() => navigate(routes.teacherList)}
                   >
                     Cancel
@@ -1230,8 +1319,21 @@ const TeacherForm = () => {
                         const form = formRef.current;
                         const get = (name: string) => (form.querySelector(`[name="${name}"]`) as HTMLInputElement)?.value?.trim() || null;
                         const getNum = (name: string) => { const v = get(name); return v ? parseInt(v, 10) : undefined; };
+                        const emUpd = get("email");
+                        const phUpd = get("phone");
+                        if (emUpd && !isValidClientEmail(emUpd)) {
+                          alert("Please enter a valid email address.");
+                          return;
+                        }
+                        if (phUpd && !isValidClientPhone(phUpd)) {
+                          alert("Phone must contain 7–15 digits.");
+                          return;
+                        }
                         setIsUpdating(true);
                         try {
+                          const bgRow = (bloodGroups || []).find(
+                            (bg: any) => String(bg.id) === selectedBloodGroupId
+                          );
                           const updateData: Record<string, any> = {
                             status: selectedStatus,
                             is_active: selectedStatus === 'Active',
@@ -1258,17 +1360,28 @@ const TeacherForm = () => {
                             twitter: get('twitter') || teacherData?.twitter,
                             linkedin: get('linkedin') || teacherData?.linkedin,
                             languages_known: owner?.length ? owner : (teacherData?.languages_known ? (Array.isArray(teacherData.languages_known) ? teacherData.languages_known : [teacherData.languages_known]) : undefined),
-                            class_id: teacherData?.class_id,
-                            subject_id: teacherData?.subject_id,
+                            class_id: selectedClassId ? parseInt(selectedClassId, 10) : teacherData?.class_id,
+                            subject_id: selectedSubjectId ? parseInt(selectedSubjectId, 10) : teacherData?.subject_id,
                             gender: selectedGender || teacherData?.gender,
                             marital_status: selectedMaritalStatus || teacherData?.marital_status,
-                            blood_group: selectedBloodGroup || teacherData?.blood_group,
+                            designation_id: selectedDesignationId ? parseInt(selectedDesignationId, 10) : undefined,
+                            department_id: selectedDepartmentId ? parseInt(selectedDepartmentId, 10) : undefined,
+                            blood_group_id: selectedBloodGroupId ? parseInt(selectedBloodGroupId, 10) : undefined,
+                            blood_group: bgRow?.blood_group ?? teacherData?.blood_group,
                             salary: getNum('salary') ?? teacherData?.salary,
                             contract_type: selectedContractType || teacherData?.contract_type,
                             shift: selectedShift || teacherData?.shift,
                             work_location: get('work_location') || teacherData?.work_location,
-                            date_of_birth: teacherData?.date_of_birth ? dayjs(teacherData.date_of_birth).format('YYYY-MM-DD') : undefined,
-                            joining_date: teacherData?.joining_date ? dayjs(teacherData.joining_date).format('YYYY-MM-DD') : undefined,
+                            date_of_birth: dobDate
+                              ? dobDate.format('YYYY-MM-DD')
+                              : (teacherData?.date_of_birth
+                                ? dayjs(teacherData.date_of_birth).format('YYYY-MM-DD')
+                                : undefined),
+                            joining_date: joiningDate
+                              ? joiningDate.format('YYYY-MM-DD')
+                              : (teacherData?.joining_date
+                                ? dayjs(teacherData.joining_date).format('YYYY-MM-DD')
+                                : undefined),
                           };
                           Object.keys(updateData).forEach(k => { if (updateData[k] === undefined || updateData[k] === null) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
@@ -1279,7 +1392,7 @@ const TeacherForm = () => {
                           }
                         } catch (error: any) {
                           console.error('Error updating teacher:', error);
-                          alert(error?.message || 'Failed to update teacher. Please try again.');
+                          alert(parseTeacherApiErrorMessage(error, "Failed to update teacher. Please try again."));
                         } finally {
                           setIsUpdating(false);
                         }
@@ -1289,9 +1402,136 @@ const TeacherForm = () => {
                       {isUpdating ? 'Updating...' : 'Save Changes'}
                     </button>
                   ) : (
-                    <Link to={routes.teacherList} className="btn btn-primary">
-                      Add Teacher
-                    </Link>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={isCreating}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        if (!formRef.current) return;
+                        const form = formRef.current;
+                        const get = (name: string) =>
+                          (form.querySelector(`[name="${name}"]`) as HTMLInputElement)?.value?.trim() || null;
+                        const getNum = (name: string) => {
+                          const v = get(name);
+                          return v ? parseInt(v, 10) : undefined;
+                        };
+                        const fn = get("first_name");
+                        const ln = get("last_name");
+                        const em = get("email");
+                        const ph = get("phone");
+                        if (!fn || !ln) {
+                          alert("First name and last name are required.");
+                          return;
+                        }
+                        if (!em) {
+                          alert("Email is required.");
+                          return;
+                        }
+                        if (!ph) {
+                          alert("Phone is required.");
+                          return;
+                        }
+                        if (!isValidClientEmail(em)) {
+                          alert("Please enter a valid email address.");
+                          return;
+                        }
+                        if (!isValidClientPhone(ph)) {
+                          alert("Phone must contain 7–15 digits.");
+                          return;
+                        }
+                        if (!selectedClassId || !selectedSubjectId) {
+                          alert("Please select class and subject.");
+                          return;
+                        }
+                        const pw = get("new_password");
+                        const pwc = get("confirm_password");
+                        if (pw || pwc) {
+                          if (pw !== pwc) {
+                            alert("Password and confirm password do not match.");
+                            return;
+                          }
+                          if (pw.length < 6) {
+                            alert("Password must be at least 6 characters.");
+                            return;
+                          }
+                        }
+                        const bgRow = (bloodGroups || []).find(
+                          (bg: any) => String(bg.id) === selectedBloodGroupId
+                        );
+                        setIsCreating(true);
+                        try {
+                          const payload: Record<string, any> = {
+                            first_name: fn,
+                            last_name: ln,
+                            email: em,
+                            phone: ph,
+                            password: pw || undefined,
+                            class_id: parseInt(selectedClassId, 10),
+                            subject_id: parseInt(selectedSubjectId, 10),
+                            status: selectedStatus,
+                            is_active: selectedStatus === "Active",
+                            gender: selectedGender || undefined,
+                            marital_status: selectedMaritalStatus || undefined,
+                            designation_id: selectedDesignationId
+                              ? parseInt(selectedDesignationId, 10)
+                              : undefined,
+                            department_id: selectedDepartmentId
+                              ? parseInt(selectedDepartmentId, 10)
+                              : undefined,
+                            blood_group_id: selectedBloodGroupId
+                              ? parseInt(selectedBloodGroupId, 10)
+                              : undefined,
+                            blood_group: bgRow?.blood_group,
+                            father_name: get("father_name") || undefined,
+                            mother_name: get("mother_name") || undefined,
+                            address: get("address") || undefined,
+                            qualification: get("qualification") || undefined,
+                            experience_years: getNum("experience_years"),
+                            previous_school_name: get("previous_school_name") || undefined,
+                            previous_school_address: get("previous_school_address") || undefined,
+                            previous_school_phone: get("previous_school_phone") || undefined,
+                            current_address: get("address") || undefined,
+                            permanent_address: get("permanent_address") || undefined,
+                            pan_number: get("pan_number") || undefined,
+                            id_number: get("id_number") || undefined,
+                            bank_name: get("bank_name") || undefined,
+                            branch: get("branch") || undefined,
+                            ifsc: get("ifsc") || undefined,
+                            contract_type: selectedContractType || undefined,
+                            shift: selectedShift || undefined,
+                            work_location: get("work_location") || undefined,
+                            salary: getNum("salary"),
+                            facebook: get("facebook") || undefined,
+                            twitter: get("twitter") || undefined,
+                            linkedin: get("linkedin") || undefined,
+                            languages_known: owner?.length ? owner : ["English"],
+                            employee_code: get("employee_code") || undefined,
+                            date_of_birth: dobDate ? dobDate.format("YYYY-MM-DD") : undefined,
+                            joining_date: joiningDate ? joiningDate.format("YYYY-MM-DD") : undefined,
+                            emergency_contact_name: get("emergency_contact_name") || undefined,
+                            emergency_contact_phone: get("emergency_contact_phone") || undefined,
+                          };
+                          Object.keys(payload).forEach((k) => {
+                            if (payload[k] === undefined || payload[k] === null || payload[k] === "")
+                              delete payload[k];
+                          });
+                          const response = await apiService.createTeacher(payload);
+                          if (response && response.status === "SUCCESS") {
+                            navigate(routes.teacherList, { state: { refresh: true } });
+                          } else {
+                            alert(response?.message || "Failed to create teacher");
+                          }
+                        } catch (error: any) {
+                          console.error("Error creating teacher:", error);
+                          alert(parseTeacherApiErrorMessage(error, "Failed to create teacher. Please try again."));
+                        } finally {
+                          setIsCreating(false);
+                        }
+                      }}
+                    >
+                      {isCreating ? "Saving…" : "Add Teacher"}
+                    </button>
                   )}
                 </div>
               </form>
