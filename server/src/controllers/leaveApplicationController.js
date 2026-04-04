@@ -226,6 +226,14 @@ const getMyLeaveApplications = async (req, res) => {
     }
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
+    // Staff/administrative/teacher accounts must never use the student email/phone fallback below,
+    // or they can incorrectly see another student's leaves when contact details match.
+    const staffLinkCheck = await query(
+      'SELECT 1 FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+      [userId]
+    );
+    const isLinkedStaffAccount = staffLinkCheck.rows.length > 0;
+
     // First try student leaves (by students.user_id)
     let result = await query(
       `
@@ -246,8 +254,9 @@ const getMyLeaveApplications = async (req, res) => {
       [userId, limit]
     );
 
-    // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set)
-    if (result.rows.length === 0) {
+    // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set).
+    // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
+    if (result.rows.length === 0 && !isLinkedStaffAccount) {
       const userRow = await query(
         'SELECT email, phone FROM users WHERE id = $1 AND is_active = true',
         [userId]

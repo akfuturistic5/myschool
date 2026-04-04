@@ -23,6 +23,7 @@ const HEADMASTER_ROLE_IDS = new Set([1]);
 const ADMINISTRATIVE_ROLE_IDS = new Set([6]);
 
 const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
+  '/administrative/',
   '/student/',
   '/teacher/',
   '/parent/',
