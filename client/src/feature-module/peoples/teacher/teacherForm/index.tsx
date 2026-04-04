@@ -71,6 +71,12 @@ function parseTeacherApiErrorMessage(err: unknown, fallback: string): string {
   return msg || fallback;
 }
 
+function teacherStoredDocBasename(stored: string | null | undefined): string {
+  if (!stored) return "";
+  const idx = stored.lastIndexOf("/");
+  return idx >= 0 ? stored.slice(idx + 1) : stored;
+}
+
 const TeacherForm = () => {
   const routes = all_routes;
   const location = useLocation();
@@ -102,6 +108,8 @@ const TeacherForm = () => {
   const [joiningDate, setJoiningDate] = useState<dayjs.Dayjs | null>(null);
   const [leavingDate, setLeavingDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('Active');
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [joiningLetterFile, setJoiningLetterFile] = useState<File | null>(null);
 
   // Lookup data from API (real data for dropdowns)
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -153,8 +161,15 @@ const TeacherForm = () => {
       setDobDate(null);
       setJoiningDate(null);
       setLeavingDate(null);
+      setResumeFile(null);
+      setJoiningLetterFile(null);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    setResumeFile(null);
+    setJoiningLetterFile(null);
+  }, [teacherId]);
 
   useEffect(() => {
     if (teacherData && isEdit) {
@@ -209,6 +224,50 @@ const TeacherForm = () => {
   }
 
   const t = teacherData || state?.teacher;
+
+  const openTeacherPdf = async (docType: "resume" | "joining_letter") => {
+    if (!teacherId) return;
+    try {
+      const blob = await apiService.fetchTeacherDocumentBlob(teacherId, docType);
+      const u = URL.createObjectURL(blob);
+      window.open(u, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(u), 120_000);
+    } catch (e) {
+      alert(parseTeacherApiErrorMessage(e, "Could not open document."));
+    }
+  };
+
+  const onPickResume = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.size > 4 * 1024 * 1024) {
+      alert("File must be 4MB or smaller.");
+      return;
+    }
+    const lower = f.name.toLowerCase();
+    if (!lower.endsWith(".pdf") && f.type !== "application/pdf") {
+      alert("Only PDF files are allowed.");
+      return;
+    }
+    setResumeFile(f);
+  };
+
+  const onPickJoiningLetter = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.size > 4 * 1024 * 1024) {
+      alert("File must be 4MB or smaller.");
+      return;
+    }
+    const lower = f.name.toLowerCase();
+    if (!lower.endsWith(".pdf") && f.type !== "application/pdf") {
+      alert("Only PDF files are allowed.");
+      return;
+    }
+    setJoiningLetterFile(f);
+  };
 
   return (
     <>
@@ -1210,49 +1269,77 @@ const TeacherForm = () => {
                         <div className="col-lg-6">
                           <div className="mb-2">
                             <div className="mb-3">
-                              <label className="form-label">
-                                Upload Resume
-                              </label>
-                              <p>
-                                Upload image size of 4MB, Accepted Format PDF
+                              <label className="form-label">Upload Resume</label>
+                              <p className="text-muted small mb-0">
+                                Max file size 4MB. PDF only.
                               </p>
                             </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2 me-2">
+                            <div className="d-flex align-items-center flex-wrap gap-2 mb-2">
+                              <label className="btn btn-primary drag-upload-btn mb-0">
                                 <i className="ti ti-file-upload me-1" />
-                                Change
+                                {resumeFile || t?.resume ? "Change" : "Upload PDF"}
                                 <input
                                   type="file"
-                                  className="form-control image_sign"
-                                  multiple
+                                  accept="application/pdf,.pdf"
+                                  className="d-none"
+                                  onChange={onPickResume}
                                 />
-                              </div>
-                              <p className="mb-2">Resume.pdf</p>
+                              </label>
+                              {isEdit && teacherId && t?.resume && !resumeFile && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm"
+                                  onClick={() => openTeacherPdf("resume")}
+                                >
+                                  View
+                                </button>
+                              )}
                             </div>
+                            <p className="mb-0 small text-break">
+                              {resumeFile
+                                ? resumeFile.name
+                                : t?.resume
+                                  ? teacherStoredDocBasename(t.resume)
+                                  : "No file selected"}
+                            </p>
                           </div>
                         </div>
                         <div className="col-lg-6">
                           <div className="mb-2">
                             <div className="mb-3">
-                              <label className="form-label">
-                                Upload Joining Letter
-                              </label>
-                              <p>
-                                Upload image size of 4MB, Accepted Format PDF
+                              <label className="form-label">Upload Joining Letter</label>
+                              <p className="text-muted small mb-0">
+                                Max file size 4MB. PDF only.
                               </p>
                             </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2 me-2">
+                            <div className="d-flex align-items-center flex-wrap gap-2 mb-2">
+                              <label className="btn btn-primary drag-upload-btn mb-0">
                                 <i className="ti ti-file-upload me-1" />
-                                Upload Document
+                                {joiningLetterFile || t?.joining_letter ? "Change" : "Upload PDF"}
                                 <input
                                   type="file"
-                                  className="form-control image_sign"
-                                  multiple
+                                  accept="application/pdf,.pdf"
+                                  className="d-none"
+                                  onChange={onPickJoiningLetter}
                                 />
-                              </div>
-                              <p className="mb-2">Resume.pdf</p>
+                              </label>
+                              {isEdit && teacherId && t?.joining_letter && !joiningLetterFile && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm"
+                                  onClick={() => openTeacherPdf("joining_letter")}
+                                >
+                                  View
+                                </button>
+                              )}
                             </div>
+                            <p className="mb-0 small text-break">
+                              {joiningLetterFile
+                                ? joiningLetterFile.name
+                                : t?.joining_letter
+                                  ? teacherStoredDocBasename(t.joining_letter)
+                                  : "No file selected"}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -1518,6 +1605,23 @@ const TeacherForm = () => {
                           });
                           const response = await apiService.createTeacher(payload);
                           if (response && response.status === "SUCCESS") {
+                            const newId = response.data?.id;
+                            if (newId != null && (resumeFile || joiningLetterFile)) {
+                              try {
+                                const fd = new FormData();
+                                if (resumeFile) fd.append("resume", resumeFile);
+                                if (joiningLetterFile) fd.append("joining_letter", joiningLetterFile);
+                                await apiService.uploadTeacherDocuments(newId, fd);
+                              } catch (docErr) {
+                                console.error(docErr);
+                                alert(
+                                  parseTeacherApiErrorMessage(
+                                    docErr,
+                                    "Teacher was created but documents could not be uploaded. Edit the teacher to add PDFs."
+                                  )
+                                );
+                              }
+                            }
                             navigate(routes.teacherList, { state: { refresh: true } });
                           } else {
                             alert(response?.message || "Failed to create teacher");

@@ -1,9 +1,73 @@
 /**
  * Create a user account for a person (student, parent, guardian) and return user id.
  * Used when creating/updating students, parents, guardians - so they can login to the app.
+ *
+ * Login: auth accepts username OR email OR phone — store real email in users.email so
+ * parents/students/guardians sign in with email + initial password (phone).
+ * users.username is a stable handle: firstname.lastname (lowercase), unique with numeric suffix if needed.
  */
 const bcrypt = require('bcryptjs');
 const { ROLES } = require('../config/roles');
+
+const USERS_USERNAME_MAX_LEN = 50;
+
+/** Lowercase alphanumeric segment from a name part (no spaces). */
+function nameSegment(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 40);
+}
+
+/**
+ * Human-readable username base: first.last (e.g. aabid.khan). Falls back to single segment if one name missing.
+ */
+function usernameBaseFromFirstLast(first, last) {
+  const f = nameSegment(first);
+  const l = nameSegment(last);
+  if (f && l) return `${f}.${l}`;
+  if (f) return f;
+  if (l) return l;
+  return '';
+}
+
+/**
+ * Pick a username not yet in users.username (varchar 50). Never reuses another person's row on collision.
+ */
+async function allocateUniqueUsername(client, base, extraSuffixes = []) {
+  const maxLen = USERS_USERNAME_MAX_LEN;
+  const bases = [];
+  const trimmedBase = (base || '').toString().trim().slice(0, maxLen);
+  if (trimmedBase.length > 0) bases.push(trimmedBase);
+
+  for (const ex of extraSuffixes) {
+    const raw = String(ex ?? '').trim();
+    if (!raw || !trimmedBase) continue;
+    const digits = raw.replace(/\D/g, '');
+    const seg = (digits.length >= 2 ? digits.slice(-6) : '') || raw.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 8);
+    if (seg) bases.push(`${trimmedBase}.${seg}`.slice(0, maxLen));
+  }
+
+  if (bases.length === 0) {
+    bases.push(`u${Date.now()}`.slice(0, maxLen));
+  }
+
+  for (const b of bases) {
+    const candidate = b.slice(0, maxLen);
+    const check = await client.query('SELECT 1 FROM users WHERE username = $1 LIMIT 1', [candidate]);
+    if (check.rows.length === 0) return candidate;
+  }
+
+  const root = bases[0].slice(0, Math.max(1, maxLen - 6));
+  for (let i = 1; i < 5000; i++) {
+    const candidate = `${root}.${i}`.slice(0, maxLen);
+    const check = await client.query('SELECT 1 FROM users WHERE username = $1 LIMIT 1', [candidate]);
+    if (check.rows.length === 0) return candidate;
+  }
+
+  return `u${Date.now()}${Math.floor(Math.random() * 1e6)}`.slice(0, maxLen);
+}
 
 /**
  * Create user for student/parent/guardian/teacher
@@ -12,10 +76,11 @@ const { ROLES } = require('../config/roles');
  * @param {Object} opts - { username, email, phone, first_name, last_name, password? }
  * @param {Object} [insertOptions]
  * @param {boolean} [insertOptions.rejectUsernameConflict] - If true, duplicate username/email throws (required for teacher create; avoids linking staff to wrong user)
+ * @param {boolean} [insertOptions.reuseUsernameOnConflict] - If true (default), duplicate username returns existing user id (legacy). If false, throws on duplicate username.
  * @returns {Promise<number|null>} user id
  */
 async function createPersonUser(client, roleId, opts, insertOptions = {}) {
-  const { rejectUsernameConflict = false } = insertOptions;
+  const { rejectUsernameConflict = false, reuseUsernameOnConflict = true } = insertOptions;
   const username = (opts.username || opts.phone || opts.email || '').toString().trim();
   if (!username) return null;
 
@@ -43,6 +108,7 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
     );
   } catch (e) {
     if (
+      reuseUsernameOnConflict &&
       !rejectUsernameConflict &&
       e.code === '23505' &&
       e.constraint &&
@@ -58,8 +124,7 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
 }
 
 /**
- * Create user for student - username = email or name+admission (for login), password = primary contact (phone)
- * Student logs in with email/username and primary contact number as password.
+ * Create user for student — users.username = unique first.last; login via users.email or phone; password = phone (else admission fallback).
  */
 async function createStudentUser(client, { admission_number, first_name, last_name, phone, email }) {
   const emailTrim = (email || '').toString().trim();
@@ -67,21 +132,77 @@ async function createStudentUser(client, { admission_number, first_name, last_na
   const firstName = (first_name || '').toString().trim();
   const lastName = (last_name || '').toString().trim();
   const admission = (admission_number || '').toString().trim();
-  const namePart = [firstName, lastName].filter(Boolean).join('_');
-  const username = emailTrim || (namePart && admission ? `${namePart}_${admission}` : null) || admission || phoneTrim || 'stu_' + Date.now();
-  return createPersonUser(client, ROLES.STUDENT, {
-    username: username.toString().trim(),
-    email: emailTrim || null,
-    phone: phoneTrim || null,
-    first_name: firstName || null,
-    last_name: lastName || null,
-    password: phoneTrim || admission || '123456'
-  });
+  const admissionSlug = admission.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 14);
+
+  let base = usernameBaseFromFirstLast(firstName, lastName);
+  if (!base && admissionSlug) base = `stu.${admissionSlug}`.replace(/\.+/g, '.').slice(0, 40);
+  if (!base && phoneTrim) {
+    const d = phoneTrim.replace(/\D/g, '');
+    if (d.length >= 2) base = `stu.${d.slice(-8)}`;
+  }
+  if (!base) base = `stu.${Date.now()}`;
+
+  const phoneDigits = phoneTrim.replace(/\D/g, '');
+  const username = await allocateUniqueUsername(client, base, [phoneDigits, admissionSlug]);
+
+  return createPersonUser(
+    client,
+    ROLES.STUDENT,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name: firstName || null,
+      last_name: lastName || null,
+      password: phoneTrim || admission || '123456',
+    },
+    { reuseUsernameOnConflict: false }
+  );
+}
+
+function parseFullName(fullName) {
+  const s = (fullName || '').toString().trim();
+  if (!s) return { first_name: null, last_name: null };
+  const i = s.indexOf(' ');
+  if (i === -1) return { first_name: s, last_name: null };
+  return { first_name: s.slice(0, i).trim(), last_name: s.slice(i + 1).trim() || null };
+}
+
+/**
+ * One Parent-role user for either father or mother (same app role as legacy single parent).
+ * users.username = unique first.last from full name; login with email (and phone as initial password).
+ */
+async function createParentIndividualUser(client, { full_name, email, phone, parent_row_id, side }) {
+  const emailTrim = (email || '').toString().trim();
+  const phoneTrim = (phone || '').toString().trim();
+  if (!emailTrim && !phoneTrim) return null;
+
+  const { first_name, last_name } = parseFullName(full_name);
+  let base = usernameBaseFromFirstLast(first_name, last_name);
+  if (!base) base = `par.${side}.${parent_row_id}`;
+
+  const phoneDigits = phoneTrim.replace(/\D/g, '');
+  const username = await allocateUniqueUsername(client, base, [phoneDigits, `p${parent_row_id}${String(side).charAt(0)}`]);
+
+  return createPersonUser(
+    client,
+    ROLES.PARENT,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name,
+      last_name,
+      password: phoneTrim || '123456',
+    },
+    { reuseUsernameOnConflict: false }
+  );
 }
 
 /**
  * Create user for parent - username = email (name+email for login), password = phone
  * Parent logs in with email/username and phone number as password.
+ * @deprecated Prefer createParentIndividualUser per father/mother; kept for callers that still merge contacts.
  */
 async function createParentUser(client, { father_name, father_email, father_phone, mother_name, mother_email, mother_phone, student_id }) {
   const email = (father_email || mother_email || '').toString().trim();
@@ -100,21 +221,34 @@ async function createParentUser(client, { father_name, father_email, father_phon
 }
 
 /**
- * Create user for guardian - username = email (name+email for login), password = phone
- * Guardian logs in with email/username and phone number as password.
+ * Create user for guardian — users.username = unique first.last; login with email or phone; password = phone.
  */
 async function createGuardianUser(client, { first_name, last_name, phone, email }) {
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
-  const username = emailTrim || phoneTrim || 'grd_' + Date.now();
-  return createPersonUser(client, ROLES.GUARDIAN, {
-    username: username.toString().trim(),
-    email: emailTrim || null,
-    phone: phoneTrim || null,
-    first_name: (first_name || 'Guardian').toString().trim(),
-    last_name: (last_name || '').toString().trim() || null,
-    password: phoneTrim || '123456'
-  });
+  if (!emailTrim && !phoneTrim) return null;
+
+  const fn = (first_name || 'Guardian').toString().trim();
+  const ln = (last_name || '').toString().trim();
+  let base = usernameBaseFromFirstLast(fn, ln);
+  if (!base) base = 'guardian';
+
+  const phoneDigits = phoneTrim.replace(/\D/g, '');
+  const username = await allocateUniqueUsername(client, base, [phoneDigits]);
+
+  return createPersonUser(
+    client,
+    ROLES.GUARDIAN,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name: fn || null,
+      last_name: ln || null,
+      password: phoneTrim || '123456',
+    },
+    { reuseUsernameOnConflict: false }
+  );
 }
 
 const crypto = require('crypto');
@@ -163,6 +297,7 @@ module.exports = {
   createPersonUser,
   createStudentUser,
   createParentUser,
+  createParentIndividualUser,
   createGuardianUser,
   createTeacherUser
 };
