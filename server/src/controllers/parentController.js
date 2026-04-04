@@ -74,11 +74,11 @@ const createParent = async (req, res) => {
       }
       await client.query(
         `UPDATE parents SET
-          father_user_id = $1,
-          mother_user_id = $2,
-          user_id = COALESCE($1, $2),
+          father_user_id = $1::integer,
+          mother_user_id = $2::integer,
+          user_id = COALESCE($1::integer, $2::integer),
           updated_at = NOW()
-        WHERE id = $3`,
+        WHERE id = $3::integer`,
         [fatherUserId, motherUserId, row.id]
       );
       row.father_user_id = fatherUserId;

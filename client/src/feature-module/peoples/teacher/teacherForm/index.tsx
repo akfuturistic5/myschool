@@ -77,6 +77,17 @@ function teacherStoredDocBasename(stored: string | null | undefined): string {
   return idx >= 0 ? stored.slice(idx + 1) : stored;
 }
 
+/** Create-teacher API returns the new row in `data`; tolerate string ids from drivers. */
+function extractCreatedTeacherId(res: unknown): number | undefined {
+  if (!res || typeof res !== "object") return undefined;
+  const d = (res as { data?: unknown }).data;
+  if (d == null || typeof d !== "object" || Array.isArray(d)) return undefined;
+  const raw = (d as Record<string, unknown>).id ?? (d as Record<string, unknown>).ID;
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 const TeacherForm = () => {
   const routes = all_routes;
   const location = useLocation();
@@ -1275,16 +1286,16 @@ const TeacherForm = () => {
                               </p>
                             </div>
                             <div className="d-flex align-items-center flex-wrap gap-2 mb-2">
-                              <label className="btn btn-primary drag-upload-btn mb-0">
+                              <div className="btn btn-primary drag-upload-btn mb-0">
                                 <i className="ti ti-file-upload me-1" />
                                 {resumeFile || t?.resume ? "Change" : "Upload PDF"}
                                 <input
                                   type="file"
                                   accept="application/pdf,.pdf"
-                                  className="d-none"
+                                  className="form-control image_sign"
                                   onChange={onPickResume}
                                 />
-                              </label>
+                              </div>
                               {isEdit && teacherId && t?.resume && !resumeFile && (
                                 <button
                                   type="button"
@@ -1313,16 +1324,16 @@ const TeacherForm = () => {
                               </p>
                             </div>
                             <div className="d-flex align-items-center flex-wrap gap-2 mb-2">
-                              <label className="btn btn-primary drag-upload-btn mb-0">
+                              <div className="btn btn-primary drag-upload-btn mb-0">
                                 <i className="ti ti-file-upload me-1" />
                                 {joiningLetterFile || t?.joining_letter ? "Change" : "Upload PDF"}
                                 <input
                                   type="file"
                                   accept="application/pdf,.pdf"
-                                  className="d-none"
+                                  className="form-control image_sign"
                                   onChange={onPickJoiningLetter}
                                 />
-                              </label>
+                              </div>
                               {isEdit && teacherId && t?.joining_letter && !joiningLetterFile && (
                                 <button
                                   type="button"
@@ -1605,21 +1616,27 @@ const TeacherForm = () => {
                           });
                           const response = await apiService.createTeacher(payload);
                           if (response && response.status === "SUCCESS") {
-                            const newId = response.data?.id;
-                            if (newId != null && (resumeFile || joiningLetterFile)) {
-                              try {
-                                const fd = new FormData();
-                                if (resumeFile) fd.append("resume", resumeFile);
-                                if (joiningLetterFile) fd.append("joining_letter", joiningLetterFile);
-                                await apiService.uploadTeacherDocuments(newId, fd);
-                              } catch (docErr) {
-                                console.error(docErr);
+                            const newId = extractCreatedTeacherId(response);
+                            if (resumeFile || joiningLetterFile) {
+                              if (newId == null) {
                                 alert(
-                                  parseTeacherApiErrorMessage(
-                                    docErr,
-                                    "Teacher was created but documents could not be uploaded. Edit the teacher to add PDFs."
-                                  )
+                                  "Teacher was created but the app could not read the new teacher ID, so PDFs were not uploaded. Open Edit for this teacher and upload the documents again."
                                 );
+                              } else {
+                                try {
+                                  const fd = new FormData();
+                                  if (resumeFile) fd.append("resume", resumeFile);
+                                  if (joiningLetterFile) fd.append("joining_letter", joiningLetterFile);
+                                  await apiService.uploadTeacherDocuments(newId, fd);
+                                } catch (docErr) {
+                                  console.error(docErr);
+                                  alert(
+                                    parseTeacherApiErrorMessage(
+                                      docErr,
+                                      "Teacher was created but documents could not be uploaded. Edit the teacher to add PDFs."
+                                    )
+                                  );
+                                }
                               }
                             }
                             navigate(routes.teacherList, { state: { refresh: true } });
