@@ -560,6 +560,74 @@ class ApiService {
     });
   }
 
+  /**
+   * Upload teacher PDFs (multipart). Do not set Content-Type — browser sets boundary.
+   * @param {number|string} teacherId
+   * @param {FormData} formData fields: resume, joining_letter (optional each)
+   */
+  async uploadTeacherDocuments(teacherId, formData) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/teachers/${teacherId}/documents`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+    const csrf = resolveCsrfTokenForRequest();
+    if (csrf) headers['X-XSRF-TOKEN'] = csrf;
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: formData,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
+        this.logout().catch(() => {});
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
+      }
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+    const text = await response.text();
+    if (!text || !text.trim()) {
+      throw new Error('Server returned empty response.');
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      throw new Error('Server returned invalid JSON.');
+    }
+    return data;
+  }
+
+  /**
+   * @param {'resume' | 'joining_letter'} docType
+   */
+  async fetchTeacherDocumentBlob(teacherId, docType) {
+    const base = await getApiBaseUrl();
+    const pathSeg = docType === 'joining_letter' ? 'joining-letter' : 'resume';
+    const url = `${base}/teachers/${teacherId}/documents/${pathSeg}`;
+    const headers = { Accept: 'application/pdf' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
+        this.logout().catch(() => {});
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
+      }
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+    return response.blob();
+  }
+
   // Staff
   async getStaff() {
     return this.makeRequest('/staff');

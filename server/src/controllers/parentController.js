@@ -1,6 +1,6 @@
 const { query, executeTransaction } = require('../config/database');
 const { parsePagination } = require('../utils/pagination');
-const { createParentUser } = require('../utils/createPersonUser');
+const { createParentIndividualUser } = require('../utils/createPersonUser');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { getAuthContext, isAdmin, parseId } = require('../utils/accessControl');
 
@@ -48,21 +48,42 @@ const createParent = async (req, res) => {
         mother_image_url || null
       ]);
       const row = result.rows[0];
-      const parentEmail = (father_email || mother_email || '').toString().trim();
-      const parentPhone = (father_phone || mother_phone || '').toString().trim();
-      if (parentEmail || parentPhone) {
-        try {
-          const parentUserId = await createParentUser(client, {
-            father_name, father_email, father_phone, mother_name, mother_email, mother_phone, student_id
+      let fatherUserId = null;
+      let motherUserId = null;
+      try {
+        if (father_phone || father_email) {
+          fatherUserId = await createParentIndividualUser(client, {
+            full_name: father_name,
+            email: father_email,
+            phone: father_phone,
+            parent_row_id: row.id,
+            side: 'father',
           });
-          if (parentUserId) {
-            await client.query('UPDATE parents SET user_id = $1, updated_at = NOW() WHERE id = $2', [parentUserId, row.id]);
-            row.user_id = parentUserId;
-          }
-        } catch (e) {
-          console.warn('createParent: could not create parent user:', e.message);
         }
+        if (mother_phone || mother_email) {
+          motherUserId = await createParentIndividualUser(client, {
+            full_name: mother_name,
+            email: mother_email,
+            phone: mother_phone,
+            parent_row_id: row.id,
+            side: 'mother',
+          });
+        }
+      } catch (e) {
+        console.warn('createParent: could not create parent users:', e.message);
       }
+      await client.query(
+        `UPDATE parents SET
+          father_user_id = $1,
+          mother_user_id = $2,
+          user_id = COALESCE($1, $2),
+          updated_at = NOW()
+        WHERE id = $3`,
+        [fatherUserId, motherUserId, row.id]
+      );
+      row.father_user_id = fatherUserId;
+      row.mother_user_id = motherUserId;
+      row.user_id = fatherUserId || motherUserId || row.user_id;
       return row;
     });
 
@@ -89,7 +110,9 @@ const updateParent = async (req, res) => {
       mother_name, mother_email, mother_phone, mother_occupation, mother_image_url
     } = req.body;
 
-    const result = await query(`
+    const row = await executeTransaction(async (client) => {
+      const result = await client.query(
+        `
       UPDATE parents SET
         father_name = $1,
         father_email = $2,
@@ -103,27 +126,81 @@ const updateParent = async (req, res) => {
         mother_image_url = $10,
         updated_at = NOW()
       WHERE id = $11
-      RETURNING *
-    `, [
-      father_name || null, father_email || null, father_phone || null, 
-      father_occupation || null, father_image_url || null, mother_name || null, 
-      mother_email || null, mother_phone || null, mother_occupation || null, 
-      mother_image_url || null, id
-    ]);
+      RETURNING id, father_user_id, mother_user_id
+    `,
+        [
+          father_name || null,
+          father_email || null,
+          father_phone || null,
+          father_occupation || null,
+          father_image_url || null,
+          mother_name || null,
+          mother_email || null,
+          mother_phone || null,
+          mother_occupation || null,
+          mother_image_url || null,
+          id,
+        ]
+      );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Parent not found'
-      });
-    }
+      if (result.rows.length === 0) {
+        const err = new Error('Parent not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const p = result.rows[0];
+      let newFatherUserId = null;
+      let newMotherUserId = null;
+      try {
+        if ((father_phone || father_email) && !p.father_user_id) {
+          newFatherUserId = await createParentIndividualUser(client, {
+            full_name: father_name,
+            email: father_email,
+            phone: father_phone,
+            parent_row_id: p.id,
+            side: 'father',
+          });
+        }
+        if ((mother_phone || mother_email) && !p.mother_user_id) {
+          newMotherUserId = await createParentIndividualUser(client, {
+            full_name: mother_name,
+            email: mother_email,
+            phone: mother_phone,
+            parent_row_id: p.id,
+            side: 'mother',
+          });
+        }
+      } catch (e) {
+        console.warn('updateParent: could not create parent users:', e.message);
+      }
+
+      await client.query(
+        `UPDATE parents SET
+          father_user_id = COALESCE($1::integer, father_user_id),
+          mother_user_id = COALESCE($2::integer, mother_user_id),
+          user_id = COALESCE(user_id, father_user_id, mother_user_id),
+          updated_at = NOW()
+        WHERE id = $3`,
+        [newFatherUserId, newMotherUserId, p.id]
+      );
+
+      const full = await client.query('SELECT * FROM parents WHERE id = $1', [p.id]);
+      return full.rows[0];
+    });
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Parent updated successfully',
-      data: result.rows[0]
+      data: row,
     });
   } catch (error) {
+    if (error.statusCode === 404) {
+      return res.status(404).json({
+        status: 'ERROR',
+        message: 'Parent not found',
+      });
+    }
     console.error('Error updating parent:', error);
     res.status(500).json({
       status: 'ERROR',

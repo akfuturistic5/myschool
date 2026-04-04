@@ -65,6 +65,14 @@ interface MotherTongueItem {
   language_name?: string;
 }
 
+/** Email + phone must appear together for app login (matches server create/update student). */
+const contactPairValid = (email: string, phone: string) => {
+  const e = (email || "").trim();
+  const p = (phone || "").trim();
+  if (!e && !p) return true;
+  return Boolean(e && p);
+};
+
 const AddStudent = () => {
   const routes = all_routes;
   const navigate = useNavigate();
@@ -475,6 +483,35 @@ const AddStudent = () => {
     setSubmitError(null);
 
     try {
+      if (!contactPairValid(formData.email, formData.phone)) {
+        setSubmitError(
+          "Student: enter both email and phone for login, or leave both empty."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+      if (!contactPairValid(formData.father_email, formData.father_phone)) {
+        setSubmitError(
+          "Father: enter both email and phone, or leave both empty."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+      if (!contactPairValid(formData.mother_email, formData.mother_phone)) {
+        setSubmitError(
+          "Mother: enter both email and phone, or leave both empty."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+      if (!contactPairValid(formData.guardian_email, formData.guardian_phone)) {
+        setSubmitError(
+          "Guardian: enter both email and phone, or leave both empty."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       // Prepare data for submission
       const submitData = {
         ...formData,

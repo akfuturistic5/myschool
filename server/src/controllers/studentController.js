@@ -3,7 +3,7 @@ const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
-const { createStudentUser, createParentUser, createGuardianUser } = require('../utils/createPersonUser');
+const { createStudentUser, createParentIndividualUser, createGuardianUser } = require('../utils/createPersonUser');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -65,6 +65,39 @@ const createStudent = async (req, res) => {
     const medicationsVal = Array.isArray(medications)
       ? medications.join(',')
       : (typeof medications === 'string' ? medications : (medications || null));
+
+    const stuEm = (email || '').toString().trim();
+    const stuPh = (phone || '').toString().trim();
+    if ((stuEm && !stuPh) || (!stuEm && stuPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Student email and phone must both be filled for login, or leave both empty.',
+      });
+    }
+    const fEm = (father_email || '').toString().trim();
+    const fPh = (father_phone || '').toString().trim();
+    if ((fEm && !fPh) || (!fEm && fPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Father email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const mEm = (mother_email || '').toString().trim();
+    const mPh = (mother_phone || '').toString().trim();
+    if ((mEm && !mPh) || (!mEm && mPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Mother email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const gEm = (guardian_email || '').toString().trim();
+    const gPh = (guardian_phone || '').toString().trim();
+    if ((gEm && !gPh) || (!gEm && gPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Guardian email and phone must both be filled, or leave both empty.',
+      });
+    }
 
     const student = await executeTransaction(async (client) => {
       const existingStudent = await client.query(
@@ -232,29 +265,48 @@ const createStudent = async (req, res) => {
 
         studentRow.parent_id = parentResult.rows[0].id;
 
-        // Create parent user and link
-        const parentEmail = (father_email || mother_email || '').toString().trim();
-        const parentPhone = (father_phone || mother_phone || '').toString().trim();
-        if (parentEmail || parentPhone) {
-          try {
-            const parentUserId = await createParentUser(client, {
-              father_name, father_email, father_phone, mother_name, mother_email, mother_phone, student_id: studentRow.id
+        const parentRowId = parentResult.rows[0].id;
+        let fatherUserId = null;
+        let motherUserId = null;
+        try {
+          if (father_phone || father_email) {
+            fatherUserId = await createParentIndividualUser(client, {
+              full_name: father_name,
+              email: father_email,
+              phone: father_phone,
+              parent_row_id: parentRowId,
+              side: 'father',
             });
-            if (parentUserId) {
-              await client.query('UPDATE parents SET user_id = $1, updated_at = NOW() WHERE id = $2', [parentUserId, parentResult.rows[0].id]);
-            }
-          } catch (e) {
-            console.warn('createStudent: could not create parent user:', e.message);
           }
+          if (mother_phone || mother_email) {
+            motherUserId = await createParentIndividualUser(client, {
+              full_name: mother_name,
+              email: mother_email,
+              phone: mother_phone,
+              parent_row_id: parentRowId,
+              side: 'mother',
+            });
+          }
+        } catch (e) {
+          console.warn('createStudent: could not create parent users:', e.message);
         }
+        await client.query(
+          `UPDATE parents SET
+            father_user_id = $1,
+            mother_user_id = $2,
+            user_id = COALESCE($1, $2),
+            updated_at = NOW()
+          WHERE id = $3`,
+          [fatherUserId, motherUserId, parentRowId]
+        );
       }
 
       if (hasGuardianInfo) {
         const guardianResult = await client.query(`
           INSERT INTO guardians (
-            student_id, first_name, last_name, relation, occupation, phone, email, address,
+            student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
             is_active, created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+          ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
           RETURNING id
         `, [
           studentRow.id,
@@ -401,6 +453,39 @@ const updateStudent = async (req, res) => {
     const medicationsVal = Array.isArray(medications)
       ? medications.join(',')
       : (typeof medications === 'string' ? medications : (medications || null));
+
+    const stuEmUp = (email || '').toString().trim();
+    const stuPhUp = (phone || '').toString().trim();
+    if ((stuEmUp && !stuPhUp) || (!stuEmUp && stuPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Student email and phone must both be filled for login, or leave both empty.',
+      });
+    }
+    const fEmUp = (father_email || '').toString().trim();
+    const fPhUp = (father_phone || '').toString().trim();
+    if ((fEmUp && !fPhUp) || (!fEmUp && fPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Father email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const mEmUp = (mother_email || '').toString().trim();
+    const mPhUp = (mother_phone || '').toString().trim();
+    if ((mEmUp && !mPhUp) || (!mEmUp && mPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Mother email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const gEmUp = (guardian_email || '').toString().trim();
+    const gPhUp = (guardian_phone || '').toString().trim();
+    if ((gEmUp && !gPhUp) || (!gEmUp && gPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Guardian email and phone must both be filled, or leave both empty.',
+      });
+    }
 
     const student = await executeTransaction(async (client) => {
       const existingStudent = await client.query(
@@ -678,6 +763,29 @@ const updateStudent = async (req, res) => {
 
       const studentRow = result.rows[0];
 
+      const stuPhoneUp = (phone || '').toString().trim();
+      const stuEmailUp = (email || '').toString().trim();
+      if (!studentRow.user_id && (stuPhoneUp || stuEmailUp || admission_number)) {
+        try {
+          const studentUserId = await createStudentUser(client, {
+            admission_number,
+            first_name,
+            last_name,
+            phone: stuPhoneUp || null,
+            email: stuEmailUp || null,
+          });
+          if (studentUserId) {
+            await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [
+              studentUserId,
+              studentRow.id,
+            ]);
+            studentRow.user_id = studentUserId;
+          }
+        } catch (e) {
+          console.warn('updateStudent: could not create student user:', e.message);
+        }
+      }
+
       if (hasParentInfo) {
         const existingParent = await client.query(
           'SELECT id FROM parents WHERE student_id = $1',
@@ -733,6 +841,47 @@ const updateStudent = async (req, res) => {
 
           studentRow.parent_id = parentResult.rows[0].id;
         }
+
+        const pRowRes = await client.query(
+          'SELECT id, father_user_id, mother_user_id FROM parents WHERE student_id = $1 LIMIT 1',
+          [studentRow.id]
+        );
+        if (pRowRes.rows.length > 0) {
+          const pRow = pRowRes.rows[0];
+          let newFatherUserId = null;
+          let newMotherUserId = null;
+          try {
+            if ((father_phone || father_email) && !pRow.father_user_id) {
+              newFatherUserId = await createParentIndividualUser(client, {
+                full_name: father_name,
+                email: father_email,
+                phone: father_phone,
+                parent_row_id: pRow.id,
+                side: 'father',
+              });
+            }
+            if ((mother_phone || mother_email) && !pRow.mother_user_id) {
+              newMotherUserId = await createParentIndividualUser(client, {
+                full_name: mother_name,
+                email: mother_email,
+                phone: mother_phone,
+                parent_row_id: pRow.id,
+                side: 'mother',
+              });
+            }
+          } catch (e) {
+            console.warn('updateStudent: could not create parent users:', e.message);
+          }
+          await client.query(
+            `UPDATE parents SET
+              father_user_id = COALESCE($1::integer, father_user_id),
+              mother_user_id = COALESCE($2::integer, mother_user_id),
+              user_id = COALESCE(user_id, father_user_id, mother_user_id),
+              updated_at = NOW()
+            WHERE id = $3`,
+            [newFatherUserId, newMotherUserId, pRow.id]
+          );
+        }
       }
 
       if (hasGuardianInfo) {
@@ -751,6 +900,7 @@ const updateStudent = async (req, res) => {
               phone = $5,
               email = $6,
               address = $7,
+              guardian_type = COALESCE(guardian_type, 'guardian'),
               modified_at = NOW()
             WHERE student_id = $8
           `, [
@@ -767,9 +917,9 @@ const updateStudent = async (req, res) => {
         } else {
           const guardianResult = await client.query(`
             INSERT INTO guardians (
-              student_id, first_name, last_name, relation, occupation, phone, email, address,
+              student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
               is_active, created_at, modified_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+            ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
             RETURNING id
           `, [
             studentRow.id,
@@ -787,6 +937,34 @@ const updateStudent = async (req, res) => {
           `, [guardianResult.rows[0].id, studentRow.id]);
 
           studentRow.guardian_id = guardianResult.rows[0].id;
+        }
+      }
+
+      const gUserSync = await client.query(
+        'SELECT id, user_id, phone, email, first_name, last_name FROM guardians WHERE student_id = $1 LIMIT 1',
+        [studentRow.id]
+      );
+      if (gUserSync.rows.length > 0 && !gUserSync.rows[0].user_id) {
+        const gr = gUserSync.rows[0];
+        const gPhoneUp = (guardian_phone || gr.phone || '').toString().trim();
+        const gEmailUp = (guardian_email || gr.email || '').toString().trim();
+        if (gPhoneUp || gEmailUp) {
+          try {
+            const guardianUserId = await createGuardianUser(client, {
+              first_name: guardian_first_name || gr.first_name || 'Guardian',
+              last_name: guardian_last_name || gr.last_name || '',
+              phone: gPhoneUp || null,
+              email: gEmailUp || null,
+            });
+            if (guardianUserId) {
+              await client.query('UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2', [
+                guardianUserId,
+                gr.id,
+              ]);
+            }
+          } catch (e) {
+            console.warn('updateStudent: could not create guardian user:', e.message);
+          }
         }
       }
 
@@ -1500,46 +1678,18 @@ const getStudentLoginDetails = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
-    // Collect parent contact info for matching parent user accounts
-    const parentContacts = {
-      emails: [],
-      phones: [],
-    };
-
-    if (stu.parent_id) {
-      try {
-        const pRes = await query(
-          `SELECT
-             father_email,
-             father_phone,
-             mother_email,
-             mother_phone
-           FROM parents
-           WHERE id = $1 OR student_id = $2
-           LIMIT 1`,
-          [stu.parent_id, id]
-        );
-        if (pRes.rows.length > 0) {
-          const p = pRes.rows[0];
-          const emails = [
-            p.father_email,
-            p.mother_email,
-          ].filter((e) => e && e.toString().trim() !== '');
-          const phones = [
-            p.father_phone,
-            p.mother_phone,
-          ].filter((ph) => ph && ph.toString().trim() !== '');
-          parentContacts.emails = Array.from(new Set(emails.map((e) => e.toString().trim().toLowerCase())));
-          parentContacts.phones = Array.from(new Set(phones.map((ph) => ph.toString().trim())));
-        }
-      } catch (e) {
-        // If parents table lookup fails, we still return student user if available.
-      }
-    }
-
     let parentUsers = [];
-    if (parentContacts.emails.length > 0 || parentContacts.phones.length > 0) {
-      try {
+    if (stu.parent_id) {
+      const loadParentsByContact = async (p) => {
+        const emails = [p.father_email, p.mother_email]
+          .filter((e) => e && e.toString().trim() !== '')
+          .map((e) => e.toString().trim().toLowerCase());
+        const phones = [p.father_phone, p.mother_phone]
+          .filter((ph) => ph && ph.toString().trim() !== '')
+          .map((ph) => ph.toString().trim());
+        const uEmails = Array.from(new Set(emails));
+        const uPhones = Array.from(new Set(phones));
+        if (uEmails.length === 0 && uPhones.length === 0) return [];
         const parRes = await query(
           `SELECT id, username, email, phone
            FROM users
@@ -1549,43 +1699,88 @@ const getStudentLoginDetails = async (req, res) => {
                (COALESCE(LOWER(TRIM(email)), '') <> '' AND LOWER(TRIM(email)) = ANY($2))
                OR (COALESCE(TRIM(phone), '') <> '' AND TRIM(phone) = ANY($3))
              )`,
-          [ROLES.PARENT, parentContacts.emails, parentContacts.phones]
+          [ROLES.PARENT, uEmails, uPhones]
         );
-        parentUsers = parRes.rows;
+        return parRes.rows;
+      };
+
+      try {
+        const pRes = await query(
+          `SELECT father_user_id, mother_user_id, user_id,
+                  father_email, father_phone, mother_email, mother_phone
+           FROM parents
+           WHERE id = $1 OR student_id = $2
+           LIMIT 1`,
+          [stu.parent_id, id]
+        );
+        if (pRes.rows.length > 0) {
+          const p = pRes.rows[0];
+          const idSet = new Set();
+          for (const uid of [p.father_user_id, p.mother_user_id, p.user_id]) {
+            if (uid != null && uid !== '') idSet.add(parseInt(uid, 10));
+          }
+          if (idSet.size > 0) {
+            const parRes = await query(
+              `SELECT id, username, email, phone
+               FROM users
+               WHERE is_active = true AND role_id = $1 AND id = ANY($2::int[])`,
+              [ROLES.PARENT, [...idSet]]
+            );
+            parentUsers = parRes.rows;
+          }
+          if (parentUsers.length === 0) {
+            parentUsers = await loadParentsByContact(p);
+          }
+        }
       } catch (e) {
-        // If parent users lookup fails, we still return student user if available.
+        try {
+          const pRes = await query(
+            `SELECT father_email, father_phone, mother_email, mother_phone
+             FROM parents WHERE id = $1 OR student_id = $2 LIMIT 1`,
+            [stu.parent_id, id]
+          );
+          if (pRes.rows.length > 0) {
+            parentUsers = await loadParentsByContact(pRes.rows[0]);
+          }
+        } catch (_) {
+          // ignore
+        }
       }
     }
 
-    // If requester is a Parent, show only their own account (not all matched parents)
-    if (parentUsers.length > 0) {
-      if (isParent && userId) {
-        parentUsers = parentUsers.filter((u) => {
-          try {
-            return parseInt(u.id, 10) === parseInt(userId, 10);
-          } catch {
-            return false;
-          }
-        });
-      } else {
-        // For Admin/Student/Guardian: de-duplicate by contact (email/phone) so that
-        // shared phone/email across multiple accounts does not show multiple rows.
-        const seen = new Set();
-        const deduped = [];
-        for (const u of parentUsers) {
-          const emailKey = (u.email || '').toString().trim().toLowerCase();
-          const phoneKey = (u.phone || '').toString().trim();
-          const key = emailKey || phoneKey;
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          deduped.push(u);
-        }
-        parentUsers = deduped;
+    if (parentUsers.length > 0 && isParent && userId) {
+      parentUsers = parentUsers.filter((u) => parseInt(u.id, 10) === parseInt(userId, 10));
+    } else if (parentUsers.length > 0 && !isParent) {
+      const seenId = new Set();
+      parentUsers = parentUsers.filter((u) => {
+        const k = parseInt(u.id, 10);
+        if (seenId.has(k)) return false;
+        seenId.add(k);
+        return true;
+      });
+    }
+
+    let guardianLogin = null;
+    try {
+      const gRes = await query(
+        `SELECT u.username, u.email, u.phone
+         FROM guardians g
+         JOIN users u ON u.id = g.user_id AND u.is_active = true
+         WHERE g.student_id = $1 AND g.user_id IS NOT NULL
+         LIMIT 1`,
+        [id]
+      );
+      if (gRes.rows.length > 0) {
+        const g = gRes.rows[0];
+        guardianLogin = {
+          userType: 'Guardian',
+          username: g.username || null,
+          phone: g.phone || null,
+          email: g.email || null,
+        };
       }
-      // For non-parent roles (Student/Admin/Guardian), show at most one parent account
-      if (!isParent && parentUsers.length > 1) {
-        parentUsers = [parentUsers[0]];
-      }
+    } catch (e) {
+      // ignore
     }
 
     const loginDetails = {
@@ -1603,6 +1798,7 @@ const getStudentLoginDetails = async (req, res) => {
         phone: u.phone || null,
         email: u.email || null,
       })),
+      guardian: guardianLogin,
     };
 
     return res.status(200).json({

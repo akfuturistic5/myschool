@@ -1,8 +1,10 @@
+const fs = require('fs');
 const { query, executeTransaction } = require('../config/database');
 const { ADMIN_ROLE_IDS } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { canAccessClass } = require('../utils/accessControl');
 const { createTeacherUser } = require('../utils/createPersonUser');
+const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 
 const normalizeGender = (g) => {
   if (g == null || g === '') return null;
@@ -76,7 +78,9 @@ const getAllTeachers = async (req, res) => {
         t.linkedin,
         t.status,
         t.created_at,
-        t.updated_at,
+        t.resume,
+        t.joining_letter,
+        t.modified_at AS updated_at,
         t.staff_id,
         s.user_id,
         s.employee_code,
@@ -150,7 +154,9 @@ const getCurrentTeacher = async (req, res) => {
         t.linkedin,
         t.status,
         t.created_at,
-        t.updated_at,
+        t.resume,
+        t.joining_letter,
+        t.modified_at AS updated_at,
         t.staff_id,
         s.employee_code,
         s.first_name,
@@ -230,7 +236,9 @@ const getTeacherById = async (req, res) => {
         t.linkedin,
         t.status,
         t.created_at,
-        t.updated_at,
+        t.resume,
+        t.joining_letter,
+        t.modified_at AS updated_at,
         t.staff_id,
         s.employee_code,
         s.first_name,
@@ -317,7 +325,9 @@ const getTeachersByClass = async (req, res) => {
         t.linkedin,
         t.status,
         t.created_at,
-        t.updated_at,
+        t.resume,
+        t.joining_letter,
+        t.modified_at AS updated_at,
         t.staff_id,
         s.employee_code,
         s.first_name,
@@ -825,9 +835,9 @@ const createTeacher = async (req, res) => {
           previous_school_name, previous_school_address, previous_school_phone,
           current_address, permanent_address, pan_number, id_number, status,
           bank_name, branch, ifsc, contract_type, shift, work_location,
-          facebook, twitter, linkedin, blood_group, created_at, updated_at
+          facebook, twitter, linkedin, blood_group, resume, joining_letter, created_at, modified_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NULL, NULL, NOW(), NOW()
         ) RETURNING id`,
         [
           staffId,
@@ -891,7 +901,9 @@ const createTeacher = async (req, res) => {
         t.linkedin,
         t.status,
         t.created_at,
-        t.updated_at,
+        t.resume,
+        t.joining_letter,
+        t.modified_at AS updated_at,
         t.staff_id,
         s.user_id,
         s.employee_code,
@@ -1070,7 +1082,7 @@ const updateTeacher = async (req, res) => {
     tadd('facebook', facebook);
     tadd('twitter', twitter);
     tadd('linkedin', linkedin);
-    teacherUpdates.push('updated_at = NOW()');
+    teacherUpdates.push('modified_at = NOW()');
     teacherParams.push(teacherIdNum);
     await query(`UPDATE teachers SET ${teacherUpdates.join(', ')} WHERE id = $${tidx}`, teacherParams);
 
@@ -1202,6 +1214,133 @@ const getTeacherClassAttendance = async (req, res) => {
   }
 };
 
+function unlinkTeacherDocStored(relPath) {
+  const abs = resolveTeacherDocumentPath(relPath);
+  if (!abs) return;
+  try {
+    if (fs.existsSync(abs)) fs.unlinkSync(abs);
+  } catch (e) {
+    console.error('unlinkTeacherDocStored:', e);
+  }
+}
+
+function unlinkMulterTemp(file) {
+  if (!file?.path) return;
+  try {
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  } catch (e) {
+    console.error('unlinkMulterTemp:', e);
+  }
+}
+
+const uploadTeacherDocuments = async (req, res) => {
+  try {
+    const teacherId = parseInt(req.params.id, 10);
+    if (!teacherId || Number.isNaN(teacherId)) {
+      return errorResponse(res, 400, 'Invalid teacher ID', 'VALIDATION_ERROR');
+    }
+
+    const resumeArr = req.files?.resume;
+    const letterArr = req.files?.joining_letter;
+    const resumeFile = Array.isArray(resumeArr) && resumeArr[0] ? resumeArr[0] : null;
+    const letterFile = Array.isArray(letterArr) && letterArr[0] ? letterArr[0] : null;
+
+    if (!resumeFile && !letterFile) {
+      return errorResponse(res, 400, 'No files uploaded. Use multipart fields resume and/or joining_letter.', 'VALIDATION_ERROR');
+    }
+
+    const tenant = sanitizeTenant(req.tenant?.db_name || 'default_tenant') || 'default_tenant';
+
+    const prev = await query('SELECT resume, joining_letter FROM teachers WHERE id = $1', [teacherId]);
+    if (!prev.rows.length) {
+      if (resumeFile) unlinkMulterTemp(resumeFile);
+      if (letterFile) unlinkMulterTemp(letterFile);
+      return errorResponse(res, 404, 'Teacher not found', 'NOT_FOUND');
+    }
+
+    const oldResume = prev.rows[0].resume;
+    const oldLetter = prev.rows[0].joining_letter;
+
+    const newResumeRel = resumeFile ? `${tenant}/${resumeFile.filename}` : null;
+    const newLetterRel = letterFile ? `${tenant}/${letterFile.filename}` : null;
+
+    await query(
+      `UPDATE teachers SET
+        resume = COALESCE($1, resume),
+        joining_letter = COALESCE($2, joining_letter),
+        modified_at = NOW()
+      WHERE id = $3`,
+      [newResumeRel, newLetterRel, teacherId]
+    );
+
+    if (resumeFile && oldResume && oldResume !== newResumeRel) unlinkTeacherDocStored(oldResume);
+    if (letterFile && oldLetter && oldLetter !== newLetterRel) unlinkTeacherDocStored(oldLetter);
+
+    const refreshed = await query(
+      `SELECT t.resume, t.joining_letter, t.modified_at AS updated_at FROM teachers t WHERE t.id = $1`,
+      [teacherId]
+    );
+    return success(res, 200, 'Documents uploaded successfully', refreshed.rows[0] || {});
+  } catch (error) {
+    console.error('uploadTeacherDocuments:', error);
+    return errorResponse(res, 500, 'Failed to upload documents', 'INTERNAL_ERROR');
+  }
+};
+
+const getTeacherDocument = async (req, res) => {
+  try {
+    const teacherId = parseInt(req.params.id, 10);
+    const docTypeRaw = String(req.params.docType || '').toLowerCase();
+    if (!teacherId || Number.isNaN(teacherId)) {
+      return errorResponse(res, 400, 'Invalid teacher ID', 'VALIDATION_ERROR');
+    }
+    const column = docTypeRaw === 'joining-letter' ? 'joining_letter' : docTypeRaw === 'resume' ? 'resume' : null;
+    if (!column) {
+      return errorResponse(res, 400, 'Invalid document type', 'VALIDATION_ERROR');
+    }
+
+    const requester = req.user;
+    const roleId = requester?.role_id != null ? parseInt(requester.role_id, 10) : null;
+    if (!requester?.id || roleId == null) {
+      return errorResponse(res, 401, 'Not authenticated');
+    }
+
+    const result = await query(
+      `SELECT t.${column} AS doc_path, s.user_id, s.staff_id
+       FROM teachers t
+       INNER JOIN staff s ON t.staff_id = s.id
+       WHERE t.id = $1`,
+      [teacherId]
+    );
+
+    if (!result.rows.length) {
+      return errorResponse(res, 404, 'Teacher not found');
+    }
+
+    const row = result.rows[0];
+    const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
+    const isSelf = String(row.user_id) === String(requester.id);
+    const staffIdMatch = requester.staff_id != null && String(row.staff_id) === String(requester.staff_id);
+    if (!isAdmin && !isSelf && !staffIdMatch) {
+      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+    }
+
+    const rel = row.doc_path;
+    const abs = resolveTeacherDocumentPath(rel);
+    if (!abs || !fs.existsSync(abs)) {
+      return errorResponse(res, 404, 'Document not found or file missing');
+    }
+
+    const downloadName = column === 'joining_letter' ? 'joining-letter.pdf' : 'resume.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${downloadName}"`);
+    return res.sendFile(abs);
+  } catch (error) {
+    console.error('getTeacherDocument:', error);
+    return errorResponse(res, 500, 'Failed to load document', 'INTERNAL_ERROR');
+  }
+};
+
 module.exports = {
   getAllTeachers,
   getCurrentTeacher,
@@ -1210,5 +1349,7 @@ module.exports = {
   getTeacherRoutine,
   getTeacherClassAttendance,
   createTeacher,
-  updateTeacher
+  updateTeacher,
+  uploadTeacherDocuments,
+  getTeacherDocument,
 };
