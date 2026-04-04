@@ -1,12 +1,15 @@
 const express = require('express');
 const { requireRole } = require('../middleware/rbacMiddleware');
 const { TEACHER_LIST_ALL_ROLES, PEOPLE_MANAGER_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
-const { getAllTeachers, getCurrentTeacher, getTeacherById, getTeachersByClass, getTeacherRoutine, getTeacherClassAttendance, updateTeacher } = require('../controllers/teacherController');
+const { getAllTeachers, getCurrentTeacher, getTeacherById, getTeachersByClass, getTeacherRoutine, getTeacherClassAttendance, createTeacher, updateTeacher } = require('../controllers/teacherController');
 
 const router = express.Router();
 
 // Get all teachers - Admin only
 router.get('/', requireRole(TEACHER_LIST_ALL_ROLES), getAllTeachers);
+
+// Create teacher - Admin / Administrative
+router.post('/', requireRole(PEOPLE_MANAGER_ROLES), createTeacher);
 
 // Get current logged-in teacher (must be before /:id route)
 router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentTeacher);

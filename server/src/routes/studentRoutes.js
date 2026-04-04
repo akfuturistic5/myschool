@@ -9,6 +9,7 @@ const {
   getStudentsByClass,
   createStudent,
   updateStudent,
+  promoteStudents,
   getStudentAttendance,
   getStudentLoginDetails,
   getStudentExamResults,
@@ -17,7 +18,7 @@ const {
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
-const { createStudentSchema, updateStudentSchema } = require('../validations/studentValidation');
+const { createStudentSchema, updateStudentSchema, promoteStudentsSchema } = require('../validations/studentValidation');
 
 const router = express.Router();
 
@@ -26,6 +27,14 @@ router.get('/', requireRole(STUDENT_LIST_ALL_ROLES), getAllStudents);
 
 // Get students for current teacher - Teacher only
 router.get('/teacher/students', requireRole([ROLES.TEACHER]), getTeacherStudents);
+
+// Bulk promote students (must be before /:id)
+router.post(
+  '/promote',
+  requireRole(PEOPLE_MANAGER_ROLES),
+  validate(promoteStudentsSchema),
+  promoteStudents
+);
 
 // Get current logged-in student (must be before /:id)
 router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);

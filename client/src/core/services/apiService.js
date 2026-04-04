@@ -321,6 +321,13 @@ class ApiService {
     });
   }
 
+  async promoteStudents(payload) {
+    return this.makeRequest('/students/promote', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getStudentById(id) {
     return this.makeRequest(`/students/${id}`);
   }
@@ -542,6 +549,13 @@ class ApiService {
   async updateTeacher(id, teacherData) {
     return this.makeRequest(`/teachers/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(teacherData)
+    });
+  }
+
+  async createTeacher(teacherData) {
+    return this.makeRequest('/teachers', {
+      method: 'POST',
       body: JSON.stringify(teacherData)
     });
   }

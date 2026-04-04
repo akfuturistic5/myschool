@@ -852,6 +852,162 @@ const updateStudent = async (req, res) => {
   }
 };
 
+/**
+ * Bulk promote: update students' academic year / class / section and record history in student_promotions.
+ */
+const promoteStudents = async (req, res) => {
+  try {
+    const {
+      student_ids: studentIds,
+      to_class_id: toClassId,
+      to_section_id: toSectionId,
+      to_academic_year_id: toAcademicYearId,
+      from_academic_year_id: fromAcademicYearId,
+    } = req.body;
+
+    const userId = req.user?.id;
+    let promotedByStaffId = null;
+    if (userId) {
+      const staffRes = await query(
+        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        [userId]
+      );
+      if (staffRes.rows.length > 0) {
+        promotedByStaffId = staffRes.rows[0].id;
+      }
+    }
+
+    const classCheck = await query(
+      `SELECT id FROM classes
+       WHERE id = $1 AND academic_year_id = $2 AND COALESCE(is_active, true) = true`,
+      [toClassId, toAcademicYearId]
+    );
+    if (classCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target class is invalid for the selected academic year',
+      });
+    }
+
+    const sectionCheck = await query(
+      'SELECT id, class_id FROM sections WHERE id = $1 AND COALESCE(is_active, true) = true',
+      [toSectionId]
+    );
+    if (sectionCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section not found',
+      });
+    }
+    const secRow = sectionCheck.rows[0];
+    if (secRow.class_id != null && Number(secRow.class_id) !== Number(toClassId)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section does not belong to the target class',
+      });
+    }
+
+    const uniqueIds = [...new Set(studentIds.map((n) => parseInt(n, 10)).filter((n) => !Number.isNaN(n)))];
+    if (uniqueIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      let promoted = 0;
+      for (const sid of uniqueIds) {
+        const sRes = await client.query(
+          `SELECT id, academic_year_id, class_id, section_id, is_active
+           FROM students WHERE id = $1 LIMIT 1`,
+          [sid]
+        );
+        if (sRes.rows.length === 0) {
+          const err = new Error(`Student ${sid} not found`);
+          err.statusCode = 400;
+          throw err;
+        }
+        const s = sRes.rows[0];
+        if (s.is_active === false || s.is_active === 'f' || s.is_active === 0) {
+          const err = new Error(`Student ${sid} is not active`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (
+          fromAcademicYearId != null &&
+          s.academic_year_id != null &&
+          Number(s.academic_year_id) !== Number(fromAcademicYearId)
+        ) {
+          const err = new Error(
+            `Student ${sid} is not enrolled in the selected current academic year`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const fromClassId = s.class_id;
+        const fromSectionId = s.section_id;
+        const fromYearId = s.academic_year_id;
+
+        await client.query(
+          `UPDATE students SET
+            academic_year_id = $1,
+            class_id = $2,
+            section_id = $3,
+            modified_at = NOW()
+           WHERE id = $4`,
+          [toAcademicYearId, toClassId, toSectionId, sid]
+        );
+
+        await client.query(
+          `INSERT INTO student_promotions (
+            student_id,
+            from_class_id,
+            to_class_id,
+            from_section_id,
+            to_section_id,
+            from_academic_year_id,
+            to_academic_year_id,
+            status,
+            promoted_by,
+            remarks
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            sid,
+            fromClassId,
+            toClassId,
+            fromSectionId,
+            toSectionId,
+            fromYearId,
+            toAcademicYearId,
+            'promoted',
+            promotedByStaffId,
+            null,
+          ]
+        );
+        promoted += 1;
+      }
+      return promoted;
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Students promoted successfully',
+      data: { promoted: result },
+    });
+  } catch (error) {
+    console.error('Error promoting students:', error);
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: error.message || 'Invalid promotion request',
+      });
+    }
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to promote students',
+    });
+  }
+};
+
 // Get all students
 const getAllStudents = async (req, res) => {
   try {
@@ -2524,6 +2680,7 @@ const getAttendanceReport = async (req, res) => {
 module.exports = {
   createStudent,
   updateStudent,
+  promoteStudents,
   getAllStudents,
   getTeacherStudents,
   getStudentById,

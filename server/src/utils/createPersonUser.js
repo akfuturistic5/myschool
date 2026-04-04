@@ -6,13 +6,16 @@ const bcrypt = require('bcryptjs');
 const { ROLES } = require('../config/roles');
 
 /**
- * Create user for student/parent/guardian
+ * Create user for student/parent/guardian/teacher
  * @param {Object} client - PG client (from transaction)
- * @param {number} roleId - ROLES.STUDENT | ROLES.PARENT | ROLES.GUARDIAN
+ * @param {number} roleId
  * @param {Object} opts - { username, email, phone, first_name, last_name, password? }
- * @returns {Promise<number>} user id
+ * @param {Object} [insertOptions]
+ * @param {boolean} [insertOptions.rejectUsernameConflict] - If true, duplicate username/email throws (required for teacher create; avoids linking staff to wrong user)
+ * @returns {Promise<number|null>} user id
  */
-async function createPersonUser(client, roleId, opts) {
+async function createPersonUser(client, roleId, opts, insertOptions = {}) {
+  const { rejectUsernameConflict = false } = insertOptions;
   const username = (opts.username || opts.phone || opts.email || '').toString().trim();
   if (!username) return null;
 
@@ -24,7 +27,7 @@ async function createPersonUser(client, roleId, opts) {
 
   let passwordHash;
   try {
-    passwordHash = await bcrypt.hash(rawPassword, 10);
+    passwordHash = await bcrypt.hash(rawPassword, 12);
   } catch (e) {
     console.error('createPersonUser: bcrypt hash failed', e.message);
     return null;
@@ -39,7 +42,12 @@ async function createPersonUser(client, roleId, opts) {
       [username, email, phone, passwordHash, roleId, firstName, lastName]
     );
   } catch (e) {
-    if (e.code === '23505' && e.constraint && e.constraint.includes('username')) {
+    if (
+      !rejectUsernameConflict &&
+      e.code === '23505' &&
+      e.constraint &&
+      String(e.constraint).includes('username')
+    ) {
       const existing = await client.query('SELECT id FROM users WHERE username = $1', [username]);
       if (existing.rows.length > 0) return existing.rows[0].id;
     }
@@ -109,9 +117,52 @@ async function createGuardianUser(client, { first_name, last_name, phone, email 
   });
 }
 
+const crypto = require('crypto');
+
+function generateTeacherInitialPassword() {
+  return crypto.randomBytes(18).toString('base64url');
+}
+
+/**
+ * Teacher app login — username prefers email, then phone.
+ * Password: explicit → else phone digits → else cryptographically secure random (never weak default).
+ * Duplicate username/email always fails the transaction (rejectUsernameConflict).
+ */
+async function createTeacherUser(client, { email, phone, first_name, last_name, password }) {
+  const emailTrim = (email || '').toString().trim();
+  const phoneTrim = (phone || '').toString().trim();
+  const username = (emailTrim || phoneTrim || `tch_${Date.now()}`).toString().trim().slice(0, 50);
+
+  let rawPassword;
+  if (password != null && String(password).trim() !== '') {
+    rawPassword = String(password).trim();
+  } else if (phoneTrim) {
+    rawPassword = phoneTrim.replace(/\D/g, '') || phoneTrim;
+  } else {
+    rawPassword = generateTeacherInitialPassword();
+  }
+
+  const userId = await createPersonUser(
+    client,
+    ROLES.TEACHER,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name: (first_name || '').toString().trim() || null,
+      last_name: (last_name || '').toString().trim() || null,
+      password: rawPassword,
+    },
+    { rejectUsernameConflict: true }
+  );
+
+  return userId;
+}
+
 module.exports = {
   createPersonUser,
   createStudentUser,
   createParentUser,
-  createGuardianUser
+  createGuardianUser,
+  createTeacherUser
 };

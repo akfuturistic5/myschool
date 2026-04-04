@@ -270,15 +270,10 @@ const TeacherGrid = () => {
                         </Link>
                       </li>
                       <li>
-                        <Link
-                          className="dropdown-item rounded-1"
-                          to="#"
-                          data-bs-toggle="modal"
-                          data-bs-target="#delete-modal"
-                        >
+                        <span className="dropdown-item rounded-1 disabled text-muted" title="Coming soon">
                           <i className="ti ti-trash-x me-2" />
                           Delete
-                        </Link>
+                        </span>
                       </li>
                     </ul>
                   </div>
