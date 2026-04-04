@@ -5,7 +5,6 @@ import { all_routes } from "../../../router/all_routes";
 import Table from "../../../../core/common/dataTable/index";
 import type { TableData } from "../../../../core/data/interface";
 import CommonSelect from "../../../../core/common/commonSelect";
-import PredefinedDateRanges from "../../../../core/common/datePicker";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useSelector } from "react-redux";
@@ -120,18 +119,42 @@ const StudentPromotion = () => {
     return y?.year_name ?? `Year #${toAcademicYearId}`;
   }, [academicYears, toAcademicYearId]);
 
+  const normLabel = (v: string | null | undefined) =>
+    String(v ?? "")
+      .trim()
+      .toLowerCase();
+
+  /**
+   * Match by class_id/section_id first (correct when student.class_id is the same row as the dropdown).
+   * Fallback: match by class_name + section_name — needed when class rows are duplicated per academic year
+   * but legacy student rows still point at another year's class id while academic_year_id is correct.
+   */
   const filteredStudents = useMemo(() => {
     if (!fromClassId) return students;
     const cid = parseInt(fromClassId, 10);
     if (Number.isNaN(cid)) return students;
+
+    const fromClass = classesFrom.find((c) => String(c.id) === fromClassId);
+    const fromSec = fromSections.find((sec) => String(sec.id) === fromSectionId);
+    const wantClassName = normLabel(fromClass?.class_name);
+    const wantSectionName = fromSectionId ? normLabel(fromSec?.section_name) : "";
+
     return students.filter((s: any) => {
-      if (Number(s.class_id) !== cid) return false;
-      if (!fromSectionId) return true;
-      const sid = parseInt(fromSectionId, 10);
-      if (Number.isNaN(sid)) return true;
-      return Number(s.section_id) === sid;
+      const sid = fromSectionId ? parseInt(fromSectionId, 10) : NaN;
+      const idMatch =
+        Number(s.class_id) === cid &&
+        (!fromSectionId || Number.isNaN(sid) || Number(s.section_id) === sid);
+
+      const nameMatch =
+        !!wantClassName &&
+        normLabel(s.class_name) === wantClassName &&
+        (!fromSectionId ||
+          !wantSectionName ||
+          normLabel(s.section_name) === wantSectionName);
+
+      return idMatch || nameMatch;
     });
-  }, [students, fromClassId, fromSectionId]);
+  }, [students, fromClassId, fromSectionId, classesFrom, fromSections]);
 
   const data = useMemo(
     () =>
@@ -393,8 +416,16 @@ const StudentPromotion = () => {
                 <i className="ti ti-info-circle me-1" />
                 <strong>Note :</strong> Promoting students updates their class, section, and
                 academic year for the target session. An audit row is stored in promotion
-                history.
+                history. The student list always follows the{" "}
+                <strong>Academic Year chosen in the top header</strong> — it is not filtered by
+                calendar dates.
               </div>
+              {fromAcademicYearId == null && (
+                <div className="alert alert-warning mb-4" role="alert">
+                  Select an <strong>Academic Year</strong> in the header dropdown so the correct
+                  students load for promotion.
+                </div>
+              )}
               <div className="card">
                 <div className="card-header border-0 pb-0">
                   <div className="bg-light-gray p-3 rounded">
@@ -650,8 +681,16 @@ const StudentPromotion = () => {
                   <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                     <h4 className="mb-3">Students List</h4>
                     <div className="d-flex align-items-center flex-wrap">
-                      <div className="input-icon-start mb-3 me-2 position-relative">
-                        <PredefinedDateRanges />
+                      <div className="mb-3 me-3 small text-muted">
+                        <span className="d-block fw-semibold text-dark">Roster academic year</span>
+                        <span>
+                          {currentYearLabel}
+                          {fromAcademicYearId != null ? (
+                            <span className="text-muted"> (same as header dropdown)</span>
+                          ) : (
+                            <span className="text-warning"> — select a year in the header</span>
+                          )}
+                        </span>
                       </div>
                       <div className="dropdown mb-3">
                         <Link
@@ -721,8 +760,9 @@ const StudentPromotion = () => {
                         <div className="alert alert-info mx-3" role="alert">
                           <strong>No students in this class/section.</strong> Use{" "}
                           <strong>Promotion from Class</strong> and <strong>Section</strong> (left column above) to
-                          match where students are enrolled for {currentYearLabel}. The table checkboxes appear
-                          on each row once students show here.
+                          match where students are enrolled for {currentYearLabel}. Names are matched as well as
+                          IDs, so the list should still show if class/section labels match. The table checkboxes
+                          appear on each row once students show here.
                         </div>
                       )}
                     {!studentsLoading && !studentsError && (
