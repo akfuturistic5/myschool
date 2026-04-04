@@ -181,8 +181,8 @@ export const useDashboardPerformanceSummary = (options = {}) => {
         setLoading(true);
         setError(null);
         const res = await apiService.getDashboardPerformanceSummary({
-          academicYearId,
-          classId,
+          ...(academicYearId != null ? { academicYearId } : {}),
+          ...(classId != null ? { classId } : {}),
         });
         if (mounted && res.status === 'SUCCESS' && res.data) {
           setSummary({
