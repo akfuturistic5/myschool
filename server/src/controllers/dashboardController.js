@@ -1139,6 +1139,7 @@ const getDashboardFeeStats = async (req, res) => {
   try {
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
+    const feeWin = parseFeeDateWindow(req);
 
     let totalFeesCollected = 0;
     let fineCollected = 0;
@@ -1146,19 +1147,24 @@ const getDashboardFeeStats = async (req, res) => {
     let totalOutstanding = 0;
 
     try {
-      const collectedResult = hasYearFilter
-        ? await query(
-            `SELECT COALESCE(SUM(fc.amount_paid::numeric), 0) AS total
+      const earnParams = hasYearFilter ? [academicYearId] : [];
+      let earnSql = hasYearFilter
+        ? `SELECT COALESCE(SUM(fc.amount_paid::numeric), 0) AS total
              FROM fee_collections fc
              INNER JOIN students s ON fc.student_id = s.id
-             WHERE fc.is_active = true AND s.academic_year_id = $1`,
-            [academicYearId]
-          )
-        : await query(`
-            SELECT COALESCE(SUM(amount_paid::numeric), 0) AS total
+             WHERE fc.is_active = true AND s.academic_year_id = $1`
+        : `SELECT COALESCE(SUM(amount_paid::numeric), 0) AS total
             FROM fee_collections
-            WHERE is_active = true
-          `);
+            WHERE is_active = true`;
+      if (feeWin.from && feeWin.to) {
+        const a = earnParams.length + 1;
+        const b = earnParams.length + 2;
+        earnSql += hasYearFilter
+          ? ` AND fc.payment_date >= $${a}::date AND fc.payment_date <= $${b}::date`
+          : ` AND payment_date >= $${a}::date AND payment_date <= $${b}::date`;
+        earnParams.push(feeWin.from, feeWin.to);
+      }
+      const collectedResult = await query(earnSql, earnParams);
       totalFeesCollected = parseFloat(collectedResult.rows[0]?.total || '0') || 0;
     } catch (e) {
       console.warn('Dashboard: fee_collections sum failed', e.message);

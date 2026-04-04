@@ -404,16 +404,6 @@ function buildAdministrativeSidebar() {
         });
       }
 
-      if (section.label === "HRM") {
-        nextSection.submenuItems = nextSection.submenuItems.map((item) => {
-          if (item.label !== "Leaves" || !item.submenuItems) return item;
-          return {
-            ...item,
-            submenuItems: item.submenuItems.filter((sub) => sub.label !== "Approve Request"),
-          };
-        });
-      }
-
       if (section.label === "Pages") {
         nextSection.submenuItems = nextSection.submenuItems.filter((item) => item.label === "Profile");
       }

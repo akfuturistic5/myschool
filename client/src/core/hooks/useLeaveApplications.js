@@ -26,7 +26,17 @@ function getBadgeClass(leaveTypeName) {
 }
 
 export const useLeaveApplications = (options = {}) => {
-  const { limit = 20, studentOnly = false, parentChildren = false, studentId = null, staffId = null, canUseAdminList = false, academicYearId = null } = options;
+  const {
+    limit = 20,
+    studentOnly = false,
+    parentChildren = false,
+    studentId = null,
+    staffId = null,
+    canUseAdminList = false,
+    academicYearId = null,
+    leaveFrom = null,
+    leaveTo = null,
+  } = options;
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,16 +57,33 @@ export const useLeaveApplications = (options = {}) => {
           setLoading(false);
           return;
         }
-        response = await apiService.getLeaveApplications({ limit, student_id: studentId, academic_year_id: academicYearId });
+        response = await apiService.getLeaveApplications({
+          limit,
+          student_id: studentId,
+          academic_year_id: academicYearId,
+          leave_from: leaveFrom || undefined,
+          leave_to: leaveTo || undefined,
+        });
       } else if (staffId != null) {
         if (!canUseAdminList) {
           setList([]);
           setLoading(false);
           return;
         }
-        response = await apiService.getLeaveApplications({ limit, staff_id: staffId, academic_year_id: academicYearId });
+        response = await apiService.getLeaveApplications({
+          limit,
+          staff_id: staffId,
+          academic_year_id: academicYearId,
+          leave_from: leaveFrom || undefined,
+          leave_to: leaveTo || undefined,
+        });
       } else if (canUseAdminList) {
-        response = await apiService.getLeaveApplications({ limit, academic_year_id: academicYearId });
+        response = await apiService.getLeaveApplications({
+          limit,
+          academic_year_id: academicYearId,
+          leave_from: leaveFrom || undefined,
+          leave_to: leaveTo || undefined,
+        });
       } else {
         // Role loading or non-admin - skip admin API to avoid 403
         setList([]);
@@ -144,7 +171,7 @@ export const useLeaveApplications = (options = {}) => {
 
   useEffect(() => {
     fetchList();
-  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId]);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId, leaveFrom, leaveTo]);
 
   return {
     leaveApplications: list,

@@ -70,7 +70,8 @@ function shouldGlobalSessionExpireOn401(requestUrl) {
   try {
     pathname = new URL(requestUrl).pathname;
   } catch {
-    pathname = requestUrl;
+    // Relative URLs (e.g. dev proxy: `/api/...`) — strip query so /api/auth/me?... still matches.
+    pathname = String(requestUrl).split('?')[0];
   }
   if (pathname === '/api/auth/me' || pathname.endsWith('/api/auth/me')) return false;
   if (pathname === '/api/auth/login' || pathname.endsWith('/api/auth/login')) return false;
@@ -612,6 +613,9 @@ class ApiService {
   async getDashboardStats(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.attendanceDate != null && params.attendanceDate !== '') {
+      searchParams.set('attendance_date', params.attendanceDate);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/stats${qs ? `?${qs}` : ''}`);
   }
@@ -634,6 +638,7 @@ class ApiService {
   async getDashboardBestPerformers(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/best-performers${qs ? `?${qs}` : ''}`);
   }
@@ -646,8 +651,26 @@ class ApiService {
     return this.makeRequest(`/dashboard/star-students${qs ? `?${qs}` : ''}`);
   }
 
-  async getDashboardPerformanceSummary() {
-    return this.makeRequest('/dashboard/performance-summary');
+  async getDashboardPerformanceSummary(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/performance-summary${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDashboardMergedUpcomingEvents(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.limit != null) searchParams.set('limit', params.limit);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/merged-upcoming-events${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDashboardStudentActivity(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/student-activity${qs ? `?${qs}` : ''}`);
   }
 
   async getDashboardTopSubjects(params = {}) {
@@ -674,6 +697,9 @@ class ApiService {
   async getDashboardFeeStats(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.feePeriod != null && params.feePeriod !== '' && params.feePeriod !== 'all') {
+      searchParams.set('fee_period', params.feePeriod);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/fee-stats${qs ? `?${qs}` : ''}`);
   }
@@ -681,6 +707,9 @@ class ApiService {
   async getDashboardFinanceSummary(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.feePeriod != null && params.feePeriod !== '' && params.feePeriod !== 'all') {
+      searchParams.set('fee_period', params.feePeriod);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/finance-summary${qs ? `?${qs}` : ''}`);
   }
@@ -750,6 +779,8 @@ class ApiService {
     if (params.student_id != null) searchParams.set('student_id', params.student_id);
     if (params.staff_id != null) searchParams.set('staff_id', params.staff_id);
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.leave_from != null && params.leave_from !== '') searchParams.set('leave_from', params.leave_from);
+    if (params.leave_to != null && params.leave_to !== '') searchParams.set('leave_to', params.leave_to);
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications${qs ? `?${qs}` : ''}`);
   }

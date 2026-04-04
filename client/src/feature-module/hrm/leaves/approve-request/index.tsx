@@ -10,13 +10,13 @@ import TooltipOption from "../../../../core/common/tooltipOption";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
 import { apiService } from "../../../../core/services/apiService";
-import { isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 
 const ApproveRequest = () => {
   const routes = all_routes;
   const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
   const { user: currentUser } = useCurrentUser();
-  const canUseAdminList = isHeadmasterRole(currentUser);
+  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     canUseAdminList,
