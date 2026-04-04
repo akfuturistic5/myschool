@@ -11,6 +11,39 @@ const { ROLES } = require('../config/roles');
 
 const USERS_USERNAME_MAX_LEN = 50;
 
+/**
+ * Find active user row by email (case-insensitive). Used to avoid users_email_key violations inside a transaction.
+ */
+async function findUserRowByEmail(client, email) {
+  const e = (email || '').toString().trim();
+  if (!e) return null;
+  const r = await client.query(
+    `SELECT id, role_id FROM users
+     WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1)) AND is_active = true
+     LIMIT 1`,
+    [e]
+  );
+  return r.rows[0] || null;
+}
+
+/** True if any active user already owns this email (one email → one user). */
+async function isUserEmailTaken(client, email) {
+  const row = await findUserRowByEmail(client, email);
+  return Boolean(row);
+}
+
+async function runPersonInsertWithSavepoint(client, fn) {
+  await client.query('SAVEPOINT sp_person_user_insert');
+  try {
+    const id = await fn();
+    await client.query('RELEASE SAVEPOINT sp_person_user_insert');
+    return id;
+  } catch (e) {
+    await client.query('ROLLBACK TO SAVEPOINT sp_person_user_insert');
+    throw e;
+  }
+}
+
 /** Lowercase alphanumeric segment from a name part (no spaces). */
 function nameSegment(s) {
   return String(s || '')
@@ -145,19 +178,39 @@ async function createStudentUser(client, { admission_number, first_name, last_na
   const phoneDigits = phoneTrim.replace(/\D/g, '');
   const username = await allocateUniqueUsername(client, base, [phoneDigits, admissionSlug]);
 
-  return createPersonUser(
-    client,
-    ROLES.STUDENT,
-    {
-      username,
-      email: emailTrim || null,
-      phone: phoneTrim || null,
-      first_name: firstName || null,
-      last_name: lastName || null,
-      password: phoneTrim || admission || '123456',
-    },
-    { reuseUsernameOnConflict: false }
-  );
+  if (emailTrim) {
+    const existing = await findUserRowByEmail(client, emailTrim);
+    if (existing) {
+      console.warn(
+        `createStudentUser: email already in use (user id=${existing.id}), skipping student user link`
+      );
+      return null;
+    }
+  }
+
+  try {
+    return await runPersonInsertWithSavepoint(client, () =>
+      createPersonUser(
+        client,
+        ROLES.STUDENT,
+        {
+          username,
+          email: emailTrim || null,
+          phone: phoneTrim || null,
+          first_name: firstName || null,
+          last_name: lastName || null,
+          password: phoneTrim || admission || '123456',
+        },
+        { reuseUsernameOnConflict: false }
+      )
+    );
+  } catch (e) {
+    if (e.code === '23505' && emailTrim && String(e.constraint || '').includes('email')) {
+      console.warn('createStudentUser: duplicate email (concurrent), skipping student user link');
+      return null;
+    }
+    throw e;
+  }
 }
 
 function parseFullName(fullName) {
@@ -184,19 +237,37 @@ async function createParentIndividualUser(client, { full_name, email, phone, par
   const phoneDigits = phoneTrim.replace(/\D/g, '');
   const username = await allocateUniqueUsername(client, base, [phoneDigits, `p${parent_row_id}${String(side).charAt(0)}`]);
 
-  return createPersonUser(
-    client,
-    ROLES.PARENT,
-    {
-      username,
-      email: emailTrim || null,
-      phone: phoneTrim || null,
-      first_name,
-      last_name,
-      password: phoneTrim || '123456',
-    },
-    { reuseUsernameOnConflict: false }
-  );
+  if (emailTrim) {
+    const existing = await findUserRowByEmail(client, emailTrim);
+    if (existing) {
+      console.warn(`createParentIndividualUser: email already in use, skip user (${side})`);
+      return null;
+    }
+  }
+
+  try {
+    return await runPersonInsertWithSavepoint(client, () =>
+      createPersonUser(
+        client,
+        ROLES.PARENT,
+        {
+          username,
+          email: emailTrim || null,
+          phone: phoneTrim || null,
+          first_name,
+          last_name,
+          password: phoneTrim || '123456',
+        },
+        { reuseUsernameOnConflict: false }
+      )
+    );
+  } catch (e) {
+    if (e.code === '23505' && emailTrim && String(e.constraint || '').includes('email')) {
+      console.warn(`createParentIndividualUser: duplicate email (race), skip user (${side})`);
+      return null;
+    }
+    throw e;
+  }
 }
 
 /**
@@ -236,19 +307,37 @@ async function createGuardianUser(client, { first_name, last_name, phone, email 
   const phoneDigits = phoneTrim.replace(/\D/g, '');
   const username = await allocateUniqueUsername(client, base, [phoneDigits]);
 
-  return createPersonUser(
-    client,
-    ROLES.GUARDIAN,
-    {
-      username,
-      email: emailTrim || null,
-      phone: phoneTrim || null,
-      first_name: fn || null,
-      last_name: ln || null,
-      password: phoneTrim || '123456',
-    },
-    { reuseUsernameOnConflict: false }
-  );
+  if (emailTrim) {
+    const existing = await findUserRowByEmail(client, emailTrim);
+    if (existing) {
+      console.warn('createGuardianUser: email already in use, skip guardian user link');
+      return null;
+    }
+  }
+
+  try {
+    return await runPersonInsertWithSavepoint(client, () =>
+      createPersonUser(
+        client,
+        ROLES.GUARDIAN,
+        {
+          username,
+          email: emailTrim || null,
+          phone: phoneTrim || null,
+          first_name: fn || null,
+          last_name: ln || null,
+          password: phoneTrim || '123456',
+        },
+        { reuseUsernameOnConflict: false }
+      )
+    );
+  } catch (e) {
+    if (e.code === '23505' && emailTrim && String(e.constraint || '').includes('email')) {
+      console.warn('createGuardianUser: duplicate email (race), skip guardian user link');
+      return null;
+    }
+    throw e;
+  }
 }
 
 const crypto = require('crypto');
@@ -299,5 +388,6 @@ module.exports = {
   createParentUser,
   createParentIndividualUser,
   createGuardianUser,
-  createTeacherUser
+  createTeacherUser,
+  isUserEmailTaken,
 };

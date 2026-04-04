@@ -3,9 +3,23 @@ const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
-const { createStudentUser, createParentIndividualUser, createGuardianUser } = require('../utils/createPersonUser');
+const {
+  createStudentUser,
+  createParentIndividualUser,
+  createGuardianUser,
+  isUserEmailTaken,
+} = require('../utils/createPersonUser');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
+
+/** Non-fatal warning when an email is already registered in users (student row still saved). */
+function buildEmailInUseWarning(field, displayLabel) {
+  return {
+    code: 'EMAIL_IN_USE',
+    field,
+    message: `${displayLabel}: Email already in use. Another account already uses this email. The student was saved successfully; no duplicate user was created for this email.`,
+  };
+}
 
 // Generate next unique GR number for this tenant database (one school per DB).
 const generateNextGrNumber = async (client) => {
@@ -99,7 +113,9 @@ const createStudent = async (req, res) => {
       });
     }
 
-    const student = await executeTransaction(async (client) => {
+    const createResult = await executeTransaction(async (client) => {
+      const creationWarnings = [];
+
       const existingStudent = await client.query(
         'SELECT id FROM students WHERE admission_number = $1 AND is_active = true',
         [admission_number]
@@ -238,6 +254,8 @@ const createStudent = async (req, res) => {
           if (studentUserId) {
             await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [studentUserId, studentRow.id]);
             studentRow.user_id = studentUserId;
+          } else if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
+            creationWarnings.push(buildEmailInUseWarning('email', 'Student'));
           }
         } catch (e) {
           console.warn('createStudent: could not create student user:', e.message);
@@ -277,6 +295,10 @@ const createStudent = async (req, res) => {
               parent_row_id: parentRowId,
               side: 'father',
             });
+            const fMail = (father_email || '').toString().trim();
+            if (!fatherUserId && fMail && (await isUserEmailTaken(client, fMail))) {
+              creationWarnings.push(buildEmailInUseWarning('father_email', 'Father'));
+            }
           }
           if (mother_phone || mother_email) {
             motherUserId = await createParentIndividualUser(client, {
@@ -286,6 +308,10 @@ const createStudent = async (req, res) => {
               parent_row_id: parentRowId,
               side: 'mother',
             });
+            const mMail = (mother_email || '').toString().trim();
+            if (!motherUserId && mMail && (await isUserEmailTaken(client, mMail))) {
+              creationWarnings.push(buildEmailInUseWarning('mother_email', 'Mother'));
+            }
           }
         } catch (e) {
           console.warn('createStudent: could not create parent users:', e.message);
@@ -338,6 +364,8 @@ const createStudent = async (req, res) => {
             });
             if (guardianUserId) {
               await client.query('UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2', [guardianUserId, guardianResult.rows[0].id]);
+            } else if (gEmail && (await isUserEmailTaken(client, gEmail))) {
+              creationWarnings.push(buildEmailInUseWarning('guardian_email', 'Guardian'));
             }
           } catch (e) {
             console.warn('createStudent: could not create guardian user:', e.message);
@@ -384,13 +412,14 @@ const createStudent = async (req, res) => {
         }
       }
 
-      return studentRow;
+      return { studentRow, warnings: creationWarnings };
     });
 
     res.status(201).json({
       status: 'SUCCESS',
       message: 'Student created successfully',
-      data: student
+      data: createResult.studentRow,
+      warnings: createResult.warnings || [],
     });
   } catch (error) {
     console.error('Error creating student:', error);
@@ -487,7 +516,9 @@ const updateStudent = async (req, res) => {
       });
     }
 
-    const student = await executeTransaction(async (client) => {
+    const updateResult = await executeTransaction(async (client) => {
+      const updateWarnings = [];
+
       const existingStudent = await client.query(
         'SELECT id FROM students WHERE admission_number = $1 AND id != $2 AND is_active = true',
         [admission_number, id]
@@ -780,6 +811,8 @@ const updateStudent = async (req, res) => {
               studentRow.id,
             ]);
             studentRow.user_id = studentUserId;
+          } else if (stuEmailUp && (await isUserEmailTaken(client, stuEmailUp))) {
+            updateWarnings.push(buildEmailInUseWarning('email', 'Student'));
           }
         } catch (e) {
           console.warn('updateStudent: could not create student user:', e.message);
@@ -859,6 +892,10 @@ const updateStudent = async (req, res) => {
                 parent_row_id: pRow.id,
                 side: 'father',
               });
+              const fMailUp = (father_email || '').toString().trim();
+              if (!newFatherUserId && fMailUp && (await isUserEmailTaken(client, fMailUp))) {
+                updateWarnings.push(buildEmailInUseWarning('father_email', 'Father'));
+              }
             }
             if ((mother_phone || mother_email) && !pRow.mother_user_id) {
               newMotherUserId = await createParentIndividualUser(client, {
@@ -868,6 +905,10 @@ const updateStudent = async (req, res) => {
                 parent_row_id: pRow.id,
                 side: 'mother',
               });
+              const mMailUp = (mother_email || '').toString().trim();
+              if (!newMotherUserId && mMailUp && (await isUserEmailTaken(client, mMailUp))) {
+                updateWarnings.push(buildEmailInUseWarning('mother_email', 'Mother'));
+              }
             }
           } catch (e) {
             console.warn('updateStudent: could not create parent users:', e.message);
@@ -961,6 +1002,8 @@ const updateStudent = async (req, res) => {
                 guardianUserId,
                 gr.id,
               ]);
+            } else if (gEmailUp && (await isUserEmailTaken(client, gEmailUp))) {
+              updateWarnings.push(buildEmailInUseWarning('guardian_email', 'Guardian'));
             }
           } catch (e) {
             console.warn('updateStudent: could not create guardian user:', e.message);
@@ -1007,13 +1050,14 @@ const updateStudent = async (req, res) => {
         }
       }
 
-      return studentRow;
+      return { studentRow, warnings: updateWarnings };
     });
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Student updated successfully',
-      data: student
+      data: updateResult.studentRow,
+      warnings: updateResult.warnings || [],
     });
   } catch (error) {
     console.error('Error updating student:', error);

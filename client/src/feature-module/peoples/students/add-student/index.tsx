@@ -26,6 +26,7 @@ import { useHouses } from "../../../../core/hooks/useHouses";
 import { useHostels } from "../../../../core/hooks/useHostels";
 import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { apiService } from "../../../../core/services/apiService";
+import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
@@ -571,12 +572,31 @@ const AddStudent = () => {
         medications: Array.isArray(owner2) ? owner2 : (owner2 ? String(owner2).split(',').map(s => s.trim()).filter(Boolean) : [])
       };
 
-      let response;
+      let response: { status?: string; warnings?: { message?: string }[] };
       if (isEdit && id) {
         // Update existing student
         response = await apiService.updateStudent(id, submitData);
       } else {
         response = await apiService.createStudent(submitData);
+      }
+
+      if (
+        response?.status === "SUCCESS" &&
+        Array.isArray(response.warnings) &&
+        response.warnings.length > 0
+      ) {
+        const lines = response.warnings
+          .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
+          .filter(Boolean);
+        await Swal.fire({
+          icon: "warning",
+          title: "Email already in use",
+          text:
+            lines.length > 0
+              ? lines.join("\n\n")
+              : "One or more emails are already registered to another account.",
+          confirmButtonText: "OK",
+        });
       }
 
       // Navigate to student list on success
