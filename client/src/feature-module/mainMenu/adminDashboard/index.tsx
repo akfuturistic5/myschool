@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import ReactApexChart from "react-apexcharts";
 import { Link } from "react-router-dom";
@@ -17,7 +17,6 @@ import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicY
 import { useDashboardStats } from "../../../core/hooks/useDashboardStats";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
-import { useEvents } from "../../../core/hooks/useEvents";
 import {
   useDashboardClassRoutine,
   useDashboardBestPerformers,
@@ -28,21 +27,54 @@ import {
   useDashboardNoticeBoard,
   useDashboardFeeStats,
   useDashboardFinanceSummary,
+  useDashboardMergedUpcomingEvents,
+  useDashboardStudentActivity,
+  useDashboardMyTodos,
 } from "../../../core/hooks/useDashboardData";
+
+function toYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function startOfWeekMonday(ref: Date): Date {
+  const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function endOfWeekSunday(ref: Date): Date {
+  const start = startOfWeekMonday(ref);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return end;
+}
 
 const AdminDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
+  const [leaveFeedback, setLeaveFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
 
   const handleLeaveApprove = async (id: number) => {
     if (leaveActionId) return;
     setLeaveActionId(id);
+    setLeaveFeedback(null);
     try {
       const res = await apiService.updateLeaveApplicationStatus(id, "approved");
-      if (res?.status === "SUCCESS") refetchLeaves();
-    } catch (_) {
-      // ignore
+      if (res?.status === "SUCCESS") {
+        setLeaveFeedback({ type: "success", text: "Leave approved." });
+        refetchLeaves();
+      } else {
+        setLeaveFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not approve leave.";
+      setLeaveFeedback({ type: "danger", text: msg });
     }
     setLeaveActionId(null);
   };
@@ -50,28 +82,92 @@ const AdminDashboard = () => {
   const handleLeaveReject = async (id: number) => {
     if (leaveActionId) return;
     setLeaveActionId(id);
+    setLeaveFeedback(null);
     try {
       const res = await apiService.updateLeaveApplicationStatus(id, "rejected");
-      if (res?.status === "SUCCESS") refetchLeaves();
-    } catch (_) {
-      // ignore
+      if (res?.status === "SUCCESS") {
+        setLeaveFeedback({ type: "success", text: "Leave rejected." });
+        refetchLeaves();
+      } else {
+        setLeaveFeedback({ type: "danger", text: res?.message || "Could not reject leave." });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Could not reject leave.";
+      setLeaveFeedback({ type: "danger", text: msg });
     }
     setLeaveActionId(null);
   };
   const [date, setDate] = useState<Nullable<Date>>(null);
-  const { stats } = useDashboardStats({ academicYearId });
-  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({ limit: 10, canUseAdminList: true, academicYearId });
+  const [attendanceRange, setAttendanceRange] = useState<"today" | "yesterday">("today");
+  const [feePeriod, setFeePeriod] = useState<"all" | "month" | "year" | "90d">("all");
+  const [leaveRange, setLeaveRange] = useState<"all" | "this_week" | "last_week">("all");
+
+  const attendanceDateStr = useMemo(() => {
+    const d = new Date();
+    if (attendanceRange === "yesterday") d.setDate(d.getDate() - 1);
+    return toYMD(d);
+  }, [attendanceRange]);
+
+  const leaveWindow = useMemo(() => {
+    if (leaveRange === "all") return { from: null as string | null, to: null as string | null };
+    const today = new Date();
+    if (leaveRange === "this_week") {
+      const from = startOfWeekMonday(today);
+      const end = endOfWeekSunday(today);
+      const endCap = today.getTime() < end.getTime() ? today : end;
+      return { from: toYMD(from), to: toYMD(endCap) };
+    }
+    const thisMon = startOfWeekMonday(today);
+    const lastMon = new Date(thisMon);
+    lastMon.setDate(lastMon.getDate() - 7);
+    const lastSun = new Date(lastMon);
+    lastSun.setDate(lastMon.getDate() + 6);
+    return { from: toYMD(lastMon), to: toYMD(lastSun) };
+  }, [leaveRange]);
+
+  const attendanceFilterLabel = attendanceRange === "today" ? "Today" : "Yesterday";
+  const feePeriodLabel =
+    feePeriod === "month"
+      ? "This month"
+      : feePeriod === "year"
+        ? "This year"
+        : feePeriod === "90d"
+          ? "Last 90 days"
+          : "All time";
+  const leaveRangeLabel =
+    leaveRange === "this_week" ? "This week" : leaveRange === "last_week" ? "Last week" : "All recent";
+
+  const { stats, trends, attendanceToday, loading: statsLoading, error: statsError } = useDashboardStats({
+    academicYearId,
+    attendanceDate: attendanceDateStr,
+  });
+  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
+    limit: 10,
+    canUseAdminList: true,
+    academicYearId,
+    leaveFrom: leaveWindow.from ?? undefined,
+    leaveTo: leaveWindow.to ?? undefined,
+  });
   const { user: currentUser, loading: userLoading } = useCurrentUser();
-  const { upcomingEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 10 });
+  const { upcomingEvents, loading: eventsLoading, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 12 });
   const { routine: classRoutine, loading: routineLoading, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
-  const { performers: bestPerformers } = useDashboardBestPerformers({ limit: 3 });
+  const { performers: bestPerformers } = useDashboardBestPerformers({ limit: 3, academicYearId });
   const { students: starStudents } = useDashboardStarStudents({ limit: 3, academicYearId });
   const { summary: performanceSummary } = useDashboardPerformanceSummary({ academicYearId });
   const { subjects: topSubjects } = useDashboardTopSubjects({ academicYearId });
   const { activity: recentActivity } = useDashboardRecentActivity({ academicYearId });
+  const { activityItems: studentActivityItems, loading: activityLoading, error: activityError } = useDashboardStudentActivity({ limit: 5, academicYearId });
+  const { todos: dashboardTodos, loading: todosLoading, error: todosError } = useDashboardMyTodos({ limit: 5 });
   const { notices: dashboardNotices } = useDashboardNoticeBoard({ limit: 5 });
-  const { feeStats } = useDashboardFeeStats({ academicYearId });
-  const { financeSummary } = useDashboardFinanceSummary({ academicYearId });
+  const { feeStats } = useDashboardFeeStats({ academicYearId, feePeriod });
+  const { financeSummary } = useDashboardFinanceSummary({ academicYearId, feePeriod });
+
+  const stuAtt = attendanceToday.students;
+  const teachAtt = attendanceToday.teachers;
+  const staffAtt = attendanceToday.staff;
+  const studentMarked = stuAtt.totalMarked > 0;
+  const teachMarked = teachAtt.totalMarked > 0;
+  const staffMarked = staffAtt.totalMarked > 0;
   function SampleNextArrow(props: any) {
     const { style, onClick } = props;
     return (
@@ -168,11 +264,14 @@ const AdminDashboard = () => {
         show: false,
       },
     },
+    labels: ["Present", "Absent", "Late"],
     legend: {
       show: false,
     },
-    colors: ["#3D5EE1", "#6FCCD8"],
-    series: stats.students.total > 0 ? [stats.students.active, stats.students.inactive] : [0, 0],
+    colors: ["#3D5EE1", "#E82646", "#EAB300"],
+    series: studentMarked
+      ? [stuAtt.present, stuAtt.absent, stuAtt.late]
+      : [0, 0, 0],
     responsive: [
       {
         breakpoint: 480,
@@ -193,11 +292,14 @@ const AdminDashboard = () => {
         show: false,
       },
     },
+    labels: ["Present", "On leave"],
     legend: {
       show: false,
     },
-    colors: ["#3D5EE1", "#6FCCD8"],
-    series: stats.teachers.total > 0 ? [stats.teachers.active, stats.teachers.inactive] : [0, 0],
+    colors: ["#3D5EE1", "#E82646"],
+    series: teachMarked
+      ? [teachAtt.present, teachAtt.absent]
+      : [0, 0],
     responsive: [
       {
         breakpoint: 480,
@@ -218,11 +320,14 @@ const AdminDashboard = () => {
         show: false,
       },
     },
+    labels: ["Present", "On leave"],
     legend: {
       show: false,
     },
-    colors: ["#3D5EE1", "#6FCCD8"],
-    series: stats.staff.total > 0 ? [stats.staff.active, stats.staff.inactive] : [0, 0],
+    colors: ["#3D5EE1", "#E82646"],
+    series: staffMarked
+      ? [staffAtt.present, staffAtt.absent]
+      : [0, 0],
     responsive: [
       {
         breakpoint: 480,
@@ -243,7 +348,7 @@ const AdminDashboard = () => {
         show: false,
       },
     },
-    labels: ["Good", "Average", "Below Average"],
+    labels: ["Strong (≥75%)", "Satisfactory (40–75%)", "Below 40%"],
     legend: { show: false },
     dataLabels: {
       enabled: false,
@@ -321,7 +426,11 @@ const AdminDashboard = () => {
       data: [(feeStats.totalFeesCollected ?? 0) + (feeStats.totalOutstanding ?? 0)]
     }],
     xaxis: {
-      categories: [(feeStats.totalFeesCollected ?? 0) + (feeStats.totalOutstanding ?? 0) > 0 ? 'Fees' : 'No fee data'],
+      categories: [
+        (feeStats.totalFeesCollected ?? 0) + (feeStats.totalOutstanding ?? 0) > 0
+          ? `Fees (${feePeriodLabel})`
+          : "No fee data",
+      ],
     },
     yaxis: {
       tickAmount: 3,
@@ -336,7 +445,7 @@ const AdminDashboard = () => {
     tooltip: {
       y: {
         formatter: function (val: any) {
-          return "$ " + val + " thousands"
+          return "$ " + Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
       }
     }
@@ -360,8 +469,8 @@ const AdminDashboard = () => {
       curve: 'straight'
     },
     series: [{
-      name: 'Earnings',
-      data: [financeSummary.totalEarnings ?? 0]
+      name: 'Income',
+      data: [(financeSummary.totalEarnings ?? 0) + (financeSummary.totalFines ?? 0)]
     }]
   };
   const totalExpenseArea = {
@@ -387,8 +496,6 @@ const AdminDashboard = () => {
       data: [financeSummary.totalExpenses ?? 0]
     }]
   };
-
-
 
   return (
     <>
@@ -515,6 +622,15 @@ const AdminDashboard = () => {
                 {/* /Dashboard Content */}
               </div>
             </div>
+            {statsError && (
+              <div className="row">
+                <div className="col-12">
+                  <div className="alert alert-warning mb-3" role="alert">
+                    {statsError}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="row">
               {/* Total Students */}
               <div className="col-xxl-3 col-sm-6 d-flex">
@@ -530,9 +646,11 @@ const AdminDashboard = () => {
                       <div className="overflow-hidden flex-fill">
                         <div className="d-flex align-items-center justify-content-between">
                           <h2 className="counter">
-                            <CountUp end={stats.students.total} />
+                            {statsLoading ? "…" : <CountUp end={stats.students.total} />}
                           </h2>
-                          <span className="badge bg-danger">1.2%</span>
+                          <span className="badge bg-danger" title="Active share of listed students">
+                            {trends.studentsActivePct}%
+                          </span>
                         </div>
                         <p>Total Students</p>
                       </div>
@@ -566,9 +684,11 @@ const AdminDashboard = () => {
                       <div className="overflow-hidden flex-fill">
                         <div className="d-flex align-items-center justify-content-between">
                           <h2 className="counter">
-                            <CountUp end={stats.teachers.total} />
+                            {statsLoading ? "…" : <CountUp end={stats.teachers.total} />}
                           </h2>
-                          <span className="badge bg-pending">1.2%</span>
+                          <span className="badge bg-pending" title="Active share (in scope)">
+                            {trends.teachersActivePct}%
+                          </span>
                         </div>
                         <p>Total Teachers</p>
                       </div>
@@ -602,9 +722,11 @@ const AdminDashboard = () => {
                       <div className="overflow-hidden flex-fill">
                         <div className="d-flex align-items-center justify-content-between">
                           <h2 className="counter">
-                            <CountUp end={stats.staff.total} />
+                            {statsLoading ? "…" : <CountUp end={stats.staff.total} />}
                           </h2>
-                          <span className="badge bg-warning">1.2%</span>
+                          <span className="badge bg-warning" title="Active share">
+                            {trends.staffActivePct}%
+                          </span>
                         </div>
                         <p>Total Staff</p>
                       </div>
@@ -638,9 +760,11 @@ const AdminDashboard = () => {
                       <div className="overflow-hidden flex-fill">
                         <div className="d-flex align-items-center justify-content-between">
                           <h2 className="counter">
-                            <CountUp end={stats.subjects.total} />
+                            {statsLoading ? "…" : <CountUp end={stats.subjects.total} />}
                           </h2>
-                          <span className="badge bg-success">1.2%</span>
+                          <span className="badge bg-success" title="Active share">
+                            {trends.subjectsActivePct}%
+                          </span>
                         </div>
                         <p>Total Subjects</p>
                       </div>
@@ -695,19 +819,20 @@ const AdminDashboard = () => {
                       {!eventsLoading && upcomingEvents.length === 0 && (
                         <p className="mb-0 text-muted small">No upcoming events.</p>
                       )}
-                      {!eventsLoading && upcomingEvents.length > 0 && upcomingEvents.map((ev: { id?: number; title?: string; start_date?: string; end_date?: string; is_all_day?: boolean; event_color?: string }) => {
+                      {!eventsLoading && upcomingEvents.length > 0 && upcomingEvents.map((ev: { id?: string | number; source?: string; title?: string; start_date?: string; end_date?: string; is_all_day?: boolean; event_color?: string }) => {
                         const startDateFormatted = ev.start_date ? new Date(ev.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A';
                         const endDateFormatted = ev.end_date ? new Date(ev.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
                         const timeRange = ev.is_all_day ? 'All day' : ev.start_date ? `${new Date(ev.start_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}${ev.end_date ? ` - ${new Date(ev.end_date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })}` : ''}` : '';
                         const borderCls = ev.event_color === 'bg-danger' ? 'border-danger' : ev.event_color === 'bg-success' ? 'border-success' : ev.event_color === 'bg-warning' ? 'border-warning' : 'border-skyblue';
+                        const srcLabel = ev.source === 'calendar' ? 'Calendar' : 'School';
                         return (
-                          <div key={ev.id} className={`border-start border-3 shadow-sm p-3 mb-3 ${borderCls}`}>
+                          <div key={String(ev.id)} className={`border-start border-3 shadow-sm p-3 mb-3 ${borderCls}`}>
                             <div className="d-flex align-items-center mb-3 pb-3 border-bottom">
                               <span className="avatar p-1 me-2 bg-teal-transparent flex-shrink-0">
                                 <i className="ti ti-calendar-event text-info fs-20" />
                               </span>
                               <div className="flex-fill">
-                                <h6 className="mb-1">{ev.title}</h6>
+                                <h6 className="mb-1">{ev.title} <span className="badge bg-light text-dark fs-10 ms-1">{srcLabel}</span></h6>
                                 <p className="d-flex align-items-center mb-0">
                                   <i className="ti ti-calendar me-1" />
                                   {startDateFormatted}{endDateFormatted && endDateFormatted !== startDateFormatted ? ` - ${endDateFormatted}` : ''}
@@ -740,23 +865,26 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-calendar-due me-1" />
-                        Today
+                        {attendanceFilterLabel}
                       </Link>
                       <ul className="dropdown-menu mt-2 p-3">
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Week
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setAttendanceRange("today")}
+                          >
+                            Today
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setAttendanceRange("yesterday")}
+                          >
+                            Yesterday
+                          </button>
                         </li>
                       </ul>
                     </div>
@@ -803,7 +931,7 @@ const AdminDashboard = () => {
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.students.active}</h5>
+                                <h5>{stuAtt.present}</h5>
                                 <p className="fs-12">Present</p>
                               </div>
                             </div>
@@ -811,7 +939,7 @@ const AdminDashboard = () => {
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.students.inactive}</h5>
+                                <h5>{stuAtt.absent}</h5>
                                 <p className="fs-12">Absent</p>
                               </div>
                             </div>
@@ -819,13 +947,17 @@ const AdminDashboard = () => {
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>0</h5>
+                                <h5>{stuAtt.late}</h5>
                                 <p className="fs-12">Late</p>
                               </div>
                             </div>
                           </div>
                         </div>
-                        <p className="small text-muted text-center mb-2">Attendance data from student stats. Use Attendance module for daily records.</p>
+                        <p className="small text-muted text-center mb-2">
+                          {studentMarked
+                            ? `${attendanceToday.date || attendanceDateStr}: ${stuAtt.totalMarked} students marked · ${stuAtt.attendancePct}% attended (present + late + half-day).`
+                            : `No student attendance for ${attendanceToday.date || attendanceDateStr}. Open Student Attendance to mark the class.`}
+                        </p>
                         <div className="text-center">
                           <ReactApexChart
                             id="student-chart"
@@ -849,28 +981,31 @@ const AdminDashboard = () => {
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.teachers.active}</h5>
-                                <p className="fs-12">Present</p>
+                                <h5>{teachAtt.present}</h5>
+                                <p className="fs-12">Present (est.)</p>
                               </div>
                             </div>
                           </div>
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.teachers.inactive}</h5>
-                                <p className="fs-12">Absent</p>
+                                <h5>{teachAtt.absent}</h5>
+                                <p className="fs-12">On approved leave</p>
                               </div>
                             </div>
                           </div>
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>0</h5>
+                                <h5>—</h5>
                                 <p className="fs-12">Late</p>
                               </div>
                             </div>
                           </div>
                         </div>
+                        <p className="small text-muted text-center mb-2">
+                          No teacher clock-in table; &quot;Absent&quot; is teachers on approved leave on {attendanceToday.date || attendanceDateStr} ({teachAtt.totalMarked} active in scope).
+                        </p>
                         <div className="text-center">
                           <ReactApexChart
                             id="teacher-chart"
@@ -894,30 +1029,32 @@ const AdminDashboard = () => {
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.staff.active}</h5>
-                                <p className="fs-12">Present</p>
+                                <h5>{staffAtt.present}</h5>
+                                <p className="fs-12">Present (est.)</p>
                               </div>
                             </div>
                           </div>
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>{stats.staff.inactive}</h5>
-                                <p className="fs-12">Absent</p>
+                                <h5>{staffAtt.absent}</h5>
+                                <p className="fs-12">On approved leave</p>
                               </div>
                             </div>
                           </div>
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>0</h5>
+                                <h5>—</h5>
                                 <p className="fs-12">Late</p>
                               </div>
                             </div>
                           </div>
                         </div>
+                        <p className="small text-muted text-center mb-2">
+                          Staff figures use approved leave vs active staff for {attendanceToday.date || attendanceDateStr} ({staffAtt.totalMarked} in scope). Use HRM for detailed records.
+                        </p>
                         <div className="text-center">
-                          <div id="staff-chart" className="mb-4" />
                           <ReactApexChart
                             id="staff-chart"
                             className="mb-4"
@@ -927,7 +1064,7 @@ const AdminDashboard = () => {
                             height={210}
                           />
                           <Link
-                            to={routes.studentAttendance}
+                            to={routes.staffAttendance}
                             className="btn btn-light"
                           >
                             <i className="ti ti-calendar-share me-1" />
@@ -950,8 +1087,8 @@ const AdminDashboard = () => {
                           <div className="item h-100">
                             <div className="d-flex justify-content-between flex-column h-100">
                               <div>
-                                <h5 className="mb-3 text-white">Best Performer</h5>
-                                <p className="text-light mb-0">No teachers found.</p>
+                                <h5 className="mb-3 text-white">Top teachers</h5>
+                                <p className="text-light mb-0">No teachers match criteria yet.</p>
                               </div>
                               <ImageWithBasePath
                                 src="assets/img/performer/performer-01.png"
@@ -960,13 +1097,13 @@ const AdminDashboard = () => {
                             </div>
                           </div>
                         )}
-                        {bestPerformers.map((p) => (
+                        {bestPerformers.map((p: { id?: number; name?: string; subject?: string; photoUrl?: string | null; avgMarks?: number | null }) => (
                           <div key={p.id} className="item h-100">
                             <div className="d-flex justify-content-between flex-column h-100">
                               <div>
-                                <h5 className="mb-3 text-white">Best Performer</h5>
+                                <h5 className="mb-3 text-white">Top teachers (exam avg)</h5>
                                 <h4 className="mb-1 text-white">{p.name}</h4>
-                                <p className="text-light">{p.subject}</p>
+                                <p className="text-light">{p.subject}{p.avgMarks != null ? ` · Avg ${p.avgMarks}` : ""}</p>
                               </div>
                               {p.photoUrl ? (
                                 <img src={p.photoUrl} alt={p.name} className="img-fluid" style={{ maxHeight: 120, objectFit: 'contain' }} />
@@ -1004,13 +1141,13 @@ const AdminDashboard = () => {
                             </div>
                           </div>
                         )}
-                        {starStudents.map((s) => (
+                        {starStudents.map((s: { id?: number; name?: string; classSection?: string; photoUrl?: string | null; avgMarks?: number | null }) => (
                           <div key={s.id} className="item h-100">
                             <div className="d-flex justify-content-between flex-column h-100">
                               <div>
-                                <h5 className="mb-3 text-white">Star Students</h5>
+                                <h5 className="mb-3 text-white">Top students (exam avg)</h5>
                                 <h4 className="mb-1 text-white">{s.name}</h4>
-                                <p className="text-light">{s.classSection}</p>
+                                <p className="text-light">{s.classSection}{s.avgMarks != null ? ` · Avg ${s.avgMarks}` : ""}</p>
                               </div>
                               {s.photoUrl ? (
                                 <img src={s.photoUrl} alt={s.name} className="img-fluid" style={{ maxHeight: 120, objectFit: 'contain' }} />
@@ -1180,53 +1317,55 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-school-bell  me-2" />
-                        Class II
+                        Exam results
                       </Link>
                       <ul className="dropdown-menu mt-2 p-3">
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class I
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class II
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class III
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class IV
-                          </Link>
+                          <span className="dropdown-item-text small text-muted">
+                            Student bands from average % score across exam subjects. Academic year filter applies when set in the header.
+                          </span>
                         </li>
                       </ul>
                     </div>
                   </div>
                   <div className="card-body">
+                    <p className="small text-muted mb-2">
+                      Counts are students with at least one exam mark. Strong ≥75% avg, satisfactory 40–75%, below &lt;40%.
+                    </p>
+                    {performanceSummary.emptyMessage && (
+                      <p className="small text-warning mb-2">{performanceSummary.emptyMessage}</p>
+                    )}
+                    {performanceSummary.studentsWithExamData > 0 && (
+                      <p className="small text-muted mb-2">
+                        School avg score:{" "}
+                        {performanceSummary.averageScorePct != null ? `${performanceSummary.averageScorePct}%` : "—"}
+                        {" · "}
+                        Pass rate (≥40% avg):{" "}
+                        {performanceSummary.passPct != null ? `${performanceSummary.passPct}%` : "—"}
+                        {" "}
+                        <span className="text-muted">({performanceSummary.studentsWithExamData} students)</span>
+                      </p>
+                    )}
                     <div className="d-md-flex align-items-center justify-content-between">
                       <div className="me-md-3 mb-3 mb-md-0 w-100">
                         <div className="border border-dashed p-3 rounded d-flex align-items-center justify-content-between mb-1">
                           <p className="mb-0 me-2">
                             <i className="ti ti-arrow-badge-down-filled me-2 text-primary" />
-                            Good
+                            Strong (≥75%)
                           </p>
                           <h5>{performanceSummary.good}</h5>
                         </div>
                         <div className="border border-dashed p-3 rounded d-flex align-items-center justify-content-between mb-1">
                           <p className="mb-0 me-2">
                             <i className="ti ti-arrow-badge-down-filled me-2 text-warning" />
-                            Average
+                            Satisfactory
                           </p>
                           <h5>{performanceSummary.average}</h5>
                         </div>
                         <div className="border border-dashed p-3 rounded d-flex align-items-center justify-content-between mb-0">
                           <p className="mb-0 me-2">
                             <i className="ti ti-arrow-badge-down-filled me-2 text-danger" />
-                            Below Avg
+                            Below 40%
                           </p>
                           <h5>{performanceSummary.below}</h5>
                         </div>
@@ -1259,33 +1398,52 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-calendar  me-2" />
-                        Last 8 Quater
+                        {feePeriodLabel}
                       </Link>
                       <ul className="dropdown-menu mt-2 p-3">
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Month
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setFeePeriod("all")}
+                          >
+                            All time
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Year
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setFeePeriod("month")}
+                          >
+                            This month
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last 12 Quater
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setFeePeriod("year")}
+                          >
+                            This year
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last 16 Quater
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setFeePeriod("90d")}
+                          >
+                            Last 90 days
+                          </button>
                         </li>
                       </ul>
                     </div>
                   </div>
                   <div className="card-body pb-0">
+                    <p className="small text-muted mb-2">
+                      Collected amount uses payment date in the selected period. Outstanding is current overall (not period-filtered).
+                    </p>
                     <ReactApexChart
                       id="fees-chart"
                       options={feesBar}
@@ -1309,28 +1467,54 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-calendar-due me-1" />
-                        Today
+                        {leaveRangeLabel}
                       </Link>
                       <ul className="dropdown-menu mt-2 p-3">
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Week
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setLeaveRange("all")}
+                          >
+                            All recent
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setLeaveRange("this_week")}
+                          >
+                            This week
+                          </button>
                         </li>
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setLeaveRange("last_week")}
+                          >
+                            Last week
+                          </button>
                         </li>
                       </ul>
                     </div>
                   </div>
                   <div className="card-body">
+                    {leaveFeedback && (
+                      <div
+                        className={`alert alert-${leaveFeedback.type === "success" ? "success" : "danger"} py-2 px-3 small mb-3`}
+                        role="alert"
+                      >
+                        {leaveFeedback.text}
+                        <button
+                          type="button"
+                          className="btn-close float-end mt-0"
+                          aria-label="Dismiss"
+                          onClick={() => setLeaveFeedback(null)}
+                        />
+                      </div>
+                    )}
                     {leaveLoading && (
                       <p className="mb-0 text-muted small">Loading leave requests...</p>
                     )}
@@ -1485,7 +1669,7 @@ const AdminDashboard = () => {
               {/* Links */}
               <div className="col-xl-3 col-md-6 d-flex">
                 <Link
-                  to={routes.studentAttendance}
+                  to={routes.collectFees}
                   className="card bg-secondary-transparent border border-5 border-white animate-card flex-fill"
                 >
                   <div className="card-body">
@@ -1496,7 +1680,7 @@ const AdminDashboard = () => {
                         </span>
                         <div className="overflow-hidden">
                           <h6 className="fw-semibold text-default">
-                            Finance &amp; Accounts
+                            Finance &amp; Fees
                           </h6>
                         </div>
                       </div>
@@ -1516,9 +1700,10 @@ const AdminDashboard = () => {
                   <div className="card-body">
                     <div className="d-flex align-items-center justify-content-between">
                       <div>
-                        <h6 className="mb-1">Total Earnings</h6>
+                        <h6 className="mb-1">Fee collections</h6>
                         <h2>${(financeSummary.totalEarnings ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
-                        <small className="text-muted">From fees collected</small>
+                        <small className="text-muted d-block">Fee income window: {feePeriodLabel}. Library fines (returned, all-time): ${(financeSummary.totalFines ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
+                        <small className="text-muted d-block fw-semibold text-dark mt-1">Net position: ${(financeSummary.netPosition ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
                       </div>
                       <span className="avatar avatar-lg bg-primary">
                         <i className="ti ti-user-dollar" />
@@ -1540,13 +1725,17 @@ const AdminDashboard = () => {
                       <div>
                         <h6 className="mb-1">Total Expenses</h6>
                         <h2>${(financeSummary.totalExpenses ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+                        <small className="text-muted">
+                          {financeSummary.expensesTracked
+                            ? 'From school_expenses (all-time total in database).'
+                            : 'Expenses not tracked: no school_expenses table — value is 0; net uses fees + fines only.'}
+                        </small>
                       </div>
                       <span className="avatar avatar-lg bg-danger">
                         <i className="ti ti-user-dollar" />
                       </span>
                     </div>
                   </div>
-                  <div id="total-expenses" />
                   <ReactApexChart
                     id="total-expenses"
                     options={totalExpenseArea}
@@ -1608,7 +1797,7 @@ const AdminDashboard = () => {
                 </div>
                 <div className="card flex-fill mb-2">
                   <div className="card-body">
-                    <p className="mb-2">Fine Collected till date</p>
+                    <p className="mb-2">Library fines (returned)</p>
                     <div className="d-flex align-items-end justify-content-between">
                       <h4>${(feeStats.fineCollected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                       <span className="badge badge-soft-danger">
@@ -1616,6 +1805,7 @@ const AdminDashboard = () => {
                         Real
                       </span>
                     </div>
+                    <small className="text-muted">Sum of fine_amount on returned library issues</small>
                   </div>
                 </div>
                 <div className="card flex-fill mb-2">
@@ -1658,28 +1848,11 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-school-bell  me-2" />
-                        Class II
+                        By exam avg.
                       </Link>
                       <ul className="dropdown-menu mt-2 p-3">
                         <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class I
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class II
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class III
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Class IV
-                          </Link>
+                          <span className="dropdown-item-text small text-muted">Ranked by average marks (year filter applies)</span>
                         </li>
                       </ul>
                     </div>
@@ -1691,8 +1864,7 @@ const AdminDashboard = () => {
                     >
                       <i className="ti ti-info-square-rounded me-2 fs-14" />
                       <div className="fs-14">
-                        These Result are obtained from the syllabus completion
-                        on the respective Class
+                        Bars reflect relative average marks across subjects when exam data exists; otherwise subjects are listed alphabetically.
                       </div>
                     </div>
                     <ul className="list-group">
@@ -1701,14 +1873,17 @@ const AdminDashboard = () => {
                           <p className="mb-0 text-muted">No subjects found.</p>
                         </li>
                       )}
-                      {topSubjects.map((subj, idx) => {
+                      {topSubjects.map((subj: { id: number; name?: string; scorePercent?: number; avgMarks?: number | null }, idx: number) => {
                         const colors = ['bg-primary', 'bg-secondary', 'bg-info', 'bg-success', 'bg-warning', 'bg-danger'];
-                        const pct = topSubjects.length > 1 ? Math.min(100, 30 + Math.floor((idx / (topSubjects.length - 1)) * 60)) : 100;
+                        const pct = typeof subj.scorePercent === 'number' ? Math.min(100, Math.max(0, subj.scorePercent)) : 0;
                         return (
                           <li key={subj.id} className="list-group-item">
                             <div className="row align-items-center">
                               <div className="col-sm-4">
                                 <p className="text-dark mb-0">{subj.name}</p>
+                                {subj.avgMarks != null && (
+                                  <p className="text-muted fs-12 mb-0">Avg {subj.avgMarks}</p>
+                                )}
                               </div>
                               <div className="col-sm-8">
                                 <div className="progress progress-xs flex-grow-1">
@@ -1736,93 +1911,39 @@ const AdminDashboard = () => {
                 <div className="card flex-fill">
                   <div className="card-header  d-flex align-items-center justify-content-between">
                     <h4 className="card-title">Student Activity</h4>
-                    <div className="dropdown">
-                      <Link
-                        to="#"
-                        className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
-                      >
-                        <i className="ti ti-calendar me-2" />
-                        This Month
-                      </Link>
-                      <ul className="dropdown-menu mt-2 p-3">
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Month
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Year
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
-                        </li>
-                      </ul>
-                    </div>
+                    <Link to={routes.leaveReport} className="fw-medium small">
+                      Reports
+                    </Link>
                   </div>
                   <div className="card-body">
-                    <div className="d-flex align-items-center overflow-hidden p-3 mb-3 border rounded">
-                      <span className="avatar avatar-lg flex-shrink-0 rounded me-2">
-                        <ImageWithBasePath
-                          src="assets/img/students/student-09.jpg"
-                          alt="student"
-                        />
-                      </span>
-                      <div className="overflow-hidden">
-                        <h6 className="mb-1 text-truncate">
-                          1st place in "Chess”
-                        </h6>
-                        <p>This event took place in Our School</p>
+                    {activityLoading && (
+                      <p className="mb-0 text-muted small">Loading activity…</p>
+                    )}
+                    {!activityLoading && activityError && (
+                      <p className="mb-0 text-danger small">{activityError}</p>
+                    )}
+                    {!activityLoading && !activityError && studentActivityItems.length === 0 && (
+                      <p className="mb-0 text-muted small">No recent student activity.</p>
+                    )}
+                    {!activityLoading && !activityError && studentActivityItems.map((it: { id?: string; title?: string; subtitle?: string; date?: string }, i: number) => (
+                      <div
+                        key={it.id || `act-${i}`}
+                        className={`d-flex align-items-start overflow-hidden p-3 border rounded ${i < studentActivityItems.length - 1 ? "mb-3" : "mb-0"}`}
+                      >
+                        <span className="avatar avatar-md flex-shrink-0 rounded me-2 bg-primary-transparent">
+                          <i className="ti ti-activity text-primary fs-18" />
+                        </span>
+                        <div className="overflow-hidden">
+                          <h6 className="mb-1 text-truncate">{it.title}</h6>
+                          <p className="mb-0 text-muted small">{it.subtitle}</p>
+                          {it.date && (
+                            <p className="mb-0 text-muted fs-12 mt-1">
+                              {new Date(it.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="d-flex align-items-center overflow-hidden p-3 mb-3 border rounded">
-                      <span className="avatar avatar-lg flex-shrink-0 rounded me-2">
-                        <ImageWithBasePath
-                          src="assets/img/students/student-12.jpg"
-                          alt="student"
-                        />
-                      </span>
-                      <div className="overflow-hidden">
-                        <h6 className="mb-1 text-truncate">
-                          Participated in "Carrom"
-                        </h6>
-                        <p>Justin Lee participated in "Carrom"</p>
-                      </div>
-                    </div>
-                    <div className="d-flex align-items-center overflow-hidden p-3 mb-3 border rounded">
-                      <span className="avatar avatar-lg flex-shrink-0 rounded me-2">
-                        <ImageWithBasePath
-                          src="assets/img/students/student-11.jpg"
-                          alt="student"
-                        />
-                      </span>
-                      <div className="overflow-hidden">
-                        <h6 className="mb-1 text-truncate">
-                          1st place in "100M”
-                        </h6>
-                        <p>This event took place in Our School</p>
-                      </div>
-                    </div>
-                    <div className="d-flex align-items-center overflow-hidden p-3 mb-0 border rounded">
-                      <span className="avatar avatar-lg flex-shrink-0 rounded me-2">
-                        <ImageWithBasePath
-                          src="assets/img/students/student-10.jpg"
-                          alt="student"
-                        />
-                      </span>
-                      <div className="overflow-hidden">
-                        <h6 className="mb-1 text-truncate">
-                          International conference
-                        </h6>
-                        <p className="text-truncate">
-                          We attended international conference
-                        </p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1831,143 +1952,50 @@ const AdminDashboard = () => {
               <div className="col-xxl-4 col-xl-12 d-flex">
                 <div className="card flex-fill">
                   <div className="card-header  d-flex align-items-center justify-content-between">
-                    <h4 className="card-title">Todo</h4>
-                    <div className="dropdown">
-                      <Link
-                        to="#"
-                        className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
-                      >
-                        <i className="ti ti-calendar me-2" />
-                        Today
-                      </Link>
-                      <ul className="dropdown-menu mt-2 p-3">
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Month
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            This Year
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1">
-                            Last Week
-                          </Link>
-                        </li>
-                      </ul>
-                    </div>
+                    <h4 className="card-title">My Todo</h4>
+                    <Link to={routes.todo} className="fw-medium small">
+                      Open Todo
+                    </Link>
                   </div>
                   <div className="card-body">
+                    {todosLoading && (
+                      <p className="mb-0 text-muted small">Loading todos…</p>
+                    )}
+                    {!todosLoading && todosError && (
+                      <p className="mb-0 text-danger small">{todosError}</p>
+                    )}
+                    {!todosLoading && !todosError && dashboardTodos.length === 0 && (
+                      <p className="mb-0 text-muted small">No todos yet. Add tasks from the Todo page.</p>
+                    )}
                     <ul className="list-group list-group-flush todo-list">
-                      <li className="list-group-item py-3 px-0 pt-0">
-                        <div className="d-sm-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center overflow-hidden me-2 todo-strike-content">
-                            <div className="form-check form-check-md me-2">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                                defaultChecked
-                              />
+                      {!todosLoading && !todosError && dashboardTodos.map((todoRow: { id?: number; title?: string; due_date?: string; status?: string }, idx: number) => {
+                        const statusNorm = String(todoRow.status || "").toLowerCase();
+                        const badge =
+                          statusNorm.includes("complete") || statusNorm.includes("done")
+                            ? "badge-soft-success"
+                            : statusNorm.includes("progress")
+                              ? "badge-soft-skyblue"
+                              : "badge-soft-warning";
+                        const due = todoRow.due_date
+                          ? new Date(todoRow.due_date).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                          : "—";
+                        return (
+                          <li key={todoRow.id ?? idx} className={`list-group-item py-3 px-0 ${idx === 0 ? "pt-0" : ""}`}>
+                            <div className="d-sm-flex align-items-center justify-content-between">
+                              <div className="d-flex align-items-center overflow-hidden me-2">
+                                <div className="form-check form-check-md me-2">
+                                  <input className="form-check-input" type="checkbox" readOnly checked={statusNorm.includes("complete") || statusNorm.includes("done")} />
+                                </div>
+                                <div className="overflow-hidden">
+                                  <h6 className="mb-1 text-truncate">{todoRow.title || "Task"}</h6>
+                                  <p className="mb-0 fs-12 text-muted">{due}</p>
+                                </div>
+                              </div>
+                              <span className={`badge ${badge} mt-2 mt-sm-0 text-capitalize`}>{todoRow.status || "pending"}</span>
                             </div>
-                            <div className="overflow-hidden">
-                              <h6 className="mb-1 text-truncate">
-                                Send Reminder to Students
-                              </h6>
-                              <p>01:00 PM</p>
-                            </div>
-                          </div>
-                          <span className="badge badge-soft-success mt-2 mt-sm-0">
-                            Compeleted
-                          </span>
-                        </div>
-                      </li>
-                      <li className="list-group-item py-3 px-0">
-                        <div className="d-sm-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center overflow-hidden me-2">
-                            <div className="form-check form-check-md me-2">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                              />
-                            </div>
-                            <div className="overflow-hidden">
-                              <h6 className="mb-1 text-truncate">
-                                Create Routine to new staff
-                              </h6>
-                              <p>04:50 PM</p>
-                            </div>
-                          </div>
-                          <span className="badge badge-soft-skyblue mt-2 mt-sm-0">
-                            Inprogress
-                          </span>
-                        </div>
-                      </li>
-                      <li className="list-group-item py-3 px-0">
-                        <div className="d-sm-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center overflow-hidden me-2">
-                            <div className="form-check form-check-md me-2">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                              />
-                            </div>
-                            <div className="overflow-hidden">
-                              <h6 className="mb-1 text-truncate">
-                                Extra Class Info to Students
-                              </h6>
-                              <p>04:55 PM</p>
-                            </div>
-                          </div>
-                          <span className="badge badge-soft-warning mt-2 mt-sm-0">
-                            Yet to Start
-                          </span>
-                        </div>
-                      </li>
-                      <li className="list-group-item py-3 px-0">
-                        <div className="d-sm-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center overflow-hidden me-2">
-                            <div className="form-check form-check-md me-2">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                              />
-                            </div>
-                            <div className="overflow-hidden">
-                              <h6 className="mb-1 text-truncate">
-                                Fees for Upcoming Academics
-                              </h6>
-                              <p>04:55 PM</p>
-                            </div>
-                          </div>
-                          <span className="badge badge-soft-warning mt-2 mt-sm-0">
-                            Yet to Start
-                          </span>
-                        </div>
-                      </li>
-                      <li className="list-group-item py-3 px-0 pb-0">
-                        <div className="d-sm-flex align-items-center justify-content-between">
-                          <div className="d-flex align-items-center overflow-hidden me-2">
-                            <div className="form-check form-check-md me-2">
-                              <input
-                                className="form-check-input"
-                                type="checkbox"
-                              />
-                            </div>
-                            <div className="overflow-hidden">
-                              <h6 className="mb-1 text-truncate">
-                                English - Essay on Visit
-                              </h6>
-                              <p>05:55 PM</p>
-                            </div>
-                          </div>
-                          <span className="badge badge-soft-warning mt-2 mt-sm-0">
-                            Yet to Start
-                          </span>
-                        </div>
-                      </li>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 </div>
