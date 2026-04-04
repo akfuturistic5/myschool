@@ -17,7 +17,7 @@ import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 const AdministrativeDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { user: currentUser } = useCurrentUser();
+  const { user: currentUser, loading: userLoading } = useCurrentUser();
   const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({ academicYearId });
   const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 8 });
   const { routine: classRoutine, loading: routineLoading, error: routineError, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
@@ -59,7 +59,16 @@ const AdministrativeDashboard = () => {
                       Daily operations, records, fees, reports and communication tools are available here.
                     </p>
                   </div>
-                  <div className="d-flex flex-wrap gap-2">
+                  <div className="d-flex flex-wrap gap-2 align-items-center">
+                    {!userLoading && currentUser?.staff_id != null && (
+                        <Link
+                          to={routes.administrativeDetails}
+                          className="btn btn-outline-light"
+                        >
+                          <i className="ti ti-id me-1" />
+                          View details
+                        </Link>
+                      )}
                     {quickLinks.map((item) => (
                       <Link key={item.label} to={item.to} className="btn btn-primary">
                         <i className={`${item.icon} me-1`} />
