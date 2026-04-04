@@ -1301,6 +1301,153 @@ class ApiService {
     });
   }
 
+  // Library (requires DB migration 002_library_module.sql for members + book_code)
+  async getLibraryCategories() {
+    return this.makeRequest('/library/categories');
+  }
+
+  async getLibraryCategoryById(id) {
+    return this.makeRequest(`/library/categories/${id}`);
+  }
+
+  async createLibraryCategory(data) {
+    return this.makeRequest('/library/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryCategory(id, data) {
+    return this.makeRequest(`/library/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryCategory(id) {
+    return this.makeRequest(`/library/categories/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLibraryBooks(params = {}) {
+    const q = new URLSearchParams();
+    if (params.search) q.set('search', params.search);
+    if (params.category_id != null && params.category_id !== '') q.set('category_id', String(params.category_id));
+    if (params.book_code) q.set('book_code', String(params.book_code));
+    if (params.date_from) q.set('date_from', String(params.date_from));
+    if (params.date_to) q.set('date_to', String(params.date_to));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/books${qs ? `?${qs}` : ''}`);
+  }
+
+  async importLibraryBooks(payload) {
+    return this.makeRequest('/library/books/import', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getLibraryBookById(id) {
+    return this.makeRequest(`/library/books/${id}`);
+  }
+
+  async createLibraryBook(data) {
+    return this.makeRequest('/library/books', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryBook(id, data) {
+    return this.makeRequest(`/library/books/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryBook(id) {
+    return this.makeRequest(`/library/books/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLibraryMembers(params = {}) {
+    const q = new URLSearchParams();
+    if (params.search) q.set('search', params.search);
+    if (params.member_type) q.set('member_type', String(params.member_type));
+    if (params.member_id != null && params.member_id !== '') q.set('member_id', String(params.member_id));
+    if (params.date_from) q.set('date_from', String(params.date_from));
+    if (params.date_to) q.set('date_to', String(params.date_to));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/members${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryMemberById(id) {
+    return this.makeRequest(`/library/members/${id}`);
+  }
+
+  async createLibraryMember(data) {
+    return this.makeRequest('/library/members', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryMember(id, data) {
+    return this.makeRequest(`/library/members/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryMember(id) {
+    return this.makeRequest(`/library/members/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLibraryIssues(params = {}) {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.student_id != null) q.set('student_id', String(params.student_id));
+    if (params.staff_id != null) q.set('staff_id', String(params.staff_id));
+    if (params.member_id != null && params.member_id !== '') q.set('member_id', String(params.member_id));
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.issue_date_from) q.set('issue_date_from', String(params.issue_date_from));
+    if (params.issue_date_to) q.set('issue_date_to', String(params.issue_date_to));
+    if (params.search) q.set('search', String(params.search));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/issues${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryIssueById(id) {
+    return this.makeRequest(`/library/issues/${id}`);
+  }
+
+  async createLibraryIssue(data) {
+    return this.makeRequest('/library/issues', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async returnLibraryIssue(id, data) {
+    return this.makeRequest(`/library/issues/${id}/return`, {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
   // School Profile
   async getSchoolProfile() {
     return this.makeRequest('/school/profile');

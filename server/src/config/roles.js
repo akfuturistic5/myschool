@@ -77,6 +77,9 @@ const FEE_COLLECTIONS_LIST_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can create students, teachers, parents, guardians */
 const PEOPLE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
+/** Library books, members, issue/return */
+const LIBRARY_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+
 module.exports = {
   ROLES,
   ADMIN_ROLE_IDS,
@@ -96,4 +99,5 @@ module.exports = {
   LEAVE_LIST_ALL_ROLES,
   FEE_COLLECTIONS_LIST_ROLES,
   PEOPLE_MANAGER_ROLES,
+  LIBRARY_MANAGER_ROLES,
 };

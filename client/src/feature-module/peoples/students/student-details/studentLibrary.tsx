@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -58,6 +58,31 @@ const StudentLibrary = () => {
       })
       .finally(() => setLoading(false));
   }, [studentId, state?.student, isStudentRole, currentStudent]);
+
+  const [issues, setIssues] = useState<any[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState<string | null>(null);
+
+  const loadIssues = useCallback(async () => {
+    if (!studentId) return;
+    setIssuesLoading(true);
+    setIssuesError(null);
+    try {
+      const params = isStudentRole ? {} : { student_id: studentId };
+      const res = await apiService.getLibraryIssues(params as any);
+      const list = (res as any)?.data || [];
+      setIssues(list);
+    } catch (e: any) {
+      setIssuesError(e?.message || "Could not load library issues");
+      setIssues([]);
+    } finally {
+      setIssuesLoading(false);
+    }
+  }, [studentId, isStudentRole]);
+
+  useEffect(() => {
+    loadIssues();
+  }, [loadIssues]);
 
   const showLoading = loading || (isStudentRole && !student && !state?.student && currentStudentLoading);
 
@@ -142,19 +167,14 @@ const StudentLibrary = () => {
                   </ul>
 
                   <div className="card">
-                    <div className="card-header">
+                    <div className="card-header d-flex align-items-center justify-content-between flex-wrap">
                       <h4 className="mb-0">Library</h4>
+                      <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => loadIssues()}>
+                        Refresh
+                      </button>
                     </div>
                     <div className="card-body">
-                      <div className="alert alert-info d-flex align-items-start mb-3" role="alert">
-                        <i className="ti ti-info-circle me-2 fs-18 mt-1" />
-                        <div>
-                          <p className="mb-1">Library records are not available in the current student API.</p>
-                          <p className="mb-0">Fake book entries have been removed so this page does not show dummy data.</p>
-                        </div>
-                      </div>
-
-                      <div className="border rounded p-3 bg-light">
+                      <div className="border rounded p-3 bg-light mb-4">
                         <div className="row g-3">
                           <div className="col-md-4">
                             <p className="text-muted mb-1">Student</p>
@@ -176,6 +196,41 @@ const StudentLibrary = () => {
                           </div>
                         </div>
                       </div>
+
+                      {issuesError && (
+                        <div className="alert alert-warning" role="alert">
+                          {issuesError}
+                        </div>
+                      )}
+
+                      {issuesLoading ? (
+                        <p className="text-muted mb-0">Loading library activity…</p>
+                      ) : issues.length === 0 ? (
+                        <p className="text-muted mb-0">No library issues on record.</p>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="table table-hover mb-0">
+                            <thead>
+                              <tr>
+                                <th>Book</th>
+                                <th>Issued</th>
+                                <th>Due</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {issues.map((row: any) => (
+                                <tr key={row.id}>
+                                  <td>{row.booksIssued || row.book_title || "—"}</td>
+                                  <td>{row.dateofIssue || "—"}</td>
+                                  <td>{row.dueDate || "—"}</td>
+                                  <td>{row.status || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
 
                       <div className="mt-3 d-flex flex-wrap gap-2">
                         <Link
