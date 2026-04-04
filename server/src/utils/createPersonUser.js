@@ -410,6 +410,48 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
   return userId;
 }
 
+const crypto = require('crypto');
+
+function generateTeacherInitialPassword() {
+  return crypto.randomBytes(18).toString('base64url');
+}
+
+/**
+ * Teacher app login — username prefers email, then phone.
+ * Password: explicit → else phone digits → else cryptographically secure random (never weak default).
+ * Duplicate username/email always fails the transaction (rejectUsernameConflict).
+ */
+async function createTeacherUser(client, { email, phone, first_name, last_name, password }) {
+  const emailTrim = (email || '').toString().trim();
+  const phoneTrim = (phone || '').toString().trim();
+  const username = (emailTrim || phoneTrim || `tch_${Date.now()}`).toString().trim().slice(0, 50);
+
+  let rawPassword;
+  if (password != null && String(password).trim() !== '') {
+    rawPassword = String(password).trim();
+  } else if (phoneTrim) {
+    rawPassword = phoneTrim.replace(/\D/g, '') || phoneTrim;
+  } else {
+    rawPassword = generateTeacherInitialPassword();
+  }
+
+  const userId = await createPersonUser(
+    client,
+    ROLES.TEACHER,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name: (first_name || '').toString().trim() || null,
+      last_name: (last_name || '').toString().trim() || null,
+      password: rawPassword,
+    },
+    { rejectUsernameConflict: true }
+  );
+
+  return userId;
+}
+
 module.exports = {
   createPersonUser,
   createStudentUser,
