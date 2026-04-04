@@ -18,7 +18,8 @@ import { apiService } from "../../../../core/services/apiService.js";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 
 const StudentPromotion = () => {
-  const [isPromotion, setIsPromotion] = useState<boolean>(false);
+  /** Show roster + checkboxes immediately (otherwise the list block stays hidden until "Manage Promotion"). */
+  const [isPromotion, setIsPromotion] = useState<boolean>(true);
   const routes = all_routes;
   const promoteModalRef = useRef<HTMLDivElement>(null);
 
@@ -705,6 +706,25 @@ const StudentPromotion = () => {
                         <div className="alert alert-danger mb-0">{studentsError}</div>
                       </div>
                     )}
+                    {!studentsLoading && !studentsError && students.length === 0 && (
+                      <div className="alert alert-warning mx-3" role="alert">
+                        <strong>No students loaded</strong> for the academic year selected in the header (
+                        {currentYearLabel}). Add students for this session or switch the dashboard academic year.
+                        Also ensure each student has <strong>Academic year</strong> set on their record.
+                      </div>
+                    )}
+                    {!studentsLoading &&
+                      !studentsError &&
+                      students.length > 0 &&
+                      data.length === 0 &&
+                      (fromClassId || fromSectionId) && (
+                        <div className="alert alert-info mx-3" role="alert">
+                          <strong>No students in this class/section.</strong> Use{" "}
+                          <strong>Promotion from Class</strong> and <strong>Section</strong> (left column above) to
+                          match where students are enrolled for {currentYearLabel}. The table checkboxes appear
+                          on each row once students show here.
+                        </div>
+                      )}
                     {!studentsLoading && !studentsError && (
                       <Table
                         dataSource={data}
