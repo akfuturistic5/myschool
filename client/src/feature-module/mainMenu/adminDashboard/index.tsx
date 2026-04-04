@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import ReactApexChart from "react-apexcharts";
 import { Link } from "react-router-dom";
@@ -98,9 +98,46 @@ const AdminDashboard = () => {
     setLeaveActionId(null);
   };
   const [date, setDate] = useState<Nullable<Date>>(null);
-  const [attendanceRange, setAttendanceRange] = useState<"today" | "yesterday">("today");
+  const [attendanceRange, setAttendanceRange] = useState<"today" | "yesterday" | "all_time">("today");
   const [feePeriod, setFeePeriod] = useState<"all" | "month" | "year" | "90d">("all");
   const [leaveRange, setLeaveRange] = useState<"all" | "this_week" | "last_week">("all");
+  const [dashboardClasses, setDashboardClasses] = useState<{ id: number; class_name: string }[]>([]);
+  const [perfClassId, setPerfClassId] = useState<number | null>(null);
+  const [topSubjectsClassId, setTopSubjectsClassId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setPerfClassId(null);
+    setTopSubjectsClassId(null);
+  }, [academicYearId]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res =
+          academicYearId != null
+            ? await apiService.getClassesByAcademicYear(academicYearId)
+            : await apiService.getClasses();
+        const raw = res?.data;
+        const arr = Array.isArray(raw) ? raw : [];
+        if (!mounted) return;
+        setDashboardClasses(
+          arr
+            .map((c: { id: number; class_name?: string }) => ({
+              id: Number(c.id),
+              class_name: String(c.class_name || "").trim() || `Class ${c.id}`,
+            }))
+            .filter((c) => Number.isFinite(c.id))
+            .sort((a, b) => a.class_name.localeCompare(b.class_name))
+        );
+      } catch {
+        if (mounted) setDashboardClasses([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [academicYearId]);
 
   const attendanceDateStr = useMemo(() => {
     const d = new Date();
@@ -125,7 +162,15 @@ const AdminDashboard = () => {
     return { from: toYMD(lastMon), to: toYMD(lastSun) };
   }, [leaveRange]);
 
-  const attendanceFilterLabel = attendanceRange === "today" ? "Today" : "Yesterday";
+  const attendanceFilterLabel =
+    attendanceRange === "today"
+      ? "Today"
+      : attendanceRange === "yesterday"
+        ? "Yesterday"
+        : "All time";
+  const attendanceScope = attendanceRange === "all_time" ? "all_time" : "day";
+  const attendanceMarksHint =
+    academicYearId != null ? " for the selected academic year" : " (all academic years)";
   const feePeriodLabel =
     feePeriod === "month"
       ? "This month"
@@ -140,6 +185,7 @@ const AdminDashboard = () => {
   const { stats, trends, attendanceToday, loading: statsLoading, error: statsError } = useDashboardStats({
     academicYearId,
     attendanceDate: attendanceDateStr,
+    attendanceScope,
   });
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 10,
@@ -153,8 +199,21 @@ const AdminDashboard = () => {
   const { routine: classRoutine, loading: routineLoading, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
   const { performers: bestPerformers } = useDashboardBestPerformers({ limit: 3, academicYearId });
   const { students: starStudents } = useDashboardStarStudents({ limit: 3, academicYearId });
-  const { summary: performanceSummary } = useDashboardPerformanceSummary({ academicYearId });
-  const { subjects: topSubjects } = useDashboardTopSubjects({ academicYearId });
+  const { summary: performanceSummary } = useDashboardPerformanceSummary({
+    academicYearId,
+    classId: perfClassId,
+  });
+  const { subjects: topSubjects } = useDashboardTopSubjects({ academicYearId, classId: topSubjectsClassId });
+
+  const perfClassLabel = useMemo(() => {
+    if (perfClassId == null) return "All classes";
+    return dashboardClasses.find((c) => c.id === perfClassId)?.class_name ?? "Class";
+  }, [perfClassId, dashboardClasses]);
+
+  const topSubjectsClassLabel = useMemo(() => {
+    if (topSubjectsClassId == null) return "All classes";
+    return dashboardClasses.find((c) => c.id === topSubjectsClassId)?.class_name ?? "Class";
+  }, [topSubjectsClassId, dashboardClasses]);
   const { activity: recentActivity } = useDashboardRecentActivity({ academicYearId });
   const { activityItems: studentActivityItems, loading: activityLoading, error: activityError } = useDashboardStudentActivity({ limit: 5, academicYearId });
   const { todos: dashboardTodos, loading: todosLoading, error: todosError } = useDashboardMyTodos({ limit: 5 });
@@ -886,6 +945,15 @@ const AdminDashboard = () => {
                             Yesterday
                           </button>
                         </li>
+                        <li>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-1"
+                            onClick={() => setAttendanceRange("all_time")}
+                          >
+                            All time
+                          </button>
+                        </li>
                       </ul>
                     </div>
                   </div>
@@ -954,9 +1022,13 @@ const AdminDashboard = () => {
                           </div>
                         </div>
                         <p className="small text-muted text-center mb-2">
-                          {studentMarked
-                            ? `${attendanceToday.date || attendanceDateStr}: ${stuAtt.totalMarked} students marked · ${stuAtt.attendancePct}% attended (present + late + half-day).`
-                            : `No student attendance for ${attendanceToday.date || attendanceDateStr}. Open Student Attendance to mark the class.`}
+                          {attendanceRange === "all_time"
+                            ? studentMarked
+                              ? `All time: ${stuAtt.totalMarked} attendance marks${attendanceMarksHint} · ${stuAtt.attendancePct}% attended (present + late + half-day).`
+                              : `No student attendance records yet${attendanceMarksHint}.`
+                            : studentMarked
+                              ? `${attendanceToday.date || attendanceDateStr}: ${stuAtt.totalMarked} students marked · ${stuAtt.attendancePct}% attended (present + late + half-day).`
+                              : `No student attendance for ${attendanceToday.date || attendanceDateStr}. Open Student Attendance to mark the class.`}
                         </p>
                         <div className="text-center">
                           <ReactApexChart
@@ -1004,7 +1076,9 @@ const AdminDashboard = () => {
                           </div>
                         </div>
                         <p className="small text-muted text-center mb-2">
-                          No teacher clock-in table; &quot;Absent&quot; is teachers on approved leave on {attendanceToday.date || attendanceDateStr} ({teachAtt.totalMarked} active in scope).
+                          {attendanceRange === "all_time"
+                            ? "All-time teacher attendance is not stored in the database. Use Today or Yesterday for a same-day estimate from approved leave, or open Teacher Attendance / HRM."
+                            : `No teacher clock-in table; &quot;Absent&quot; is teachers on approved leave on ${attendanceToday.date || attendanceDateStr} (${teachAtt.totalMarked} active in scope).`}
                         </p>
                         <div className="text-center">
                           <ReactApexChart
@@ -1052,7 +1126,9 @@ const AdminDashboard = () => {
                           </div>
                         </div>
                         <p className="small text-muted text-center mb-2">
-                          Staff figures use approved leave vs active staff for {attendanceToday.date || attendanceDateStr} ({staffAtt.totalMarked} in scope). Use HRM for detailed records.
+                          {attendanceRange === "all_time"
+                            ? "All-time staff attendance is not stored. Use Today or Yesterday for a same-day leave-based estimate, or Staff Attendance / HRM."
+                            : `Staff figures use approved leave vs active staff for ${attendanceToday.date || attendanceDateStr} (${staffAtt.totalMarked} in scope). Use HRM for detailed records.`}
                         </p>
                         <div className="text-center">
                           <ReactApexChart
@@ -1317,20 +1393,41 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-school-bell  me-2" />
-                        Exam results
+                        {perfClassLabel}
                       </Link>
-                      <ul className="dropdown-menu mt-2 p-3">
-                        <li>
-                          <span className="dropdown-item-text small text-muted">
-                            Student bands from average % score across exam subjects. Academic year filter applies when set in the header.
-                          </span>
+                      <ul
+                        className="dropdown-menu mt-2 p-0"
+                        style={{ maxHeight: 280, overflowY: "auto" }}
+                      >
+                        <li className="px-3 py-2 border-bottom">
+                          <span className="small text-muted">Filter by class (exam averages)</span>
                         </li>
+                        <li>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-0"
+                            onClick={() => setPerfClassId(null)}
+                          >
+                            All classes
+                          </button>
+                        </li>
+                        {dashboardClasses.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              className="dropdown-item rounded-0"
+                              onClick={() => setPerfClassId(c.id)}
+                            >
+                              {c.class_name}
+                            </button>
+                          </li>
+                        ))}
                       </ul>
                     </div>
                   </div>
                   <div className="card-body">
                     <p className="small text-muted mb-2">
-                      Counts are students with at least one exam mark. Strong ≥75% avg, satisfactory 40–75%, below &lt;40%.
+                      Counts are students with at least one exam mark in the selected scope. Strong ≥75% avg, satisfactory 40–75%, below &lt;40%. Academic year (header) applies together with class.
                     </p>
                     {performanceSummary.emptyMessage && (
                       <p className="small text-warning mb-2">{performanceSummary.emptyMessage}</p>
@@ -1848,12 +1945,35 @@ const AdminDashboard = () => {
                         data-bs-toggle="dropdown"
                       >
                         <i className="ti ti-school-bell  me-2" />
-                        By exam avg.
+                        {topSubjectsClassLabel}
                       </Link>
-                      <ul className="dropdown-menu mt-2 p-3">
-                        <li>
-                          <span className="dropdown-item-text small text-muted">Ranked by average marks (year filter applies)</span>
+                      <ul
+                        className="dropdown-menu mt-2 p-0"
+                        style={{ maxHeight: 280, overflowY: "auto" }}
+                      >
+                        <li className="px-3 py-2 border-bottom">
+                          <span className="small text-muted">Filter by class (avg marks, high → low)</span>
                         </li>
+                        <li>
+                          <button
+                            type="button"
+                            className="dropdown-item rounded-0"
+                            onClick={() => setTopSubjectsClassId(null)}
+                          >
+                            All classes
+                          </button>
+                        </li>
+                        {dashboardClasses.map((c) => (
+                          <li key={`top-${c.id}`}>
+                            <button
+                              type="button"
+                              className="dropdown-item rounded-0"
+                              onClick={() => setTopSubjectsClassId(c.id)}
+                            >
+                              {c.class_name}
+                            </button>
+                          </li>
+                        ))}
                       </ul>
                     </div>
                   </div>
@@ -1864,7 +1984,7 @@ const AdminDashboard = () => {
                     >
                       <i className="ti ti-info-square-rounded me-2 fs-14" />
                       <div className="fs-14">
-                        Bars reflect relative average marks across subjects when exam data exists; otherwise subjects are listed alphabetically.
+                        Ranked by average exam marks for students in the selected class; bars show relative strength. If there are no marks yet, subjects come from schedules (alphabetically). Academic year (header) applies.
                       </div>
                     </div>
                     <ul className="list-group">

@@ -17,6 +17,7 @@ const defaultTrends = {
 
 const defaultAttendanceToday = {
   date: null,
+  scope: 'day',
   students: {
     present: 0,
     absent: 0,
@@ -44,7 +45,7 @@ const defaultAttendanceToday = {
 };
 
 export const useDashboardStats = (options = {}) => {
-  const { academicYearId, attendanceDate = null } = options;
+  const { academicYearId, attendanceDate = null, attendanceScope = 'day' } = options;
   const [stats, setStats] = useState(defaultStats);
   const [trends, setTrends] = useState(defaultTrends);
   const [attendanceToday, setAttendanceToday] = useState(defaultAttendanceToday);
@@ -55,7 +56,11 @@ export const useDashboardStats = (options = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getDashboardStats({ academicYearId, attendanceDate });
+      const response = await apiService.getDashboardStats({
+        academicYearId,
+        attendanceDate: attendanceScope === 'all_time' ? null : attendanceDate,
+        attendanceScope,
+      });
       if (response.status === 'SUCCESS' && response.data) {
         const d = response.data;
         setStats({
@@ -72,6 +77,7 @@ export const useDashboardStats = (options = {}) => {
         });
         setAttendanceToday({
           date: d.attendanceToday?.date ?? defaultAttendanceToday.date,
+          scope: d.attendanceToday?.scope ?? defaultAttendanceToday.scope,
           students: { ...defaultAttendanceToday.students, ...d.attendanceToday?.students },
           teachers: { ...defaultAttendanceToday.teachers, ...d.attendanceToday?.teachers },
           staff: { ...defaultAttendanceToday.staff, ...d.attendanceToday?.staff },
@@ -94,7 +100,7 @@ export const useDashboardStats = (options = {}) => {
 
   useEffect(() => {
     fetchStats();
-  }, [academicYearId, attendanceDate]);
+  }, [academicYearId, attendanceDate, attendanceScope]);
 
   return {
     stats,

@@ -38,8 +38,8 @@ const ROLE_NAMES = {
   [ROLES.GUARDIAN]: 'Guardian',
 };
 
-/** Roles that can approve/reject leave applications */
-const LEAVE_APPROVER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+/** Roles that can approve/reject leave applications (Headmaster / Admin only) */
+const LEAVE_APPROVER_ROLES = [ROLES.ADMIN];
 
 /** Roles that can manage fee collection (create, list all) */
 const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
@@ -68,8 +68,8 @@ const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can create/update/delete school events (Headmaster + Teacher) */
 const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
-/** Roles that can access getLeaveApplications (all/filtered list - admin view) */
-const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+/** Roles that can access getLeaveApplications (all/filtered list - Headmaster / Admin view only) */
+const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN];
 
 /** Roles that can access fee collections list (all students with fee summary) */
 const FEE_COLLECTIONS_LIST_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];

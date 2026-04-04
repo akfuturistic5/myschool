@@ -29,7 +29,8 @@ const LeaveReport = () => {
   const routes = all_routes;
   const user = useSelector(selectUser);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const canUseAdminList = isHeadmasterRole(user) || isAdministrativeRole(user);
+  const canUseAdminList = isHeadmasterRole(user);
+  const isOwnLeavesOnly = isAdministrativeRole(user);
   const { students, loading: studentsLoading, error: studentsError } = useStudents();
   const {
     leaveApplications,
@@ -38,6 +39,7 @@ const LeaveReport = () => {
   } = useLeaveApplications({
     limit: 500,
     canUseAdminList,
+    studentOnly: isOwnLeavesOnly,
     academicYearId,
   });
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);

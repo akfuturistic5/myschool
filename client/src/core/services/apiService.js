@@ -613,7 +613,9 @@ class ApiService {
   async getDashboardStats(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
-    if (params.attendanceDate != null && params.attendanceDate !== '') {
+    if (params.attendanceScope === 'all_time') {
+      searchParams.set('attendance_scope', 'all_time');
+    } else if (params.attendanceDate != null && params.attendanceDate !== '') {
       searchParams.set('attendance_date', params.attendanceDate);
     }
     const qs = searchParams.toString();
@@ -654,6 +656,7 @@ class ApiService {
   async getDashboardPerformanceSummary(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.classId != null) searchParams.set('class_id', params.classId);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/performance-summary${qs ? `?${qs}` : ''}`);
   }
@@ -676,6 +679,7 @@ class ApiService {
   async getDashboardTopSubjects(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.classId != null) searchParams.set('class_id', params.classId);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/top-subjects${qs ? `?${qs}` : ''}`);
   }

@@ -49,7 +49,7 @@ const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
   all_routes.profile,
 ]);
 
-const ADMINISTRATIVE_BLOCKED_EXACT_PATHS = new Set<string>();
+const ADMINISTRATIVE_BLOCKED_EXACT_PATHS = new Set([all_routes.approveRequest]);
 
 type RoleScope = 'headmaster' | 'administrative' | 'teacher' | 'student' | 'parent' | 'guardian' | 'unknown';
 

@@ -158,7 +158,7 @@ export const useDashboardStarStudents = (options = {}) => {
 };
 
 export const useDashboardPerformanceSummary = (options = {}) => {
-  const { academicYearId } = options;
+  const { academicYearId, classId = null } = options;
   const [summary, setSummary] = useState({
     good: 0,
     average: 0,
@@ -169,6 +169,7 @@ export const useDashboardPerformanceSummary = (options = {}) => {
     studentsWithExamData: 0,
     dataSource: 'exam_results',
     emptyMessage: null,
+    classId: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -179,9 +180,10 @@ export const useDashboardPerformanceSummary = (options = {}) => {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getDashboardPerformanceSummary(
-          academicYearId != null ? { academicYearId } : {}
-        );
+        const res = await apiService.getDashboardPerformanceSummary({
+          academicYearId,
+          classId,
+        });
         if (mounted && res.status === 'SUCCESS' && res.data) {
           setSummary({
             good: res.data.good ?? 0,
@@ -193,6 +195,7 @@ export const useDashboardPerformanceSummary = (options = {}) => {
             studentsWithExamData: res.data.studentsWithExamData ?? 0,
             dataSource: res.data.dataSource ?? 'exam_results',
             emptyMessage: res.data.emptyMessage ?? null,
+            classId: res.data.classId ?? null,
           });
         }
       } catch (err) {
@@ -208,6 +211,7 @@ export const useDashboardPerformanceSummary = (options = {}) => {
             studentsWithExamData: 0,
             dataSource: 'exam_results',
             emptyMessage: null,
+            classId: null,
           });
         }
       } finally {
@@ -215,13 +219,13 @@ export const useDashboardPerformanceSummary = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [academicYearId]);
+  }, [academicYearId, classId]);
 
   return { summary, loading, error };
 };
 
 export const useDashboardTopSubjects = (options = {}) => {
-  const { academicYearId } = options;
+  const { academicYearId, classId = null } = options;
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -232,7 +236,7 @@ export const useDashboardTopSubjects = (options = {}) => {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getDashboardTopSubjects({ academicYearId });
+        const res = await apiService.getDashboardTopSubjects({ academicYearId, classId });
         if (mounted && res.status === 'SUCCESS' && Array.isArray(res.data)) {
           setSubjects(res.data);
         } else if (mounted) {
@@ -248,7 +252,7 @@ export const useDashboardTopSubjects = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [academicYearId]);
+  }, [academicYearId, classId]);
 
   return { subjects, loading, error };
 };

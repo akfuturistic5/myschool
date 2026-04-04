@@ -9,6 +9,27 @@ function parseAcademicYearId(req) {
   return Number.isNaN(n) ? null : n;
 }
 
+/** Optional class filter for exam-based dashboard widgets (students in this class only). */
+function parseClassId(req) {
+  const val = req.query?.class_id;
+  if (val == null || val === '') return null;
+  const n = parseInt(val, 10);
+  return Number.isNaN(n) || n < 1 ? null : n;
+}
+
+/**
+ * Teacher row linked to an academic year (not only class_schedules — avoids 0 when timetable not entered).
+ * @param {string} t SQL alias for teachers (e.g. 't')
+ * @param {number} n PostgreSQL parameter index for academic_year_id
+ */
+function sqlTeacherInAcademicYear(t, n) {
+  return `(
+    EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = ${t}.id AND cs.academic_year_id = $${n})
+    OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.class_teacher_id = ${t}.staff_id)
+    OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.id = ${t}.class_id)
+  )`;
+}
+
 /** YYYY-MM-DD for dashboard attendance snapshot; invalid → null */
 function parseAttendanceDate(req) {
   const val = req.query?.attendance_date;
@@ -17,6 +38,16 @@ function parseAttendanceDate(req) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const d = new Date(`${s}T12:00:00Z`);
   return Number.isNaN(d.getTime()) ? null : s;
+}
+
+/** Single day vs cumulative student marks: all_time aggregates every attendance row (optional year on students). */
+function parseAttendanceScope(req) {
+  const v = String(req.query?.attendance_scope || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (v === 'all_time' || v === 'alltime') return 'all_time';
+  return 'day';
 }
 
 /**
@@ -51,39 +82,71 @@ function pctPart(num, den) {
   return Math.round((100 * n) / d);
 }
 
-/** Attendance for a calendar date: students from attendance; teachers/staff = leave proxy (no clock-in table). */
-async function buildAttendanceSnapshot(academicYearId, attendanceDate = null) {
+/**
+ * Students: either one calendar day or all rows in attendance (all_time).
+ * Teachers/staff: leave-vs-active for a single day only (no historical staff clock-in table).
+ */
+async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, scope = 'day') {
+  const isAllTime = scope === 'all_time';
   const hasYear = academicYearId != null;
-  let dateStr = attendanceDate;
-  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) {
-    const dateRow = await query(`SELECT CURRENT_DATE::text AS d`);
-    dateStr = dateRow.rows[0]?.d || new Date().toISOString().slice(0, 10);
+
+  let dateStr = null;
+  if (!isAllTime) {
+    dateStr = attendanceDate;
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) {
+      const dateRow = await query(`SELECT CURRENT_DATE::text AS d`);
+      dateStr = dateRow.rows[0]?.d || new Date().toISOString().slice(0, 10);
+    }
   }
 
   const students = { present: 0, absent: 0, late: 0, halfDay: 0, totalMarked: 0, attendancePct: 0 };
   try {
-    const studentParams = hasYear ? [dateStr, academicYearId] : [dateStr];
-    const yearClause = hasYear ? 'AND st.academic_year_id = $2' : '';
-    const r = await query(
-      `SELECT
-         COUNT(*) FILTER (WHERE a.status = 'present')::int AS present,
-         COUNT(*) FILTER (WHERE a.status = 'absent')::int AS absent,
-         COUNT(*) FILTER (WHERE a.status = 'late')::int AS late,
-         COUNT(*) FILTER (WHERE a.status = 'half_day')::int AS half_day,
-         COUNT(*)::int AS total_marked
-       FROM attendance a
-       INNER JOIN students st ON a.student_id = st.id
-       WHERE a.attendance_date = $1::date
-         AND st.is_active = true
-         ${yearClause}`,
-      studentParams
-    );
-    const row = r.rows[0] || {};
-    students.present = parseInt(row.present, 10) || 0;
-    students.absent = parseInt(row.absent, 10) || 0;
-    students.late = parseInt(row.late, 10) || 0;
-    students.halfDay = parseInt(row.half_day, 10) || 0;
-    students.totalMarked = parseInt(row.total_marked, 10) || 0;
+    if (isAllTime) {
+      const studentParams = hasYear ? [academicYearId] : [];
+      const yearClause = hasYear ? 'AND st.academic_year_id = $1' : '';
+      const r = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE a.status = 'present')::int AS present,
+           COUNT(*) FILTER (WHERE a.status = 'absent')::int AS absent,
+           COUNT(*) FILTER (WHERE a.status = 'late')::int AS late,
+           COUNT(*) FILTER (WHERE a.status = 'half_day')::int AS half_day,
+           COUNT(*)::int AS total_marked
+         FROM attendance a
+         INNER JOIN students st ON a.student_id = st.id
+         WHERE st.is_active = true
+           ${yearClause}`,
+        studentParams
+      );
+      const row = r.rows[0] || {};
+      students.present = parseInt(row.present, 10) || 0;
+      students.absent = parseInt(row.absent, 10) || 0;
+      students.late = parseInt(row.late, 10) || 0;
+      students.halfDay = parseInt(row.half_day, 10) || 0;
+      students.totalMarked = parseInt(row.total_marked, 10) || 0;
+    } else {
+      const studentParams = hasYear ? [dateStr, academicYearId] : [dateStr];
+      const yearClause = hasYear ? 'AND st.academic_year_id = $2' : '';
+      const r = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE a.status = 'present')::int AS present,
+           COUNT(*) FILTER (WHERE a.status = 'absent')::int AS absent,
+           COUNT(*) FILTER (WHERE a.status = 'late')::int AS late,
+           COUNT(*) FILTER (WHERE a.status = 'half_day')::int AS half_day,
+           COUNT(*)::int AS total_marked
+         FROM attendance a
+         INNER JOIN students st ON a.student_id = st.id
+         WHERE a.attendance_date = $1::date
+           AND st.is_active = true
+           ${yearClause}`,
+        studentParams
+      );
+      const row = r.rows[0] || {};
+      students.present = parseInt(row.present, 10) || 0;
+      students.absent = parseInt(row.absent, 10) || 0;
+      students.late = parseInt(row.late, 10) || 0;
+      students.halfDay = parseInt(row.half_day, 10) || 0;
+      students.totalMarked = parseInt(row.total_marked, 10) || 0;
+    }
     const attended = students.present + students.late + students.halfDay;
     students.attendancePct = pctPart(attended, students.totalMarked);
   } catch (e) {
@@ -99,42 +162,42 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null) {
     isProxy: true,
     dataSource: 'leave_vs_active',
   };
-  try {
-    const tParams = hasYear ? [academicYearId] : [];
-    const teachYear = hasYear
-      ? `AND EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = t.id AND cs.academic_year_id = $1)`
-      : '';
-    const totalR = await query(
-      `SELECT COUNT(*)::int AS total
-       FROM teachers t
-       INNER JOIN staff s ON t.staff_id = s.id
-       WHERE t.status = 'Active' AND s.is_active = true
-       ${teachYear}`,
-      tParams
-    );
-    const totalT = parseInt(totalR.rows[0]?.total, 10) || 0;
-    const leaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
-    const leaveYear = hasYear
-      ? `AND EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = t.id AND cs.academic_year_id = $2)`
-      : '';
-    const leaveR = await query(
-      `SELECT COUNT(DISTINCT t.id)::int AS on_leave
-       FROM teachers t
-       INNER JOIN staff s ON t.staff_id = s.id
-       INNER JOIN leave_applications la ON la.staff_id = s.id
-       WHERE t.status = 'Active' AND s.is_active = true
-         AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
-         AND la.start_date <= $1::date AND la.end_date >= $1::date
-       ${leaveYear}`,
-      leaveParams
-    );
-    const onLeave = parseInt(leaveR.rows[0]?.on_leave, 10) || 0;
-    teachers.absent = Math.min(onLeave, totalT);
-    teachers.present = Math.max(0, totalT - teachers.absent);
-    teachers.totalMarked = totalT;
-    teachers.attendancePct = pctPart(teachers.present, totalT);
-  } catch (e) {
-    console.warn('Dashboard: teacher leave proxy snapshot failed', e.message);
+  if (!isAllTime) {
+    try {
+      const tParams = hasYear ? [academicYearId] : [];
+      const teachYear = hasYear ? `AND ${sqlTeacherInAcademicYear('t', 1)}` : '';
+      const totalR = await query(
+        `SELECT COUNT(*)::int AS total
+         FROM teachers t
+         INNER JOIN staff s ON t.staff_id = s.id
+         WHERE t.status = 'Active' AND s.is_active = true
+         ${teachYear}`,
+        tParams
+      );
+      const totalT = parseInt(totalR.rows[0]?.total, 10) || 0;
+      const leaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
+      const leaveYear = hasYear ? `AND ${sqlTeacherInAcademicYear('t', 2)}` : '';
+      const leaveR = await query(
+        `SELECT COUNT(DISTINCT t.id)::int AS on_leave
+         FROM teachers t
+         INNER JOIN staff s ON t.staff_id = s.id
+         INNER JOIN leave_applications la ON la.staff_id = s.id
+         WHERE t.status = 'Active' AND s.is_active = true
+           AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
+           AND la.start_date <= $1::date AND la.end_date >= $1::date
+         ${leaveYear}`,
+        leaveParams
+      );
+      const onLeave = parseInt(leaveR.rows[0]?.on_leave, 10) || 0;
+      teachers.absent = Math.min(onLeave, totalT);
+      teachers.present = Math.max(0, totalT - teachers.absent);
+      teachers.totalMarked = totalT;
+      teachers.attendancePct = pctPart(teachers.present, totalT);
+    } catch (e) {
+      console.warn('Dashboard: teacher leave proxy snapshot failed', e.message);
+    }
+  } else {
+    teachers.dataSource = 'daily_only';
   }
 
   const staff = {
@@ -146,48 +209,56 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null) {
     isProxy: true,
     dataSource: 'leave_vs_active',
   };
-  try {
-    const staffYear = hasYear
-      ? `AND EXISTS (
-           SELECT 1 FROM teachers t
-           INNER JOIN class_schedules cs ON cs.teacher_id = t.id AND cs.academic_year_id = $1
-           WHERE t.staff_id = s.id
-         )`
-      : '';
-    const sp = hasYear ? [academicYearId] : [];
-    const totalS = await query(
-      `SELECT COUNT(*)::int AS total FROM staff s WHERE s.is_active = true ${staffYear}`,
-      sp
-    );
-    const totalSt = parseInt(totalS.rows[0]?.total, 10) || 0;
-    const staffLeaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
-    const staffLeaveYear = hasYear
-      ? `AND EXISTS (
-           SELECT 1 FROM teachers t
-           INNER JOIN class_schedules cs ON cs.teacher_id = t.id AND cs.academic_year_id = $2
-           WHERE t.staff_id = s.id
-         )`
-      : '';
-    const leaveS = await query(
-      `SELECT COUNT(DISTINCT s.id)::int AS on_leave
-       FROM staff s
-       INNER JOIN leave_applications la ON la.staff_id = s.id
-       WHERE s.is_active = true
-         AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
-         AND la.start_date <= $1::date AND la.end_date >= $1::date
-       ${staffLeaveYear}`,
-      staffLeaveParams
-    );
-    const onLeaveS = parseInt(leaveS.rows[0]?.on_leave, 10) || 0;
-    staff.absent = Math.min(onLeaveS, totalSt);
-    staff.present = Math.max(0, totalSt - staff.absent);
-    staff.totalMarked = totalSt;
-    staff.attendancePct = pctPart(staff.present, totalSt);
-  } catch (e) {
-    console.warn('Dashboard: staff leave proxy snapshot failed', e.message);
+  if (!isAllTime) {
+    try {
+      const staffYear = hasYear
+        ? `AND EXISTS (
+             SELECT 1 FROM teachers t
+             WHERE t.staff_id = s.id AND ${sqlTeacherInAcademicYear('t', 1)}
+           )`
+        : '';
+      const sp = hasYear ? [academicYearId] : [];
+      const totalS = await query(
+        `SELECT COUNT(*)::int AS total FROM staff s WHERE s.is_active = true ${staffYear}`,
+        sp
+      );
+      const totalSt = parseInt(totalS.rows[0]?.total, 10) || 0;
+      const staffLeaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
+      const staffLeaveYear = hasYear
+        ? `AND EXISTS (
+             SELECT 1 FROM teachers t
+             WHERE t.staff_id = s.id AND ${sqlTeacherInAcademicYear('t', 2)}
+           )`
+        : '';
+      const leaveS = await query(
+        `SELECT COUNT(DISTINCT s.id)::int AS on_leave
+         FROM staff s
+         INNER JOIN leave_applications la ON la.staff_id = s.id
+         WHERE s.is_active = true
+           AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
+           AND la.start_date <= $1::date AND la.end_date >= $1::date
+         ${staffLeaveYear}`,
+        staffLeaveParams
+      );
+      const onLeaveS = parseInt(leaveS.rows[0]?.on_leave, 10) || 0;
+      staff.absent = Math.min(onLeaveS, totalSt);
+      staff.present = Math.max(0, totalSt - staff.absent);
+      staff.totalMarked = totalSt;
+      staff.attendancePct = pctPart(staff.present, totalSt);
+    } catch (e) {
+      console.warn('Dashboard: staff leave proxy snapshot failed', e.message);
+    }
+  } else {
+    staff.dataSource = 'daily_only';
   }
 
-  return { date: dateStr, students, teachers, staff };
+  return {
+    date: isAllTime ? null : dateStr,
+    scope: isAllTime ? 'all_time' : 'day',
+    students,
+    teachers,
+    staff,
+  };
 }
 
 // Get dashboard stats (counts for students, teachers, staff, subjects)
@@ -234,13 +305,16 @@ const getDashboardStats = async (req, res) => {
       console.warn('Dashboard: students count failed', e.message);
     }
 
-    // Teachers: when academic year selected, count teachers with schedules in that year; otherwise school-wide
+    // Teachers: school-wide when no year; with year = linked to that year via timetable OR class teacher OR assigned class
+    // (schedule-only under-counted teachers who appear in Teacher list but have no class_schedules rows yet)
     try {
       if (hasYearFilter) {
+        const yearTeacherScope = sqlTeacherInAcademicYear('t', 1);
         const teachersTotal = await query(
           `SELECT COUNT(DISTINCT t.id)::int AS total
            FROM teachers t
-           INNER JOIN class_schedules cs ON cs.teacher_id = t.id AND cs.academic_year_id = $1`,
+           INNER JOIN staff s ON t.staff_id = s.id
+           WHERE ${yearTeacherScope}`,
           [academicYearId]
         );
         stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
@@ -248,8 +322,8 @@ const getDashboardStats = async (req, res) => {
           `SELECT COUNT(DISTINCT t.id)::int AS active
            FROM teachers t
            INNER JOIN staff s ON t.staff_id = s.id
-           INNER JOIN class_schedules cs ON cs.teacher_id = t.id AND cs.academic_year_id = $1
-           WHERE t.status = 'Active' AND s.is_active = true`,
+           WHERE t.status = 'Active' AND s.is_active = true
+             AND ${yearTeacherScope}`,
           [academicYearId]
         );
         stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
@@ -314,15 +388,18 @@ const getDashboardStats = async (req, res) => {
 
     let attendanceToday = {
       date: null,
+      scope: 'day',
       students: { present: 0, absent: 0, late: 0, halfDay: 0, totalMarked: 0, attendancePct: 0 },
       teachers: { present: 0, absent: 0, late: 0, totalMarked: 0, attendancePct: 0, isProxy: true },
       staff: { present: 0, absent: 0, late: 0, totalMarked: 0, attendancePct: 0, isProxy: true },
     };
     try {
+      const attendanceScope = parseAttendanceScope(req);
       const attendanceDate = parseAttendanceDate(req);
       attendanceToday = await buildAttendanceSnapshot(
         hasYearFilter ? academicYearId : null,
-        attendanceDate
+        attendanceDate,
+        attendanceScope
       );
     } catch (e) {
       console.warn('Dashboard: attendance snapshot failed', e.message);
@@ -945,6 +1022,8 @@ const getPerformanceSummary = async (req, res) => {
   try {
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
+    const classId = parseClassId(req);
+    const hasClassFilter = classId != null;
 
     let good = 0;
     let average = 0;
@@ -955,8 +1034,17 @@ const getPerformanceSummary = async (req, res) => {
     const dataSource = 'exam_results';
 
     try {
-      const params = hasYearFilter ? [academicYearId] : [];
-      const yearSql = hasYearFilter ? 'AND st.academic_year_id = $1' : '';
+      const params = [];
+      let extra = '';
+      let p = 1;
+      if (hasYearFilter) {
+        extra += ` AND st.academic_year_id = $${p++}`;
+        params.push(academicYearId);
+      }
+      if (hasClassFilter) {
+        extra += ` AND st.class_id = $${p++}`;
+        params.push(classId);
+      }
       const agg = await query(
         `WITH scored AS (
            SELECT st.id AS student_id,
@@ -968,7 +1056,7 @@ const getPerformanceSummary = async (req, res) => {
              AND er.is_absent = false AND COALESCE(er.is_active, true) = true
            LEFT JOIN exams e ON e.id = er.exam_id AND COALESCE(e.is_active, true) = true
            WHERE st.is_active = true
-             ${yearSql}
+             ${extra}
            GROUP BY st.id
            HAVING COUNT(er.id) > 0
          )
@@ -1001,7 +1089,9 @@ const getPerformanceSummary = async (req, res) => {
 
     const emptyMessage =
       studentsWithExamData === 0
-        ? 'No exam result data yet. Enter marks in Exam Results to see performance bands.'
+        ? hasClassFilter
+          ? 'No exam result data for this class yet. Add marks or pick another class.'
+          : 'No exam result data yet. Enter marks in Exam Results to see performance bands.'
         : null;
 
     res.status(200).json({
@@ -1017,6 +1107,7 @@ const getPerformanceSummary = async (req, res) => {
         studentsWithExamData,
         dataSource,
         emptyMessage,
+        classId: hasClassFilter ? classId : null,
       },
     });
   } catch (error) {
@@ -1028,30 +1119,35 @@ const getPerformanceSummary = async (req, res) => {
   }
 };
 
-// Top subjects by average exam marks (fallback: scheduled subjects list)
+// Top subjects by average exam marks (fallback: scheduled subjects list; optional class filter)
 const getTopSubjects = async (req, res) => {
   try {
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
+    const classId = parseClassId(req);
+    const hasClassFilter = classId != null;
 
     let rows = [];
     try {
-      const params = hasYearFilter ? [academicYearId] : [];
-      const sql = hasYearFilter
-        ? `SELECT sub.id, sub.subject_name, sub.subject_code,
+      const params = [];
+      let extra = '';
+      let p = 1;
+      if (hasYearFilter) {
+        extra += ` AND st.academic_year_id = $${p++}`;
+        params.push(academicYearId);
+      }
+      if (hasClassFilter) {
+        extra += ` AND st.class_id = $${p++}`;
+        params.push(classId);
+      }
+      const sql = `SELECT sub.id, sub.subject_name, sub.subject_code,
                   ROUND(AVG(er.marks_obtained)::numeric, 1) AS avg_marks
            FROM exam_results er
            INNER JOIN subjects sub ON er.subject_id = sub.id
-           INNER JOIN students st ON er.student_id = st.id AND st.academic_year_id = $1
+           INNER JOIN students st ON er.student_id = st.id
            WHERE sub.is_active = true AND er.is_absent = false AND COALESCE(er.is_active, true) = true
-           GROUP BY sub.id, sub.subject_name, sub.subject_code
-           ORDER BY avg_marks DESC NULLS LAST
-           LIMIT 10`
-        : `SELECT sub.id, sub.subject_name, sub.subject_code,
-                  ROUND(AVG(er.marks_obtained)::numeric, 1) AS avg_marks
-           FROM exam_results er
-           INNER JOIN subjects sub ON er.subject_id = sub.id
-           WHERE sub.is_active = true AND er.is_absent = false AND COALESCE(er.is_active, true) = true
+             AND st.is_active = true
+             ${extra}
            GROUP BY sub.id, sub.subject_name, sub.subject_code
            ORDER BY avg_marks DESC NULLS LAST
            LIMIT 10`;
@@ -1062,21 +1158,46 @@ const getTopSubjects = async (req, res) => {
     }
 
     if (rows.length === 0) {
-      const fb = await query(
-        hasYearFilter
-          ? `SELECT DISTINCT sub.id, sub.subject_name, sub.subject_code, NULL::numeric AS avg_marks
+      let fb;
+      if (hasYearFilter && hasClassFilter) {
+        fb = await query(
+          `SELECT DISTINCT sub.id, sub.subject_name, sub.subject_code, NULL::numeric AS avg_marks
+             FROM subjects sub
+             INNER JOIN class_schedules cs ON cs.subject_id = sub.id AND cs.academic_year_id = $1 AND cs.class_id = $2
+             WHERE sub.is_active = true
+             ORDER BY sub.subject_name ASC
+             LIMIT 10`,
+          [academicYearId, classId]
+        );
+      } else if (hasYearFilter) {
+        fb = await query(
+          `SELECT DISTINCT sub.id, sub.subject_name, sub.subject_code, NULL::numeric AS avg_marks
              FROM subjects sub
              INNER JOIN class_schedules cs ON cs.subject_id = sub.id AND cs.academic_year_id = $1
              WHERE sub.is_active = true
              ORDER BY sub.subject_name ASC
-             LIMIT 10`
-          : `SELECT id, subject_name, subject_code, NULL::numeric AS avg_marks
+             LIMIT 10`,
+          [academicYearId]
+        );
+      } else if (hasClassFilter) {
+        fb = await query(
+          `SELECT DISTINCT sub.id, sub.subject_name, sub.subject_code, NULL::numeric AS avg_marks
+             FROM subjects sub
+             INNER JOIN class_schedules cs ON cs.subject_id = sub.id AND cs.class_id = $1
+             WHERE sub.is_active = true
+             ORDER BY sub.subject_name ASC
+             LIMIT 10`,
+          [classId]
+        );
+      } else {
+        fb = await query(
+          `SELECT id, subject_name, subject_code, NULL::numeric AS avg_marks
              FROM subjects
              WHERE is_active = true
              ORDER BY subject_name ASC
-             LIMIT 10`,
-        hasYearFilter ? [academicYearId] : []
-      );
+             LIMIT 10`
+        );
+      }
       rows = fb.rows;
     }
 
@@ -1099,6 +1220,7 @@ const getTopSubjects = async (req, res) => {
       status: 'SUCCESS',
       message: 'Top subjects fetched successfully',
       data,
+      meta: { classId: hasClassFilter ? classId : null },
     });
   } catch (error) {
     console.error('Error fetching top subjects:', error);

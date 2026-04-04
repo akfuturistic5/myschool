@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { apiService } from "../../../core/services/apiService";
 import { useDashboardStats } from "../../../core/hooks/useDashboardStats";
 import {
   useDashboardClassRoutine,
@@ -19,8 +17,6 @@ import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 const AdministrativeDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
-  const [leaveFeedback, setLeaveFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
   const { user: currentUser } = useCurrentUser();
   const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({ academicYearId });
   const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 8 });
@@ -31,8 +27,7 @@ const AdministrativeDashboard = () => {
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId });
   const { leaveApplications, loading: leavesLoading, error: leavesError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 5,
-    canUseAdminList: true,
-    academicYearId,
+    studentOnly: true,
   });
 
   const quickLinks = [
@@ -47,31 +42,6 @@ const AdministrativeDashboard = () => {
   const noticeRows = Array.isArray(dashboardNotices) ? dashboardNotices : [];
   const leaveRows = Array.isArray(leaveApplications) ? leaveApplications : [];
   const activityRows = Array.isArray(activityItems) ? activityItems : [];
-
-  const handleLeaveAction = async (id: number, status: "approved" | "rejected") => {
-    if (leaveActionId != null) return;
-    setLeaveActionId(id);
-    setLeaveFeedback(null);
-    try {
-      const res = await apiService.updateLeaveApplicationStatus(id, status);
-      if (res?.status === "SUCCESS") {
-        setLeaveFeedback({
-          type: "success",
-          text: status === "approved" ? "Leave approved successfully." : "Leave rejected successfully.",
-        });
-        refetchLeaves();
-      } else {
-        setLeaveFeedback({ type: "danger", text: res?.message || "Could not update leave status." });
-      }
-    } catch (err) {
-      setLeaveFeedback({
-        type: "danger",
-        text: err instanceof Error ? err.message : "Could not update leave status.",
-      });
-    } finally {
-      setLeaveActionId(null);
-    }
-  };
 
   return (
     <div className="page-wrapper">
@@ -96,10 +66,6 @@ const AdministrativeDashboard = () => {
                         {item.label}
                       </Link>
                     ))}
-                    <Link to={routes.approveRequest} className="btn btn-outline-light">
-                      <i className="ti ti-checklist me-1" />
-                      Approve Leaves
-                    </Link>
                   </div>
                 </div>
               </div>
@@ -191,50 +157,30 @@ const AdministrativeDashboard = () => {
           <div className="col-xl-6 d-flex">
             <div className="card flex-fill">
               <div className="card-header">
-                <h5 className="card-title">Leave Requests</h5>
+                <h5 className="card-title">My leave</h5>
               </div>
               <div className="card-body">
-                {leaveFeedback && (
-                  <div className={`alert alert-${leaveFeedback.type} py-2`}>{leaveFeedback.text}</div>
-                )}
                 {leavesError && (
                   <div className="alert alert-danger py-2 d-flex justify-content-between align-items-center">
-                    <span className="small mb-0">Could not load leave requests.</span>
+                    <span className="small mb-0">Could not load your leave applications.</span>
                     <button type="button" className="btn btn-sm btn-danger" onClick={refetchLeaves}>
                       Retry
                     </button>
                   </div>
                 )}
                 {leavesLoading ? (
-                  <p className="text-muted mb-0">Loading leave requests...</p>
+                  <p className="text-muted mb-0">Loading your leave...</p>
                 ) : leaveRows.length === 0 ? (
-                  <p className="text-muted mb-0">No leave requests found.</p>
+                  <p className="text-muted mb-0">No leave applications on file for your account. Apply from HRM → Leaves if your user is linked to staff.</p>
                 ) : (
                   <ul className="list-group list-group-flush">
                     {leaveRows.map((leave: any) => (
                       <li key={leave.id} className="list-group-item px-0">
-                        <div className="fw-semibold">{leave.name || "Unknown user"}</div>
+                        <div className="fw-semibold">{leave.leaveType || "Leave"}</div>
                         <small className="text-muted">
-                          {leave.leaveType || "Leave"} • {leave.status || "Pending"}
+                          Status: {leave.status || "Pending"}
+                          {leave.leaveRange ? ` • ${leave.leaveRange}` : ""}
                         </small>
-                        <div className="mt-2 d-flex gap-2">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-success"
-                            disabled={leaveActionId === leave.id}
-                            onClick={() => handleLeaveAction(leave.id, "approved")}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-danger"
-                            disabled={leaveActionId === leave.id}
-                            onClick={() => handleLeaveAction(leave.id, "rejected")}
-                          >
-                            Reject
-                          </button>
-                        </div>
                       </li>
                     ))}
                   </ul>
