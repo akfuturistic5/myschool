@@ -1,5 +1,5 @@
 const fs = require('fs');
-const { query, executeTransaction } = require('../config/database');
+const { query, executeTransaction, runWithTenant } = require('../config/database');
 const { ADMIN_ROLE_IDS } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { canAccessClass } = require('../utils/accessControl');
@@ -1249,38 +1249,55 @@ const uploadTeacherDocuments = async (req, res) => {
       return errorResponse(res, 400, 'No files uploaded. Use multipart fields resume and/or joining_letter.', 'VALIDATION_ERROR');
     }
 
-    const tenant = sanitizeTenant(req.tenant?.db_name || 'default_tenant') || 'default_tenant';
-
-    const prev = await query('SELECT resume, joining_letter FROM teachers WHERE id = $1', [teacherId]);
-    if (!prev.rows.length) {
+    const dbName = req.tenant?.db_name;
+    if (!dbName || !String(dbName).trim()) {
       if (resumeFile) unlinkMulterTemp(resumeFile);
       if (letterFile) unlinkMulterTemp(letterFile);
-      return errorResponse(res, 404, 'Teacher not found', 'NOT_FOUND');
+      return errorResponse(res, 500, 'Tenant context missing', 'CONFIG_ERROR');
     }
 
-    const oldResume = prev.rows[0].resume;
-    const oldLetter = prev.rows[0].joining_letter;
+    // Multer runs after auth's runWithTenant(); stream/async boundaries can drop AsyncLocalStorage.
+    // Re-bind tenant so query() hits the correct school DB (not primary fallback).
+    return await runWithTenant(dbName, async () => {
+      const tenant = sanitizeTenant(req.tenant?.db_name || dbName || 'default_tenant') || 'default_tenant';
 
-    const newResumeRel = resumeFile ? `${tenant}/${resumeFile.filename}` : null;
-    const newLetterRel = letterFile ? `${tenant}/${letterFile.filename}` : null;
+      const prev = await query('SELECT resume, joining_letter FROM teachers WHERE id = $1', [teacherId]);
+      if (!prev.rows.length) {
+        if (resumeFile) unlinkMulterTemp(resumeFile);
+        if (letterFile) unlinkMulterTemp(letterFile);
+        return errorResponse(res, 404, 'Teacher not found', 'NOT_FOUND');
+      }
 
-    await query(
-      `UPDATE teachers SET
-        resume = COALESCE($1, resume),
-        joining_letter = COALESCE($2, joining_letter),
-        modified_at = NOW()
-      WHERE id = $3`,
-      [newResumeRel, newLetterRel, teacherId]
-    );
+      const oldResume = prev.rows[0].resume;
+      const oldLetter = prev.rows[0].joining_letter;
 
-    if (resumeFile && oldResume && oldResume !== newResumeRel) unlinkTeacherDocStored(oldResume);
-    if (letterFile && oldLetter && oldLetter !== newLetterRel) unlinkTeacherDocStored(oldLetter);
+      const newResumeRel = resumeFile ? `${tenant}/${resumeFile.filename}` : null;
+      const newLetterRel = letterFile ? `${tenant}/${letterFile.filename}` : null;
 
-    const refreshed = await query(
-      `SELECT t.resume, t.joining_letter, t.modified_at AS updated_at FROM teachers t WHERE t.id = $1`,
-      [teacherId]
-    );
-    return success(res, 200, 'Documents uploaded successfully', refreshed.rows[0] || {});
+      const upd = await query(
+        `UPDATE teachers SET
+          resume = COALESCE($1, resume),
+          joining_letter = COALESCE($2, joining_letter),
+          modified_at = NOW()
+        WHERE id = $3`,
+        [newResumeRel, newLetterRel, teacherId]
+      );
+
+      if (upd.rowCount < 1) {
+        if (resumeFile) unlinkMulterTemp(resumeFile);
+        if (letterFile) unlinkMulterTemp(letterFile);
+        return errorResponse(res, 404, 'Teacher not found or could not update', 'NOT_FOUND');
+      }
+
+      if (resumeFile && oldResume && oldResume !== newResumeRel) unlinkTeacherDocStored(oldResume);
+      if (letterFile && oldLetter && oldLetter !== newLetterRel) unlinkTeacherDocStored(oldLetter);
+
+      const refreshed = await query(
+        `SELECT t.resume, t.joining_letter, t.modified_at AS updated_at FROM teachers t WHERE t.id = $1`,
+        [teacherId]
+      );
+      return success(res, 200, 'Documents uploaded successfully', refreshed.rows[0] || {});
+    });
   } catch (error) {
     console.error('uploadTeacherDocuments:', error);
     return errorResponse(res, 500, 'Failed to upload documents', 'INTERNAL_ERROR');
@@ -1305,36 +1322,43 @@ const getTeacherDocument = async (req, res) => {
       return errorResponse(res, 401, 'Not authenticated');
     }
 
-    const result = await query(
-      `SELECT t.${column} AS doc_path, s.user_id, s.staff_id
-       FROM teachers t
-       INNER JOIN staff s ON t.staff_id = s.id
-       WHERE t.id = $1`,
-      [teacherId]
-    );
-
-    if (!result.rows.length) {
-      return errorResponse(res, 404, 'Teacher not found');
+    const dbName = req.tenant?.db_name;
+    if (!dbName || !String(dbName).trim()) {
+      return errorResponse(res, 500, 'Tenant context missing', 'CONFIG_ERROR');
     }
 
-    const row = result.rows[0];
-    const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
-    const isSelf = String(row.user_id) === String(requester.id);
-    const staffIdMatch = requester.staff_id != null && String(row.staff_id) === String(requester.staff_id);
-    if (!isAdmin && !isSelf && !staffIdMatch) {
-      return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
-    }
+    return await runWithTenant(dbName, async () => {
+      const result = await query(
+        `SELECT t.${column} AS doc_path, s.user_id, s.staff_id
+         FROM teachers t
+         INNER JOIN staff s ON t.staff_id = s.id
+         WHERE t.id = $1`,
+        [teacherId]
+      );
 
-    const rel = row.doc_path;
-    const abs = resolveTeacherDocumentPath(rel);
-    if (!abs || !fs.existsSync(abs)) {
-      return errorResponse(res, 404, 'Document not found or file missing');
-    }
+      if (!result.rows.length) {
+        return errorResponse(res, 404, 'Teacher not found');
+      }
 
-    const downloadName = column === 'joining_letter' ? 'joining-letter.pdf' : 'resume.pdf';
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${downloadName}"`);
-    return res.sendFile(abs);
+      const row = result.rows[0];
+      const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
+      const isSelf = String(row.user_id) === String(requester.id);
+      const staffIdMatch = requester.staff_id != null && String(row.staff_id) === String(requester.staff_id);
+      if (!isAdmin && !isSelf && !staffIdMatch) {
+        return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+      }
+
+      const rel = row.doc_path;
+      const abs = resolveTeacherDocumentPath(rel);
+      if (!abs || !fs.existsSync(abs)) {
+        return errorResponse(res, 404, 'Document not found or file missing');
+      }
+
+      const downloadName = column === 'joining_letter' ? 'joining-letter.pdf' : 'resume.pdf';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${downloadName}"`);
+      return res.sendFile(abs);
+    });
   } catch (error) {
     console.error('getTeacherDocument:', error);
     return errorResponse(res, 500, 'Failed to load document', 'INTERNAL_ERROR');

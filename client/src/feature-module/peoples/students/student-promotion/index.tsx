@@ -321,13 +321,33 @@ const StudentPromotion = () => {
     [all_routes.studentDetail]
   );
 
+  /** Same pattern as profile password modal — use getOrCreateInstance; ref alone can miss the node timing. */
   const hidePromoteModal = () => {
-    const el = promoteModalRef.current;
-    const bs = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
-    if (el && bs) {
-      const inst = bs.getInstance(el) ?? bs.getOrCreateInstance(el);
-      inst?.hide();
+    const el =
+      (document.getElementById("student_promote") as HTMLElement | null) ??
+      promoteModalRef.current;
+    if (!el) return;
+    try {
+      const Modal = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
+      if (Modal?.getOrCreateInstance) {
+        Modal.getOrCreateInstance(el).hide();
+      }
+    } catch {
+      // fall through to DOM cleanup
     }
+    // If Bootstrap API did not run or hide() no-opped, remove overlay (fixes stuck modal after success).
+    window.setTimeout(() => {
+      if (!el.classList.contains("show")) return;
+      el.classList.remove("show");
+      el.style.display = "none";
+      el.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+      document.querySelectorAll(".modal-backdrop").forEach((node) => {
+        node.parentElement?.removeChild(node);
+      });
+    }, 400);
   };
 
   const handleConfirmPromote = async () => {
@@ -371,12 +391,12 @@ const StudentPromotion = () => {
       if (res?.status !== "SUCCESS") {
         throw new Error(res?.message || "Promotion failed");
       }
+      hidePromoteModal();
       setPromoteSuccess(
         `${res?.data?.promoted ?? ids.length} student(s) promoted successfully.`
       );
       setSelectedRowKeys([]);
       await refetchStudents();
-      hidePromoteModal();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Promotion failed";
       setPromoteError(msg);

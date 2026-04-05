@@ -19,7 +19,8 @@ export const useStudents = () => {
     }
     const roleId = user.user_role_id ?? user.role_id;
     const roleName = (user.role ?? '').trim().toLowerCase();
-    const isTeacher = roleId === 3 || roleName === 'teacher';
+    // user_roles: teacher id = 2, student id = 3 (must match server ROLES)
+    const isTeacher = roleName === 'teacher' || roleId === 2;
     const canListStudents = isTeacher || isHeadmasterRole(user) || isAdministrativeRole(user);
     if (!canListStudents) {
       setStudents([]);

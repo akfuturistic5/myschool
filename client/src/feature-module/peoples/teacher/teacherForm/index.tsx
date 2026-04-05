@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type ChangeEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 // import { feeGroup, feesTypes, paymentType } from '../../../core/common/selectoption/selectoption'
 import { DatePicker } from "antd";
@@ -80,9 +80,16 @@ function teacherStoredDocBasename(stored: string | null | undefined): string {
 /** Create-teacher API returns the new row in `data`; tolerate string ids from drivers. */
 function extractCreatedTeacherId(res: unknown): number | undefined {
   if (!res || typeof res !== "object") return undefined;
-  const d = (res as { data?: unknown }).data;
-  if (d == null || typeof d !== "object" || Array.isArray(d)) return undefined;
-  const raw = (d as Record<string, unknown>).id ?? (d as Record<string, unknown>).ID;
+  const o = res as Record<string, unknown>;
+  const d = o.data;
+  let raw: unknown;
+  if (d != null && typeof d === "object" && !Array.isArray(d)) {
+    const inner = d as Record<string, unknown>;
+    raw = inner.id ?? inner.ID ?? inner.teacher_id;
+  }
+  if (raw === undefined || raw === null || raw === "") {
+    raw = o.id ?? o.ID;
+  }
   if (raw === undefined || raw === null || raw === "") return undefined;
   const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
   return Number.isFinite(n) && n > 0 ? n : undefined;
@@ -121,6 +128,9 @@ const TeacherForm = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('Active');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [joiningLetterFile, setJoiningLetterFile] = useState<File | null>(null);
+  /** Same files as state; refs avoid rare stale values on save click after long forms. */
+  const resumeFileRef = useRef<File | null>(null);
+  const joiningLetterFileRef = useRef<File | null>(null);
 
   // Lookup data from API (real data for dropdowns)
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -174,12 +184,16 @@ const TeacherForm = () => {
       setLeavingDate(null);
       setResumeFile(null);
       setJoiningLetterFile(null);
+      resumeFileRef.current = null;
+      joiningLetterFileRef.current = null;
     }
   }, [location.pathname]);
 
   useEffect(() => {
     setResumeFile(null);
     setJoiningLetterFile(null);
+    resumeFileRef.current = null;
+    joiningLetterFileRef.current = null;
   }, [teacherId]);
 
   useEffect(() => {
@@ -262,6 +276,7 @@ const TeacherForm = () => {
       return;
     }
     setResumeFile(f);
+    resumeFileRef.current = f;
   };
 
   const onPickJoiningLetter = (e: ChangeEvent<HTMLInputElement>) => {
@@ -278,6 +293,7 @@ const TeacherForm = () => {
       return;
     }
     setJoiningLetterFile(f);
+    joiningLetterFileRef.current = f;
   };
 
   return (
@@ -1484,6 +1500,24 @@ const TeacherForm = () => {
                           Object.keys(updateData).forEach(k => { if (updateData[k] === undefined || updateData[k] === null) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
                           if (response && response.status === 'SUCCESS') {
+                            const rFile = resumeFileRef.current;
+                            const jFile = joiningLetterFileRef.current;
+                            if (rFile || jFile) {
+                              try {
+                                const fd = new FormData();
+                                if (rFile) fd.append('resume', rFile);
+                                if (jFile) fd.append('joining_letter', jFile);
+                                await apiService.uploadTeacherDocuments(teacherId, fd);
+                              } catch (docErr) {
+                                console.error(docErr);
+                                alert(
+                                  parseTeacherApiErrorMessage(
+                                    docErr,
+                                    'Teacher was saved but documents could not be uploaded. Try uploading PDFs again from Edit.'
+                                  )
+                                );
+                              }
+                            }
                             navigate(routes.teacherList, { state: { refresh: true } });
                           } else {
                             alert(response?.message || 'Failed to update teacher');
@@ -1617,7 +1651,9 @@ const TeacherForm = () => {
                           const response = await apiService.createTeacher(payload);
                           if (response && response.status === "SUCCESS") {
                             const newId = extractCreatedTeacherId(response);
-                            if (resumeFile || joiningLetterFile) {
+                            const rFile = resumeFileRef.current;
+                            const jFile = joiningLetterFileRef.current;
+                            if (rFile || jFile) {
                               if (newId == null) {
                                 alert(
                                   "Teacher was created but the app could not read the new teacher ID, so PDFs were not uploaded. Open Edit for this teacher and upload the documents again."
@@ -1625,8 +1661,8 @@ const TeacherForm = () => {
                               } else {
                                 try {
                                   const fd = new FormData();
-                                  if (resumeFile) fd.append("resume", resumeFile);
-                                  if (joiningLetterFile) fd.append("joining_letter", joiningLetterFile);
+                                  if (rFile) fd.append("resume", rFile);
+                                  if (jFile) fd.append("joining_letter", jFile);
                                   await apiService.uploadTeacherDocuments(newId, fd);
                                 } catch (docErr) {
                                   console.error(docErr);

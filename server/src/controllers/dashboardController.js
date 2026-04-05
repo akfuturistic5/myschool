@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { getAuthContext, isAdmin, resolveTeacherIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
+const { ROLES } = require('../config/roles');
 
 // Parse academic_year_id from query (optional - when set, filter year-specific data)
 function parseAcademicYearId(req) {
@@ -667,7 +668,7 @@ const getClassRoutineForDashboard = async (req, res) => {
 
       if (!isAdmin(ctx)) {
         // Teacher scope: only own schedules.
-        if (ctx.roleName === 'teacher' || ctx.roleId === 3) {
+        if (ctx.roleName === 'teacher' || ctx.roleId === ROLES.TEACHER) {
           const teacherId = await resolveTeacherIdForUser(ctx.userId);
           if (teacherId) {
             where = ` WHERE (cs.teacher_id = $${params.length + 1} OR cs.teacher = $${params.length + 1})`;

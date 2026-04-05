@@ -3,6 +3,7 @@ const { parsePagination } = require('../utils/pagination');
 const { createParentIndividualUser } = require('../utils/createPersonUser');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { getAuthContext, isAdmin, parseId } = require('../utils/accessControl');
+const { ROLES } = require('../config/roles');
 
 // Create new parent
 const createParent = async (req, res) => {
@@ -246,7 +247,7 @@ const getAllParents = async (req, res) => {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     const ctx = getAuthContext(req);
-    const isTeacherRole = ctx.roleId === 3 || ctx.roleName === 'teacher';
+    const isTeacherRole = ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher';
 
     if (isTeacherRole) {
       if (!ctx.userId) {
