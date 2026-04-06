@@ -184,22 +184,33 @@ const StudentPromotion = () => {
       .trim()
       .toLowerCase();
 
+  // Promotion/Leaving selection must only show active students.
+  // Student master list elsewhere still keeps inactive rows for records/audit.
+  const activeStudents = useMemo(
+    () =>
+      students.filter((s: any) => {
+        const v = s?.is_active;
+        return !(v === false || v === "f" || v === 0 || v === "0");
+      }),
+    [students]
+  );
+
   /**
    * Match by class_id/section_id first (correct when student.class_id is the same row as the dropdown).
    * Fallback: match by class_name + section_name — needed when class rows are duplicated per academic year
    * but legacy student rows still point at another year's class id while academic_year_id is correct.
    */
   const filteredStudents = useMemo(() => {
-    if (!fromClassId) return students;
+    if (!fromClassId) return activeStudents;
     const cid = parseInt(fromClassId, 10);
-    if (Number.isNaN(cid)) return students;
+    if (Number.isNaN(cid)) return activeStudents;
 
     const fromClass = classesFrom.find((c) => String(c.id) === fromClassId);
     const fromSec = fromSections.find((sec) => String(sec.id) === fromSectionId);
     const wantClassName = normLabel(fromClass?.class_name);
     const wantSectionName = fromSectionId ? normLabel(fromSec?.section_name) : "";
 
-    return students.filter((s: any) => {
+    return activeStudents.filter((s: any) => {
       const sid = fromSectionId ? parseInt(fromSectionId, 10) : NaN;
       const idMatch =
         Number(s.class_id) === cid &&
@@ -214,7 +225,7 @@ const StudentPromotion = () => {
 
       return idMatch || nameMatch;
     });
-  }, [students, fromClassId, fromSectionId, classesFrom, fromSections]);
+  }, [activeStudents, fromClassId, fromSectionId, classesFrom, fromSections]);
 
   const data = useMemo(
     () =>

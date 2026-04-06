@@ -1512,6 +1512,11 @@ const getStudentPromotions = async (req, res) => {
   try {
     const rawLimit = parseInt(req.query.limit, 10);
     const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+    const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
+    const hasStudentFilter = studentId != null && !Number.isNaN(studentId);
+    const whereClause = hasStudentFilter ? 'WHERE sp.student_id = $1' : '';
+    const params = hasStudentFilter ? [studentId, limit] : [limit];
+    const limitParam = hasStudentFilter ? '$2' : '$1';
 
     const result = await query(
       `SELECT
@@ -1550,9 +1555,10 @@ const getStudentPromotions = async (req, res) => {
       LEFT JOIN academic_years fay ON fay.id = sp.from_academic_year_id
       LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
       LEFT JOIN staff st ON st.id = sp.promoted_by
+      ${whereClause}
       ORDER BY sp.promotion_date DESC, sp.id DESC
-      LIMIT $1`,
-      [limit]
+      LIMIT ${limitParam}`,
+      params
     );
 
     res.status(200).json({
@@ -1846,6 +1852,10 @@ const getStudentById = async (req, res) => {
       s.sibiling_1, s.sibiling_2, s.sibiling_1_class, s.sibiling_2_class,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       c.class_name, sec.section_name,
+      ay.year_name as academic_year_name,
+      cls_t.staff_id as class_teacher_staff_id,
+      cls_staff.first_name as class_teacher_first_name,
+      cls_staff.last_name as class_teacher_last_name,
       bg.blood_group as blood_group_name,
       cast_t.cast_name,
       mt.language_name as mother_tongue_name,
@@ -1860,6 +1870,9 @@ const getStudentById = async (req, res) => {
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+      LEFT JOIN teachers cls_t ON c.class_teacher_id = cls_t.id
+      LEFT JOIN staff cls_staff ON cls_t.staff_id = cls_staff.id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
