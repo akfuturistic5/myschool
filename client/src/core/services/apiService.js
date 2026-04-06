@@ -328,9 +328,14 @@ class ApiService {
     });
   }
 
-  async getStudentPromotions(limit = 200) {
+  async getStudentPromotions(limit = 200, studentId = null) {
     const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
-    return this.makeRequest(`/students/promotions?limit=${safeLimit}`);
+    const params = new URLSearchParams();
+    params.set('limit', String(safeLimit));
+    if (studentId != null && Number.isFinite(Number(studentId))) {
+      params.set('student_id', String(studentId));
+    }
+    return this.makeRequest(`/students/promotions?${params.toString()}`);
   }
 
   async leaveStudents(payload) {
