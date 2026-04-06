@@ -103,9 +103,21 @@ const StudentPromotion = () => {
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
+  const [actionMode, setActionMode] = useState<"promote" | "leave">("promote");
+  const [leavingDate, setLeavingDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [leaveReason, setLeaveReason] = useState<string>("");
+  const [leaveRemarks, setLeaveRemarks] = useState<string>("");
   const [promotionHistory, setPromotionHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [leavingHistory, setLeavingHistory] = useState<any[]>([]);
+  const [leavingLoading, setLeavingLoading] = useState(false);
+  const [leavingError, setLeavingError] = useState<string | null>(null);
+  const [leavingSearchTerm, setLeavingSearchTerm] = useState<string>("");
+  const [leavingYearFilter, setLeavingYearFilter] = useState<string>("all");
+  const [leavingResultFilter, setLeavingResultFilter] = useState<string>("all");
+  const [leavingFromDate, setLeavingFromDate] = useState<string>("");
+  const [leavingToDate, setLeavingToDate] = useState<string>("");
 
   const user = useSelector(selectUser);
   const canPromote = Boolean(
@@ -293,6 +305,24 @@ const StudentPromotion = () => {
     }
   }, []);
 
+  const loadLeavingHistory = useCallback(async () => {
+    try {
+      setLeavingLoading(true);
+      setLeavingError(null);
+      const res = await apiService.getLeavingStudents(500);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load leaving students");
+      }
+      setLeavingHistory(Array.isArray(res?.data) ? res.data : []);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load leaving students";
+      setLeavingError(msg);
+      setLeavingHistory([]);
+    } finally {
+      setLeavingLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setSelectedRowKeys((prev) => prev.filter((k) => data.some((row) => row.key === k)));
   }, [data]);
@@ -300,6 +330,10 @@ const StudentPromotion = () => {
   useEffect(() => {
     void fetchPromotionHistory();
   }, [fetchPromotionHistory]);
+
+  useEffect(() => {
+    void loadLeavingHistory();
+  }, [loadLeavingHistory]);
 
   const columns = useMemo(
     () => [
@@ -420,7 +454,7 @@ const StudentPromotion = () => {
     }, 400);
   };
 
-  const handleConfirmPromote = async () => {
+  const handleConfirmAction = async () => {
     setPromoteError(null);
     setPromoteSuccess(null);
     if (!canPromote) {
@@ -438,38 +472,51 @@ const StudentPromotion = () => {
       setPromoteError("Could not resolve selected students.");
       return;
     }
+    const isPromote = actionMode === "promote";
     const tc = parseInt(toClassId, 10);
     const ts = parseInt(toSectionId, 10);
     const ty = parseInt(toAcademicYearId, 10);
-    if (Number.isNaN(tc) || Number.isNaN(ts) || Number.isNaN(ty)) {
+    if (isPromote && (Number.isNaN(tc) || Number.isNaN(ts) || Number.isNaN(ty))) {
       setPromoteError("Choose a valid target class, section, and academic year.");
       return;
     }
 
     setPromoteSubmitting(true);
     try {
-      const body: Record<string, unknown> = {
-        student_ids: ids,
-        to_class_id: tc,
-        to_section_id: ts,
-        to_academic_year_id: ty,
-      };
+      const body: Record<string, unknown> = { student_ids: ids };
       if (fromAcademicYearId != null && !Number.isNaN(Number(fromAcademicYearId))) {
         body.from_academic_year_id = Number(fromAcademicYearId);
       }
-      const res = await apiService.promoteStudents(body);
+      let res: any;
+      if (isPromote) {
+        body.to_class_id = tc;
+        body.to_section_id = ts;
+        body.to_academic_year_id = ty;
+        res = await apiService.promoteStudents(body);
+      } else {
+        body.leaving_date = leavingDate || undefined;
+        body.reason = leaveReason || undefined;
+        body.remarks = leaveRemarks || undefined;
+        res = await apiService.leaveStudents(body);
+      }
       if (res?.status !== "SUCCESS") {
-        throw new Error(res?.message || "Promotion failed");
+        throw new Error(res?.message || (isPromote ? "Promotion failed" : "Leaving failed"));
       }
       hidePromoteModal();
+      const affected = isPromote ? (res?.data?.promoted ?? ids.length) : (res?.data?.left ?? ids.length);
       setPromoteSuccess(
-        `${res?.data?.promoted ?? ids.length} student(s) promoted successfully.`
+        `${affected} student(s) ${isPromote ? "promoted" : "marked as leaving"} successfully.`
       );
       setSelectedRowKeys([]);
       await refetchStudents();
       await fetchPromotionHistory();
+      await loadLeavingHistory();
+      if (!isPromote) {
+        setLeaveReason("");
+        setLeaveRemarks("");
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Promotion failed";
+      const msg = e instanceof Error ? e.message : (isPromote ? "Promotion failed" : "Leaving failed");
       setPromoteError(msg);
     } finally {
       setPromoteSubmitting(false);
@@ -524,6 +571,179 @@ const StudentPromotion = () => {
     ],
     []
   );
+
+  const formatDate = (v: string | null | undefined) => {
+    if (!v) return "—";
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const leavingData = useMemo(
+    () =>
+      leavingHistory.map((row: any, idx: number) => ({
+        key: String(row.id ?? idx),
+        admissionNo: row.admission_number ?? "—",
+        studentName:
+          [row.student_first_name, row.student_last_name].filter(Boolean).join(" ") || "N/A",
+        joining:
+          `${row.joining_class_name ?? "—"} / ${row.joining_section_name ?? "—"} / ${row.joining_academic_year_name ?? "—"}`,
+        joiningDate: formatDate(row.joining_date),
+        last:
+          `${row.last_class_name ?? "—"} / ${row.last_section_name ?? "—"} / ${row.last_academic_year_name ?? "—"}`,
+        leavingDate: formatDate(row.leaving_date),
+        leavingDateRaw: row.leaving_date ?? null,
+        lastAcademicYearName: row.last_academic_year_name ?? "—",
+        lastResult: row.last_class_result ?? "Not Available",
+        reason: row.reason ?? "—",
+        remarks: row.remarks ?? "—",
+      })),
+    [leavingHistory]
+  );
+
+  const leavingYearOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const items: string[] = [];
+    leavingData.forEach((row: any) => {
+      const y = String(row.lastAcademicYearName || "").trim();
+      if (!y || y === "—" || seen.has(y)) return;
+      seen.add(y);
+      items.push(y);
+    });
+    return items.sort((a, b) => a.localeCompare(b));
+  }, [leavingData]);
+
+  const filteredLeavingData = useMemo(() => {
+    const q = leavingSearchTerm.trim().toLowerCase();
+    return leavingData.filter((row: any) => {
+      const matchesSearch =
+        !q ||
+        [
+          row.admissionNo,
+          row.studentName,
+          row.joining,
+          row.last,
+          row.reason,
+          row.remarks,
+          row.lastResult,
+        ]
+          .map((v) => String(v || "").toLowerCase())
+          .some((v) => v.includes(q));
+
+      const matchesYear =
+        leavingYearFilter === "all" || String(row.lastAcademicYearName || "") === leavingYearFilter;
+      const matchesResult =
+        leavingResultFilter === "all" || String(row.lastResult || "") === leavingResultFilter;
+      const raw = row.leavingDateRaw ? String(row.leavingDateRaw).slice(0, 10) : "";
+      const matchesFrom = !leavingFromDate || (raw && raw >= leavingFromDate);
+      const matchesTo = !leavingToDate || (raw && raw <= leavingToDate);
+
+      return matchesSearch && matchesYear && matchesResult && matchesFrom && matchesTo;
+    });
+  }, [leavingData, leavingSearchTerm, leavingYearFilter, leavingResultFilter, leavingFromDate, leavingToDate]);
+
+  const leavingColumns = useMemo(
+    () => [
+      { title: "Admission No", dataIndex: "admissionNo" },
+      { title: "Student", dataIndex: "studentName" },
+      { title: "Joining Details", dataIndex: "joining" },
+      { title: "Joining Date", dataIndex: "joiningDate" },
+      { title: "Last Class/Section/Year", dataIndex: "last" },
+      { title: "Leaving Date", dataIndex: "leavingDate" },
+      {
+        title: "Last Class Result",
+        dataIndex: "lastResult",
+        render: (text: string) =>
+          text === "Pass" ? (
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {text}
+            </span>
+          ) : text === "Fail" ? (
+            <span className="badge badge-soft-danger d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {text}
+            </span>
+          ) : (
+            <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              {text}
+            </span>
+          ),
+      },
+      { title: "Reason", dataIndex: "reason" },
+      { title: "Remarks", dataIndex: "remarks" },
+    ],
+    []
+  );
+
+  const exportHeaders = [
+    "Admission No",
+    "Student Name",
+    "Joining Details",
+    "Joining Date",
+    "Last Class/Section/Year",
+    "Leaving Date",
+    "Last Class Result",
+    "Reason",
+    "Remarks",
+  ];
+  const exportRows = filteredLeavingData.map((row: any) => [
+    row.admissionNo ?? "",
+    row.studentName ?? "",
+    row.joining ?? "",
+    row.joiningDate ?? "",
+    row.last ?? "",
+    row.leavingDate ?? "",
+    row.lastResult ?? "",
+    row.reason ?? "",
+    row.remarks ?? "",
+  ]);
+  const sanitizeCell = (value: unknown) => String(value ?? "").replace(/"/g, '""');
+  const downloadTextFile = (content: string, fileName: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  const handleExportLeavingCsv = () => {
+    const lines = [
+      exportHeaders.map((h) => `"${sanitizeCell(h)}"`).join(","),
+      ...exportRows.map((cells) => cells.map((c) => `"${sanitizeCell(c)}"`).join(",")),
+    ];
+    const csv = `\uFEFF${lines.join("\n")}`;
+    const today = new Date().toISOString().slice(0, 10);
+    downloadTextFile(csv, `leaving-students-${today}.csv`, "text/csv;charset=utf-8;");
+  };
+  const htmlEscape = (value: unknown) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const handleExportLeavingExcel = () => {
+    const headerRow = exportHeaders.map((h) => `<th>${htmlEscape(h)}</th>`).join("");
+    const bodyRows = exportRows
+      .map((cells) => `<tr>${cells.map((c) => `<td>${htmlEscape(c)}</td>`).join("")}</tr>`)
+      .join("");
+    const tableHtml = `
+      <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <table border="1">
+          <thead><tr>${headerRow}</tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </body>
+      </html>`;
+    const today = new Date().toISOString().slice(0, 10);
+    downloadTextFile(tableHtml, `leaving-students-${today}.xls`, "application/vnd.ms-excel;charset=utf-8;");
+  };
 
   return (
     <>
@@ -925,9 +1145,29 @@ const StudentPromotion = () => {
                   </div>
                 </div>
                 <div className="promoted-year text-center">
+                  <div className="mb-2 d-flex justify-content-center align-items-center gap-3 flex-wrap">
+                    <label className="d-flex align-items-center mb-0">
+                      <input
+                        type="radio"
+                        className="form-check-input me-2"
+                        checked={actionMode === "promote"}
+                        onChange={() => setActionMode("promote")}
+                      />
+                      Promote
+                    </label>
+                    <label className="d-flex align-items-center mb-0">
+                      <input
+                        type="radio"
+                        className="form-check-input me-2"
+                        checked={actionMode === "leave"}
+                        onChange={() => setActionMode("leave")}
+                      />
+                      Leaving
+                    </label>
+                  </div>
                   <p>
                     {selectedRowKeys.length} student(s) selected — target:{" "}
-                    <strong>{targetYearLabel}</strong>
+                    <strong>{actionMode === "promote" ? targetYearLabel : "School Leaving"}</strong>
                   </p>
                   <button
                     type="button"
@@ -937,7 +1177,7 @@ const StudentPromotion = () => {
                     disabled={selectedRowKeys.length === 0 || !canPromote}
                     onClick={() => setPromoteError(null)}
                   >
-                    Promote Students
+                    {actionMode === "promote" ? "Promote Students" : "Mark as Leaving"}
                   </button>
                 </div>
                 <div className="card mt-4">
@@ -974,6 +1214,114 @@ const StudentPromotion = () => {
                     )}
                   </div>
                 </div>
+                <div className="card mt-3">
+                  <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
+                    <h4 className="mb-3">Leaving Students</h4>
+                    <div className="d-flex align-items-center gap-2 mb-3">
+                      <button
+                        type="button"
+                        className="btn btn-outline-success btn-sm"
+                        onClick={handleExportLeavingCsv}
+                        disabled={filteredLeavingData.length === 0}
+                      >
+                        Export CSV
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={handleExportLeavingExcel}
+                        disabled={filteredLeavingData.length === 0}
+                      >
+                        Export Excel
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={() => void loadLeavingHistory()}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                  <div className="card-body p-0 py-3">
+                    <div className="px-3 pb-2">
+                      <div className="row g-2">
+                        <div className="col-md-4">
+                          <label className="form-label mb-1">Search</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="Search name, admission no, class, reason..."
+                            value={leavingSearchTerm}
+                            onChange={(e) => setLeavingSearchTerm(e.target.value)}
+                          />
+                        </div>
+                        <div className="col-md-2">
+                          <label className="form-label mb-1">Academic Year</label>
+                          <select
+                            className="form-select"
+                            value={leavingYearFilter}
+                            onChange={(e) => setLeavingYearFilter(e.target.value)}
+                          >
+                            <option value="all">All</option>
+                            {leavingYearOptions.map((y) => (
+                              <option key={y} value={y}>
+                                {y}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-md-2">
+                          <label className="form-label mb-1">Result</label>
+                          <select
+                            className="form-select"
+                            value={leavingResultFilter}
+                            onChange={(e) => setLeavingResultFilter(e.target.value)}
+                          >
+                            <option value="all">All</option>
+                            <option value="Pass">Pass</option>
+                            <option value="Fail">Fail</option>
+                            <option value="Not Available">Not Available</option>
+                          </select>
+                        </div>
+                        <div className="col-md-2">
+                          <label className="form-label mb-1">Leaving From</label>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={leavingFromDate}
+                            onChange={(e) => setLeavingFromDate(e.target.value)}
+                          />
+                        </div>
+                        <div className="col-md-2">
+                          <label className="form-label mb-1">Leaving To</label>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={leavingToDate}
+                            onChange={(e) => setLeavingToDate(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {leavingLoading && (
+                      <div className="text-center p-4 text-muted">Loading leaving students...</div>
+                    )}
+                    {leavingError && (
+                      <div className="alert alert-danger mx-3" role="alert">
+                        {leavingError}
+                      </div>
+                    )}
+                    {!leavingLoading && !leavingError && filteredLeavingData.length === 0 && (
+                      <div className="alert alert-info mx-3" role="alert">
+                        No leaving students found for selected filters.
+                      </div>
+                    )}
+                    {!leavingLoading && !leavingError && filteredLeavingData.length > 0 && (
+                      <Table dataSource={filteredLeavingData} columns={leavingColumns} Selection={false} />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -989,12 +1337,53 @@ const StudentPromotion = () => {
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <div className="modal-body text-center">
-              <h4>Confirm Promotion</h4>
+              <h4>{actionMode === "promote" ? "Confirm Promotion" : "Confirm Leaving"}</h4>
               <p>
-                Promote <strong>{selectedRowKeys.length}</strong> selected student(s) to{" "}
-                <strong>{toClassName}</strong> section <strong>{toSectionName}</strong> in{" "}
-                <strong>{targetYearLabel}</strong>?
+                {actionMode === "promote" ? (
+                  <>
+                    Promote <strong>{selectedRowKeys.length}</strong> selected student(s) to{" "}
+                    <strong>{toClassName}</strong> section <strong>{toSectionName}</strong> in{" "}
+                    <strong>{targetYearLabel}</strong>?
+                  </>
+                ) : (
+                  <>
+                    Mark <strong>{selectedRowKeys.length}</strong> selected student(s) as leaving?
+                  </>
+                )}
               </p>
+              {actionMode === "leave" && (
+                <div className="text-start mb-3">
+                  <div className="mb-2">
+                    <label className="form-label">Leaving Date</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={leavingDate}
+                      onChange={(e) => setLeavingDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="mb-2">
+                    <label className="form-label">Reason</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={leaveReason}
+                      onChange={(e) => setLeaveReason(e.target.value)}
+                      placeholder="Optional reason"
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Remarks</label>
+                    <textarea
+                      className="form-control"
+                      rows={2}
+                      value={leaveRemarks}
+                      onChange={(e) => setLeaveRemarks(e.target.value)}
+                      placeholder="Optional remarks"
+                    />
+                  </div>
+                </div>
+              )}
               {promoteError && (
                 <div className="alert alert-danger text-start small" role="alert">
                   {promoteError}
@@ -1013,7 +1402,7 @@ const StudentPromotion = () => {
                   type="button"
                   className="btn btn-danger"
                   disabled={promoteSubmitting}
-                  onClick={() => void handleConfirmPromote()}
+                  onClick={() => void handleConfirmAction()}
                 >
                   {promoteSubmitting ? (
                     <>
@@ -1022,10 +1411,10 @@ const StudentPromotion = () => {
                         role="status"
                         aria-hidden="true"
                       />
-                      Promoting…
+                      {actionMode === "promote" ? "Processing promotion..." : "Processing leaving..."}
                     </>
                   ) : (
-                    "Promote"
+                    actionMode === "promote" ? "Promote" : "Confirm Leaving"
                   )}
                 </button>
               </div>
