@@ -780,6 +780,31 @@ const StudentPromotion = () => {
                 <strong>Academic Year chosen in the top header</strong> — it is not filtered by
                 calendar dates.
               </div>
+              <div className="card mb-4">
+                <div className="card-body py-2">
+                  <div className="d-flex align-items-center gap-3 flex-wrap">
+                    <span className="fw-semibold">Action Mode:</span>
+                    <label className="d-flex align-items-center mb-0">
+                      <input
+                        type="radio"
+                        className="form-check-input me-2"
+                        checked={actionMode === "promote"}
+                        onChange={() => setActionMode("promote")}
+                      />
+                      Promote
+                    </label>
+                    <label className="d-flex align-items-center mb-0">
+                      <input
+                        type="radio"
+                        className="form-check-input me-2"
+                        checked={actionMode === "leave"}
+                        onChange={() => setActionMode("leave")}
+                      />
+                      Leaving
+                    </label>
+                  </div>
+                </div>
+              </div>
               {fromAcademicYearId == null && (
                 <div className="alert alert-warning mb-4" role="alert">
                   Select an <strong>Academic Year</strong> in the header dropdown so the correct
@@ -789,8 +814,12 @@ const StudentPromotion = () => {
               <div className="card">
                 <div className="card-header border-0 pb-0">
                   <div className="bg-light-gray p-3 rounded">
-                    <h4>Promotion</h4>
-                    <p>Select current class/section (to filter the list) and target session</p>
+                    <h4>{actionMode === "promote" ? "Promotion" : "Leaving"}</h4>
+                    <p>
+                      {actionMode === "promote"
+                        ? "Select current class/section (to filter the list) and target session"
+                        : "Select current class/section to choose students who are leaving school"}
+                    </p>
                   </div>
                 </div>
                 <div className="card-body">
@@ -806,7 +835,7 @@ const StudentPromotion = () => {
                           </div>
                           <div>
                             <label className="form-label mb-2">
-                              Promotion from Class
+                              {actionMode === "promote" ? "Promotion from Class" : "Leaving from Class"}
                               <span className="text-danger"> *</span>
                             </label>
                             <div className="d-block d-md-flex">
@@ -859,6 +888,8 @@ const StudentPromotion = () => {
                           </div>
                         </div>
                       </div>
+                      {actionMode === "promote" ? (
+                      <>
                       <Link
                         to="#"
                         className="badge bg-primary badge-xl exchange-link text-white d-flex align-items-center justify-content-center mx-md-4 mx-auto my-md-0 my-4 flex-shrink-0"
@@ -951,6 +982,28 @@ const StudentPromotion = () => {
                           </div>
                         </div>
                       </div>
+                      </>
+                      ) : (
+                        <div className="card flex-fill w-100 ms-md-4">
+                          <div className="card-body">
+                            <div className="mb-2">
+                              <label className="form-label">Leaving Action</label>
+                              <div className="form-control-plaintext p-0 text-danger fw-semibold">
+                                Selected students will be marked as school leaving.
+                              </div>
+                            </div>
+                            <div className="mb-0">
+                              <label className="form-label">Leaving Date</label>
+                              <input
+                                type="date"
+                                className="form-control"
+                                value={leavingDate}
+                                onChange={(e) => setLeavingDate(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-12">
                       <div className="manage-promote-btn d-flex justify-content-center flex-wrap row-gap-2">
@@ -984,8 +1037,12 @@ const StudentPromotion = () => {
                 <div className="card">
                   <div className="card-header border-0 pb-0">
                     <div className="bg-light-gray p-3 rounded">
-                      <h4>Map Class Sections</h4>
-                      <p>Summary of source and target (adjust selections above if needed)</p>
+                      <h4>{actionMode === "promote" ? "Map Class Sections" : "Leaving Summary"}</h4>
+                      <p>
+                        {actionMode === "promote"
+                          ? "Summary of source and target (adjust selections above if needed)"
+                          : "Summary of selected source class/section for school leaving"}
+                      </p>
                     </div>
                   </div>
                   <div className="card-body pb-2">
@@ -1007,6 +1064,8 @@ const StudentPromotion = () => {
                           </div>
                         </div>
                       </div>
+                      {actionMode === "promote" ? (
+                        <>
                       <Link
                         to="#"
                         className="badge bg-primary badge-xl exchange-link text-white d-flex align-items-center justify-content-center mx-md-4 mx-auto my-md-0 my-4 flex-shrink-0"
@@ -1034,6 +1093,25 @@ const StudentPromotion = () => {
                           </div>
                         </div>
                       </div>
+                        </>
+                      ) : (
+                        <div className="card w-100 ms-md-4">
+                          <div className="card-body">
+                            <div className="mb-3">
+                              <label className="form-label">Action</label>
+                              <div className="form-control-plaintext p-0 text-danger fw-semibold">
+                                School Leaving
+                              </div>
+                            </div>
+                            <div>
+                              <label className="form-label mb-2">Leaving Date</label>
+                              <div className="form-control-plaintext p-0">
+                                {formatDate(leavingDate)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1145,26 +1223,6 @@ const StudentPromotion = () => {
                   </div>
                 </div>
                 <div className="promoted-year text-center">
-                  <div className="mb-2 d-flex justify-content-center align-items-center gap-3 flex-wrap">
-                    <label className="d-flex align-items-center mb-0">
-                      <input
-                        type="radio"
-                        className="form-check-input me-2"
-                        checked={actionMode === "promote"}
-                        onChange={() => setActionMode("promote")}
-                      />
-                      Promote
-                    </label>
-                    <label className="d-flex align-items-center mb-0">
-                      <input
-                        type="radio"
-                        className="form-check-input me-2"
-                        checked={actionMode === "leave"}
-                        onChange={() => setActionMode("leave")}
-                      />
-                      Leaving
-                    </label>
-                  </div>
                   <p>
                     {selectedRowKeys.length} student(s) selected — target:{" "}
                     <strong>{actionMode === "promote" ? targetYearLabel : "School Leaving"}</strong>
