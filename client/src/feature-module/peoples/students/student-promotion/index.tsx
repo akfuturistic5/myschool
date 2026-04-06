@@ -124,16 +124,43 @@ const StudentPromotion = () => {
     user && (isHeadmasterRole(user) || isAdministrativeRole(user))
   );
 
-  useEffect(() => {
-    if (!academicYears?.length) return;
-    setToAcademicYearId((prev) => {
-      if (prev && academicYears.some((y) => String(y.id) === prev)) return prev;
-      const other = academicYears.find(
-        (y) => fromAcademicYearId == null || Number(y.id) !== Number(fromAcademicYearId)
-      );
-      return String((other ?? academicYears[0]).id);
+  // Extract first 4-digit year from labels like "2025-26", "2025-2026", etc.
+  const getAcademicYearSortKey = useCallback((yearName?: string | null) => {
+    const m = String(yearName || "").match(/\b(19|20)\d{2}\b/);
+    return m ? parseInt(m[0], 10) : null;
+  }, []);
+
+  const currentAcademicYear = useMemo(
+    () => academicYears?.find((y) => Number(y.id) === Number(fromAcademicYearId)) ?? null,
+    [academicYears, fromAcademicYearId]
+  );
+
+  const targetAcademicYears = useMemo(() => {
+    if (!academicYears?.length) return [];
+    if (fromAcademicYearId == null || !currentAcademicYear) return academicYears;
+
+    const currentKey = getAcademicYearSortKey(currentAcademicYear.year_name);
+    return academicYears.filter((y) => {
+      // Never allow selecting current year as promotion target.
+      if (Number(y.id) === Number(fromAcademicYearId)) return false;
+
+      const k = getAcademicYearSortKey(y.year_name);
+      if (currentKey != null && k != null) return k > currentKey;
+      // Fallback when labels are non-standard: use id ordering.
+      return Number(y.id) > Number(fromAcademicYearId);
     });
-  }, [academicYears, fromAcademicYearId]);
+  }, [academicYears, currentAcademicYear, fromAcademicYearId, getAcademicYearSortKey]);
+
+  useEffect(() => {
+    if (!targetAcademicYears?.length) {
+      setToAcademicYearId("");
+      return;
+    }
+    setToAcademicYearId((prev) => {
+      if (prev && targetAcademicYears.some((y) => String(y.id) === prev)) return prev;
+      return String(targetAcademicYears[0].id);
+    });
+  }, [targetAcademicYears]);
 
   useEffect(() => {
     if (!classesFrom.length) return;
@@ -287,11 +314,11 @@ const StudentPromotion = () => {
   );
   const yearOptions = useMemo(
     () =>
-      (academicYears ?? []).map((year) => ({
+      (targetAcademicYears ?? []).map((year) => ({
         value: year.id.toString(),
         label: year.year_name ?? `Year #${year.id}`,
       })),
-    [academicYears]
+    [targetAcademicYears]
   );
 
   const onTableSelectionChange = useCallback((keys: (string | number)[]) => {
@@ -924,6 +951,11 @@ const StudentPromotion = () => {
                               <div className="form-control text-danger">
                                 <i className="ti ti-alert-circle me-2"></i>
                                 Error: {academicYearsError}
+                              </div>
+                            ) : yearOptions.length === 0 ? (
+                              <div className="form-control text-warning">
+                                <i className="ti ti-alert-triangle me-2"></i>
+                                No future academic year available for promotion
                               </div>
                             ) : (
                               <CommonSelect

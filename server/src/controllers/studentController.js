@@ -1202,6 +1202,41 @@ const promoteStudents = async (req, res) => {
       from_academic_year_id: fromAcademicYearId,
     } = req.body;
 
+    // Disallow backward / same-year promotion.
+    // Compare by year label (preferred), with id-order fallback.
+    const parseYearKey = (name) => {
+      const m = String(name || '').match(/\b(19|20)\d{2}\b/);
+      return m ? parseInt(m[0], 10) : null;
+    };
+    if (fromAcademicYearId != null) {
+      const yearsRes = await query(
+        `SELECT id, year_name
+         FROM academic_years
+         WHERE id = ANY($1::int[])`,
+        [[Number(fromAcademicYearId), Number(toAcademicYearId)]]
+      );
+      const fromRow = yearsRes.rows.find((r) => Number(r.id) === Number(fromAcademicYearId));
+      const toRow = yearsRes.rows.find((r) => Number(r.id) === Number(toAcademicYearId));
+      if (fromRow && toRow) {
+        const fromKey = parseYearKey(fromRow.year_name);
+        const toKey = parseYearKey(toRow.year_name);
+        const isForward = (fromKey != null && toKey != null)
+          ? toKey > fromKey
+          : Number(toAcademicYearId) > Number(fromAcademicYearId);
+        if (!isForward) {
+          return res.status(400).json({
+            status: 'ERROR',
+            message: 'Target academic year must be greater than current academic year',
+          });
+        }
+      } else if (Number(toAcademicYearId) <= Number(fromAcademicYearId)) {
+        return res.status(400).json({
+          status: 'ERROR',
+          message: 'Target academic year must be greater than current academic year',
+        });
+      }
+    }
+
     const userId = req.user?.id;
     let promotedByStaffId = null;
     if (userId) {
