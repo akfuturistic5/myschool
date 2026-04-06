@@ -1238,6 +1238,7 @@ const StudentPromotion = () => {
                     {actionMode === "promote" ? "Promote Students" : "Mark as Leaving"}
                   </button>
                 </div>
+                {actionMode === "promote" && (
                 <div className="card mt-4">
                   <div className="card-header border-0 pb-0">
                     <div className="bg-light-gray p-3 rounded">
@@ -1272,6 +1273,8 @@ const StudentPromotion = () => {
                     )}
                   </div>
                 </div>
+                )}
+                {actionMode === "leave" && (
                 <div className="card mt-3">
                   <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                     <h4 className="mb-3">Leaving Students</h4>
@@ -1380,6 +1383,7 @@ const StudentPromotion = () => {
                     )}
                   </div>
                 </div>
+                )}
               </div>
             </div>
           </div>
