@@ -1074,6 +1074,121 @@ const updateStudent = async (req, res) => {
   }
 };
 
+const normalizeOverallResult = (val) => {
+  const s = String(val || '').trim().toLowerCase();
+  if (!s) return 'Not Available';
+  if (['pass', 'p', 'passed'].includes(s)) return 'Pass';
+  if (['fail', 'f', 'failed'].includes(s)) return 'Fail';
+  return 'Not Available';
+};
+
+const computeLastClassResult = async (client, studentId, classId, academicYearId) => {
+  try {
+    if (!studentId) return 'Not Available';
+    const params = [studentId];
+    const scoped = [];
+    if (classId != null) {
+      params.push(classId);
+      scoped.push(`e.class_id = $${params.length}`);
+    }
+    if (academicYearId != null) {
+      params.push(academicYearId);
+      scoped.push(`e.academic_year_id = $${params.length}`);
+    }
+    const scopedSql = scoped.length > 0 ? `AND ${scoped.join(' AND ')}` : '';
+    const examRes = await client.query(
+      `SELECT er.exam_id, COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date
+       FROM exam_results er
+       LEFT JOIN exams e ON e.id = er.exam_id
+       WHERE er.student_id = $1
+         AND er.exam_id IS NOT NULL
+         ${scopedSql}
+       ORDER BY COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST, er.exam_id DESC
+       LIMIT 1`,
+      params
+    );
+    const latestExamId = examRes.rows[0]?.exam_id;
+    if (!latestExamId) return 'Not Available';
+    const summary = await client.query(
+      `SELECT
+         COUNT(*)::int AS subjects_count,
+         COALESCE(SUM(CASE WHEN er.is_absent = true THEN 0 ELSE COALESCE(er.marks_obtained, er.obtained_marks, er.marks, er.marks_scored, er.score, 0) END), 0)::numeric AS total_obtained,
+         COALESCE(SUM(COALESCE(er.min_marks, er.pass_marks, er.min_mark, er.min, 0)), 0)::numeric AS total_min
+       FROM exam_results er
+       WHERE er.student_id = $1 AND er.exam_id = $2`,
+      [studentId, latestExamId]
+    );
+    const row = summary.rows[0];
+    if (!row || Number(row.subjects_count || 0) === 0) return 'Not Available';
+    return Number(row.total_obtained || 0) >= Number(row.total_min || 0) ? 'Pass' : 'Fail';
+  } catch (e) {
+    console.warn('computeLastClassResult failed:', e.message);
+    return 'Not Available';
+  }
+};
+
+const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
+  if (!studentRow) return;
+
+  // Deactivate student login
+  if (studentRow.user_id != null) {
+    await client.query(
+      'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+      [studentRow.user_id]
+    );
+  }
+
+  // Deactivate guardian + guardian login only when no other active student is linked to that guardian.
+  if (studentRow.guardian_id != null) {
+    const otherGuardianActive = await client.query(
+      'SELECT 1 FROM students WHERE guardian_id = $1 AND is_active = true AND id <> $2 LIMIT 1',
+      [studentRow.guardian_id, studentRow.id]
+    );
+    if (otherGuardianActive.rows.length === 0) {
+      await client.query(
+        'UPDATE guardians SET is_active = false, modified_at = NOW() WHERE id = $1',
+        [studentRow.guardian_id]
+      );
+      const guardianUser = await client.query(
+        'SELECT user_id FROM guardians WHERE id = $1 LIMIT 1',
+        [studentRow.guardian_id]
+      );
+      const guardianUid = guardianUser.rows[0]?.user_id;
+      if (guardianUid != null) {
+        await client.query(
+          'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+          [guardianUid]
+        );
+      }
+    }
+  }
+
+  // Deactivate parent users only when no other active student is linked to this parent.
+  if (studentRow.parent_id != null) {
+    const otherParentActive = await client.query(
+      'SELECT 1 FROM students WHERE parent_id = $1 AND is_active = true AND id <> $2 LIMIT 1',
+      [studentRow.parent_id, studentRow.id]
+    );
+    if (otherParentActive.rows.length === 0) {
+      const pRes = await client.query(
+        `SELECT father_user_id, mother_user_id, user_id
+         FROM parents WHERE id = $1 LIMIT 1`,
+        [studentRow.parent_id]
+      );
+      if (pRes.rows.length > 0) {
+        const p = pRes.rows[0];
+        const uniqueUids = [...new Set([p.father_user_id, p.mother_user_id, p.user_id].filter((v) => v != null))];
+        for (const uid of uniqueUids) {
+          await client.query(
+            'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+            [uid]
+          );
+        }
+      }
+    }
+  }
+};
+
 /**
  * Bulk promote: update students' academic year / class / section and record history in student_promotions.
  */
@@ -1226,6 +1341,295 @@ const promoteStudents = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to promote students',
+    });
+  }
+};
+
+/**
+ * Bulk mark students as leaving school from the promotion screen.
+ * Stores a full snapshot in leaving_students and deactivates linked accounts.
+ */
+const leaveStudents = async (req, res) => {
+  try {
+    const {
+      student_ids: studentIds,
+      leaving_date: leavingDateRaw,
+      reason,
+      remarks,
+      from_academic_year_id: fromAcademicYearId,
+    } = req.body;
+
+    const leavingDate = leavingDateRaw || new Date().toISOString().slice(0, 10);
+    const userId = req.user?.id;
+    let leftByStaffId = null;
+
+    if (userId) {
+      const staffRes = await query(
+        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        [userId]
+      );
+      if (staffRes.rows.length > 0) leftByStaffId = staffRes.rows[0].id;
+    }
+
+    const uniqueIds = [...new Set(studentIds.map((n) => parseInt(n, 10)).filter((n) => !Number.isNaN(n)))];
+    if (uniqueIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      let left = 0;
+      for (const sid of uniqueIds) {
+        const sRes = await client.query(
+          `SELECT
+             s.id, s.user_id, s.parent_id, s.guardian_id, s.is_active,
+             s.admission_number, s.first_name, s.last_name,
+             s.class_id, s.section_id, s.academic_year_id, s.admission_date
+           FROM students s
+           WHERE s.id = $1
+           LIMIT 1`,
+          [sid]
+        );
+        if (sRes.rows.length === 0) {
+          const err = new Error(`Student ${sid} not found`);
+          err.statusCode = 400;
+          throw err;
+        }
+        const s = sRes.rows[0];
+        if (s.is_active === false || s.is_active === 'f' || s.is_active === 0) {
+          const err = new Error(`Student ${sid} is already inactive`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (
+          fromAcademicYearId != null &&
+          s.academic_year_id != null &&
+          Number(s.academic_year_id) !== Number(fromAcademicYearId)
+        ) {
+          const err = new Error(`Student ${sid} is not in the selected current academic year`);
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const alreadyLeft = await client.query(
+          'SELECT id FROM leaving_students WHERE student_id = $1 AND is_active = true LIMIT 1',
+          [sid]
+        );
+        if (alreadyLeft.rows.length > 0) {
+          const err = new Error(`Student ${sid} already has an active leaving record`);
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const firstHistory = await client.query(
+          `SELECT from_class_id, from_section_id, from_academic_year_id
+           FROM student_promotions
+           WHERE student_id = $1
+           ORDER BY promotion_date ASC NULLS LAST, id ASC
+           LIMIT 1`,
+          [sid]
+        );
+        const first = firstHistory.rows[0] || {};
+
+        const joiningClassId = first.from_class_id ?? s.class_id ?? null;
+        const joiningSectionId = first.from_section_id ?? s.section_id ?? null;
+        const joiningAcademicYearId = first.from_academic_year_id ?? s.academic_year_id ?? null;
+
+        const lastClassResult = await computeLastClassResult(
+          client,
+          sid,
+          s.class_id ?? null,
+          s.academic_year_id ?? null
+        );
+
+        await client.query(
+          `INSERT INTO leaving_students (
+             student_id, admission_number, student_first_name, student_last_name,
+             joining_class_id, joining_section_id, joining_academic_year_id, joining_date,
+             last_class_id, last_section_id, last_academic_year_id, leaving_date,
+             last_class_result, reason, remarks, left_by, created_by
+           ) VALUES (
+             $1, $2, $3, $4,
+             $5, $6, $7, $8,
+             $9, $10, $11, $12,
+             $13, $14, $15, $16, $17
+           )`,
+          [
+            sid,
+            s.admission_number ?? null,
+            s.first_name ?? null,
+            s.last_name ?? null,
+            joiningClassId,
+            joiningSectionId,
+            joiningAcademicYearId,
+            s.admission_date ?? null,
+            s.class_id ?? null,
+            s.section_id ?? null,
+            s.academic_year_id ?? null,
+            leavingDate,
+            normalizeOverallResult(lastClassResult),
+            reason || null,
+            remarks || null,
+            leftByStaffId,
+            userId || null,
+          ]
+        );
+
+        await client.query(
+          `UPDATE students
+           SET is_active = false, modified_at = NOW()
+           WHERE id = $1`,
+          [sid]
+        );
+
+        await deactivateLinkedAccountsForLeftStudent(client, s);
+        left += 1;
+      }
+      return left;
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Students marked as leaving successfully',
+      data: { left: result },
+    });
+  } catch (error) {
+    console.error('Error leaving students:', error);
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: error.message || 'Invalid leave request',
+      });
+    }
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to leave students',
+    });
+  }
+};
+
+// Get student promotion history
+const getStudentPromotions = async (req, res) => {
+  try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+
+    const result = await query(
+      `SELECT
+        sp.id,
+        sp.student_id,
+        sp.from_class_id,
+        sp.to_class_id,
+        sp.from_section_id,
+        sp.to_section_id,
+        sp.from_academic_year_id,
+        sp.to_academic_year_id,
+        sp.promotion_date,
+        sp.status,
+        sp.remarks,
+        sp.promoted_by,
+        sp.created_at,
+        sp.modified_at,
+        s.admission_number,
+        s.roll_number,
+        s.first_name,
+        s.last_name,
+        fc.class_name AS from_class_name,
+        tc.class_name AS to_class_name,
+        fs.section_name AS from_section_name,
+        ts.section_name AS to_section_name,
+        fay.year_name AS from_academic_year_name,
+        tay.year_name AS to_academic_year_name,
+        st.first_name AS promoted_by_first_name,
+        st.last_name AS promoted_by_last_name
+      FROM student_promotions sp
+      LEFT JOIN students s ON s.id = sp.student_id
+      LEFT JOIN classes fc ON fc.id = sp.from_class_id
+      LEFT JOIN classes tc ON tc.id = sp.to_class_id
+      LEFT JOIN sections fs ON fs.id = sp.from_section_id
+      LEFT JOIN sections ts ON ts.id = sp.to_section_id
+      LEFT JOIN academic_years fay ON fay.id = sp.from_academic_year_id
+      LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
+      LEFT JOIN staff st ON st.id = sp.promoted_by
+      ORDER BY sp.promotion_date DESC, sp.id DESC
+      LIMIT $1`,
+      [limit]
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student promotion history fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching student promotions:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch student promotion history',
+    });
+  }
+};
+
+// Get leaving students history with join/last snapshots and names.
+const getLeavingStudents = async (req, res) => {
+  try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+
+    const result = await query(
+      `SELECT
+         ls.id,
+         ls.student_id,
+         ls.admission_number,
+         ls.student_first_name,
+         ls.student_last_name,
+         ls.joining_class_id,
+         ls.joining_section_id,
+         ls.joining_academic_year_id,
+         ls.joining_date,
+         ls.last_class_id,
+         ls.last_section_id,
+         ls.last_academic_year_id,
+         ls.leaving_date,
+         ls.last_class_result,
+         ls.reason,
+         ls.remarks,
+         ls.left_by,
+         ls.created_at,
+         ls.modified_at,
+         jc.class_name AS joining_class_name,
+         js.section_name AS joining_section_name,
+         jay.year_name AS joining_academic_year_name,
+         lc.class_name AS last_class_name,
+         lsn.section_name AS last_section_name,
+         lay.year_name AS last_academic_year_name,
+         st.first_name AS left_by_first_name,
+         st.last_name AS left_by_last_name
+       FROM leaving_students ls
+       LEFT JOIN classes jc ON jc.id = ls.joining_class_id
+       LEFT JOIN sections js ON js.id = ls.joining_section_id
+       LEFT JOIN academic_years jay ON jay.id = ls.joining_academic_year_id
+       LEFT JOIN classes lc ON lc.id = ls.last_class_id
+       LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
+       LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
+       LEFT JOIN staff st ON st.id = ls.left_by
+       WHERE COALESCE(ls.is_active, true) = true
+       ORDER BY ls.leaving_date DESC, ls.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Leaving students fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching leaving students:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch leaving students',
     });
   }
 };
@@ -2940,6 +3344,9 @@ module.exports = {
   createStudent,
   updateStudent,
   promoteStudents,
+  leaveStudents,
+  getStudentPromotions,
+  getLeavingStudents,
   getAllStudents,
   getTeacherStudents,
   getStudentById,

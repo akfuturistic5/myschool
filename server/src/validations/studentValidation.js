@@ -92,4 +92,12 @@ const promoteStudentsSchema = Joi.object({
   from_academic_year_id: Joi.number().integer().positive().optional().allow(null),
 });
 
-module.exports = { createStudentSchema, updateStudentSchema, promoteStudentsSchema };
+const leaveStudentsSchema = Joi.object({
+  student_ids: Joi.array().items(Joi.number().integer().positive()).min(1).required(),
+  leaving_date: Joi.date().iso().optional().allow(null),
+  reason: Joi.string().trim().optional().allow(null, ''),
+  remarks: Joi.string().trim().optional().allow(null, ''),
+  from_academic_year_id: Joi.number().integer().positive().optional().allow(null),
+});
+
+module.exports = { createStudentSchema, updateStudentSchema, promoteStudentsSchema, leaveStudentsSchema };

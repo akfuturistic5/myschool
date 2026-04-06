@@ -544,7 +544,7 @@ const getDashboardStudentActivity = async (req, res) => {
       const leaveYear = hasYearFilter ? 'AND st.academic_year_id = $1' : '';
       const leaveRes = await query(
         `SELECT la.id, st.first_name, st.last_name, lt.leave_type AS leave_type_name,
-                COALESCE(la.applied_at, la.created_at, la.start_date) AS sort_date
+                COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) AS sort_date
          FROM leave_applications la
          INNER JOIN students st ON la.student_id = st.id
          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
@@ -1437,7 +1437,9 @@ const getRecentActivity = async (req, res) => {
     const params = hasYearFilter ? [academicYearId] : [];
 
     const result = await query(
-      `SELECT la.id, la.start_date, la.end_date, la.applied_at, la.created_at,
+      `SELECT la.id, la.start_date, la.end_date,
+             COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) AS applied_at,
+             la.created_at,
              lt.leave_type AS leave_type_name,
              COALESCE(s.first_name || ' ' || s.last_name, st.first_name || ' ' || st.last_name) AS applicant_name,
              c.class_name, sec.section_name
@@ -1448,7 +1450,7 @@ const getRecentActivity = async (req, res) => {
       LEFT JOIN classes c ON st.class_id = c.id
       LEFT JOIN sections sec ON st.section_id = sec.id
       WHERE 1=1${yearFilter}
-      ORDER BY COALESCE(la.applied_at, la.created_at, la.start_date) DESC NULLS LAST
+      ORDER BY COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) DESC NULLS LAST
       LIMIT 1`,
       params
     );

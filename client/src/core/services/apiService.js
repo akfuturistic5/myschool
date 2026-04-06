@@ -328,6 +328,23 @@ class ApiService {
     });
   }
 
+  async getStudentPromotions(limit = 200) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    return this.makeRequest(`/students/promotions?limit=${safeLimit}`);
+  }
+
+  async leaveStudents(payload) {
+    return this.makeRequest('/students/leave', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getLeavingStudents(limit = 200) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    return this.makeRequest(`/students/leaving?limit=${safeLimit}`);
+  }
+
   async getStudentById(id) {
     return this.makeRequest(`/students/${id}`);
   }

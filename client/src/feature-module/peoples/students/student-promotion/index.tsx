@@ -16,6 +16,22 @@ import { useStudents } from "../../../../core/hooks/useStudents";
 import { apiService } from "../../../../core/services/apiService.js";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 
+type AcademicYearItem = { id: number | string; year_name?: string };
+type ClassItem = { id: number | string; class_name?: string };
+type SectionItem = { id: number | string; section_name?: string };
+type StudentItem = {
+  id: number;
+  class_id?: number | string | null;
+  section_id?: number | string | null;
+  class_name?: string | null;
+  section_name?: string | null;
+  admission_number?: string | null;
+  roll_number?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  photo_url?: string | null;
+};
+
 const StudentPromotion = () => {
   /** Show roster + checkboxes immediately (otherwise the list block stays hidden until "Manage Promotion"). */
   const [isPromotion, setIsPromotion] = useState<boolean>(true);
@@ -23,13 +39,42 @@ const StudentPromotion = () => {
   const promoteModalRef = useRef<HTMLDivElement>(null);
 
   const fromAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { students, loading: studentsLoading, error: studentsError, refetch: refetchStudents } =
-    useStudents();
-  const { academicYears, loading: academicYearsLoading, error: academicYearsError } =
-    useAcademicYears();
+  const useClassesTyped = useClasses as (
+    academicYearId?: number | null
+  ) => { classes: ClassItem[]; loading: boolean; error: string | null };
+  const useSectionsTyped = useSections as (
+    classId?: number | null
+  ) => { sections: SectionItem[]; loading: boolean; error: string | null };
+  const useStudentsTyped = useStudents as () => {
+    students: StudentItem[];
+    loading: boolean;
+    error: string | null;
+    refetch: () => Promise<void> | void;
+  };
+  const useAcademicYearsTyped = useAcademicYears as () => {
+    academicYears: AcademicYearItem[];
+    loading: boolean;
+    error: string | null;
+  };
+
+  const {
+    students,
+    loading: studentsLoading,
+    error: studentsError,
+    refetch: refetchStudents,
+  } = useStudentsTyped();
+  const {
+    academicYears,
+    loading: academicYearsLoading,
+    error: academicYearsError,
+  } = useAcademicYearsTyped();
 
   const { classes: classesFrom, loading: classesFromLoading, error: classesFromError } =
-    useClasses(fromAcademicYearId ?? null);
+    useClassesTyped(
+      fromAcademicYearId == null || Number.isNaN(Number(fromAcademicYearId))
+        ? null
+        : Number(fromAcademicYearId)
+    );
 
   const [toAcademicYearId, setToAcademicYearId] = useState<string>("");
   const [fromClassId, setFromClassId] = useState<string>("");
@@ -39,7 +84,7 @@ const StudentPromotion = () => {
 
   const toYearNum = toAcademicYearId ? parseInt(toAcademicYearId, 10) : null;
   const { classes: classesTo, loading: classesToLoading, error: classesToError } =
-    useClasses(toYearNum);
+    useClassesTyped(toYearNum);
 
   const fromClassNum = fromClassId ? parseInt(fromClassId, 10) : null;
   const toClassNum = toClassId ? parseInt(toClassId, 10) : null;
@@ -47,17 +92,20 @@ const StudentPromotion = () => {
     sections: fromSections,
     loading: fromSectionsLoading,
     error: fromSectionsError,
-  } = useSections(fromClassNum);
+  } = useSectionsTyped(fromClassNum);
   const {
     sections: toSections,
     loading: toSectionsLoading,
     error: toSectionsError,
-  } = useSections(toClassNum);
+  } = useSectionsTyped(toClassNum);
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<(string | number)[]>([]);
   const [promoteSubmitting, setPromoteSubmitting] = useState(false);
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [promoteSuccess, setPromoteSuccess] = useState<string | null>(null);
+  const [promotionHistory, setPromotionHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const user = useSelector(selectUser);
   const canPromote = Boolean(
@@ -186,7 +234,7 @@ const StudentPromotion = () => {
     () =>
       classesFrom.map((cls) => ({
         value: cls.id.toString(),
-        label: cls.class_name,
+        label: cls.class_name ?? "Unnamed Class",
       })),
     [classesFrom]
   );
@@ -194,7 +242,7 @@ const StudentPromotion = () => {
     () =>
       classesTo.map((cls) => ({
         value: cls.id.toString(),
-        label: cls.class_name,
+        label: cls.class_name ?? "Unnamed Class",
       })),
     [classesTo]
   );
@@ -202,7 +250,7 @@ const StudentPromotion = () => {
     () =>
       fromSections.map((section) => ({
         value: section.id.toString(),
-        label: section.section_name,
+        label: section.section_name ?? "Unnamed Section",
       })),
     [fromSections]
   );
@@ -210,7 +258,7 @@ const StudentPromotion = () => {
     () =>
       toSections.map((section) => ({
         value: section.id.toString(),
-        label: section.section_name,
+        label: section.section_name ?? "Unnamed Section",
       })),
     [toSections]
   );
@@ -218,7 +266,7 @@ const StudentPromotion = () => {
     () =>
       (academicYears ?? []).map((year) => ({
         value: year.id.toString(),
-        label: year.year_name,
+        label: year.year_name ?? `Year #${year.id}`,
       })),
     [academicYears]
   );
@@ -227,9 +275,31 @@ const StudentPromotion = () => {
     setSelectedRowKeys(keys);
   }, []);
 
+  const fetchPromotionHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      const res = await apiService.getStudentPromotions(500);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load promotion history");
+      }
+      setPromotionHistory(Array.isArray(res?.data) ? res.data : []);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load promotion history";
+      setHistoryError(msg);
+      setPromotionHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setSelectedRowKeys((prev) => prev.filter((k) => data.some((row) => row.key === k)));
   }, [data]);
+
+  useEffect(() => {
+    void fetchPromotionHistory();
+  }, [fetchPromotionHistory]);
 
   const columns = useMemo(
     () => [
@@ -318,7 +388,7 @@ const StudentPromotion = () => {
           String(a.result).length - String(b.result).length,
       },
     ],
-    [all_routes.studentDetail]
+    [routes.studentDetail]
   );
 
   /** Same pattern as profile password modal — use getOrCreateInstance; ref alone can miss the node timing. */
@@ -397,6 +467,7 @@ const StudentPromotion = () => {
       );
       setSelectedRowKeys([]);
       await refetchStudents();
+      await fetchPromotionHistory();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Promotion failed";
       setPromoteError(msg);
@@ -404,6 +475,55 @@ const StudentPromotion = () => {
       setPromoteSubmitting(false);
     }
   };
+
+  const historyRows = useMemo(
+    () =>
+      promotionHistory.map((row: any) => ({
+        key: String(row.id),
+        promotionDate: row.promotion_date || "N/A",
+        admissionNumber: row.admission_number || "N/A",
+        rollNumber: row.roll_number || "N/A",
+        studentName:
+          [row.first_name, row.last_name].filter(Boolean).join(" ") || `Student #${row.student_id}`,
+        fromAcademicYear:
+          row.from_academic_year_name ||
+          (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : "N/A"),
+        toAcademicYear:
+          row.to_academic_year_name ||
+          (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : "N/A"),
+        fromClass:
+          row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : "N/A"),
+        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : "N/A"),
+        fromSection:
+          row.from_section_name ||
+          (row.from_section_id != null ? `Section #${row.from_section_id}` : "N/A"),
+        toSection:
+          row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : "N/A"),
+        status: row.status || "N/A",
+        promotedBy:
+          [row.promoted_by_first_name, row.promoted_by_last_name].filter(Boolean).join(" ") ||
+          (row.promoted_by != null ? `Staff #${row.promoted_by}` : "System"),
+      })),
+    [promotionHistory]
+  );
+
+  const historyColumns = useMemo(
+    () => [
+      { title: "Date", dataIndex: "promotionDate" },
+      { title: "Admission No", dataIndex: "admissionNumber" },
+      { title: "Roll No", dataIndex: "rollNumber" },
+      { title: "Student", dataIndex: "studentName" },
+      { title: "From Session", dataIndex: "fromAcademicYear" },
+      { title: "To Session", dataIndex: "toAcademicYear" },
+      { title: "From Class", dataIndex: "fromClass" },
+      { title: "To Class", dataIndex: "toClass" },
+      { title: "From Section", dataIndex: "fromSection" },
+      { title: "To Section", dataIndex: "toSection" },
+      { title: "Status", dataIndex: "status" },
+      { title: "Promoted By", dataIndex: "promotedBy" },
+    ],
+    []
+  );
 
   return (
     <>
@@ -819,6 +939,40 @@ const StudentPromotion = () => {
                   >
                     Promote Students
                   </button>
+                </div>
+                <div className="card mt-4">
+                  <div className="card-header border-0 pb-0">
+                    <div className="bg-light-gray p-3 rounded">
+                      <h4>Promotion History</h4>
+                      <p>
+                        Shows already promoted students with from/to session, class, section, date,
+                        and promoter details.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="card-body p-0 py-3">
+                    {historyLoading && (
+                      <div className="text-center p-4">
+                        <div className="spinner-border text-primary" role="status">
+                          <span className="visually-hidden">Loading...</span>
+                        </div>
+                        <p className="mt-2">Loading promotion history...</p>
+                      </div>
+                    )}
+                    {historyError && (
+                      <div className="text-center p-4">
+                        <div className="alert alert-danger mb-0">{historyError}</div>
+                      </div>
+                    )}
+                    {!historyLoading && !historyError && historyRows.length === 0 && (
+                      <div className="alert alert-info mx-3 mb-0" role="alert">
+                        No promotion history records found yet.
+                      </div>
+                    )}
+                    {!historyLoading && !historyError && historyRows.length > 0 && (
+                      <Table dataSource={historyRows} columns={historyColumns} Selection={false} />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
