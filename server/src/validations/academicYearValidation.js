@@ -20,7 +20,12 @@ const updateAcademicYearSchema = Joi.object({
   .min(1)
   .unknown(false);
 
+const deleteAcademicYearSchema = Joi.object({
+  password: Joi.string().min(1).max(200).required(),
+}).unknown(false);
+
 module.exports = {
   createAcademicYearSchema,
   updateAcademicYearSchema,
+  deleteAcademicYearSchema,
 };

@@ -1,4 +1,5 @@
 const { query, executeTransaction } = require('../config/database');
+const bcrypt = require('bcryptjs');
 
 function parseYearId(param) {
   const n = parseInt(param, 10);
@@ -152,6 +153,46 @@ const getAcademicYearSummary = async (req, res) => {
     });
   }
 };
+
+async function getAcademicYearUsageCounts(id) {
+  const statsRes = await query(
+    `
+    SELECT
+      (SELECT COUNT(*)::int FROM classes c WHERE c.academic_year_id = $1) AS classes_count,
+      (SELECT COUNT(*)::int FROM sections s
+        INNER JOIN classes c ON s.class_id = c.id
+        WHERE c.academic_year_id = $1) AS sections_count,
+      (SELECT COUNT(*)::int FROM students st WHERE st.academic_year_id = $1) AS students_count,
+      (SELECT COUNT(*)::int FROM class_schedules cs WHERE cs.academic_year_id = $1) AS class_schedules_count,
+      (SELECT COUNT(*)::int FROM fee_structures fs WHERE fs.academic_year_id = $1) AS fee_structures_count,
+      (SELECT COUNT(*)::int FROM exams e WHERE e.academic_year_id = $1) AS exams_count,
+      (SELECT COUNT(*)::int FROM holidays h WHERE h.academic_year_id = $1) AS holidays_count,
+      (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.to_academic_year_id = $1) AS promotions_into_count,
+      (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.from_academic_year_id = $1) AS promotions_from_count,
+      (SELECT COUNT(*)::int FROM attendance a WHERE a.academic_year_id = $1) AS attendance_records_count,
+      (SELECT COUNT(*)::int FROM teacher_routines tr WHERE tr.academic_year_id = $1) AS teacher_routines_count
+    `,
+    [id]
+  );
+  return statsRes.rows[0] || {};
+}
+
+function hasBlockingReferences(usage) {
+  const keys = [
+    'classes_count',
+    'sections_count',
+    'students_count',
+    'class_schedules_count',
+    'fee_structures_count',
+    'exams_count',
+    'holidays_count',
+    'promotions_into_count',
+    'promotions_from_count',
+    'attendance_records_count',
+    'teacher_routines_count',
+  ];
+  return keys.some((k) => Number(usage?.[k] || 0) > 0);
+}
 
 const createAcademicYear = async (req, res) => {
   try {
@@ -316,6 +357,84 @@ const updateAcademicYear = async (req, res) => {
   }
 };
 
+const deleteAcademicYear = async (req, res) => {
+  try {
+    const id = parseYearId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid academic year id' });
+    }
+
+    const enteredPassword = String(req.body?.password || '');
+    // Avoid any logging of password; just enforce presence (schema already checks).
+    if (!enteredPassword.trim()) {
+      return res.status(400).json({ status: 'ERROR', message: 'Password is required' });
+    }
+    // Verify against users.password_hash (same as login)
+    const userId = req.user?.id;
+    const ph = await query('SELECT password_hash FROM users WHERE id = $1 LIMIT 1', [userId]);
+    const passwordHash = ph.rows?.[0]?.password_hash;
+    let ok = false;
+    try {
+      ok = await bcrypt.compare(enteredPassword, String(passwordHash || ''));
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      return res.status(403).json({
+        status: 'ERROR',
+        code: 'PASSWORD_INCORRECT',
+        message: 'Password is incorrect',
+      });
+    }
+
+    const existing = await query('SELECT * FROM academic_years WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ status: 'ERROR', message: 'Academic year not found' });
+    }
+
+    const cur = existing.rows[0];
+    const isCurrent = cur.is_current === true || cur.is_current === 't';
+    if (isCurrent) {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DELETE_CURRENT_BLOCKED',
+        message: 'Cannot delete the current academic year. Mark another year as current first.',
+      });
+    }
+
+    // Hard delete is only safe when no FK references exist (most FKs are RESTRICT).
+    const usage = await getAcademicYearUsageCounts(id);
+    if (hasBlockingReferences(usage)) {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DELETE_HAS_REFERENCES',
+        message:
+          'This academic year is already used in school records. It cannot be deleted. Set it to inactive instead.',
+        data: { usage },
+      });
+    }
+
+    await executeTransaction(async (client) => {
+      // Lock row to avoid races with new inserts.
+      await client.query('SELECT id FROM academic_years WHERE id = $1 FOR UPDATE', [id]);
+      // class_syllabus is ON DELETE SET NULL; others should be zero due to usage check above.
+      await client.query('DELETE FROM academic_years WHERE id = $1', [id]);
+    });
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Academic year deleted successfully',
+      data: { id },
+    });
+  } catch (error) {
+    console.error('Error deleting academic year:', error);
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to delete academic year',
+    });
+  }
+};
+
 module.exports = {
   getAllAcademicYears,
   getAllAcademicYearsManage,
@@ -323,4 +442,5 @@ module.exports = {
   getAcademicYearSummary,
   createAcademicYear,
   updateAcademicYear,
+  deleteAcademicYear,
 };

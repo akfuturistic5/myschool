@@ -217,6 +217,13 @@ class ApiService {
     });
   }
 
+  async deleteAcademicYear(id, password) {
+    return this.makeRequest(`/academic-years/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+  }
+
   // Classes
   async getClasses() {
     return this.makeRequest('/classes');
