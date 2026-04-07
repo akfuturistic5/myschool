@@ -5,6 +5,8 @@ import { all_routes } from "../../router/all_routes";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { getDashboardForRole } from "../../../core/utils/roleUtils";
 import { apiService } from "../../../core/services/apiService";
+import Swal from "sweetalert2";
+import withReactContent from "sweetalert2-react-content";
 
 type Stats = Record<string, number | undefined>;
 
@@ -64,6 +66,9 @@ const AcademicYearDetail = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveOk, setSaveOk] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const MySwal = withReactContent(Swal);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(id)) return;
@@ -154,6 +159,66 @@ const AcademicYearDetail = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const hasBlockingData = useMemo(() => {
+    const values = Object.values(stats || {});
+    return values.some((v) => Number(v || 0) > 0);
+  }, [stats]);
+
+  const handleDelete = async () => {
+    if (!Number.isFinite(id) || !year) return;
+    setDeleteError(null);
+    const name = String(year.year_name || "this academic year");
+
+    const result = await MySwal.fire({
+      icon: "warning",
+      title: "Delete academic year",
+      html: `
+        <p class="mb-2 text-start"><strong>${name}</strong> (ID: <strong>#${id}</strong>)</p>
+        <p class="mb-0 text-start text-danger small">
+          This will permanently remove the academic year from the database. Enter your password to continue.
+        </p>
+      `,
+      input: "password",
+      inputLabel: "Your password",
+      inputPlaceholder: "Password",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#6c757d",
+      focusCancel: false,
+      inputAttributes: {
+        autocapitalize: "off",
+        autocorrect: "off",
+      },
+      preConfirm: async (password) => {
+        const pwd = String(password || "").trim();
+        if (!pwd) {
+          Swal.showValidationMessage("Password is required");
+          return false;
+        }
+        try {
+          setDeleting(true);
+          await apiService.deleteAcademicYear(id, pwd);
+          return true;
+        } catch (e: unknown) {
+          const err = e as Error & { status?: number };
+          if (err?.status === 403) {
+            Swal.showValidationMessage("Sorry, that password is incorrect.");
+            return false;
+          }
+          Swal.showValidationMessage(err?.message || "Could not delete academic year. Please try again.");
+          return false;
+        } finally {
+          setDeleting(false);
+        }
+      },
+    });
+
+    if (!result.isConfirmed || result.value !== true) return;
+    navigate(routes.academicYears, { replace: true });
   };
 
   if (!Number.isFinite(id)) {
@@ -397,6 +462,54 @@ const AcademicYearDetail = () => {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+
+            <div className="card border-0 shadow-sm mb-4 border border-danger-subtle">
+              <div className="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>
+                  <h5 className="mb-0 text-danger">Danger zone</h5>
+                  <p className="text-muted small mb-0 mt-1">
+                    Delete is allowed only when this year is not current and has no linked school records.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={handleDelete}
+                  disabled={deleting || editCurrent || hasBlockingData}
+                  title={
+                    editCurrent
+                      ? "Cannot delete current academic year"
+                      : hasBlockingData
+                        ? "Cannot delete: year is already used in records"
+                        : "Delete academic year"
+                  }
+                >
+                  {deleting ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" aria-hidden />
+                      Deleting…
+                    </>
+                  ) : (
+                    <>
+                      <i className="ti ti-trash me-1" />
+                      Delete academic year
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="card-body">
+                {deleteError && (
+                  <div className="alert alert-danger py-2 mb-3" role="alert">
+                    {deleteError}
+                  </div>
+                )}
+                <ul className="mb-0 small text-muted">
+                  <li><strong>Recommended:</strong> set the year to <strong>Inactive</strong> instead of deleting.</li>
+                  <li><strong>Blocked automatically</strong> if classes/students/attendance/etc exist for the year.</li>
+                  <li><strong>Not allowed</strong> for the current year—mark another year as current first.</li>
+                </ul>
               </div>
             </div>
 

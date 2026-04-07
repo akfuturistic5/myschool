@@ -9,10 +9,12 @@ const {
   getAcademicYearSummary,
   createAcademicYear,
   updateAcademicYear,
+  deleteAcademicYear,
 } = require('../controllers/academicYearController');
 const {
   createAcademicYearSchema,
   updateAcademicYearSchema,
+  deleteAcademicYearSchema,
 } = require('../validations/academicYearValidation');
 
 const router = express.Router();
@@ -25,5 +27,6 @@ router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllAcademicYears);
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createAcademicYearSchema), createAcademicYear);
 router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getAcademicYearById);
 router.patch('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(updateAcademicYearSchema), updateAcademicYear);
+router.delete('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(deleteAcademicYearSchema), deleteAcademicYear);
 
 module.exports = router;
