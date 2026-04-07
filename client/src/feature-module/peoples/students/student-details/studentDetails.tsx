@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import ImageWithBasePath from '../../../../core/common/imageWithBasePath'
 import { all_routes } from '../../../router/all_routes'
@@ -5,10 +6,18 @@ import StudentModals from '../studentModals'
 import StudentSidebar from './studentSidebar'
 import StudentBreadcrumb from './studentBreadcrumb'
 import { useLinkedStudentContext } from '../../../../core/hooks/useLinkedStudentContext'
+import { apiService } from '../../../../core/services/apiService'
 
 interface StudentDetailsLocationState {
   studentId?: number
   student?: any
+}
+
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return 'N/A'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return 'N/A'
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const StudentDetails = () => {
@@ -20,6 +29,41 @@ const StudentDetails = () => {
     locationState: state,
     routeStudentId: paramId,
   })
+  const [promotionRows, setPromotionRows] = useState<any[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!student?.id) {
+      setPromotionRows([])
+      setHistoryError(null)
+      return
+    }
+    let cancelled = false
+    setHistoryLoading(true)
+    setHistoryError(null)
+    apiService
+      .getStudentPromotions(500, student.id)
+      .then((res: any) => {
+        if (cancelled) return
+        if (res?.status === 'SUCCESS' && Array.isArray(res?.data)) {
+          setPromotionRows(res.data)
+          return
+        }
+        setPromotionRows([])
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        setHistoryError(err?.message || 'Failed to load promotion history')
+        setPromotionRows([])
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [student?.id])
   const showLoading = loading
   if (showLoading) {
     return (
@@ -78,6 +122,30 @@ const StudentDetails = () => {
   const medications = student.medications ?? student.medicationsList ?? null
   const medicalCondition = student.medical_condition ?? student.medicalCondition ?? null
   const otherInformation = student.other_information ?? student.otherInformation ?? null
+  const currentClass = student.class_name ?? 'N/A'
+  const currentSection = student.section_name ?? 'N/A'
+  const currentAcademicYear = student.academic_year_name ?? (student.academic_year_id ? `Year #${student.academic_year_id}` : 'N/A')
+  const currentClassTeacher = [student.class_teacher_first_name, student.class_teacher_last_name]
+    .filter(Boolean)
+    .join(' ') || 'N/A'
+  const latestPromotion = promotionRows[0] ?? null
+  const lastClass = latestPromotion?.from_class_name || (latestPromotion?.from_class_id != null ? `Class #${latestPromotion.from_class_id}` : 'N/A')
+  const lastSection = latestPromotion?.from_section_name || (latestPromotion?.from_section_id != null ? `Section #${latestPromotion.from_section_id}` : 'N/A')
+  const lastAcademicYear = latestPromotion?.from_academic_year_name || (latestPromotion?.from_academic_year_id != null ? `Year #${latestPromotion.from_academic_year_id}` : 'N/A')
+  const historyTableRows = useMemo(
+    () =>
+      promotionRows.map((row: any) => ({
+        key: String(row.id),
+        date: formatDate(row.promotion_date),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
+        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
+        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
+      })),
+    [promotionRows]
+  )
 
   return (
     <>
@@ -258,6 +326,71 @@ const StudentDetails = () => {
                 </div>
               </div>
               {/* /Parents Information */}
+
+              {/* History */}
+              <div className="card">
+                <div className="card-header">
+                  <h5>History</h5>
+                </div>
+                <div className="card-body">
+                  <div className="row">
+                    <div className="col-md-6">
+                      <div className="border rounded p-3 mb-3 h-100">
+                        <h6 className="mb-3">Current Details</h6>
+                        <p className="mb-2"><strong>Current Class:</strong> {currentClass}</p>
+                        <p className="mb-2"><strong>Current Section:</strong> {currentSection}</p>
+                        <p className="mb-2"><strong>Current Class Teacher:</strong> {currentClassTeacher}</p>
+                        <p className="mb-0"><strong>Current Academic Year:</strong> {currentAcademicYear}</p>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="border rounded p-3 mb-3 h-100">
+                        <h6 className="mb-3">Last Details</h6>
+                        <p className="mb-2"><strong>Last Class:</strong> {lastClass}</p>
+                        <p className="mb-2"><strong>Last Section:</strong> {lastSection}</p>
+                        <p className="mb-0"><strong>Last Academic Year:</strong> {lastAcademicYear}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <h6 className="mb-2">Promotion History</h6>
+                  {historyLoading && <p className="text-muted mb-0">Loading promotion history...</p>}
+                  {historyError && <div className="alert alert-danger mb-0">{historyError}</div>}
+                  {!historyLoading && !historyError && historyTableRows.length === 0 && (
+                    <p className="text-muted mb-0">No promotion history available for this student.</p>
+                  )}
+                  {!historyLoading && !historyError && historyTableRows.length > 0 && (
+                    <div className="table-responsive">
+                      <table className="table table-bordered align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>From Class</th>
+                            <th>From Section</th>
+                            <th>From Academic Year</th>
+                            <th>To Class</th>
+                            <th>To Section</th>
+                            <th>To Academic Year</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historyTableRows.map((r) => (
+                            <tr key={r.key}>
+                              <td>{r.date}</td>
+                              <td>{r.fromClass}</td>
+                              <td>{r.fromSection}</td>
+                              <td>{r.fromYear}</td>
+                              <td>{r.toClass}</td>
+                              <td>{r.toSection}</td>
+                              <td>{r.toYear}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* /History */}
             </div>
             {/* Address */}
             <div className="col-xxl-12 d-flex">

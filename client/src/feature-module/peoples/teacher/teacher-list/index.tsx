@@ -196,32 +196,22 @@ const TeacherList = () => {
                   </Link>
                 </li>
                 <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#login_detail"
-                  >
+                  <span className="dropdown-item rounded-1 disabled text-muted" title="Coming soon">
                     <i className="ti ti-lock me-2" />
                     Login Details
-                  </Link>
+                  </span>
                 </li>
                 <li>
-                  <Link className="dropdown-item rounded-1" to="#">
+                  <span className="dropdown-item rounded-1 disabled text-muted" title="Coming soon">
                     <i className="ti ti-toggle-right me-2" />
                     Disable
-                  </Link>
+                  </span>
                 </li>
                 <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
+                  <span className="dropdown-item rounded-1 disabled text-muted" title="Coming soon">
                     <i className="ti ti-trash-x me-2" />
                     Delete
-                  </Link>
+                  </span>
                 </li>
               </ul>
             </div>
