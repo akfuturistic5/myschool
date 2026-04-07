@@ -1,4 +1,7 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
@@ -18,10 +21,18 @@ import { all_routes } from "../../router/all_routes";
 const ClassSection = () => {
   const routes = all_routes;
   const { sections, loading, error, refetch } = useSections();
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classes = [] } = useClasses(academicYearId);
   const [selectedSection, setSelectedSection] = useState<any>(null);
   const [editSectionName, setEditSectionName] = useState<string>('');
   const [editSectionStatus, setEditSectionStatus] = useState<boolean>(true);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [message, setMessage] = useState<string>('');
+  const [addForm, setAddForm] = useState({ section_name: '', class_id: '', is_active: true });
+  const [filterSection, setFilterSection] = useState("Select");
+  const [filterStatus, setFilterStatus] = useState("Select");
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const editModalRef = useRef<HTMLDivElement | null>(null);
   
@@ -119,6 +130,7 @@ const ClassSection = () => {
         }
 
         await refetch();
+        setMessage('Section updated successfully');
 
         // Reset form
         setSelectedSection(null);
@@ -128,6 +140,35 @@ const ClassSection = () => {
         const errorMsg = response?.message || 'Failed to update section';
         console.error('Update failed:', errorMsg);
         alert(errorMsg);
+  const classOptions = useMemo(() => [{ value: "Select", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))], [classes]);
+  const sectionOptions = useMemo(() => [{ value: "Select", label: "Select" }, ...Array.from(new Set((sections || []).map((s: any) => s.section_name))).map((s) => ({ value: s, label: s }))], [sections]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.section_name.trim() || !addForm.class_id) return;
+    setIsCreating(true);
+    try {
+      await apiService.createSection({ section_name: addForm.section_name.trim(), class_id: Number(addForm.class_id), is_active: addForm.is_active });
+      await refetch();
+      setMessage('Section created successfully');
+      setAddForm({ section_name: '', class_id: '', is_active: true });
+      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('add_class_section'));
+      modal?.hide();
+    } finally { setIsCreating(false); }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedSection?.id) return;
+    setIsDeleting(true);
+    try {
+      await apiService.deleteSection(selectedSection.id);
+      await refetch();
+      setMessage('Section deleted successfully');
+      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('delete-modal'));
+      modal?.hide();
+    } finally { setIsDeleting(false); }
+  };
+
       }
     } catch (err: any) {
       console.error('=== ERROR UPDATING SECTION ===');
@@ -213,7 +254,7 @@ const ClassSection = () => {
         is_active: isActive // Ensure sectionData also has normalized boolean
       }
     };
-  });
+  }).filter((row: any) => (filterSection === "Select" || row.sectionName === filterSection) && (filterStatus === "Select" || row.status === filterStatus));
 
   const columns = [
     {
@@ -354,6 +395,7 @@ const ClassSection = () => {
               </div>
             </div>
             {/* /Page Header */}
+            {message ? <div className="alert alert-info">{message}</div> : null}
             {/* Guardians List */}
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
@@ -384,7 +426,9 @@ const ClassSection = () => {
                                 <label className="form-label">Section</label>
                                 <CommonSelect
                                   className="select"
-                                  options={activeList}
+                                  options={sectionOptions}
+                                  defaultValue={sectionOptions[0]}
+                                  onChange={(v) => setFilterSection(v || "Select")}
                                    
                                 />
                               </div>
@@ -396,6 +440,7 @@ const ClassSection = () => {
                                   className="select"
                                   options={activeList}
                                   defaultValue={activeList[0]}
+                                  onChange={(v) => setFilterStatus(v || "Select")}
                                    
                                 />
                               </div>
@@ -403,7 +448,7 @@ const ClassSection = () => {
                           </div>
                         </div>
                         <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
+                          <Link to="#" className="btn btn-light me-3" onClick={() => { setFilterSection("Select"); setFilterStatus("Select"); }}>
                             Reset
                           </Link>
                           <Link
@@ -507,13 +552,17 @@ const ClassSection = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form onSubmit={handleCreate}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Section</label>
-                        <input type="text" className="form-control" />
+                        <input type="text" className="form-control" value={addForm.section_name} onChange={(e) => setAddForm((f) => ({ ...f, section_name: e.target.value }))} />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Class</label>
+                        <CommonSelect className="select" options={classOptions} defaultValue={classOptions[0]} onChange={(v) => setAddForm((f) => ({ ...f, class_id: v || '' }))} />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -521,12 +570,7 @@ const ClassSection = () => {
                           <p>Change the Status by toggle </p>
                         </div>
                         <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm"
-                          />
+                          <input className="form-check-input" type="checkbox" role="switch" id="switch-sm" checked={addForm.is_active} onChange={(e) => setAddForm((f) => ({ ...f, is_active: e.target.checked }))} />
                         </div>
                       </div>
                     </div>
@@ -540,9 +584,7 @@ const ClassSection = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Section
-                  </Link>
+                  <button type="submit" className="btn btn-primary" disabled={isCreating}>{isCreating ? "Adding..." : "Add Section"}</button>
                 </div>
               </form>
             </div>
@@ -644,9 +686,7 @@ const ClassSection = () => {
                     >
                       Cancel
                     </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
+                    <button type="button" className="btn btn-danger" onClick={handleDeleteConfirm} disabled={isDeleting}>{isDeleting ? "Deleting..." : "Yes, Delete"}</button>
                   </div>
                 </div>
               </form>

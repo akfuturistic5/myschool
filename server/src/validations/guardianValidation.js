@@ -13,7 +13,14 @@ const createGuardianSchema = Joi.object({
   office_address: Joi.string().trim().optional().allow(null, ''),
   is_primary_contact: Joi.boolean().optional(),
   is_emergency_contact: Joi.boolean().optional(),
-}).unknown(true);
+}).custom((value, helpers) => {
+  const email = (value.email || '').toString().trim();
+  const phone = (value.phone || '').toString().trim();
+  if (email && !phone) {
+    return helpers.error('any.invalid', { message: 'Guardian email and phone must both be filled, or leave both empty.' });
+  }
+  return value;
+}, 'guardian contact pair validation').unknown(true);
 
 const updateGuardianSchema = Joi.object({
   student_id: Joi.number().integer().optional(),
@@ -28,6 +35,13 @@ const updateGuardianSchema = Joi.object({
   office_address: Joi.string().trim().optional().allow(null, ''),
   is_primary_contact: Joi.boolean().optional(),
   is_emergency_contact: Joi.boolean().optional(),
-}).unknown(true);
+}).custom((value, helpers) => {
+  const email = (value.email || '').toString().trim();
+  const phone = (value.phone || '').toString().trim();
+  if (email && !phone) {
+    return helpers.error('any.invalid', { message: 'Guardian email and phone must both be filled, or leave both empty.' });
+  }
+  return value;
+}, 'guardian contact pair validation').unknown(true);
 
 module.exports = { createGuardianSchema, updateGuardianSchema };

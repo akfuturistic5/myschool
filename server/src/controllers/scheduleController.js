@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 function formatTime(val) {
   if (val == null) return null;
@@ -57,18 +58,10 @@ const getAllSchedules = async (req, res) => {
       }
     }
     const data = rows.map((row) => mapScheduleRow(row));
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Schedules fetched successfully',
-      data,
-      count: data.length
-    });
+    return success(res, 200, 'Schedules fetched successfully', data, { count: data.length });
   } catch (error) {
     console.error('Error fetching schedules:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch schedules',
-    });
+    return errorResponse(res, 500, 'Failed to fetch schedules');
   }
 };
 
@@ -93,20 +86,29 @@ const getScheduleById = async (req, res) => {
       }
     }
     if (!row) {
-      return res.status(404).json({ status: 'ERROR', message: 'Schedule not found' });
+      return errorResponse(res, 404, 'Schedule not found');
     }
     const data = mapScheduleRow(row);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Schedule fetched successfully',
-      data
-    });
+    return success(res, 200, 'Schedule fetched successfully', data);
   } catch (error) {
     console.error('Error fetching schedule:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch schedule',
-    });
+    return errorResponse(res, 500, 'Failed to fetch schedule');
+  }
+};
+
+const createSchedule = async (req, res) => {
+  try {
+    const { slot_name, start_time, end_time, duration, is_break, is_active, description } = req.body;
+    const result = await query(
+      `INSERT INTO time_slots (slot_name, start_time, end_time, duration, is_break, is_active, description)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [slot_name.trim(), start_time, end_time, duration || null, !!is_break, is_active !== false, description || null]
+    );
+    return success(res, 201, 'Schedule created successfully', mapScheduleRow(result.rows[0]));
+  } catch (error) {
+    console.error('Error creating schedule:', error);
+    if (error.code === '23505') return errorResponse(res, 409, 'Schedule already exists');
+    return errorResponse(res, 500, 'Failed to create schedule');
   }
 };
 
@@ -141,7 +143,7 @@ const updateSchedule = async (req, res) => {
       } catch (e3) {}
     }
     if (!tableName) {
-      return res.status(404).json({ status: 'ERROR', message: 'Schedule not found' });
+      return errorResponse(res, 404, 'Schedule not found');
     }
 
     // Get existing columns to avoid updating non-existent columns
@@ -202,7 +204,7 @@ const updateSchedule = async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ status: 'ERROR', message: 'No fields to update' });
+      return errorResponse(res, 400, 'No fields to update');
     }
 
     values.push(id);
@@ -213,23 +215,29 @@ const updateSchedule = async (req, res) => {
     );
 
     if (!result.rows || result.rows.length === 0) {
-      return res.status(404).json({ status: 'ERROR', message: 'Schedule not found or update had no effect' });
+      return errorResponse(res, 404, 'Schedule not found or update had no effect');
     }
 
     const data = mapScheduleRow(result.rows[0]);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Schedule updated successfully',
-      data
-    });
+    return success(res, 200, 'Schedule updated successfully', data);
   } catch (error) {
     console.error('Error updating schedule:', error);
     console.error('Update schedule error details:', error.message, error.stack);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to update schedule',
-    });
+    return errorResponse(res, 500, 'Failed to update schedule');
   }
 };
 
-module.exports = { getAllSchedules, getScheduleById, updateSchedule };
+const deleteSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM time_slots WHERE id = $1 RETURNING id', [id]);
+    if (!result.rows.length) return errorResponse(res, 404, 'Schedule not found');
+    return success(res, 200, 'Schedule deleted successfully', { id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting schedule:', error);
+    if (error.code === '23503') return errorResponse(res, 409, 'Schedule is referenced by class routines');
+    return errorResponse(res, 500, 'Failed to delete schedule');
+  }
+};
+
+module.exports = { getAllSchedules, getScheduleById, createSchedule, updateSchedule, deleteSchedule };

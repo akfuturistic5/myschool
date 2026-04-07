@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
-import { scheduleClass } from '../data/json/schedule_class';
 
 export const useSchedules = () => {
   const [data, setData] = useState([]);
@@ -45,6 +44,6 @@ export const useSchedules = () => {
     loading,
     error,
     refetch: fetchSchedules,
-    fallbackData: scheduleClass
+    fallbackData: []
   };
 };

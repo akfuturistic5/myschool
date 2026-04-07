@@ -11,6 +11,7 @@
     "db:init:reset": "node scripts/run-init-migration.js --reset-tenant",
     "db:verify": "node scripts/run-init-migration.js --verify-only",
     "db:migrate:student-promotions": "node scripts/run-student-promotions-migration.js",
+    "db:migrate:guardian-hardening": "node scripts/run-guardian-hardening-migration.js",
     "db:seed:master": "node scripts/ensure-master-school-registry.js",
     "db:migrate:library": "node scripts/run-library-migration.js",
     "test": "echo \"Error: no test specified\" && exit 1"

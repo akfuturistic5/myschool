@@ -36,6 +36,11 @@ const ClassSyllabus = () => {
     const base = fromApi.length > 0 ? fromApi : classSylabus.filter((x: any) => x.value !== "Select");
     return [{ value: "Select", label: "Select" }, ...base];
   }, [classes]);
+  const classIdByName = useMemo(() => {
+    const map: Record<string, number> = {};
+    classes.forEach((c: any) => { if (c.class_name) map[String(c.class_name)] = Number(c.id); });
+    return map;
+  }, [classes]);
 
   const sectionOptions = useMemo(() => {
     const fromApi = (sections || []).map((s: any) => {
@@ -44,6 +49,11 @@ const ClassSyllabus = () => {
     }).filter(Boolean) as { value: string; label: string }[];
     const base = fromApi.length > 0 ? fromApi : classSection.filter((x: any) => x.value !== "Select");
     return [{ value: "Select", label: "Select" }, ...base];
+  }, [sections]);
+  const sectionIdByName = useMemo(() => {
+    const map: Record<string, number> = {};
+    sections.forEach((s: any) => { if (s.section_name) map[String(s.section_name)] = Number(s.id); });
+    return map;
   }, [sections]);
 
   const editClassOptions = useMemo(() => {
@@ -91,12 +101,11 @@ const ClassSyllabus = () => {
     setSubmitting(true);
     try {
       await apiService.createClassSyllabus({
-        class: cls,
-        section: sec,
-        class_name: cls,
-        section_name: sec,
+        class_id: cls ? classIdByName[cls] : undefined,
+        section_id: sec ? sectionIdByName[sec] : undefined,
         subject_group: subjectGroup,
         status: "Active",
+        academic_year_id: academicYearId,
       });
       refetch();
       setAddClass("");
@@ -129,12 +138,11 @@ const ClassSyllabus = () => {
       const sec = (editSection && editSection !== "Select" ? editSection : selectedSyllabus?.section) || undefined;
       const statusVal = editStatus && editStatus !== "Select" ? editStatus : selectedSyllabus?.status;
       await apiService.updateClassSyllabus(selectedSyllabus.id, {
-        class: cls,
-        section: sec,
-        class_name: cls,
-        section_name: sec,
+        class_id: cls ? classIdByName[cls] : selectedSyllabus?.originalData?.class_id,
+        section_id: sec ? sectionIdByName[sec] : selectedSyllabus?.originalData?.section_id,
         subject_group: subjectGroup,
         status: statusVal,
+        academic_year_id: academicYearId,
       });
       refetch();
       setSelectedSyllabus(null);

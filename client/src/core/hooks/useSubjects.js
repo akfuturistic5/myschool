@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useSubjects = () => {
+export const useSubjects = (classId = null) => {
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,7 +10,7 @@ export const useSubjects = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getSubjects();
+      const response = classId ? await apiService.getSubjectsByClass(classId) : await apiService.getSubjects();
       
       if (response.status === 'SUCCESS') {
         setSubjects(response.data);
@@ -27,7 +27,7 @@ export const useSubjects = () => {
 
   useEffect(() => {
     fetchSubjects();
-  }, []);
+  }, [classId]);
 
   return {
     subjects,

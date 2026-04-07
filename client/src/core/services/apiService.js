@@ -243,6 +243,12 @@ class ApiService {
       body: JSON.stringify(classData)
     });
   }
+  async createClass(classData) {
+    return this.makeRequest('/classes', { method: 'POST', body: JSON.stringify(classData) });
+  }
+  async deleteClass(id) {
+    return this.makeRequest(`/classes/${id}`, { method: 'DELETE' });
+  }
 
   // Sections
   async getSections() {
@@ -262,6 +268,12 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(sectionData)
     });
+  }
+  async createSection(data) {
+    return this.makeRequest('/sections', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async deleteSection(id) {
+    return this.makeRequest(`/sections/${id}`, { method: 'DELETE' });
   }
 
   // Class Rooms
@@ -297,6 +309,12 @@ class ApiService {
   async getClassSchedules() {
     return this.makeRequest('/class-schedules');
   }
+  async getClassSchedulesScoped(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/class-schedules${qs ? `?${qs}` : ''}`);
+  }
 
   async getClassScheduleById(id) {
     return this.makeRequest(`/class-schedules/${id}`);
@@ -308,10 +326,19 @@ class ApiService {
       body: JSON.stringify(data)
     });
   }
+  async updateClassSchedule(id, data) {
+    return this.makeRequest(`/class-schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteClassSchedule(id) {
+    return this.makeRequest(`/class-schedules/${id}`, { method: 'DELETE' });
+  }
 
   // Schedules (time_slots / schedule table - ID, Type, Start Time, End Time, Status)
   async getSchedules() {
     return this.makeRequest('/schedules');
+  }
+  async createSchedule(data) {
+    return this.makeRequest('/schedules', { method: 'POST', body: JSON.stringify(data) });
   }
 
   async getScheduleById(id) {
@@ -323,6 +350,9 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(scheduleData)
     });
+  }
+  async deleteSchedule(id) {
+    return this.makeRequest(`/schedules/${id}`, { method: 'DELETE' });
   }
 
   // Students
@@ -1039,6 +1069,12 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(subjectData),
     });
+  }
+  async createSubject(subjectData) {
+    return this.makeRequest('/subjects', { method: 'POST', body: JSON.stringify(subjectData) });
+  }
+  async deleteSubject(id) {
+    return this.makeRequest(`/subjects/${id}`, { method: 'DELETE' });
   }
 
   // Hostels

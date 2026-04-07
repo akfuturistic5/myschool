@@ -31,6 +31,8 @@ const ScheduleClasses = () => {
   const [editingRow, setEditingRow] = useState<EditRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [addForm, setAddForm] = useState({ type: "Class", startTime: "", endTime: "", isActive: true });
+  const [selectedDeleteId, setSelectedDeleteId] = useState<string | number | null>(null);
   const [editForm, setEditForm] = useState({
     type: "",
     startTime: "",
@@ -174,6 +176,42 @@ const ScheduleClasses = () => {
     }
   };
 
+  const handleCreateSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await apiService.createSchedule({
+        slot_name: addForm.type,
+        start_time: timeToApiFormat(addForm.startTime),
+        end_time: timeToApiFormat(addForm.endTime),
+        is_active: addForm.isActive,
+      });
+      await refetch();
+      (window as any).bootstrap?.Modal?.getInstance(document.getElementById("add_Schedule"))?.hide();
+      setAddForm({ type: "Class", startTime: "", endTime: "", isActive: true });
+    } catch (err: any) {
+      setSaveError(err?.message ?? "Failed to create schedule");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSchedule = async () => {
+    if (!selectedDeleteId) return;
+    setSaving(true);
+    try {
+      await apiService.deleteSchedule(String(selectedDeleteId));
+      await refetch();
+      (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"))?.hide();
+      setSelectedDeleteId(null);
+    } catch (err: any) {
+      setSaveError(err?.message ?? "Failed to delete schedule");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const columns = [
     {
       title: "ID",
@@ -258,8 +296,11 @@ const ScheduleClasses = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSelectedDeleteId(record.originalData?.id ?? record.id);
+                      (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show();
+                    }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -452,7 +493,7 @@ const ScheduleClasses = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleCreateSchedule}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -461,15 +502,16 @@ const ScheduleClasses = () => {
                         <CommonSelect
                           className="select"
                           options={classselect}
+                          onChange={(v) => setAddForm((f) => ({ ...f, type: v || "Class" }))}
                         />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Start Time </label>
-                        <CommonSelect className="select" options={uniqueTimeOptions} />
+                        <CommonSelect className="select" options={uniqueTimeOptions} onChange={(v) => setAddForm((f) => ({ ...f, startTime: v || "" }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">End Time </label>
-                        <CommonSelect className="select" options={uniqueTimeOptions} />
+                        <CommonSelect className="select" options={uniqueTimeOptions} onChange={(v) => setAddForm((f) => ({ ...f, endTime: v || "" }))} />
                       </div>
                       <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -477,7 +519,7 @@ const ScheduleClasses = () => {
                           <p>Change the Status by toggle </p>
                         </div>
                         <div className="status-toggle modal-status">
-                          <input type="checkbox" id="user1" className="check" />
+                          <input type="checkbox" id="user1" className="check" checked={addForm.isActive} onChange={(e) => setAddForm((f) => ({ ...f, isActive: e.target.checked }))} />
                           <label htmlFor="user1" className="checktoggle">
                             {" "}
                           </label>
@@ -494,13 +536,7 @@ const ScheduleClasses = () => {
                   >
                     Cancel
                   </Link>
-                  <Link
-                    to="#"
-                    className="btn btn-primary"
-                    data-bs-dismiss="modal"
-                  >
-                    Add Schedule
-                  </Link>
+                  <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Add Schedule"}</button>
                 </div>
               </form>
             </div>
@@ -672,13 +708,9 @@ const ScheduleClasses = () => {
                     >
                       Cancel
                     </Link>
-                    <Link
-                      to="#"
-                      className="btn btn-danger"
-                      data-bs-dismiss="modal"
-                    >
-                      Yes, Delete
-                    </Link>
+                    <button type="button" className="btn btn-danger" onClick={handleDeleteSchedule} disabled={saving}>
+                      {saving ? "Deleting..." : "Yes, Delete"}
+                    </button>
                   </div>
                 </div>
               </form>

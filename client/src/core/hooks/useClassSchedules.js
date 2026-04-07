@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
-import { classRoutine } from '../data/json/class-routine';
 
 // Format time from "HH:MM:SS" or "HH:MM" to "HH:MM AM/PM"
 function formatTimeDisplay(t) {
@@ -17,7 +16,8 @@ function formatTimeDisplay(t) {
   return `${h}:${m} ${ampm}`;
 }
 
-export const useClassSchedules = () => {
+export const useClassSchedules = (params = {}) => {
+  const { classId = null, sectionId = null, academicYearId = null } = params;
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,10 +26,15 @@ export const useClassSchedules = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getClassSchedules();
+      const response = await apiService.getClassSchedulesScoped({ academicYearId });
       const list = Array.isArray(response) ? response : (response?.data ?? []);
       if (Array.isArray(list)) {
-        const mapped = list.map((row, index) => ({
+        const filtered = list.filter((row) => {
+          const classOk = classId == null || Number(row.class_id ?? row.classId) === Number(classId);
+          const sectionOk = sectionId == null || Number(row.section_id ?? row.sectionId) === Number(sectionId);
+          return classOk && sectionOk;
+        });
+        const mapped = filtered.map((row, index) => ({
           key: String(row.id ?? index + 1),
           id: row.id?.toString() || `RT${String(index + 1).padStart(6, '0')}`,
           class: row.class ?? 'N/A',
@@ -58,13 +63,13 @@ export const useClassSchedules = () => {
 
   useEffect(() => {
     fetchSchedules();
-  }, []);
+  }, [classId, sectionId, academicYearId]);
 
   return {
     data,
     loading,
     error,
     refetch: fetchSchedules,
-    fallbackData: classRoutine,
+    fallbackData: [],
   };
 };

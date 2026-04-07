@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
@@ -33,6 +33,15 @@ const Classes = () => {
   const editModalRef = useRef<HTMLDivElement | null>(null);
   const [editingRow, setEditingRow] = useState<EditRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [selectedDeleteRow, setSelectedDeleteRow] = useState<EditRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addForm, setAddForm] = useState({ className: "", noOfStudents: "", isActive: true });
+  const [filterClass, setFilterClass] = useState("Select");
+  const [filterSection, setFilterSection] = useState("Select");
+  const [filterStatus, setFilterStatus] = useState("Select");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [editForm, setEditForm] = useState({ className: "", sectionName: "", noOfStudents: "", noOfSubjects: "", isActive: true });
 
   useEffect(() => {
@@ -91,11 +100,55 @@ const Classes = () => {
         });
       }
       await refetch();
+      setMessage("Updated successfully");
       closeEditModalAndCleanup();
     } catch (err) {
       console.error("Failed to save:", err);
+      setMessage("Failed to save changes");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAddClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.className.trim() || !academicYearId) return;
+    setAdding(true);
+    try {
+      await apiService.createClass({
+        class_name: addForm.className.trim(),
+        academic_year_id: academicYearId,
+        no_of_students: addForm.noOfStudents ? parseInt(addForm.noOfStudents, 10) : 0,
+        is_active: addForm.isActive,
+      });
+      setAddForm({ className: "", noOfStudents: "", isActive: true });
+      await refetch();
+      setMessage("Class created successfully");
+      const el = document.getElementById("add_class");
+      const modal = (window as any).bootstrap?.Modal?.getInstance(el);
+      modal?.hide();
+    } catch {
+      setMessage("Failed to create class");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedDeleteRow) return;
+    setDeleting(true);
+    try {
+      if (selectedDeleteRow.sectionId) await apiService.deleteSection(selectedDeleteRow.sectionId);
+      else await apiService.deleteClass(selectedDeleteRow.classId);
+      await refetch();
+      setMessage("Deleted successfully");
+      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"));
+      modal?.hide();
+      setSelectedDeleteRow(null);
+    } catch {
+      setMessage("Failed to delete record");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -122,6 +175,23 @@ const Classes = () => {
     className: item.className || 'N/A',
     sectionName: item.sectionName || 'N/A',
   }));
+  const dynamicClassOptions = useMemo(
+    () => [{ value: "Select", label: "Select" }, ...Array.from(new Set(transformedData.map((r: any) => r.class))).map((v) => ({ value: v, label: v }))],
+    [transformedData]
+  );
+  const dynamicSectionOptions = useMemo(
+    () => [{ value: "Select", label: "Select" }, ...Array.from(new Set(transformedData.map((r: any) => r.section))).map((v) => ({ value: v, label: v }))],
+    [transformedData]
+  );
+  const filteredData = transformedData
+    .filter((r: any) =>
+      (filterClass === "Select" || r.class === filterClass) &&
+      (filterSection === "Select" || r.section === filterSection) &&
+      (filterStatus === "Select" || r.status === filterStatus)
+    )
+    .sort((a: any, b: any) =>
+      sortOrder === "asc" ? String(a.class).localeCompare(String(b.class)) : String(b.class).localeCompare(String(a.class))
+    );
 
   const columns = [
     {
@@ -211,8 +281,12 @@ const Classes = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSelectedDeleteRow(record as EditRow);
+                      const modal = (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"));
+                      modal?.show();
+                    }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -301,6 +375,7 @@ const Classes = () => {
           </div>
           {/* /Page Header */}
           {/* Classes List */}
+          {message ? <div className="alert alert-info">{message}</div> : null}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Classes List</h4>
@@ -330,8 +405,9 @@ const Classes = () => {
                               <label className="form-label">Class</label>
                               <CommonSelect
                                 className="select"
-                                options={classSylabus}
-                                defaultValue={classSylabus[0]}
+                                options={dynamicClassOptions}
+                                defaultValue={dynamicClassOptions[0]}
+                                onChange={(v) => setFilterClass(v || "Select")}
                               />
                             </div>
                           </div>
@@ -340,8 +416,9 @@ const Classes = () => {
                               <label className="form-label">Section</label>
                               <CommonSelect
                                 className="select"
-                                options={classSection}
-                                defaultValue={classSection[0]}
+                                options={dynamicSectionOptions}
+                                defaultValue={dynamicSectionOptions[0]}
+                                onChange={(v) => setFilterSection(v || "Select")}
                               />
                             </div>
                           </div>
@@ -352,13 +429,14 @@ const Classes = () => {
                                 className="select"
                                 options={activeList}
                                 defaultValue={activeList[0]}
+                                onChange={(v) => setFilterStatus(v || "Select")}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link to="#" className="btn btn-light me-3" onClick={() => { setFilterClass("Select"); setFilterSection("Select"); setFilterStatus("Select"); }}>
                           Reset
                         </Link>
                         <Link
@@ -383,12 +461,12 @@ const Classes = () => {
                   </Link>
                   <ul className="dropdown-menu p-3">
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
+                      <Link to="#" className="dropdown-item rounded-1 active" onClick={() => setSortOrder("asc")}>
                         Ascending
                       </Link>
                     </li>
                     <li>
-                      <Link to="#" className="dropdown-item rounded-1">
+                      <Link to="#" className="dropdown-item rounded-1" onClick={() => setSortOrder("desc")}>
                         Descending
                       </Link>
                     </li>
@@ -408,7 +486,7 @@ const Classes = () => {
             </div>
             <div className="card-body p-0 py-3">
               {/* Classes List */}
-              <Table columns={columns} dataSource={transformedData} Selection={true} />
+              <Table columns={columns} dataSource={filteredData} Selection={true} />
               {/* /Classes List */}
             </div>
           </div>
@@ -432,25 +510,21 @@ const Classes = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddClass}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Class Name</label>
-                        <input type="text" className="form-control" />
+                        <input type="text" className="form-control" value={addForm.className} onChange={(e) => setAddForm((f) => ({ ...f, className: e.target.value }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Section</label>
-                        <CommonSelect
-                          className="select"
-                          options={classSection}
-                          defaultValue={classSection[0]}
-                        />
+                        <input type="text" className="form-control" value="Manage section in Sections page" readOnly />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">No of Students</label>
-                        <input type="text" className="form-control" />
+                        <input type="text" className="form-control" value={addForm.noOfStudents} onChange={(e) => setAddForm((f) => ({ ...f, noOfStudents: e.target.value }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">No of Subjects</label>
@@ -462,12 +536,7 @@ const Classes = () => {
                           <p>Change the Status by toggle </p>
                         </div>
                         <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm"
-                          />
+                          <input className="form-check-input" type="checkbox" role="switch" id="switch-sm" checked={addForm.isActive} onChange={(e) => setAddForm((f) => ({ ...f, isActive: e.target.checked }))} />
                         </div>
                       </div>
                     </div>
@@ -481,9 +550,7 @@ const Classes = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Class
-                  </Link>
+                  <button type="submit" className="btn btn-primary" disabled={adding}>{adding ? "Adding..." : "Add Class"}</button>
                 </div>
               </form>
             </div>
@@ -614,10 +681,9 @@ const Classes = () => {
                     >
                       Cancel
                     </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal"
-                    >
-                      Yes, Delete
-                    </Link>
+                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
+                      {deleting ? "Deleting..." : "Yes, Delete"}
+                    </button>
                   </div>
                 </div>
               </form>
