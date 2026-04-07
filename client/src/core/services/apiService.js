@@ -195,6 +195,28 @@ class ApiService {
     return this.makeRequest(`/academic-years/${id}`);
   }
 
+  async getAcademicYearsManage() {
+    return this.makeRequest('/academic-years/manage');
+  }
+
+  async createAcademicYear(data) {
+    return this.makeRequest('/academic-years', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getAcademicYearSummary(id) {
+    return this.makeRequest(`/academic-years/${id}/summary`);
+  }
+
+  async updateAcademicYear(id, data) {
+    return this.makeRequest(`/academic-years/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Classes
   async getClasses() {
     return this.makeRequest('/classes');
