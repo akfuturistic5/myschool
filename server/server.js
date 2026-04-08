@@ -59,6 +59,7 @@ const superAdminAuthRoutes = require('./src/routes/superAdminAuthRoutes');
 const superAdminRoutes = require('./src/routes/superAdminRoutes');
 const schoolProfileRoutes = require('./src/routes/schoolProfileRoutes');
 const bonafideRoutes = require('./src/routes/bonafideRoutes');
+const libraryRoutes = require('./src/routes/libraryRoutes');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
 
@@ -144,16 +145,32 @@ app.use(
     skip: shouldSkipRequestLog,
   })
 );
-// CORS: production = explicit origins from CORS_ORIGIN, dev = localhost
-const defaultDevOrigins = ['http://localhost:3000', 'http://localhost:5173'];
+// CORS: production = explicit origins from CORS_ORIGIN; dev = list + any localhost / 127.0.0.1 port (Vite may use 5174+)
+const defaultDevOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+];
 const allowedOrigins = serverConfig.corsOrigin
   ? serverConfig.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 const devOrigins = Array.from(new Set([...defaultDevOrigins, ...allowedOrigins]));
+
+/** Dev-only: allow Vite on any port (e.g. 5174 when 5173 is taken). */
+function isLocalDevOrigin(origin) {
+  if (!origin || typeof origin !== 'string') return true;
+  if (devOrigins.includes(origin)) return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin.trim());
+}
+
 const corsOptions = {
   origin: isProduction
     ? (allowedOrigins.length > 0 ? allowedOrigins : false)
-    : devOrigins,
+    : (origin, callback) => {
+        if (isLocalDevOrigin(origin)) return callback(null, true);
+        return callback(null, false);
+      },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
@@ -300,6 +317,7 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/school/profile', schoolProfileRoutes);
 app.use('/api/bonafide', bonafideRoutes);
+app.use('/api/library', libraryRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {
@@ -375,10 +393,13 @@ const startServer = async () => {
       console.log('🚀 Server is running!');
       console.log(`📍 Listening on ${BIND_HOST}:${PORT} (use PORT from environment on PaaS)`);
       console.log(`🌍 Environment: ${serverConfig.nodeEnv}`);
-      console.log('📋 Available endpoints:');
-      const base = `http://127.0.0.1:${PORT}`;
+      // Use localhost in logs so it matches VITE_API_URL / browser Network tab (127.0.0.1 is the same host).
+      console.log(`📌 API base: http://localhost:${PORT}/api  (same as http://127.0.0.1:${PORT}/api)`);
+      console.log('📋 Example GET routes:');
+      const base = `http://localhost:${PORT}`;
       console.log(`   GET  ${base}/`);
       console.log(`   GET  ${base}/api/health`);
+      console.log(`   POST ${base}/api/auth/login`);
       console.log(`   GET  ${base}/api/health/database`);
       console.log(`   GET  ${base}/api/academic-years`);
       console.log(`   GET  ${base}/api/academic-years/:id`);
