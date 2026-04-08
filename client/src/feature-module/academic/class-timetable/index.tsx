@@ -17,7 +17,13 @@ import { apiService } from "../../../core/services/apiService";
 const ClassTimetable = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { data: routineData, loading, refetch } = useClassSchedules({ academicYearId });
+  const [filterClassId, setFilterClassId] = useState<string>("");
+  const [filterSectionId, setFilterSectionId] = useState<string>("");
+  const { data: routineData, loading, error, refetch } = useClassSchedules({
+    academicYearId,
+    classId: filterClassId ? Number(filterClassId) : null,
+    sectionId: filterSectionId ? Number(filterSectionId) : null,
+  });
   const { classes = [] } = useClasses(academicYearId);
   const { sections = [] } = useSections();
   const { subjects = [] } = useSubjects();
@@ -114,10 +120,11 @@ const ClassTimetable = () => {
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Class</label>
-
                               <CommonSelect
                                 className="select"
-                                options={classSylabus}
+                                options={classOptions}
+                                defaultValue={classOptions[0]}
+                                onChange={(v) => setFilterClassId(v || "")}
                               />
                             </div>
                           </div>
@@ -126,14 +133,24 @@ const ClassTimetable = () => {
                               <label className="form-label">Section</label>
                               <CommonSelect
                                 className="select"
-                                options={classSection}
+                                options={sectionOptions}
+                                defaultValue={sectionOptions[0]}
+                                onChange={(v) => setFilterSectionId(v || "")}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link
+                          to="#"
+                          className="btn btn-light me-3"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setFilterClassId("");
+                            setFilterSectionId("");
+                          }}
+                        >
                           Reset
                         </Link>
                         <Link
@@ -151,6 +168,7 @@ const ClassTimetable = () => {
             </div>
             <div className="card-body pb-0">
               {message ? <div className="alert alert-info">{message}</div> : null}
+              {error ? <div className="alert alert-danger" role="alert">{error}</div> : null}
               {loading ? <div className="text-center py-4">Loading timetable...</div> : null}
               <div className="d-flex flex-nowrap overflow-auto">
                 {Object.keys(grouped).map((day) => (

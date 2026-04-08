@@ -16,6 +16,7 @@ const ClassSubject = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [classFilterId, setClassFilterId] = useState<string>("");
+  const [codeFilter, setCodeFilter] = useState<string>("");
   const { classes = [] } = useClasses(academicYearId);
   const { subjects, loading, error, refetch } = useSubjects(classFilterId ? Number(classFilterId) : null);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
@@ -24,15 +25,30 @@ const ClassSubject = () => {
   const [form, setForm] = useState({ subject_name: "", subject_code: "", class_id: "", type: "Theory", is_active: true });
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const classOptions = useMemo(() => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))], [classes]);
-  const data = (subjects ?? []).map((s: any, index: number) => ({
-    key: String(s.id ?? index),
-    id: s.id,
-    name: s.subject_name || "N/A",
-    code: s.subject_code || "N/A",
-    type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
-    status: s.is_active ? "Active" : "Inactive",
-    originalData: s,
-  }));
+  const codeOptions = useMemo(() => {
+    const codes = Array.from(
+      new Set(
+        (subjects ?? [])
+          .map((s: any) => {
+            const c = s.subject_code;
+            return c != null && String(c).trim() !== "" ? String(c).trim() : null;
+          })
+          .filter(Boolean) as string[]
+      )
+    ).sort();
+    return [{ value: "", label: "All Codes" }, ...codes.map((c) => ({ value: c, label: c }))];
+  }, [subjects]);
+  const data = (subjects ?? [])
+    .map((s: any, index: number) => ({
+      key: String(s.id ?? index),
+      id: s.id,
+      name: s.subject_name || "N/A",
+      code: s.subject_code || "N/A",
+      type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
+      status: s.is_active ? "Active" : "Inactive",
+      originalData: s,
+    }))
+    .filter((row) => !codeFilter || String(row.code) === codeFilter);
   const handleApplyClick = () => dropdownMenuRef.current?.classList.remove("show");
   const columns = [
     {
@@ -194,7 +210,7 @@ const ClassSubject = () => {
                           <div className="row">
                             <div className="col-md-12">
                               <div className="mb-3">
-                                <label className="form-label">Name</label>
+                                <label className="form-label">Class</label>
                                 <CommonSelect
                                   className="select"
                                   options={classOptions}
@@ -208,16 +224,24 @@ const ClassSubject = () => {
                                 <label className="form-label">Code</label>
                                 <CommonSelect
                                   className="select"
-                                  options={count}
-                                  defaultValue={count[0]}
-                                   
+                                  options={codeOptions}
+                                  defaultValue={codeOptions[0]}
+                                  onChange={(v) => setCodeFilter(v || "")}
                                 />
                               </div>
                             </div>
                           </div>
                         </div>
                         <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
+                          <Link
+                            to="#"
+                            className="btn btn-light me-3"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setClassFilterId("");
+                              setCodeFilter("");
+                            }}
+                          >
                             Reset
                           </Link>
                           <Link
