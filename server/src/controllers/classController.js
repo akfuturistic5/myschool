@@ -1,4 +1,12 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
+
+const normalizeBool = (v, fallback = true) => {
+  if (v === undefined || v === null) return fallback;
+  if (v === true || v === 'true' || v === 1 || v === '1' || v === 't' || v === 'T') return true;
+  if (v === false || v === 'false' || v === 0 || v === '0' || v === 'f' || v === 'F') return false;
+  return fallback;
+};
 
 const getAllClasses = async (req, res) => {
   try {
@@ -24,18 +32,10 @@ const getAllClasses = async (req, res) => {
       ORDER BY c.class_name ASC
     `);
     
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Classes fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Classes fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching classes:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch classes',
-    });
+    return errorResponse(res, 500, 'Failed to fetch classes');
   }
 };
 
@@ -65,23 +65,13 @@ const getClassById = async (req, res) => {
     `, [id]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Class not found'
-      });
+      return errorResponse(res, 404, 'Class not found');
     }
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Class fetched successfully',
-      data: result.rows[0]
-    });
+    return success(res, 200, 'Class fetched successfully', result.rows[0]);
   } catch (error) {
     console.error('Error fetching class:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch class',
-    });
+    return errorResponse(res, 500, 'Failed to fetch class');
   }
 };
 
@@ -111,72 +101,105 @@ const getClassesByAcademicYear = async (req, res) => {
       ORDER BY c.class_name ASC
     `, [academicYearId]);
 
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Classes fetched successfully',
-      data: result.rows,
-      count: result.rows.length
-    });
+    return success(res, 200, 'Classes fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching classes by academic year:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch classes',
-    });
+    return errorResponse(res, 500, 'Failed to fetch classes');
+  }
+};
+
+const createClass = async (req, res) => {
+  try {
+    const {
+      class_name,
+      class_code,
+      academic_year_id,
+      class_teacher_id,
+      max_students,
+      class_fee,
+      description,
+      is_active,
+      no_of_students,
+    } = req.body;
+
+    const result = await query(
+      `INSERT INTO classes (
+        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      RETURNING *`,
+      [
+        class_name.trim(),
+        class_code || null,
+        academic_year_id,
+        class_teacher_id || null,
+        max_students || null,
+        class_fee || null,
+        description || null,
+        normalizeBool(is_active, true),
+        no_of_students != null ? parseInt(no_of_students, 10) : null,
+      ]
+    );
+    return success(res, 201, 'Class created successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error creating class:', error);
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid academic year or teacher');
+    if (error.code === '23505') return errorResponse(res, 409, 'Class already exists');
+    return errorResponse(res, 500, 'Failed to create class');
   }
 };
 
 const updateClass = async (req, res) => {
   try {
     const { id } = req.params;
-    const { class_name, no_of_students, is_active } = req.body;
-
-    if (!class_name) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Class name is required'
-      });
-    }
-
-    let isActiveBoolean = false;
-    if (is_active === true || is_active === 'true' || is_active === 1 || is_active === 't' || is_active === 'T') {
-      isActiveBoolean = true;
-    } else if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'f' || is_active === 'F') {
-      isActiveBoolean = false;
-    } else {
-      isActiveBoolean = false;
-    }
-
-    const noOfStudents = no_of_students != null ? parseInt(no_of_students, 10) : null;
+    const payload = req.body;
+    const current = await query('SELECT * FROM classes WHERE id = $1', [id]);
+    if (!current.rows.length) return errorResponse(res, 404, 'Class not found');
+    const cur = current.rows[0];
 
     const result = await query(`
       UPDATE classes SET
         class_name = $1,
-        no_of_students = $2,
-        is_active = $3,
+        class_code = $2,
+        academic_year_id = $3,
+        class_teacher_id = $4,
+        max_students = $5,
+        class_fee = $6,
+        description = $7,
+        no_of_students = $8,
+        is_active = $9,
         modified_at = NOW()
-      WHERE id = $4
-      RETURNING id, class_name, class_code, is_active, no_of_students, created_at, modified_at
-    `, [class_name, noOfStudents, isActiveBoolean, id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Class not found'
-      });
-    }
-
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Class updated successfully',
-      data: result.rows[0]
-    });
+      WHERE id = $10
+      RETURNING *
+    `, [
+      payload.class_name ?? cur.class_name,
+      payload.class_code ?? cur.class_code,
+      payload.academic_year_id ?? cur.academic_year_id,
+      payload.class_teacher_id ?? cur.class_teacher_id,
+      payload.max_students ?? cur.max_students,
+      payload.class_fee ?? cur.class_fee,
+      payload.description ?? cur.description,
+      payload.no_of_students ?? cur.no_of_students,
+      normalizeBool(payload.is_active, cur.is_active),
+      id
+    ]);
+    return success(res, 200, 'Class updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating class:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to update class',
-    });
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid academic year or teacher');
+    return errorResponse(res, 500, 'Failed to update class');
+  }
+};
+
+const deleteClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM classes WHERE id = $1 RETURNING id', [id]);
+    if (!result.rows.length) return errorResponse(res, 404, 'Class not found');
+    return success(res, 200, 'Class deleted successfully', { id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting class:', error);
+    if (error.code === '23503') return errorResponse(res, 409, 'Class is referenced by related records');
+    return errorResponse(res, 500, 'Failed to delete class');
   }
 };
 
@@ -184,5 +207,7 @@ module.exports = {
   getAllClasses,
   getClassById,
   getClassesByAcademicYear,
-  updateClass
+  createClass,
+  updateClass,
+  deleteClass,
 };

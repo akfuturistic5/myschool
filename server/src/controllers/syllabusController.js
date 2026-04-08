@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 function formatCreatedDate(row) {
   const d = row.created_at ?? row.created_date;
@@ -58,12 +59,7 @@ const getAllSyllabus = async (req, res) => {
       params
     );
     const data = result.rows.map(mapRow);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Syllabus fetched successfully',
-      data,
-      count: data.length
-    });
+    return success(res, 200, 'Syllabus fetched successfully', data, { count: data.length });
   } catch (err) {
     try {
       const result = await query(`
@@ -76,18 +72,10 @@ const getAllSyllabus = async (req, res) => {
         class: row.class_name,
         section: row.section_name
       }));
-      return res.status(200).json({
-        status: 'SUCCESS',
-        message: 'Syllabus fetched successfully',
-        data,
-        count: data.length
-      });
+      return success(res, 200, 'Syllabus fetched successfully', data, { count: data.length });
     } catch (e2) {
       console.error('Error fetching syllabus:', err);
-      res.status(500).json({
-        status: 'ERROR',
-        message: 'Failed to fetch syllabus'
-      });
+      return errorResponse(res, 500, 'Failed to fetch syllabus');
     }
   }
 };
@@ -113,13 +101,9 @@ const getSyllabusById = async (req, res) => {
       WHERE s.id = $1
     `, [id]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ status: 'ERROR', message: 'Syllabus not found' });
+      return errorResponse(res, 404, 'Syllabus not found');
     }
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Syllabus fetched successfully',
-      data: mapRow(result.rows[0])
-    });
+    return success(res, 200, 'Syllabus fetched successfully', mapRow(result.rows[0]));
   } catch (err) {
     try {
       const { id } = req.params;
@@ -128,17 +112,13 @@ const getSyllabusById = async (req, res) => {
         [id]
       );
       if (result.rows.length === 0) {
-        return res.status(404).json({ status: 'ERROR', message: 'Syllabus not found' });
+        return errorResponse(res, 404, 'Syllabus not found');
       }
       const row = result.rows[0];
-      return res.status(200).json({
-        status: 'SUCCESS',
-        message: 'Syllabus fetched successfully',
-        data: mapRow({ ...row, class: row.class_name, section: row.section_name })
-      });
+      return success(res, 200, 'Syllabus fetched successfully', mapRow({ ...row, class: row.class_name, section: row.section_name }));
     } catch (e2) {
       console.error('Error fetching syllabus:', err);
-      res.status(500).json({ status: 'ERROR', message: 'Failed to fetch syllabus' });
+      return errorResponse(res, 500, 'Failed to fetch syllabus');
     }
   }
 };
@@ -165,11 +145,10 @@ const createSyllabus = async (req, res) => {
     const secName = section_name ?? sectionVal ?? '';
     const subjGroup = subject_group ?? subjectGroup ?? '';
     if (!subjGroup.trim()) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Subject group is required'
-      });
+      return errorResponse(res, 400, 'Subject group is required');
     }
+    if (!clsId) return errorResponse(res, 400, 'class_id is required');
+    if (!academic_year_id) return errorResponse(res, 400, 'academic_year_id is required');
     const stat = (status && String(status).toLowerCase() === 'active') ? 'Active' : 'Inactive';
 
     const result = await query(`
@@ -179,17 +158,11 @@ const createSyllabus = async (req, res) => {
     `, [clsId, secId, clsName || null, secName || null, subjGroup.trim(), stat, description || null, academic_year_id || null]);
 
     const row = result.rows[0];
-    res.status(201).json({
-      status: 'SUCCESS',
-      message: 'Syllabus created successfully',
-      data: mapRow({ ...row, class: row.class_name ?? clsName, section: row.section_name ?? secName })
-    });
+    return success(res, 201, 'Syllabus created successfully', mapRow({ ...row, class: row.class_name ?? clsName, section: row.section_name ?? secName }));
   } catch (err) {
     console.error('Error creating syllabus:', err);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to create syllabus'
-    });
+    if (err.code === '23503') return errorResponse(res, 400, 'Invalid class/section/academic year reference');
+    return errorResponse(res, 500, 'Failed to create syllabus');
   }
 };
 
@@ -252,10 +225,7 @@ const updateSyllabus = async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'No fields to update'
-      });
+      return errorResponse(res, 400, 'No fields to update');
     }
 
     updates.push('modified_at = NOW()');
@@ -269,24 +239,15 @@ const updateSyllabus = async (req, res) => {
     `, params);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Syllabus not found'
-      });
+      return errorResponse(res, 404, 'Syllabus not found');
     }
 
     const row = result.rows[0];
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Syllabus updated successfully',
-      data: mapRow({ ...row, class: row.class_name, section: row.section_name })
-    });
+    return success(res, 200, 'Syllabus updated successfully', mapRow({ ...row, class: row.class_name, section: row.section_name }));
   } catch (err) {
     console.error('Error updating syllabus:', err);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to update syllabus'
-    });
+    if (err.code === '23503') return errorResponse(res, 400, 'Invalid class/section/academic year reference');
+    return errorResponse(res, 500, 'Failed to update syllabus');
   }
 };
 
@@ -298,21 +259,12 @@ const deleteSyllabus = async (req, res) => {
       [id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({
-        status: 'ERROR',
-        message: 'Syllabus not found'
-      });
+      return errorResponse(res, 404, 'Syllabus not found');
     }
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Syllabus deleted successfully'
-    });
+    return success(res, 200, 'Syllabus deleted successfully', { id: result.rows[0].id });
   } catch (err) {
     console.error('Error deleting syllabus:', err);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to delete syllabus'
-    });
+    return errorResponse(res, 500, 'Failed to delete syllabus');
   }
 };
 

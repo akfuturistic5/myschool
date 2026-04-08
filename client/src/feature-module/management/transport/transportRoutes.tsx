@@ -291,7 +291,7 @@ const TransportRoutes = () => {
             <div className="card-body p-0 py-3">
               {error && (
                 <div className="alert alert-warning mx-3 mt-3 mb-0" role="alert">
-                  Could not load routes from server. Showing sample data. Check that the server is running on port 5000.
+                  Could not load routes from server. Showing sample data. Please check API connectivity and login session.
                 </div>
               )}
               {loading && (

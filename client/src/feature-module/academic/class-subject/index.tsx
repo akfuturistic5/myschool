@@ -1,12 +1,6 @@
-import  { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useSelector } from "react-redux";
 import Table from "../../../core/common/dataTable/index";
-
-import {
-  count,
- 
-  language,
-  typetheory,
-} from "../../../core/common/selectoption/selectoption";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import type { TableData } from "../../../core/data/interface";
@@ -14,35 +8,32 @@ import { Link } from "react-router-dom";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 import { useSubjects } from "../../../core/hooks/useSubjects";
+import { useClasses } from "../../../core/hooks/useClasses";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
 
 const ClassSubject = () => {
   const routes = all_routes;
-  const { subjects, loading, error, refetch } = useSubjects();
-  
-  // State for edit modal
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const [classFilterId, setClassFilterId] = useState<string>("");
+  const { classes = [] } = useClasses(academicYearId);
+  const { subjects, loading, error, refetch } = useSubjects(classFilterId ? Number(classFilterId) : null);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [editSubjectName, setEditSubjectName] = useState('');
-  const [editSubjectStatus, setEditSubjectStatus] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  // Transform API data to match table structure
-  const data = (subjects ?? []).map((subject: any, index: number) => ({
-    key: subject.id?.toString() || (index + 1).toString(),
-    id: subject.id?.toString() || subject.subject_code || `SU${String(index + 1).padStart(6, '0')}`,
-    name: subject.subject_name || 'N/A',
-    code: subject.subject_code || 'N/A',
-    type: (subject.practical_hours && subject.practical_hours > 0) ? 'Practical' : 'Theory',
-    status: subject.is_active ? 'Active' : 'Inactive',
-    // Store original data for edit modal
-    originalData: subject
-  }));
+  const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [form, setForm] = useState({ subject_name: "", subject_code: "", class_id: "", type: "Theory", is_active: true });
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
-    }
-  };
+  const classOptions = useMemo(() => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))], [classes]);
+  const data = (subjects ?? []).map((s: any, index: number) => ({
+    key: String(s.id ?? index),
+    id: s.id,
+    name: s.subject_name || "N/A",
+    code: s.subject_code || "N/A",
+    type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
+    status: s.is_active ? "Active" : "Inactive",
+    originalData: s,
+  }));
+  const handleApplyClick = () => dropdownMenuRef.current?.classList.remove("show");
   const columns = [
     {
       title: "ID",
@@ -54,27 +45,23 @@ const ClassSubject = () => {
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => {
-        const idA = String(a.id || '').length;
-        const idB = String(b.id || '').length;
-        return idA - idB;
-      },
+      sorter: (a: TableData, b: TableData) => String(a.id || "").localeCompare(String(b.id || "")),
     },
 
     {
       title: "Name",
       dataIndex: "name",
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
+      sorter: (a: TableData, b: TableData) => String(a.name || "").localeCompare(String(b.name || "")),
     },
     {
       title: "Code",
       dataIndex: "code",
-      sorter: (a: TableData, b: TableData) => a.code.length - b.code.length,
+      sorter: (a: TableData, b: TableData) => String(a.code || "").localeCompare(String(b.code || "")),
     },
     {
       title: "Type",
       dataIndex: "type",
-      sorter: (a: TableData, b: TableData) => a.type.length - b.type.length,
+      sorter: (a: TableData, b: TableData) => String(a.type || "").localeCompare(String(b.type || "")),
     },
     {
       title: "Status",
@@ -94,7 +81,7 @@ const ClassSubject = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => String(a.status || "").localeCompare(String(b.status || "")),
     },
 
     {
@@ -117,35 +104,7 @@ const ClassSubject = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // Populate edit form state from selected record
-                      const subject = record.originalData || record;
-                      const name = subject.subject_name || record.name || '';
-                      let status = true;
-                      if (subject && Object.prototype.hasOwnProperty.call(subject, 'is_active')) {
-                        status =
-                          subject.is_active === true ||
-                          subject.is_active === 1 ||
-                          subject.is_active === 'true';
-                      } else if (record.status) {
-                        status = record.status === 'Active';
-                      }
-
-                      setEditSubjectName(name);
-                      setEditSubjectStatus(status);
-                      setSelectedSubject(record);
-                      setTimeout(() => {
-                        const modalElement = document.getElementById('edit_subject');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-                            modal.show();
-                          }
-                        }
-                      }, 100);
-                    }}
+                    onClick={(e) => { e.preventDefault(); setSelectedSubject(record); setForm({ subject_name: record.originalData?.subject_name || "", subject_code: record.originalData?.subject_code || "", class_id: String(record.originalData?.class_id || ""), type: record.type, is_active: record.status === "Active" }); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("edit_subject"))?.show(); }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -155,8 +114,7 @@ const ClassSubject = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => { e.preventDefault(); setSelectedSubject(record); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show(); }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -209,7 +167,7 @@ const ClassSubject = () => {
               </div>
             </div>
             {/* /Page Header */}
-            {/* Guardians List */}
+            {message ? <div className="alert alert-info">{message}</div> : null}
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                 <h4 className="mb-3">Class Subject</h4>
@@ -239,9 +197,9 @@ const ClassSubject = () => {
                                 <label className="form-label">Name</label>
                                 <CommonSelect
                                   className="select"
-                                  options={language}
-                                  defaultValue={language[0]}
-                                  
+                                  options={classOptions}
+                                  defaultValue={classOptions[0]}
+                                  onChange={(v) => setClassFilterId(v || "")}
                                 />
                               </div>
                             </div>
@@ -375,31 +333,38 @@ const ClassSubject = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!form.subject_name.trim()) return;
+                setIsSaving(true);
+                try {
+                  await apiService.createSubject({
+                    subject_name: form.subject_name.trim(),
+                    subject_code: form.subject_code || null,
+                    class_id: form.class_id ? Number(form.class_id) : null,
+                    practical_hours: form.type === "Practical" ? 1 : 0,
+                    theory_hours: form.type === "Theory" ? 1 : 0,
+                    is_active: form.is_active,
+                  });
+                  await refetch();
+                  setMessage("Subject created successfully");
+                  (window as any).bootstrap?.Modal?.getInstance(document.getElementById("add_subject"))?.hide();
+                } catch { setMessage("Failed to create subject"); } finally { setIsSaving(false); }
+              }}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Name</label>
-                        <input type="text" className="form-control" />
+                        <input type="text" className="form-control" value={form.subject_name} onChange={(e) => setForm((f) => ({ ...f, subject_name: e.target.value }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Code</label>
-                        <CommonSelect
-                          className="select"
-                          options={count}
-                          defaultValue={count[0]}
-                           
-                        />
+                        <input type="text" className="form-control" value={form.subject_code} onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Type</label>
-                        <CommonSelect
-                          className="select"
-                          options={typetheory}
-                          defaultValue={typetheory[0]}
-                          
-                        />
+                        <CommonSelect className="select" options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]} defaultValue={{ value: form.type, label: form.type }} onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))} />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -426,9 +391,7 @@ const ClassSubject = () => {
                   >
                     Cancel
                   </Link>
-                  <Link to="#" data-bs-dismiss="modal" className="btn btn-primary">
-                    Add Subject
-                  </Link>
+                  <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? "Saving..." : "Add Subject"}</button>
                 </div>
               </form>
             </div>
@@ -450,7 +413,7 @@ const ClassSubject = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form onSubmit={(e) => e.preventDefault()}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -460,26 +423,25 @@ const ClassSubject = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Name"
-                          value={editSubjectName}
-                          onChange={(e) => setEditSubjectName(e.target.value)}
+                          value={form.subject_name}
+                          onChange={(e) => setForm((f) => ({ ...f, subject_name: e.target.value }))}
                         />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Code</label>
                         <CommonSelect
                           className="select"
-                          options={count}
-                          defaultValue={selectedSubject?.originalData?.subject_code || selectedSubject?.code ? count.find((c: any) => c.value === (selectedSubject?.originalData?.subject_code || selectedSubject?.code) || c.label === (selectedSubject?.originalData?.subject_code || selectedSubject?.code)) || count[0] : count[0]}
-                          key={`code-${selectedSubject?.id || 'new'}`}
-                        />
+                          options={[{ value: form.subject_code || "custom", label: form.subject_code || "custom" }]}
+                          defaultValue={{ value: form.subject_code || "custom", label: form.subject_code || "custom" }}
+                        /><input className="form-control mt-2" value={form.subject_code} onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))} />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Type</label>
                         <CommonSelect
                           className="select"
-                          options={typetheory}
-                          defaultValue={selectedSubject?.type === 'Practical' ? typetheory.find((t: any) => t.label === 'Practical') || typetheory[0] : typetheory.find((t: any) => t.label === 'Theory') || typetheory[0]}
-                          key={`type-${selectedSubject?.id || 'new'}`}
+                          options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]}
+                          defaultValue={{ value: form.type, label: form.type }}
+                          onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
@@ -493,8 +455,8 @@ const ClassSubject = () => {
                             type="checkbox"
                             role="switch"
                             id="switch-sm2"
-                            checked={editSubjectStatus}
-                            onChange={(e) => setEditSubjectStatus(e.target.checked)}
+                            checked={form.is_active}
+                            onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                           />
                         </div>
                       </div>
@@ -515,44 +477,28 @@ const ClassSubject = () => {
                     onClick={async (e) => {
                       e.preventDefault();
                       const id = selectedSubject?.originalData?.id || selectedSubject?.id;
-                      if (!id || isUpdating) return;
-
-                      const name = editSubjectName.trim();
-                      if (!name) {
-                        alert('Subject name is required');
-                        return;
-                      }
-
-                      setIsUpdating(true);
+                      if (!id || isSaving || !form.subject_name.trim()) return;
+                      setIsSaving(true);
                       try {
-                        const payload = {
-                          subject_name: name,
-                          is_active: editSubjectStatus,
-                        };
-                        const response = await apiService.updateSubject(id, payload);
-                        if (response && response.status === 'SUCCESS') {
-                          const modalElement = document.getElementById('edit_subject');
-                          if (modalElement) {
-                            const bootstrap = (window as any).bootstrap;
-                            if (bootstrap && bootstrap.Modal) {
-                              const modal = bootstrap.Modal.getInstance(modalElement);
-                              if (modal) modal.hide();
-                            }
-                          }
-                          await refetch();
-                          setSelectedSubject(null);
-                        } else {
-                          alert(response?.message || 'Failed to update subject');
-                        }
-                      } catch (err: any) {
-                        console.error('Error updating subject:', err);
-                        alert(err?.message || 'Failed to update subject. Please try again.');
+                        await apiService.updateSubject(id, {
+                          subject_name: form.subject_name.trim(),
+                          subject_code: form.subject_code || null,
+                          class_id: form.class_id ? Number(form.class_id) : null,
+                          practical_hours: form.type === "Practical" ? 1 : 0,
+                          theory_hours: form.type === "Theory" ? 1 : 0,
+                          is_active: form.is_active,
+                        });
+                        await refetch();
+                        setMessage("Subject updated successfully");
+                        (window as any).bootstrap?.Modal?.getInstance(document.getElementById("edit_subject"))?.hide();
+                      } catch {
+                        setMessage("Failed to update subject");
                       } finally {
-                        setIsUpdating(false);
+                        setIsSaving(false);
                       }
                     }}
                   >
-                    {isUpdating ? 'Updating...' : 'Save Changes'}
+                    {isSaving ? "Updating..." : "Save Changes"}
                   </Link>
                 </div>
               </form>
@@ -582,9 +528,19 @@ const ClassSubject = () => {
                     >
                       Cancel
                     </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
+                    <button type="button" className="btn btn-danger" disabled={isSaving} onClick={async () => {
+                      const id = selectedSubject?.originalData?.id || selectedSubject?.id;
+                      if (!id) return;
+                      setIsSaving(true);
+                      try {
+                        await apiService.deleteSubject(id);
+                        await refetch();
+                        setMessage("Subject deleted successfully");
+                        (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"))?.hide();
+                      } catch {
+                        setMessage("Failed to delete subject");
+                      } finally { setIsSaving(false); }
+                    }}>{isSaving ? "Deleting..." : "Yes, Delete"}</button>
                   </div>
                 </div>
               </form>

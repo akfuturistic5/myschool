@@ -1,6 +1,10 @@
 const { query } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAY_TO_INT = {
+  monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, sunday: 7
+};
 
 function formatTime(val) {
   if (val == null) return null;
@@ -16,6 +20,24 @@ function getDayName(row) {
   const n = Number(day);
   if (n >= 0 && n <= 6) return DAY_NAMES[n];
   return String(day);
+}
+
+function normalizeDayOfWeek(day) {
+  if (day === undefined || day === null || day === '') return null;
+  if (typeof day === 'number') return day >= 1 && day <= 7 ? day : null;
+  const n = parseInt(day, 10);
+  if (!Number.isNaN(n) && n >= 1 && n <= 7) return n;
+  const mapped = DAY_TO_INT[String(day).trim().toLowerCase()];
+  return mapped || null;
+}
+
+async function resolveTeacherToStaffId(teacherId) {
+  if (!teacherId) return null;
+  const staffTry = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
+  if (staffTry.rows.length) return staffTry.rows[0].id;
+  const teacherTry = await query('SELECT staff_id FROM teachers WHERE id = $1 LIMIT 1', [teacherId]);
+  if (teacherTry.rows.length) return teacherTry.rows[0].staff_id;
+  return null;
 }
 
 // Get period start/end from time_slots row (support multiple column names)
@@ -55,7 +77,11 @@ const getAllClassSchedules = async (req, res) => {
   try {
     let rows = [];
     try {
-      const result = await query('SELECT * FROM class_schedules ORDER BY id ASC');
+      const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
+      const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+      const result = hasYearFilter
+        ? await query('SELECT * FROM class_schedules WHERE academic_year_id = $1 ORDER BY id ASC', [academicYearId])
+        : await query('SELECT * FROM class_schedules ORDER BY id ASC');
       rows = result.rows;
     } catch (e) {
       try {
@@ -164,18 +190,10 @@ const getAllClassSchedules = async (req, res) => {
     const data = rows.map((row) =>
       mapScheduleRow(row, classMap, sectionMap, subjectMap, timeSlotMap, teacherMap)
     );
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Class schedules fetched successfully',
-      data,
-      count: data.length
-    });
+    return success(res, 200, 'Class schedules fetched successfully', data, { count: data.length });
   } catch (error) {
     console.error('Error fetching class schedules:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch class schedules',
-    });
+    return errorResponse(res, 500, 'Failed to fetch class schedules');
   }
 };
 
@@ -195,7 +213,7 @@ const getClassScheduleById = async (req, res) => {
       }
     }
     if (!row) {
-      return res.status(404).json({ status: 'ERROR', message: 'Class schedule not found' });
+      return errorResponse(res, 404, 'Class schedule not found');
     }
     const classIds = [row.class_id ?? row.class].filter(Boolean);
     const sectionIds = [row.section_id ?? row.section].filter(Boolean);
@@ -239,31 +257,20 @@ const getClassScheduleById = async (req, res) => {
     }
 
     const data = mapScheduleRow(row, classMap, sectionMap, subjectMap, timeSlotMap, teacherMap);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Class schedule fetched successfully',
-      data
-    });
+    return success(res, 200, 'Class schedule fetched successfully', data);
   } catch (error) {
     console.error('Error fetching class schedule:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to fetch class schedule',
-    });
+    return errorResponse(res, 500, 'Failed to fetch class schedule');
   }
 };
 
 // Create class schedule
 const createClassSchedule = async (req, res) => {
   try {
-    const { teacher_id, class_id, section_id, subject_id, day_of_week, class_room_id, room_number, time_slot_id } = req.body;
-
-    if (!teacher_id || !class_id || !section_id) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Teacher, Class, and Section are required'
-      });
-    }
+    const {
+      teacher_id, class_id, section_id, subject_id, day_of_week, class_room_id,
+      room_number, time_slot_id, academic_year_id
+    } = req.body;
 
     let slotId = time_slot_id || null;
     if (!slotId) {
@@ -271,7 +278,17 @@ const createClassSchedule = async (req, res) => {
       slotId = slotRes.rows.length > 0 ? slotRes.rows[0].id : null;
     }
 
-    const roomVal = room_number || class_room_id || null;
+    const dayInt = normalizeDayOfWeek(day_of_week);
+    if (!dayInt) return errorResponse(res, 400, 'Invalid day_of_week. Use 1-7 or day name');
+    const teacherStaffId = await resolveTeacherToStaffId(teacher_id);
+    if (!teacherStaffId) return errorResponse(res, 400, 'Invalid teacher_id');
+    const roomVal = room_number != null ? String(room_number) : null;
+    let academicYearId = academic_year_id || null;
+    if (!academicYearId) {
+      const classRes = await query('SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1', [class_id]);
+      academicYearId = classRes.rows[0]?.academic_year_id || null;
+    }
+    if (!academicYearId) return errorResponse(res, 400, 'academic_year_id is required');
     let tableName = 'class_schedules';
     try {
       await query(`SELECT 1 FROM ${tableName} LIMIT 1`);
@@ -280,30 +297,77 @@ const createClassSchedule = async (req, res) => {
     }
 
     const result = await query(`
-      INSERT INTO ${tableName} (teacher_id, class_id, section_id, subject_id, time_slot_id, day_of_week, room_number)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO ${tableName} (teacher_id, class_id, section_id, subject_id, time_slot_id, day_of_week, room_number, class_room_id, academic_year_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
-      teacher_id,
+      teacherStaffId,
       class_id,
       section_id || null,
       subject_id || null,
       slotId,
-      day_of_week || 'Monday',
-      roomVal != null ? String(roomVal) : null
+      dayInt,
+      roomVal,
+      class_room_id || null,
+      academicYearId
     ]);
 
-    res.status(201).json({
-      status: 'SUCCESS',
-      message: 'Class routine added successfully',
-      data: result.rows[0]
-    });
+    return success(res, 201, 'Class routine added successfully', result.rows[0]);
   } catch (error) {
     console.error('Error creating class schedule:', error);
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to add class routine'
-    });
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
+    return errorResponse(res, 500, 'Failed to add class routine');
+  }
+};
+
+const updateClassSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const payload = req.body || {};
+    const current = await query('SELECT * FROM class_schedules WHERE id = $1', [id]);
+    if (!current.rows.length) return errorResponse(res, 404, 'Class schedule not found');
+    const cur = current.rows[0];
+
+    const teacherId = payload.teacher_id ? await resolveTeacherToStaffId(payload.teacher_id) : cur.teacher_id;
+    if (!teacherId) return errorResponse(res, 400, 'Invalid teacher_id');
+    const dayInt = payload.day_of_week !== undefined ? normalizeDayOfWeek(payload.day_of_week) : cur.day_of_week;
+    if (!dayInt) return errorResponse(res, 400, 'Invalid day_of_week. Use 1-7 or day name');
+
+    const result = await query(
+      `UPDATE class_schedules SET
+        teacher_id = $1, class_id = $2, section_id = $3, subject_id = $4, time_slot_id = $5,
+        day_of_week = $6, room_number = $7, class_room_id = $8, academic_year_id = $9, modified_at = NOW()
+      WHERE id = $10 RETURNING *`,
+      [
+        teacherId,
+        payload.class_id ?? cur.class_id,
+        payload.section_id ?? cur.section_id,
+        payload.subject_id ?? cur.subject_id,
+        payload.time_slot_id ?? cur.time_slot_id,
+        dayInt,
+        payload.room_number ?? cur.room_number,
+        payload.class_room_id ?? cur.class_room_id,
+        payload.academic_year_id ?? cur.academic_year_id,
+        id
+      ]
+    );
+    return success(res, 200, 'Class routine updated successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error updating class schedule:', error);
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
+    return errorResponse(res, 500, 'Failed to update class routine');
+  }
+};
+
+const deleteClassSchedule = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM class_schedules WHERE id = $1 RETURNING id', [id]);
+    if (!result.rows.length) return errorResponse(res, 404, 'Class schedule not found');
+    return success(res, 200, 'Class routine deleted successfully', { id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting class schedule:', error);
+    return errorResponse(res, 500, 'Failed to delete class routine');
   }
 };
 
@@ -339,10 +403,17 @@ const getClassSchedulesDebug = async (req, res) => {
     } catch (e) {
       out.errors.push('classes: ' + (e?.message || String(e)));
     }
-    res.status(200).json({ status: 'SUCCESS', ...out });
+    return success(res, 200, 'Class schedule debug fetched', out);
   } catch (error) {
-    res.status(500).json({ status: 'ERROR', message: 'Failed to process request' });
+    return errorResponse(res, 500, 'Failed to process request');
   }
 };
 
-module.exports = { getAllClassSchedules, getClassScheduleById, createClassSchedule, getClassSchedulesDebug };
+module.exports = {
+  getAllClassSchedules,
+  getClassScheduleById,
+  createClassSchedule,
+  updateClassSchedule,
+  deleteClassSchedule,
+  getClassSchedulesDebug
+};

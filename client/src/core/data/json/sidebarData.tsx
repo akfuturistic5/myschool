@@ -153,6 +153,14 @@ export const SidebarData = [
 
     submenuItems: [
       {
+        label: "Academic Years",
+        link: routes.academicYears,
+        subLink1: routes.academicYearNew,
+        icon: "ti ti-calendar-stats",
+        showSubRoute: false,
+        submenu: false,
+      },
+      {
         label: "Classes",
         icon: "ti ti-school-bell",
         submenu: true,

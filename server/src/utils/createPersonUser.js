@@ -14,12 +14,13 @@ const USERS_USERNAME_MAX_LEN = 50;
 /**
  * Find active user row by email (case-insensitive). Used to avoid users_email_key violations inside a transaction.
  */
-async function findUserRowByEmail(client, email) {
+async function findUserRowByEmail(client, email, { includeInactive = true } = {}) {
   const e = (email || '').toString().trim();
   if (!e) return null;
+  const activeClause = includeInactive ? '' : ' AND is_active = true';
   const r = await client.query(
     `SELECT id, role_id FROM users
-     WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1)) AND is_active = true
+     WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1))${activeClause}
      LIMIT 1`,
     [e]
   );
@@ -30,6 +31,21 @@ async function findUserRowByEmail(client, email) {
 async function isUserEmailTaken(client, email) {
   const row = await findUserRowByEmail(client, email);
   return Boolean(row);
+}
+
+async function findGuardianUserRowByPhone(client, phone, { includeInactive = true } = {}) {
+  const p = (phone || '').toString().trim();
+  if (!p) return null;
+  const activeClause = includeInactive ? '' : ' AND is_active = true';
+  const r = await client.query(
+    `SELECT id, role_id FROM users
+     WHERE phone IS NOT NULL
+       AND TRIM(phone) = TRIM($1)
+       AND role_id = $2${activeClause}
+     LIMIT 1`,
+    [p, ROLES.GUARDIAN]
+  );
+  return r.rows[0] || null;
 }
 
 async function runPersonInsertWithSavepoint(client, fn) {
@@ -310,9 +326,16 @@ async function createGuardianUser(client, { first_name, last_name, phone, email 
   if (emailTrim) {
     const existing = await findUserRowByEmail(client, emailTrim);
     if (existing) {
-      console.warn('createGuardianUser: email already in use, skip guardian user link');
-      return null;
+      if (Number(existing.role_id) !== Number(ROLES.GUARDIAN)) {
+        const err = new Error('Email is already linked to another account type');
+        err.code = 'EMAIL_IN_USE_BY_DIFFERENT_ROLE';
+        throw err;
+      }
+      return existing.id;
     }
+  } else if (phoneTrim) {
+    const existingByPhone = await findGuardianUserRowByPhone(client, phoneTrim);
+    if (existingByPhone) return existingByPhone.id;
   }
 
   try {
@@ -333,8 +356,13 @@ async function createGuardianUser(client, { first_name, last_name, phone, email 
     );
   } catch (e) {
     if (e.code === '23505' && emailTrim && String(e.constraint || '').includes('email')) {
-      console.warn('createGuardianUser: duplicate email (race), skip guardian user link');
-      return null;
+      const existing = await findUserRowByEmail(client, emailTrim);
+      if (existing && Number(existing.role_id) === Number(ROLES.GUARDIAN)) {
+        return existing.id;
+      }
+      const conflict = new Error('Email is already linked to another account type');
+      conflict.code = 'EMAIL_IN_USE_BY_DIFFERENT_ROLE';
+      throw conflict;
     }
     throw e;
   }
