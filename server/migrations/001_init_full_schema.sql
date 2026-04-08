@@ -312,7 +312,7 @@ CREATE SEQUENCE public.addresses_id_seq
     CACHE 1;
 
 
---
+-- ============
 -- TOC entry 4488 (class 0 OID 0)
 -- Dependencies: 220
 -- Name: addresses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
