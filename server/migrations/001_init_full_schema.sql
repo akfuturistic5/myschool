@@ -284,7 +284,7 @@ ALTER SEQUENCE public.academic_years_id_seq OWNED BY public.academic_years.id;
 --
 -- TOC entry 219 (class 1259 OID 214527)
 -- Name: addresses; Type: TABLE; Schema: public; Owner: neondb_owner
---
+-- ====
 
 CREATE TABLE public.addresses (
     id integer NOT NULL,
