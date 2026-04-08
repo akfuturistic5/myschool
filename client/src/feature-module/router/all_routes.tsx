@@ -219,6 +219,8 @@ export const all_routes = {
   teacherSalary: "/teacher/teacher-salary",
   teacherLeaves: "/teacher/teacher-leaves",
   teachersRoutine: "/teacher/teacher-routine",
+  administrativeDetails: "/administrative/my-details",
+  administrativeLeaves: "/administrative/my-leaves",
   parentGrid: "/parent/parent-grid",
   parentList: "/parent/parent-list",
   guardiansGrid: "/parent/guardians-grid",

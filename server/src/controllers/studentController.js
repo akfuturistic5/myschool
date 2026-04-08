@@ -3,9 +3,23 @@ const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
-const { createStudentUser, createParentUser, createGuardianUser } = require('../utils/createPersonUser');
+const {
+  createStudentUser,
+  createParentIndividualUser,
+  createGuardianUser,
+  isUserEmailTaken,
+} = require('../utils/createPersonUser');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
+
+/** Non-fatal warning when an email is already registered in users (student row still saved). */
+function buildEmailInUseWarning(field, displayLabel) {
+  return {
+    code: 'EMAIL_IN_USE',
+    field,
+    message: `${displayLabel}: Email already in use. Another account already uses this email. The student was saved successfully; no duplicate user was created for this email.`,
+  };
+}
 
 // Generate next unique GR number for this tenant database (one school per DB).
 const generateNextGrNumber = async (client) => {
@@ -66,7 +80,42 @@ const createStudent = async (req, res) => {
       ? medications.join(',')
       : (typeof medications === 'string' ? medications : (medications || null));
 
-    const student = await executeTransaction(async (client) => {
+    const stuEm = (email || '').toString().trim();
+    const stuPh = (phone || '').toString().trim();
+    if ((stuEm && !stuPh) || (!stuEm && stuPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Student email and phone must both be filled for login, or leave both empty.',
+      });
+    }
+    const fEm = (father_email || '').toString().trim();
+    const fPh = (father_phone || '').toString().trim();
+    if ((fEm && !fPh) || (!fEm && fPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Father email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const mEm = (mother_email || '').toString().trim();
+    const mPh = (mother_phone || '').toString().trim();
+    if ((mEm && !mPh) || (!mEm && mPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Mother email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const gEm = (guardian_email || '').toString().trim();
+    const gPh = (guardian_phone || '').toString().trim();
+    if ((gEm && !gPh) || (!gEm && gPh)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Guardian email and phone must both be filled, or leave both empty.',
+      });
+    }
+
+    const createResult = await executeTransaction(async (client) => {
+      const creationWarnings = [];
+
       const existingStudent = await client.query(
         'SELECT id FROM students WHERE admission_number = $1 AND is_active = true',
         [admission_number]
@@ -205,6 +254,8 @@ const createStudent = async (req, res) => {
           if (studentUserId) {
             await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [studentUserId, studentRow.id]);
             studentRow.user_id = studentUserId;
+          } else if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
+            creationWarnings.push(buildEmailInUseWarning('email', 'Student'));
           }
         } catch (e) {
           console.warn('createStudent: could not create student user:', e.message);
@@ -232,29 +283,56 @@ const createStudent = async (req, res) => {
 
         studentRow.parent_id = parentResult.rows[0].id;
 
-        // Create parent user and link
-        const parentEmail = (father_email || mother_email || '').toString().trim();
-        const parentPhone = (father_phone || mother_phone || '').toString().trim();
-        if (parentEmail || parentPhone) {
-          try {
-            const parentUserId = await createParentUser(client, {
-              father_name, father_email, father_phone, mother_name, mother_email, mother_phone, student_id: studentRow.id
+        const parentRowId = parentResult.rows[0].id;
+        let fatherUserId = null;
+        let motherUserId = null;
+        try {
+          if (father_phone || father_email) {
+            fatherUserId = await createParentIndividualUser(client, {
+              full_name: father_name,
+              email: father_email,
+              phone: father_phone,
+              parent_row_id: parentRowId,
+              side: 'father',
             });
-            if (parentUserId) {
-              await client.query('UPDATE parents SET user_id = $1, updated_at = NOW() WHERE id = $2', [parentUserId, parentResult.rows[0].id]);
+            const fMail = (father_email || '').toString().trim();
+            if (!fatherUserId && fMail && (await isUserEmailTaken(client, fMail))) {
+              creationWarnings.push(buildEmailInUseWarning('father_email', 'Father'));
             }
-          } catch (e) {
-            console.warn('createStudent: could not create parent user:', e.message);
           }
+          if (mother_phone || mother_email) {
+            motherUserId = await createParentIndividualUser(client, {
+              full_name: mother_name,
+              email: mother_email,
+              phone: mother_phone,
+              parent_row_id: parentRowId,
+              side: 'mother',
+            });
+            const mMail = (mother_email || '').toString().trim();
+            if (!motherUserId && mMail && (await isUserEmailTaken(client, mMail))) {
+              creationWarnings.push(buildEmailInUseWarning('mother_email', 'Mother'));
+            }
+          }
+        } catch (e) {
+          console.warn('createStudent: could not create parent users:', e.message);
         }
+        await client.query(
+          `UPDATE parents SET
+            father_user_id = $1::integer,
+            mother_user_id = $2::integer,
+            user_id = COALESCE($1::integer, $2::integer),
+            updated_at = NOW()
+          WHERE id = $3::integer`,
+          [fatherUserId, motherUserId, parentRowId]
+        );
       }
 
       if (hasGuardianInfo) {
         const guardianResult = await client.query(`
           INSERT INTO guardians (
-            student_id, first_name, last_name, relation, occupation, phone, email, address,
+            student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
             is_active, created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+          ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
           RETURNING id
         `, [
           studentRow.id,
@@ -286,6 +364,8 @@ const createStudent = async (req, res) => {
             });
             if (guardianUserId) {
               await client.query('UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2', [guardianUserId, guardianResult.rows[0].id]);
+            } else if (gEmail && (await isUserEmailTaken(client, gEmail))) {
+              creationWarnings.push(buildEmailInUseWarning('guardian_email', 'Guardian'));
             }
           } catch (e) {
             console.warn('createStudent: could not create guardian user:', e.message);
@@ -332,13 +412,14 @@ const createStudent = async (req, res) => {
         }
       }
 
-      return studentRow;
+      return { studentRow, warnings: creationWarnings };
     });
 
     res.status(201).json({
       status: 'SUCCESS',
       message: 'Student created successfully',
-      data: student
+      data: createResult.studentRow,
+      warnings: createResult.warnings || [],
     });
   } catch (error) {
     console.error('Error creating student:', error);
@@ -402,7 +483,42 @@ const updateStudent = async (req, res) => {
       ? medications.join(',')
       : (typeof medications === 'string' ? medications : (medications || null));
 
-    const student = await executeTransaction(async (client) => {
+    const stuEmUp = (email || '').toString().trim();
+    const stuPhUp = (phone || '').toString().trim();
+    if ((stuEmUp && !stuPhUp) || (!stuEmUp && stuPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Student email and phone must both be filled for login, or leave both empty.',
+      });
+    }
+    const fEmUp = (father_email || '').toString().trim();
+    const fPhUp = (father_phone || '').toString().trim();
+    if ((fEmUp && !fPhUp) || (!fEmUp && fPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Father email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const mEmUp = (mother_email || '').toString().trim();
+    const mPhUp = (mother_phone || '').toString().trim();
+    if ((mEmUp && !mPhUp) || (!mEmUp && mPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Mother email and phone must both be filled, or leave both empty.',
+      });
+    }
+    const gEmUp = (guardian_email || '').toString().trim();
+    const gPhUp = (guardian_phone || '').toString().trim();
+    if ((gEmUp && !gPhUp) || (!gEmUp && gPhUp)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Guardian email and phone must both be filled, or leave both empty.',
+      });
+    }
+
+    const updateResult = await executeTransaction(async (client) => {
+      const updateWarnings = [];
+
       const existingStudent = await client.query(
         'SELECT id FROM students WHERE admission_number = $1 AND id != $2 AND is_active = true',
         [admission_number, id]
@@ -678,6 +794,31 @@ const updateStudent = async (req, res) => {
 
       const studentRow = result.rows[0];
 
+      const stuPhoneUp = (phone || '').toString().trim();
+      const stuEmailUp = (email || '').toString().trim();
+      if (!studentRow.user_id && (stuPhoneUp || stuEmailUp || admission_number)) {
+        try {
+          const studentUserId = await createStudentUser(client, {
+            admission_number,
+            first_name,
+            last_name,
+            phone: stuPhoneUp || null,
+            email: stuEmailUp || null,
+          });
+          if (studentUserId) {
+            await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [
+              studentUserId,
+              studentRow.id,
+            ]);
+            studentRow.user_id = studentUserId;
+          } else if (stuEmailUp && (await isUserEmailTaken(client, stuEmailUp))) {
+            updateWarnings.push(buildEmailInUseWarning('email', 'Student'));
+          }
+        } catch (e) {
+          console.warn('updateStudent: could not create student user:', e.message);
+        }
+      }
+
       if (hasParentInfo) {
         const existingParent = await client.query(
           'SELECT id FROM parents WHERE student_id = $1',
@@ -733,6 +874,55 @@ const updateStudent = async (req, res) => {
 
           studentRow.parent_id = parentResult.rows[0].id;
         }
+
+        const pRowRes = await client.query(
+          'SELECT id, father_user_id, mother_user_id FROM parents WHERE student_id = $1 LIMIT 1',
+          [studentRow.id]
+        );
+        if (pRowRes.rows.length > 0) {
+          const pRow = pRowRes.rows[0];
+          let newFatherUserId = null;
+          let newMotherUserId = null;
+          try {
+            if ((father_phone || father_email) && !pRow.father_user_id) {
+              newFatherUserId = await createParentIndividualUser(client, {
+                full_name: father_name,
+                email: father_email,
+                phone: father_phone,
+                parent_row_id: pRow.id,
+                side: 'father',
+              });
+              const fMailUp = (father_email || '').toString().trim();
+              if (!newFatherUserId && fMailUp && (await isUserEmailTaken(client, fMailUp))) {
+                updateWarnings.push(buildEmailInUseWarning('father_email', 'Father'));
+              }
+            }
+            if ((mother_phone || mother_email) && !pRow.mother_user_id) {
+              newMotherUserId = await createParentIndividualUser(client, {
+                full_name: mother_name,
+                email: mother_email,
+                phone: mother_phone,
+                parent_row_id: pRow.id,
+                side: 'mother',
+              });
+              const mMailUp = (mother_email || '').toString().trim();
+              if (!newMotherUserId && mMailUp && (await isUserEmailTaken(client, mMailUp))) {
+                updateWarnings.push(buildEmailInUseWarning('mother_email', 'Mother'));
+              }
+            }
+          } catch (e) {
+            console.warn('updateStudent: could not create parent users:', e.message);
+          }
+          await client.query(
+            `UPDATE parents SET
+              father_user_id = COALESCE($1::integer, father_user_id),
+              mother_user_id = COALESCE($2::integer, mother_user_id),
+              user_id = COALESCE(user_id, father_user_id, mother_user_id),
+              updated_at = NOW()
+            WHERE id = $3`,
+            [newFatherUserId, newMotherUserId, pRow.id]
+          );
+        }
       }
 
       if (hasGuardianInfo) {
@@ -751,6 +941,7 @@ const updateStudent = async (req, res) => {
               phone = $5,
               email = $6,
               address = $7,
+              guardian_type = COALESCE(guardian_type, 'guardian'),
               modified_at = NOW()
             WHERE student_id = $8
           `, [
@@ -767,9 +958,9 @@ const updateStudent = async (req, res) => {
         } else {
           const guardianResult = await client.query(`
             INSERT INTO guardians (
-              student_id, first_name, last_name, relation, occupation, phone, email, address,
+              student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
               is_active, created_at, modified_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+            ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
             RETURNING id
           `, [
             studentRow.id,
@@ -787,6 +978,36 @@ const updateStudent = async (req, res) => {
           `, [guardianResult.rows[0].id, studentRow.id]);
 
           studentRow.guardian_id = guardianResult.rows[0].id;
+        }
+      }
+
+      const gUserSync = await client.query(
+        'SELECT id, user_id, phone, email, first_name, last_name FROM guardians WHERE student_id = $1 LIMIT 1',
+        [studentRow.id]
+      );
+      if (gUserSync.rows.length > 0 && !gUserSync.rows[0].user_id) {
+        const gr = gUserSync.rows[0];
+        const gPhoneUp = (guardian_phone || gr.phone || '').toString().trim();
+        const gEmailUp = (guardian_email || gr.email || '').toString().trim();
+        if (gPhoneUp || gEmailUp) {
+          try {
+            const guardianUserId = await createGuardianUser(client, {
+              first_name: guardian_first_name || gr.first_name || 'Guardian',
+              last_name: guardian_last_name || gr.last_name || '',
+              phone: gPhoneUp || null,
+              email: gEmailUp || null,
+            });
+            if (guardianUserId) {
+              await client.query('UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2', [
+                guardianUserId,
+                gr.id,
+              ]);
+            } else if (gEmailUp && (await isUserEmailTaken(client, gEmailUp))) {
+              updateWarnings.push(buildEmailInUseWarning('guardian_email', 'Guardian'));
+            }
+          } catch (e) {
+            console.warn('updateStudent: could not create guardian user:', e.message);
+          }
         }
       }
 
@@ -829,13 +1050,14 @@ const updateStudent = async (req, res) => {
         }
       }
 
-      return studentRow;
+      return { studentRow, warnings: updateWarnings };
     });
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Student updated successfully',
-      data: student
+      data: updateResult.studentRow,
+      warnings: updateResult.warnings || [],
     });
   } catch (error) {
     console.error('Error updating student:', error);
@@ -852,12 +1074,632 @@ const updateStudent = async (req, res) => {
   }
 };
 
+const normalizeOverallResult = (val) => {
+  const s = String(val || '').trim().toLowerCase();
+  if (!s) return 'Not Available';
+  if (['pass', 'p', 'passed'].includes(s)) return 'Pass';
+  if (['fail', 'f', 'failed'].includes(s)) return 'Fail';
+  return 'Not Available';
+};
+
+const computeLastClassResult = async (client, studentId, classId, academicYearId) => {
+  try {
+    if (!studentId) return 'Not Available';
+    const params = [studentId];
+    const scoped = [];
+    if (classId != null) {
+      params.push(classId);
+      scoped.push(`e.class_id = $${params.length}`);
+    }
+    if (academicYearId != null) {
+      params.push(academicYearId);
+      scoped.push(`e.academic_year_id = $${params.length}`);
+    }
+    const scopedSql = scoped.length > 0 ? `AND ${scoped.join(' AND ')}` : '';
+    const examRes = await client.query(
+      `SELECT er.exam_id, COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date
+       FROM exam_results er
+       LEFT JOIN exams e ON e.id = er.exam_id
+       WHERE er.student_id = $1
+         AND er.exam_id IS NOT NULL
+         ${scopedSql}
+       ORDER BY COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST, er.exam_id DESC
+       LIMIT 1`,
+      params
+    );
+    const latestExamId = examRes.rows[0]?.exam_id;
+    if (!latestExamId) return 'Not Available';
+    const summary = await client.query(
+      `SELECT
+         COUNT(*)::int AS subjects_count,
+         COALESCE(SUM(CASE WHEN er.is_absent = true THEN 0 ELSE COALESCE(er.marks_obtained, er.obtained_marks, er.marks, er.marks_scored, er.score, 0) END), 0)::numeric AS total_obtained,
+         COALESCE(SUM(COALESCE(er.min_marks, er.pass_marks, er.min_mark, er.min, 0)), 0)::numeric AS total_min
+       FROM exam_results er
+       WHERE er.student_id = $1 AND er.exam_id = $2`,
+      [studentId, latestExamId]
+    );
+    const row = summary.rows[0];
+    if (!row || Number(row.subjects_count || 0) === 0) return 'Not Available';
+    return Number(row.total_obtained || 0) >= Number(row.total_min || 0) ? 'Pass' : 'Fail';
+  } catch (e) {
+    console.warn('computeLastClassResult failed:', e.message);
+    return 'Not Available';
+  }
+};
+
+const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
+  if (!studentRow) return;
+
+  // Deactivate student login
+  if (studentRow.user_id != null) {
+    await client.query(
+      'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+      [studentRow.user_id]
+    );
+  }
+
+  // Deactivate guardian + guardian login only when no other active student is linked to that guardian.
+  if (studentRow.guardian_id != null) {
+    const otherGuardianActive = await client.query(
+      'SELECT 1 FROM students WHERE guardian_id = $1 AND is_active = true AND id <> $2 LIMIT 1',
+      [studentRow.guardian_id, studentRow.id]
+    );
+    if (otherGuardianActive.rows.length === 0) {
+      await client.query(
+        'UPDATE guardians SET is_active = false, modified_at = NOW() WHERE id = $1',
+        [studentRow.guardian_id]
+      );
+      const guardianUser = await client.query(
+        'SELECT user_id FROM guardians WHERE id = $1 LIMIT 1',
+        [studentRow.guardian_id]
+      );
+      const guardianUid = guardianUser.rows[0]?.user_id;
+      if (guardianUid != null) {
+        await client.query(
+          'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+          [guardianUid]
+        );
+      }
+    }
+  }
+
+  // Deactivate parent users only when no other active student is linked to this parent.
+  if (studentRow.parent_id != null) {
+    const otherParentActive = await client.query(
+      'SELECT 1 FROM students WHERE parent_id = $1 AND is_active = true AND id <> $2 LIMIT 1',
+      [studentRow.parent_id, studentRow.id]
+    );
+    if (otherParentActive.rows.length === 0) {
+      const pRes = await client.query(
+        `SELECT father_user_id, mother_user_id, user_id
+         FROM parents WHERE id = $1 LIMIT 1`,
+        [studentRow.parent_id]
+      );
+      if (pRes.rows.length > 0) {
+        const p = pRes.rows[0];
+        const uniqueUids = [...new Set([p.father_user_id, p.mother_user_id, p.user_id].filter((v) => v != null))];
+        for (const uid of uniqueUids) {
+          await client.query(
+            'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+            [uid]
+          );
+        }
+      }
+    }
+  }
+};
+
+/**
+ * Bulk promote: update students' academic year / class / section and record history in student_promotions.
+ */
+const promoteStudents = async (req, res) => {
+  try {
+    const {
+      student_ids: studentIds,
+      to_class_id: toClassId,
+      to_section_id: toSectionId,
+      to_academic_year_id: toAcademicYearId,
+      from_academic_year_id: fromAcademicYearId,
+    } = req.body;
+
+    // Disallow backward / same-year promotion.
+    // Compare by year label (preferred), with id-order fallback.
+    const parseYearKey = (name) => {
+      const m = String(name || '').match(/\b(19|20)\d{2}\b/);
+      return m ? parseInt(m[0], 10) : null;
+    };
+    if (fromAcademicYearId != null) {
+      const yearsRes = await query(
+        `SELECT id, year_name
+         FROM academic_years
+         WHERE id = ANY($1::int[])`,
+        [[Number(fromAcademicYearId), Number(toAcademicYearId)]]
+      );
+      const fromRow = yearsRes.rows.find((r) => Number(r.id) === Number(fromAcademicYearId));
+      const toRow = yearsRes.rows.find((r) => Number(r.id) === Number(toAcademicYearId));
+      if (fromRow && toRow) {
+        const fromKey = parseYearKey(fromRow.year_name);
+        const toKey = parseYearKey(toRow.year_name);
+        const isForward = (fromKey != null && toKey != null)
+          ? toKey > fromKey
+          : Number(toAcademicYearId) > Number(fromAcademicYearId);
+        if (!isForward) {
+          return res.status(400).json({
+            status: 'ERROR',
+            message: 'Target academic year must be greater than current academic year',
+          });
+        }
+      } else if (Number(toAcademicYearId) <= Number(fromAcademicYearId)) {
+        return res.status(400).json({
+          status: 'ERROR',
+          message: 'Target academic year must be greater than current academic year',
+        });
+      }
+    }
+
+    const userId = req.user?.id;
+    let promotedByStaffId = null;
+    if (userId) {
+      const staffRes = await query(
+        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        [userId]
+      );
+      if (staffRes.rows.length > 0) {
+        promotedByStaffId = staffRes.rows[0].id;
+      }
+    }
+
+    const classCheck = await query(
+      `SELECT id FROM classes
+       WHERE id = $1 AND academic_year_id = $2 AND COALESCE(is_active, true) = true`,
+      [toClassId, toAcademicYearId]
+    );
+    if (classCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target class is invalid for the selected academic year',
+      });
+    }
+
+    const sectionCheck = await query(
+      'SELECT id, class_id FROM sections WHERE id = $1 AND COALESCE(is_active, true) = true',
+      [toSectionId]
+    );
+    if (sectionCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section not found',
+      });
+    }
+    const secRow = sectionCheck.rows[0];
+    if (secRow.class_id != null && Number(secRow.class_id) !== Number(toClassId)) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section does not belong to the target class',
+      });
+    }
+
+    const uniqueIds = [...new Set(studentIds.map((n) => parseInt(n, 10)).filter((n) => !Number.isNaN(n)))];
+    if (uniqueIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      let promoted = 0;
+      for (const sid of uniqueIds) {
+        const sRes = await client.query(
+          `SELECT id, academic_year_id, class_id, section_id, is_active
+           FROM students WHERE id = $1 LIMIT 1`,
+          [sid]
+        );
+        if (sRes.rows.length === 0) {
+          const err = new Error(`Student ${sid} not found`);
+          err.statusCode = 400;
+          throw err;
+        }
+        const s = sRes.rows[0];
+        if (s.is_active === false || s.is_active === 'f' || s.is_active === 0) {
+          const err = new Error(`Student ${sid} is not active`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (
+          fromAcademicYearId != null &&
+          s.academic_year_id != null &&
+          Number(s.academic_year_id) !== Number(fromAcademicYearId)
+        ) {
+          const err = new Error(
+            `Student ${sid} is not enrolled in the selected current academic year`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const fromClassId = s.class_id;
+        const fromSectionId = s.section_id;
+        const fromYearId = s.academic_year_id;
+
+        await client.query(
+          `UPDATE students SET
+            academic_year_id = $1,
+            class_id = $2,
+            section_id = $3,
+            modified_at = NOW()
+           WHERE id = $4`,
+          [toAcademicYearId, toClassId, toSectionId, sid]
+        );
+
+        await client.query(
+          `INSERT INTO student_promotions (
+            student_id,
+            from_class_id,
+            to_class_id,
+            from_section_id,
+            to_section_id,
+            from_academic_year_id,
+            to_academic_year_id,
+            status,
+            promoted_by,
+            remarks
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            sid,
+            fromClassId,
+            toClassId,
+            fromSectionId,
+            toSectionId,
+            fromYearId,
+            toAcademicYearId,
+            'promoted',
+            promotedByStaffId,
+            null,
+          ]
+        );
+        promoted += 1;
+      }
+      return promoted;
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Students promoted successfully',
+      data: { promoted: result },
+    });
+  } catch (error) {
+    console.error('Error promoting students:', error);
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: error.message || 'Invalid promotion request',
+      });
+    }
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to promote students',
+    });
+  }
+};
+
+/**
+ * Bulk mark students as leaving school from the promotion screen.
+ * Stores a full snapshot in leaving_students and deactivates linked accounts.
+ */
+const leaveStudents = async (req, res) => {
+  try {
+    const {
+      student_ids: studentIds,
+      leaving_date: leavingDateRaw,
+      reason,
+      remarks,
+      from_academic_year_id: fromAcademicYearId,
+    } = req.body;
+
+    const leavingDate = leavingDateRaw || new Date().toISOString().slice(0, 10);
+    const userId = req.user?.id;
+    let leftByStaffId = null;
+
+    if (userId) {
+      const staffRes = await query(
+        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        [userId]
+      );
+      if (staffRes.rows.length > 0) leftByStaffId = staffRes.rows[0].id;
+    }
+
+    const uniqueIds = [...new Set(studentIds.map((n) => parseInt(n, 10)).filter((n) => !Number.isNaN(n)))];
+    if (uniqueIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      let left = 0;
+      for (const sid of uniqueIds) {
+        const sRes = await client.query(
+          `SELECT
+             s.id, s.user_id, s.parent_id, s.guardian_id, s.is_active,
+             s.admission_number, s.first_name, s.last_name,
+             s.class_id, s.section_id, s.academic_year_id, s.admission_date
+           FROM students s
+           WHERE s.id = $1
+           LIMIT 1`,
+          [sid]
+        );
+        if (sRes.rows.length === 0) {
+          const err = new Error(`Student ${sid} not found`);
+          err.statusCode = 400;
+          throw err;
+        }
+        const s = sRes.rows[0];
+        if (s.is_active === false || s.is_active === 'f' || s.is_active === 0) {
+          const err = new Error(`Student ${sid} is already inactive`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (
+          fromAcademicYearId != null &&
+          s.academic_year_id != null &&
+          Number(s.academic_year_id) !== Number(fromAcademicYearId)
+        ) {
+          const err = new Error(`Student ${sid} is not in the selected current academic year`);
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const alreadyLeft = await client.query(
+          'SELECT id FROM leaving_students WHERE student_id = $1 AND is_active = true LIMIT 1',
+          [sid]
+        );
+        if (alreadyLeft.rows.length > 0) {
+          const err = new Error(`Student ${sid} already has an active leaving record`);
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const firstHistory = await client.query(
+          `SELECT from_class_id, from_section_id, from_academic_year_id
+           FROM student_promotions
+           WHERE student_id = $1
+           ORDER BY promotion_date ASC NULLS LAST, id ASC
+           LIMIT 1`,
+          [sid]
+        );
+        const first = firstHistory.rows[0] || {};
+
+        const joiningClassId = first.from_class_id ?? s.class_id ?? null;
+        const joiningSectionId = first.from_section_id ?? s.section_id ?? null;
+        const joiningAcademicYearId = first.from_academic_year_id ?? s.academic_year_id ?? null;
+
+        const lastClassResult = await computeLastClassResult(
+          client,
+          sid,
+          s.class_id ?? null,
+          s.academic_year_id ?? null
+        );
+
+        await client.query(
+          `INSERT INTO leaving_students (
+             student_id, admission_number, student_first_name, student_last_name,
+             joining_class_id, joining_section_id, joining_academic_year_id, joining_date,
+             last_class_id, last_section_id, last_academic_year_id, leaving_date,
+             last_class_result, reason, remarks, left_by, created_by
+           ) VALUES (
+             $1, $2, $3, $4,
+             $5, $6, $7, $8,
+             $9, $10, $11, $12,
+             $13, $14, $15, $16, $17
+           )`,
+          [
+            sid,
+            s.admission_number ?? null,
+            s.first_name ?? null,
+            s.last_name ?? null,
+            joiningClassId,
+            joiningSectionId,
+            joiningAcademicYearId,
+            s.admission_date ?? null,
+            s.class_id ?? null,
+            s.section_id ?? null,
+            s.academic_year_id ?? null,
+            leavingDate,
+            normalizeOverallResult(lastClassResult),
+            reason || null,
+            remarks || null,
+            leftByStaffId,
+            userId || null,
+          ]
+        );
+
+        await client.query(
+          `UPDATE students
+           SET is_active = false, modified_at = NOW()
+           WHERE id = $1`,
+          [sid]
+        );
+
+        await deactivateLinkedAccountsForLeftStudent(client, s);
+        left += 1;
+      }
+      return left;
+    });
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Students marked as leaving successfully',
+      data: { left: result },
+    });
+  } catch (error) {
+    console.error('Error leaving students:', error);
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: error.message || 'Invalid leave request',
+      });
+    }
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to leave students',
+    });
+  }
+};
+
+// Get student promotion history
+const getStudentPromotions = async (req, res) => {
+  try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+    const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
+    const hasStudentFilter = studentId != null && !Number.isNaN(studentId);
+    const whereClause = hasStudentFilter ? 'WHERE sp.student_id = $1' : '';
+    const params = hasStudentFilter ? [studentId, limit] : [limit];
+    const limitParam = hasStudentFilter ? '$2' : '$1';
+
+    const result = await query(
+      `SELECT
+        sp.id,
+        sp.student_id,
+        sp.from_class_id,
+        sp.to_class_id,
+        sp.from_section_id,
+        sp.to_section_id,
+        sp.from_academic_year_id,
+        sp.to_academic_year_id,
+        sp.promotion_date,
+        sp.status,
+        sp.remarks,
+        sp.promoted_by,
+        sp.created_at,
+        sp.modified_at,
+        s.admission_number,
+        s.roll_number,
+        s.first_name,
+        s.last_name,
+        fc.class_name AS from_class_name,
+        tc.class_name AS to_class_name,
+        fs.section_name AS from_section_name,
+        ts.section_name AS to_section_name,
+        fay.year_name AS from_academic_year_name,
+        tay.year_name AS to_academic_year_name,
+        st.first_name AS promoted_by_first_name,
+        st.last_name AS promoted_by_last_name
+      FROM student_promotions sp
+      LEFT JOIN students s ON s.id = sp.student_id
+      LEFT JOIN classes fc ON fc.id = sp.from_class_id
+      LEFT JOIN classes tc ON tc.id = sp.to_class_id
+      LEFT JOIN sections fs ON fs.id = sp.from_section_id
+      LEFT JOIN sections ts ON ts.id = sp.to_section_id
+      LEFT JOIN academic_years fay ON fay.id = sp.from_academic_year_id
+      LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
+      LEFT JOIN staff st ON st.id = sp.promoted_by
+      ${whereClause}
+      ORDER BY sp.promotion_date DESC, sp.id DESC
+      LIMIT ${limitParam}`,
+      params
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student promotion history fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching student promotions:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch student promotion history',
+    });
+  }
+};
+
+// Get leaving students history with join/last snapshots and names.
+const getLeavingStudents = async (req, res) => {
+  try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+
+    const result = await query(
+      `SELECT
+         ls.id,
+         ls.student_id,
+         ls.admission_number,
+         ls.student_first_name,
+         ls.student_last_name,
+         ls.joining_class_id,
+         ls.joining_section_id,
+         ls.joining_academic_year_id,
+         ls.joining_date,
+         ls.last_class_id,
+         ls.last_section_id,
+         ls.last_academic_year_id,
+         ls.leaving_date,
+         ls.last_class_result,
+         ls.reason,
+         ls.remarks,
+         ls.left_by,
+         ls.created_at,
+         ls.modified_at,
+         jc.class_name AS joining_class_name,
+         js.section_name AS joining_section_name,
+         jay.year_name AS joining_academic_year_name,
+         lc.class_name AS last_class_name,
+         lsn.section_name AS last_section_name,
+         lay.year_name AS last_academic_year_name,
+         st.first_name AS left_by_first_name,
+         st.last_name AS left_by_last_name
+       FROM leaving_students ls
+       LEFT JOIN classes jc ON jc.id = ls.joining_class_id
+       LEFT JOIN sections js ON js.id = ls.joining_section_id
+       LEFT JOIN academic_years jay ON jay.id = ls.joining_academic_year_id
+       LEFT JOIN classes lc ON lc.id = ls.last_class_id
+       LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
+       LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
+       LEFT JOIN staff st ON st.id = ls.left_by
+       WHERE COALESCE(ls.is_active, true) = true
+       ORDER BY ls.leaving_date DESC, ls.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Leaving students fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching leaving students:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch leaving students',
+    });
+  }
+};
+
 // Get all students
 const getAllStudents = async (req, res) => {
   try {
-    const { page, limit, offset } = parsePagination(req.query);
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+
+    // When scoped to an academic year, client screens (e.g. Student Promotion) need the full roster
+    // for that year — not only the first page (default 50 / max 100 from parsePagination).
+    let page;
+    let limit;
+    let offset;
+    if (hasAcademicYearFilter) {
+      page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const rawLimit = parseInt(req.query.limit, 10);
+      limit =
+        Number.isNaN(rawLimit) || rawLimit < 1
+          ? 5000
+          : Math.min(10000, rawLimit);
+      offset = (page - 1) * limit;
+    } else {
+      const p = parsePagination(req.query);
+      page = p.page;
+      limit = p.limit;
+      offset = p.offset;
+    }
 
     const countWhere = hasAcademicYearFilter ? ' WHERE academic_year_id = $1' : '';
     const countParams = hasAcademicYearFilter ? [academicYearId] : [];
@@ -1045,6 +1887,10 @@ const getStudentById = async (req, res) => {
       s.sibiling_1, s.sibiling_2, s.sibiling_1_class, s.sibiling_2_class,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       c.class_name, sec.section_name,
+      ay.year_name as academic_year_name,
+      cls_t.staff_id as class_teacher_staff_id,
+      cls_staff.first_name as class_teacher_first_name,
+      cls_staff.last_name as class_teacher_last_name,
       bg.blood_group as blood_group_name,
       cast_t.cast_name,
       mt.language_name as mother_tongue_name,
@@ -1059,6 +1905,9 @@ const getStudentById = async (req, res) => {
       LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+      LEFT JOIN teachers cls_t ON c.class_teacher_id = cls_t.id
+      LEFT JOIN staff cls_staff ON cls_t.staff_id = cls_staff.id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
@@ -1344,46 +2193,18 @@ const getStudentLoginDetails = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
-    // Collect parent contact info for matching parent user accounts
-    const parentContacts = {
-      emails: [],
-      phones: [],
-    };
-
-    if (stu.parent_id) {
-      try {
-        const pRes = await query(
-          `SELECT
-             father_email,
-             father_phone,
-             mother_email,
-             mother_phone
-           FROM parents
-           WHERE id = $1 OR student_id = $2
-           LIMIT 1`,
-          [stu.parent_id, id]
-        );
-        if (pRes.rows.length > 0) {
-          const p = pRes.rows[0];
-          const emails = [
-            p.father_email,
-            p.mother_email,
-          ].filter((e) => e && e.toString().trim() !== '');
-          const phones = [
-            p.father_phone,
-            p.mother_phone,
-          ].filter((ph) => ph && ph.toString().trim() !== '');
-          parentContacts.emails = Array.from(new Set(emails.map((e) => e.toString().trim().toLowerCase())));
-          parentContacts.phones = Array.from(new Set(phones.map((ph) => ph.toString().trim())));
-        }
-      } catch (e) {
-        // If parents table lookup fails, we still return student user if available.
-      }
-    }
-
     let parentUsers = [];
-    if (parentContacts.emails.length > 0 || parentContacts.phones.length > 0) {
-      try {
+    if (stu.parent_id) {
+      const loadParentsByContact = async (p) => {
+        const emails = [p.father_email, p.mother_email]
+          .filter((e) => e && e.toString().trim() !== '')
+          .map((e) => e.toString().trim().toLowerCase());
+        const phones = [p.father_phone, p.mother_phone]
+          .filter((ph) => ph && ph.toString().trim() !== '')
+          .map((ph) => ph.toString().trim());
+        const uEmails = Array.from(new Set(emails));
+        const uPhones = Array.from(new Set(phones));
+        if (uEmails.length === 0 && uPhones.length === 0) return [];
         const parRes = await query(
           `SELECT id, username, email, phone
            FROM users
@@ -1393,43 +2214,88 @@ const getStudentLoginDetails = async (req, res) => {
                (COALESCE(LOWER(TRIM(email)), '') <> '' AND LOWER(TRIM(email)) = ANY($2))
                OR (COALESCE(TRIM(phone), '') <> '' AND TRIM(phone) = ANY($3))
              )`,
-          [ROLES.PARENT, parentContacts.emails, parentContacts.phones]
+          [ROLES.PARENT, uEmails, uPhones]
         );
-        parentUsers = parRes.rows;
+        return parRes.rows;
+      };
+
+      try {
+        const pRes = await query(
+          `SELECT father_user_id, mother_user_id, user_id,
+                  father_email, father_phone, mother_email, mother_phone
+           FROM parents
+           WHERE id = $1 OR student_id = $2
+           LIMIT 1`,
+          [stu.parent_id, id]
+        );
+        if (pRes.rows.length > 0) {
+          const p = pRes.rows[0];
+          const idSet = new Set();
+          for (const uid of [p.father_user_id, p.mother_user_id, p.user_id]) {
+            if (uid != null && uid !== '') idSet.add(parseInt(uid, 10));
+          }
+          if (idSet.size > 0) {
+            const parRes = await query(
+              `SELECT id, username, email, phone
+               FROM users
+               WHERE is_active = true AND role_id = $1 AND id = ANY($2::int[])`,
+              [ROLES.PARENT, [...idSet]]
+            );
+            parentUsers = parRes.rows;
+          }
+          if (parentUsers.length === 0) {
+            parentUsers = await loadParentsByContact(p);
+          }
+        }
       } catch (e) {
-        // If parent users lookup fails, we still return student user if available.
+        try {
+          const pRes = await query(
+            `SELECT father_email, father_phone, mother_email, mother_phone
+             FROM parents WHERE id = $1 OR student_id = $2 LIMIT 1`,
+            [stu.parent_id, id]
+          );
+          if (pRes.rows.length > 0) {
+            parentUsers = await loadParentsByContact(pRes.rows[0]);
+          }
+        } catch (_) {
+          // ignore
+        }
       }
     }
 
-    // If requester is a Parent, show only their own account (not all matched parents)
-    if (parentUsers.length > 0) {
-      if (isParent && userId) {
-        parentUsers = parentUsers.filter((u) => {
-          try {
-            return parseInt(u.id, 10) === parseInt(userId, 10);
-          } catch {
-            return false;
-          }
-        });
-      } else {
-        // For Admin/Student/Guardian: de-duplicate by contact (email/phone) so that
-        // shared phone/email across multiple accounts does not show multiple rows.
-        const seen = new Set();
-        const deduped = [];
-        for (const u of parentUsers) {
-          const emailKey = (u.email || '').toString().trim().toLowerCase();
-          const phoneKey = (u.phone || '').toString().trim();
-          const key = emailKey || phoneKey;
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          deduped.push(u);
-        }
-        parentUsers = deduped;
+    if (parentUsers.length > 0 && isParent && userId) {
+      parentUsers = parentUsers.filter((u) => parseInt(u.id, 10) === parseInt(userId, 10));
+    } else if (parentUsers.length > 0 && !isParent) {
+      const seenId = new Set();
+      parentUsers = parentUsers.filter((u) => {
+        const k = parseInt(u.id, 10);
+        if (seenId.has(k)) return false;
+        seenId.add(k);
+        return true;
+      });
+    }
+
+    let guardianLogin = null;
+    try {
+      const gRes = await query(
+        `SELECT u.username, u.email, u.phone
+         FROM guardians g
+         JOIN users u ON u.id = g.user_id AND u.is_active = true
+         WHERE g.student_id = $1 AND g.user_id IS NOT NULL
+         LIMIT 1`,
+        [id]
+      );
+      if (gRes.rows.length > 0) {
+        const g = gRes.rows[0];
+        guardianLogin = {
+          userType: 'Guardian',
+          username: g.username || null,
+          phone: g.phone || null,
+          email: g.email || null,
+        };
       }
-      // For non-parent roles (Student/Admin/Guardian), show at most one parent account
-      if (!isParent && parentUsers.length > 1) {
-        parentUsers = [parentUsers[0]];
-      }
+    } catch (e) {
+      // ignore
     }
 
     const loginDetails = {
@@ -1447,6 +2313,7 @@ const getStudentLoginDetails = async (req, res) => {
         phone: u.phone || null,
         email: u.email || null,
       })),
+      guardian: guardianLogin,
     };
 
     return res.status(200).json({
@@ -2524,6 +3391,10 @@ const getAttendanceReport = async (req, res) => {
 module.exports = {
   createStudent,
   updateStudent,
+  promoteStudents,
+  leaveStudents,
+  getStudentPromotions,
+  getLeavingStudents,
   getAllStudents,
   getTeacherStudents,
   getStudentById,

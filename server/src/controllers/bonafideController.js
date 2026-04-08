@@ -5,6 +5,7 @@ const PDFDocument = require('pdfkit');
 const { query, masterQuery, getCurrentTenantDbName } = require('../config/database');
 const { error: errorResponse } = require('../utils/responseHelper');
 const { canAccessStudent } = require('../utils/accessControl');
+const { ROLES } = require('../config/roles');
 const { getSchoolProfile } = require('../services/schoolProfileService');
 const { resolveExistingLogoPath, sanitizeFilename, sanitizeTenant } = require('../utils/schoolLogoStorage');
 
@@ -25,7 +26,7 @@ function isAllowedBonafideRole(req) {
   const { roleName, roleId } = parseRole(req);
   if (roleName === 'admin' || roleId === 1) return true;
   if (roleName === 'administrative' || roleId === 6) return true;
-  if (roleName === 'student' || roleId === 2) return true;
+  if (roleName === 'student' || roleId === ROLES.STUDENT) return true;
   if (roleName === 'parent' || roleId === 4) return true;
   if (roleName === 'guardian' || roleId === 5) return true;
   return false;

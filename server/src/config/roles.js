@@ -1,12 +1,12 @@
 /**
  * Role-based access control configuration
- * role_id from user_roles: 1=Admin, 2=Student, 3=Teacher, 4=Parent, 5=Guardian, 6=Administrative
- * Use role names for flexibility (DB may have different IDs)
+ * Must match public.user_roles (see migrations/001_init_full_schema.sql seed):
+ * 1=admin, 2=teacher, 3=student, 4=parent, 5=Guardian, 6=administrative (if present)
  */
 const ROLES = {
   ADMIN: 1,
-  STUDENT: 2,
-  TEACHER: 3,
+  TEACHER: 2,
+  STUDENT: 3,
   PARENT: 4,
   GUARDIAN: 5,
   ADMINISTRATIVE: 6,
@@ -38,7 +38,7 @@ const ROLE_NAMES = {
   [ROLES.GUARDIAN]: 'Guardian',
 };
 
-/** Roles that can approve/reject leave applications */
+/** Roles that can approve/reject leave applications (Headmaster / Admin only) */
 const LEAVE_APPROVER_ROLES = [ROLES.ADMIN];
 
 /** Roles that can manage fee collection (create, list all) */
@@ -47,8 +47,8 @@ const FEE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can manage notice board (create, update, delete) */
 const NOTICE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
-/** Roles that can access admin dashboard stats (full system counts) */
-const ADMIN_DASHBOARD_ROLES = [ROLES.ADMIN];
+/** Roles that can access dashboard operational stats */
+const ADMIN_DASHBOARD_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can manage users */
 const USER_MANAGER_ROLES = [ROLES.ADMIN];
@@ -68,8 +68,8 @@ const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can create/update/delete school events (Headmaster + Teacher) */
 const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
-/** Roles that can access getLeaveApplications (all/filtered list - admin view) */
-const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+/** Roles that can access getLeaveApplications (all/filtered list - Headmaster / Admin view only) */
+const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN];
 
 /** Roles that can access fee collections list (all students with fee summary) */
 const FEE_COLLECTIONS_LIST_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];

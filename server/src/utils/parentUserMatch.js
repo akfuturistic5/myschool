@@ -1,7 +1,7 @@
 /**
  * Parent-user matching utility.
  * Links users (Parent role) to parents table when parents has no user_id.
- * Uses: 1) direct parents.user_id mapping
+ * Uses: 1) direct parents.user_id / father_user_id / mother_user_id mapping
  *       2) username+@email.com (unique, disambiguates when multiple parents share same phone)
  *       3) email match (father_email/mother_email)
  *       4) phone match (father_phone/mother_phone)
@@ -41,12 +41,25 @@ async function getParentsForUser(userId) {
     WHERE s.is_active = true
   `;
 
-  // 1. Prefer exact user link created during parent onboarding.
-  const directUserMatch = await query(
-    `${baseSelect} AND p.user_id = $1
+  // 1. Prefer exact user link created during student/parent onboarding.
+  let directUserMatch;
+  try {
+    directUserMatch = await query(
+      `${baseSelect} AND (
+      p.user_id = $1
+      OR p.father_user_id = $1
+      OR p.mother_user_id = $1
+    )
      ORDER BY s.first_name ASC, s.last_name ASC`,
-    [userId]
-  );
+      [userId]
+    );
+  } catch {
+    directUserMatch = await query(
+      `${baseSelect} AND p.user_id = $1
+     ORDER BY s.first_name ASC, s.last_name ASC`,
+      [userId]
+    );
+  }
   if (directUserMatch.rows.length > 0) {
     const studentIds = directUserMatch.rows.map((row) => row.student_id).filter(Boolean);
     return { parents: directUserMatch.rows, studentIds };

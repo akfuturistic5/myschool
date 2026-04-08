@@ -136,6 +136,8 @@ import StudentPromotion from "../peoples/students/student-promotion";
 import TeacherDetails from "../peoples/teacher/teacher-details/teacherDetails";
 import TeacherLeave from "../peoples/teacher/teacher-details/teacherLeave";
 import TeacherLibrary from "../peoples/teacher/teacher-details/teacherLibrary";
+import AdministrativeDetails from "../peoples/administrative/administrative-details/administrativeDetails";
+import AdministrativeLeave from "../peoples/administrative/administrative-details/administrativeLeave";
 import TeacherSalary from "../peoples/teacher/teacher-details/teacherSalary";
 import TeachersRoutine from "../peoples/teacher/teacher-details/teachersRoutine";
 import TeacherGrid from "../peoples/teacher/teacher-grid";
@@ -932,6 +934,16 @@ export const publicRoutes = [
   {
     path: routes.teacherLibrary,
     element: <TeacherLibrary />,
+    route: Route,
+  },
+  {
+    path: routes.administrativeDetails,
+    element: <AdministrativeDetails />,
+    route: Route,
+  },
+  {
+    path: routes.administrativeLeaves,
+    element: <AdministrativeLeave />,
     route: Route,
   },
   {

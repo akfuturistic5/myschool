@@ -1,0 +1,410 @@
+================================================================================
+SCHOOL MANAGEMENT SYSTEM
+PENDING WORK
+================================================================================
+
+This document lists gaps, partial implementations, and pending areas. It
+matches the same module scope as the completed work analysis.
+
+
+--------------------------------------------------------------------------------
+**STUDENT LIFECYCLE PROMOTION**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Persist promotion to new class or academic year with validation and audit
+
+Current State
+Promotion page loads students from API but file has no API calls for promote
+action
+
+Priority
+High
+
+
+--------------------------------------------------------------------------------
+**TEACHER CREATION**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Create teacher with user account and staff linkage in one flow
+
+Current State
+Add teacher UI does not call a create endpoint, teacherRoutes.js has no POST
+
+Priority
+High
+
+
+--------------------------------------------------------------------------------
+**FEE CONFIGURATION MANAGEMENT**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Fees group, type, master, assign backed by tenant APIs and validation
+
+Current State
+Those screens use static JSON demo data, fee runtime uses structures and
+collections APIs only
+
+Priority
+High
+
+
+--------------------------------------------------------------------------------
+**EXAMINATION ADMINISTRATION**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Create edit exams, schedules, attendance, result entry with same data model as
+exam_results
+
+Current State
+Admin exam pages use static JSON, results are read via student exam results API
+only
+
+Priority
+High
+
+
+--------------------------------------------------------------------------------
+**EVENTS FULL UI**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Main events page should call same REST API as dashboards
+
+Current State
+events.tsx has no apiService or useEvents usage found in file
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**TRANSPORT OPERATIONS FOR ADMINISTRATIVE ROLE**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Decide if Administrative may edit routes vehicles drivers pickup points
+
+Current State
+PUT routes on transport require ROLES.ADMIN only
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**HOSTEL LIFECYCLE**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Create update hostels and rooms, allocations if in scope
+
+Current State
+Mostly GET, room update is Admin only, no create hostel in hostelRoutes.js
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**LEAVE APPROVAL FOR ADMINISTRATIVE**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Optional delegation of leave approval to office staff
+
+Current State
+Only Headmaster role id 1 in LEAVE_APPROVER_ROLES, frontend blocks approve page
+for Administrative
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**USER MANAGEMENT**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Create deactivate reset password assign roles within tenant
+
+Current State
+Backend exposes GET users only for Admin in userRoutes.js
+
+Priority
+High
+
+
+--------------------------------------------------------------------------------
+**REPORTING CENTER COMPLETENESS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+All report pages backed by queries and export
+
+Current State
+Grade report integrated, other reports vary
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**COMMUNICATION AND PRODUCTIVITY POLISH**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Product workflows not only CRUD stubs
+
+Current State
+Server has many routes, UI completeness uneven
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**STAFF AND HRM DEPTH**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Payroll attendance holidays as operational modules
+
+Current State
+Mixed template and partial hooks, staff API is read focused in routes file
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**SCHOOL AND GLOBAL SETTINGS PERSISTENCE**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Required Features
+Map each settings page to real tenant or platform storage
+
+Current State
+Many pages exist in router, several are Headmaster only on frontend without
+matching broad API surface in server.js
+
+Priority
+Medium
+
+
+--------------------------------------------------------------------------------
+**LIBRARY**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Catalog issue return members with tenant APIs
+
+Current State
+UI routes only, no library routes in server.js
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**SPORTS**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Teams players fixtures if in product scope
+
+Current State
+UI routes only
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**FINANCE AND ACCOUNTS**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Invoices income expense ledger integration with fees optional
+
+Current State
+UI under accounts in client, no matching accounts routes in server.js
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**MEMBERSHIP**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Plans addons transactions if SaaS billing for parents
+
+Current State
+UI routes only
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**SUPPORT AND TICKETING**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Tickets SLA admin views
+
+Current State
+UI routes only
+
+Priority
+Low
+
+
+--------------------------------------------------------------------------------
+**CONTENT CMS**
+--------------------------------------------------------------------------------
+
+Status
+Pending
+
+Required Features
+Blogs FAQ pages backed by API
+
+Current State
+Content routes in client, no matching content API group in server.js
+
+Priority
+Low
+
+
+================================================================================
+ROLE GAPS (PENDING WORK DOCUMENT)
+================================================================================
+
+
+**SUPER ADMIN**
+
+Missing
+Deeper analytics beyond current stats if product requires them
+
+
+**SCHOOL ADMIN SLASH HEADMASTER**
+
+Missing
+Same as high priority partial modules above for tenant depth
+
+
+**TEACHER**
+
+Missing
+Create teacher not in teacher flow, exam management, admin settings
+
+
+**STUDENT**
+
+Missing
+Optional features like homework submission if desired, library portal until
+library module exists
+
+
+**PARENT**
+
+Missing
+Rich messaging until communication module is finalized
+
+
+**GUARDIAN**
+
+Missing
+Same as parent plus dashboard charts need data feeding
+
+
+**ADMINISTRATIVE**
+
+Missing
+Leave approval, many settings screens, possible transport writes, clarity on
+intended parity with Headmaster
+
+
+================================================================================
+SUMMARY (PENDING WORK DOCUMENT)
+================================================================================
+
+Total Modules
+29
+
+Completed count
+7
+
+Partial count
+21
+
+Pending count
+1
+
+Notes on counts
+Same note as Document 1 if you split the ancillary group into six separate
+Pending modules.
+
+================================================================================
+END OF DOCUMENT
+================================================================================
