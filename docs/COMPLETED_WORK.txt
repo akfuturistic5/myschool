@@ -114,7 +114,7 @@ Key Features Implemented
 List notices, create update delete for managers, read for all authenticated
 
 Notes
-None..
+None
 
 
 --------------------------------------------------------------------------------
