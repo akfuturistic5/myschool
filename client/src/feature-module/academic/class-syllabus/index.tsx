@@ -362,13 +362,13 @@ const ClassSyllabus = () => {
                             <div className="col-md-12">
                               <div className="mb-3">
                                 <label className="form-label">Class</label>
-                                <CommonSelect className="select" options={classOptions} />
+                                <CommonSelect className="select" options={classOptions} defaultValue={classOptions[0]} />
                               </div>
                             </div>
                             <div className="col-md-12">
                               <div className="mb-3">
                                 <label className="form-label">Section</label>
-                                <CommonSelect className="select" options={sectionOptions} defaultValue={classSection[0]} />
+                                <CommonSelect className="select" options={sectionOptions} defaultValue={sectionOptions[0]} />
                               </div>
                             </div>
                             <div className="col-md-12">

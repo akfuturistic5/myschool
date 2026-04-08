@@ -42,6 +42,41 @@ const ClassSection = () => {
     }
   };
 
+  const classOptions = useMemo(
+    () => [{ value: "Select", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))],
+    [classes]
+  );
+  const sectionOptions = useMemo(
+    () => [{ value: "Select", label: "Select" }, ...Array.from(new Set((sections || []).map((s: any) => s.section_name))).map((s) => ({ value: s, label: s }))],
+    [sections]
+  );
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addForm.section_name.trim() || !addForm.class_id) return;
+    setIsCreating(true);
+    try {
+      await apiService.createSection({ section_name: addForm.section_name.trim(), class_id: Number(addForm.class_id), is_active: addForm.is_active });
+      await refetch();
+      setMessage('Section created successfully');
+      setAddForm({ section_name: '', class_id: '', is_active: true });
+      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('add_class_section'));
+      modal?.hide();
+    } finally { setIsCreating(false); }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedSection?.id) return;
+    setIsDeleting(true);
+    try {
+      await apiService.deleteSection(selectedSection.id);
+      await refetch();
+      setMessage('Section deleted successfully');
+      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('delete-modal'));
+      modal?.hide();
+    } finally { setIsDeleting(false); }
+  };
+
   // Handle edit button click
   const handleEditClick = (section: any) => {
     setSelectedSection(section);
@@ -140,35 +175,6 @@ const ClassSection = () => {
         const errorMsg = response?.message || 'Failed to update section';
         console.error('Update failed:', errorMsg);
         alert(errorMsg);
-  const classOptions = useMemo(() => [{ value: "Select", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))], [classes]);
-  const sectionOptions = useMemo(() => [{ value: "Select", label: "Select" }, ...Array.from(new Set((sections || []).map((s: any) => s.section_name))).map((s) => ({ value: s, label: s }))], [sections]);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!addForm.section_name.trim() || !addForm.class_id) return;
-    setIsCreating(true);
-    try {
-      await apiService.createSection({ section_name: addForm.section_name.trim(), class_id: Number(addForm.class_id), is_active: addForm.is_active });
-      await refetch();
-      setMessage('Section created successfully');
-      setAddForm({ section_name: '', class_id: '', is_active: true });
-      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('add_class_section'));
-      modal?.hide();
-    } finally { setIsCreating(false); }
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!selectedSection?.id) return;
-    setIsDeleting(true);
-    try {
-      await apiService.deleteSection(selectedSection.id);
-      await refetch();
-      setMessage('Section deleted successfully');
-      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('delete-modal'));
-      modal?.hide();
-    } finally { setIsDeleting(false); }
-  };
-
       }
     } catch (err: any) {
       console.error('=== ERROR UPDATING SECTION ===');
