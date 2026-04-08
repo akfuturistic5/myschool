@@ -113,10 +113,13 @@ class ApiService {
     const method = (options.method || 'GET').toUpperCase();
 
     const headers = {
-      'Content-Type': 'application/json',
+      'Content-Type': options.isMultipart ? undefined : 'application/json',
       Accept: 'application/json',
       ...(options.headers || {}),
     };
+    if (headers['Content-Type'] === undefined) {
+      delete headers['Content-Type'];
+    }
 
     const existingAuth = headers['Authorization'] || headers['authorization'];
     if (!existingAuth) {
@@ -1655,6 +1658,159 @@ class ApiService {
     });
   }
 
+  /** @private */
+  _accountsListParams(params = {}) {
+    const q = new URLSearchParams();
+    const set = (key, val) => {
+      if (val != null && val !== '') q.set(key, String(val));
+    };
+    set('search', params.search);
+    set('date_from', params.date_from);
+    set('date_to', params.date_to);
+    set('status', params.status);
+    set('transaction_type', params.transaction_type);
+    set('category_id', params.category_id);
+    set('academic_year_id', params.academic_year_id);
+    set('is_active', params.is_active);
+    set('page', params.page);
+    set('page_size', params.page_size);
+    set('sort_by', params.sort_by);
+    set('sort_order', params.sort_order);
+    set('payment_method', params.payment_method);
+    return q;
+  }
+
+  // Finance & Accounts (requires migrations 004_accounts_module.sql, 005_accounts_expenses_and_tx_expense_fk.sql)
+  async getAccountsIncome(params = {}) {
+    const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/income${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsIncomeById(id) {
+    return this.makeRequest(`/accounts/income/${id}`);
+  }
+
+  async createAccountsIncome(data) {
+    return this.makeRequest('/accounts/income', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAccountsIncome(id, data) {
+    return this.makeRequest(`/accounts/income/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccountsIncome(id) {
+    return this.makeRequest(`/accounts/income/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAccountsInvoices(params = {}) {
+    const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/invoices${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsInvoiceById(id) {
+    return this.makeRequest(`/accounts/invoices/${id}`);
+  }
+
+  async createAccountsInvoice(data) {
+    return this.makeRequest('/accounts/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAccountsInvoice(id, data) {
+    return this.makeRequest(`/accounts/invoices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccountsInvoice(id) {
+    return this.makeRequest(`/accounts/invoices/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAccountsTransactions(params = {}) {
+    const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/transactions${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsTransactionById(id) {
+    return this.makeRequest(`/accounts/transactions/${id}`);
+  }
+
+  async getAccountsExpenseCategories(params = {}) {
+    const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/expense-categories${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsExpenseCategoryById(id) {
+    return this.makeRequest(`/accounts/expense-categories/${id}`);
+  }
+
+  async createAccountsExpenseCategory(data) {
+    return this.makeRequest('/accounts/expense-categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAccountsExpenseCategory(id, data) {
+    return this.makeRequest(`/accounts/expense-categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccountsExpenseCategory(id) {
+    return this.makeRequest(`/accounts/expense-categories/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAccountsExpenses(params = {}) {
+    const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/expenses${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsExpenseById(id) {
+    return this.makeRequest(`/accounts/expenses/${id}`);
+  }
+
+  async createAccountsExpense(data) {
+    return this.makeRequest('/accounts/expenses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAccountsExpense(id, data) {
+    return this.makeRequest(`/accounts/expenses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccountsExpense(id) {
+    return this.makeRequest(`/accounts/expenses/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // School Profile
   async getSchoolProfile() {
     return this.makeRequest('/school/profile');
@@ -1717,6 +1873,30 @@ class ApiService {
       throw err;
     }
     return body;
+  }
+  async getSettings(group) {
+    let url = '/settings';
+    if (group) url += `?group=${encodeURIComponent(group)}`;
+    return this.makeRequest(url);
+  }
+
+  async upsertSettings(group, settingsObject) {
+    return this.makeRequest('/settings', {
+      method: 'POST',
+      body: JSON.stringify({ group, settings: settingsObject }),
+    });
+  }
+
+  async uploadSettingFile(file, group, key) {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (group) formData.append('group', group);
+    if (key) formData.append('key', key);
+    return this.makeRequest('/settings/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true
+    });
   }
 }
 

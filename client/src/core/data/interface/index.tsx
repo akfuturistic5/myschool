@@ -302,6 +302,12 @@ export interface DatatableProps {
   /** When provided with onSelectionChange, row selection is controlled by the parent. */
   selectedRowKeys?: (string | number)[];
   onSelectionChange?: (selectedRowKeys: (string | number)[], selectedRows: any[]) => void;
+  /** Ant Design Table pagination; pass total + onChange for server-side lists */
+  pagination?: any;
+  /** When false, hides the built-in client search box (server-filtered lists) */
+  showSearch?: boolean;
+  /** Forwarded to Ant Design Table (server sort + pagination) */
+  onTableChange?: (...args: unknown[]) => void;
 }
 
 export interface CountriesData {
