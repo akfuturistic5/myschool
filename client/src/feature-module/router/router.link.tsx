@@ -28,6 +28,7 @@ import AdministrativeDashboard from "../mainMenu/administrativeDashboard";
 import ParentDashboard from "../mainMenu/parentDashboard";
 import GuardianDashboard from "../mainMenu/guardianDashboard";
 import TeacherDashboard from "../mainMenu/teacherDashboard";
+import DriverDashboard from "../mainMenu/driverDashboard";
 const StudentDasboard = React.lazy(() => import("../mainMenu/studentDashboard"));
 import AudioCall from "../application/call/audioCall";
 import CallHistory from "../application/call/callHistory";
@@ -289,6 +290,11 @@ export const publicRoutes = [
   {
     path: routes.guardianDashboard,
     element: <GuardianDashboard />,
+    route: Route,
+  },
+  {
+    path: routes.driverDashboard,
+    element: <DriverDashboard />,
     route: Route,
   },
   {

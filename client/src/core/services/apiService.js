@@ -1,3 +1,4 @@
+
 import {
   resolveCsrfTokenForRequest,
   setCachedCsrfToken,
@@ -84,12 +85,19 @@ class ApiService {
     const url = `${base}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     // Create a unique key for this request (endpoint + method + body hash)
-    const method = options.method || 'GET';
-    const bodyKey = options.body ? JSON.stringify(options.body).substring(0, 50) : '';
+    const method = (options.method || 'GET').toUpperCase();
+    const bodyKey = options.body
+      ? (typeof options.body === 'string'
+          ? options.body
+          : JSON.stringify(options.body)).substring(0, 120)
+      : '';
     const requestKey = `${method}:${endpoint}:${bodyKey}`;
 
-    // If the same request is already pending, return the existing promise
-    if (pendingRequests.has(requestKey)) {
+    // Only dedupe safe reads. Never dedupe POST/PUT/PATCH/DELETE — reusing a pending
+    // mutation promise can mask failures or return the wrong response; refetch-after-create
+    // must not accidentally reuse a pre-mutation GET.
+    const dedupeReadsOnly = method === 'GET' || method === 'HEAD';
+    if (dedupeReadsOnly && pendingRequests.has(requestKey)) {
       if (isDev) console.log('Deduplicating request:', url, '- reusing pending request');
       return pendingRequests.get(requestKey);
     }
@@ -721,6 +729,26 @@ class ApiService {
     return this.makeRequest(`/staff/${id}`);
   }
 
+  async createStaff(data) {
+    return this.makeRequest('/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateStaff(id, data) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteStaff(id) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Departments
   async getDepartments() {
     return this.makeRequest('/departments');
@@ -734,6 +762,19 @@ class ApiService {
     return this.makeRequest(`/departments/${id}`, {
       method: 'PUT',
       body: JSON.stringify(departmentData),
+    });
+  }
+
+  async createDepartment(departmentData) {
+    return this.makeRequest('/departments', {
+      method: 'POST',
+      body: JSON.stringify(departmentData),
+    });
+  }
+
+  async deleteDepartment(id) {
+    return this.makeRequest(`/departments/${id}`, {
+      method: 'DELETE',
     });
   }
 
@@ -1052,6 +1093,11 @@ class ApiService {
 
   async getTransportDriverById(id) {
     return this.makeRequest(`/transport/drivers/${id}`);
+  }
+
+  // Driver Portal (self-scoped)
+  async getDriverPortalMe() {
+    return this.makeRequest('/driver-portal/me');
   }
 
   // Subjects

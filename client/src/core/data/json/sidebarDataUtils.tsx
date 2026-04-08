@@ -14,6 +14,7 @@ const ROLE_DASHBOARD_MAP: Record<string, { label: string; link: string }> = {
   Student: { label: "Student Dashboard", link: routes.studentDashboard },
   Parent: { label: "Parent Dashboard", link: routes.parentDashboard },
   Guardian: { label: "Guardian Dashboard", link: routes.guardianDashboard },
+  Driver: { label: "Driver Dashboard", link: routes.driverDashboard },
 };
 
 const ADMINISTRATIVE_VISIBLE_SECTIONS = new Set([
@@ -448,6 +449,41 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
 
   if (roleKey === "Parent") {
     return buildParentSidebar();
+  }
+
+  if (roleKey === "Driver") {
+    return [
+      {
+        label: "MAIN",
+        submenuOpen: true,
+        showSubRoute: false,
+        submenuHdr: "Main",
+        submenuItems: [
+          {
+            label: "Driver Dashboard",
+            icon: "ti ti-layout-dashboard",
+            link: routes.driverDashboard,
+            submenu: false,
+            showSubRoute: false,
+          },
+        ],
+      },
+      {
+        label: "Pages",
+        submenuOpen: true,
+        showSubRoute: false,
+        submenuHdr: "Pages",
+        submenuItems: [
+          {
+            label: "Profile",
+            icon: "ti ti-user-circle",
+            link: routes.profile,
+            submenu: false,
+            showSubRoute: false,
+          },
+        ],
+      },
+    ];
   }
 
   const dashboardItem = ROLE_DASHBOARD_MAP[roleKey] || ROLE_DASHBOARD_MAP.Admin;

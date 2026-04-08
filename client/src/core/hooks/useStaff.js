@@ -1,12 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useStaff = () => {
+/**
+ * @param {{ enabled?: boolean }} [options]
+ * When enabled is false, does not call the list API (for users without PEOPLE_MANAGER access).
+ */
+export const useStaff = (options = {}) => {
+  const { enabled = true } = options;
+
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchStaff = async () => {
+  const fetchStaff = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -15,7 +21,7 @@ export const useStaff = () => {
 
       if (response.status === 'SUCCESS') {
         const transformedData = response.data.map((staff, index) => {
-          const id =
+          const displayId =
             staff.employee_code ||
             (staff.id != null ? String(staff.id) : `S${index + 1}`);
 
@@ -51,9 +57,17 @@ export const useStaff = () => {
             staff.profile_image ||
             'assets/img/profiles/avatar-27.jpg';
 
+          const dbId =
+            staff.id != null && !Number.isNaN(Number(staff.id))
+              ? Number(staff.id)
+              : null;
+
           return {
             key: staff.id != null ? String(staff.id) : String(index + 1),
-            id,
+            /** Shown in ID column (employee code preferred) */
+            id: displayId,
+            /** Primary key for APIs and navigation — always numeric when present */
+            dbId,
             name,
             department,
             designation,
@@ -61,7 +75,7 @@ export const useStaff = () => {
             email,
             dateOfJoin,
             img,
-            originalData: staff, // Store original data for edit modal
+            originalData: staff,
           };
         });
 
@@ -70,16 +84,21 @@ export const useStaff = () => {
         setError('Failed to fetch staff data');
       }
     } catch (err) {
-      console.error('Error fetching staff:', err);
       setError(err.message || 'Failed to fetch staff data');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      setStaffList([]);
+      return;
+    }
     fetchStaff();
-  }, []);
+  }, [enabled, fetchStaff]);
 
   return {
     staffList,

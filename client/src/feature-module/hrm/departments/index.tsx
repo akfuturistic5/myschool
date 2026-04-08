@@ -1,7 +1,6 @@
-import  { useRef, useState } from 'react'
+import  { useRef, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Table from "../../../core/common/dataTable/index";
-import { activeList, departmentSelect } from '../../../core/common/selectoption/selectoption';
 import type { TableData } from '../../../core/data/interface';
 import PredefinedDateRanges from '../../../core/common/datePicker';
 import CommonSelect from '../../../core/common/commonSelect';
@@ -9,6 +8,40 @@ import { all_routes } from '../../router/all_routes';
 import TooltipOption from '../../../core/common/tooltipOption';
 import { useDepartments } from '../../../core/hooks/useDepartments';
 import { apiService } from '../../../core/services/apiService';
+
+const STATUS_FILTER_OPTIONS = [
+  { value: '__all__', label: 'All statuses' },
+  { value: 'Active', label: 'Active' },
+  { value: 'Inactive', label: 'Inactive' },
+];
+
+function parseDepartmentApiError(err: unknown, fallback: string): string {
+  if (!(err instanceof Error)) return fallback;
+  const msg = err.message;
+  const marker = 'message: ';
+  const idx = msg.indexOf(marker);
+  if (idx === -1) return msg || fallback;
+  const jsonPart = msg.slice(idx + marker.length).trim();
+  try {
+    const j = JSON.parse(jsonPart) as { message?: string };
+    if (typeof j.message === 'string' && j.message.trim()) return j.message;
+  } catch {
+    /* ignore */
+  }
+  return msg || fallback;
+}
+
+type TableSortMode = 'none' | 'nameAsc' | 'nameDesc' | 'recentId';
+
+function closeModalById(modalId: string) {
+  const el = document.getElementById(modalId);
+  if (!el) return;
+  const bs = (window as any).bootstrap;
+  if (bs?.Modal) {
+    const modal = bs.Modal.getInstance(el) || new bs.Modal(el);
+    modal.hide();
+  }
+}
 
 const Departments = () => {
   const routes = all_routes;
@@ -18,7 +51,76 @@ const Departments = () => {
   const [editDepartmentName, setEditDepartmentName] = useState<string>('');
   const [editDepartmentStatus, setEditDepartmentStatus] = useState<boolean>(true);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
+  const [addDepartmentName, setAddDepartmentName] = useState('');
+  const [addDepartmentActive, setAddDepartmentActive] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [addFormError, setAddFormError] = useState<string | null>(null);
+  const [filterDeptId, setFilterDeptId] = useState<string | null>('__all__');
+  const [filterStatus, setFilterStatus] = useState<string | null>('__all__');
+  const [tableSort, setTableSort] = useState<TableSortMode>('none');
+  const [departmentPendingDelete, setDepartmentPendingDelete] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const departmentFilterSelectOptions = useMemo(() => {
+    const all = [{ value: '__all__', label: 'All departments' }];
+    if (!Array.isArray(departments)) {
+      return all;
+    }
+    const opts = departments
+      .filter((d: { originalData?: { id?: number | string } }) => d.originalData?.id != null)
+      .map((d: {
+        department?: string;
+        originalData: { id: number | string };
+      }) => ({
+        value: String(d.originalData.id),
+        label: String(d.department ?? 'N/A'),
+      }));
+    return [...all, ...opts];
+  }, [departments]);
+
+  const displayData = useMemo(() => {
+    if (!Array.isArray(data)) {
+      return [];
+    }
+    let rows = data.filter((row: any) => {
+      if (filterDeptId && filterDeptId !== '__all__') {
+        const rid =
+          row.originalData?.id != null ? String(row.originalData.id) : String(row.key ?? '');
+        if (rid !== filterDeptId) return false;
+      }
+      if (filterStatus && filterStatus !== '__all__') {
+        if (row.status !== filterStatus) return false;
+      }
+      return true;
+    });
+    rows = [...rows];
+    if (tableSort === 'nameAsc') {
+      rows.sort((a: any, b: any) =>
+        String(a.department ?? '').localeCompare(String(b.department ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+    } else if (tableSort === 'nameDesc') {
+      rows.sort((a: any, b: any) =>
+        String(b.department ?? '').localeCompare(String(a.department ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+    } else if (tableSort === 'recentId') {
+      rows.sort(
+        (a: any, b: any) =>
+          Number(b.originalData?.id ?? b.key ?? 0) - Number(a.originalData?.id ?? a.key ?? 0)
+      );
+    }
+    return rows;
+  }, [data, filterDeptId, filterStatus, tableSort]);
+
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -87,6 +189,7 @@ const Departments = () => {
                     to="#"
                     onClick={(e) => {
                       e.preventDefault();
+                      setEditFormError(null);
                       setSelectedDepartment(record);
                       const dept = record.originalData || record;
                       setEditDepartmentName(dept.department_name || dept.department || '');
@@ -111,8 +214,33 @@ const Departments = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const dept = record.originalData || record;
+                      const rawId = dept.id ?? record.originalData?.id;
+                      const nid =
+                        typeof rawId === 'number' ? rawId : parseInt(String(rawId ?? ''), 10);
+                      if (!Number.isFinite(nid) || nid < 1) return;
+                      setDeleteError(null);
+                      setDepartmentPendingDelete({
+                        id: nid,
+                        name: String(
+                          dept.department_name || dept.department || record.department || 'this department'
+                        ),
+                      });
+                      setTimeout(() => {
+                        const modalElement = document.getElementById('delete_department_modal');
+                        if (modalElement) {
+                          const bootstrap = (window as any).bootstrap;
+                          if (bootstrap && bootstrap.Modal) {
+                            const modal =
+                              bootstrap.Modal.getInstance(modalElement) ||
+                              new bootstrap.Modal(modalElement);
+                            modal.show();
+                          }
+                        }
+                      }, 0);
+                    }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -194,28 +322,47 @@ const Departments = () => {
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Department</label>
-                              <CommonSelect
-                                className="select"
-                                options={departmentSelect}
-                               
-                              />
+                              {loading ? (
+                                <div className="form-control d-flex align-items-center">
+                                  <span
+                                    className="spinner-border spinner-border-sm text-primary me-2"
+                                    role="status"
+                                  />
+                                  Loading…
+                                </div>
+                              ) : (
+                                <CommonSelect
+                                  className="select"
+                                  options={departmentFilterSelectOptions}
+                                  value={filterDeptId}
+                                  onChange={(v) => setFilterDeptId(v || '__all__')}
+                                />
+                              )}
                             </div>
                           </div>
                           <div className="col-md-12">
                             <div className="mb-0">
                               <label className="form-label">Status</label>
-                            
                               <CommonSelect
                                 className="select"
-                                options={activeList}
-                               
+                                options={STATUS_FILTER_OPTIONS}
+                                value={filterStatus}
+                                onChange={(v) => setFilterStatus(v || '__all__')}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link
+                          to="#"
+                          className="btn btn-light me-3"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setFilterDeptId('__all__');
+                            setFilterStatus('__all__');
+                          }}
+                        >
                           Reset
                         </Link>
                         <Link
@@ -242,7 +389,11 @@ const Departments = () => {
                     <li>
                       <Link
                         to="#"
-                        className="dropdown-item rounded-1 active"
+                        className={`dropdown-item rounded-1${tableSort === 'nameAsc' ? ' active' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setTableSort('nameAsc');
+                        }}
                       >
                         Ascending
                       </Link>
@@ -250,7 +401,11 @@ const Departments = () => {
                     <li>
                       <Link
                         to="#"
-                        className="dropdown-item rounded-1"
+                        className={`dropdown-item rounded-1${tableSort === 'nameDesc' ? ' active' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setTableSort('nameDesc');
+                        }}
                       >
                         Descending
                       </Link>
@@ -258,15 +413,23 @@ const Departments = () => {
                     <li>
                       <Link
                         to="#"
-                        className="dropdown-item rounded-1"
+                        className={`dropdown-item rounded-1${tableSort === 'none' ? ' active' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setTableSort('none');
+                        }}
                       >
-                        Recently Viewed
+                        Default order
                       </Link>
                     </li>
                     <li>
                       <Link
                         to="#"
-                        className="dropdown-item rounded-1"
+                        className={`dropdown-item rounded-1${tableSort === 'recentId' ? ' active' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setTableSort('recentId');
+                        }}
                       >
                         Recently Added
                       </Link>
@@ -304,7 +467,7 @@ const Departments = () => {
 
               {/* Student List */}
               {!loading && !error && (
-                <Table columns={columns} dataSource={data} Selection={true} />
+                <Table columns={columns} dataSource={displayData} Selection={true} />
               )}
               {/* /Student List */}
             </div>
@@ -324,17 +487,64 @@ const Departments = () => {
             className="btn-close custom-btn-close"
             data-bs-dismiss="modal"
             aria-label="Close"
+            onClick={() => {
+              setAddFormError(null);
+              setAddDepartmentName('');
+              setAddDepartmentActive(true);
+            }}
           >
             <i className="ti ti-x" />
           </button>
         </div>
-        <form >
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const name = addDepartmentName.trim();
+            if (!name) {
+              setAddFormError('Department name is required.');
+              return;
+            }
+            setAddFormError(null);
+            try {
+              setIsCreating(true);
+              const res: any = await apiService.createDepartment({
+                department_name: name,
+                is_active: addDepartmentActive,
+              });
+              if (res?.status === 'SUCCESS' || res?.data) {
+                setAddDepartmentName('');
+                setAddDepartmentActive(true);
+                closeModalById('add_department');
+                await refetch();
+              } else {
+                setAddFormError('Could not create department. Please try again.');
+              }
+            } catch (err) {
+              setAddFormError(parseDepartmentApiError(err, 'Failed to create department.'));
+            } finally {
+              setIsCreating(false);
+            }
+          }}
+        >
           <div className="modal-body">
+            {addFormError && (
+              <div className="alert alert-danger py-2 mb-3" role="alert">
+                {addFormError}
+              </div>
+            )}
             <div className="row">
               <div className="col-md-12">
                 <div className="mb-3">
                   <label className="form-label">Department Name</label>
-                  <input type="text" className="form-control" />
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={addDepartmentName}
+                    onChange={(ev) => setAddDepartmentName(ev.target.value)}
+                    maxLength={100}
+                    autoComplete="off"
+                    disabled={isCreating}
+                  />
                 </div>
               </div>
               <div className="d-flex align-items-center justify-content-between">
@@ -348,18 +558,31 @@ const Departments = () => {
                     type="checkbox"
                     role="switch"
                     id="switch-sm"
+                    checked={addDepartmentActive}
+                    onChange={(ev) => setAddDepartmentActive(ev.target.checked)}
+                    disabled={isCreating}
                   />
                 </div>
               </div>
             </div>
           </div>
           <div className="modal-footer">
-            <Link to="#" className="btn btn-light me-2" data-bs-dismiss="modal">
+            <button
+              type="button"
+              className="btn btn-light me-2"
+              data-bs-dismiss="modal"
+              disabled={isCreating}
+              onClick={() => {
+                setAddFormError(null);
+                setAddDepartmentName('');
+                setAddDepartmentActive(true);
+              }}
+            >
               Cancel
-            </Link>
-            <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-              Add Department
-            </Link>
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={isCreating}>
+              {isCreating ? 'Saving…' : 'Add Department'}
+            </button>
           </div>
         </form>
       </div>
@@ -377,12 +600,18 @@ const Departments = () => {
             className="btn-close custom-btn-close"
             data-bs-dismiss="modal"
             aria-label="Close"
+            onClick={() => setEditFormError(null)}
           >
             <i className="ti ti-x" />
           </button>
         </div>
         <form >
           <div className="modal-body">
+            {editFormError && (
+              <div className="alert alert-danger py-2 mb-3" role="alert">
+                {editFormError}
+              </div>
+            )}
             <div className="row">
               <div className="col-md-12">
                 <div className="mb-3">
@@ -392,7 +621,12 @@ const Departments = () => {
                     className="form-control"
                     placeholder="Enter Department Name"
                     value={editDepartmentName}
-                    onChange={(e) => setEditDepartmentName(e.target.value)}
+                    onChange={(e) => {
+                      setEditDepartmentName(e.target.value);
+                      setEditFormError(null);
+                    }}
+                    maxLength={100}
+                    autoComplete="off"
                     key={`dept-name-${selectedDepartment?.id || 'new'}`}
                   />
                 </div>
@@ -417,7 +651,12 @@ const Departments = () => {
             </div>
           </div>
           <div className="modal-footer">
-            <Link to="#" className="btn btn-light me-2" data-bs-dismiss="modal">
+            <Link
+              to="#"
+              className="btn btn-light me-2"
+              data-bs-dismiss="modal"
+              onClick={() => setEditFormError(null)}
+            >
               Cancel
             </Link>
             <Link
@@ -432,41 +671,36 @@ const Departments = () => {
                   selectedDepartment?.originalData?.id ?? selectedDepartment?.id;
 
                 if (!id) {
-                  console.error('No department id found for update');
+                  setEditFormError('No department id found for update.');
+                  return;
+                }
+
+                const trimmed = editDepartmentName.trim();
+                if (!trimmed) {
+                  setEditFormError('Department name is required.');
                   return;
                 }
 
                 try {
                   setIsUpdating(true);
+                  setEditFormError(null);
 
                   const payload = {
-                    department_name: editDepartmentName,
+                    department_name: trimmed,
                     is_active: editDepartmentStatus,
                   };
 
                   await apiService.updateDepartment(id, payload);
 
-                  // Close modal programmatically after successful update
-                  const modalElement = document.getElementById('edit_department');
-                  if (modalElement) {
-                    const bootstrap = (window as any).bootstrap;
-                    if (bootstrap && bootstrap.Modal) {
-                      const modal =
-                        bootstrap.Modal.getInstance(modalElement) ||
-                        new bootstrap.Modal(modalElement);
-                      modal.hide();
-                    }
-                  }
+                  closeModalById('edit_department');
 
-                  // Refresh data
                   await refetch();
 
-                  // Reset local state
                   setSelectedDepartment(null);
                   setEditDepartmentName('');
                   setEditDepartmentStatus(true);
                 } catch (err) {
-                  console.error('Failed to update department', err);
+                  setEditFormError(parseDepartmentApiError(err, 'Failed to update department.'));
                 } finally {
                   setIsUpdating(false);
                 }
@@ -481,30 +715,66 @@ const Departments = () => {
   </div>
   {/* Edit Department */}
   {/* Delete Modal */}
-  <div className="modal fade" id="delete-modal">
+  <div className="modal fade" id="delete_department_modal">
     <div className="modal-dialog modal-dialog-centered">
       <div className="modal-content">
-        <form >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+          }}
+        >
           <div className="modal-body text-center">
             <span className="delete-icon">
               <i className="ti ti-trash-x" />
             </span>
             <h4>Confirm Deletion</h4>
-            <p>
-              You want to delete all the marked items, this cant be undone once
-              you delete.
+            {deleteError && (
+              <div className="alert alert-danger text-start py-2 mb-2" role="alert">
+                {deleteError}
+              </div>
+            )}
+            <p className="mb-1">
+              Delete department{' '}
+              <strong>{departmentPendingDelete?.name ?? '—'}</strong>? This cannot be undone.
             </p>
-            <div className="d-flex justify-content-center">
-              <Link
-                to="#"
+            <p className="text-muted small">
+              Deletion is blocked if staff or designations still use this department.
+            </p>
+            <div className="d-flex justify-content-center mt-3">
+              <button
+                type="button"
                 className="btn btn-light me-3"
                 data-bs-dismiss="modal"
+                disabled={isDeleting}
+                onClick={() => {
+                  setDeleteError(null);
+                  setDepartmentPendingDelete(null);
+                }}
               >
                 Cancel
-              </Link>
-              <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                Yes, Delete
-              </Link>
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={isDeleting || !departmentPendingDelete}
+                onClick={async () => {
+                  if (!departmentPendingDelete) return;
+                  setDeleteError(null);
+                  try {
+                    setIsDeleting(true);
+                    await apiService.deleteDepartment(departmentPendingDelete.id);
+                    closeModalById('delete_department_modal');
+                    setDepartmentPendingDelete(null);
+                    await refetch();
+                  } catch (err) {
+                    setDeleteError(parseDepartmentApiError(err, 'Failed to delete department.'));
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+              >
+                {isDeleting ? 'Deleting…' : 'Yes, Delete'}
+              </button>
             </div>
           </div>
         </form>

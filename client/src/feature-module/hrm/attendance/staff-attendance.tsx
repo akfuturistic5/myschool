@@ -1,4 +1,4 @@
-import  { useRef, useState } from "react";
+import  { useRef, useState, useMemo } from "react";
 import { staffAttendance } from "../../../core/data/json/staff-attendance";
 import type { TableData } from "../../../core/data/interface";
 import { Link } from "react-router-dom";
@@ -7,11 +7,11 @@ import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
-  departmentName,
-  designationName,
   studentName,
   teacherId,
 } from "../../../core/common/selectoption/selectoption";
+import { useDepartments } from "../../../core/hooks/useDepartments";
+import { useDesignations } from "../../../core/hooks/useDesignations";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 
@@ -233,7 +233,7 @@ const StaffAttendance = () => {
                               <label className="form-label">Department</label>
                               <CommonSelect
                                 className="select"
-                                options={departmentName}
+                                options={departmentNameOptions}
                               />
                             </div>
                           </div>
@@ -242,7 +242,7 @@ const StaffAttendance = () => {
                               <label className="form-label">Designation</label>
                               <CommonSelect
                                 className="select"
-                                options={designationName}
+                                options={designationNameOptions}
                               />
                             </div>
                           </div>
