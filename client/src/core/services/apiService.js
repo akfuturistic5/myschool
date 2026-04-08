@@ -70,7 +70,8 @@ function shouldGlobalSessionExpireOn401(requestUrl) {
   try {
     pathname = new URL(requestUrl).pathname;
   } catch {
-    pathname = requestUrl;
+    // Relative URLs (e.g. dev proxy: `/api/...`) — strip query so /api/auth/me?... still matches.
+    pathname = String(requestUrl).split('?')[0];
   }
   if (pathname === '/api/auth/me' || pathname.endsWith('/api/auth/me')) return false;
   if (pathname === '/api/auth/login' || pathname.endsWith('/api/auth/login')) return false;
@@ -320,6 +321,35 @@ class ApiService {
     });
   }
 
+  async promoteStudents(payload) {
+    return this.makeRequest('/students/promote', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getStudentPromotions(limit = 200, studentId = null) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    const params = new URLSearchParams();
+    params.set('limit', String(safeLimit));
+    if (studentId != null && Number.isFinite(Number(studentId))) {
+      params.set('student_id', String(studentId));
+    }
+    return this.makeRequest(`/students/promotions?${params.toString()}`);
+  }
+
+  async leaveStudents(payload) {
+    return this.makeRequest('/students/leave', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getLeavingStudents(limit = 200) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    return this.makeRequest(`/students/leaving?limit=${safeLimit}`);
+  }
+
   async getStudentById(id) {
     return this.makeRequest(`/students/${id}`);
   }
@@ -545,6 +575,81 @@ class ApiService {
     });
   }
 
+  async createTeacher(teacherData) {
+    return this.makeRequest('/teachers', {
+      method: 'POST',
+      body: JSON.stringify(teacherData)
+    });
+  }
+
+  /**
+   * Upload teacher PDFs (multipart). Do not set Content-Type — browser sets boundary.
+   * @param {number|string} teacherId
+   * @param {FormData} formData fields: resume, joining_letter (optional each)
+   */
+  async uploadTeacherDocuments(teacherId, formData) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/teachers/${teacherId}/documents`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+    const csrf = resolveCsrfTokenForRequest();
+    if (csrf) headers['X-XSRF-TOKEN'] = csrf;
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: formData,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
+        this.logout().catch(() => {});
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
+      }
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+    const text = await response.text();
+    if (!text || !text.trim()) {
+      throw new Error('Server returned empty response.');
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_) {
+      throw new Error('Server returned invalid JSON.');
+    }
+    return data;
+  }
+
+  /**
+   * @param {'resume' | 'joining_letter'} docType
+   */
+  async fetchTeacherDocumentBlob(teacherId, docType) {
+    const base = await getApiBaseUrl();
+    const pathSeg = docType === 'joining_letter' ? 'joining-letter' : 'resume';
+    const url = `${base}/teachers/${teacherId}/documents/${pathSeg}`;
+    const headers = { Accept: 'application/pdf' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
+        this.logout().catch(() => {});
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
+      }
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+    return response.blob();
+  }
+
   // Staff
   async getStaff() {
     return this.makeRequest('/staff');
@@ -612,6 +717,11 @@ class ApiService {
   async getDashboardStats(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.attendanceScope === 'all_time') {
+      searchParams.set('attendance_scope', 'all_time');
+    } else if (params.attendanceDate != null && params.attendanceDate !== '') {
+      searchParams.set('attendance_date', params.attendanceDate);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/stats${qs ? `?${qs}` : ''}`);
   }
@@ -634,6 +744,7 @@ class ApiService {
   async getDashboardBestPerformers(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/best-performers${qs ? `?${qs}` : ''}`);
   }
@@ -646,13 +757,33 @@ class ApiService {
     return this.makeRequest(`/dashboard/star-students${qs ? `?${qs}` : ''}`);
   }
 
-  async getDashboardPerformanceSummary() {
-    return this.makeRequest('/dashboard/performance-summary');
+  async getDashboardPerformanceSummary(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.classId != null) searchParams.set('class_id', params.classId);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/performance-summary${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDashboardMergedUpcomingEvents(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.limit != null) searchParams.set('limit', params.limit);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/merged-upcoming-events${qs ? `?${qs}` : ''}`);
+  }
+
+  async getDashboardStudentActivity(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/dashboard/student-activity${qs ? `?${qs}` : ''}`);
   }
 
   async getDashboardTopSubjects(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.classId != null) searchParams.set('class_id', params.classId);
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/top-subjects${qs ? `?${qs}` : ''}`);
   }
@@ -674,6 +805,9 @@ class ApiService {
   async getDashboardFeeStats(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.feePeriod != null && params.feePeriod !== '' && params.feePeriod !== 'all') {
+      searchParams.set('fee_period', params.feePeriod);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/fee-stats${qs ? `?${qs}` : ''}`);
   }
@@ -681,6 +815,9 @@ class ApiService {
   async getDashboardFinanceSummary(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.feePeriod != null && params.feePeriod !== '' && params.feePeriod !== 'all') {
+      searchParams.set('fee_period', params.feePeriod);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/finance-summary${qs ? `?${qs}` : ''}`);
   }
@@ -750,6 +887,11 @@ class ApiService {
     if (params.student_id != null) searchParams.set('student_id', params.student_id);
     if (params.staff_id != null) searchParams.set('staff_id', params.staff_id);
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.leave_from != null && params.leave_from !== '') searchParams.set('leave_from', params.leave_from);
+    if (params.leave_to != null && params.leave_to !== '') searchParams.set('leave_to', params.leave_to);
+    if (params.pending_only === true || params.pending_only === 1 || params.pending_only === '1') {
+      searchParams.set('pending_only', '1');
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications${qs ? `?${qs}` : ''}`);
   }

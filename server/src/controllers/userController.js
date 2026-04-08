@@ -1,4 +1,5 @@
 const { query } = require('../config/database');
+const { ROLES } = require('../config/roles');
 
 function stripSensitiveUserFields(row) {
   if (!row || typeof row !== 'object') return row;
@@ -7,8 +8,7 @@ function stripSensitiveUserFields(row) {
   return copy;
 }
 
-// Get all users (optional: filter by role_id)
-// role_id: 1=admin, 2=student, 3=teacher, 4=parent, 5=guardian
+// Get all users (optional: filter by role_id) — IDs from user_roles (ROLES)
 const getAllUsers = async (req, res) => {
   try {
     const { role_id } = req.query;
@@ -17,7 +17,7 @@ const getAllUsers = async (req, res) => {
     if (role_id) {
       // Filter by role - join with role-specific tables for extra data
       const roleNum = parseInt(role_id, 10);
-      if (roleNum === 2) {
+      if (roleNum === ROLES.STUDENT) {
         // Students: users + students + class + section
         result = await query(`
           SELECT 
@@ -33,7 +33,7 @@ const getAllUsers = async (req, res) => {
           WHERE u.is_active = true AND u.role_id = $1
           ORDER BY u.first_name ASC, u.last_name ASC
         `, [roleNum]);
-      } else if (roleNum === 3) {
+      } else if (roleNum === ROLES.TEACHER) {
         // Teachers: users + staff + teachers + class + subject
         result = await query(`
           SELECT 

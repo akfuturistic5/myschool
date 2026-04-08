@@ -14,10 +14,12 @@ import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/r
 const ListLeaves = () => {
   const routes = all_routes;
   const { user: currentUser } = useCurrentUser();
-  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const canUseAdminList = isHeadmasterRole(currentUser);
+  const isOwnLeavesOnly = isAdministrativeRole(currentUser);
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     canUseAdminList,
+    studentOnly: isOwnLeavesOnly,
   });
 
   const data = useMemo(() => {

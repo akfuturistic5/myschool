@@ -5,16 +5,32 @@ import type { DatatableProps } from "../../data/interface"; // Ensure correct pa
  // Ensure correct path
 
 
-const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection }) => {
+const Datatable: React.FC<DatatableProps> = ({
+  columns,
+  dataSource,
+  Selection,
+  selectedRowKeys: controlledSelectedKeys,
+  onSelectionChange,
+}) => {
   const safeData = Array.isArray(dataSource) ? dataSource : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
-  const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
+  const [internalSelectedRowKeys, setInternalSelectedRowKeys] = useState<any[]>([]);
   const [searchText, setSearchText] = useState<string>("");
   const [Selections, setSelections] = useState<any>(true);
   const [filteredDataSource, setFilteredDataSource] = useState(safeData);
 
-  const onSelectChange = (newSelectedRowKeys: any[], _selectedRows: any[]) => {
-    setSelectedRowKeys(newSelectedRowKeys);
+  const selectionControlled =
+    controlledSelectedKeys !== undefined && typeof onSelectionChange === "function";
+  const selectedRowKeys = selectionControlled
+    ? controlledSelectedKeys
+    : internalSelectedRowKeys;
+
+  const onSelectChange = (newSelectedRowKeys: any[], selectedRows: any[]) => {
+    if (selectionControlled) {
+      onSelectionChange!(newSelectedRowKeys, selectedRows);
+    } else {
+      setInternalSelectedRowKeys(newSelectedRowKeys);
+    }
   };
 
   const handleSearch = (value: string) => {

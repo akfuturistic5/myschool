@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { getParentsForUser } = require('../utils/parentUserMatch');
+const { ROLES } = require('../config/roles');
 
 // Seed leave types if table is empty (handles case when migration seed didn't run)
 const seedLeaveTypesIfEmpty = async () => {
@@ -225,6 +226,56 @@ const getMyLeaveApplications = async (req, res) => {
       });
     }
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const roleIdRaw = req.user?.role_id;
+    const roleId =
+      roleIdRaw != null && roleIdRaw !== '' ? parseInt(roleIdRaw, 10) : NaN;
+    const roleNameNorm = String(req.user?.role_name || '')
+      .trim()
+      .toLowerCase();
+
+    // Teacher & Administrative JWT roles must ONLY see their own staff leave rows.
+    // Otherwise a mistaken students.user_id link or email/phone match can show other people's leaves.
+    const isStaffFacingLoginRole =
+      roleId === ROLES.TEACHER ||
+      roleId === ROLES.ADMINISTRATIVE ||
+      roleNameNorm === 'teacher' ||
+      roleNameNorm === 'administrative';
+
+    if (isStaffFacingLoginRole) {
+      const staffOnly = await query(
+        `
+        SELECT
+          la.*,
+          lt.leave_type AS leave_type_name,
+          s.first_name AS applicant_first_name,
+          s.last_name AS applicant_last_name,
+          s.photo_url AS applicant_photo_url,
+          COALESCE(d.designation_name, 'Staff') AS applicant_role
+        FROM leave_applications la
+        INNER JOIN staff s ON la.staff_id = s.id AND s.user_id = $1
+        LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+        LEFT JOIN designations d ON s.designation_id = d.id
+        WHERE la.staff_id IS NOT NULL
+        ORDER BY la.start_date DESC NULLS LAST
+        LIMIT $2
+        `,
+        [userId, limit]
+      );
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Leave applications fetched successfully',
+        data: staffOnly.rows,
+        count: staffOnly.rows.length,
+      });
+    }
+
+    // Staff/administrative/teacher accounts must never use the student email/phone fallback below,
+    // or they can incorrectly see another student's leaves when contact details match.
+    const staffLinkCheck = await query(
+      'SELECT 1 FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+      [userId]
+    );
+    const isLinkedStaffAccount = staffLinkCheck.rows.length > 0;
 
     // First try student leaves (by students.user_id)
     let result = await query(
@@ -246,8 +297,9 @@ const getMyLeaveApplications = async (req, res) => {
       [userId, limit]
     );
 
-    // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set)
-    if (result.rows.length === 0) {
+    // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set).
+    // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
+    if (result.rows.length === 0 && !isLinkedStaffAccount) {
       const userRow = await query(
         'SELECT email, phone FROM users WHERE id = $1 AND is_active = true',
         [userId]
@@ -452,9 +504,23 @@ const getGuardianWardLeaves = async (req, res) => {
   }
 };
 
+function parseLeaveDateQuery(q, keys) {
+  if (!q || !keys) return null;
+  for (let k = 0; k < keys.length; k += 1) {
+    const key = keys[k];
+    const val = q[key];
+    if (val == null || val === '') continue;
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  }
+  return null;
+}
+
 // Get leave applications for dashboard (e.g. pending or recent).
 // Optional filters: ?student_id=X, ?staff_id=X (for admin viewing specific student/teacher).
 // Optional: ?academic_year_id=X - filter student leaves by academic year.
+// Optional: ?leave_from=&leave_to= or ?from_date=&to_date= (YYYY-MM-DD) — overlap filter on leave range.
+// Optional: ?pending_only=1 — only rows with status pending (Headmaster dashboard "requests awaiting action").
 const getLeaveApplications = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
@@ -462,20 +528,45 @@ const getLeaveApplications = async (req, res) => {
     const staffId = req.query.staff_id ? parseInt(req.query.staff_id, 10) : null;
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
+    const leaveFrom = parseLeaveDateQuery(req.query, ['leave_from', 'from_date']);
+    const leaveTo = parseLeaveDateQuery(req.query, ['leave_to', 'to_date']);
+    const pendingOnlyRaw = String(req.query.pending_only || '').trim().toLowerCase();
+    const pendingOnly = pendingOnlyRaw === '1' || pendingOnlyRaw === 'true' || pendingOnlyRaw === 'yes';
 
-    let whereClause = '';
+    const conditions = [];
     const params = [];
-    if (studentId) {
-      whereClause = ' WHERE la.student_id = $1';
+    let i = 1;
+
+    if (studentId && !Number.isNaN(studentId)) {
+      conditions.push(`la.student_id = $${i++}`);
       params.push(studentId);
-    } else if (staffId) {
-      whereClause = ' WHERE la.staff_id = $1';
+    } else if (staffId && !Number.isNaN(staffId)) {
+      conditions.push(`la.staff_id = $${i++}`);
       params.push(staffId);
     } else if (hasYearFilter) {
-      whereClause = ' WHERE (la.student_id IS NULL OR st.academic_year_id = $1)';
+      conditions.push(`(la.student_id IS NULL OR st.academic_year_id = $${i++})`);
       params.push(academicYearId);
     }
+
+    if (leaveFrom) {
+      conditions.push(`la.end_date >= $${i++}::date`);
+      params.push(leaveFrom);
+    }
+    if (leaveTo) {
+      conditions.push(`la.start_date <= $${i++}::date`);
+      params.push(leaveTo);
+    }
+
+    if (pendingOnly) {
+      conditions.push(`LOWER(TRIM(COALESCE(la.status, ''))) = 'pending'`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     params.push(limit);
+    const limitIdx = i;
+    const orderBy = pendingOnly
+      ? 'ORDER BY COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) DESC NULLS LAST'
+      : 'ORDER BY la.start_date DESC NULLS LAST';
 
     const result = await query(
       `
@@ -492,8 +583,8 @@ const getLeaveApplications = async (req, res) => {
       LEFT JOIN designations d ON s.designation_id = d.id
       LEFT JOIN students st ON la.student_id = st.id
       ${whereClause}
-      ORDER BY la.start_date DESC NULLS LAST
-      LIMIT $${params.length}
+      ${orderBy}
+      LIMIT $${limitIdx}
       `,
       params
     );

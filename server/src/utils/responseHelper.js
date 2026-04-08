@@ -21,6 +21,7 @@ const error = (res, statusCode = 500, message = 'Something went wrong', code = '
     success: false,
     status: 'ERROR',
     code,
+    errorCode: code,
     message
   });
 };
