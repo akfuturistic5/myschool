@@ -31,15 +31,45 @@ const Sidebar = () => {
   const isMillatLogo = isMillatStyleLogoPath(schoolLogoSrc);
   const {
     isHeadmaster: canChangeSchoolLogo,
-    uploading: logoUploading,
-    inputRef: logoFileInputRef,
-    openFilePicker: openSchoolLogoPicker,
-    onFileChange: onSchoolLogoFileChange,
   } = useSchoolLogoUpload();
   const dashboardLink = getDashboardForRole(user);
 
   const [subOpen, setSubopen] = useState<any>("");
   const [subsidebar, setSubsidebar] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredSidebarData = useMemo(() => {
+    if (!searchQuery.trim()) return SidebarData;
+
+    const query = searchQuery.toLowerCase().trim();
+    return SidebarData?.map((section: any) => {
+      const isSectionMatch = section.label?.toLowerCase().includes(query);
+      
+      const filteredSubmenuItems = section.submenuItems?.filter((item: any) => {
+        const itemLabelMatch = item.label?.toLowerCase().includes(query);
+        
+        // Search in level 2 submenu items
+        const subItemsMatch = item.submenuItems?.some((sub: any) => {
+          const subLabelMatch = sub.label?.toLowerCase().includes(query);
+          // Search in level 3 submenu items if they exist
+          const deepSubMatch = sub.submenuItems?.some((deep: any) => 
+            deep.label?.toLowerCase().includes(query)
+          );
+          return subLabelMatch || deepSubMatch;
+        });
+
+        return itemLabelMatch || subItemsMatch;
+      });
+
+      if (isSectionMatch || (filteredSubmenuItems && filteredSubmenuItems.length > 0)) {
+        return { 
+          ...section, 
+          submenuItems: isSectionMatch ? section.submenuItems : filteredSubmenuItems,
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  }, [SidebarData, searchQuery]);
 
   const toggleSidebar = (title: any) => {
     localStorage.setItem("menuOpened", title);
@@ -153,59 +183,33 @@ const Sidebar = () => {
         <PerfectScrollbar>
           <div className="sidebar-inner slimscroll">
             <div id="sidebar-menu" className="sidebar-menu">
-              <ul>
-                <li>
-                  {canChangeSchoolLogo && (
-                    <input
-                      ref={logoFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="d-none"
-                      onChange={onSchoolLogoFileChange}
-                      aria-hidden
-                    />
-                  )}
-                  {canChangeSchoolLogo ? (
-                    <button
-                      type="button"
-                      className="school-card d-flex align-items-center border bg-white rounded p-2 mb-4 w-100 text-start"
-                      onClick={openSchoolLogoPicker}
-                      disabled={logoUploading}
-                      title="Change school logo"
-                      aria-label="Change school logo"
-                      style={{ cursor: logoUploading ? "wait" : "pointer" }}
+              <div className="sidebar-search mb-3 px-3 mt-3">
+                <div className="input-group input-group-sm bg-light rounded-pill px-2">
+                  <span className="input-group-text bg-transparent border-0 text-muted">
+                    <i className="ti ti-search fs-14"></i>
+                  </span>
+                  <input
+                    type="text"
+                    className="form-control border-0 ps-0 bg-transparent"
+                    placeholder="Search menu..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ fontSize: '13px', color: '#5b6670', boxShadow: 'none' }}
+                  />
+                  {searchQuery && (
+                    <span 
+                      className="input-group-text bg-transparent border-0 text-muted cursor-pointer"
+                      onClick={() => setSearchQuery("")}
+                      style={{ cursor: 'pointer' }}
                     >
-                      <SchoolLogoImage
-                        src={schoolLogoSrc}
-                        className="avatar avatar-md img-fluid rounded"
-                        alt="School Logo"
-                        style={isMillatLogo ? { width: 44, height: 44 } : undefined}
-                      />
-                      <span className="school-card__name text-dark ms-2 fw-normal">
-                        {`${user?.school_name || ""} ${user?.school_type || ""}`.trim() || "—"}
-                      </span>
-                    </button>
-                  ) : (
-                    <Link
-                      to={dashboardLink || all_routes.adminDashboard}
-                      className="school-card d-flex align-items-center border bg-white rounded p-2 mb-4"
-                    >
-                      <SchoolLogoImage
-                        src={schoolLogoSrc}
-                        className="avatar avatar-md img-fluid rounded"
-                        alt="School Logo"
-                        style={isMillatLogo ? { width: 44, height: 44 } : undefined}
-                      />
-                      <span className="school-card__name text-dark ms-2 fw-normal">
-                        {`${user?.school_name || ""} ${user?.school_type || ""}`.trim() || "—"}
-                      </span>
-                    </Link>
+                      <i className="ti ti-x fs-12"></i>
+                    </span>
                   )}
-                </li>
-              </ul>
+                </div>
+              </div>
 
               <ul>
-                {SidebarData?.map((mainLabel, index) => (
+                {filteredSidebarData?.map((mainLabel: any, index: number) => (
                   <li key={index}>
                     <h6 className="submenu-hdr">
                       <span>{mainLabel?.label}</span>
@@ -263,8 +267,8 @@ const Sidebar = () => {
 
                             {/* Submenu Level 1 */}
                             {title?.submenu !== false &&
-                              subOpen === title?.label && (
-                                <ul style={{ display: "block" }}>
+                              (subOpen === title?.label || searchQuery.trim()) && (
+                                <ul style={{ display: (subOpen === title?.label || searchQuery.trim()) ? "block" : "none" }}>
                                   {title?.submenuItems?.map((item: any) => {
                                     const subLinks: string[] = [
                                       item?.link,
@@ -297,7 +301,7 @@ const Sidebar = () => {
                                           className={`${
                                             isSubActive ? "active" : ""
                                           } ${
-                                            subsidebar === item?.label
+                                            (subsidebar === item?.label || searchQuery.trim())
                                               ? "subdrop"
                                               : ""
                                           }`}
@@ -315,7 +319,7 @@ const Sidebar = () => {
 
                                         {/* Submenu Level 2 */}
                                         {item?.submenuItems &&
-                                          subsidebar === item?.label && (
+                                          (subsidebar === item?.label || searchQuery.trim()) && (
                                             <ul style={{ display: "block" }}>
                                               {item?.submenuItems?.map(
                                                 (subItem: any) => {
