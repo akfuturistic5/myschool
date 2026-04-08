@@ -299,6 +299,12 @@ export interface DatatableProps {
   columns: any[]; // You can replace `any[]` with the specific type of columns you expect
   dataSource: any[]; // You can replace `any[]` with the specific type of dataSource you expect
   Selection?: boolean | undefined;
+  /** Ant Design Table pagination; pass total + onChange for server-side lists */
+  pagination?: any;
+  /** When false, hides the built-in client search box (server-filtered lists) */
+  showSearch?: boolean;
+  /** Forwarded to Ant Design Table (server sort + pagination) */
+  onTableChange?: (...args: unknown[]) => void;
 }
 
 export interface CountriesData {

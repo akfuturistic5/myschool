@@ -5,7 +5,7 @@ import type { DatatableProps } from "../../data/interface"; // Ensure correct pa
  // Ensure correct path
 
 
-const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection }) => {
+const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection, pagination: paginationProp, showSearch = true, onTableChange }) => {
   const safeData = Array.isArray(dataSource) ? dataSource : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
   const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
@@ -41,9 +41,27 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSource]);
   
+  const defaultPagination = {
+    locale: { items_per_page: "" },
+    nextIcon: <span>Next</span>,
+    prevIcon: <span>Prev</span>,
+    defaultPageSize: 10,
+    showSizeChanger: true,
+    pageSizeOptions: ["10", "20", "30"],
+    showTotal: (total: number, range: [number, number]) => `${range[0]}-${range[1]} of ${total} items`,
+  };
+
+  const paginationConfig =
+    paginationProp !== undefined
+      ? paginationProp === false
+        ? false
+        : { ...defaultPagination, ...paginationProp }
+      : defaultPagination;
+  
   
   return (
     <>
+     {showSearch ? (
      <div className="table-top-data d-flex px-3 justify-content-between">
       <div className="page-range">
       </div>
@@ -51,6 +69,7 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection })
         <input type="search" className="form-control form-control-sm mb-3 w-auto float-end" value={searchText} placeholder="Search" onChange={(e) => handleSearch(e.target.value)} aria-controls="DataTables_Table_0"></input>
       </div>
      </div>
+     ) : null}
      {!Selections ?
       <Table
       className="table datanew dataTable no-footer"
@@ -58,15 +77,8 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection })
       columns={safeColumns}
       rowHoverable={false}
       dataSource={filteredDataSource ?? safeData}
-      pagination={{
-        locale: { items_per_page: "" },
-        nextIcon: <span>Next</span>,
-        prevIcon: <span>Prev</span>,
-        defaultPageSize: 10,
-        showSizeChanger: true,
-        pageSizeOptions: ["10", "20", "30"],
-        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-      }}
+      pagination={paginationConfig}
+      onChange={onTableChange}
     /> : 
     <Table
         className="table datanew dataTable no-footer"
@@ -75,15 +87,8 @@ const Datatable: React.FC<DatatableProps> = ({ columns, dataSource, Selection })
         columns={safeColumns}
         rowHoverable={false}
         dataSource={filteredDataSource ?? safeData}
-        pagination={{
-          locale: { items_per_page: "" },
-          nextIcon: <span>Next</span>,
-          prevIcon: <span>Prev</span>,
-          defaultPageSize: 10,
-          showSizeChanger: true,
-          pageSizeOptions: ["10", "20", "30"],
-          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-        }}
+        pagination={paginationConfig}
+        onChange={onTableChange}
       />}
       
     </>

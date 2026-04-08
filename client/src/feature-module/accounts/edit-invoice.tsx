@@ -1,29 +1,136 @@
-import { DatePicker } from "antd";
-import  { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Editor } from "primereact/editor";
+
+import { Link, useNavigate, useParams } from "react-router-dom";
+import type { Dayjs } from "dayjs";
+import dayjs from "dayjs";
 import CommonSelect from "../../core/common/commonSelect";
-import {
-  customerName,
-  productName,
-} from "../../core/common/selectoption/selectoption";
+import { paymentMethod } from "../../core/common/selectoption/selectoption";
+import { DatePicker } from "antd";
+import { Editor } from "primereact/editor";
+import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../router/all_routes";
+import { apiService } from "../../core/services/apiService";
+import { selectSelectedAcademicYearId } from "../../core/data/redux/academicYearSlice";
+import { getAccountsErrorMessage } from "./accountsApiErrors";
+import { toYmdString } from "../../core/utils/dateDisplay";
 
 const EditInvoice = () => {
-  const [text1, setText1] = useState("");
-  const [text2, setText2] = useState("");
+  const { id } = useParams();
+  const invoiceId = id != null ? parseInt(String(id), 10) : NaN;
   const routes = all_routes;
   const navigation = useNavigate();
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [notesHtml, setNotesHtml] = useState("");
+  const [termsHtml, setTermsHtml] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [amount, setAmount] = useState("");
+  const [payment, setPayment] = useState("Cash");
+  const [status, setStatus] = useState("Pending");
 
-  const navigationPath = () => {
-    navigation(routes.accountsInvoices);
+  useEffect(() => {
+    if (!Number.isFinite(invoiceId)) {
+      setLoading(false);
+      setFormError("Invalid invoice.");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setFormError(null);
+      try {
+        const res = await apiService.getAccountsInvoiceById(invoiceId);
+        const r = (res as { data?: unknown })?.data as Record<string, unknown> | undefined;
+        if (cancelled || !r) return;
+        setInvoiceNumber(String(r.invoice_number ?? ""));
+        setInvoiceDate(
+          r.invoice_date ? String(r.invoice_date).slice(0, 10) : ""
+        );
+        setDueDate(r.due_date ? String(r.due_date).slice(0, 10) : "");
+        setAmount(r.amount != null ? String(r.amount) : "");
+        setPayment(
+          r.payment_method && String(r.payment_method) !== "Select"
+            ? String(r.payment_method)
+            : "Cash"
+        );
+        setStatus(
+          ["Paid", "Pending", "Overdue"].includes(String(r.status))
+            ? String(r.status)
+            : "Pending"
+        );
+        const desc = r.description != null ? String(r.description) : "";
+        setNotesHtml(desc ? `<p>${desc.replace(/</g, "")}</p>` : "");
+      } catch (e: unknown) {
+        if (!cancelled) setFormError(getAccountsErrorMessage(e, "Could not load invoice."));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [invoiceId]);
+
+  const invDay: Dayjs | null =
+    invoiceDate && /^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) ? dayjs(invoiceDate) : null;
+  const dueDay: Dayjs | null =
+    dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dayjs(dueDate) : null;
+
+  const stripHtml = (s: string) =>
+    s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!Number.isFinite(invoiceId)) return;
+    setFormError(null);
+    setSaving(true);
+    try {
+      const inv = toYmdString(invoiceDate);
+      const due = toYmdString(dueDate);
+      const amt = Number(String(amount).replace(/[^0-9.-]/g, ""));
+      if (!invoiceNumber.trim() || !inv || !due || !Number.isFinite(amt) || amt <= 0) {
+        setFormError("Enter invoice number, valid dates, and a positive amount.");
+        setSaving(false);
+        return;
+      }
+      const desc = stripHtml(notesHtml) || null;
+      await apiService.updateAccountsInvoice(invoiceId, {
+        invoice_number: invoiceNumber.trim(),
+        invoice_date: inv,
+        due_date: due,
+        description: desc,
+        amount: amt,
+        payment_method: payment && payment !== "Select" ? payment : null,
+        status: status as "Paid" | "Pending" | "Overdue",
+        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+      });
+      navigation(routes.accountsInvoices);
+    } catch (err: unknown) {
+      setFormError(getAccountsErrorMessage(err, "Could not update invoice."));
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const amtNum = Number(String(amount).replace(/[^0-9.-]/g, ""));
+  const displayTotal = Number.isFinite(amtNum) ? amtNum : 0;
+
+  if (loading) {
+    return (
+      <div className="page-wrapper">
+        <div className="content content-two p-4 text-muted">Loading…</div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content content-two">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Edit Invoice</h3>
@@ -33,7 +140,7 @@ const EditInvoice = () => {
                     <Link to={routes.adminDashboard}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">
-                    <Link to={routes.teacherList}>Finance &amp; Accounts</Link>
+                    <Link to={routes.accountsInvoices}>Finance &amp; Accounts</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
                     Edit Invoice
@@ -42,50 +149,16 @@ const EditInvoice = () => {
               </nav>
             </div>
           </div>
-          {/* /Page Header */}
           <div className="row">
             <div className="col-md-12">
-              <form>
+              <form onSubmit={handleSubmit}>
+                {formError && (
+                  <div className="alert alert-warning" role="alert">
+                    {formError}
+                  </div>
+                )}
                 <div className="card">
                   <div className="card-body pb-0">
-                    {/* Customer Logo */}
-                    <div className="card">
-                      <div className="card-header bg-light">
-                        <div className="d-flex align-items-center">
-                          <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                            <i className="ti ti-user-check fs-16" />
-                          </span>
-                          <h4 className="text-dark">Company Logo</h4>
-                        </div>
-                      </div>
-                      <div className="card-body pb-1">
-                        <div className="profile-wrap mb-3">
-                          <div className="frames bg-white">
-                            <i className="ti ti-photo-plus" />
-                          </div>
-                          <div className="profile-upload">
-                            <div className="profile-uploader d-flex align-items-center">
-                              <div className="drag-upload-btn mb-3">
-                                Upload
-                                <input
-                                  type="file"
-                                  className="form-control image-sign"
-                                  multiple
-                                />
-                              </div>
-                              <Link to="#" className="btn btn-primary mb-3">
-                                Remove
-                              </Link>
-                            </div>
-                            <p className="fs-12">
-                              Upload image size 4MB, Format JPG, PNG, SVG
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    {/* /Customer Logo */}
-                    {/* Customer Information */}
                     <div className="card">
                       <div className="card-header bg-light">
                         <div className="d-flex align-items-center">
@@ -100,34 +173,19 @@ const EditInvoice = () => {
                           <div className="row">
                             <div className="col-lg-3 col-md-6">
                               <div className="mb-3">
-                                <label className="form-label">
-                                  Customer Name
-                                </label>
-                                <CommonSelect
-                                  className="select"
-                                  options={customerName}
-                                  defaultValue={customerName[0]}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-lg-3 col-md-6">
-                              <div className="mb-3">
-                                <label className="form-label">
-                                  Invoice Number
-                                </label>
+                                <label className="form-label">Invoice Number</label>
                                 <input
                                   type="text"
                                   className="form-control"
-                                  placeholder="Enter Invoice Number"
-                                  defaultValue="INV681537"
+                                  value={invoiceNumber}
+                                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                                  required
                                 />
                               </div>
                             </div>
                             <div className="col-lg-3 col-md-6">
                               <div className="mb-3">
-                                <label className="form-label">
-                                  Invoice Date
-                                </label>
+                                <label className="form-label">Invoice Date</label>
                                 <div className="input-icon position-relative">
                                   <span className="input-icon-addon">
                                     <i className="ti ti-calendar" />
@@ -135,6 +193,10 @@ const EditInvoice = () => {
                                   <DatePicker
                                     className="form-control datetimepicker"
                                     placeholder="Select Date"
+                                    value={invDay}
+                                    onChange={(d) =>
+                                      setInvoiceDate(d && d.isValid() ? d.format("YYYY-MM-DD") : "")
+                                    }
                                   />
                                 </div>
                               </div>
@@ -149,16 +211,44 @@ const EditInvoice = () => {
                                   <DatePicker
                                     className="form-control datetimepicker"
                                     placeholder="Select Date"
+                                    value={dueDay}
+                                    onChange={(d) =>
+                                      setDueDate(d && d.isValid() ? d.format("YYYY-MM-DD") : "")
+                                    }
                                   />
                                 </div>
+                              </div>
+                            </div>
+                            <div className="col-lg-3 col-md-6">
+                              <div className="mb-3">
+                                <label className="form-label">Payment Method</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={paymentMethod}
+                                  value={payment}
+                                  onChange={(v) => setPayment(v || "Cash")}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-lg-3 col-md-6">
+                              <div className="mb-3">
+                                <label className="form-label">Status</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={[
+                                    { value: "Pending", label: "Pending" },
+                                    { value: "Paid", label: "Paid" },
+                                    { value: "Overdue", label: "Overdue" },
+                                  ]}
+                                  value={status}
+                                  onChange={(v) => setStatus(v || "Pending")}
+                                />
                               </div>
                             </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                    {/* /Customer Information */}
-                    {/* Product Information */}
                     <div className="card">
                       <div className="card-header bg-light">
                         <div className="d-flex align-items-center">
@@ -169,133 +259,34 @@ const EditInvoice = () => {
                         </div>
                       </div>
                       <div className="card-body pb-0">
-                        <div className="info-section">
-                          <div className="row align-items-end">
-                            <div className="col-lg-3 col-md-6">
-                              <div className="mb-3">
-                                <label className="form-label">
-                                  Product Name
-                                </label>
-                                <CommonSelect
-                                  className="select"
-                                  options={productName}
-                                  defaultValue={productName[0]}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-lg-3 col-md-6">
-                              <div className="mb-3">
-                                <label className="form-label">Quantity</label>
-                                <input
-                                  type="number"
-                                  className="form-control"
-                                  placeholder="Enter Quantity"
-                                  defaultValue={2}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-lg-2">
-                              <div className="mb-3">
-                                <Link to="#" className="btn btn-primary">
-                                  <i className="ti ti-plus me-2" />
-                                  Add to Bill
-                                </Link>
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="invoice-product-table">
-                                <div className="table-responsive invoice-table">
-                                  <table className="table">
-                                    <thead>
-                                      <tr>
-                                        <th>Product Name</th>
-                                        <th>Quantity</th>
-                                        <th>Unit Price</th>
-                                        <th>Discount</th>
-                                        <th>Net Amount</th>
-                                        <th>Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr>
-                                        <td>Uniform</td>
-                                        <td>
-                                          <input
-                                            type="number"
-                                            className="form-control"
-                                            defaultValue={100}
-                                          />
-                                        </td>
-                                        <td>
-                                          <input
-                                            type="text"
-                                            className="form-control"
-                                            defaultValue={500}
-                                          />
-                                        </td>
-                                        <td>
-                                          <input
-                                            type="text"
-                                            className="form-control"
-                                            placeholder="%"
-                                            defaultValue={5}
-                                          />
-                                        </td>
-                                        <td>$450</td>
-                                        <td>
-                                          <Link
-                                            to="#"
-                                            className="delete-invoive-list"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#delete-modal"
-                                          >
-                                            <i className="ti ti-trash" />
-                                          </Link>
-                                        </td>
-                                      </tr>
-                                      <tr>
-                                        <td>Description</td>
-                                        <td>
-                                          <input
-                                            type="number"
-                                            className="form-control"
-                                          />
-                                        </td>
-                                        <td>
-                                          <input
-                                            type="text"
-                                            className="form-control"
-                                          />
-                                        </td>
-                                        <td>
-                                          <input
-                                            type="text"
-                                            className="form-control"
-                                            placeholder="4%"
-                                          />
-                                        </td>
-                                        <td>$300</td>
-                                        <td>
-                                          <Link
-                                            to="#"
-                                            className="delete-invoive-list"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#delete-modal"
-                                          >
-                                            <i className="ti ti-trash" />
-                                          </Link>
-                                        </td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </div>
+                        <div className="invoice-product-table">
+                          <div className="table-responsive invoice-table">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th>Description</th>
+                                  <th>Due Date</th>
+                                  <th>Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td colSpan={2}>Line items are summarized in Notes below.</td>
+                                  <td>
+                                    <input
+                                      type="text"
+                                      className="form-control"
+                                      value={amount}
+                                      onChange={(e) => setAmount(e.target.value)}
+                                    />
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       </div>
                     </div>
-                    {/* /Product Information */}
                     <div className="invoice-info">
                       <div className="row">
                         <div className="col-xxl-9 col-lg-8">
@@ -304,20 +295,8 @@ const EditInvoice = () => {
                               <div className="mb-3">
                                 <label className="form-label">Notes</label>
                                 <Editor
-                                  value={text1}
-                                  onTextChange={(e) =>
-                                    setText1(e.htmlValue ?? "")
-                                  }
-                                  style={{ height: "130px" }}
-                                />
-                              </div>
-                              <div className="mb-3">
-                                <label className="form-label">Notes</label>
-                                <Editor
-                                  value={text2}
-                                  onTextChange={(e) =>
-                                    setText2(e.htmlValue ?? "")
-                                  }
+                                  value={notesHtml}
+                                  onTextChange={(e) => setNotesHtml(e.htmlValue ?? "")}
                                   style={{ height: "130px" }}
                                 />
                               </div>
@@ -329,35 +308,31 @@ const EditInvoice = () => {
                             <ul>
                               <li>
                                 <span>Subtotal</span>
-                                <h6>$500</h6>
+                                <h6>
+                                  {new Intl.NumberFormat("en-US", {
+                                    style: "currency",
+                                    currency: "USD",
+                                  }).format(displayTotal)}
+                                </h6>
                               </li>
                               <li>
                                 <span>Discount</span>
-                                <h6>$50</h6>
+                                <h6>$0.00</h6>
                               </li>
                               <li>
                                 <span>Tax</span>
-                                <h6>$10</h6>
+                                <h6>$0.00</h6>
                               </li>
                               <li>
                                 <h5>Total</h5>
-                                <h5>$460</h5>
+                                <h5>
+                                  {new Intl.NumberFormat("en-US", {
+                                    style: "currency",
+                                    currency: "USD",
+                                  }).format(displayTotal)}
+                                </h5>
                               </li>
                             </ul>
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Signature Name
-                              </label>
-                              <input type="text" className="form-control" />
-                            </div>
-                            <div className="input-block service-upload service-upload-info mb-0">
-                              <span>
-                                <i className="ti ti-upload me-2" />
-                                Upload Signature
-                              </span>
-                              <input type="file" multiple id="image_sign" />
-                              <div id="frames" />
-                            </div>
                           </div>
                         </div>
                       </div>
@@ -365,11 +340,15 @@ const EditInvoice = () => {
                   </div>
                 </div>
                 <div className="text-end">
-                  <button type="button" className="btn btn-light me-3">
+                  <button
+                    type="button"
+                    className="btn btn-light me-3"
+                    onClick={() => navigation(routes.accountsInvoices)}
+                  >
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary" onClick={navigationPath}>
-                    Save Changes
+                  <button type="submit" className="btn btn-primary" disabled={saving}>
+                    {saving ? "Saving…" : "Save Changes"}
                   </button>
                 </div>
               </form>
@@ -377,39 +356,6 @@ const EditInvoice = () => {
           </div>
         </div>
       </div>
-      {/* /Page Wrapper */}
-      {/* Delete Modal */}
-      <div className="modal fade" id="delete-modal">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <form>
-              <div className="modal-body text-center">
-                <span className="delete-icon">
-                  <i className="ti ti-trash-x" />
-                </span>
-                <h4>Confirm Deletion</h4>
-                <p>
-                  You want to delete all the marked items, this cant be undone
-                  once you delete.
-                </p>
-                <div className="d-flex justify-content-center">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-3"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <button type="submit" className="btn btn-danger">
-                    Yes, Delete
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-      {/* /Delete Modal */}
     </div>
   );
 };

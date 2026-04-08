@@ -80,6 +80,9 @@ const PEOPLE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Library books, members, issue/return */
 const LIBRARY_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
+/** Finance & Accounts: income, invoices */
+const ACCOUNTS_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+
 module.exports = {
   ROLES,
   ADMIN_ROLE_IDS,
@@ -100,4 +103,5 @@ module.exports = {
   FEE_COLLECTIONS_LIST_ROLES,
   PEOPLE_MANAGER_ROLES,
   LIBRARY_MANAGER_ROLES,
+  ACCOUNTS_MANAGER_ROLES,
 };

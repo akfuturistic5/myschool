@@ -128,11 +128,11 @@ export const all_routes = {
 
   // settings routes
   customFields: "/app-settings/custom-fields",
-  invoiceSettings: "/app-settings/invoice-settings",
 
   bankAccount: "/financial-settings/bank-ccount",
   paymentGateways: "/financial-settings/payment-gateways",
   taxRates: "/financial-settings/tax-rates",
+  invoiceSettings: "/app-settings/invoice-settings",
 
   schoolSettings : "/academic-settings/school-settings",
   religion : "/academic-settings/religion",
@@ -296,9 +296,9 @@ export const all_routes = {
   accountsTransactions: "/accounts/accounts-transactions",
   expense: "/accounts/expense",
   expenseCategory: "/accounts/expense-category",
-  invoice: "/accounts/invoice",
+  invoice: "/accounts/invoice/:id",
   addInvoice: "/accounts/add-invoice",
-  editInvoice: "/accounts/edit-invoice",
+  editInvoice: "/accounts/edit-invoice/:id",
 
   // announcements routes
   events: "/announcements/events",

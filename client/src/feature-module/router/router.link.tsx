@@ -160,6 +160,7 @@ import CustomFields from "../settings/appSettings/customFields";
 import InvoiceSettings from "../settings/appSettings/invoiceSettings";
 import PaymentGateways from "../settings/financialSettings/paymentGateways";
 import TaxRates from "../settings/financialSettings/taxRates";
+
 import ConnectedApps from "../settings/generalSettings/connectedApps";
 import Notificationssettings from "../settings/generalSettings/notifications";
 import Securitysettings from "../settings/generalSettings/security";
@@ -1290,12 +1291,14 @@ export const publicRoutes = [
     path: routes.paymentGateways,
     element: <PaymentGateways />,
     route: Route,
+    id: 310,
   },
   {
     path: routes.taxRates,
     element: <TaxRates />,
     route: Route,
   },
+
   {
     path: routes.schoolSettings,
     element: <SchoolSettings />,

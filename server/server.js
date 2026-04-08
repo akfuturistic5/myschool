@@ -60,6 +60,9 @@ const superAdminRoutes = require('./src/routes/superAdminRoutes');
 const schoolProfileRoutes = require('./src/routes/schoolProfileRoutes');
 const bonafideRoutes = require('./src/routes/bonafideRoutes');
 const libraryRoutes = require('./src/routes/libraryRoutes');
+const accountsRoutes = require('./src/routes/accountsRoutes');
+const settingsRoutes = require('./src/routes/settingsRoutes');
+const settingsController = require('./src/controllers/settingsController');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
 
@@ -118,7 +121,8 @@ const shouldSkipRequestLog = (req, res) => {
       path === '/api/auth/csrf-token' ||
       path === '/super-admin/api/auth/csrf-token' ||
       path === '/health' ||
-      path.startsWith('/api/school/profile/logo/')
+      path.startsWith('/api/school/profile/logo/') ||
+      path.startsWith('/api/settings/file/')
     )
   ) {
     return true;
@@ -273,6 +277,8 @@ app.use('/api/auth', authRoutes);
 app.use('/super-admin/api/auth', superAdminAuthRoutes);
 app.use('/super-admin/api', superAdminRoutes);
 app.use('/api', healthRoutes);
+// settings/file must be public to serve <img> tags in browser
+app.get('/api/settings/file/:filename', settingsController.getFile);
 
 // Protect all other API routes - require valid JWT; then block inactive student/teacher accounts (except /auth/me)
 app.use('/api', protectApi, (req, res, next) => requireActiveAccount(req, res, next).catch(next));
@@ -318,6 +324,8 @@ app.use('/api/fees', feeRoutes);
 app.use('/api/school/profile', schoolProfileRoutes);
 app.use('/api/bonafide', bonafideRoutes);
 app.use('/api/library', libraryRoutes);
+app.use('/api/accounts', accountsRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {
