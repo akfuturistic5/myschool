@@ -186,7 +186,6 @@ END;
 $$;
 
 
-
 --
 -- TOC entry 340 (class 1255 OID 214516)
 -- Name: update_notice_board_modified_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
@@ -311,7 +310,6 @@ CREATE SEQUENCE public.addresses_id_seq
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
 
 
 --
