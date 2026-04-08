@@ -6,6 +6,7 @@ export const all_routes = {
   guardianDashboard: "/guardian-dashboard",
   studentDashboard: "/student-dashboard",
   teacherDashboard: "/teacher-dashboard",
+  driverDashboard: "/driver-dashboard",
 
   blankPage: "/blank-page",
   calendar: "/calendar",

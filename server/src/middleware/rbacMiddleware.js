@@ -78,4 +78,22 @@ const requireRoleName = (allowedRoleNames) => {
   };
 };
 
-module.exports = { requireRole, requireRoleName };
+/**
+ * Allows users with role_name "driver" (JWT) through, otherwise delegates to requireRole(allowedRoleIds).
+ * Used for GET /staff/:id so drivers can load their own staff profile while staying out of ALL_AUTHENTICATED_ROLES.
+ */
+const allowDriverOrRoleIds = (allowedRoleIds) => {
+  return (req, res, next) => {
+    const user = req.user;
+    if (!user) {
+      return errorResponse(res, 401, 'Not authenticated');
+    }
+    const roleName = parseRoleName(user.role_name || user.role);
+    if (roleName === 'driver') {
+      return next();
+    }
+    return requireRole(allowedRoleIds)(req, res, next);
+  };
+};
+
+module.exports = { requireRole, requireRoleName, allowDriverOrRoleIds };

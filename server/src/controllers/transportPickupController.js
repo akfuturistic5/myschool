@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 
 function mapPickupRow(row) {
   return {
@@ -13,7 +14,20 @@ function mapPickupRow(row) {
 
 const getAllPickupPoints = async (req, res) => {
   try {
-    const result = await query('SELECT * FROM pickup_points ORDER BY id ASC');
+    const scopedDriverId = await getScopedDriverId(req);
+    let result;
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return success(res, 200, 'Pickup points fetched successfully', [], { count: 0 });
+      }
+      result = await query(
+        'SELECT * FROM pickup_points WHERE route_id = ANY($1::int[]) ORDER BY id ASC',
+        [routeIds]
+      );
+    } else {
+      result = await query('SELECT * FROM pickup_points ORDER BY id ASC');
+    }
     const data = result.rows.map(mapPickupRow);
     return success(res, 200, 'Pickup points fetched successfully', data, { count: data.length });
   } catch (error) {
@@ -25,9 +39,17 @@ const getAllPickupPoints = async (req, res) => {
 const getPickupPointById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
     const result = await query('SELECT * FROM pickup_points WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Pickup point not found');
+    }
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      const rid = result.rows[0].route_id;
+      if (rid == null || !routeIds.map(Number).includes(Number(rid))) {
+        return errorResponse(res, 403, 'Access denied');
+      }
     }
     return success(res, 200, 'Pickup point fetched successfully', mapPickupRow(result.rows[0]));
   } catch (error) {

@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId } = require('../utils/driverTransportAccess');
 
 function getDriverDisplayName(row) {
   if (row.driver_name != null && String(row.driver_name).trim() !== '') return String(row.driver_name).trim();
@@ -25,7 +26,11 @@ function mapDriverRow(row) {
 
 const getAllDrivers = async (req, res) => {
   try {
-    const result = await query('SELECT * FROM drivers ORDER BY id ASC');
+    const scopedDriverId = await getScopedDriverId(req);
+    const result =
+      scopedDriverId != null
+        ? await query('SELECT * FROM drivers WHERE id = $1', [scopedDriverId])
+        : await query('SELECT * FROM drivers ORDER BY id ASC');
     const data = result.rows.map(mapDriverRow);
     return success(res, 200, 'Transport drivers fetched successfully', data, { count: data.length });
   } catch (error) {
@@ -37,6 +42,10 @@ const getAllDrivers = async (req, res) => {
 const getDriverById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
+    if (scopedDriverId != null && String(id) !== String(scopedDriverId)) {
+      return errorResponse(res, 403, 'Access denied');
+    }
     const result = await query('SELECT * FROM drivers WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Driver not found');

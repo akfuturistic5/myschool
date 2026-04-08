@@ -9,12 +9,43 @@ const normalizeBool = (v, fallback = true) => {
   return fallback;
 };
 
+/** DB: section_name VARCHAR(10) */
+const normalizeSectionName = (v) => {
+  const s = String(v ?? '').trim();
+  return s.length > 10 ? s.slice(0, 10) : s;
+};
+
+const emptyToNull = (v) => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+};
+
+/** DB: room_number VARCHAR(20) */
+const normalizeRoomNumber = (v) => {
+  const n = emptyToNull(v);
+  if (n === null) return null;
+  return n.length > 20 ? n.slice(0, 20) : n;
+};
+
+const normalizeDescription = (v) => {
+  const n = emptyToNull(v);
+  if (n === null) return null;
+  return n.length > 5000 ? n.slice(0, 5000) : n;
+};
+
+const parseOptionalInt = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isNaN(n) ? null : n;
+};
+
 const getAllSections = async (req, res) => {
   try {
     const result = await query(`
       SELECT
         s.id, s.section_name, s.class_id, s.section_teacher_id, s.max_students, s.room_number,
-        s.description, s.is_active, s.created_at, s.no_of_students,
+        s.description, s.is_active, s.created_at, s.created_by, s.modified_at, s.no_of_students,
         c.class_name, c.class_code, st.first_name as teacher_first_name, st.last_name as teacher_last_name
       FROM sections s
       LEFT JOIN classes c ON s.class_id = c.id
@@ -42,6 +73,8 @@ const getSectionById = async (req, res) => {
         s.description,
         s.is_active,
         s.created_at,
+        s.created_by,
+        s.modified_at,
         s.no_of_students,
         c.class_name,
         c.class_code,
@@ -109,14 +142,37 @@ const createSection = async (req, res) => {
       section_name, class_id, section_teacher_id, max_students, room_number,
       description, is_active, no_of_students
     } = req.body;
+
+    const nameNorm = normalizeSectionName(section_name);
+    const roomNorm = normalizeRoomNumber(room_number);
+    const descNorm = normalizeDescription(description);
+
+    let maxNorm = 30;
+    if (max_students !== undefined && max_students !== null) {
+      const p = parseOptionalInt(max_students);
+      maxNorm = p != null ? p : 30;
+    }
+
+    const noStudentsRaw = parseOptionalInt(no_of_students);
+    const noStudents = noStudentsRaw != null ? noStudentsRaw : 0;
+
+    const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+    const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
+
     const result = await query(
       `INSERT INTO sections (
-        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, no_of_students
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, no_of_students, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
-        section_name.trim(), class_id, section_teacher_id || null, max_students || null,
-        room_number || null, description || null, normalizeBool(is_active, true),
-        no_of_students != null ? parseInt(no_of_students, 10) : null
+        nameNorm,
+        class_id,
+        section_teacher_id || null,
+        maxNorm,
+        roomNorm,
+        descNorm,
+        normalizeBool(is_active, true),
+        noStudents,
+        createdByArg,
       ]
     );
     return success(res, 201, 'Section created successfully', result.rows[0]);
@@ -135,6 +191,42 @@ const updateSection = async (req, res) => {
     const current = await query('SELECT * FROM sections WHERE id = $1', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Section not found');
     const cur = current.rows[0];
+    const sectionTeacherId = Object.prototype.hasOwnProperty.call(payload, 'section_teacher_id')
+      ? payload.section_teacher_id
+      : cur.section_teacher_id;
+
+    const sectionName = Object.prototype.hasOwnProperty.call(payload, 'section_name')
+      ? normalizeSectionName(payload.section_name)
+      : cur.section_name;
+
+    let maxStudents = cur.max_students;
+    if (Object.prototype.hasOwnProperty.call(payload, 'max_students')) {
+      if (payload.max_students === null || payload.max_students === undefined) {
+        maxStudents = 30;
+      } else {
+        const p = parseOptionalInt(payload.max_students);
+        maxStudents = p != null ? p : cur.max_students;
+      }
+    }
+
+    const roomNumber = Object.prototype.hasOwnProperty.call(payload, 'room_number')
+      ? normalizeRoomNumber(payload.room_number)
+      : cur.room_number;
+
+    const description = Object.prototype.hasOwnProperty.call(payload, 'description')
+      ? normalizeDescription(payload.description)
+      : cur.description;
+
+    let noOfStudents = cur.no_of_students;
+    if (Object.prototype.hasOwnProperty.call(payload, 'no_of_students')) {
+      const p = parseOptionalInt(payload.no_of_students);
+      noOfStudents = p != null ? p : 0;
+    }
+
+    const isActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
+      ? normalizeBool(payload.is_active, cur.is_active)
+      : cur.is_active;
+
     const result = await query(`
       UPDATE sections SET
         section_name = $1,
@@ -148,13 +240,13 @@ const updateSection = async (req, res) => {
       WHERE id = $8
       RETURNING *
     `, [
-      payload.section_name ?? cur.section_name,
-      payload.section_teacher_id ?? cur.section_teacher_id,
-      payload.max_students ?? cur.max_students,
-      payload.room_number ?? cur.room_number,
-      payload.description ?? cur.description,
-      payload.no_of_students ?? cur.no_of_students,
-      normalizeBool(payload.is_active, cur.is_active),
+      sectionName,
+      sectionTeacherId,
+      maxStudents,
+      roomNumber,
+      description,
+      noOfStudents,
+      isActive,
       id
     ]);
     return success(res, 200, 'Section updated successfully', result.rows[0]);

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -6,11 +6,11 @@ import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
 import {
-  departmentName,
   months,
   names,
   ticketDate,
 } from "../../../core/common/selectoption/selectoption";
+import { useDepartments } from "../../../core/hooks/useDepartments";
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { teacherAttendancereportData } from "../../../core/data/json/teacher_attendance_data";
@@ -686,7 +686,7 @@ const StaffReport = () => {
 
                               <CommonSelect
                                 className="select"
-                                options={departmentName}
+                                options={departmentFilterOptions}
                                 defaultValue={undefined}
                               />
                             </div>
