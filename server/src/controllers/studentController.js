@@ -331,8 +331,8 @@ const createStudent = async (req, res) => {
         const guardianResult = await client.query(`
           INSERT INTO guardians (
             student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
-            is_active, created_at, modified_at
-          ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+            is_primary_contact, is_active, created_at, modified_at
+          ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, true, NOW(), NOW())
           RETURNING id
         `, [
           studentRow.id,
@@ -348,6 +348,10 @@ const createStudent = async (req, res) => {
         await client.query(`
           UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2
         `, [guardianResult.rows[0].id, studentRow.id]);
+        await client.query(
+          'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
+          [guardianResult.rows[0].id, studentRow.id]
+        );
 
         studentRow.guardian_id = guardianResult.rows[0].id;
 
@@ -556,6 +560,7 @@ const updateStudent = async (req, res) => {
       }
 
       let result;
+      await client.query('SAVEPOINT sp_student_update');
       try {
         // Primary path: for schemas using correct "religion_id" column
         result = await client.query(`
@@ -631,7 +636,9 @@ const updateStudent = async (req, res) => {
           grNormUpdate,
           id
         ]);
+        await client.query('RELEASE SAVEPOINT sp_student_update');
       } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_student_update');
         const hasAddrColsError = e.message && (e.message.includes('current_address') || e.message.includes('permanent_address'));
         if (hasAddrColsError) {
           try {
@@ -784,6 +791,7 @@ const updateStudent = async (req, res) => {
         } else {
           throw e;
         }
+        await client.query('RELEASE SAVEPOINT sp_student_update');
       }
 
       if (result.rows.length === 0) {
@@ -955,12 +963,19 @@ const updateStudent = async (req, res) => {
             studentRow.id
           ]);
           studentRow.guardian_id = existingGuardian.rows[0].id;
+          await client.query(`
+            UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2
+          `, [existingGuardian.rows[0].id, studentRow.id]);
+          await client.query(
+            'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
+            [existingGuardian.rows[0].id, studentRow.id]
+          );
         } else {
           const guardianResult = await client.query(`
             INSERT INTO guardians (
               student_id, guardian_type, first_name, last_name, relation, occupation, phone, email, address,
-              is_active, created_at, modified_at
-            ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+              is_primary_contact, is_active, created_at, modified_at
+            ) VALUES ($1, 'guardian', $2, $3, $4, $5, $6, $7, $8, true, true, NOW(), NOW())
             RETURNING id
           `, [
             studentRow.id,
@@ -976,6 +991,10 @@ const updateStudent = async (req, res) => {
           await client.query(`
             UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2
           `, [guardianResult.rows[0].id, studentRow.id]);
+          await client.query(
+            'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
+            [guardianResult.rows[0].id, studentRow.id]
+          );
 
           studentRow.guardian_id = guardianResult.rows[0].id;
         }

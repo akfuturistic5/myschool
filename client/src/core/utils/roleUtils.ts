@@ -225,6 +225,15 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
     return path === userDashboard;
   }
 
+  /** Academic Years module: Headmaster + Administrative only (not teachers/students/parents). */
+  const academicYearsBase = all_routes.academicYears;
+  if (
+    academicYearsBase &&
+    (path === academicYearsBase || path.startsWith(`${academicYearsBase}/`))
+  ) {
+    return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
+  }
+
   if (isHeadmasterRole(role, explicitRoleId)) {
     return true;
   }

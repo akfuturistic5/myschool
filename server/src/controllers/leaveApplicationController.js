@@ -113,8 +113,7 @@ const createLeaveApplication = async (req, res) => {
         if (!childIds.includes(Number(reqStudentId))) {
           const guardianCheck = await query(
             `SELECT student_id FROM guardians g
-             INNER JOIN users u ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email)) OR (g.phone = u.phone AND g.phone != ''))
-             WHERE u.id = $1 AND g.student_id = $2`,
+             WHERE g.user_id = $1 AND g.student_id = $2`,
             [userId, reqStudentId]
           );
           if (guardianCheck.rows.length === 0) {
@@ -448,22 +447,14 @@ const getGuardianWardLeaves = async (req, res) => {
     }
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
-    const userResult = await query(
-      'SELECT email, phone FROM users WHERE id = $1 AND is_active = true',
-      [userId]
-    );
+    const userResult = await query('SELECT id FROM users WHERE id = $1 AND is_active = true', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
-    const user = userResult.rows[0];
-    const userEmail = (user.email || '').toString().trim();
-    const userPhone = (user.phone || '').toString().trim();
-
     const guardianResult = await query(
       `SELECT student_id FROM guardians
-       WHERE (LOWER(TRIM(email)) = LOWER($1) AND $1 != '')
-          OR (TRIM(phone) = $2 AND $2 != '')`,
-      [userEmail, userPhone]
+       WHERE user_id = $1`,
+      [userId]
     );
     const studentIds = guardianResult.rows.map(r => r.student_id).filter(Boolean);
     if (studentIds.length === 0) {

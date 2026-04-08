@@ -266,6 +266,9 @@ export const all_routes = {
   examResult: "/academic/exam-result",
   examAttendance: "/academic/exam-attendance",
   classTimetable: "/academic/class-time-table",
+  academicYears: "/academic/academic-years",
+  academicYearNew: "/academic/academic-years/new",
+  academicYearDetail: "/academic/academic-years/:id",
 
   //Hrm module
   staff: "/hrm/staff",

@@ -100,37 +100,69 @@ const getSubjectsByClass = async (req, res) => {
   }
 };
 
-// Update subject (name + status)
+const createSubject = async (req, res) => {
+  try {
+    const {
+      subject_name, subject_code, class_id, teacher_id, theory_hours,
+      practical_hours, total_marks, passing_marks, description, is_active
+    } = req.body;
+    const result = await query(
+      `INSERT INTO subjects (
+        subject_name, subject_code, class_id, teacher_id, theory_hours, practical_hours,
+        total_marks, passing_marks, description, is_active
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [
+        subject_name.trim(), subject_code || null, class_id || null, teacher_id || null,
+        theory_hours || 0, practical_hours || 0, total_marks || 0, passing_marks || 0,
+        description || null, is_active !== false
+      ]
+    );
+    return success(res, 201, 'Subject created successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error creating subject:', error);
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid class or teacher');
+    if (error.code === '23505') return errorResponse(res, 409, 'Subject already exists');
+    return errorResponse(res, 500, 'Failed to create subject');
+  }
+};
+
+// Update subject
 const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const { subject_name, is_active } = req.body;
-
-    // Validate required fields
-    if (!subject_name || !subject_name.trim()) {
-      return errorResponse(res, 400, 'Subject name is required');
-    }
-
-    // Convert is_active to boolean
-    let isActiveBoolean = true; // default keep active
-    if (is_active === true || is_active === 'true' || is_active === 1 || is_active === 't' || is_active === 'T') {
-      isActiveBoolean = true;
-    } else if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'f' || is_active === 'F') {
-      isActiveBoolean = false;
-    }
+    const payload = req.body;
+    const current = await query('SELECT * FROM subjects WHERE id = $1', [id]);
+    if (!current.rows.length) return errorResponse(res, 404, 'Subject not found');
+    const cur = current.rows[0];
 
     const result = await query(`
       UPDATE subjects
       SET subject_name = $1,
-          is_active = $2,
+          subject_code = $2,
+          class_id = $3,
+          teacher_id = $4,
+          theory_hours = $5,
+          practical_hours = $6,
+          total_marks = $7,
+          passing_marks = $8,
+          description = $9,
+          is_active = $10,
           modified_at = NOW()
-      WHERE id = $3
+      WHERE id = $11
       RETURNING *
-    `, [subject_name.trim(), isActiveBoolean, id]);
-
-    if (result.rows.length === 0) {
-      return errorResponse(res, 404, 'Subject not found');
-    }
+    `, [
+      payload.subject_name ?? cur.subject_name,
+      payload.subject_code ?? cur.subject_code,
+      payload.class_id ?? cur.class_id,
+      payload.teacher_id ?? cur.teacher_id,
+      payload.theory_hours ?? cur.theory_hours,
+      payload.practical_hours ?? cur.practical_hours,
+      payload.total_marks ?? cur.total_marks,
+      payload.passing_marks ?? cur.passing_marks,
+      payload.description ?? cur.description,
+      payload.is_active !== undefined ? payload.is_active : cur.is_active,
+      id
+    ]);
 
     return success(res, 200, 'Subject updated successfully', result.rows[0]);
   } catch (error) {
@@ -139,9 +171,24 @@ const updateSubject = async (req, res) => {
   }
 };
 
+const deleteSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM subjects WHERE id = $1 RETURNING id', [id]);
+    if (!result.rows.length) return errorResponse(res, 404, 'Subject not found');
+    return success(res, 200, 'Subject deleted successfully', { id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error deleting subject:', error);
+    if (error.code === '23503') return errorResponse(res, 409, 'Subject is referenced by related records');
+    return errorResponse(res, 500, 'Failed to delete subject');
+  }
+};
+
 module.exports = {
   getAllSubjects,
   getSubjectById,
   getSubjectsByClass,
-  updateSubject
+  createSubject,
+  updateSubject,
+  deleteSubject,
 };

@@ -91,10 +91,7 @@ async function canAccessStudent(req, studentId) {
     const gCheck = await query(
       `SELECT 1
        FROM guardians g
-       INNER JOIN users u
-         ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email))
-             OR (g.phone = u.phone AND g.phone != ''))
-       WHERE u.id = $1 AND g.student_id = $2
+       WHERE g.user_id = $1 AND g.student_id = $2
        LIMIT 1`,
       [ctx.userId, sid]
     );
@@ -151,10 +148,7 @@ async function resolveWardStudentIdsForUser(req) {
     const g = await query(
       `SELECT g.student_id
        FROM guardians g
-       INNER JOIN users u
-         ON (LOWER(TRIM(g.email)) = LOWER(TRIM(u.email))
-             OR (g.phone = u.phone AND g.phone != ''))
-       WHERE u.id = $1`,
+       WHERE g.user_id = $1`,
       [ctx.userId]
     );
     return (g.rows || []).map((r) => parseId(r.student_id)).filter(Boolean);

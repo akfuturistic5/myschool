@@ -51,6 +51,9 @@ import ClassSubject from "../academic/class-subject";
 import ClassSyllabus from "../academic/class-syllabus";
 import ClassTimetable from "../academic/class-timetable";
 import Classes from "../academic/classes";
+import AcademicYearsList from "../academic/academic-years";
+import AcademicYearCreate from "../academic/academic-years/create";
+import AcademicYearDetail from "../academic/academic-years/detail";
 import Exam from "../academic/examinations/exam";
 import ExamAttendance from "../academic/examinations/exam-attendance";
 import ExamResult from "../academic/examinations/exam-results";
@@ -809,6 +812,21 @@ export const publicRoutes = [
   {
     path: routes.AcademicReason,
     element: <AcademicReason />,
+    route: Route,
+  },
+  {
+    path: routes.academicYearNew,
+    element: <AcademicYearCreate />,
+    route: Route,
+  },
+  {
+    path: routes.academicYearDetail,
+    element: <AcademicYearDetail />,
+    route: Route,
+  },
+  {
+    path: routes.academicYears,
+    element: <AcademicYearsList />,
     route: Route,
   },
   {

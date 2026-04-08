@@ -13,6 +13,7 @@
     "db:seed:master": "node scripts/ensure-master-school-registry.js",
     "db:migrate:library": "node scripts/run-library-migration.js",
     "db:migrate:student-promotions": "node scripts/run-student-promotions-migration.js",
+    "db:migrate:guardian-hardening": "node scripts/run-guardian-hardening-migration.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
