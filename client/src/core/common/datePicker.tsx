@@ -14,7 +14,11 @@ dayjs.extend(localeData);
 const { RangePicker } = DatePicker;
 const dateFormat = 'YYYY/MM/DD';
 
-const PredefinedDatePicker: React.FC = () => {
+interface PredefinedDatePickerProps {
+  onChange?: (dates: [dayjs.Dayjs, dayjs.Dayjs]) => void;
+}
+
+const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange }) => {
   const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
     dayjs().subtract(6, 'days'),
     dayjs(),
@@ -40,8 +44,10 @@ const PredefinedDatePicker: React.FC = () => {
       // Trigger calendar popup manually
       setTimeout(() => rangeRef.current?.focus(), 0);
     } else {
-      setDates(predefinedRanges[key]);
+      const newDates = predefinedRanges[key];
+      setDates(newDates);
       setCustomVisible(false);
+      onChange?.(newDates);
     }
   };
 
@@ -49,6 +55,7 @@ const PredefinedDatePicker: React.FC = () => {
     if (value) {
       setDates(value);
       setCustomVisible(false);
+      onChange?.(value);
     }
   };
 

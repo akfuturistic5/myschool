@@ -453,7 +453,6 @@ export const SidebarData = [
             subLink1: routes.addInvoice,
             subLink2: routes.editInvoice,
           },
-          { label: "Invoice View", link: routes.invoice },
           { label: "Transactions", link: routes.accountsTransactions },
         ],
       },

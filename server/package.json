@@ -14,6 +14,7 @@
     "db:migrate:guardian-hardening": "node scripts/run-guardian-hardening-migration.js",
     "db:seed:master": "node scripts/ensure-master-school-registry.js",
     "db:migrate:library": "node scripts/run-library-migration.js",
+    "db:migrate:accounts": "node scripts/run-accounts-migration.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
