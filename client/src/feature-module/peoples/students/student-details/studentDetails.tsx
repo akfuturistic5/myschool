@@ -64,6 +64,22 @@ const StudentDetails = () => {
       cancelled = true
     }
   }, [student?.id])
+
+  const historyTableRows = useMemo(
+    () =>
+      promotionRows.map((row: any) => ({
+        key: String(row.id),
+        date: formatDate(row.promotion_date),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
+        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
+        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
+      })),
+    [promotionRows]
+  )
+
   const showLoading = loading
   if (showLoading) {
     return (
@@ -132,20 +148,6 @@ const StudentDetails = () => {
   const lastClass = latestPromotion?.from_class_name || (latestPromotion?.from_class_id != null ? `Class #${latestPromotion.from_class_id}` : 'N/A')
   const lastSection = latestPromotion?.from_section_name || (latestPromotion?.from_section_id != null ? `Section #${latestPromotion.from_section_id}` : 'N/A')
   const lastAcademicYear = latestPromotion?.from_academic_year_name || (latestPromotion?.from_academic_year_id != null ? `Year #${latestPromotion.from_academic_year_id}` : 'N/A')
-  const historyTableRows = useMemo(
-    () =>
-      promotionRows.map((row: any) => ({
-        key: String(row.id),
-        date: formatDate(row.promotion_date),
-        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
-        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
-        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
-        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
-        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
-        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
-      })),
-    [promotionRows]
-  )
 
   return (
     <>
