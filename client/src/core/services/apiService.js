@@ -416,6 +416,33 @@ class ApiService {
     return this.makeRequest(`/students/${id}`);
   }
 
+  /**
+   * Duplicate check for admission number (form UX). excludeId = student id when editing.
+   */
+  async checkAdmissionNumberUnique(admissionNumber, excludeId = null) {
+    const params = new URLSearchParams();
+    params.set('admissionNumber', String(admissionNumber ?? '').trim());
+    if (excludeId != null && String(excludeId).trim() !== '') {
+      params.set('excludeId', String(excludeId));
+    }
+    return this.makeRequest(`/students/check-admission-number?${params.toString()}`);
+  }
+
+  /** Typeahead: parent_persons + legacy parents/guardians tables (mobile/email/name). */
+  async searchParentPersons(q, limit = 20, role = 'any') {
+    const params = new URLSearchParams();
+    params.set('q', String(q ?? '').trim());
+    params.set('limit', String(limit));
+    if (role && role !== 'any') {
+      params.set('role', String(role));
+    }
+    return this.makeRequest(`/parent-persons/search?${params.toString()}`);
+  }
+
+  async getParentPersonById(id) {
+    return this.makeRequest(`/parent-persons/${id}`);
+  }
+
   async downloadStudentBonafide(studentId) {
     const base = await getApiBaseUrl();
     const url = `${base}/students/${studentId}/bonafide`.replace(/([^:]\/)\/+/g, '$1');
@@ -563,6 +590,31 @@ class ApiService {
     });
   }
 
+  /** Typeahead: min 2 chars on server; debounce in UI */
+  async searchStudentsForParent(q) {
+    const qs = new URLSearchParams();
+    qs.set('q', String(q ?? ''));
+    return this.makeRequest(`/students/search?${qs.toString()}`);
+  }
+
+  async uploadParentProfileImage(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.makeRequest('/parents/profile-image', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /** Creates parent user (role parent) + optional guardian (father) link */
+  async createParentWithChild(payload) {
+    return this.makeRequest('/parents/create-with-child', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Guardians
   async getGuardians(params = {}) {
     const searchParams = new URLSearchParams();
@@ -642,6 +694,37 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(teacherData)
     });
+  }
+
+  /** @param {{ teacherId?: number|string, classId?: number|string }} [params] */
+  async getTeacherAssignments(params = {}) {
+    const q = new URLSearchParams();
+    if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
+    if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    const qs = q.toString();
+    return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
+  }
+
+  async getTeacherAssignmentClassMeta(classId) {
+    return this.makeRequest(`/teacher-assignments/class/${classId}/meta`);
+  }
+
+  async createTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/${id}`, { method: 'DELETE' });
   }
 
   /**
@@ -764,6 +847,25 @@ class ApiService {
 
   async getUserById(id) {
     return this.makeRequest(`/users/${id}`);
+  }
+
+  /**
+   * Real-time uniqueness for mobile / email (optional excludeId for edit).
+   * @param {{ mobile?: string, email?: string, excludeId?: number|null }} params
+   */
+  async checkUserUnique(params = {}) {
+    const sp = new URLSearchParams();
+    if (params.mobile != null && String(params.mobile).trim() !== '') {
+      sp.set('mobile', String(params.mobile).trim());
+    }
+    if (params.email != null && String(params.email).trim() !== '') {
+      sp.set('email', String(params.email).trim());
+    }
+    if (params.excludeId != null && String(params.excludeId).trim() !== '') {
+      sp.set('excludeId', String(params.excludeId));
+    }
+    const qs = sp.toString();
+    return this.makeRequest(`/users/check-unique${qs ? `?${qs}` : ''}`);
   }
 
   // User Roles
@@ -1897,6 +1999,58 @@ class ApiService {
       body: formData,
       isMultipart: true
     });
+  }
+
+  /**
+   * Multi-tenant school storage (school id from session/JWT only).
+   * @param {File} file
+   * @param {'students'|'documents'|'uploads'|'temp'} folder
+   */
+  async uploadSchoolStorageFile(file, folder) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /**
+   * Student PDF documents (medical / transfer certificate). Tenant school from JWT only.
+   * @param {File} file
+   * @param {'medical'|'transfer_certificate'} docType
+   */
+  async uploadStudentDocumentPdf(file, docType) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docType', docType);
+    formData.append('folder', 'documents');
+    return this.makeRequest('/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /** @param {string} relativePath — e.g. school_12/students/abc.jpg */
+  async deleteSchoolStorageFile(relativePath) {
+    return this.makeRequest('/storage/file', {
+      method: 'DELETE',
+      body: JSON.stringify({ relativePath }),
+    });
+  }
+
+  /**
+   * Turn API path `/api/storage/files/...` into an absolute URL for `<img src>` (same host as API).
+   * @param {string} apiPath — `data.url` from uploadSchoolStorageFile
+   */
+  async getSchoolStorageFileAbsoluteUrl(apiPath) {
+    const base = await getApiBaseUrl();
+    const origin = new URL(base).origin;
+    const p = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
+    return `${origin}${p}`;
   }
 }
 

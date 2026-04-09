@@ -1,5 +1,5 @@
 const { query } = require('../config/database');
-const { getAuthContext, isAdmin, resolveTeacherIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
+const { getAuthContext, isAdmin, resolveTeacherStaffIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
 
 // Parse academic_year_id from query (optional - when set, filter year-specific data)
@@ -25,7 +25,7 @@ function parseClassId(req) {
  */
 function sqlTeacherInAcademicYear(t, n) {
   return `(
-    EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = ${t}.id AND cs.academic_year_id = $${n})
+    EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = ${t}.staff_id AND cs.academic_year_id = $${n})
     OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.class_teacher_id = ${t}.staff_id)
     OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.id = ${t}.class_id)
   )`;
@@ -689,10 +689,10 @@ const getClassRoutineForDashboard = async (req, res) => {
       if (!isAdmin(ctx)) {
         // Teacher scope: only own schedules.
         if (ctx.roleName === 'teacher' || ctx.roleId === ROLES.TEACHER) {
-          const teacherId = await resolveTeacherIdForUser(ctx.userId);
-          if (teacherId) {
+          const staffId = await resolveTeacherStaffIdForUser(ctx.userId);
+          if (staffId) {
             where = ` WHERE (cs.teacher_id = $${params.length + 1} OR cs.teacher = $${params.length + 1})`;
-            params.push(teacherId);
+            params.push(staffId);
           }
         }
 
@@ -865,7 +865,7 @@ const getBestPerformers = async (req, res) => {
            INNER JOIN students st ON er.student_id = st.id AND st.academic_year_id = $1
            INNER JOIN class_schedules cs ON cs.class_id = st.class_id AND cs.subject_id = er.subject_id
              AND cs.academic_year_id = $1
-           INNER JOIN teachers t ON t.id = cs.teacher_id
+           INNER JOIN teachers t ON t.staff_id = cs.teacher_id
            INNER JOIN staff s ON t.staff_id = s.id
            LEFT JOIN subjects sub ON er.subject_id = sub.id
            WHERE er.is_absent = false AND COALESCE(er.is_active, true) = true
@@ -879,7 +879,7 @@ const getBestPerformers = async (req, res) => {
            FROM exam_results er
            INNER JOIN students st ON er.student_id = st.id
            INNER JOIN class_schedules cs ON cs.class_id = st.class_id AND cs.subject_id = er.subject_id
-           INNER JOIN teachers t ON t.id = cs.teacher_id
+           INNER JOIN teachers t ON t.staff_id = cs.teacher_id
            INNER JOIN staff s ON t.staff_id = s.id
            LEFT JOIN subjects sub ON er.subject_id = sub.id
            WHERE er.is_absent = false AND COALESCE(er.is_active, true) = true
@@ -900,7 +900,7 @@ const getBestPerformers = async (req, res) => {
          FROM teachers t
          INNER JOIN staff s ON t.staff_id = s.id
          LEFT JOIN subjects sub ON t.subject_id = sub.id
-         LEFT JOIN class_schedules cs ON cs.teacher_id = t.id
+         LEFT JOIN class_schedules cs ON cs.teacher_id = t.staff_id
            ${hasYearFilter ? 'AND cs.academic_year_id = $2' : ''}
          WHERE t.status = 'Active' AND s.is_active = true
          GROUP BY t.id, s.first_name, s.last_name, s.photo_url, sub.subject_name

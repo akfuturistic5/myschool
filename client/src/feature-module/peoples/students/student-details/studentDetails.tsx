@@ -64,6 +64,23 @@ const StudentDetails = () => {
       cancelled = true
     }
   }, [student?.id])
+
+  // Must run before any early return — hooks order must be stable across loading / error / empty states.
+  const historyTableRows = useMemo(
+    () =>
+      promotionRows.map((row: any) => ({
+        key: String(row.id),
+        date: formatDate(row.promotion_date),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
+        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
+        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
+      })),
+    [promotionRows]
+  )
+
   const showLoading = loading
   if (showLoading) {
     return (
@@ -111,6 +128,12 @@ const StudentDetails = () => {
     student.guardian_first_name || student.guardian_last_name
       ? [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(' ') || 'N/A'
       : null
+
+  const showFatherBlock = fatherName !== 'N/A' || !!student.father_phone || !!student.father_email
+  const showMotherBlock = motherName !== 'N/A' || !!student.mother_phone || !!student.mother_email
+  const showGuardianBlock = !!guardianName
+  const hasParentsInformation = showFatherBlock || showMotherBlock || showGuardianBlock
+
   const currentAddress = student.current_address ?? student.address ?? 'N/A'
   const permanentAddress = student.permanent_address ?? 'N/A'
   const previousSchool = student.previous_school ?? 'N/A'
@@ -132,20 +155,6 @@ const StudentDetails = () => {
   const lastClass = latestPromotion?.from_class_name || (latestPromotion?.from_class_id != null ? `Class #${latestPromotion.from_class_id}` : 'N/A')
   const lastSection = latestPromotion?.from_section_name || (latestPromotion?.from_section_id != null ? `Section #${latestPromotion.from_section_id}` : 'N/A')
   const lastAcademicYear = latestPromotion?.from_academic_year_name || (latestPromotion?.from_academic_year_id != null ? `Year #${latestPromotion.from_academic_year_id}` : 'N/A')
-  const historyTableRows = useMemo(
-    () =>
-      promotionRows.map((row: any) => ({
-        key: String(row.id),
-        date: formatDate(row.promotion_date),
-        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
-        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
-        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
-        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
-        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
-        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
-      })),
-    [promotionRows]
-  )
 
   return (
     <>
@@ -214,7 +223,8 @@ const StudentDetails = () => {
                 </li>
               </ul>
               {/* /List */}
-              {/* Parents Information */}
+              {/* Parents Information — only when at least father, mother, or guardian data exists */}
+              {hasParentsInformation && (
               <div className="card">
                 <div className="card-header">
                   <h5>Parents Information</h5>
@@ -319,12 +329,9 @@ const StudentDetails = () => {
                       </div>
                     </div>
                   )}
-                  {fatherName === 'N/A' && !student.father_phone && !student.father_email &&
-                   motherName === 'N/A' && !student.mother_phone && !student.mother_email && !guardianName && (
-                    <p className="text-muted mb-0">No parent or guardian information available.</p>
-                  )}
                 </div>
               </div>
+              )}
               {/* /Parents Information */}
 
               {/* History */}

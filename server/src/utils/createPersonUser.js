@@ -460,4 +460,5 @@ module.exports = {
   createGuardianUser,
   createTeacherUser,
   isUserEmailTaken,
+  parseFullName,
 };

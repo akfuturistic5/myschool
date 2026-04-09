@@ -56,7 +56,8 @@ export const useParents = (options = {}) => {
           mother_phone: parent.mother_phone,
           father_occupation: parent.father_occupation,
           mother_occupation: parent.mother_occupation,
-          student_id: parent.student_id
+          student_id: parent.student_id,
+          father_user_id: parent.father_user_id != null ? Number(parent.father_user_id) : null,
         };
         }).filter(Boolean);
         setParents(transformedData);

@@ -21,6 +21,7 @@ const getAllClasses = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -53,6 +54,7 @@ const getClassById = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -89,6 +91,7 @@ const getClassesByAcademicYear = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -120,12 +123,13 @@ const createClass = async (req, res) => {
       description,
       is_active,
       no_of_students,
+      has_sections,
     } = req.body;
 
     const result = await query(
       `INSERT INTO classes (
-        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, has_sections
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING *`,
       [
         class_name.trim(),
@@ -137,6 +141,7 @@ const createClass = async (req, res) => {
         description || null,
         normalizeBool(is_active, true),
         no_of_students != null ? parseInt(no_of_students, 10) : null,
+        normalizeBool(has_sections, true),
       ]
     );
     return success(res, 201, 'Class created successfully', result.rows[0]);
@@ -167,8 +172,9 @@ const updateClass = async (req, res) => {
         description = $7,
         no_of_students = $8,
         is_active = $9,
+        has_sections = $10,
         modified_at = NOW()
-      WHERE id = $10
+      WHERE id = $11
       RETURNING *
     `, [
       payload.class_name ?? cur.class_name,
@@ -180,6 +186,7 @@ const updateClass = async (req, res) => {
       payload.description ?? cur.description,
       payload.no_of_students ?? cur.no_of_students,
       normalizeBool(payload.is_active, cur.is_active),
+      normalizeBool(payload.has_sections, cur.has_sections !== undefined ? cur.has_sections : true),
       id
     ]);
     return success(res, 200, 'Class updated successfully', result.rows[0]);

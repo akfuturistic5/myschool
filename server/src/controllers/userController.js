@@ -195,7 +195,64 @@ const getUserById = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/users/check-unique?mobile=&email=&excludeId=
+ * Independent checks for active users; excludeId skips that user (edit mode).
+ */
+const checkUserUnique = async (req, res) => {
+  try {
+    const mobileRaw = req.query.mobile != null ? String(req.query.mobile).trim() : '';
+    const emailRaw = req.query.email != null ? String(req.query.email).trim() : '';
+    const excludeRaw = req.query.excludeId;
+    const excludeId =
+      excludeRaw != null && String(excludeRaw).trim() !== '' ? parseInt(String(excludeRaw).trim(), 10) : null;
+    const excludeOk = Number.isFinite(excludeId) && excludeId > 0;
+
+    let mobileExists = false;
+    let emailExists = false;
+
+    if (mobileRaw.length >= 4) {
+      const digits = mobileRaw.replace(/\D/g, '');
+      if (digits.length >= 4) {
+        const r = await query(
+          `SELECT 1 FROM users WHERE is_active = true
+           AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1
+           AND ($2::int IS NULL OR id <> $2)
+           LIMIT 1`,
+          [digits, excludeOk ? excludeId : null]
+        );
+        mobileExists = r.rows.length > 0;
+      }
+    }
+
+    if (emailRaw.length > 0) {
+      const r = await query(
+        `SELECT 1 FROM users WHERE is_active = true
+         AND email IS NOT NULL
+         AND LOWER(TRIM(email)) = LOWER(TRIM($1))
+         AND ($2::int IS NULL OR id <> $2)
+         LIMIT 1`,
+        [emailRaw, excludeOk ? excludeId : null]
+      );
+      emailExists = r.rows.length > 0;
+    }
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      mobileExists,
+      emailExists,
+    });
+  } catch (error) {
+    console.error('checkUserUnique:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Uniqueness check failed',
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
+  checkUserUnique,
 };

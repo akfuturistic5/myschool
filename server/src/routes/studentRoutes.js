@@ -18,6 +18,8 @@ const {
   getStudentExamResults,
   getGradeReport,
   getAttendanceReport,
+  checkAdmissionNumberUnique,
+  searchStudents,
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
@@ -53,6 +55,12 @@ router.get('/leaving', requireRole(STUDENT_LIST_ALL_ROLES), getLeavingStudents);
 
 // Get current logged-in student (must be before /:id)
 router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
+
+// Uniqueness checks for forms (must be before /:id)
+router.get('/check-admission-number', requireRole(PEOPLE_MANAGER_ROLES), checkAdmissionNumberUnique);
+
+// Typeahead student search (must be before /:id)
+router.get('/search', requireRole(PEOPLE_MANAGER_ROLES), searchStudents);
 
 // Get students by class - Admin or Teacher
 router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsByClass);
