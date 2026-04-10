@@ -1,3 +1,4 @@
+
 import {
   resolveCsrfTokenForRequest,
   setCachedCsrfToken,
@@ -84,12 +85,19 @@ class ApiService {
     const url = `${base}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     // Create a unique key for this request (endpoint + method + body hash)
-    const method = options.method || 'GET';
-    const bodyKey = options.body ? JSON.stringify(options.body).substring(0, 50) : '';
+    const method = (options.method || 'GET').toUpperCase();
+    const bodyKey = options.body
+      ? (typeof options.body === 'string'
+          ? options.body
+          : JSON.stringify(options.body)).substring(0, 120)
+      : '';
     const requestKey = `${method}:${endpoint}:${bodyKey}`;
 
-    // If the same request is already pending, return the existing promise
-    if (pendingRequests.has(requestKey)) {
+    // Only dedupe safe reads. Never dedupe POST/PUT/PATCH/DELETE — reusing a pending
+    // mutation promise can mask failures or return the wrong response; refetch-after-create
+    // must not accidentally reuse a pre-mutation GET.
+    const dedupeReadsOnly = method === 'GET' || method === 'HEAD';
+    if (dedupeReadsOnly && pendingRequests.has(requestKey)) {
       if (isDev) console.log('Deduplicating request:', url, '- reusing pending request');
       return pendingRequests.get(requestKey);
     }
@@ -804,6 +812,26 @@ class ApiService {
     return this.makeRequest(`/staff/${id}`);
   }
 
+  async createStaff(data) {
+    return this.makeRequest('/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateStaff(id, data) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteStaff(id) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Departments
   async getDepartments() {
     return this.makeRequest('/departments');
@@ -817,6 +845,19 @@ class ApiService {
     return this.makeRequest(`/departments/${id}`, {
       method: 'PUT',
       body: JSON.stringify(departmentData),
+    });
+  }
+
+  async createDepartment(departmentData) {
+    return this.makeRequest('/departments', {
+      method: 'POST',
+      body: JSON.stringify(departmentData),
+    });
+  }
+
+  async deleteDepartment(id) {
+    return this.makeRequest(`/departments/${id}`, {
+      method: 'DELETE',
     });
   }
 
@@ -1009,6 +1050,113 @@ class ApiService {
     });
   }
 
+  // Fees Groups
+  async getFeesGroups(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-groups${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesGroup(data) {
+    return this.makeRequest('/fees-groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesGroup(id, data) {
+    return this.makeRequest(`/fees-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesGroup(id) {
+    return this.makeRequest(`/fees-groups/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Types
+  async getFeesTypes(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-types${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesType(data) {
+    return this.makeRequest('/fees-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesType(id, data) {
+    return this.makeRequest(`/fees-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesType(id) {
+    return this.makeRequest(`/fees-types/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Master
+  async getFeesMaster(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-master${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesMaster(data) {
+    return this.makeRequest('/fees-master', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesMaster(id, data) {
+    return this.makeRequest(`/fees-master/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesMaster(id) {
+    return this.makeRequest(`/fees-master/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Assign
+  async getFeesAssignments(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-assign${qs ? `?${qs}` : ''}`);
+  }
+  async assignFees(data) {
+    return this.makeRequest('/fees-assign/assign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesAssignment(id) {
+    return this.makeRequest(`/fees-assign/${id}`, {
+      method: 'DELETE',
+    });
+  }
+  async getFeeCollectionsList(params = {}) {
+    const academic_year_id = params.academic_year_id || params.academicYearId;
+    const searchParams = new URLSearchParams();
+    if (academic_year_id) searchParams.set('academic_year_id', academic_year_id);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/fees-collect/list${qs ? `?${qs}` : ''}`);
+  }
+
+  // Fees Collect (Enterprise)
+  async collectFeesEnterprise(data) {
+    return this.makeRequest('/fees-collect/collect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async getStudentFeeDetailedStatus(studentId, academicYearId) {
+    return this.makeRequest(`/fees-collect/student/${studentId}/${academicYearId}`);
+  }
+  async getPaymentHistoryDetailed(studentId, academicYearId) {
+    return this.makeRequest(`/fees-collect/history/${studentId}/${academicYearId}`);
+  }
+
   // Notice Board
   async getNoticeBoard(params = {}) {
     const searchParams = new URLSearchParams();
@@ -1154,6 +1302,11 @@ class ApiService {
 
   async getTransportDriverById(id) {
     return this.makeRequest(`/transport/drivers/${id}`);
+  }
+
+  // Driver Portal (self-scoped)
+  async getDriverPortalMe() {
+    return this.makeRequest('/driver-portal/me');
   }
 
   // Subjects

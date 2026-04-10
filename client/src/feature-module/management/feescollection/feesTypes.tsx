@@ -1,6 +1,9 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { apiService } from "../../../core/services/apiService";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
@@ -13,17 +16,163 @@ import {
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import FeesModal from "./feesModal";
-import { feesType } from "../../../core/data/json/feesType";
 import TooltipOption from "../../../core/common/tooltipOption";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
 
 const FeesTypes = () => {
   const routes = all_routes;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const data = feesType;
-  const handleApplyClick = () => {
+
+  const [data, setData] = useState<any[]>([]);
+  const [filteredData, setFilteredData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filter States
+  const [filterGroup, setFilterGroup] = useState<string | number>("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+
+  // Options
+  const [groups, setGroups] = useState<any[]>([]);
+
+  // Modal States
+  const [selectedType, setSelectedType] = useState<any>(null);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const fetchGroups = async () => {
+    try {
+      if (!academicYearId) return;
+      const res = await apiService.getFeesGroups({ academic_year_id: academicYearId });
+      if (res.status === "SUCCESS") {
+        setGroups(res.data
+          .filter((g: any) => g.status === "Active")
+          .map((g: any) => ({ value: String(g.id), label: g.name }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch groups", err);
+    }
+  };
+
+  const fetchFeesTypes = async (isManualRefresh = false) => {
+    try {
+      if (!academicYearId) return;
+      setLoading(true);
+      setError(null);
+      const res = await apiService.getFeesTypes({ academic_year_id: academicYearId });
+      if (res.status === "SUCCESS") {
+        const mappedData = res.data.map((item: any) => ({
+          ...item,
+          key: item.id,
+          feesType: item.name,
+          feesCode: item.code || "-",
+          feesGroup: item.group_names || "-",
+          groupIds: item.group_ids || []
+        }));
+        setData(mappedData);
+        setFilteredData(mappedData);
+        if (isManualRefresh) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Refreshed',
+            text: 'Data updated successfully',
+            timer: 1500,
+            showConfirmButton: false
+          });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch fees types");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFeesTypes();
+    fetchGroups();
+  }, [academicYearId]);
+
+  const handleApplyClick = (e: any) => {
+    e.preventDefault();
+    let filtered = [...data];
+
+    if (filterGroup !== "All") {
+      filtered = filtered.filter(item => {
+        const ids = item.group_ids || [];
+        // Handle both array (PostgreSQL ARRAY_AGG) and potential JSON string
+        const normalizedIds = Array.isArray(ids) ? ids : (typeof ids === 'string' ? JSON.parse(ids) : []);
+        return normalizedIds.some((gid: any) => Number(gid) === Number(filterGroup));
+      });
+    }
+
+    if (filterStatus !== "All") {
+      filtered = filtered.filter(item => 
+        item.status && item.status.toLowerCase() === filterStatus.toLowerCase()
+      );
+    }
+
+    setFilteredData(filtered);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
+  };
+
+  const handleReset = () => {
+    setFilterGroup("All");
+    setFilterStatus("All");
+    setFilteredData(data);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = filteredData.map(item => ({
+      ID: item.id,
+      "Fees Type": item.name,
+      Code: item.code || "",
+      "Fees Group": item.group_names || "-",
+      Description: item.description || "",
+      Status: item.status
+    }));
+    exportToExcel(exportData, `FeesTypes_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const columns = [
+      { title: "ID", dataKey: "id" },
+      { title: "Fees Type", dataKey: "name" },
+      { title: "Code", dataKey: "code" },
+      { title: "Fees Group", dataKey: "group_names" },
+      { title: "Description", dataKey: "description" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(filteredData, "Fees Type List", `FeesTypes_${new Date().toISOString().split('T')[0]}`, columns);
+  };
+
+  const handlePrint = () => {
+    const columns = [
+      { title: "ID", dataKey: "id" },
+      { title: "Fees Type", dataKey: "name" },
+      { title: "Code", dataKey: "code" },
+      { title: "Fees Group", dataKey: "group_names" },
+      { title: "Description", dataKey: "description" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Fees Type List", columns, filteredData);
+  };
+
+  const handleEdit = (type: any) => {
+    setSelectedType(type);
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setDeleteId(id);
+  };
+
+  const handleDeleteSuccess = () => {
+    fetchFeesTypes();
+    setDeleteId(null);
   };
   const columns = [
     {
@@ -34,31 +183,31 @@ const FeesTypes = () => {
           {text}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: TableData, b: TableData) => Number(a.id || 0) - Number(b.id || 0),
     },
     {
       title: "Fees Type",
       dataIndex: "feesType",
       sorter: (a: TableData, b: TableData) =>
-        a.feesType.length - b.feesType.length,
+        (a.feesType || "").localeCompare(b.feesType || ""),
     },
     {
       title: "Fees Code",
       dataIndex: "feesCode",
       sorter: (a: TableData, b: TableData) =>
-        a.feesCode.length - b.feesCode.length,
+        (a.feesCode || "").localeCompare(b.feesCode || ""),
     },
     {
       title: "Fees Group",
       dataIndex: "feesGroup",
       sorter: (a: TableData, b: TableData) =>
-        a.feesGroup.length - b.feesGroup.length,
+        (a.feesGroup || "").localeCompare(b.feesGroup || ""),
     },
     {
       title: "Description",
       dataIndex: "description",
       sorter: (a: TableData, b: TableData) =>
-        a.description.length - b.description.length,
+        (a.description || "").localeCompare(b.description || ""),
     },
     {
       title: "Status",
@@ -78,50 +227,50 @@ const FeesTypes = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: any, b: any) => (a.status || "").localeCompare(b.status || ""),
     },
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_fees_Type"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-right p-3">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#edit_fees_Type"
+                  onClick={() => handleEdit(record)}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#delete-modal"
+                  onClick={() => handleDeleteClick(record.id)}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Delete
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
@@ -149,13 +298,19 @@ const FeesTypes = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
+              <TooltipOption 
+                onRefresh={() => fetchFeesTypes(true)}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
                   data-bs-toggle="modal"
                   data-bs-target="#add_fees_Type"
+                  onClick={() => setSelectedType(null)}
                 >
                   <i className="ti ti-square-rounded-plus me-2" />
                   Add Fees Type
@@ -167,11 +322,8 @@ const FeesTypes = () => {
           {/* Students List */}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Fees Collection</h4>
+              <h4 className="mb-3">Fees Type List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -186,49 +338,21 @@ const FeesTypes = () => {
                     className="dropdown-menu drop-width"
                     ref={dropdownMenuRef}
                   >
-                    <form>
+                    <form onSubmit={handleApplyClick}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">ID</label>
-                              <CommonSelect
-                                className="select"
-                                options={ids}
-                                defaultValue={ids[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Name</label>
-                              <CommonSelect
-                                className="select"
-                                options={names}
-                                defaultValue={names[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
+                          <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Fees Group</label>
                               <CommonSelect
                                 className="select"
-                                options={feeGroup}
-                                defaultValue={feeGroup[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Fees Type</label>
-                              <CommonSelect
-                                className="select"
-                                options={feesTypes}
-                                defaultValue={feesTypes[0]}
+                                options={[{ value: "All", label: "All Groups" }, ...groups]}
+                                defaultValue={{ value: "All", label: "All Groups" }}
+                                value={filterGroup === "All" ? "All" : filterGroup.toString()}
+                                onChange={(val: any) => setFilterGroup(val)}
                               />
                             </div>
                           </div>
@@ -237,73 +361,49 @@ const FeesTypes = () => {
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={status}
-                                defaultValue={status[0]}
+                                options={[
+                                  { value: "All", label: "All Status" },
+                                  { value: "Active", label: "Active" },
+                                  { value: "Inactive", label: "Inactive" }
+                                ]}
+                                defaultValue={{ value: "All", label: "All Status" }}
+                                value={filterStatus}
+                                onChange={(val: any) => setFilterStatus(val)}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <button type="button" className="btn btn-light me-3" onClick={handleReset}>
                           Reset
-                        </Link>
-                        <Link
-                          to="#"
+                        </button>
+                        <button
+                          type="submit"
                           className="btn btn-primary"
-                          onClick={handleApplyClick}
                         >
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={data} columns={columns} Selection={true} />
-              {/* /Student List */}
+              <Table dataSource={filteredData} columns={columns} Selection={true} />
             </div>
           </div>
           {/* /Students List */}
         </div>
       </div>
       {/* /Page Wrapper */}
-      <FeesModal />
+      <FeesModal 
+        onSuccess={fetchFeesTypes} 
+        editTypeData={selectedType} 
+        deleteId={deleteId}
+        onDeleteSuccess={handleDeleteSuccess}
+      />
     </>
   );
 };

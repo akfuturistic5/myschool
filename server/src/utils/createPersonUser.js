@@ -410,21 +410,13 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
   return userId;
 }
 
-const crypto = require('crypto');
-
-function generateTeacherInitialPassword() {
-  return crypto.randomBytes(18).toString('base64url');
-}
-
 /**
- * Teacher app login — username prefers email, then phone.
- * Password: explicit → else phone digits → else cryptographically secure random (never weak default).
- * Duplicate username/email always fails the transaction (rejectUsernameConflict).
+ * Non-teaching staff (HRM directory) — default Administrative app role; use roleId for Driver (user_roles.id).
  */
-async function createTeacherUser(client, { email, phone, first_name, last_name, password }) {
+async function createAdministrativeStaffUser(client, { email, phone, first_name, last_name, password, roleId }) {
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
-  const username = (emailTrim || phoneTrim || `tch_${Date.now()}`).toString().trim().slice(0, 50);
+  const username = (emailTrim || phoneTrim || `staff_${Date.now()}`).toString().trim().slice(0, 50);
 
   let rawPassword;
   if (password != null && String(password).trim() !== '') {
@@ -435,9 +427,12 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
     rawPassword = generateTeacherInitialPassword();
   }
 
+  const resolvedRoleId =
+    roleId != null && Number.isFinite(Number(roleId)) ? Number(roleId) : ROLES.ADMINISTRATIVE;
+
   const userId = await createPersonUser(
     client,
-    ROLES.TEACHER,
+    resolvedRoleId,
     {
       username,
       email: emailTrim || null,
@@ -459,6 +454,7 @@ module.exports = {
   createParentIndividualUser,
   createGuardianUser,
   createTeacherUser,
+  createAdministrativeStaffUser,
   isUserEmailTaken,
   parseFullName,
 };

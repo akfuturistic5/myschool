@@ -6,7 +6,7 @@ import type { DatatableProps } from "../../data/interface";
 const Datatable: React.FC<DatatableProps> = ({
   columns,
   dataSource,
-  Selection,
+  Selection, pagination: paginationProp, showSearch = true, onTableChange,
   selectedRowKeys: controlledSelectedKeys,
   onSelectionChange,
   pagination: paginationProp,

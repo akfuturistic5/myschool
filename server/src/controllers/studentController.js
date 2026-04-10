@@ -1416,6 +1416,8 @@ const promoteStudents = async (req, res) => {
 
     const result = await executeTransaction(async (client) => {
       let promoted = 0;
+      const impactedClassIds = new Set();
+      const impactedSectionIds = new Set();
       for (const sid of uniqueIds) {
         const sRes = await client.query(
           `SELECT id, academic_year_id, class_id, section_id, is_active
@@ -1459,6 +1461,12 @@ const promoteStudents = async (req, res) => {
           [toAcademicYearId, toClassId, toSectionId, sid]
         );
 
+        // Maintain class/section aggregates for screens that read no_of_students.
+        if (fromClassId != null) impactedClassIds.add(Number(fromClassId));
+        if (toClassId != null) impactedClassIds.add(Number(toClassId));
+        if (fromSectionId != null) impactedSectionIds.add(Number(fromSectionId));
+        if (toSectionId != null) impactedSectionIds.add(Number(toSectionId));
+
         await client.query(
           `INSERT INTO student_promotions (
             student_id,
@@ -1487,6 +1495,63 @@ const promoteStudents = async (req, res) => {
         );
         promoted += 1;
       }
+
+      if (impactedClassIds.size > 0) {
+        await client.query(
+          `UPDATE classes c
+           SET no_of_students = COALESCE(s.cnt, 0),
+               modified_at = NOW()
+           FROM (
+             SELECT class_id, COUNT(*)::int AS cnt
+             FROM students
+             WHERE is_active = true AND class_id = ANY($1::int[])
+             GROUP BY class_id
+           ) s
+           WHERE c.id = s.class_id`,
+          [[...impactedClassIds]]
+        );
+        await client.query(
+          `UPDATE classes
+           SET no_of_students = 0,
+               modified_at = NOW()
+           WHERE id = ANY($1::int[])
+             AND id NOT IN (
+               SELECT class_id
+               FROM students
+               WHERE is_active = true AND class_id = ANY($1::int[])
+             )`,
+          [[...impactedClassIds]]
+        );
+      }
+
+      if (impactedSectionIds.size > 0) {
+        await client.query(
+          `UPDATE sections sct
+           SET no_of_students = COALESCE(s.cnt, 0),
+               modified_at = NOW()
+           FROM (
+             SELECT section_id, COUNT(*)::int AS cnt
+             FROM students
+             WHERE is_active = true AND section_id = ANY($1::int[])
+             GROUP BY section_id
+           ) s
+           WHERE sct.id = s.section_id`,
+          [[...impactedSectionIds]]
+        );
+        await client.query(
+          `UPDATE sections
+           SET no_of_students = 0,
+               modified_at = NOW()
+           WHERE id = ANY($1::int[])
+             AND id NOT IN (
+               SELECT section_id
+               FROM students
+               WHERE is_active = true AND section_id = ANY($1::int[])
+             )`,
+          [[...impactedSectionIds]]
+        );
+      }
+
       return promoted;
     });
 

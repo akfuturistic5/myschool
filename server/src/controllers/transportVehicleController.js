@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId } = require('../utils/driverTransportAccess');
 
 function getDriverDisplayName(driverRow) {
   if (!driverRow) return null;
@@ -68,7 +69,11 @@ function mapVehicleRow(row, driverMap = {}, routeMap = {}, pickupMap = {}) {
 
 const getAllVehicles = async (req, res) => {
   try {
-    const vehiclesResult = await query('SELECT * FROM vehicles ORDER BY id ASC');
+    const scopedDriverId = await getScopedDriverId(req);
+    const vehiclesResult =
+      scopedDriverId != null
+        ? await query('SELECT * FROM vehicles WHERE driver_id = $1 ORDER BY id ASC', [scopedDriverId])
+        : await query('SELECT * FROM vehicles ORDER BY id ASC');
     const driverIds = [...new Set(vehiclesResult.rows.map((v) => v.driver_id).filter(Boolean))];
     const routeIds = [...new Set(vehiclesResult.rows.map((v) => v.route_id ?? v.route).filter(Boolean))];
 
@@ -122,6 +127,10 @@ const getVehicleById = async (req, res) => {
       return errorResponse(res, 404, 'Vehicle not found');
     }
     const row = vehiclesResult.rows[0];
+    const scopedDriverId = await getScopedDriverId(req);
+    if (scopedDriverId != null && Number(row.driver_id) !== Number(scopedDriverId)) {
+      return errorResponse(res, 403, 'Access denied');
+    }
     let driverMap = {};
     let routeMap = {};
     let pickupMap = {};

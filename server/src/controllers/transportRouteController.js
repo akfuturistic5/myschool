@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 
 function mapRouteRow(row) {
   return {
@@ -13,7 +14,17 @@ function mapRouteRow(row) {
 
 const getAllRoutes = async (req, res) => {
   try {
-    const result = await query('SELECT * FROM routes ORDER BY id ASC');
+    const scopedDriverId = await getScopedDriverId(req);
+    let result;
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return success(res, 200, 'Transport routes fetched successfully', [], { count: 0 });
+      }
+      result = await query('SELECT * FROM routes WHERE id = ANY($1::int[]) ORDER BY id ASC', [routeIds]);
+    } else {
+      result = await query('SELECT * FROM routes ORDER BY id ASC');
+    }
     const data = result.rows.map(mapRouteRow);
     return success(res, 200, 'Transport routes fetched successfully', data, { count: data.length });
   } catch (error) {
@@ -25,6 +36,13 @@ const getAllRoutes = async (req, res) => {
 const getRouteById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (!routeIds.map(Number).includes(Number(id))) {
+        return errorResponse(res, 403, 'Access denied');
+      }
+    }
     const result = await query('SELECT * FROM routes WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Route not found');
