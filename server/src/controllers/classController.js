@@ -56,6 +56,7 @@ const getAllClasses = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -88,6 +89,7 @@ const getClassById = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -124,6 +126,7 @@ const getClassesByAcademicYear = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -155,6 +158,7 @@ const createClass = async (req, res) => {
       description,
       is_active,
       no_of_students,
+      has_sections,
     } = req.body;
 
     const codeNorm = normalizeClassCode(class_code);
@@ -173,8 +177,8 @@ const createClass = async (req, res) => {
 
     const result = await query(
       `INSERT INTO classes (
-        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, has_sections, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       RETURNING *`,
       [
         String(class_name).trim(),
@@ -186,6 +190,7 @@ const createClass = async (req, res) => {
         descNorm,
         normalizeBool(is_active, true),
         noStudents != null ? noStudents : 0,
+        normalizeBool(has_sections, true),
         createdByArg,
       ]
     );
@@ -242,6 +247,11 @@ const updateClass = async (req, res) => {
     const nameFinal = typeof className === 'string' ? className.trim() : className;
     if (!nameFinal) return errorResponse(res, 400, 'class_name cannot be empty');
 
+    let hasSections = cur.has_sections;
+    if (Object.prototype.hasOwnProperty.call(payload, 'has_sections')) {
+      hasSections = normalizeBool(payload.has_sections, cur.has_sections);
+    }
+
     const result = await query(`
       UPDATE classes SET
         class_name = $1,
@@ -253,8 +263,9 @@ const updateClass = async (req, res) => {
         description = $7,
         no_of_students = $8,
         is_active = $9,
+        has_sections = $10,
         modified_at = NOW()
-      WHERE id = $10
+      WHERE id = $11
       RETURNING *
     `, [
       nameFinal,
@@ -268,6 +279,7 @@ const updateClass = async (req, res) => {
       Object.prototype.hasOwnProperty.call(payload, 'is_active')
         ? normalizeBool(payload.is_active, cur.is_active)
         : normalizeBool(cur.is_active, true),
+      hasSections,
       id
     ]);
     return success(res, 200, 'Class updated successfully', result.rows[0]);

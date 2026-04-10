@@ -133,6 +133,7 @@ export const SidebarData = [
             subLink2: routes.editTeacher,
           },
           { label: "Teacher List", link: routes.teacherList },
+          { label: "Teacher assignments", link: routes.teacherAssignments },
           {
             label: "Teacher Details",
             link: routes.teacherDetails,

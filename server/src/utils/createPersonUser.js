@@ -456,4 +456,5 @@ module.exports = {
   createTeacherUser,
   createAdministrativeStaffUser,
   isUserEmailTaken,
+  parseFullName,
 };

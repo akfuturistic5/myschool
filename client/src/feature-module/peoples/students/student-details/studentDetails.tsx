@@ -65,6 +65,7 @@ const StudentDetails = () => {
     }
   }, [student?.id])
 
+  // Must run before any early return — hooks order must be stable across loading / error / empty states.
   const historyTableRows = useMemo(
     () =>
       promotionRows.map((row: any) => ({
@@ -127,6 +128,12 @@ const StudentDetails = () => {
     student.guardian_first_name || student.guardian_last_name
       ? [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(' ') || 'N/A'
       : null
+
+  const showFatherBlock = fatherName !== 'N/A' || !!student.father_phone || !!student.father_email
+  const showMotherBlock = motherName !== 'N/A' || !!student.mother_phone || !!student.mother_email
+  const showGuardianBlock = !!guardianName
+  const hasParentsInformation = showFatherBlock || showMotherBlock || showGuardianBlock
+
   const currentAddress = student.current_address ?? student.address ?? 'N/A'
   const permanentAddress = student.permanent_address ?? 'N/A'
   const previousSchool = student.previous_school ?? 'N/A'
@@ -216,7 +223,8 @@ const StudentDetails = () => {
                 </li>
               </ul>
               {/* /List */}
-              {/* Parents Information */}
+              {/* Parents Information — only when at least father, mother, or guardian data exists */}
+              {hasParentsInformation && (
               <div className="card">
                 <div className="card-header">
                   <h5>Parents Information</h5>
@@ -321,12 +329,9 @@ const StudentDetails = () => {
                       </div>
                     </div>
                   )}
-                  {fatherName === 'N/A' && !student.father_phone && !student.father_email &&
-                   motherName === 'N/A' && !student.mother_phone && !student.mother_email && !guardianName && (
-                    <p className="text-muted mb-0">No parent or guardian information available.</p>
-                  )}
                 </div>
               </div>
+              )}
               {/* /Parents Information */}
 
               {/* History */}

@@ -1,29 +1,60 @@
 const { query, executeTransaction } = require('../config/database');
 const { createGuardianUser } = require('../utils/createPersonUser');
+const { guardiansIsSlimSchema } = require('../utils/studentContactSync');
 
-// Create new guardian
+const guardianSelectBase = `
+        g.id,
+        g.student_id,
+        g.guardian_type,
+        u.first_name,
+        u.last_name,
+        g.relation,
+        u.occupation,
+        u.phone,
+        u.email,
+        s.first_name as student_first_name,
+        s.last_name as student_last_name,
+        s.admission_number,
+        s.roll_number,
+        c.class_name,
+        sec.section_name`;
+
+const guardianJoins = `
+      FROM guardians g
+      INNER JOIN users u ON u.id = g.user_id
+      LEFT JOIN students s ON g.student_id = s.id
+      LEFT JOIN classes c ON s.class_id = c.id
+      LEFT JOIN sections sec ON s.section_id = sec.id`;
+
 const createGuardian = async (req, res) => {
   try {
     const {
       student_id, guardian_type, first_name, last_name, relation, occupation,
-      phone, email, address, office_address, is_primary_contact, is_emergency_contact
+      phone, email, is_primary_contact, is_emergency_contact,
     } = req.body;
 
     if (!first_name || !last_name || !phone) {
       return res.status(400).json({
         status: 'ERROR',
-        message: 'First name, last name, and phone are required'
+        message: 'First name, last name, and phone are required',
       });
     }
 
     if (!student_id) {
       return res.status(400).json({
         status: 'ERROR',
-        message: 'Student ID is required'
+        message: 'Student ID is required',
       });
     }
 
     const guardianRow = await executeTransaction(async (client) => {
+      const slim = await guardiansIsSlimSchema(client);
+      if (!slim) {
+        const err = new Error('Database not migrated: run npm run db:migrate:unify');
+        err.statusCode = 503;
+        throw err;
+      }
+
       const studentCheck = await client.query(
         'SELECT id FROM students WHERE id = $1 AND is_active = true LIMIT 1',
         [student_id]
@@ -38,12 +69,13 @@ const createGuardian = async (req, res) => {
       const phoneNorm = (phone || '').toString().trim();
       if (emailNorm || phoneNorm) {
         const dupCheck = await client.query(
-          `SELECT id FROM guardians
-           WHERE student_id = $1
+          `SELECT g.id FROM guardians g
+           INNER JOIN users u ON u.id = g.user_id
+           WHERE g.student_id = $1
              AND (
-               ($2 <> '' AND COALESCE(LOWER(TRIM(email)), '') = LOWER(TRIM($2)))
+               ($2 <> '' AND COALESCE(LOWER(TRIM(u.email)), '') = LOWER(TRIM($2)))
                OR
-               ($3 <> '' AND COALESCE(TRIM(phone), '') = TRIM($3))
+               ($3 <> '' AND COALESCE(TRIM(u.phone), '') = TRIM($3))
              )
            LIMIT 1`,
           [student_id, emailNorm, phoneNorm]
@@ -55,60 +87,71 @@ const createGuardian = async (req, res) => {
         }
       }
 
-      const result = await client.query(`
-        INSERT INTO guardians (
-          student_id, guardian_type, first_name, last_name, relation, occupation,
-          phone, email, address, office_address, is_primary_contact, is_emergency_contact,
-          is_active, created_at, modified_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, NOW(), NOW())
-        RETURNING *
-      `, [
-        student_id,
-        guardian_type || null,
+      const guardianUserId = await createGuardianUser(client, {
         first_name,
         last_name,
-        relation || null,
-        occupation || null,
         phone,
-        email || null,
-        address || null,
-        office_address || null,
-        is_primary_contact === true || is_primary_contact === 'true',
-        is_emergency_contact === true || is_emergency_contact === 'true'
-      ]);
-      const row = result.rows[0];
-      const guardianUserId = await createGuardianUser(client, {
-        first_name, last_name, phone, email: email || null
+        email: email || null,
       });
-      if (guardianUserId) {
-        await client.query('UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2', [guardianUserId, row.id]);
-        row.user_id = guardianUserId;
+      if (!guardianUserId) {
+        const err = new Error('Could not create guardian user (email or phone required)');
+        err.statusCode = 400;
+        throw err;
       }
 
-      // Keep student.guardian_id in sync with latest explicit assignment from registry.
-      await client.query(
-        'UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2',
-        [row.id, student_id]
+      if (occupation) {
+        await client.query(`UPDATE users SET occupation = $1, modified_at = NOW() WHERE id = $2`, [
+          occupation,
+          guardianUserId,
+        ]);
+      }
+
+      const result = await client.query(
+        `INSERT INTO guardians (
+          student_id, user_id, guardian_type, relation,
+          is_primary_contact, is_emergency_contact,
+          is_active, created_at, modified_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+        RETURNING *`,
+        [
+          student_id,
+          guardianUserId,
+          guardian_type || null,
+          relation || null,
+          is_primary_contact === true || is_primary_contact === 'true',
+          is_emergency_contact === true || is_emergency_contact === 'true',
+        ]
       );
+      const row = result.rows[0];
+
+      await client.query('UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2', [
+        row.id,
+        student_id,
+      ]);
       await client.query(
         'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
         [row.id, student_id]
       );
-      row.is_primary = true;
-      row.primary_for_student_id = student_id;
 
-      return row;
+      const full = await client.query(
+        `SELECT ${guardianSelectBase} ${guardianJoins} WHERE g.id = $1`,
+        [row.id]
+      );
+      return full.rows[0] || row;
     });
 
     res.status(201).json({
       status: 'SUCCESS',
       message: 'Guardian created successfully',
-      data: guardianRow
+      data: guardianRow,
     });
   } catch (error) {
     console.error('Error creating guardian:', error);
     if (error.statusCode === 400) {
       return res.status(400).json({ status: 'ERROR', message: error.message });
+    }
+    if (error.statusCode === 503) {
+      return res.status(503).json({ status: 'ERROR', message: error.message });
     }
     if (error.statusCode === 409 || error.code === 'EMAIL_IN_USE_BY_DIFFERENT_ROLE') {
       return res.status(409).json({ status: 'ERROR', message: error.message || 'Guardian could not be linked due to account conflict' });
@@ -120,23 +163,29 @@ const createGuardian = async (req, res) => {
   }
 };
 
-// Update guardian
 const updateGuardian = async (req, res) => {
   try {
     const { id } = req.params;
     const {
       student_id, guardian_type, first_name, last_name, relation, occupation,
-      phone, email, address, office_address, is_primary_contact, is_emergency_contact
+      phone, email, is_primary_contact, is_emergency_contact,
     } = req.body;
 
     if (!first_name || !last_name || !phone) {
       return res.status(400).json({
         status: 'ERROR',
-        message: 'First name, last name, and phone are required'
+        message: 'First name, last name, and phone are required',
       });
     }
 
     const result = await executeTransaction(async (client) => {
+      const slim = await guardiansIsSlimSchema(client);
+      if (!slim) {
+        const err = new Error('Database not migrated: run npm run db:migrate:unify');
+        err.statusCode = 503;
+        throw err;
+      }
+
       const existingRes = await client.query(
         'SELECT id, student_id, user_id FROM guardians WHERE id = $1 LIMIT 1',
         [id]
@@ -153,16 +202,18 @@ const updateGuardian = async (req, res) => {
         err.statusCode = 400;
         throw err;
       }
+
       const emailNorm = (email || '').toString().trim();
       const phoneNorm = (phone || '').toString().trim();
       if (emailNorm || phoneNorm) {
         const dupCheck = await client.query(
-          `SELECT id FROM guardians
-           WHERE student_id = $1 AND id <> $2
+          `SELECT g.id FROM guardians g
+           INNER JOIN users u ON u.id = g.user_id
+           WHERE g.student_id = $1 AND g.id <> $2
              AND (
-               ($3 <> '' AND COALESCE(LOWER(TRIM(email)), '') = LOWER(TRIM($3)))
+               ($3 <> '' AND COALESCE(LOWER(TRIM(u.email)), '') = LOWER(TRIM($3)))
                OR
-               ($4 <> '' AND COALESCE(TRIM(phone), '') = TRIM($4))
+               ($4 <> '' AND COALESCE(TRIM(u.phone), '') = TRIM($4))
              )
            LIMIT 1`,
           [targetStudentId, id, emailNorm, phoneNorm]
@@ -174,71 +225,59 @@ const updateGuardian = async (req, res) => {
         }
       }
 
-      const updated = await client.query(`
-        UPDATE guardians SET
+      await client.query(
+        `UPDATE users SET
+          first_name = $1,
+          last_name = $2,
+          phone = $3,
+          email = $4,
+          occupation = $5,
+          modified_at = NOW()
+        WHERE id = $6`,
+        [first_name, last_name || '', phone, email || null, occupation || null, existing.user_id]
+      );
+
+      const updated = await client.query(
+        `UPDATE guardians SET
           student_id = COALESCE($1, student_id),
           guardian_type = $2,
-          first_name = $3,
-          last_name = $4,
-          relation = $5,
-          occupation = $6,
-          phone = $7,
-          email = $8,
-          address = $9,
-          office_address = $10,
-          is_primary_contact = $11,
-          is_emergency_contact = $12,
+          relation = $3,
+          is_primary_contact = $4,
+          is_emergency_contact = $5,
           modified_at = NOW()
-        WHERE id = $13
-        RETURNING *
-      `, [
-        student_id || null,
-        guardian_type || null,
-        first_name,
-        last_name,
-        relation || null,
-        occupation || null,
-        phone,
-        email || null,
-        address || null,
-        office_address || null,
-        is_primary_contact === true || is_primary_contact === 'true',
-        is_emergency_contact === true || is_emergency_contact === 'true',
-        id
-      ]);
+        WHERE id = $6
+        RETURNING *`,
+        [
+          student_id || null,
+          guardian_type || null,
+          relation || null,
+          is_primary_contact === true || is_primary_contact === 'true',
+          is_emergency_contact === true || is_emergency_contact === 'true',
+          id,
+        ]
+      );
 
       const row = updated.rows[0];
-      if (!row.user_id && ((email || '').toString().trim() || (phone || '').toString().trim())) {
-        const guardianUserId = await createGuardianUser(client, {
-          first_name: row.first_name,
-          last_name: row.last_name,
-          phone: row.phone,
-          email: row.email,
-        });
-        if (guardianUserId) {
-          await client.query(
-            'UPDATE guardians SET user_id = $1, modified_at = NOW() WHERE id = $2',
-            [guardianUserId, row.id]
-          );
-          row.user_id = guardianUserId;
-        }
-      }
-
-      await client.query(
-        'UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2',
-        [row.id, row.student_id]
-      );
+      await client.query('UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2', [
+        row.id,
+        row.student_id,
+      ]);
       await client.query(
         'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
         [row.id, row.student_id]
       );
-      return row;
+
+      const full = await client.query(
+        `SELECT ${guardianSelectBase} ${guardianJoins} WHERE g.id = $1`,
+        [row.id]
+      );
+      return full.rows[0] || row;
     });
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Guardian updated successfully',
-      data: result
+      data: result,
     });
   } catch (error) {
     console.error('Error updating guardian:', error);
@@ -247,6 +286,9 @@ const updateGuardian = async (req, res) => {
     }
     if (error.statusCode === 400) {
       return res.status(400).json({ status: 'ERROR', message: error.message });
+    }
+    if (error.statusCode === 503) {
+      return res.status(503).json({ status: 'ERROR', message: error.message });
     }
     if (error.statusCode === 409 || error.code === 'EMAIL_IN_USE_BY_DIFFERENT_ROLE') {
       return res.status(409).json({ status: 'ERROR', message: error.message || 'Guardian could not be linked due to account conflict' });
@@ -258,7 +300,6 @@ const updateGuardian = async (req, res) => {
   }
 };
 
-// Get all guardians (optional query: academic_year_id - only guardians whose student is in that year)
 const getAllGuardians = async (req, res) => {
   try {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
@@ -267,36 +308,18 @@ const getAllGuardians = async (req, res) => {
     const params = hasYearFilter ? [academicYearId] : [];
 
     const result = await query(
-      `SELECT
-        g.id,
-        g.student_id,
-        g.guardian_type,
-        g.first_name,
-        g.last_name,
-        g.relation,
-        g.occupation,
-        g.phone,
-        g.email,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
-        s.admission_number,
-        s.roll_number,
-        c.class_name,
-        sec.section_name
-      FROM guardians g
-      LEFT JOIN students s ON g.student_id = s.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      `SELECT ${guardianSelectBase}
+      ${guardianJoins}
       WHERE s.is_active = true${yearWhere}
       ORDER BY s.first_name ASC, s.last_name ASC`,
       params
     );
-    
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Guardians fetched successfully',
       data: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
     });
   } catch (error) {
     console.error('Error fetching guardians:', error);
@@ -307,7 +330,6 @@ const getAllGuardians = async (req, res) => {
   }
 };
 
-// Get guardian by ID
 const getGuardianById = async (req, res) => {
   try {
     const { canAccessStudent, parseId, isAdmin, getAuthContext } = require('../utils/accessControl');
@@ -315,35 +337,18 @@ const getGuardianById = async (req, res) => {
     if (!gid) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid guardian ID' });
     }
-    
-    const result = await query(`
-      SELECT
-        g.id,
-        g.student_id,
-        g.guardian_type,
-        g.first_name,
-        g.last_name,
-        g.relation,
-        g.occupation,
-        g.phone,
-        g.email,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
-        s.admission_number,
-        s.roll_number,
-        c.class_name,
-        sec.section_name
-      FROM guardians g
-      LEFT JOIN students s ON g.student_id = s.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      WHERE g.id = $1 AND s.is_active = true
-    `, [gid]);
-    
+
+    const result = await query(
+      `SELECT ${guardianSelectBase}
+      ${guardianJoins}
+      WHERE g.id = $1 AND s.is_active = true`,
+      [gid]
+    );
+
     if (result.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
-        message: 'Guardian not found'
+        message: 'Guardian not found',
       });
     }
 
@@ -355,11 +360,11 @@ const getGuardianById = async (req, res) => {
         return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
       }
     }
-    
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Guardian fetched successfully',
-      data: result.rows[0]
+      data: result.rows[0],
     });
   } catch (error) {
     console.error('Error fetching guardian:', error);
@@ -370,15 +375,13 @@ const getGuardianById = async (req, res) => {
   }
 };
 
-// Get current logged-in guardian (by user email/phone from JWT)
-// Matches guardians table by email or phone of the logged-in user
 const getCurrentGuardian = async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({
         status: 'ERROR',
-        message: 'Not authenticated'
+        message: 'Not authenticated',
       });
     }
 
@@ -386,40 +389,23 @@ const getCurrentGuardian = async (req, res) => {
     if (userResult.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
-        message: 'User not found'
+        message: 'User not found',
       });
     }
-    // Find guardian by stable FK link only.
-    const result = await query(`
-      SELECT
-        g.id,
-        g.student_id,
-        g.guardian_type,
-        g.first_name,
-        g.last_name,
-        g.relation,
-        g.occupation,
-        g.phone,
-        g.email,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
-        s.admission_number,
-        s.roll_number,
-        c.class_name,
-        sec.section_name
-      FROM guardians g
-      LEFT JOIN students s ON g.student_id = s.id AND s.is_active = true
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      WHERE g.user_id = $1
-      ORDER BY g.is_primary_contact DESC, s.first_name ASC NULLS LAST, s.last_name ASC NULLS LAST
-    `, [userId]);
+
+    const result = await query(
+      `SELECT ${guardianSelectBase}
+      ${guardianJoins}
+      WHERE g.user_id = $1 AND (s.is_active IS NULL OR s.is_active = true)
+      ORDER BY g.is_primary_contact DESC, s.first_name ASC NULLS LAST, s.last_name ASC NULLS LAST`,
+      [userId]
+    );
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Guardian fetched successfully',
       data: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
     });
   } catch (error) {
     console.error('Error fetching current guardian:', error);
@@ -430,7 +416,6 @@ const getCurrentGuardian = async (req, res) => {
   }
 };
 
-// Get guardian by student ID
 const getGuardianByStudentId = async (req, res) => {
   try {
     const { canAccessStudent, parseId } = require('../utils/accessControl');
@@ -443,44 +428,27 @@ const getGuardianByStudentId = async (req, res) => {
     if (!access.ok) {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
-    
-    const result = await query(`
-      SELECT
-        g.id,
-        g.student_id,
-        g.guardian_type,
-        g.first_name,
-        g.last_name,
-        g.relation,
-        g.occupation,
-        g.phone,
-        g.email,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
-        s.admission_number,
-        s.roll_number,
-        c.class_name,
-        sec.section_name
-      FROM guardians g
-      LEFT JOIN students s ON g.student_id = s.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+
+    const result = await query(
+      `SELECT ${guardianSelectBase}
+      ${guardianJoins}
       WHERE g.student_id = $1 AND s.is_active = true
-      ORDER BY g.is_primary_contact DESC, g.modified_at DESC, g.id DESC
-    `, [studentId]);
-    
+      ORDER BY g.is_primary_contact DESC, g.modified_at DESC, g.id DESC`,
+      [studentId]
+    );
+
     if (result.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
-        message: 'Guardian not found for this student'
+        message: 'Guardian not found for this student',
       });
     }
-    
+
     const rows = result.rows;
     let primaryGuardian = rows[0];
     if (rows.length > 1) {
       const primary = await query(
-        `SELECT g.*
+        `SELECT g.id
          FROM students s
          INNER JOIN guardians g ON g.id = s.guardian_id
          WHERE s.id = $1
@@ -498,7 +466,7 @@ const getGuardianByStudentId = async (req, res) => {
       message: 'Guardian fetched successfully',
       data: primaryGuardian,
       guardians: rows,
-      count: rows.length
+      count: rows.length,
     });
   } catch (error) {
     console.error('Error fetching guardian by student ID:', error);
@@ -515,5 +483,5 @@ module.exports = {
   getAllGuardians,
   getCurrentGuardian,
   getGuardianById,
-  getGuardianByStudentId
+  getGuardianByStudentId,
 };

@@ -1,16 +1,17 @@
-// index.tsx
-import  { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Table } from "antd";
-import type { DatatableProps } from "../../data/interface"; // Ensure correct path
- // Ensure correct path
+import type { DatatableProps } from "../../data/interface";
 
 
 const Datatable: React.FC<DatatableProps> = ({
   columns,
   dataSource,
-  Selection, pagination: paginationProp, showSearch = true, onTableChange,
+  Selection,
   selectedRowKeys: controlledSelectedKeys,
   onSelectionChange,
+  pagination: paginationProp,
+  showSearch = true,
+  onTableChange,
 }) => {
   const safeData = Array.isArray(dataSource) ? dataSource : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
