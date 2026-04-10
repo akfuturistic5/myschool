@@ -13,6 +13,7 @@ import {
   useDashboardStudentActivity,
 } from "../../../core/hooks/useDashboardData";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 const AdministrativeDashboard = () => {
   const routes = all_routes;
@@ -47,6 +48,7 @@ const AdministrativeDashboard = () => {
     <div className="page-wrapper">
       <div className="content">
         <div className="row">
+          <HolidayDashboardCard />
           <div className="col-12">
             <div className="card bg-dark position-relative overflow-hidden">
               <div className="card-body">
@@ -66,7 +68,7 @@ const AdministrativeDashboard = () => {
                           className="btn btn-outline-light"
                         >
                           <i className="ti ti-id me-1" />
-                          View details
+                          View Profile
                         </Link>
                       )}
                     {quickLinks.map((item) => (

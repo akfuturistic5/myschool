@@ -1,380 +1,335 @@
-
-import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
-import { all_routes } from "../../../router/all_routes";
-import { staffsAttendance } from "../../../../core/data/json/staffs_attendance";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
+import { all_routes } from "../../../router/all_routes";
+import { apiService } from "../../../../core/services/apiService";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { canManageStaffDirectory } from "../staffDirectoryPermissions";
+import { useStaffProfileLoader } from "../useStaffProfileLoader";
+import { StaffProfileSidebar } from "../StaffProfileSidebar";
+import { StaffProfilePageHeader } from "../StaffProfilePageHeader";
+import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
+
+function normalizeStatus(s: string) {
+  const v = String(s || "")
+    .trim()
+    .toLowerCase();
+  if (v === "halfday") return "half_day";
+  return v;
+}
 
 const StaffsAttendance = () => {
   const routes = all_routes;
-  const data = staffsAttendance;
-  const columns = [
-    {
-      title: "Date/Time",
-      dataIndex: "rollNo",
-      sorter: (a: any, b: any) => a.rollNo.length - b.rollNo.length,
-    },
+  const user = useSelector(selectUser);
+  const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
+  const { academicYears } = useAcademicYears();
+  const academicYearsList = (academicYears || []) as Array<{ id?: number; is_current?: boolean }>;
+  const currentAcademicYear =
+    academicYearsList.find((year) => year?.is_current) ??
+    academicYearsList[0] ??
+    null;
+  const academicYearId = selectedAcademicYearId ?? currentAcademicYear?.id ?? null;
+  const canManageDirectory = canManageStaffDirectory(user);
+  const { staffId, staff, loading, error, detailSearch, navState, pk } =
+    useStaffProfileLoader();
 
-    {
-      title: "Jun",
-      dataIndex: "Jun",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    new Date().toISOString().slice(0, 7)
+  );
+  const [rows, setRows] = useState<any[]>([]);
+  const [attLoading, setAttLoading] = useState(false);
+  const [attError, setAttError] = useState<string | null>(null);
+  const [monthHolidayDates, setMonthHolidayDates] = useState<string[]>([]);
+  const [monthHolidayTitles, setMonthHolidayTitles] = useState<Record<string, string>>({});
+
+  const loadAttendance = useCallback(async () => {
+    if (!Number.isFinite(pk) || pk <= 0) return;
+    setAttLoading(true);
+    setAttError(null);
+    try {
+      const res = await apiService.getEntityAttendanceReport("staff", {
+        month: selectedMonth,
+        academicYearId,
+      });
+      const all = Array.isArray(res?.data?.rows) ? res.data.rows : [];
+      const mine = all.filter((r: any) => Number(r?.entity_id) === Number(pk));
+      mine.sort((a: any, b: any) =>
+        String(a?.attendance_date || "").localeCompare(
+          String(b?.attendance_date || "")
+        )
+      );
+      setRows(mine);
+    } catch (e: any) {
+      setAttError(e?.message || "Failed to load attendance");
+      setRows([]);
+    } finally {
+      setAttLoading(false);
+    }
+  }, [pk, selectedMonth, academicYearId]);
+
+  useEffect(() => {
+    if (Number.isFinite(pk) && pk > 0) loadAttendance();
+  }, [pk, loadAttendance]);
+
+  useEffect(() => {
+    let disposed = false;
+    const loadHolidayDates = async () => {
+      try {
+        const [year, month] = String(selectedMonth || "").split("-").map(Number);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+          if (!disposed) setMonthHolidayDates([]);
+          return;
         }
+        const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+        const endDate = `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+        const res = await apiService.getHolidays({ startDate, endDate, academicYearId });
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const dates = new Set<string>();
+        const titleByDate: Record<string, string> = {};
+        rows.forEach((h: any) => {
+          const hs = String(h?.start_date || "").slice(0, 10);
+          const he = String(h?.end_date || "").slice(0, 10);
+          const title = String(h?.title || "").trim() || "Holiday";
+          if (!hs || !he) return;
+          let cursor = new Date(`${hs}T00:00:00`);
+          const until = new Date(`${he}T00:00:00`);
+          if (Number.isNaN(cursor.getTime()) || Number.isNaN(until.getTime()) || cursor > until) return;
+          while (cursor <= until) {
+            const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+            dates.add(d);
+            if (!titleByDate[d]) titleByDate[d] = title;
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        });
+        if (!disposed) {
+          setMonthHolidayDates(Array.from(dates));
+          setMonthHolidayTitles(titleByDate);
+        }
+      } catch {
+        if (!disposed) {
+          setMonthHolidayDates([]);
+          setMonthHolidayTitles({});
+        }
+      }
+    };
+    loadHolidayDates();
+    return () => {
+      disposed = true;
+    };
+  }, [selectedMonth, academicYearId]);
 
+  const rowsWithHolidays = useMemo(() => {
+    const existing = Array.isArray(rows) ? [...rows] : [];
+    const holidayRowDates = new Set(
+      existing
+        .filter((row: any) => normalizeStatus(String(row?.status || "")) === "holiday")
+        .map((row: any) => String(row?.attendance_date || "").slice(0, 10))
+        .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    );
+    const generated: any[] = [];
+    for (const d of monthHolidayDates) {
+      if (!holidayRowDates.has(d)) {
+        generated.push({
+          attendance_date: d,
+          status: "holiday",
+          remark: `Holiday: ${monthHolidayTitles[d] || "Holiday"}`,
+        });
+      }
+    }
+    return [...existing, ...generated].sort((a: any, b: any) =>
+      String(a?.attendance_date || "").localeCompare(String(b?.attendance_date || ""))
+    );
+  }, [rows, monthHolidayDates, monthHolidayTitles]);
+
+  const summary = useMemo(() => {
+    return rowsWithHolidays.reduce(
+      (acc, row) => {
+        const st = normalizeStatus(String(row?.status || ""));
+        if (st === "present") acc.present += 1;
+        else if (st === "absent") acc.absent += 1;
+        else if (st === "late") acc.late += 1;
+        else if (st === "half_day") acc.half += 1;
+        else if (st === "holiday") acc.holiday += 1;
+        return acc;
+      },
+      { present: 0, absent: 0, late: 0, half: 0, holiday: 0 }
+    );
+  }, [rowsWithHolidays]);
+
+  const lastUpdated =
+    rowsWithHolidays.length > 0
+      ? String(rowsWithHolidays[rowsWithHolidays.length - 1]?.attendance_date || "").slice(0, 10)
+      : null;
+
+  const tableData = useMemo(
+    () =>
+      rowsWithHolidays.map((r, i) => ({
+        ...r,
+        key: `att-${String(r.attendance_date ?? i)}-${i}`,
+      })),
+    [rowsWithHolidays]
+  );
+
+  const tableColumns = [
+    {
+      title: "Date",
+      dataIndex: "attendance_date",
+      render: (_: unknown, record: any) =>
+        String(record?.attendance_date || "").slice(0, 10) || "—",
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).attendance_date || "").localeCompare(
+          String((b as any).attendance_date || "")
+        ),
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      render: (_: unknown, record: any) => {
+        const st = normalizeStatus(String(record?.status || ""));
+        const badgeClass =
+          st === "present"
+            ? "badge-soft-success"
+            : st === "absent"
+              ? "badge-soft-danger"
+              : st === "late"
+                ? "badge-soft-warning"
+                : st === "half_day"
+                  ? "badge-soft-info"
+                  : st === "holiday"
+                    ? "badge-soft-primary"
+                    : "badge-soft-secondary";
+        const label = String(record?.status || "—")
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
         return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-danger"></span>
-            )}
-          </>
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {label}
+          </span>
         );
       },
-      sorter: (a: TableData, b: TableData) => a.Jun.length - b.Jun.length,
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).status || "").localeCompare(
+          String((b as any).status || "")
+        ),
     },
     {
-      title: "Jul",
-      dataIndex: "Jul",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-danger"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Jul.length - b.Jul.length,
-    },
-    {
-      title: "Aug",
-      dataIndex: "Aug",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-danger"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Aug.length - b.Aug.length,
-    },
-    {
-      title: "Sep",
-      dataIndex: "Sep",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-danger"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Sep.length - b.Sep.length,
-    },
-    {
-      title: "Oct",
-      dataIndex: "Oct",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-pending"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Oct.length - b.Oct.length,
-    },
-    {
-      title: "Nov",
-      dataIndex: "Nov",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-pending"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Nov.length - b.Nov.length,
-    },
-    {
-      title: "Dec",
-      dataIndex: "Dec",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-pending"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Dec.length - b.Dec.length,
-    },
-    {
-      title: "Jan",
-      dataIndex: "Jan",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-pending"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Jan.length - b.Jan.length,
-    },
-    {
-      title: "Feb",
-      dataIndex: "Feb",
-      render: (text: string) => {
-        if (text === "") {
-          return null;
-        }
-
-        return (
-          <>
-            {text === "green" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : (
-              <span className="attendance-range bg-pending"></span>
-            )}
-          </>
-        );
-      },
-      sorter: (a: TableData, b: TableData) => a.Feb.length - b.Feb.length,
-    },
-    {
-      title: "Mar",
-      dataIndex: "Mar",
-      sorter: (a: TableData, b: TableData) => a.Mar.length - b.Mar.length,
-    },
-    {
-      title: "Apr",
-      dataIndex: "Apr",
-      sorter: (a: TableData, b: TableData) => a.Apr.length - b.Apr.length,
+      title: "Remark",
+      dataIndex: "remark",
+      render: (_: unknown, record: any) =>
+        record?.remark != null && String(record.remark).trim() !== ""
+          ? String(record.remark)
+          : "—",
     },
   ];
+
+  if (staffId == null) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="p-5 text-muted text-center">Redirecting…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || (!staff && !error)) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="d-flex justify-content-center align-items-center p-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <span className="ms-2">Loading staff…</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !staff) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="alert alert-danger">{error || "Staff not found."}</div>
+          <Link to={routes.staff} className="btn btn-primary">
+            Back to staff list
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-wrapper">
         <div className="content">
           <div className="row">
-            {/* Page Header */}
-            <div className="col-md-12">
-              <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
-                <div className="my-auto mb-2">
-                  <h3 className="page-title mb-1">Staff Details</h3>
-                  <nav>
-                    <ol className="breadcrumb mb-0">
-                      <li className="breadcrumb-item">
-                        <Link to={routes.adminDashboard}>Dashboard</Link>
-                      </li>
-                      <li className="breadcrumb-item">
-                        <Link to={routes.studentList}>HRM</Link>
-                      </li>
-                      <li
-                        className="breadcrumb-item active"
-                        aria-current="page"
-                      >
-                        Staff Details
-                      </li>
-                    </ol>
-                  </nav>
-                </div>
-                <div className="d-flex my-xl-auto right-content align-items-center  flex-wrap">
-                  <Link
-                    to={routes.editStaff}
-                    className="btn btn-primary d-flex align-items-center mb-2"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit Staff
-                  </Link>
-                </div>
-              </div>
-            </div>
-            {/* /Page Header */}
-          </div>
-          <div className="row">
-            {/* Staff Information */}
+            <StaffProfilePageHeader
+              routes={routes}
+              canShowEdit={canManageDirectory}
+              editTo={{ pathname: routes.editStaff, search: detailSearch }}
+              editState={navState}
+            />
             <div className="col-xxl-3 col-lg-4 theiaStickySidebar">
               <div className="stickybar">
-                <div className="card border-white">
-                  <div className="card-header">
-                    <div className="d-flex align-items-center  row-gap-3">
-                      <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                        <ImageWithBasePath
-                          src="assets/img/profiles/avatar-27.jpg"
-                          className="img-fluid"
-                          alt="img"
-                        />
-                      </div>
-                      <div>
-                        <span className="badge badge-soft-success d-inline-flex align-items-center mb-1">
-                          <i className="ti ti-circle-filled fs-5 me-1" />
-                          Active
-                        </span>
-                        <h5 className="mb-1">Kevin Larry</h5>
-                        <p className="text-primary m-0">AD1256589</p>
-                        <p className="p-0">Joined On : 10 Mar 2024</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="card-body">
-                    <h5 className="mb-3">Basic Information</h5>
-                    <dl className="row mb-0">
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Staff ID
-                      </dt>
-                      <dd className="col-6  mb-3">35013</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">Gender</dt>
-                      <dd className="col-6  mb-3">Male</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Designation
-                      </dt>
-                      <dd className="col-6  mb-3">25 Jan 2008</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Department
-                      </dt>
-                      <dd className="col-6  mb-3">Technical Lead</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Date Of Birth
-                      </dt>
-                      <dd className="col-6  mb-3">Admin</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Blood Group
-                      </dt>
-                      <dd className="col-6  mb-3">15 Aug 1987</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Blood Group
-                      </dt>
-                      <dd className="col-6  mb-3">O+</dd>
-                      <dt className="col-6 fw-medium text-dark mb-3">
-                        Mother tongue
-                      </dt>
-                      <dd className="col-6  mb-3">English</dd>
-                      <dt className="col-6 fw-medium text-dark mb-0">
-                        Language
-                      </dt>
-                      <dd className="col-6 text-dark mb-0">
-                        <span className="badge badge-light text-dark me-2">
-                          English
-                        </span>
-                        <span className="badge badge-light text-dark">
-                          Spanish
-                        </span>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-                <div className="card border-white">
-                  <div className="card-body">
-                    <h5 className="mb-3">Primary Contact Info</h5>
-                    <div className="d-flex align-items-center mb-3">
-                      <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                        <i className="ti ti-phone" />
-                      </span>
-                      <div>
-                        <span className="fs-12 mb-1 fw-medium text-dark ">
-                          Phone Number
-                        </span>
-                        <p>+1 46548 84498</p>
-                      </div>
-                    </div>
-                    <div className="d-flex align-items-center">
-                      <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                        <i className="ti ti-mail" />
-                      </span>
-                      <div>
-                        <span className="fs-12 mb-1 fw-medium text-dark ">
-                          Email Address
-                        </span>
-                        <p>jan@example.com</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <StaffProfileSidebar staff={staff} />
               </div>
             </div>
-            {/* /Staff Information */}
             <div className="col-xxl-9 col-xl-8">
               <div className="row">
                 <div className="col-md-12">
-                  {/* List */}
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
-                      <Link to={routes.staffDetails} className="nav-link">
+                      <Link
+                        to={{
+                          pathname: routes.staffDetails,
+                          search: detailSearch,
+                        }}
+                        state={navState}
+                        className="nav-link"
+                      >
                         <i className="ti ti-info-square-rounded me-2" />
                         Basic Details
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.staffPayroll} className="nav-link ">
+                      <Link
+                        to={{
+                          pathname: routes.staffPayroll,
+                          search: detailSearch,
+                        }}
+                        state={navState}
+                        className="nav-link"
+                      >
                         <i className="ti ti-file-dollar me-2" />
                         Payroll
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.staffLeave} className="nav-link">
+                      <Link
+                        to={{
+                          pathname: routes.staffLeave,
+                          search: detailSearch,
+                        }}
+                        state={navState}
+                        className="nav-link"
+                      >
                         <i className="ti ti-calendar-due me-2" />
                         Leaves
                       </Link>
                     </li>
                     <li>
                       <Link
-                        to={routes.staffsAttendance}
+                        to={{
+                          pathname: routes.staffsAttendance,
+                          search: detailSearch,
+                        }}
+                        state={navState}
                         className="nav-link active"
                       >
                         <i className="ti ti-calendar-due me-2" />
@@ -382,208 +337,131 @@ const StaffsAttendance = () => {
                       </Link>
                     </li>
                   </ul>
-                  {/* /List */}
-                  {/* Attendance */}
-                  <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-1">
-                      <h4 className="mb-3">Attendance</h4>
-                      <div className="d-flex align-items-center flex-wrap">
-                        <div className="d-flex align-items-center flex-wrap me-3">
-                          <p className="text-dark mb-3 me-2">
-                            Last Updated on : 25 May 2024
-                          </p>
-                          <Link
-                            to="#"
-                            className="btn btn-primary btn-icon btn-sm rounded-circle d-inline-flex align-items-center justify-content-center p-0 mb-3"
-                          >
-                            <i className="ti ti-refresh-dot" />
-                          </Link>
-                        </div>
-                        <div className="dropdown mb-3">
-                          <Link
-                            to="#"
-                            className="btn btn-outline-light bg-white dropdown-toggle"
-                            data-bs-toggle="dropdown"
-                            data-bs-auto-close="outside"
-                          >
-                            <i className="ti ti-calendar-due me-2" />
-                            Year : 2024 / 2025
-                          </Link>
-                          <ul className="dropdown-menu p-3">
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2024 / 2025
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2023 / 2024
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                Year : 2022 / 2023
-                              </Link>
-                            </li>
-                          </ul>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-1">
+                  <h4 className="mb-3">Attendance</h4>
+                  <div className="d-flex align-items-center flex-wrap gap-2">
+                    <label className="mb-0 small text-muted me-1">Month</label>
+                    <input
+                      type="month"
+                      className="form-control form-control-sm"
+                      style={{ width: "auto" }}
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={() => loadAttendance()}
+                      disabled={attLoading}
+                    >
+                      {attLoading ? "Loading…" : "Refresh"}
+                    </button>
+                  </div>
+                </div>
+                <div className="card-body pb-1">
+                  {attError && (
+                    <div className="alert alert-warning py-2">{attError}</div>
+                  )}
+                  <p className="text-muted small mb-3">
+                    Last marked date in this list:{" "}
+                    <span className="text-dark">
+                      {lastUpdated || "—"}
+                    </span>
+                  </p>
+                  {monthHolidayDates.length > 0 && (
+                    <div className="alert alert-info py-2">
+                      Holiday dates are auto-included in attendance history.
+                    </div>
+                  )}
+                  <div className="row">
+                    <div className="col-md-6 col-xxl-3 d-flex">
+                      <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                        <span className="avatar avatar-lg bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
+                          <i className="ti ti-user-check fs-24" />
+                        </span>
+                        <div className="ms-2">
+                          <p className="mb-1">Present</p>
+                          <h5>{summary.present}</h5>
                         </div>
                       </div>
                     </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        {/* Total Present */}
-                        <div className="col-md-6 col-xxl-3 d-flex">
-                          <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                            <span className="avatar avatar-lg bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
-                              <i className="ti ti-user-check fs-24" />
-                            </span>
-                            <div className="ms-2">
-                              <p className="mb-1">Present</p>
-                              <h5>265</h5>
-                            </div>
-                          </div>
+                    <div className="col-md-6 col-xxl-3 d-flex">
+                      <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                        <span className="avatar avatar-lg bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
+                          <i className="ti ti-user-check fs-24" />
+                        </span>
+                        <div className="ms-2">
+                          <p className="mb-1">Absent</p>
+                          <h5>{summary.absent}</h5>
                         </div>
-                        {/* /Total Present */}
-                        {/* Total Absent */}
-                        <div className="col-md-6 col-xxl-3 d-flex">
-                          <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                            <span className="avatar avatar-lg bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
-                              <i className="ti ti-user-check fs-24" />
-                            </span>
-                            <div className="ms-2">
-                              <p className="mb-1">Absent</p>
-                              <h5>05</h5>
-                            </div>
-                          </div>
+                      </div>
+                    </div>
+                    <div className="col-md-6 col-xxl-3 d-flex">
+                      <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                        <span className="avatar avatar-lg bg-info-transparent rounded me-2 flex-shrink-0 text-info">
+                          <i className="ti ti-user-check fs-24" />
+                        </span>
+                        <div className="ms-2">
+                          <p className="mb-1">Half day</p>
+                          <h5>{summary.half}</h5>
                         </div>
-                        {/* /Total Absent */}
-                        {/* Half Day */}
-                        <div className="col-md-6 col-xxl-3 d-flex">
-                          <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                            <span className="avatar avatar-lg bg-info-transparent rounded me-2 flex-shrink-0 text-info">
-                              <i className="ti ti-user-check fs-24" />
-                            </span>
-                            <div className="ms-2">
-                              <p className="mb-1">Half Day</p>
-                              <h5>01</h5>
-                            </div>
-                          </div>
+                      </div>
+                    </div>
+                    <div className="col-md-6 col-xxl-3 d-flex">
+                      <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                        <span className="avatar avatar-lg bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
+                          <i className="ti ti-user-check fs-24" />
+                        </span>
+                        <div className="ms-2">
+                          <p className="mb-1">Late</p>
+                          <h5>{summary.late}</h5>
                         </div>
-                        {/* /Half Day */}
-                        {/* Late to School*/}
-                        <div className="col-md-6 col-xxl-3 d-flex">
-                          <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                            <span className="avatar avatar-lg bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
-                              <i className="ti ti-user-check fs-24" />
-                            </span>
-                            <div className="ms-2">
-                              <p className="mb-1">Late</p>
-                              <h5>12</h5>
-                            </div>
-                          </div>
-                        </div>
-                        {/* /Late to School*/}
                       </div>
                     </div>
                   </div>
-                  <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-1">
-                      <h4 className="mb-3">Attendance</h4>
-                      <div className="d-flex align-items-center flex-wrap">
-                        <div className="dropdown mb-3 me-3">
-                          <Link
-                            to="#"
-                            className="btn btn-outline-light border-white bg-white dropdown-toggle shadow-md"
-                            data-bs-toggle="dropdown"
-                          >
-                            <i className="ti ti-calendar-due me-2" />
-                            This Year
-                          </Link>
-                          <ul className="dropdown-menu p-3">
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                This Year
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                This Month
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                This Week
-                              </Link>
-                            </li>
-                          </ul>
-                        </div>
-                        <div className="dropdown mb-3">
-                          <Link
-                            to="#"
-                            className="dropdown-toggle btn btn-light fw-medium d-inline-flex align-items-center"
-                            data-bs-toggle="dropdown"
-                          >
-                            <i className="ti ti-file-export me-2" />
-                            Export
-                          </Link>
-                          <ul className="dropdown-menu  dropdown-menu-end p-3">
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                <i className="ti ti-file-type-pdf me-2" />
-                                Export as PDF
-                              </Link>
-                            </li>
-                            <li>
-                              <Link to="#" className="dropdown-item rounded-1">
-                                <i className="ti ti-file-type-xls me-2" />
-                                Export as Excel{" "}
-                              </Link>
-                            </li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="card-body p-0 py-3">
-                      <div className="px-3">
-                        <div className="d-flex align-items-center flex-wrap">
-                          <div className="d-flex align-items-center bg-white border rounded p-2 me-3 mb-3">
-                            <span className="avatar avatar-sm bg-success rounded me-2 flex-shrink-0 ">
-                              <i className="ti ti-checks" />
-                            </span>
-                            <p className="text-dark">Present</p>
-                          </div>
-                          <div className="d-flex align-items-center bg-white border rounded p-2 me-3 mb-3">
-                            <span className="avatar avatar-sm bg-danger rounded me-2 flex-shrink-0 ">
-                              <i className="ti ti-x" />
-                            </span>
-                            <p className="text-dark">Absent</p>
-                          </div>
-                          <div className="d-flex align-items-center bg-white border rounded p-2 me-3 mb-3">
-                            <span className="avatar avatar-sm bg-pending rounded me-2 flex-shrink-0 ">
-                              <i className="ti ti-clock-x" />
-                            </span>
-                            <p className="text-dark">Late</p>
-                          </div>
-                          <div className="d-flex align-items-center bg-white border rounded p-2 me-3 mb-3">
-                            <span className="avatar avatar-sm bg-dark rounded me-2 flex-shrink-0 ">
-                              <i className="ti ti-calendar-event" />
-                            </span>
-                            <p className="text-dark">Halfday</p>
-                          </div>
-                          <div className="d-flex align-items-center bg-white border rounded p-2 me-3 mb-3">
-                            <span className="avatar avatar-sm bg-info rounded me-2 flex-shrink-0 ">
-                              <i className="ti ti-calendar-event" />
-                            </span>
-                            <p className="text-dark">Holiday</p>
-                          </div>
-                        </div>
-                      </div>
-                      {/* Attendance List */}
-                      <Table columns={columns} dataSource={data} />
-                      {/* /Attendance List */}
-                    </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-header">
+                  <h4 className="mb-0">Daily marks ({selectedMonth})</h4>
+                </div>
+                <div className="card-body p-0 py-3">
+                  <div className="px-3 mb-3 d-flex flex-wrap gap-2 align-items-center">
+                    <span className="avatar avatar-sm bg-success rounded">
+                      <i className="ti ti-checks" />
+                    </span>
+                    <span className="small me-3">Present</span>
+                    <span className="avatar avatar-sm bg-danger rounded">
+                      <i className="ti ti-x" />
+                    </span>
+                    <span className="small me-3">Absent</span>
+                    <span className="avatar avatar-sm bg-pending rounded">
+                      <i className="ti ti-clock-x" />
+                    </span>
+                    <span className="small me-3">Late</span>
+                    <span className="avatar avatar-sm bg-dark rounded">
+                      <i className="ti ti-calendar-event" />
+                    </span>
+                    <span className="small me-3">Half day</span>
+                    <span className="avatar avatar-sm bg-info rounded">
+                      <i className="ti ti-calendar-event" />
+                    </span>
+                    <span className="small">Holiday</span>
                   </div>
-                  {/* /Attendance */}
+                  {attLoading ? (
+                    <div className="p-4 text-center text-muted">Loading…</div>
+                  ) : (
+                    <Table
+                      columns={tableColumns}
+                      dataSource={tableData}
+                      Selection={false}
+                    />
+                  )}
                 </div>
               </div>
             </div>

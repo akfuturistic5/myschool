@@ -258,11 +258,10 @@ const getAllParents = async (req, res) => {
       }
 
       const teacherCheck = await query(
-        `SELECT t.id
+        `SELECT t.id, t.staff_id
          FROM teachers t
          INNER JOIN staff st ON t.staff_id = st.id
-         WHERE st.user_id = $1 AND st.is_active = true
-         LIMIT 1`,
+         WHERE st.user_id = $1 AND st.is_active = true`,
         [ctx.userId]
       );
 
@@ -273,9 +272,18 @@ const getAllParents = async (req, res) => {
         });
       }
 
-      const teacherId = parseId(teacherCheck.rows[0].id);
-      const academicYearClause = hasYearFilter ? ' AND s.academic_year_id = $2' : '';
-      const teacherParams = hasYearFilter ? [teacherId, academicYearId] : [teacherId];
+      const teacherIds = [...new Set(teacherCheck.rows.map((row) => parseId(row.id)).filter(Boolean))];
+      const teacherStaffIds = [...new Set(teacherCheck.rows.map((row) => parseId(row.staff_id)).filter(Boolean))];
+      if (!teacherIds.length || !teacherStaffIds.length) {
+        return res.status(403).json({
+          status: 'ERROR',
+          message: 'Access denied. User is not an active teacher.',
+        });
+      }
+
+      const teacherParams = [teacherIds, teacherStaffIds];
+      const academicYearClause = hasYearFilter ? ` AND s.academic_year_id = $${teacherParams.length + 1}` : '';
+      if (hasYearFilter) teacherParams.push(academicYearId);
 
       const result = await query(
         `SELECT
@@ -307,13 +315,23 @@ const getAllParents = async (req, res) => {
           AND (
             EXISTS (
               SELECT 1 FROM class_schedules cs
-              WHERE cs.teacher_id = $1
+              WHERE cs.teacher_id = ANY($1::int[])
                 AND cs.class_id = s.class_id
                 AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
             )
             OR EXISTS (
               SELECT 1 FROM teachers t
-              WHERE t.id = $1 AND t.class_id = s.class_id
+              WHERE t.id = ANY($1::int[]) AND t.class_id = s.class_id
+            )
+            OR EXISTS (
+              SELECT 1 FROM sections sec_map
+              WHERE sec_map.id = s.section_id
+                AND sec_map.section_teacher_id = ANY($2::int[])
+            )
+            OR EXISTS (
+              SELECT 1 FROM classes c_map
+              WHERE c_map.id = s.class_id
+                AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
             )
           )${academicYearClause}
         ORDER BY s.first_name ASC, s.last_name ASC`,

@@ -18,7 +18,8 @@
     "db:migrate:student-promotions": "node scripts/run-student-promotions-migration.js",
     "db:migrate:accounts": "node scripts/run-accounts-migration.js",
     "db:migrate:guardian-hardening": "node scripts/run-guardian-hardening-migration.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test",
+    "test:attendance": "node --test test/attendanceValidation.test.js"
   },
   "keywords": [
     "school",

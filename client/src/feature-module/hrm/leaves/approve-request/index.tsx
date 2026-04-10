@@ -10,24 +10,32 @@ import TooltipOption from "../../../../core/common/tooltipOption";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
 import { apiService } from "../../../../core/services/apiService";
-import { isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { parseFetchErrorMessage } from "../../../../core/utils/parseFetchErrorMessage";
 
 const ApproveRequest = () => {
   const routes = all_routes;
   const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
   const { user: currentUser } = useCurrentUser();
-  const canUseAdminList = isHeadmasterRole(currentUser);
+  const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
+  const roleId = Number(currentUser?.user_role_id ?? currentUser?.role_id);
+  const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
+  const canUseAdminList = isTeacher || isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const applicantType = isTeacher ? "student" : "staff";
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     canUseAdminList,
+    pendingOnly: true,
+    applicantType,
   });
 
   const data = useMemo(() => {
     if (!Array.isArray(leaveApplications)) return [];
-    const approvedOnly = leaveApplications.filter((row) =>
-      String(row?.status ?? "").toLowerCase().includes("approv")
+    const pendingOnly = leaveApplications.filter((row) =>
+      String(row?.status ?? "").toLowerCase() === "pending"
     );
-    return approvedOnly.map((row) => ({
+    return pendingOnly.map((row) => ({
       key: row.key ?? String(row.id),
       id: row.id,
       submittedBy: row.name ?? "—",
@@ -44,11 +52,17 @@ const ApproveRequest = () => {
   const handleApprove = async (id: number) => {
     if (leaveActionId != null) return;
     setLeaveActionId(id);
+    setActionFeedback(null);
     try {
       const res = await apiService.updateLeaveApplicationStatus(id, "approved");
-      if (res?.status === "SUCCESS") refetchLeaves();
-    } catch (_) {
-      // ignore
+      if (res?.status === "SUCCESS") {
+        setActionFeedback({ type: "success", text: "Leave approved." });
+        await refetchLeaves();
+      } else {
+        setActionFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
+      }
+    } catch (e: unknown) {
+      setActionFeedback({ type: "danger", text: parseFetchErrorMessage(e) });
     } finally {
       setLeaveActionId(null);
     }
@@ -57,11 +71,22 @@ const ApproveRequest = () => {
   const handleReject = async (id: number) => {
     if (leaveActionId != null) return;
     setLeaveActionId(id);
+    setActionFeedback(null);
     try {
-      const res = await apiService.updateLeaveApplicationStatus(id, "rejected");
-      if (res?.status === "SUCCESS") refetchLeaves();
-    } catch (_) {
-      // ignore
+      const reason = window.prompt("Enter rejection reason");
+      if (!reason || !reason.trim()) {
+        setLeaveActionId(null);
+        return;
+      }
+      const res = await apiService.updateLeaveApplicationStatus(id, "rejected", { rejection_reason: reason.trim() });
+      if (res?.status === "SUCCESS") {
+        setActionFeedback({ type: "success", text: "Leave rejected." });
+        await refetchLeaves();
+      } else {
+        setActionFeedback({ type: "danger", text: res?.message || "Could not reject leave." });
+      }
+    } catch (e: unknown) {
+      setActionFeedback({ type: "danger", text: parseFetchErrorMessage(e) });
     } finally {
       setLeaveActionId(null);
     }
@@ -176,7 +201,7 @@ const ApproveRequest = () => {
             {/* Page Header */}
             <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
               <div className="my-auto mb-2">
-                <h3 className="page-title mb-1">Approved Leave Request</h3>
+                <h3 className="page-title mb-1">Leave Approval Requests</h3>
                 <nav>
                   <ol className="breadcrumb mb-0">
                     <li className="breadcrumb-item">
@@ -186,7 +211,7 @@ const ApproveRequest = () => {
                       <Link to="#">HRM</Link>
                     </li>
                     <li className="breadcrumb-item active" aria-current="page">
-                      Approved Leave Request
+                      Leave Approval Requests
                     </li>
                   </ol>
                 </nav>
@@ -199,7 +224,7 @@ const ApproveRequest = () => {
             {/* Filter Section */}
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                <h4 className="mb-3">Approved Leave Request List</h4>
+                <h4 className="mb-3">Pending Leave Requests</h4>
                 <div className="d-flex align-items-center flex-wrap">
                   <div className="input-icon-start mb-3 me-2 position-relative">
                   <PredefinedDateRanges />
@@ -324,6 +349,20 @@ const ApproveRequest = () => {
                 </div>
               </div>
               <div className="card-body p-0 py-3">
+                {actionFeedback && (
+                  <div
+                    className={`alert alert-${actionFeedback.type === "success" ? "success" : "danger"} mx-3 mt-3 mb-0 d-flex justify-content-between align-items-start gap-2`}
+                    role="alert"
+                  >
+                    <span className="small mb-0">{actionFeedback.text}</span>
+                    <button
+                      type="button"
+                      className="btn-close"
+                      aria-label="Dismiss"
+                      onClick={() => setActionFeedback(null)}
+                    />
+                  </div>
+                )}
                 {leaveError && (
                   <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
                     {leaveError}

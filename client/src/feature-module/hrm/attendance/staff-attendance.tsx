@@ -1,162 +1,116 @@
-import  { useRef, useState, useMemo } from "react";
-import { staffAttendance } from "../../../core/data/json/staff-attendance";
-import type { TableData } from "../../../core/data/interface";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import Table from "../../../core/common/dataTable/index";
-import PredefinedDateRanges from "../../../core/common/datePicker";
-import CommonSelect from "../../../core/common/commonSelect";
-import {
-  studentName,
-  teacherId,
-} from "../../../core/common/selectoption/selectoption";
 import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
+import { apiService } from "../../../core/services/apiService";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+
+const normalizeTimeForInput = (value: unknown): string => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  // Accept HH:mm or HH:mm:ss from API/DB and render as HH:mm in time input.
+  const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return "";
+  return `${match[1]}:${match[2]}`;
+};
 
 const StaffAttendance = () => {
   const routes = all_routes;
-  const data = staffAttendance;
-  const [selectedOptions, setSelectedOptions] = useState(
-    data.map(() => 'Present') // Default to 'Present' for each row
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const today = new Date().toISOString().slice(0, 10);
+  const [attendanceDate, setAttendanceDate] = useState(today);
+  const [departmentId, setDepartmentId] = useState<number | null>(null);
+  const [designationId, setDesignationId] = useState<number | null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [rowState, setRowState] = useState<
+    Record<number, { status: string; checkInTime: string; checkOutTime: string; remark: string }>
+  >({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [activeHoliday, setActiveHoliday] = useState<any>(null);
+
+  const { departments } = useDepartments();
+  const { designations } = useDesignations();
+
+  const departmentNameOptions = useMemo(
+    () => (departments || []).map((d: any) => ({ id: d.originalData?.id ?? d.key, label: d.department })),
+    [departments]
   );
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
+  const designationNameOptions = useMemo(
+    () => (designations || []).map((d: any) => ({ id: d.originalData?.id ?? d.key, label: d.designation })),
+    [designations]
+  );
+
+  const fetchRoster = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiService.getAttendanceMarkingRoster("staff", {
+        date: attendanceDate,
+        departmentId,
+        designationId,
+        academicYearId,
+      });
+      const roster = Array.isArray(response?.data) ? response.data : [];
+      setActiveHoliday(response?.holiday || null);
+      setRows(roster);
+      const state: Record<number, { status: string; checkInTime: string; checkOutTime: string; remark: string }> = {};
+      roster.forEach((r: any) => {
+        state[r.entity_id] = {
+          status: r.status || "present",
+          checkInTime: normalizeTimeForInput(r.check_in_time),
+          checkOutTime: normalizeTimeForInput(r.check_out_time),
+          remark: r.remark || "",
+        };
+      });
+      setRowState(state);
+    } catch (err: any) {
+      setError(err?.message || "Failed to load staff roster");
+      setRows([]);
+      setActiveHoliday(null);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle state change for each row
-  const handleOptionChange = (index:any, value:any) => {
-    const newSelectedOptions = [...selectedOptions];
-    newSelectedOptions[index] = value;
-    setSelectedOptions(newSelectedOptions);
+  useEffect(() => {
+    fetchRoster();
+  }, [attendanceDate, departmentId, designationId, academicYearId]);
+
+  const handleSave = async () => {
+    if (rows.length === 0) return;
+    try {
+      setSaving(true);
+      setError(null);
+      setMessage(null);
+      await apiService.saveAttendance({
+        entityType: "staff",
+        attendanceDate,
+        academicYearId,
+        records: rows.map((r: any) => ({
+          entityId: r.entity_id,
+          status: rowState[r.entity_id]?.status || "present",
+          checkInTime: rowState[r.entity_id]?.checkInTime || null,
+          checkOutTime: rowState[r.entity_id]?.checkOutTime || null,
+          remark: rowState[r.entity_id]?.remark || "",
+          departmentId,
+          designationId,
+        })),
+      });
+      setMessage("Staff attendance saved successfully.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to save staff attendance");
+    } finally {
+      setSaving(false);
+    }
   };
-  const columns = [
-    {
-      title: "ID",
-      dataIndex: "id",
-      render: ( record: any) => (
-        <>
-          <Link to="#" className="link-primary">
-            {record.id}
-          </Link>
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
-    },
-    {
-      title: "Name",
-      dataIndex: "name",
-      render: (text: string, record: any) => (
-        <div className="d-flex align-items-center">
-          <Link to="#" className="avatar avatar-md">
-            <ImageWithBasePath
-              src={record.img}
-              className="img-fluid rounded-circle"
-              alt="img"
-            />
-          </Link>
-          <div className="ms-2">
-            <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
-            </p>
-          </div>
-        </div>
-      ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
-    },
-    {
-      title: "Department",
-      dataIndex: "department",
-      sorter: (a: TableData, b: TableData) =>
-        a.department.length - b.department.length,
-    },
-    {
-      title: "Designation",
-      dataIndex: "designation",
-      sorter: (a: TableData, b: TableData) =>
-        a.designation.length - b.designation.length,
-    },
-    {
-      title: "Attendance",
-      dataIndex: "attendance",
-      render: (index:any) => (
-        <div className="d-flex align-items-center check-radio-group flex-nowrap">
-          <label className="custom-radio">
-            <input
-              type="radio"
-              name={`attendance-${index}`}
-              value="Present"
-              checked={selectedOptions[index] === 'Present'}
-              onChange={() => handleOptionChange(index, 'Present')}
-            />
-            <span className="checkmark" />
-            Present
-          </label>
-          <label className="custom-radio">
-            <input
-              type="radio"
-              name={`attendance-${index}`}
-              value="Late"
-              checked={selectedOptions[index] === 'Late'}
-              onChange={() => handleOptionChange(index, 'Late')}
-            />
-            <span className="checkmark" />
-            Late
-          </label>
-          <label className="custom-radio">
-            <input
-              type="radio"
-              name={`attendance-${index}`}
-              value="Absent"
-              checked={selectedOptions[index] === 'Absent'}
-              onChange={() => handleOptionChange(index, 'Absent')}
-            />
-            <span className="checkmark" />
-            Absent
-          </label>
-          <label className="custom-radio">
-            <input
-              type="radio"
-              name={`attendance-${index}`}
-              value="Holiday"
-              checked={selectedOptions[index] === 'Holiday'}
-              onChange={() => handleOptionChange(index, 'Holiday')}
-            />
-            <span className="checkmark" />
-            Holiday
-          </label>
-          <label className="custom-radio">
-            <input
-              type="radio"
-              name={`attendance-${index}`}
-              value="Halfday"
-              checked={selectedOptions[index] === 'Halfday'}
-              onChange={() => handleOptionChange(index, 'Halfday')}
-            />
-            <span className="checkmark" />
-            Halfday
-          </label>
-        </div>
-      ),
-      sorter: (a: TableData, b: TableData) => a.attendance.length - b.attendance.length,
-    },
-    {
-      title: "Notes",
-      dataIndex: "notes",
-      render: () => (
-          <input
-            type="text"
-            className="form-control"
-            placeholder="Enter Name" style={{ minWidth: '200px', width: '200px' }}
-          />
-      ),
-      sorter: (a: TableData, b: TableData) => a.notes.length - b.notes.length,
-    },
-  ];
+
+  const statusOptions = ["present", "late", "absent", "half_day"];
   return (
     <div>
       <div className="page-wrapper">
@@ -184,126 +138,144 @@ const StaffAttendance = () => {
             </div>
           </div>
           {/* /Page Header */}
-          {/* Student List */}
           <div className="card">
-            <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Staff Attendance List</h4>
-              <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
+            <div className="card-header">
+              <div className="row g-2">
+                <div className="col-md-3">
+                  <label className="form-label">Date</label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={attendanceDate}
+                    max={today}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setAttendanceDate(next && next > today ? today : next);
+                    }}
+                  />
                 </div>
-                <div className="dropdown mb-3 me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                    data-bs-auto-close="outside"
-                  >
-                    <i className="ti ti-filter me-2" />
-                    Filter
-                  </Link>
-                  <div className="dropdown-menu drop-width"  ref={dropdownMenuRef}>
-                    <form>
-                      <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
-                      </div>
-                      <div className="p-3 border-bottom">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">ID</label>
-                              <CommonSelect
-                                className="select"
-                                options={teacherId}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Name</label>
-
-                              <CommonSelect
-                                className="select"
-                                options={studentName}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-0">
-                              <label className="form-label">Department</label>
-                              <CommonSelect
-                                className="select"
-                                options={departmentNameOptions}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-0">
-                              <label className="form-label">Designation</label>
-                              <CommonSelect
-                                className="select"
-                                options={designationNameOptions}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
-                          Reset
-                        </Link>
-                        <Link
-                            to="#"
-                            className="btn btn-primary"
-                            onClick={handleApplyClick}
-                          >
-                            Apply
-                          </Link>
-                      </div>
-                    </form>
-                  </div>
+                <div className="col-md-3">
+                  <label className="form-label">Department</label>
+                  <select className="form-select" value={departmentId ?? ""} onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">All Departments</option>
+                    {departmentNameOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
+                <div className="col-md-3">
+                  <label className="form-label">Designation</label>
+                  <select className="form-select" value={designationId ?? ""} onChange={(e) => setDesignationId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">All Designations</option>
+                    {designationNameOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-3 d-flex align-items-end">
+                  <button type="button" className="btn btn-primary w-100" onClick={handleSave} disabled={saving || loading || rows.length === 0 || !!activeHoliday}>
+                    {saving ? "Saving..." : "Save Attendance"}
+                  </button>
                 </div>
               </div>
             </div>
-            <div className="card-body p-0 py-3">
-              {/* Student List */}
-                <Table dataSource={data} columns={columns} Selection={true} />
-              {/* /Student List */}
+            <div className="card-body">
+              {error && <div className="alert alert-danger">{error}</div>}
+              {message && <div className="alert alert-success">{message}</div>}
+              {activeHoliday && (
+                <div className="alert alert-info">
+                  Holiday (auto): {activeHoliday.title}. Manual attendance marking is disabled for this date.
+                </div>
+              )}
+              {loading ? (
+                <div className="text-muted">Loading roster...</div>
+              ) : rows.length === 0 ? (
+                <div className="text-muted">No staff found.</div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-striped">
+                    <thead><tr><th>Name</th><th>Status</th><th>Check In</th><th>Check Out</th><th>Remark</th></tr></thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.entity_id}>
+                          <td>{r.entity_name}</td>
+                          <td>
+                            <select
+                              className="form-select"
+                              value={rowState[r.entity_id]?.status || "present"}
+                              disabled={!!activeHoliday}
+                              onChange={(e) =>
+                                setRowState((prev) => ({
+                                  ...prev,
+                                  [r.entity_id]: {
+                                    status: e.target.value,
+                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
+                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
+                                    remark: prev[r.entity_id]?.remark || "",
+                                  },
+                                }))
+                              }
+                            >
+                              {statusOptions.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
+                            </select>
+                          </td>
+                          <td>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={rowState[r.entity_id]?.checkInTime || ""}
+                              onChange={(e) =>
+                                setRowState((prev) => ({
+                                  ...prev,
+                                  [r.entity_id]: {
+                                    status: prev[r.entity_id]?.status || "present",
+                                    checkInTime: e.target.value,
+                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
+                                    remark: prev[r.entity_id]?.remark || "",
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={rowState[r.entity_id]?.checkOutTime || ""}
+                              onChange={(e) =>
+                                setRowState((prev) => ({
+                                  ...prev,
+                                  [r.entity_id]: {
+                                    status: prev[r.entity_id]?.status || "present",
+                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
+                                    checkOutTime: e.target.value,
+                                    remark: prev[r.entity_id]?.remark || "",
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                          <td>
+                            <input
+                              className="form-control"
+                              value={rowState[r.entity_id]?.remark || ""}
+                              onChange={(e) =>
+                                setRowState((prev) => ({
+                                  ...prev,
+                                  [r.entity_id]: {
+                                    status: prev[r.entity_id]?.status || "present",
+                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
+                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
+                                    remark: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
-          {/* /Student List */}
         </div>
       </div>
     </div>

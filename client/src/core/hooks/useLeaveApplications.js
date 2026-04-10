@@ -33,19 +33,29 @@ export const useLeaveApplications = (options = {}) => {
     studentId = null,
     staffId = null,
     canUseAdminList = false,
+    classId = null,
+    sectionId = null,
     academicYearId = null,
     leaveFrom = null,
     leaveTo = null,
     pendingOnly = false,
+    status = null,
+    leaveTypeId = null,
+    applicantType = null,
+    sortBy = null,
+    sortOrder = null,
+    page = null,
+    pageSize = null,
   } = options;
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchList = async () => {
+  const fetchList = async (bustCache = false) => {
     try {
       setLoading(true);
       setError(null);
+      const refreshKey = bustCache ? Date.now() : null;
       let response;
       if (parentChildren) {
         response = await apiService.getParentChildrenLeaves({ limit });
@@ -60,10 +70,20 @@ export const useLeaveApplications = (options = {}) => {
         }
         response = await apiService.getLeaveApplications({
           limit,
+          page: page ?? undefined,
+          page_size: pageSize ?? undefined,
           student_id: studentId,
           academic_year_id: academicYearId,
+          leave_type_id: leaveTypeId ?? undefined,
+          applicant_type: applicantType ?? undefined,
+          class_id: classId ?? undefined,
+          section_id: sectionId ?? undefined,
+          status: status ?? undefined,
+          sort_by: sortBy ?? undefined,
+          sort_order: sortOrder ?? undefined,
           leave_from: leaveFrom || undefined,
           leave_to: leaveTo || undefined,
+          ...(refreshKey != null ? { _refresh: refreshKey } : {}),
         });
       } else if (staffId != null) {
         if (!canUseAdminList) {
@@ -73,18 +93,38 @@ export const useLeaveApplications = (options = {}) => {
         }
         response = await apiService.getLeaveApplications({
           limit,
+          page: page ?? undefined,
+          page_size: pageSize ?? undefined,
           staff_id: staffId,
           academic_year_id: academicYearId,
+          leave_type_id: leaveTypeId ?? undefined,
+          applicant_type: applicantType ?? undefined,
+          class_id: classId ?? undefined,
+          section_id: sectionId ?? undefined,
+          status: status ?? undefined,
+          sort_by: sortBy ?? undefined,
+          sort_order: sortOrder ?? undefined,
           leave_from: leaveFrom || undefined,
           leave_to: leaveTo || undefined,
+          ...(refreshKey != null ? { _refresh: refreshKey } : {}),
         });
       } else if (canUseAdminList) {
         response = await apiService.getLeaveApplications({
           limit,
+          page: page ?? undefined,
+          page_size: pageSize ?? undefined,
           academic_year_id: academicYearId,
+          leave_type_id: leaveTypeId ?? undefined,
+          applicant_type: applicantType ?? undefined,
+          class_id: classId ?? undefined,
+          section_id: sectionId ?? undefined,
+          status: status ?? undefined,
+          sort_by: sortBy ?? undefined,
+          sort_order: sortOrder ?? undefined,
           leave_from: leaveFrom || undefined,
           leave_to: leaveTo || undefined,
           ...(pendingOnly ? { pending_only: true } : {}),
+          ...(refreshKey != null ? { _refresh: refreshKey } : {}),
         });
       } else {
         // Role loading or non-admin - skip admin API to avoid 403
@@ -133,14 +173,16 @@ export const useLeaveApplications = (options = {}) => {
             row.photo_url ||
             'assets/img/profiles/avatar-14.jpg';
 
-          const statusVal = row.status || row.leave_status || 'Pending';
-          const statusLower = String(statusVal).toLowerCase();
+          const statusRaw = row.status || row.leave_status || 'pending';
+          const statusLower = String(statusRaw).toLowerCase();
+          const statusVal = statusLower;
 
-          const noOfDays = row.no_of_days ?? row.noOfDays ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
+          const noOfDays = row.total_days ?? row.no_of_days ?? row.noOfDays ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
 
           return {
             key: row.id != null ? String(row.id) : `leave-${index}`,
             id: row.id,
+            leaveTypeId: row.leave_type_id ?? row.leaveTypeId ?? null,
             studentId: row.student_id ?? null,
             staffId: row.staff_id ?? null,
             name,
@@ -155,6 +197,9 @@ export const useLeaveApplications = (options = {}) => {
             photoUrl,
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
+            rejectionReason: row.rejection_reason ?? null,
+            approvedBy: row.approved_by ?? null,
+            approvedDate: row.approved_date ?? null,
             statusBadgeClass: statusLower.includes('approv') ? 'bg-success' : statusLower.includes('declin') || statusLower.includes('reject') ? 'bg-danger' : 'bg-skyblue',
           };
         });
@@ -172,13 +217,13 @@ export const useLeaveApplications = (options = {}) => {
   };
 
   useEffect(() => {
-    fetchList();
-  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, academicYearId, leaveFrom, leaveTo, pendingOnly]);
+    fetchList(false);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, classId, sectionId, academicYearId, leaveFrom, leaveTo, pendingOnly, status, leaveTypeId, applicantType, sortBy, sortOrder, page, pageSize]);
 
   return {
     leaveApplications: list,
     loading,
     error,
-    refetch: fetchList,
+    refetch: () => fetchList(true),
   };
 };

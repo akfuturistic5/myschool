@@ -60,9 +60,9 @@ export const useGuardianWardLeaves = (options = {}) => {
           const startDate = row.start_date || row.from_date;
           const endDate = row.end_date || row.to_date;
           const leaveRange = formatLeaveRange(startDate, endDate);
-          const statusVal = row.status || row.leave_status || 'Pending';
-          const statusLower = String(statusVal).toLowerCase();
-          const noOfDays = row.no_of_days ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
+          const statusLower = String(row.status || row.leave_status || 'pending').toLowerCase();
+          const statusVal = statusLower;
+          const noOfDays = row.total_days ?? row.no_of_days ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
 
           return {
             key: row.id != null ? String(row.id) : `leave-${index}`,

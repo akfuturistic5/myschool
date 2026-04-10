@@ -1,14 +1,21 @@
 
 import { Link, useLocation } from "react-router-dom";
 import { useState, useEffect, useMemo } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
 import Table from "../../../../core/common/dataTable/index";
 import type { TableData } from "../../../../core/data/interface";
-import { Attendance } from "../../../../core/data/json/attendance";
 import TeacherSidebar from "./teacherSidebar";
 import TeacherBreadcrumb from "./teacherBreadcrumb";
 import TeacherModal from "../teacherModal";
 import { apiService } from "../../../../core/services/apiService";
+import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
+import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
+import { useMyAttendance } from "../../../../core/hooks/useMyAttendance";
+import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -19,9 +26,26 @@ const TeacherLeave = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as TeacherDetailsLocationState | null;
-  const teacherId = state?.teacherId ?? state?.teacher?.id;
+  const user = useSelector(selectUser);
+  const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
+  const { academicYears } = useAcademicYears();
+  const isTeacherRole = String(user?.role || "").toLowerCase() === "teacher";
+  const currentAcademicYear =
+    (academicYears || []).find((year: { is_current?: boolean }) => year?.is_current) ??
+    (academicYears || [])[0] ??
+    null;
+  const effectiveAcademicYearId = selectedAcademicYearId ?? currentAcademicYear?.id ?? null;
+  const { teacher: currentTeacher } = useCurrentTeacher();
+  const teacherIdFromState = state?.teacherId ?? state?.teacher?.id;
+  const teacherId = teacherIdFromState ?? currentTeacher?.id;
   const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
   const [loading, setLoading] = useState(!!teacherId);
+  const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [attendanceRows, setAttendanceRows] = useState<any[]>([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [monthHolidayDates, setMonthHolidayDates] = useState<string[]>([]);
+  const [monthHolidayTitles, setMonthHolidayTitles] = useState<Record<string, string>>({});
 
   // Always fetch full teacher by ID when teacherId is available to ensure we have complete data
   useEffect(() => {
@@ -36,19 +60,260 @@ const TeacherLeave = () => {
         .finally(() => setLoading(false));
     }
   }, [teacherId]);
-  const staffId = teacher?.staff_id ?? teacher?.staffId ?? null;
+  const selfScopeEnabled = isTeacherRole && !teacherIdFromState;
+  const effectiveTeacher = teacher ?? currentTeacher ?? null;
+  const staffId = effectiveTeacher?.staff_id ?? effectiveTeacher?.staffId ?? null;
+  const { data: myAttendanceData, loading: myAttendanceLoading, error: myAttendanceError } = useMyAttendance({
+    days: 365,
+    enabled: selfScopeEnabled,
+  });
+
+  const normalizeStatus = (value: string) => {
+    const s = String(value || "").trim().toLowerCase();
+    if (s === "halfday") return "half_day";
+    return s;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAttendance = async () => {
+      if (!teacherId) {
+        setAttendanceRows([]);
+        setAttendanceLoading(false);
+        setAttendanceError(null);
+        return;
+      }
+
+      try {
+        if (!cancelled) {
+          setAttendanceLoading(true);
+          setAttendanceError(null);
+        }
+        const staffIdNum = Number(staffId);
+        if (!Number.isFinite(staffIdNum) || staffIdNum <= 0) {
+          if (!cancelled) {
+            setAttendanceRows([]);
+            setAttendanceError("Staff profile is not linked for this teacher.");
+            setAttendanceLoading(false);
+          }
+          return;
+        }
+        const response = await apiService.getEntityAttendanceReport("staff", {
+          month: attendanceMonth,
+          academicYearId: effectiveAcademicYearId,
+        });
+        const rows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
+        const filtered = rows
+          .filter((r: any) => Number(r?.entity_id) === staffIdNum)
+          .sort((a: any, b: any) => String(b?.attendance_date || "").localeCompare(String(a?.attendance_date || "")));
+          if (!cancelled) setAttendanceRows(filtered);
+      } catch (err: any) {
+        if (selfScopeEnabled) {
+          const scopedRows = Array.isArray(myAttendanceData?.staff?.rows) ? myAttendanceData.staff.rows : [];
+          const filtered = scopedRows
+            .filter((r: any) => String(r?.attendance_date || "").slice(0, 7) === attendanceMonth)
+            .sort((a: any, b: any) => String(b?.attendance_date || "").localeCompare(String(a?.attendance_date || "")));
+          if (!cancelled) {
+            setAttendanceRows(filtered);
+            setAttendanceError(myAttendanceError || null);
+          }
+        } else if (!cancelled) {
+          setAttendanceRows([]);
+          setAttendanceError(err?.message || "Failed to load attendance history");
+        }
+      } finally {
+        if (!cancelled) setAttendanceLoading(false);
+      }
+    };
+
+    loadAttendance();
+    return () => {
+      cancelled = true;
+    };
+  }, [attendanceMonth, teacherId, selfScopeEnabled, staffId, myAttendanceData, myAttendanceLoading, myAttendanceError, effectiveAcademicYearId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadHolidayDates = async () => {
+      try {
+        const [year, month] = String(attendanceMonth || "").split("-").map(Number);
+        if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+          if (!cancelled) setMonthHolidayDates([]);
+          return;
+        }
+        const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+        const endDate = `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+        const res = await apiService.getHolidays({ startDate, endDate, academicYearId: effectiveAcademicYearId });
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const dates = new Set<string>();
+        const titleByDate: Record<string, string> = {};
+        const today = new Date();
+        const todayYmd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        rows.forEach((h: any) => {
+          const hs = String(h?.start_date || "").slice(0, 10);
+          const he = String(h?.end_date || "").slice(0, 10);
+          const title = String(h?.title || "").trim() || "Holiday";
+          if (!hs || !he) return;
+          let cursor = new Date(`${hs}T00:00:00`);
+          const until = new Date(`${he}T00:00:00`);
+          if (Number.isNaN(cursor.getTime()) || Number.isNaN(until.getTime()) || cursor > until) return;
+          while (cursor <= until) {
+            const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+            if (d <= todayYmd) {
+              dates.add(d);
+              if (!titleByDate[d]) titleByDate[d] = title;
+            }
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        });
+
+        // Weekly holiday rule: every Sunday should auto-show in history, only when date has reached.
+        let sundayCursor = new Date(`${startDate}T00:00:00`);
+        const monthEnd = new Date(`${endDate}T00:00:00`);
+        const until = monthEnd < today ? monthEnd : today;
+        while (sundayCursor <= until) {
+          if (sundayCursor.getDay() === 0) {
+            const d = `${sundayCursor.getFullYear()}-${String(sundayCursor.getMonth() + 1).padStart(2, "0")}-${String(sundayCursor.getDate()).padStart(2, "0")}`;
+            dates.add(d);
+            if (!titleByDate[d]) titleByDate[d] = "Weekly Holiday";
+          }
+          sundayCursor.setDate(sundayCursor.getDate() + 1);
+        }
+        if (!cancelled) {
+          setMonthHolidayDates(Array.from(dates));
+          setMonthHolidayTitles(titleByDate);
+        }
+      } catch {
+        if (!cancelled) {
+          setMonthHolidayDates([]);
+          setMonthHolidayTitles({});
+        }
+      }
+    };
+    loadHolidayDates();
+    return () => {
+      cancelled = true;
+    };
+  }, [attendanceMonth, effectiveAcademicYearId]);
+
+  const attendanceRowsWithHoliday = useMemo(() => {
+    const existing = Array.isArray(attendanceRows) ? [...attendanceRows] : [];
+    const isSunday = (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const d = new Date(`${value}T00:00:00`);
+      return !Number.isNaN(d.getTime()) && d.getDay() === 0;
+    };
+    const normalizedExisting = existing.map((row: any) => {
+      const d = String(row?.attendance_date || "").slice(0, 10);
+      if (isSunday(d)) {
+        return {
+          ...row,
+          attendance_date: d,
+          status: "holiday",
+          remark: "Weekly Holiday",
+          check_in_time: null,
+          check_out_time: null,
+        };
+      }
+      return row;
+    });
+    const holidayRowDates = new Set(
+      normalizedExisting
+        .filter((row: any) => normalizeStatus(String(row?.status || "")) === "holiday")
+        .map((row: any) => String(row?.attendance_date || "").slice(0, 10))
+        .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    );
+    const generated: any[] = [];
+    for (const d of monthHolidayDates) {
+      if (!holidayRowDates.has(d)) {
+        generated.push({
+          attendance_date: d,
+          status: "holiday",
+            remark: monthHolidayTitles[d] === "Weekly Holiday" ? "Weekly Holiday" : `Holiday: ${monthHolidayTitles[d] || "Holiday"}`,
+          check_in_time: null,
+          check_out_time: null,
+        });
+      }
+    }
+    return [...normalizedExisting, ...generated].sort((a: any, b: any) =>
+      String(b?.attendance_date || "").localeCompare(String(a?.attendance_date || ""))
+    );
+  }, [attendanceRows, monthHolidayDates, monthHolidayTitles]);
+  const attendanceSummary = useMemo(() => {
+    return attendanceRowsWithHoliday.reduce(
+      (acc, row) => {
+        const status = normalizeStatus(String(row?.status || ""));
+        if (status === "present") acc.present += 1;
+        else if (status === "absent") acc.absent += 1;
+        else if (status === "late") acc.late += 1;
+        else if (status === "half_day") acc.half_day += 1;
+        else if (status === "holiday") acc.holiday += 1;
+        return acc;
+      },
+      { present: 0, absent: 0, late: 0, half_day: 0, holiday: 0 }
+    );
+  }, [attendanceRowsWithHoliday]);
+  const leaveUseMeEndpoint = isTeacherRole;
   const { leaveApplications, loading: leaveDataLoading, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
-    staffId: staffId ?? undefined,
-    canUseAdminList: true, // Teacher leave page is admin-only
+    studentOnly: leaveUseMeEndpoint,
+    staffId: leaveUseMeEndpoint ? undefined : (staffId ?? undefined),
+    canUseAdminList: !leaveUseMeEndpoint, // teacher self should not hit admin-only leave list endpoint
   });
+  const { leaveTypes } = useLeaveTypes();
   const data = useMemo(() => {
     return leaveApplications.map((l) => ({
       ...l,
       leaveDate: l.leaveRange,
     }));
   }, [leaveApplications]);
-  const data2 = Attendance;
+  const leaveSummary = useMemo(() => {
+    const source = Array.isArray(leaveTypes) ? leaveTypes : [];
+    const unique = new Map<string, any>();
+    source.forEach((t: any) => {
+      const rawName = String(
+        t?.label ?? t?.leave_type ?? t?.leave_type_name ?? ""
+      ).trim();
+      const normalizedName = rawName.toLowerCase();
+      const typeId = Number(t?.id ?? t?.value);
+      const key =
+        Number.isFinite(typeId) && typeId > 0
+          ? `id:${typeId}`
+          : `name:${normalizedName || "unknown"}`;
+      if (!unique.has(key)) unique.set(key, t);
+    });
+
+    return Array.from(unique.values()).map((t: any, idx: number) => {
+      const typeId = Number(t?.id ?? t?.value);
+      const typeName =
+        String(
+          t?.label ?? t?.leave_type ?? t?.leave_type_name ?? ""
+        ).trim() || "Leave";
+      const yearlyLimit = Number(t?.max_days_per_year ?? t?.max_days ?? 0);
+      const used = leaveApplications
+        .filter((l: any) => {
+          const status = String(l?.status || "").toLowerCase();
+          const includeByStatus = ["pending", "approved"].includes(status);
+          const byId = Number.isFinite(typeId) && typeId > 0 && Number(l?.leaveTypeId) === typeId;
+          const byName =
+            !byId &&
+            String(l?.leaveType || "")
+              .trim()
+              .toLowerCase() === typeName.toLowerCase();
+          return includeByStatus && (byId || byName);
+        })
+        .reduce((sum: number, l: any) => sum + Number(l?.noOfDays || 0), 0);
+
+      return {
+        key: `leave-type-${Number.isFinite(typeId) ? typeId : "na"}-${typeName.toLowerCase().replace(/\s+/g, "-")}-${idx}`,
+        leaveType: typeName,
+        yearlyLimit: Number.isFinite(yearlyLimit) ? yearlyLimit : 0,
+        used,
+        available: Number.isFinite(yearlyLimit) ? Math.max(yearlyLimit - used, 0) : 0,
+      };
+    });
+  }, [leaveApplications, leaveTypes]);
   const columns = [
     {
       title: "Leave Type",
@@ -77,270 +342,19 @@ const TeacherLeave = () => {
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Approved" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          )}
-        </>
-      ),
+      render: (text: string) => {
+        const status = String(text || "").toLowerCase();
+        const badgeClass = status === "approved" ? "badge-soft-success" : status === "rejected" ? "badge-soft-danger" : status === "cancelled" ? "badge-soft-secondary" : "badge-soft-pending";
+        const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Pending";
+        return (
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1"></i>
+            {label}
+          </span>
+        );
+      },
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
     },
-  ];
-  const columns2 = [
-    {
-      title: "Date | Month",
-      dataIndex: "date",
-      sorter: (a: TableData, b: TableData) => a.date.length - b.date.length,
-    },
-    {
-      title: "Jan",
-      dataIndex: "jan",
-      render: (text: string) => (
-        <>
-          {text === "1" ? (
-            <span className="attendance-range bg-success"></span>
-          ) : text === "2" ? (
-            <span className="attendance-range bg-pending"></span>
-          ) : text === "3" ? (
-            <span className="attendance-range bg-dark"></span>
-          ) : text === "4" ? (
-            <span className="attendance-range bg-danger"></span>
-          ) : (
-            <span className="attendance-range bg-info"></span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => a.jan.length - b.jan.length,
-    },
-    {
-        title: "feb",
-        dataIndex: "feb",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.feb.length - b.feb.length,
-      },
-      {
-        title: "mar",
-        dataIndex: "mar",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.mar.length - b.mar.length,
-      },
-      {
-        title: "apr",
-        dataIndex: "apr",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.apr.length - b.apr.length,
-      },
-      {
-        title: "may",
-        dataIndex: "may",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.may.length - b.may.length,
-      },
-      {
-        title: "jun",
-        dataIndex: "jun",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.jun.length - b.jun.length,
-      },
-      {
-        title: "jul",
-        dataIndex: "jul",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.jul.length - b.jul.length,
-      },
-      {
-        title: "aug",
-        dataIndex: "aug",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.aug.length - b.aug.length,
-      },
-      {
-        title: "sep",
-        dataIndex: "sep",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.sep.length - b.sep.length,
-      },
-      {
-        title: "oct",
-        dataIndex: "oct",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.oct.length - b.oct.length,
-      },
-      {
-        title: "nov",
-        dataIndex: "nov",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.nov.length - b.nov.length,
-      },
-      {
-        title: "dec",
-        dataIndex: "dec",
-        render: (text: string) => (
-          <>
-            {text === "1" ? (
-              <span className="attendance-range bg-success"></span>
-            ) : text === "2" ? (
-              <span className="attendance-range bg-pending"></span>
-            ) : text === "3" ? (
-              <span className="attendance-range bg-dark"></span>
-            ) : text === "4" ? (
-              <span className="attendance-range bg-danger"></span>
-            ) : (
-              <span className="attendance-range bg-info"></span>
-            )}
-          </>
-        ),
-        sorter: (a: TableData, b: TableData) => a.dec.length - b.dec.length,
-      },
   ];
   return (
     <>
@@ -363,7 +377,7 @@ const TeacherLeave = () => {
                 </div>
               </div>
             ) : (
-              <TeacherSidebar teacher={teacher} />
+              <TeacherSidebar teacher={effectiveTeacher} />
             )}
             {/* /Teacher Information */}
             <div className="col-xxl-9 col-xl-8">
@@ -438,58 +452,19 @@ const TeacherLeave = () => {
                     {/* Leave */}
                     <div className="tab-pane fade show active" id="leave">
                       <div className="row gx-3">
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Medical Leave (10)</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">
-                                  Used : 5
-                                </p>
-                                <p className="mb-0">Available : 5</p>
+                        {leaveSummary.map((s) => (
+                          <div className="col-lg-6 col-xxl-3 d-flex" key={s.key}>
+                            <div className="card flex-fill">
+                              <div className="card-body">
+                                <h5 className="mb-2">{`${s.leaveType} (${s.yearlyLimit})`}</h5>
+                                <div className="d-flex align-items-center flex-wrap">
+                                  <p className="border-end pe-2 me-2 mb-0">{`Used : ${s.used}`}</p>
+                                  <p className="mb-0">{`Available : ${s.available}`}</p>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Casual Leave (12)</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">
-                                  Used : 1
-                                </p>
-                                <p className="mb-0">Available : 11</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Maternity Leave (10)</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">
-                                  Used : 0
-                                </p>
-                                <p className="mb-0">Available : 10</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Paternity Leave (0)</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">
-                                  Used : 0
-                                </p>
-                                <p className="mb-0">Available : 0</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        ))}
                       </div>
                       <div className="card">
                         <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
@@ -529,8 +504,15 @@ const TeacherLeave = () => {
                           <div className="d-flex align-items-center flex-wrap">
                             <div className="d-flex align-items-center flex-wrap me-3">
                               <p className="text-dark mb-3 me-2">
-                                Last Updated on : 25 May 2024
+                                Last Updated on : {new Date().toLocaleDateString("en-GB")}
                               </p>
+                              <input
+                                type="month"
+                                className="form-control form-control-sm me-2 mb-3"
+                                style={{ minWidth: 170 }}
+                                value={attendanceMonth}
+                                onChange={(e) => setAttendanceMonth(e.target.value)}
+                              />
                               <Link
                                 to="#"
                                 className="btn btn-primary btn-icon btn-sm rounded-circle d-inline-flex align-items-center justify-content-center p-0 mb-3"
@@ -546,7 +528,7 @@ const TeacherLeave = () => {
                                 data-bs-auto-close="outside"
                               >
                                 <i className="ti ti-calendar-due me-2" />
-                                Year : 2024 / 2025
+                                Month : {attendanceMonth}
                               </Link>
                               <ul className="dropdown-menu p-3">
                                 <li>
@@ -587,7 +569,7 @@ const TeacherLeave = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Present</p>
-                                  <h5>265</h5>
+                                  <h5>{attendanceSummary.present}</h5>
                                 </div>
                               </div>
                             </div>
@@ -600,7 +582,7 @@ const TeacherLeave = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Absent</p>
-                                  <h5>05</h5>
+                                  <h5>{attendanceSummary.absent}</h5>
                                 </div>
                               </div>
                             </div>
@@ -613,7 +595,7 @@ const TeacherLeave = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Half Day</p>
-                                  <h5>01</h5>
+                                  <h5>{attendanceSummary.half_day}</h5>
                                 </div>
                               </div>
                             </div>
@@ -626,11 +608,22 @@ const TeacherLeave = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Late</p>
-                                  <h5>12</h5>
+                                  <h5>{attendanceSummary.late}</h5>
                                 </div>
                               </div>
                             </div>
                             {/* /Late to School*/}
+                            <div className="col-md-6 col-xxl-3 d-flex">
+                              <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                                <span className="avatar avatar-lg bg-info-transparent rounded me-2 flex-shrink-0 text-info">
+                                  <i className="ti ti-calendar-event fs-24" />
+                                </span>
+                                <div className="ms-2">
+                                  <p className="mb-1">Holiday</p>
+                                  <h5>{attendanceSummary.holiday}</h5>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -743,11 +736,79 @@ const TeacherLeave = () => {
                           </div>
                           {/* Attendance List */}
                          
-                          <Table
-                            dataSource={data2}
-                            columns={columns2}
-                            Selection={false}
-                          />
+                          {attendanceError && (
+                            <div className="px-3 pb-2">
+                              <div className="alert alert-warning mb-0">{attendanceError}</div>
+                            </div>
+                          )}
+                          {!attendanceLoading && monthHolidayDates.length > 0 && (
+                            <div className="px-3 pb-2">
+                              <div className="alert alert-info mb-0">
+                                Holiday days are auto-shown in attendance history.
+                              </div>
+                            </div>
+                          )}
+                          {attendanceLoading ? (
+                            <div className="px-3 pb-2 text-muted">Loading attendance history...</div>
+                          ) : (
+                            <Table
+                              dataSource={attendanceRowsWithHoliday}
+                              columns={[
+                                {
+                                  title: "Date",
+                                  dataIndex: "attendance_date",
+                                  render: (val: string) =>
+                                    val
+                                      ? new Date(val).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                                      : "—",
+                                  sorter: (a: any, b: any) => String(a.attendance_date || "").localeCompare(String(b.attendance_date || "")),
+                                },
+                                {
+                                  title: "Status",
+                                  dataIndex: "status",
+                                  render: (_text: string, record: any) => {
+                                    const status = normalizeStatus(String(record?.status || ""));
+                                    const badgeClass =
+                                      status === "present"
+                                        ? "badge-soft-success"
+                                        : status === "absent"
+                                          ? "badge-soft-danger"
+                                          : status === "late"
+                                            ? "badge-soft-warning"
+                                            : status === "half_day"
+                                              ? "badge-soft-info"
+                                              : status === "holiday"
+                                                ? "badge-soft-primary"
+                                              : "badge-soft-secondary";
+                                    const label = status ? status.replace("_", " ") : "unknown";
+                                    return (
+                                      <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+                                        <i className="ti ti-circle-filled fs-5 me-1" />
+                                        {label.charAt(0).toUpperCase() + label.slice(1)}
+                                      </span>
+                                    );
+                                  },
+                                  sorter: (a: any, b: any) => String(a.status || "").localeCompare(String(b.status || "")),
+                                },
+                                {
+                                  title: "Check In",
+                                  dataIndex: "check_in_time",
+                                  render: (val: string) => (val ? String(val).slice(0, 5) : "—"),
+                                },
+                                {
+                                  title: "Check Out",
+                                  dataIndex: "check_out_time",
+                                  render: (val: string) => (val ? String(val).slice(0, 5) : "—"),
+                                },
+                                {
+                                  title: "Remark",
+                                  dataIndex: "remark",
+                                  render: (val: string) => (val && String(val).trim() ? val : "—"),
+                                },
+                              ]}
+                              Selection={false}
+                            />
+                          )}
                           {/* /Attendance List */}
                         </div>
                       </div>

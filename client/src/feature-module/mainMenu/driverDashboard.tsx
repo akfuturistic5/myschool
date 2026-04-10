@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiService } from "../../core/services/apiService";
 import { all_routes } from "../router/all_routes";
+import HolidayDashboardCard from "./shared/HolidayDashboardCard";
 
 type DriverPortalPayload = {
   linked?: boolean;
@@ -68,6 +69,9 @@ export default function DriverDashboard() {
               </Link>
             </div>
           </div>
+        </div>
+        <div className="row">
+          <HolidayDashboardCard />
         </div>
 
         {loading && <div className="alert alert-info">Loading driver data...</div>}

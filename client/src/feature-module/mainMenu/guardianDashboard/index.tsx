@@ -8,6 +8,7 @@ import { useGuardianWardLeaves } from "../../../core/hooks/useGuardianWardLeaves
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { EventsCard } from "../shared/EventsCard";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 const GuardianDashboard = () => {
   const routes = all_routes;
@@ -77,6 +78,9 @@ const GuardianDashboard = () => {
                 </ol>
               </nav>
             </div>
+          </div>
+          <div className="row">
+            <HolidayDashboardCard />
           </div>
 
           {guardianLoading && (
@@ -154,9 +158,13 @@ const GuardianDashboard = () => {
                           <span className="avatar avatar-sm bg-light-500 me-2 rounded">
                             <i className="ti ti-message-up text-dark fs-16" />
                           </span>
-                          <h6>Raise a Request</h6>
+                          <h6>Open Leave Requests</h6>
                         </div>
-                        <Link to={routes.approveRequest} className="badge rounded-circle arrow d-flex align-items-center justify-content-center">
+                        <Link
+                          to={routes.studentLeaves}
+                          state={activeWard?.student_id != null ? { studentId: activeWard.student_id } : undefined}
+                          className="badge rounded-circle arrow d-flex align-items-center justify-content-center"
+                        >
                           <i className="ti ti-chevron-right fs-14" />
                         </Link>
                       </div>

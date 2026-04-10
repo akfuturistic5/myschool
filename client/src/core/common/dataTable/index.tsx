@@ -1,5 +1,5 @@
 // index.tsx
-import  { useEffect, useState } from "react";
+import  { useEffect, useMemo, useState } from "react";
 import { Table } from "antd";
 import type { DatatableProps } from "../../data/interface"; // Ensure correct path
  // Ensure correct path
@@ -16,8 +16,8 @@ const Datatable: React.FC<DatatableProps> = ({
   const safeColumns = Array.isArray(columns) ? columns : [];
   const [internalSelectedRowKeys, setInternalSelectedRowKeys] = useState<any[]>([]);
   const [searchText, setSearchText] = useState<string>("");
-  const [Selections, setSelections] = useState<any>(true);
   const [filteredDataSource, setFilteredDataSource] = useState(safeData);
+  const isSelectionEnabled = Selection !== false;
 
   const selectionControlled =
     controlledSelectedKeys !== undefined && typeof onSelectionChange === "function";
@@ -43,14 +43,17 @@ const Datatable: React.FC<DatatableProps> = ({
     setFilteredDataSource(filteredData);
   };
 
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: onSelectChange,
-    getCheckboxProps: (_record: any) => ({ disabled: false }),
-  };
-  useEffect(() => {
-    setSelections(Selection);
-  }, [Selection]);
+  const rowSelection = useMemo(
+    () =>
+      isSelectionEnabled
+        ? {
+            selectedRowKeys,
+            onChange: onSelectChange,
+            getCheckboxProps: (_record: any) => ({ disabled: false }),
+          }
+        : undefined,
+    [isSelectionEnabled, selectedRowKeys]
+  );
 
   useEffect(() => {
     setFilteredDataSource(safeData);
@@ -86,7 +89,7 @@ const Datatable: React.FC<DatatableProps> = ({
       </div>
      </div>
      ) : null}
-     {!Selections ?
+     {!isSelectionEnabled ?
       <Table
       className="table datanew dataTable no-footer"
       rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}

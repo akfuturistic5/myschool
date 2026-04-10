@@ -342,8 +342,7 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
-          { label: "Student Attendance", link: routes.studentAttendance },
-          { label: "Teacher Attendance", link: routes.teacherAttendance },
+          { label: "Attendance Report", link: routes.studentAttendance },
           { label: "Staff Attendance", link: routes.staffAttendance },
         ],
       },
@@ -412,13 +411,9 @@ export const SidebarData = [
       {
         label: "Attendance Report",
         link: routes.attendanceReport,
-        subLink1: routes.studentAttendanceType,
+        subLink1: routes.dailyAttendance,
         subLink2: routes.staffReport,
-        subLink3: routes.teacherReport,
-        subLink4: routes.staffDayWise,
-        subLink5: routes.teacherDayWise,
-        subLink6: routes.studentDayWise,
-        subLink7: routes.dailyAttendance,
+        subLink3: routes.staffDayWise,
         icon: "ti ti-calendar-due",
         showSubRoute: false,
         submenu: false,

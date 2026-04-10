@@ -19,6 +19,7 @@ import { useTeacherClassAttendance } from "../../../core/hooks/useTeacherClassAt
 import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useEvents } from "../../../core/hooks/useEvents";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -237,6 +238,9 @@ const TeacherDashboard = () => {
             </div>
           </div>
           {/* /Page Header */}
+          <div className="row">
+            <HolidayDashboardCard />
+          </div>
           {teacherLoading && (
             <div className="d-flex justify-content-center align-items-center p-5">
               <div className="spinner-border text-primary" role="status">
@@ -316,10 +320,11 @@ const TeacherDashboard = () => {
                           </div>
                         </div>
                         <Link
-                          to={routes.profile}
+                          to={routes.teacherDetails}
+                          state={teacher?.id ? { teacherId: teacher.id, teacher } : undefined}
                           className="btn btn-primary flex-shrink-0 mb-3"
                         >
-                          Edit Profile
+                          View Profile
                         </Link>
                       </div>
                       <div className="student-card-bg">

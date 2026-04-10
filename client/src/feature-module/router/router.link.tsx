@@ -83,6 +83,7 @@ import Pages from "../content/pages";
 import Testimonials from "../content/testimonials";
 import StaffAttendance from "../hrm/attendance/staff-attendance";
 import StudentAttendance from "../hrm/attendance/student-attendance";
+import StudentAttendanceReport from "../hrm/attendance/student-attendance-report";
 
 import Departments from "../hrm/departments";
 import Designation from "../hrm/designation";
@@ -149,12 +150,8 @@ import TeacherList from "../peoples/teacher/teacher-list";
 import TeacherForm from "../peoples/teacher/teacherForm";
 import AttendanceReport from "../report/attendance-report/attendanceReport";
 import DailyAttendance from "../report/attendance-report/dailyAttendance";
-import StaffDayWise from "../report/attendance-report/staffDayWise";
-import StaffReport from "../report/attendance-report/staffReport";
-import StudentAttendanceType from "../report/attendance-report/studentAttendanceType";
-import StudentDayWise from "../report/attendance-report/studentDayWise";
-import TeacherDayWise from "../report/attendance-report/teacherDayWise";
-import TeacherReport from "../report/attendance-report/teacherReport";
+import StaffDayWise from "../report/attendance-report/staffDayWiseLive";
+import StaffReport from "../report/attendance-report/staffReportLive";
 import ClassReport from "../report/class-report/classReport";
 import FeesReport from "../report/fees-report/feesReport";
 import GradeReport from "../report/grade-report/gradeReport";
@@ -251,8 +248,6 @@ import Video from "../uiInterface/base-ui/video";
 import StudentGrid from "../peoples/students/student-grid/index.tsx";
 import BonafideGenerator from "../peoples/students/bonafide/BonafideGenerator";
 import Storage from "../settings/otherSettings/storage.tsx";
-import TeacherAttendance from "../hrm/attendance/teacher-attendance.tsx";
-
 const routes = all_routes;
 
 export const publicRoutes = [
@@ -1162,12 +1157,15 @@ export const publicRoutes = [
     route: Route,
   },
   {
-    path: routes.teacherAttendance,
-    element: <TeacherAttendance />,
+    path: routes.studentAttendanceReport,
+    element: <StudentAttendanceReport />,
     route: Route,
   },
-
-
+  {
+    path: routes.teacherAttendance,
+    element: <Navigate to={routes.staffAttendance} replace />,
+    route: Route,
+  },
   {
     path: routes.staffAttendance,
     element: <StaffAttendance />,
@@ -1432,23 +1430,13 @@ export const publicRoutes = [
     route: Route,
   },
   {
-    path: routes.studentAttendanceType,
-    element: <StudentAttendanceType />,
-    route: Route,
-  },
-  {
     path: routes.dailyAttendance,
     element: <DailyAttendance />,
     route: Route,
   },
   {
-    path: routes.studentDayWise,
-    element: <StudentDayWise />,
-    route: Route,
-  },
-  {
     path: routes.teacherDayWise,
-    element: <TeacherDayWise />,
+    element: <Navigate to={routes.staffDayWise} replace />,
     route: Route,
   },
   {
@@ -1458,7 +1446,7 @@ export const publicRoutes = [
   },
   {
     path: routes.teacherReport,
-    element: <TeacherReport />,
+    element: <Navigate to={routes.staffReport} replace />,
     route: Route,
   },
   {

@@ -25,7 +25,7 @@ const StudentDetails = () => {
   const { id: paramId } = useParams<{ id: string }>()
   const location = useLocation()
   const state = location.state as StudentDetailsLocationState | null
-  const { studentId, student, loading, loadError } = useLinkedStudentContext({
+  const { role, studentId, student, loading, loadError } = useLinkedStudentContext({
     locationState: state,
     routeStudentId: paramId,
   })
@@ -37,6 +37,15 @@ const StudentDetails = () => {
     if (!student?.id) {
       setPromotionRows([])
       setHistoryError(null)
+      return
+    }
+    const canAccessPromotionHistory =
+      role === 'admin' || role === 'headmaster' || role === 'administrative' || role === 'teacher'
+    if (!canAccessPromotionHistory) {
+      // Only admin/administrative/teacher scopes can access full promotions endpoint.
+      setPromotionRows([])
+      setHistoryError(null)
+      setHistoryLoading(false)
       return
     }
     let cancelled = false
@@ -63,7 +72,21 @@ const StudentDetails = () => {
     return () => {
       cancelled = true
     }
-  }, [student?.id])
+  }, [student?.id, role])
+  const historyTableRows = useMemo(
+    () =>
+      promotionRows.map((row: any) => ({
+        key: String(row.id),
+        date: formatDate(row.promotion_date),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
+        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
+        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
+      })),
+    [promotionRows]
+  )
   const showLoading = loading
   if (showLoading) {
     return (
@@ -128,25 +151,22 @@ const StudentDetails = () => {
   const currentClassTeacher = [student.class_teacher_first_name, student.class_teacher_last_name]
     .filter(Boolean)
     .join(' ') || 'N/A'
+  const currentClassTeacherPhone = student.class_teacher_phone ?? 'N/A'
+  const currentClassTeacherEmail = student.class_teacher_email ?? 'N/A'
+  const currentClassTeacherAddress = student.class_teacher_address ?? 'N/A'
+  const hasClassTeacherInfo =
+    currentClassTeacher !== 'N/A' ||
+    currentClassTeacherPhone !== 'N/A' ||
+    currentClassTeacherEmail !== 'N/A' ||
+    currentClassTeacherAddress !== 'N/A'
+  const classTeacherIdRaw = Number(student.class_teacher_id)
+  const classTeacherId = Number.isFinite(classTeacherIdRaw) && classTeacherIdRaw > 0 ? classTeacherIdRaw : null
+  const canOpenTeacherDetails =
+    role === 'admin' || role === 'headmaster' || role === 'administrator' || role === 'administrative'
   const latestPromotion = promotionRows[0] ?? null
   const lastClass = latestPromotion?.from_class_name || (latestPromotion?.from_class_id != null ? `Class #${latestPromotion.from_class_id}` : 'N/A')
   const lastSection = latestPromotion?.from_section_name || (latestPromotion?.from_section_id != null ? `Section #${latestPromotion.from_section_id}` : 'N/A')
   const lastAcademicYear = latestPromotion?.from_academic_year_name || (latestPromotion?.from_academic_year_id != null ? `Year #${latestPromotion.from_academic_year_id}` : 'N/A')
-  const historyTableRows = useMemo(
-    () =>
-      promotionRows.map((row: any) => ({
-        key: String(row.id),
-        date: formatDate(row.promotion_date),
-        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
-        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
-        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
-        toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
-        toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
-        toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
-      })),
-    [promotionRows]
-  )
-
   return (
     <>
   {/* Page Wrapper */}
@@ -184,7 +204,7 @@ const StudentDetails = () => {
                 </li>
                 <li>
                   <Link
-                    to={routes.studentLeaves}
+                    to={student?.id ? `${routes.studentLeaves}?studentId=${student.id}` : routes.studentLeaves}
                     className="nav-link"
                     state={{ studentId: student.id, student }}
                   >
@@ -327,6 +347,54 @@ const StudentDetails = () => {
               </div>
               {/* /Parents Information */}
 
+              {/* Class Teacher Information */}
+              <div className="card">
+                <div className="card-header">
+                  <h5>Class Teacher Information</h5>
+                </div>
+                <div className="card-body">
+                  {hasClassTeacherInfo ? (
+                    <div className="border rounded p-3 pb-0">
+                      <div className="row">
+                        <div className="col-md-6 col-lg-4">
+                          <div className="mb-3">
+                            <p className="text-dark fw-medium mb-1">Teacher Name</p>
+                            <p>{currentClassTeacher}</p>
+                          </div>
+                        </div>
+                        <div className="col-md-6 col-lg-4">
+                          <div className="mb-3">
+                            <p className="text-dark fw-medium mb-1">Class &amp; Section</p>
+                            <p>{currentClass} {currentSection !== 'N/A' ? `- ${currentSection}` : ''}</p>
+                          </div>
+                        </div>
+                        <div className="col-md-6 col-lg-4">
+                          <div className="mb-3">
+                            <p className="text-dark fw-medium mb-1">Phone</p>
+                            <p>{currentClassTeacherPhone}</p>
+                          </div>
+                        </div>
+                        <div className="col-md-6 col-lg-4">
+                          <div className="mb-3 overflow-hidden me-3">
+                            <p className="text-dark fw-medium mb-1">Email</p>
+                            <p className="text-truncate">{currentClassTeacherEmail}</p>
+                          </div>
+                        </div>
+                        <div className="col-12">
+                          <div className="mb-3 mb-md-0">
+                            <p className="text-dark fw-medium mb-1">Address</p>
+                            <p>{currentClassTeacherAddress}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-muted mb-0">Class teacher details are not available for this student.</p>
+                  )}
+                </div>
+              </div>
+              {/* /Class Teacher Information */}
+
               {/* History */}
               <div className="card">
                 <div className="card-header">
@@ -340,6 +408,18 @@ const StudentDetails = () => {
                         <p className="mb-2"><strong>Current Class:</strong> {currentClass}</p>
                         <p className="mb-2"><strong>Current Section:</strong> {currentSection}</p>
                         <p className="mb-2"><strong>Current Class Teacher:</strong> {currentClassTeacher}</p>
+                        {classTeacherId && canOpenTeacherDetails && (
+                          <div className="mb-2">
+                            <Link
+                              to={routes.teacherDetails}
+                              state={{ teacherId: classTeacherId }}
+                              className="btn btn-sm btn-outline-primary"
+                            >
+                              <i className="ti ti-user-search me-1" />
+                              View Teacher Details
+                            </Link>
+                          </div>
+                        )}
                         <p className="mb-0"><strong>Current Academic Year:</strong> {currentAcademicYear}</p>
                       </div>
                     </div>

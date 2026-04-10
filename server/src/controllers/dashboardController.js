@@ -85,7 +85,7 @@ function pctPart(num, den) {
 
 /**
  * Students: either one calendar day or all rows in attendance (all_time).
- * Teachers/staff: leave-vs-active for a single day only (no historical staff clock-in table).
+ * Staff (including teachers): staff_attendance for a single day, or all_time scope metadata only.
  */
 async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, scope = 'day') {
   const isAllTime = scope === 'all_time';
@@ -148,106 +148,49 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
       students.halfDay = parseInt(row.half_day, 10) || 0;
       students.totalMarked = parseInt(row.total_marked, 10) || 0;
     }
-    const attended = students.present + students.late + students.halfDay;
+    const attended = students.present + students.late + (students.halfDay * 0.5);
     students.attendancePct = pctPart(attended, students.totalMarked);
   } catch (e) {
     console.warn('Dashboard: student attendance snapshot failed', e.message);
-  }
-
-  const teachers = {
-    present: 0,
-    absent: 0,
-    late: 0,
-    totalMarked: 0,
-    attendancePct: 0,
-    isProxy: true,
-    dataSource: 'leave_vs_active',
-  };
-  if (!isAllTime) {
-    try {
-      const tParams = hasYear ? [academicYearId] : [];
-      const teachYear = hasYear ? `AND ${sqlTeacherInAcademicYear('t', 1)}` : '';
-      const totalR = await query(
-        `SELECT COUNT(*)::int AS total
-         FROM teachers t
-         INNER JOIN staff s ON t.staff_id = s.id
-         WHERE t.status = 'Active' AND s.is_active = true
-         ${teachYear}`,
-        tParams
-      );
-      const totalT = parseInt(totalR.rows[0]?.total, 10) || 0;
-      const leaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
-      const leaveYear = hasYear ? `AND ${sqlTeacherInAcademicYear('t', 2)}` : '';
-      const leaveR = await query(
-        `SELECT COUNT(DISTINCT t.id)::int AS on_leave
-         FROM teachers t
-         INNER JOIN staff s ON t.staff_id = s.id
-         INNER JOIN leave_applications la ON la.staff_id = s.id
-         WHERE t.status = 'Active' AND s.is_active = true
-           AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
-           AND la.start_date <= $1::date AND la.end_date >= $1::date
-         ${leaveYear}`,
-        leaveParams
-      );
-      const onLeave = parseInt(leaveR.rows[0]?.on_leave, 10) || 0;
-      teachers.absent = Math.min(onLeave, totalT);
-      teachers.present = Math.max(0, totalT - teachers.absent);
-      teachers.totalMarked = totalT;
-      teachers.attendancePct = pctPart(teachers.present, totalT);
-    } catch (e) {
-      console.warn('Dashboard: teacher leave proxy snapshot failed', e.message);
-    }
-  } else {
-    teachers.dataSource = 'daily_only';
   }
 
   const staff = {
     present: 0,
     absent: 0,
     late: 0,
+    halfDay: 0,
     totalMarked: 0,
     attendancePct: 0,
-    isProxy: true,
-    dataSource: 'leave_vs_active',
+    isProxy: false,
+    dataSource: 'staff_attendance',
   };
   if (!isAllTime) {
     try {
-      const staffYear = hasYear
-        ? `AND EXISTS (
-             SELECT 1 FROM teachers t
-             WHERE t.staff_id = s.id AND ${sqlTeacherInAcademicYear('t', 1)}
-           )`
-        : '';
-      const sp = hasYear ? [academicYearId] : [];
-      const totalS = await query(
-        `SELECT COUNT(*)::int AS total FROM staff s WHERE s.is_active = true ${staffYear}`,
-        sp
+      const params = hasYear ? [dateStr, academicYearId] : [dateStr];
+      const yearClause = hasYear ? `AND sa.academic_year_id = $2` : '';
+      const marks = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE sa.status = 'present')::int AS present,
+           COUNT(*) FILTER (WHERE sa.status = 'absent')::int AS absent,
+           COUNT(*) FILTER (WHERE sa.status = 'late')::int AS late,
+           COUNT(*) FILTER (WHERE sa.status = 'half_day')::int AS half_day,
+           COUNT(*)::int AS total_marked
+         FROM staff_attendance sa
+         WHERE sa.attendance_date = $1::date
+         ${yearClause}`,
+        params
       );
-      const totalSt = parseInt(totalS.rows[0]?.total, 10) || 0;
-      const staffLeaveParams = hasYear ? [dateStr, academicYearId] : [dateStr];
-      const staffLeaveYear = hasYear
-        ? `AND EXISTS (
-             SELECT 1 FROM teachers t
-             WHERE t.staff_id = s.id AND ${sqlTeacherInAcademicYear('t', 2)}
-           )`
-        : '';
-      const leaveS = await query(
-        `SELECT COUNT(DISTINCT s.id)::int AS on_leave
-         FROM staff s
-         INNER JOIN leave_applications la ON la.staff_id = s.id
-         WHERE s.is_active = true
-           AND LOWER(TRIM(la.status)) IN ('approved', 'approve')
-           AND la.start_date <= $1::date AND la.end_date >= $1::date
-         ${staffLeaveYear}`,
-        staffLeaveParams
-      );
-      const onLeaveS = parseInt(leaveS.rows[0]?.on_leave, 10) || 0;
-      staff.absent = Math.min(onLeaveS, totalSt);
-      staff.present = Math.max(0, totalSt - staff.absent);
-      staff.totalMarked = totalSt;
-      staff.attendancePct = pctPart(staff.present, totalSt);
+      const row = marks.rows[0] || {};
+      staff.present = parseInt(row.present, 10) || 0;
+      staff.absent = parseInt(row.absent, 10) || 0;
+      staff.late = parseInt(row.late, 10) || 0;
+      staff.halfDay = parseInt(row.half_day, 10) || 0;
+      staff.totalMarked = parseInt(row.total_marked, 10) || 0;
+      staff.attendancePct = pctPart((staff.present + staff.late) + (staff.halfDay * 0.5), staff.totalMarked);
     } catch (e) {
-      console.warn('Dashboard: staff leave proxy snapshot failed', e.message);
+      console.warn('Dashboard: staff attendance snapshot failed', e.message);
+      staff.isProxy = true;
+      staff.dataSource = 'leave_vs_active';
     }
   } else {
     staff.dataSource = 'daily_only';
@@ -257,7 +200,6 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
     date: isAllTime ? null : dateStr,
     scope: isAllTime ? 'all_time' : 'day',
     students,
-    teachers,
     staff,
   };
 }
@@ -370,7 +312,6 @@ const getDashboardStats = async (req, res) => {
       date: null,
       scope: 'day',
       students: { present: 0, absent: 0, late: 0, halfDay: 0, totalMarked: 0, attendancePct: 0 },
-      teachers: { present: 0, absent: 0, late: 0, totalMarked: 0, attendancePct: 0, isProxy: true },
       staff: { present: 0, absent: 0, late: 0, totalMarked: 0, attendancePct: 0, isProxy: true },
     };
     try {
