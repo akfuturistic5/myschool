@@ -22,11 +22,19 @@ const StudentFees = () => {
   });
 
   const { academicYears } = useAcademicYears();
-  const { data: feeData, loading: feeLoading, refetch: refetchFees } = useStudentFees(studentId ?? student?.id ?? null);
+  const academicYearsArray = Array.isArray(academicYears) ? academicYears : [];
   const currentAcademicYear =
-    (academicYears || []).find((year: { is_current?: boolean }) => year?.is_current) ??
-    (academicYears || [])[0] ??
+    academicYearsArray.find((year: any) => year?.is_current) ??
+    academicYearsArray[0] ??
     null;
+  
+  const { data, loading: feeLoading, refetch: refetchFees } = useStudentFees(
+    studentId ?? student?.id ?? null,
+    (currentAcademicYear as any)?.id ?? null
+  );
+
+  const feeData = (data as any[]) || [];
+
   const showLoading = loading;
   if (showLoading) {
     return (
@@ -50,7 +58,7 @@ const StudentFees = () => {
         <div className="content">
           <div className="row">
             {/* Page Header */}
-            <StudentBreadcrumb />
+            <StudentBreadcrumb studentId={student?.id} />
             {/* /Page Header */}
           </div>
           <div className="row">
@@ -64,7 +72,7 @@ const StudentFees = () => {
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
                       <Link
-                        to={routes.studentDetail}
+                        to={student?.id ? `${routes.studentDetail}/${student.id}` : routes.studentDetail}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -114,7 +122,7 @@ const StudentFees = () => {
                     <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                       <h4 className="mb-3">Fees</h4>
                       <span className="badge badge-soft-primary mb-3">
-                        {currentAcademicYear?.year_name ? `Academic Year: ${currentAcademicYear.year_name}` : "Academic Year not available"}
+                        {(currentAcademicYear as any)?.year_name ? `Academic Year: ${(currentAcademicYear as any).year_name}` : "Academic Year not available"}
                       </span>
                     </div>
                     <div className="card-body p-0 py-3">
@@ -130,90 +138,58 @@ const StudentFees = () => {
                             <thead className="thead-light">
                               <tr>
                                 <th>Fees Group</th>
-                                <th>Fees Code</th>
-                                <th>Due Date</th>
-                                <th>Amount $</th>
+                                <th>Fees Type</th>
+                                <th>Amount</th>
+                                <th>Paid</th>
+                                <th>Balance</th>
+                                <th>Discount</th>
+                                <th>Fine</th>
                                 <th>Status</th>
-                                <th>Ref ID</th>
-                                <th>Mode</th>
-                                <th>Date Paid</th>
-                                <th>Discount ($)</th>
-                                <th>Fine ($)</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {feeData?.structures && feeData.structures.length > 0 && (feeData.totalPaid ?? 0) > 0 ? (
-                                <>
-                                  {feeData.structures.map((row: any) => (
-                                    <tr key={row.feeStructureId}>
-                                      <td>
-                                        <p className="text-primary fees-group">
-                                          {row.className || "-"}
-                                          <span className="d-block">({row.feeName})</span>
-                                        </p>
-                                      </td>
-                                      <td>{row.feeType || "-"}</td>
-                                      <td>
-                                        {row.dueDate
-                                          ? new Date(row.dueDate).toLocaleDateString("en-GB", {
-                                              day: "2-digit",
-                                              month: "short",
-                                              year: "numeric",
-                                            })
-                                          : "-"}
-                                      </td>
-                                      <td>{row.dueAmount?.toFixed(2) ?? 0}</td>
-                                      <td>
-                                        <span
-                                          className={`badge d-inline-flex align-items-center ${
-                                            row.status === "Paid"
-                                              ? "badge-soft-success"
-                                              : "badge-soft-danger"
-                                          }`}
-                                        >
-                                          <i className="ti ti-circle-filled fs-5 me-1" />
-                                          {row.status === "Paid" ? "Paid" : "Partial"}
-                                        </span>
-                                      </td>
-                                      <td>{row.lastReceiptNumber ? `#${row.lastReceiptNumber}` : "-"}</td>
-                                      <td>{row.lastPaymentMethod || "-"}</td>
-                                      <td>
-                                        {row.lastPaymentDate
-                                          ? new Date(row.lastPaymentDate).toLocaleDateString("en-GB", {
-                                              day: "2-digit",
-                                              month: "short",
-                                              year: "numeric",
-                                            })
-                                          : "-"}
-                                      </td>
-                                      <td>{row.discountAmount != null ? Number(row.discountAmount).toFixed(2) : "-"}</td>
-                                      <td>{row.fineAmount != null ? Number(row.fineAmount).toFixed(2) : "-"}</td>
+                               {feeData && feeData.length > 0 ? (
+                                  <>
+                                    {feeData.map((row: any) => (
+                                      <tr key={row.fees_assign_details_id}>
+                                        <td>{row.fee_group || "-"}</td>
+                                        <td>{row.fee_type || "-"}</td>
+                                        <td>{parseFloat(row.total_amount || 0).toLocaleString()}</td>
+                                        <td>{parseFloat(row.paid_amount || 0).toLocaleString()}</td>
+                                        <td>{parseFloat(row.pending_amount || 0).toLocaleString()}</td>
+                                        <td>{parseFloat(row.discount_amount || 0).toLocaleString()}</td>
+                                        <td>{parseFloat(row.fine_amount || 0).toLocaleString()}</td>
+                                        <td>
+                                          <span
+                                            className={`badge d-inline-flex align-items-center ${
+                                              parseFloat(row.pending_amount) <= 0
+                                                ? "badge-soft-success"
+                                                : parseFloat(row.paid_amount) > 0 ? "badge-soft-warning" : "badge-soft-danger"
+                                            }`}
+                                          >
+                                            <i className="ti ti-circle-filled fs-5 me-1" />
+                                            {parseFloat(row.pending_amount) <= 0 ? "Paid" : parseFloat(row.paid_amount) > 0 ? "Partial" : "Unpaid"}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                    <tr className="table-dark">
+                                      <td colSpan={2} className="text-end fw-bold">Totals:</td>
+                                      <td className="fw-bold">{feeData.reduce((sum: number, r: any) => sum + (parseFloat(r?.total_amount) || 0), 0).toLocaleString()}</td>
+                                      <td className="fw-bold text-success">{feeData.reduce((sum: number, r: any) => sum + (parseFloat(r?.paid_amount) || 0), 0).toLocaleString()}</td>
+                                      <td className="fw-bold text-danger">{feeData.reduce((sum: number, r: any) => sum + (parseFloat(r?.pending_amount) || 0), 0).toLocaleString()}</td>
+                                      <td className="fw-bold">{feeData.reduce((sum: number, r: any) => sum + (parseFloat(r?.discount_amount) || 0), 0).toLocaleString()}</td>
+                                      <td className="fw-bold">{feeData.reduce((sum: number, r: any) => sum + (parseFloat(r?.fine_amount) || 0), 0).toLocaleString()}</td>
+                                      <td></td>
                                     </tr>
-                                  ))}
+                                  </>
+                                ) : (
                                   <tr>
-                                    <td className="bg-dark">-</td>
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark text-white">
-                                      {feeData.totalPaid?.toFixed(2) ?? 0}
+                                    <td colSpan={8} className="text-center text-muted py-4">
+                                      No fee assignments found for the current academic year.
                                     </td>
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark" />
-                                    <td className="bg-dark text-white">-</td>
-                                    <td className="bg-dark text-white">-</td>
                                   </tr>
-                                </>
-                              ) : (
-                                <tr>
-                                  <td colSpan={10} className="text-center text-muted py-4">
-                                    {feeData?.structures && feeData.structures.length > 0
-                                      ? "No fee payments yet. Fee records will appear here once payments are made."
-                                      : "No fee data available. Fees will appear here when assigned."}
-                                  </td>
-                                </tr>
-                              )}
+                                )}
                             </tbody>
                           </table>
                         </div>
@@ -231,7 +207,7 @@ const StudentFees = () => {
       <StudentModals
         studentId={student?.id}
         student={student}
-        feeData={feeData ?? null}
+        feeData={feeData}
         onFeeCollected={refetchFees}
       />
     </>

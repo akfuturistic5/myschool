@@ -948,6 +948,113 @@ class ApiService {
     });
   }
 
+  // Fees Groups
+  async getFeesGroups(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-groups${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesGroup(data) {
+    return this.makeRequest('/fees-groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesGroup(id, data) {
+    return this.makeRequest(`/fees-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesGroup(id) {
+    return this.makeRequest(`/fees-groups/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Types
+  async getFeesTypes(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-types${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesType(data) {
+    return this.makeRequest('/fees-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesType(id, data) {
+    return this.makeRequest(`/fees-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesType(id) {
+    return this.makeRequest(`/fees-types/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Master
+  async getFeesMaster(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-master${qs ? `?${qs}` : ''}`);
+  }
+  async createFeesMaster(data) {
+    return this.makeRequest('/fees-master', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updateFeesMaster(id, data) {
+    return this.makeRequest(`/fees-master/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesMaster(id) {
+    return this.makeRequest(`/fees-master/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Fees Assign
+  async getFeesAssignments(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.makeRequest(`/fees-assign${qs ? `?${qs}` : ''}`);
+  }
+  async assignFees(data) {
+    return this.makeRequest('/fees-assign/assign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async deleteFeesAssignment(id) {
+    return this.makeRequest(`/fees-assign/${id}`, {
+      method: 'DELETE',
+    });
+  }
+  async getFeeCollectionsList(params = {}) {
+    const academic_year_id = params.academic_year_id || params.academicYearId;
+    const searchParams = new URLSearchParams();
+    if (academic_year_id) searchParams.set('academic_year_id', academic_year_id);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/fees-collect/list${qs ? `?${qs}` : ''}`);
+  }
+
+  // Fees Collect (Enterprise)
+  async collectFeesEnterprise(data) {
+    return this.makeRequest('/fees-collect/collect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async getStudentFeeDetailedStatus(studentId, academicYearId) {
+    return this.makeRequest(`/fees-collect/student/${studentId}/${academicYearId}`);
+  }
+  async getPaymentHistoryDetailed(studentId, academicYearId) {
+    return this.makeRequest(`/fees-collect/history/${studentId}/${academicYearId}`);
+  }
+
   // Notice Board
   async getNoticeBoard(params = {}) {
     const searchParams = new URLSearchParams();

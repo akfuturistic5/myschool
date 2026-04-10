@@ -13,21 +13,26 @@ import { apiService } from '../../../core/services/apiService'
 import { useLeaveTypes } from '../../../core/hooks/useLeaveTypes'
 import { useFeeStructures } from '../../../core/hooks/useFeeStructures'
 import { useStudentFees } from '../../../core/hooks/useStudentFees'
+import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice'
+import Swal from 'sweetalert2'
+import { useSelector } from 'react-redux'
 
 interface StudentModalsProps {
   studentId?: number | null
   onLeaveApplied?: () => void
   /** Student object for Add Fees modal - real data instead of dummy */
   student?: { id?: number; admission_number?: string; first_name?: string; last_name?: string; class_name?: string; section_name?: string; photo_url?: string | null } | null
-  /** Fee data from useStudentFees - totalOutstanding, totalDue, etc. */
-  feeData?: { totalOutstanding?: number; totalDue?: number; totalPaid?: number; structures?: Array<{ feeStructureId: number; feeName: string; feeType: string; dueAmount: number; outstanding: number }> } | null
+  /** Fee data from useStudentFees - array of detailed status */
+  feeData?: any[] | null
   /** Callback after fee collected successfully */
   onFeeCollected?: () => void
 }
 
 const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected }: StudentModalsProps) => {
-  const routes = all_routes
-  const today = new Date()
+    const routes = all_routes
+    const academicYearId = useSelector(selectSelectedAcademicYearId);
+    
+    const today = new Date()
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, '0')
   const day = String(today.getDate()).padStart(2, '0')
@@ -37,8 +42,9 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const { leaveTypes } = useLeaveTypes()
   const leaveTypeOptions = leaveTypes.length > 0 ? leaveTypes : []
   const { feeStructures } = useFeeStructures()
-  const { data: fetchedFeeData } = useStudentFees(student?.id ?? null)
-  const effectiveFeeData = feeData ?? fetchedFeeData ?? null
+  
+  const { data: fetchedFeeData } = useStudentFees(student?.id ?? null, academicYearId)
+  const effectiveFeeData = (feeData ?? fetchedFeeData ?? []) as any[]
 
   const [applyLeaveType, setApplyLeaveType] = useState<SingleValue<{ value: string; label: string }>>(null)
   const [applyFromDate, setApplyFromDate] = useState<Dayjs | null>(null)
@@ -56,10 +62,34 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [remarks, setRemarks] = useState('')
   const [feeSubmitting, setFeeSubmitting] = useState(false)
 
-  const feeStructureOptions = feeStructures.map((fs) => ({
-    value: String(fs.id),
-    label: `${fs.feeName} (${fs.feeType}) - $${fs.amount?.toFixed(2) ?? '0'}`,
-  }))
+    const [assignedFees, setAssignedFees] = useState<any[]>([]);
+    const [loadingFees, setLoadingFees] = useState(false);
+
+    useEffect(() => {
+      const fetchFeesStatus = async () => {
+        if (!student?.id || !academicYearId) return;
+        try {
+          setLoadingFees(true);
+          const res = await apiService.getStudentFeeDetailedStatus(student.id, academicYearId);
+          if (res.status === "SUCCESS") {
+            setAssignedFees(res.data);
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoadingFees(false);
+        }
+      };
+      if (student?.id && academicYearId) fetchFeesStatus();
+    }, [student?.id, academicYearId]);
+
+    const feeStructureOptions = assignedFees
+      .filter(f => parseFloat(f.pending_amount) > 0)
+      .map((f) => ({
+        value: String(f.fees_assign_details_id),
+        label: `${f.fee_group} - ${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
+        balance: parseFloat(f.pending_amount)
+      }));
   const paymentOptions = paymentType.map((p) => ({ value: p.value, label: p.label }))
 
   // Login details (usernames) for parent & student
@@ -147,15 +177,13 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
 
   useEffect(() => {
     if (student && feeStructureOptions.length > 0 && !feeStructureId) {
-      const firstForStudent = effectiveFeeData?.structures?.[0] ?? feeStructures[0]
+      const firstForStudent = effectiveFeeData?.[0] || null;
       if (firstForStudent) {
-        const id = String(firstForStudent.feeStructureId ?? (firstForStudent as any).id)
-        setFeeStructureId(id)
-        const amt = (firstForStudent as any).outstanding ?? (firstForStudent as any).amount ?? firstForStudent.dueAmount
-        if (amt != null && amt > 0) setAmountPaid(String(amt))
+        setFeeStructureId(String(firstForStudent.fees_assign_details_id));
+        setAmountPaid(String(firstForStudent.pending_amount || 0));
       }
     }
-  }, [student, feeStructureOptions, effectiveFeeData?.structures, feeStructures])
+  }, [student, feeStructureOptions, effectiveFeeData])
 
   const hideAddFeesModal = () => {
     const el = document.getElementById('add_fees_collect')
@@ -167,32 +195,44 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
 
   const handleAddFeesSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!student?.id) {
-      alert('Please select a student to collect fees for.')
+    if (!student?.id || !academicYearId) {
+      Swal.fire("Error", 'Please select a student and academic year.', "error");
       return
     }
     if (!feeStructureId) {
-      alert('Please select a Fee Type.')
+      Swal.fire("Error", 'Please select a Fee Type.', "error");
       return
     }
     const amt = parseFloat(amountPaid)
     if (Number.isNaN(amt) || amt <= 0) {
-      alert('Please enter a valid amount.')
+      Swal.fire("Error", 'Please enter a valid amount.', "error");
       return
     }
+    
+    const selectedFee = assignedFees.find(f => String(f.fees_assign_details_id) === feeStructureId);
+    if (selectedFee && amt > parseFloat(selectedFee.pending_amount)) {
+      Swal.fire("Error", `Amount exceeds balance (${selectedFee.pending_amount})`, "error");
+      return;
+    }
+
     setFeeSubmitting(true)
     try {
-      const res = await apiService.createFeeCollection({
+      const res = await apiService.collectFeesEnterprise({
         student_id: student.id,
-        fee_structure_id: Number(feeStructureId),
-        amount_paid: amt,
+        academic_year_id: academicYearId,
         payment_date: collectionDate ? collectionDate.format('YYYY-MM-DD') : new Date().toISOString().slice(0, 10),
-        payment_method: paymentMethod || 'cash',
-        receipt_number: paymentRefNo.trim() || null,
-        transaction_id: paymentRefNo.trim() || null,
-        remarks: remarks.trim() || null,
+        payment_mode: paymentMethod || 'Cash',
+        remarks: remarks || '',
+        receipt_no: paymentRefNo.trim() || undefined,
+        fee_items: [
+          {
+            fees_assign_details_id: Number(feeStructureId),
+            amount_to_pay: amt
+          }
+        ]
       })
       if (res?.status === 'SUCCESS') {
+        Swal.fire("Success", "Fee collected successfully", "success");
         onFeeCollected?.()
         hideAddFeesModal()
         setFeeStructureId('')
@@ -201,21 +241,9 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         setPaymentMethod('cash')
         setPaymentRefNo('')
         setRemarks('')
-      } else {
-        alert(res?.message || 'Failed to collect fee.')
       }
     } catch (err: any) {
-      let msg = err?.message || 'Failed to collect fee.'
-      try {
-        const m = msg.match(/\{[\s\S]*\}/)
-        if (m) {
-          const j = JSON.parse(m[0])
-          if (j.detail) msg = `${j.message || msg}\n\nDetail: ${j.detail}`
-        }
-      } catch (_) {
-        // ignore
-      }
-      alert(msg)
+      Swal.fire("Error", err.message || "Failed to collect fee", "error");
     } finally {
       setFeeSubmitting(false)
     }
@@ -285,6 +313,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       setApplySubmitting(false)
     }
   }
+
   return (
     <>
       {/* Add Fees Collect */}
@@ -327,26 +356,24 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
                             <span className="fs-12 mb-1">Total Outstanding</span>
-                            <p className="text-dark">{effectiveFeeData?.totalOutstanding != null ? effectiveFeeData.totalOutstanding.toFixed(2) : '0.00'}</p>
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <span className="fs-12 mb-1">Last Date</span>
-                            <p className="text-dark">
-                              {effectiveFeeData?.structures?.[0]
-                                ? (effectiveFeeData.structures[0] as any).dueDate
-                                  ? new Date((effectiveFeeData.structures[0] as any).dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                                  : '-'
-                                : '-'}
+                            <p className="text-dark fw-bold text-danger">
+                              {(effectiveFeeData || []).reduce((sum, r) => sum + (parseFloat(r?.pending_amount) || 0), 0).toLocaleString()}
                             </p>
                           </div>
                         </div>
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
-                            <span className={`badge badge-soft-${(effectiveFeeData?.totalOutstanding ?? 0) > 0 ? 'danger' : 'success'}`}>
+                            <span className="fs-12 mb-1">Items for Payment</span>
+                            <p className="text-dark">
+                              {feeStructureOptions.length} Items
+                            </p>
+                          </div>
+                        </div>
+                        <div className="col-lg-3 col-md-6">
+                          <div className="mb-3">
+                            <span className={`badge badge-soft-${(effectiveFeeData || []).some(r => parseFloat(r?.pending_amount) > 0) ? 'danger' : 'success'}`}>
                               <i className="ti ti-circle-filled me-2" />
-                              {(effectiveFeeData?.totalOutstanding ?? 0) > 0 ? 'Unpaid' : 'Paid'}
+                              {(effectiveFeeData || []).some(r => parseFloat(r?.pending_amount) > 0) ? 'Unpaid/Partial' : 'Paid'}
                             </span>
                           </div>
                         </div>
@@ -363,8 +390,8 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             value={feeStructureOptions.find((o) => o.value === feeStructureId) ?? null}
                             onChange={(opt) => {
                               setFeeStructureId(opt?.value ?? '')
-                              const fs = feeStructures.find((f) => String(f.id) === opt?.value)
-                              if (fs && fs.amount != null) setAmountPaid(String(fs.amount))
+                              const fs = assignedFees.find((f) => String(f.fees_assign_details_id) === opt?.value)
+                              if (fs && fs.pending_amount != null) setAmountPaid(String(fs.pending_amount))
                             }}
                             placeholder="Select Fee Type"
                             isClearable

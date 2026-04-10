@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import dayjs from "dayjs";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
@@ -20,12 +21,29 @@ import { useFeeCollections } from "../../../core/hooks/useFeeCollections";
 import StudentModals from "../../peoples/students/studentModals";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import TooltipOption from "../../../core/common/tooltipOption";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
+import { apiService } from "../../../core/services/apiService";
 
 const CollectFees = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const { data, loading, error, refetch } = useFeeCollections({ academicYearId });
+  const [filteredData, setFilteredData] = useState<any[]>([]);
+  
+  // Dynamic Options for Filters
+  const [classes, setClasses] = useState<any[]>([]);
+  const [sections, setSections] = useState<any[]>([]);
+
+  // Filter States
+  const [searchAdmNo, setSearchAdmNo] = useState("");
+  const [searchRollNo, setSearchRollNo] = useState("");
+  const [selectedClass, setSelectedClass] = useState("All");
+  const [selectedSection, setSelectedSection] = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+
   const [selectedStudentForFee, setSelectedStudentForFee] = useState<{
     id: number;
     admission_number?: string;
@@ -35,10 +53,133 @@ const CollectFees = () => {
     section_name?: string;
     photo_url?: string | null;
   } | null>(null);
-  const handleApplyClick = () => {
+  const fetchFilterOptions = async () => {
+    try {
+      const cRes = await apiService.getClasses();
+      if (cRes.status === "SUCCESS") setClasses(cRes.data);
+      const sRes = await apiService.getSections();
+      if (sRes.status === "SUCCESS") setSections(sRes.data);
+    } catch (err) {
+      console.error("Filter options fetch error", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFilterOptions();
+  }, []);
+
+  useEffect(() => {
+    setFilteredData(data);
+  }, [data]);
+
+  const handleApplyFilter = (e: any) => {
+    e.preventDefault();
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
+  };
+
+  useEffect(() => {
+    let filtered = [...data];
+
+    if (searchAdmNo) {
+      filtered = filtered.filter((item: any) => 
+        item.admNo.toLowerCase().includes(searchAdmNo.toLowerCase())
+      );
+    }
+    if (searchRollNo) {
+      filtered = filtered.filter((item: any) => 
+        item.rollNo.toLowerCase().includes(searchRollNo.toLowerCase())
+      );
+    }
+    if (selectedClass !== "All") {
+      filtered = filtered.filter((item: any) => 
+        item.class === selectedClass
+      );
+    }
+    if (selectedSection !== "All") {
+      filtered = filtered.filter((item: any) => 
+        item.section === selectedSection
+      );
+    }
+    if (filterStatus !== "All") {
+      filtered = filtered.filter((item: any) => item.status === filterStatus);
+    }
+
+    if (dateRange) {
+      const start = dateRange[0].startOf('day');
+      const end = dateRange[1].endOf('day');
+      filtered = filtered.filter((item: any) => {
+        if (!item.lastDate || item.lastDate === '-') return false;
+        const d = dayjs(item.lastDate, "DD MMM YYYY");
+        return (d.isSame(start) || d.isAfter(start)) && (d.isSame(end) || d.isBefore(end));
+      });
+    }
+
+    setFilteredData(filtered);
+  }, [data, searchAdmNo, searchRollNo, selectedClass, selectedSection, filterStatus, dateRange]);
+
+  const handleReset = () => {
+    setSearchAdmNo("");
+    setSearchRollNo("");
+    setSelectedClass("All");
+    setSelectedSection("All");
+    setFilterStatus("All");
+    setDateRange(null);
+    setFilteredData(data);
+  };
+
+  const handleExportExcel = () => {
+    const exportData = filteredData.map(item => ({
+      "Adm No": item.admNo,
+      "Roll No": item.rollNo,
+      Student: item.student,
+      Class: item.class,
+      Section: item.section,
+      Amount: item.amount,
+      "Last Date": item.lastDate,
+      Status: item.status
+    }));
+    exportToExcel(exportData, `FeeCollections_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const cols = [
+      { title: "Adm No", dataKey: "admNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Student", dataKey: "student" },
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Amount", dataKey: "amount" },
+      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(filteredData, "Fee Collection List", `FeeCollections_${new Date().toISOString().split('T')[0]}`, cols);
+  };
+
+  const handlePrint = () => {
+    const cols = [
+      { title: "Adm No", dataKey: "admNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Student", dataKey: "student" },
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Amount", dataKey: "amount" },
+      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Fee Collection List", cols, filteredData);
+  };
+
+  const handleManualRefresh = () => {
+    refetch();
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed',
+      text: 'Data updated successfully',
+      timer: 1500,
+      showConfirmButton: false
+    });
   };
   const columns = [
     {
@@ -49,12 +190,12 @@ const CollectFees = () => {
           {text}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.admNo.length - b.admNo.length,
+      sorter: (a: TableData, b: TableData) => (a.admNo || "").localeCompare(b.admNo || ""),
     },
     {
       title: "Roll No",
       dataIndex: "rollNo",
-      sorter: (a: TableData, b: TableData) => a.rollNo.length - b.rollNo.length,
+      sorter: (a: TableData, b: TableData) => (a.rollNo || "").localeCompare(b.rollNo || ""),
     },
     {
       title: "Student",
@@ -77,30 +218,31 @@ const CollectFees = () => {
         </div>
       ),
       sorter: (a: TableData, b: TableData) =>
-        a.student.length - b.student.length,
+        (a.student || "").localeCompare(b.student || ""),
     },
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
+      sorter: (a: TableData, b: TableData) => (a.class || "").localeCompare(b.class || ""),
     },
     {
       title: "Section",
       dataIndex: "section",
       sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+        (a.section || "").localeCompare(b.section || ""),
     },
     {
-      title: "Amount ($)",
+      title: "Amount",
       dataIndex: "amount",
-      sorter: (a: TableData, b: TableData) => a.amount.length - b.amount.length,
+      sorter: (a: TableData, b: TableData) => parseFloat(a.amount) - parseFloat(b.amount),
+      render: (text: string) => <span>{parseFloat(text).toLocaleString()}</span>
     },
 
     {
       title: "Last Date",
       dataIndex: "lastDate",
       sorter: (a: TableData, b: TableData) =>
-        a.lastDate.length - b.lastDate.length,
+        dayjs(a.lastDate, "DD MMM YYYY").unix() - dayjs(b.lastDate, "DD MMM YYYY").unix(),
     },
 
     {
@@ -121,7 +263,7 @@ const CollectFees = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: TableData, b: TableData) => (a.status || "").localeCompare(b.status || ""),
     },
     {
       title: "Action",
@@ -186,7 +328,12 @@ const CollectFees = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption 
+                onRefresh={handleManualRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
           {/* /Page Header */}
@@ -195,24 +342,24 @@ const CollectFees = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Fees List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
-                <div className="dropdown mb-3 me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                    data-bs-auto-close="outside"
-                  >
-                    <i className="ti ti-filter me-2" />
-                    Filter
-                  </Link>
+                  <div className="mb-3 me-2">
+                    <PredefinedDateRanges onChange={(range: [any, any]) => setDateRange(range)} />
+                  </div>
+                  <div className="dropdown mb-3 me-2">
+                    <Link
+                      to="#"
+                      className="btn btn-outline-light bg-white dropdown-toggle"
+                      data-bs-toggle="dropdown"
+                      data-bs-auto-close="outside"
+                    >
+                      <i className="ti ti-filter me-2" />
+                      Filter
+                    </Link>
                   <div
                     className="dropdown-menu drop-width"
                     ref={dropdownMenuRef}
                   >
-                    <form>
+                    <form onSubmit={handleApplyFilter}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
@@ -221,41 +368,40 @@ const CollectFees = () => {
                           <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Admisson No</label>
-                              <CommonSelect
-                                className="select"
-                                options={AdmissionNo}
-                                defaultValue={AdmissionNo[0]}
+                              <input 
+                                type="text"
+                                className="form-control"
+                                value={searchAdmNo}
+                                onChange={(e) => setSearchAdmNo(e.target.value)}
+                                placeholder="Admission No"
                               />
                             </div>
                           </div>
                           <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Roll No</label>
-                              <CommonSelect
-                                className="select"
-                                options={rollno}
-                                defaultValue={rollno[0]}
+                              <input 
+                                type="text"
+                                className="form-control"
+                                value={searchRollNo}
+                                onChange={(e) => setSearchRollNo(e.target.value)}
+                                placeholder="Roll No"
                               />
                             </div>
                           </div>
 
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Student</label>
-                              <CommonSelect
-                                className="select"
-                                options={names}
-                                defaultValue={names[0]}
-                              />
-                            </div>
-                          </div>
                           <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Class</label>
                               <CommonSelect
                                 className="select"
-                                options={allClass}
-                                defaultValue={allClass[0]}
+                                options={[
+                                  { value: "All", label: "All Classes" },
+                                  ...classes.map(c => ({ value: c.class_name || c.name, label: c.class_name || c.name }))
+                                ]}
+                                defaultValue={{ value: "All", label: "All Classes" }}
+                                value={selectedClass}
+                                onChange={(val: any) => setSelectedClass(val)}
                               />
                             </div>
                           </div>
@@ -264,79 +410,49 @@ const CollectFees = () => {
                               <label className="form-label">Section</label>
                               <CommonSelect
                                 className="select"
-                                options={allSection}
-                                defaultValue={allSection[0]}
+                                options={[
+                                  { value: "All", label: "All Sections" },
+                                  ...sections.map(s => ({ value: s.section_name || s.name, label: s.section_name || s.name }))
+                                ]}
+                                defaultValue={{ value: "All", label: "All Sections" }}
+                                value={selectedSection}
+                                onChange={(val: any) => setSelectedSection(val)}
                               />
                             </div>
                           </div>
-                          <div className="col-md-6">
+                          <div className="col-md-12">
                             <div className="mb-0">
-                              <label className="form-label">Amount</label>
+                              <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={amount}
-                                defaultValue={amount[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-0">
-                              <label className="form-label">Last Date</label>
-                              <CommonSelect
-                                className="select"
-                                options={DueDate}
-                                defaultValue={DueDate[0]}
+                                options={[
+                                  { value: "All", label: "All Status" },
+                                  { value: "Paid", label: "Paid" },
+                                  { value: "Partial", label: "Partial" },
+                                  { value: "Unpaid", label: "Unpaid" },
+                                  { value: "No Fees", label: "No Fees" }
+                                ]}
+                                defaultValue={{ value: "All", label: "All Status" }}
+                                value={filterStatus}
+                                onChange={(val: any) => setFilterStatus(val)}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <button type="button" className="btn btn-light me-3" onClick={handleReset}>
                           Reset
-                        </Link>
-                        <Link
-                          to="#"
+                        </button>
+                        <button
+                          type="submit"
                           className="btn btn-primary"
-                          onClick={handleApplyClick}
                         >
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </div>
@@ -353,9 +469,8 @@ const CollectFees = () => {
                 </div>
               )}
               {!loading && !error && (
-                <Table dataSource={data} columns={columns} Selection={true} />
+                <Table dataSource={filteredData} columns={columns} Selection={true} />
               )}
-              {/* /Student List */}
             </div>
           </div>
           {/* /Students List */}

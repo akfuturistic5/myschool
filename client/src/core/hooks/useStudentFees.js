@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
-export function useStudentFees(studentId) {
+export function useStudentFees(studentId, academicYearId) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const refetch = async () => {
-    if (!studentId) return;
+    if (!studentId || !academicYearId) return;
     try {
       setLoading(true);
       setError(null);
-      const res = await apiService.getStudentFees(studentId);
+      const res = await apiService.getStudentFeeDetailedStatus(studentId, academicYearId);
       if (res?.status === 'SUCCESS' && res.data) {
         setData(res.data);
       } else {
@@ -26,7 +26,7 @@ export function useStudentFees(studentId) {
   };
 
   useEffect(() => {
-    if (!studentId) {
+    if (!studentId || !academicYearId) {
       setData(null);
       setLoading(false);
       return;
@@ -36,7 +36,7 @@ export function useStudentFees(studentId) {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getStudentFees(studentId);
+        const res = await apiService.getStudentFeeDetailedStatus(studentId, academicYearId);
         if (mounted && res?.status === 'SUCCESS' && res.data) {
           setData(res.data);
         } else if (mounted) {
@@ -52,7 +52,7 @@ export function useStudentFees(studentId) {
       }
     })();
     return () => { mounted = false; };
-  }, [studentId]);
+  }, [studentId, academicYearId]);
 
   return { data, loading, error, refetch };
 }
