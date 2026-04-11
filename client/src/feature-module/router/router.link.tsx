@@ -148,6 +148,7 @@ import TeachersRoutine from "../peoples/teacher/teacher-details/teachersRoutine"
 import TeacherGrid from "../peoples/teacher/teacher-grid";
 import TeacherList from "../peoples/teacher/teacher-list";
 import TeacherForm from "../peoples/teacher/teacherForm";
+import TeacherAssignments from "../peoples/teacher/teacher-assignments";
 import AttendanceReport from "../report/attendance-report/attendanceReport";
 import DailyAttendance from "../report/attendance-report/dailyAttendance";
 import StaffDayWise from "../report/attendance-report/staffDayWiseLive";
@@ -928,6 +929,11 @@ export const publicRoutes = [
   {
     path: routes.editTeacher,
     element: <TeacherForm />,
+    route: Route,
+  },
+  {
+    path: routes.teacherAssignments,
+    element: <TeacherAssignments />,
     route: Route,
   },
   {

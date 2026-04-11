@@ -15,19 +15,15 @@ export const useUsers = () => {
 
       if (response.status === 'SUCCESS') {
         const transformedData = response.data.map((user, index) => {
-          const id =
-            user.user_code ||
-            user.username ||
-            (user.id != null ? `U${user.id}` : `U${index + 1}`);
-
+          const numericId = user.id != null ? Number(user.id) : null;
           const name =
             `${user.first_name || ''} ${user.last_name || ''}`.trim() ||
             user.name ||
             user.username ||
             'N/A';
 
-          const className = user.class_name || user.class || 'N/A';
-          const section = user.section_name || user.section || 'N/A';
+          const className = user.class_name || user.class || '—';
+          const section = user.section_name || user.section || '—';
 
           const joinedRaw =
             user.created_at || user.date_of_join || user.date_of_joining;
@@ -46,15 +42,22 @@ export const useUsers = () => {
             ? user.status
             : 'Active';
 
+          const roleLabel =
+            (user.role_name && String(user.role_name).trim()) || '—';
+
           return {
-            key: user.id != null ? String(user.id) : String(index + 1),
-            id,
+            key: numericId != null ? String(numericId) : `idx-${index + 1}`,
+            /** DB primary key — use for support / links */
+            userId: numericId,
+            /** Shown in ID column */
+            id: numericId != null ? String(numericId) : '—',
+            role: roleLabel,
             name,
             class: className,
             section,
             dateOfJoined,
             status,
-            originalData: user, // Store original data for edit modal
+            originalData: user,
           };
         });
 

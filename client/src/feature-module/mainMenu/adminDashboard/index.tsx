@@ -1277,7 +1277,10 @@ const AdminDashboard = () => {
                         style={{ maxHeight: 280, overflowY: "auto" }}
                       >
                         <li className="px-3 py-2 border-bottom">
-                          <span className="small text-muted">Filter by class (exam averages)</span>
+                          <span className="small text-muted d-block">Filter by class (exam averages)</span>
+                          <span className="small text-muted">
+                            Student bands from average % score across exam subjects. Academic year filter applies when set in the header.
+                          </span>
                         </li>
                         <li>
                           <button
@@ -1798,7 +1801,8 @@ const AdminDashboard = () => {
                         style={{ maxHeight: 280, overflowY: "auto" }}
                       >
                         <li className="px-3 py-2 border-bottom">
-                          <span className="small text-muted">Filter by class (avg marks, high → low)</span>
+                          <span className="small text-muted d-block">Filter by class (avg marks, high → low)</span>
+                          <span className="small text-muted">Ranked by average marks (year filter applies)</span>
                         </li>
                         <li>
                           <button

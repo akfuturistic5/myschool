@@ -54,13 +54,18 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const admissionNo = student?.admission_number ?? "N/A";
   const rollNo = student?.roll_number ?? "N/A";
   const gender = student?.gender ?? "N/A";
-  const dob = student?.date_of_birth
-    ? new Date(student.date_of_birth).toLocaleDateString("en-GB", {
+  const dobRaw = student?.date_of_birth;
+  let dob = "N/A";
+  if (dobRaw) {
+    const d = new Date(dobRaw);
+    if (!isNaN(d.getTime())) {
+      dob = d.toLocaleDateString("en-GB", {
         day: "2-digit",
         month: "short",
         year: "numeric",
-      })
-    : "N/A";
+      });
+    }
+  }
   const phone = student?.phone ?? "N/A";
   const email = student?.email ?? "N/A";
   const classSection = student?.class_name && student?.section_name
@@ -123,7 +128,7 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
               <dt className="col-6 fw-medium text-dark mb-3">Caste</dt>
               <dd className="col-6 mb-3">{caste}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Category</dt>
-              <dd className="col-6 mb-3">{caste}</dd>
+              <dd className="col-6 mb-3">{student?.category_name || student?.category || "N/A"}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Mother tongue</dt>
               <dd className="col-6 mb-3">{motherTongue}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Unique Student ID (Saral)</dt>

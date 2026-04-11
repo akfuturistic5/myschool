@@ -5,6 +5,7 @@ import { all_routes } from "../../../router/all_routes";
 import Table from "../../../../core/common/dataTable/index";
 import type { TableData } from "../../../../core/data/interface";
 import CommonSelect from "../../../../core/common/commonSelect";
+import PredefinedDateRanges from "../../../../core/common/datePicker";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useSelector } from "react-redux";
@@ -1162,6 +1163,9 @@ const StudentPromotion = () => {
                   <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                     <h4 className="mb-3">Students List</h4>
                     <div className="d-flex align-items-center flex-wrap">
+                      <div className="input-icon-start mb-3 me-2 position-relative">
+                        <PredefinedDateRanges />
+                      </div>
                       <div className="mb-3 me-3 small text-muted">
                         <span className="d-block fw-semibold text-dark">Roster academic year</span>
                         <span>

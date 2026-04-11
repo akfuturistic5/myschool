@@ -27,6 +27,8 @@ const createStudentSchema = Joi.object({
   father_phone: Joi.string().trim().optional().allow(null, ''),
   father_occupation: Joi.string().trim().optional().allow(null, ''),
   father_image_url: Joi.string().trim().optional().allow(null, ''),
+  father_person_id: Joi.number().integer().positive().optional().allow(null),
+  mother_person_id: Joi.number().integer().positive().optional().allow(null),
   mother_name: Joi.string().trim().optional().allow(null, ''),
   mother_email: Joi.string().email().optional().allow(null, ''),
   mother_phone: Joi.string().trim().optional().allow(null, ''),
@@ -40,6 +42,7 @@ const createStudentSchema = Joi.object({
   guardian_email: Joi.string().email().optional().allow(null, ''),
   guardian_occupation: Joi.string().trim().optional().allow(null, ''),
   guardian_address: Joi.string().trim().optional().allow(null, ''),
+  guardian_person_id: Joi.number().integer().positive().optional().allow(null),
   // Address & previous school
   current_address: Joi.string().trim().optional().allow(null, ''),
   permanent_address: Joi.string().trim().optional().allow(null, ''),
@@ -79,7 +82,9 @@ const createStudentSchema = Joi.object({
     .optional()
     .allow(null, ''),
   medical_condition: Joi.string().trim().optional().allow(null, ''),
-  other_information: Joi.string().trim().optional().allow(null, '')
+  other_information: Joi.string().trim().optional().allow(null, ''),
+  medical_document_path: Joi.string().trim().max(512).optional().allow(null, ''),
+  transfer_certificate_path: Joi.string().trim().max(512).optional().allow(null, ''),
 });
 
 const updateStudentSchema = createStudentSchema;

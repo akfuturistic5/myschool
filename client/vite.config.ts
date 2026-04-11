@@ -15,8 +15,8 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
-      // Super Admin API (superAdminApiService) uses /super-admin/api — must reach Express, not the SPA.
-      '/super-admin': {
+      // Only /super-admin/api goes to Express. /super-admin/login etc. are React Router (SPA).
+      '/super-admin/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },

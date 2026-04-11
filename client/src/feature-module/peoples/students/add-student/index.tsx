@@ -30,6 +30,37 @@ import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import {
+  focusAddStudentField,
+  formControlInvalidClass,
+  getFirstInvalidFieldKey,
+} from "./addStudentFormValidation";
+import { FormLabelWithInfo } from "../../../../core/common/FormLabelWithInfo";
+import { FieldError, RequiredLabel } from "./AddStudentFormUi";
+import { STUDENT_FIELD_HELP_TEXT } from "./studentFieldHelpText";
+import { useAddStudentFieldErrors } from "./useAddStudentFieldErrors";
+import { ParentPersonPicker, type ParentPersonRow } from "./ParentPersonPicker";
+import { useAdmissionNumberUniqueness } from "./useAdmissionNumberUniqueness";
+import { ADMISSION_NUMBER_DUPLICATE_MSG } from "../../../../core/validation/uniqueFieldChecks";
+
+const STUDENT_DOC_MAX_BYTES = 4 * 1024 * 1024;
+
+function fileNameFromStoragePath(relativePath: string | null | undefined): string {
+  if (!relativePath) return "";
+  const parts = String(relativePath).replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+/** Path under API host for GET /api/storage/files/... */
+function apiPathFromStudentDocRelativePath(relativePath: string): string {
+  const parts = relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (parts.length < 3) return "";
+  const [schoolKey, folder, ...rest] = parts;
+  const fileName = rest.join("/");
+  return `/api/storage/files/${encodeURIComponent(schoolKey)}/${encodeURIComponent(folder)}/${encodeURIComponent(fileName)}`;
+}
+
+type DocUploadUiStatus = "idle" | "uploading" | "success" | "error";
 
 // Lookup item types (hooks are JS and return untyped arrays)
 interface AcademicYearItem {
@@ -65,14 +96,6 @@ interface MotherTongueItem {
   id: number;
   language_name?: string;
 }
-
-/** Email + phone must appear together for app login (matches server create/update student). */
-const contactPairValid = (email: string, phone: string) => {
-  const e = (email || "").trim();
-  const p = (phone || "").trim();
-  if (!e && !p) return true;
-  return Boolean(e && p);
-};
 
 const AddStudent = () => {
   const routes = all_routes;
@@ -117,11 +140,15 @@ const AddStudent = () => {
     father_phone: string;
     father_occupation: string;
     father_image_url: string;
+    father_person_id: number | null;
+    father_matched_from_legacy: boolean;
     mother_name: string;
     mother_email: string;
     mother_phone: string;
     mother_occupation: string;
     mother_image_url: string;
+    mother_person_id: number | null;
+    mother_matched_from_legacy: boolean;
     // Guardian
     guardian_first_name: string;
     guardian_last_name: string;
@@ -130,6 +157,8 @@ const AddStudent = () => {
     guardian_email: string;
     guardian_occupation: string;
     guardian_address: string;
+    guardian_person_id: number | null;
+    guardian_matched_from_legacy: boolean;
     // Siblings (API uses sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class)
     sibiling_1: string;
     sibiling_2: string;
@@ -158,6 +187,8 @@ const AddStudent = () => {
     branch: string;
     ifsc: string;
     other_information: string;
+    medical_document_path: string | null;
+    transfer_certificate_path: string | null;
   }>({
     academic_year_id: null,
     unique_student_ids: '',
@@ -165,7 +196,7 @@ const AddStudent = () => {
     aadhaar_no: '',
     admission_number: '',
     gr_number: '',
-    admission_date: null,
+    admission_date: dayjs().startOf("day"),
     roll_number: '',
     status: 'Active',
     first_name: '',
@@ -188,11 +219,15 @@ const AddStudent = () => {
     father_phone: '',
     father_occupation: '',
     father_image_url: '',
+    father_person_id: null,
+    father_matched_from_legacy: false,
     mother_name: '',
     mother_email: '',
     mother_phone: '',
     mother_occupation: '',
     mother_image_url: '',
+    mother_person_id: null,
+    mother_matched_from_legacy: false,
     guardian_first_name: '',
     guardian_last_name: '',
     guardian_relation: '',
@@ -200,6 +235,8 @@ const AddStudent = () => {
     guardian_email: '',
     guardian_occupation: '',
     guardian_address: '',
+    guardian_person_id: null,
+    guardian_matched_from_legacy: false,
     sibiling_1: '',
     sibiling_2: '',
     sibiling_1_class: '',
@@ -221,7 +258,30 @@ const AddStudent = () => {
     bank_name: '',
     branch: '',
     ifsc: '',
-    other_information: ''
+    other_information: '',
+    medical_document_path: null,
+    transfer_certificate_path: null,
+  });
+
+  const [baselineAdmission, setBaselineAdmission] = useState('');
+
+  const [medicalDocUploadStatus, setMedicalDocUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const [tcDocUploadStatus, setTcDocUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const medicalDocInputRef = useRef<HTMLInputElement>(null);
+  const tcDocInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    fieldErrors,
+    setFieldErrors,
+    clearFieldErrorSmart,
+    validateOnBlur,
+    validateAllForSubmit,
+  } = useAddStudentFieldErrors(formData, { isEdit });
+
+  const admissionUniqueness = useAdmissionNumberUniqueness({
+    admissionNumber: formData.admission_number,
+    excludeStudentId: isEdit && id ? id : null,
+    baselineAdmission,
   });
 
   // Fetch academic years from API
@@ -316,6 +376,7 @@ const AddStudent = () => {
       const student = response?.data ?? response;
       const raw = (typeof student === 'object' && student !== null ? student?.student ?? student : {}) as Record<string, unknown>;
       setStudentData(raw);
+      setBaselineAdmission(String(raw.admission_number ?? ''));
       setFormData({
         academic_year_id: raw.academic_year_id ? raw.academic_year_id.toString() : null,
         unique_student_ids: String(raw.unique_student_ids ?? raw.uniqueStudentIds ?? ''),
@@ -346,11 +407,17 @@ const AddStudent = () => {
         father_phone: raw.father_phone || '',
         father_occupation: raw.father_occupation || '',
         father_image_url: raw.father_image_url || '',
+        father_person_id:
+          raw.father_person_id != null ? Number(raw.father_person_id) : null,
+        father_matched_from_legacy: false,
         mother_name: raw.mother_name || '',
         mother_email: raw.mother_email || '',
         mother_phone: raw.mother_phone || '',
         mother_occupation: raw.mother_occupation || '',
         mother_image_url: raw.mother_image_url || '',
+        mother_person_id:
+          raw.mother_person_id != null ? Number(raw.mother_person_id) : null,
+        mother_matched_from_legacy: false,
         guardian_first_name: raw.guardian_first_name || '',
         guardian_last_name: raw.guardian_last_name || '',
         guardian_relation: raw.guardian_relation || '',
@@ -358,6 +425,9 @@ const AddStudent = () => {
         guardian_email: raw.guardian_email || '',
         guardian_occupation: raw.guardian_occupation || '',
         guardian_address: raw.guardian_address || '',
+        guardian_person_id:
+          raw.guardian_person_id != null ? Number(raw.guardian_person_id) : null,
+        guardian_matched_from_legacy: false,
         sibiling_1: raw.sibiling_1 || '',
         sibiling_2: raw.sibiling_2 || '',
         sibiling_1_class: raw.sibiling_1_class || '',
@@ -379,8 +449,24 @@ const AddStudent = () => {
         bank_name: raw.bank_name || raw.bankName || '',
         branch: raw.branch || raw.branchName || '',
         ifsc: raw.ifsc || raw.ifscCode || '',
-        other_information: raw.other_information || ''
+        other_information: raw.other_information || '',
+        medical_document_path: (() => {
+          const v = raw.medical_document_path ?? raw.medicalDocumentPath;
+          if (v == null || String(v).trim() === "") return null;
+          return String(v).trim();
+        })(),
+        transfer_certificate_path: (() => {
+          const v = raw.transfer_certificate_path ?? raw.transferCertificatePath;
+          if (v == null || String(v).trim() === "") return null;
+          return String(v).trim();
+        })(),
       });
+      setMedicalDocUploadStatus(
+        raw.medical_document_path || raw.medicalDocumentPath ? "success" : "idle"
+      );
+      setTcDocUploadStatus(
+        raw.transfer_certificate_path || raw.transferCertificatePath ? "success" : "idle"
+      );
       setOwner1(parseTagList(raw.known_allergies ?? raw.knownAllergies));
       setOwner2(parseTagList(raw.medications ?? raw.medicationsList));
     } catch (error: any) {
@@ -471,10 +557,90 @@ const AddStudent = () => {
 
   // Handle form field changes
   const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    let next = value;
+    if (field === "aadhaar_no") {
+      next = String(value ?? "")
+        .replace(/\D/g, "")
+        .slice(0, 12);
+    } else if (field === "pen_number") {
+      next = String(value ?? "").slice(0, 20);
+    } else if (field === "unique_student_ids") {
+      next = String(value ?? "").slice(0, 50);
+    }
+    setFormData((prev) => {
+      const patch: Record<string, unknown> = { [field]: next };
+      if (["father_name", "father_phone", "father_email", "father_occupation"].includes(field)) {
+        patch.father_matched_from_legacy = false;
+        if (prev.father_person_id != null) {
+          patch.father_person_id = null;
+        }
+      }
+      if (["mother_name", "mother_phone", "mother_email", "mother_occupation"].includes(field)) {
+        patch.mother_matched_from_legacy = false;
+        if (prev.mother_person_id != null) {
+          patch.mother_person_id = null;
+        }
+      }
+      if (
+        [
+          "guardian_first_name",
+          "guardian_last_name",
+          "guardian_phone",
+          "guardian_email",
+          "guardian_occupation",
+          "guardian_address",
+          "guardian_relation",
+        ].includes(field)
+      ) {
+        patch.guardian_matched_from_legacy = false;
+        if (prev.guardian_person_id != null) {
+          patch.guardian_person_id = null;
+        }
+      }
+      return { ...prev, ...patch };
+    });
+    clearFieldErrorSmart(field);
+  };
+
+  const openStudentDocument = async (relativePath: string | null) => {
+    if (!relativePath) return;
+    const apiPath = apiPathFromStudentDocRelativePath(relativePath);
+    if (!apiPath) return;
+    const abs = await apiService.getSchoolStorageFileAbsoluteUrl(apiPath);
+    window.open(abs, "_blank", "noopener,noreferrer");
+  };
+
+  const uploadStudentDoc = async (
+    file: File,
+    field: "medical_document_path" | "transfer_certificate_path",
+    docType: "medical" | "transfer_certificate",
+    setStatus: (s: DocUploadUiStatus) => void
+  ) => {
+    if (!file.name.toLowerCase().endsWith(".pdf") || file.type !== "application/pdf") {
+      setStatus("error");
+      void Swal.fire({ icon: "error", title: "Only PDF allowed", text: "Please choose a PDF file." });
+      return;
+    }
+    if (file.size > STUDENT_DOC_MAX_BYTES) {
+      setStatus("error");
+      void Swal.fire({ icon: "error", title: "File too large", text: "Maximum size is 4MB." });
+      return;
+    }
+    setStatus("uploading");
+    try {
+      const res = await apiService.uploadStudentDocumentPdf(file, docType);
+      const payload = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
+      const rel = (payload as { relativePath?: string })?.relativePath;
+      if (!rel || typeof rel !== "string") {
+        throw new Error("Upload did not return a file path");
+      }
+      setFormData((prev) => ({ ...prev, [field]: rel }));
+      setStatus("success");
+    } catch (err: unknown) {
+      setStatus("error");
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      void Swal.fire({ icon: "error", title: "Upload failed", text: msg });
+    }
   };
 
   // Handle form submission
@@ -484,38 +650,34 @@ const AddStudent = () => {
     setSubmitError(null);
 
     try {
-      if (!contactPairValid(formData.email, formData.phone)) {
-        setSubmitError(
-          "Student: enter both email and phone for login, or leave both empty."
-        );
-        setIsSubmitting(false);
-        return;
-      }
-      if (!contactPairValid(formData.father_email, formData.father_phone)) {
-        setSubmitError(
-          "Father: enter both email and phone, or leave both empty."
-        );
-        setIsSubmitting(false);
-        return;
-      }
-      if (!contactPairValid(formData.mother_email, formData.mother_phone)) {
-        setSubmitError(
-          "Mother: enter both email and phone, or leave both empty."
-        );
-        setIsSubmitting(false);
-        return;
-      }
-      if (!contactPairValid(formData.guardian_email, formData.guardian_phone)) {
-        setSubmitError(
-          "Guardian: enter both email and phone, or leave both empty."
-        );
+      const submitErrors = validateAllForSubmit(formData);
+      if (submitErrors) {
+        const firstInvalid = getFirstInvalidFieldKey(submitErrors);
+        if (firstInvalid) focusAddStudentField(firstInvalid);
         setIsSubmitting(false);
         return;
       }
 
-      // Prepare data for submission
+      const duplicateAdmission = await admissionUniqueness.ensureUniqueBeforeSubmit();
+      if (duplicateAdmission) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          admission_number: ADMISSION_NUMBER_DUPLICATE_MSG,
+        }));
+        focusAddStudentField('admission_number');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Prepare data for submission (omit UI-only legacy flags)
+      const {
+        father_matched_from_legacy: _fml,
+        mother_matched_from_legacy: _mml,
+        guardian_matched_from_legacy: _gml,
+        ...formDataForSubmit
+      } = formData;
       const submitData = {
-        ...formData,
+        ...formDataForSubmit,
         admission_date: formData.admission_date ? dayjs(formData.admission_date).format('YYYY-MM-DD') : null,
         date_of_birth: formData.date_of_birth ? dayjs(formData.date_of_birth).format('YYYY-MM-DD') : null,
         academic_year_id: formData.academic_year_id ? (typeof formData.academic_year_id === 'string' ? parseInt(formData.academic_year_id) : formData.academic_year_id) : null,
@@ -534,11 +696,13 @@ const AddStudent = () => {
         father_phone: formData.father_phone || null,
         father_occupation: formData.father_occupation || null,
         father_image_url: formData.father_image_url || null,
+        father_person_id: formData.father_person_id ?? null,
         mother_name: formData.mother_name || null,
         mother_email: formData.mother_email || null,
         mother_phone: formData.mother_phone || null,
         mother_occupation: formData.mother_occupation || null,
         mother_image_url: formData.mother_image_url || null,
+        mother_person_id: formData.mother_person_id ?? null,
         // Guardian, address, siblings, transport, hostel, bank, medical
         guardian_first_name: formData.guardian_first_name || null,
         guardian_last_name: formData.guardian_last_name || null,
@@ -547,6 +711,7 @@ const AddStudent = () => {
         guardian_email: formData.guardian_email || null,
         guardian_occupation: formData.guardian_occupation || null,
         guardian_address: formData.guardian_address || null,
+        guardian_person_id: formData.guardian_person_id ?? null,
         current_address: formData.current_address || null,
         permanent_address: formData.permanent_address || null,
         previous_school: formData.previous_school || null,
@@ -569,7 +734,11 @@ const AddStudent = () => {
         aadhaar_no: formData.aadhaar_no || null,
         gr_number: (formData.gr_number || '').trim() || null,
         known_allergies: Array.isArray(owner1) ? owner1 : (owner1 ? String(owner1).split(',').map(s => s.trim()).filter(Boolean) : []),
-        medications: Array.isArray(owner2) ? owner2 : (owner2 ? String(owner2).split(',').map(s => s.trim()).filter(Boolean) : [])
+        medications: Array.isArray(owner2) ? owner2 : (owner2 ? String(owner2).split(',').map(s => s.trim()).filter(Boolean) : []),
+        medical_condition: formData.medical_condition || null,
+        other_information: formData.other_information || null,
+        medical_document_path: formData.medical_document_path || null,
+        transfer_certificate_path: formData.transfer_certificate_path || null,
       };
 
       let response: { status?: string; warnings?: { message?: string }[] };
@@ -632,7 +801,16 @@ const AddStudent = () => {
     } else {
       setIsEdit(false);
       setDefaultDate(null);
+      setBaselineAdmission('');
       fetchedStudentIdRef.current = null; // Reset when not in edit mode
+      setMedicalDocUploadStatus("idle");
+      setTcDocUploadStatus("idle");
+      setFormData((prev) => ({
+        ...prev,
+        admission_date: dayjs().startOf("day"),
+        medical_document_path: null,
+        transfer_certificate_path: null,
+      }));
     }
   }, [id]); // Only depend on id to avoid unnecessary re-runs
 
@@ -687,7 +865,7 @@ const AddStudent = () => {
           {!loadingStudent && (
             <div className="row">
               <div className="col-md-12">
-                <form onSubmit={handleSubmit}>
+                <form onSubmit={handleSubmit} noValidate>
                   {/* Personal Information */}
                   <div className="card">
                     <div className="card-header bg-light">
@@ -729,7 +907,11 @@ const AddStudent = () => {
                       <div className="row row-cols-xxl-5 row-cols-md-6">
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Academic Year</label>
+                            {isEdit ? (
+                              <label className="form-label">Academic Year</label>
+                            ) : (
+                              <RequiredLabel>Academic Year</RequiredLabel>
+                            )}
                             {academicYearsLoading ? (
                               <div className="form-control">
                                 <i className="ti ti-loader ti-spin me-2"></i>
@@ -741,39 +923,86 @@ const AddStudent = () => {
                                 Error: {academicYearsError}
                               </div>
                             ) : (
-                              <input
-                                type="text"
-                                className="form-control bg-light"
-                                value={academicYearsList.find(y => String(y.id) === formData.academic_year_id)?.year_name ?? formData.academic_year_id ?? '—'}
-                                readOnly
-                                disabled
-                                style={{ cursor: 'default' }}
-                              />
+                              <div
+                                data-add-student-field="academic_year_id"
+                                tabIndex={!isEdit ? -1 : undefined}
+                                className={!isEdit ? "rounded" : undefined}
+                              >
+                                <input
+                                  type="text"
+                                  className={`form-control bg-light ${formControlInvalidClass(!isEdit && !!fieldErrors.academic_year_id)}`}
+                                  value={academicYearsList.find(y => String(y.id) === formData.academic_year_id)?.year_name ?? formData.academic_year_id ?? '—'}
+                                  readOnly
+                                  disabled
+                                  style={{ cursor: 'default' }}
+                                />
+                              </div>
                             )}
+                            {!isEdit && <FieldError message={fieldErrors.academic_year_id} />}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Admission Number</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              value={formData.admission_number}
-                              onChange={(e) => handleInputChange('admission_number', e.target.value)}
-                              required
+                            <FormLabelWithInfo
+                              label="Admission Number"
+                              isRequired
+                              infoText={STUDENT_FIELD_HELP_TEXT.admissionNumber}
+                              htmlFor="student-admission_number"
                             />
+                            <div className="position-relative">
+                              <input
+                                id="student-admission_number"
+                                type="text"
+                                data-add-student-field="admission_number"
+                                className={`form-control pe-4 ${formControlInvalidClass(
+                                  !!(fieldErrors.admission_number || admissionUniqueness.duplicateMessage)
+                                )}`}
+                                value={formData.admission_number}
+                                onChange={(e) => handleInputChange('admission_number', e.target.value)}
+                                onBlur={() => {
+                                  validateOnBlur('admission_number', formData);
+                                  admissionUniqueness.flushOnBlur();
+                                }}
+                                autoComplete="off"
+                                aria-busy={admissionUniqueness.checking}
+                              />
+                              {admissionUniqueness.checking && (
+                                <span
+                                  className="position-absolute top-50 end-0 translate-middle-y pe-2 text-primary"
+                                  style={{ pointerEvents: 'none' }}
+                                  aria-hidden
+                                >
+                                  <i className="ti ti-loader ti-spin" />
+                                </span>
+                              )}
+                            </div>
+                            <FieldError
+                              message={
+                                fieldErrors.admission_number ??
+                                (formData.admission_number.trim()
+                                  ? admissionUniqueness.duplicateMessage
+                                  : undefined)
+                              }
+                            />
+                            {admissionUniqueness.softWarning ? (
+                              <p className="text-muted small mb-0 mt-1">{admissionUniqueness.softWarning}</p>
+                            ) : null}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">GR Number</label>
+                            <FormLabelWithInfo
+                              label="GR Number"
+                              infoText={STUDENT_FIELD_HELP_TEXT.grNumber}
+                              htmlFor="student-gr_number"
+                            />
                             <input
+                              id="student-gr_number"
                               type="text"
                               className="form-control"
                               value={formData.gr_number}
                               onChange={(e) => handleInputChange('gr_number', e.target.value)}
-                              required
-                              placeholder="General Register number (unique in this school)"
+                              placeholder="Leave blank to auto-assign"
                             />
                           </div>
                         </div>
@@ -799,8 +1028,13 @@ const AddStudent = () => {
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Roll Number</label>
+                            <FormLabelWithInfo
+                              label="Roll Number"
+                              infoText={STUDENT_FIELD_HELP_TEXT.rollNumber}
+                              htmlFor="student-roll_number"
+                            />
                             <input
+                              id="student-roll_number"
                               type="text"
                               className="form-control"
                               value={formData.roll_number}
@@ -821,26 +1055,32 @@ const AddStudent = () => {
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">First Name</label>
+                            <RequiredLabel>First Name</RequiredLabel>
                             <input
                               type="text"
-                              className="form-control"
+                              data-add-student-field="first_name"
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.first_name)}`}
                               value={formData.first_name}
                               onChange={(e) => handleInputChange('first_name', e.target.value)}
-                              required
+                              onBlur={() => validateOnBlur('first_name', formData)}
+                              autoComplete="given-name"
                             />
+                            <FieldError message={fieldErrors.first_name} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Last Name</label>
+                            <RequiredLabel>Last Name</RequiredLabel>
                             <input
                               type="text"
-                              className="form-control"
+                              data-add-student-field="last_name"
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.last_name)}`}
                               value={formData.last_name}
                               onChange={(e) => handleInputChange('last_name', e.target.value)}
-                              required
+                              onBlur={() => validateOnBlur('last_name', formData)}
+                              autoComplete="family-name"
                             />
+                            <FieldError message={fieldErrors.last_name} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -1042,26 +1282,45 @@ const AddStudent = () => {
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">
-                              Primary Contact Number
-                            </label>
+                            <FormLabelWithInfo
+                              label="Primary Contact Number"
+                              isRequired
+                              infoText={STUDENT_FIELD_HELP_TEXT.studentContactPair}
+                              htmlFor="student-phone"
+                            />
                             <input
+                              id="student-phone"
                               type="text"
-                              className="form-control"
+                              inputMode="numeric"
+                              data-add-student-field="phone"
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.phone)}`}
                               value={formData.phone}
                               onChange={(e) => handleInputChange('phone', e.target.value)}
+                              onBlur={() => validateOnBlur('phone', formData)}
+                              autoComplete="tel"
                             />
+                            <FieldError message={fieldErrors.phone} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Email Address</label>
+                            <FormLabelWithInfo
+                              label="Email Address"
+                              isRequired
+                              infoText={STUDENT_FIELD_HELP_TEXT.studentContactPair}
+                              htmlFor="student-email"
+                            />
                             <input
+                              id="student-email"
                               type="email"
-                              className="form-control"
+                              data-add-student-field="email"
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.email)}`}
                               value={formData.email}
                               onChange={(e) => handleInputChange('email', e.target.value)}
+                              onBlur={() => validateOnBlur('email', formData)}
+                              autoComplete="email"
                             />
+                            <FieldError message={fieldErrors.email} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -1101,35 +1360,68 @@ const AddStudent = () => {
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Unique Student ids (Saral id)</label>
+                            <FormLabelWithInfo
+                              label="Unique Student ID (Saral ID)"
+                              infoText={STUDENT_FIELD_HELP_TEXT.uniqueStudentId}
+                              htmlFor="student-unique_student_ids"
+                            />
                             <input
+                              id="student-unique_student_ids"
                               type="text"
-                              className="form-control"
+                              data-add-student-field="unique_student_ids"
+                              maxLength={50}
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.unique_student_ids)}`}
                               value={formData.unique_student_ids}
                               onChange={(e) => handleInputChange('unique_student_ids', e.target.value)}
+                              onBlur={() => validateOnBlur('unique_student_ids', formData)}
+                              autoComplete="off"
                             />
+                            <FieldError message={fieldErrors.unique_student_ids} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Pen Number (UDISE id)</label>
+                            <FormLabelWithInfo
+                              label="PEN Number (UDISE ID)"
+                              infoText={STUDENT_FIELD_HELP_TEXT.penNumber}
+                              htmlFor="student-pen_number"
+                            />
                             <input
+                              id="student-pen_number"
                               type="text"
-                              className="form-control"
+                              data-add-student-field="pen_number"
+                              maxLength={20}
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.pen_number)}`}
                               value={formData.pen_number}
                               onChange={(e) => handleInputChange('pen_number', e.target.value)}
+                              onBlur={() => validateOnBlur('pen_number', formData)}
+                              autoComplete="off"
                             />
+                            <FieldError message={fieldErrors.pen_number} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Aadhar Number</label>
+                            <FormLabelWithInfo
+                              label="Aadhaar Number"
+                              infoText={STUDENT_FIELD_HELP_TEXT.aadhaarNumber}
+                              htmlFor="student-aadhaar_no"
+                            />
                             <input
+                              id="student-aadhaar_no"
                               type="text"
-                              className="form-control"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={12}
+                              data-add-student-field="aadhaar_no"
+                              className={`form-control ${formControlInvalidClass(!!fieldErrors.aadhaar_no)}`}
+                              placeholder="12 digits, or leave blank"
                               value={formData.aadhaar_no}
                               onChange={(e) => handleInputChange('aadhaar_no', e.target.value)}
+                              onBlur={() => validateOnBlur('aadhaar_no', formData)}
+                              autoComplete="off"
                             />
+                            <FieldError message={fieldErrors.aadhaar_no} />
                           </div>
                         </div>
                       </div>
@@ -1152,6 +1444,34 @@ const AddStudent = () => {
                       <div className="border-bottom mb-3">
                         <h5 className="mb-3">Father’s Info</h5>
                         <div className="row">
+                          <div className="col-12">
+                            <ParentPersonPicker
+                              label="Link existing father (search by mobile, email, or name)"
+                              searchRole="father"
+                              selectedId={formData.father_person_id}
+                              matchedFromLegacy={formData.father_matched_from_legacy}
+                              onSelectPerson={(p: ParentPersonRow) => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  father_person_id: p.id ?? null,
+                                  father_matched_from_legacy: Boolean(
+                                    p.legacy_from_student_records
+                                  ),
+                                  father_name: p.full_name || "",
+                                  father_phone: p.phone || "",
+                                  father_email: p.email || "",
+                                  father_occupation: p.occupation || "",
+                                }));
+                              }}
+                              onClear={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  father_person_id: null,
+                                  father_matched_from_legacy: false,
+                                }))
+                              }
+                            />
+                          </div>
                           <div className="col-md-12">
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
                               <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
@@ -1190,24 +1510,47 @@ const AddStudent = () => {
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Email</label>
+                              <FormLabelWithInfo
+                                label="Email"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.fatherContactPair}
+                                htmlFor="student-father_email"
+                              />
                               <input
+                                id="student-father_email"
                                 type="text"
-                                className="form-control"
+                                data-add-student-field="father_email"
+                                readOnly={formData.father_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.father_email)}`}
                                 value={formData.father_email}
                                 onChange={(e) => handleInputChange('father_email', e.target.value)}
+                                onBlur={() => validateOnBlur('father_email', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.father_email} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Phone Number</label>
+                              <FormLabelWithInfo
+                                label="Phone Number"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.fatherContactPair}
+                                htmlFor="student-father_phone"
+                              />
                               <input
+                                id="student-father_phone"
                                 type="text"
-                                className="form-control"
+                                inputMode="numeric"
+                                data-add-student-field="father_phone"
+                                readOnly={formData.father_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.father_phone)}`}
                                 value={formData.father_phone}
                                 onChange={(e) => handleInputChange('father_phone', e.target.value)}
+                                onBlur={() => validateOnBlur('father_phone', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.father_phone} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
@@ -1228,6 +1571,34 @@ const AddStudent = () => {
                       <div className="border-bottom mb-3">
                         <h5 className="mb-3">Mother’s Info</h5>
                         <div className="row">
+                          <div className="col-12">
+                            <ParentPersonPicker
+                              label="Link existing mother (search by mobile, email, or name)"
+                              searchRole="mother"
+                              selectedId={formData.mother_person_id}
+                              matchedFromLegacy={formData.mother_matched_from_legacy}
+                              onSelectPerson={(p: ParentPersonRow) => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  mother_person_id: p.id ?? null,
+                                  mother_matched_from_legacy: Boolean(
+                                    p.legacy_from_student_records
+                                  ),
+                                  mother_name: p.full_name || "",
+                                  mother_phone: p.phone || "",
+                                  mother_email: p.email || "",
+                                  mother_occupation: p.occupation || "",
+                                }));
+                              }}
+                              onClear={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  mother_person_id: null,
+                                  mother_matched_from_legacy: false,
+                                }))
+                              }
+                            />
+                          </div>
                           <div className="col-md-12">
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
                               <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
@@ -1266,24 +1637,47 @@ const AddStudent = () => {
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Email</label>
+                              <FormLabelWithInfo
+                                label="Email"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.motherContactPair}
+                                htmlFor="student-mother_email"
+                              />
                               <input
+                                id="student-mother_email"
                                 type="text"
-                                className="form-control"
+                                data-add-student-field="mother_email"
+                                readOnly={formData.mother_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_email)}`}
                                 value={formData.mother_email}
                                 onChange={(e) => handleInputChange('mother_email', e.target.value)}
+                                onBlur={() => validateOnBlur('mother_email', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.mother_email} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Phone Number</label>
+                              <FormLabelWithInfo
+                                label="Phone Number"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.motherContactPair}
+                                htmlFor="student-mother_phone"
+                              />
                               <input
+                                id="student-mother_phone"
                                 type="text"
-                                className="form-control"
+                                inputMode="numeric"
+                                data-add-student-field="mother_phone"
+                                readOnly={formData.mother_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_phone)}`}
                                 value={formData.mother_phone}
                                 onChange={(e) => handleInputChange('mother_phone', e.target.value)}
+                                onBlur={() => validateOnBlur('mother_phone', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.mother_phone} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
@@ -1304,6 +1698,37 @@ const AddStudent = () => {
                       <div>
                         <h5 className="mb-3">Guardian Details</h5>
                         <div className="row">
+                          <div className="col-12">
+                            <ParentPersonPicker
+                              label="Link existing guardian (search by mobile, email, or name)"
+                              searchRole="guardian"
+                              selectedId={formData.guardian_person_id}
+                              matchedFromLegacy={formData.guardian_matched_from_legacy}
+                              onSelectPerson={(p: ParentPersonRow) => {
+                                const parts = (p.full_name || "").trim().split(/\s+/);
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  guardian_person_id: p.id ?? null,
+                                  guardian_matched_from_legacy: Boolean(
+                                    p.legacy_from_student_records
+                                  ),
+                                  guardian_first_name: parts[0] || "",
+                                  guardian_last_name: parts.slice(1).join(" ") || "",
+                                  guardian_phone: p.phone || "",
+                                  guardian_email: p.email || "",
+                                  guardian_occupation: p.occupation || "",
+                                  guardian_address: p.address || "",
+                                }));
+                              }}
+                              onClear={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  guardian_person_id: null,
+                                  guardian_matched_from_legacy: false,
+                                }))
+                              }
+                            />
+                          </div>
                           <div className="col-md-12">
                             <div className="mb-2">
                               <div className="d-flex align-items-center flex-wrap">
@@ -1385,6 +1810,7 @@ const AddStudent = () => {
                               <input
                                 type="text"
                                 className="form-control"
+                                readOnly={formData.guardian_person_id != null}
                                 value={[formData.guardian_first_name, formData.guardian_last_name].filter(Boolean).join(' ')}
                                 onChange={(e) => {
                                   const v = e.target.value;
@@ -1413,24 +1839,47 @@ const AddStudent = () => {
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Phone Number</label>
+                              <FormLabelWithInfo
+                                label="Phone Number"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.guardianContactPair}
+                                htmlFor="student-guardian_phone"
+                              />
                               <input
+                                id="student-guardian_phone"
                                 type="text"
-                                className="form-control"
+                                inputMode="numeric"
+                                data-add-student-field="guardian_phone"
+                                readOnly={formData.guardian_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_phone)}`}
                                 value={formData.guardian_phone || ''}
                                 onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
+                                onBlur={() => validateOnBlur('guardian_phone', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.guardian_phone} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Email</label>
+                              <FormLabelWithInfo
+                                label="Email"
+                                isRequired
+                                infoText={STUDENT_FIELD_HELP_TEXT.guardianContactPair}
+                                htmlFor="student-guardian_email"
+                              />
                               <input
+                                id="student-guardian_email"
                                 type="email"
-                                className="form-control"
+                                data-add-student-field="guardian_email"
+                                readOnly={formData.guardian_person_id != null}
+                                className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_email)}`}
                                 value={formData.guardian_email || ''}
                                 onChange={(e) => handleInputChange('guardian_email', e.target.value)}
+                                onBlur={() => validateOnBlur('guardian_email', formData)}
+                                autoComplete="off"
                               />
+                              <FieldError message={fieldErrors.guardian_email} />
                             </div>
                           </div>
                           <div className="col-lg-3 col-md-6">
@@ -1903,50 +2352,131 @@ const AddStudent = () => {
                     <div className="card-body pb-1">
                       <div className="row">
                         <div className="col-lg-6">
-                          <div className="mb-2">
-                            <div className="mb-3">
-                              <label className="form-label mb-1">
-                                Medical Condition
-                              </label>
-                              <p>Upload image size of 4MB, Accepted Format PDF</p>
-                            </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2 me-2">
-                                <i className="ti ti-file-upload me-1" />
-                                Change
-                                <input
-                                  type="file"
-                                  className="form-control image_sign"
-                                  multiple
-                                />
-                              </div>
-                              {isEdit ? (
-                                <p className="mb-2">BirthCertificate.pdf</p>
-                              ) : (
-                                <></>
+                          <div className="mb-3">
+                            <label className="form-label mb-1">Medical condition (PDF)</label>
+                            <p className="text-muted small mb-2">Max 4MB. PDF only.</p>
+                            <input
+                              ref={medicalDocInputRef}
+                              type="file"
+                              accept="application/pdf,.pdf"
+                              className="d-none"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                e.target.value = "";
+                                if (f) void uploadStudentDoc(f, "medical_document_path", "medical", setMedicalDocUploadStatus);
+                              }}
+                            />
+                            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={medicalDocUploadStatus === "uploading"}
+                                onClick={() => medicalDocInputRef.current?.click()}
+                              >
+                                <i className="ti ti-upload me-1" />
+                                {formData.medical_document_path ? "Replace PDF" : "Upload PDF"}
+                              </button>
+                              {formData.medical_document_path && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm"
+                                  onClick={() => void openStudentDocument(formData.medical_document_path)}
+                                >
+                                  <i className="ti ti-external-link me-1" />
+                                  View medical document
+                                </button>
                               )}
                             </div>
+                            {formData.medical_document_path && (
+                              <p className="small text-muted mb-1">
+                                Uploaded:{" "}
+                                <span className="text-dark">{fileNameFromStoragePath(formData.medical_document_path)}</span>
+                              </p>
+                            )}
+                            <p className="small mb-0">
+                              {medicalDocUploadStatus === "uploading" && (
+                                <span className="text-primary">
+                                  <i className="ti ti-loader ti-spin me-1" />
+                                  Uploading…
+                                </span>
+                              )}
+                              {medicalDocUploadStatus === "success" && (
+                                <span className="text-success">
+                                  <i className="ti ti-check me-1" />
+                                  Uploaded
+                                </span>
+                              )}
+                              {medicalDocUploadStatus === "error" && (
+                                <span className="text-danger">
+                                  <i className="ti ti-x me-1" />
+                                  Failed
+                                </span>
+                              )}
+                            </p>
                           </div>
                         </div>
                         <div className="col-lg-6">
-                          <div className="mb-2">
-                            <div className="mb-3">
-                              <label className="form-label mb-1">
-                                Upload Transfer Certificate
-                              </label>
-                              <p>Upload image size of 4MB, Accepted Format PDF</p>
+                          <div className="mb-3">
+                            <label className="form-label mb-1">Transfer certificate (PDF)</label>
+                            <p className="text-muted small mb-2">Max 4MB. PDF only.</p>
+                            <input
+                              ref={tcDocInputRef}
+                              type="file"
+                              accept="application/pdf,.pdf"
+                              className="d-none"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                e.target.value = "";
+                                if (f) void uploadStudentDoc(f, "transfer_certificate_path", "transfer_certificate", setTcDocUploadStatus);
+                              }}
+                            />
+                            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={tcDocUploadStatus === "uploading"}
+                                onClick={() => tcDocInputRef.current?.click()}
+                              >
+                                <i className="ti ti-upload me-1" />
+                                {formData.transfer_certificate_path ? "Replace PDF" : "Upload PDF"}
+                              </button>
+                              {formData.transfer_certificate_path && (
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-secondary btn-sm"
+                                  onClick={() => void openStudentDocument(formData.transfer_certificate_path)}
+                                >
+                                  <i className="ti ti-external-link me-1" />
+                                  View transfer certificate
+                                </button>
+                              )}
                             </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2">
-                                <i className="ti ti-file-upload me-1" />
-                                Upload Document
-                                <input
-                                  type="file"
-                                  className="form-control image_sign"
-                                  multiple
-                                />
-                              </div>
-                            </div>
+                            {formData.transfer_certificate_path && (
+                              <p className="small text-muted mb-1">
+                                Uploaded:{" "}
+                                <span className="text-dark">{fileNameFromStoragePath(formData.transfer_certificate_path)}</span>
+                              </p>
+                            )}
+                            <p className="small mb-0">
+                              {tcDocUploadStatus === "uploading" && (
+                                <span className="text-primary">
+                                  <i className="ti ti-loader ti-spin me-1" />
+                                  Uploading…
+                                </span>
+                              )}
+                              {tcDocUploadStatus === "success" && (
+                                <span className="text-success">
+                                  <i className="ti ti-check me-1" />
+                                  Uploaded
+                                </span>
+                              )}
+                              {tcDocUploadStatus === "error" && (
+                                <span className="text-danger">
+                                  <i className="ti ti-x me-1" />
+                                  Failed
+                                </span>
+                              )}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -2145,7 +2675,15 @@ const AddStudent = () => {
                     <button type="button" className="btn btn-light me-3">
                       Cancel
                     </button>
-                    <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={
+                        isSubmitting ||
+                        admissionUniqueness.checking ||
+                        admissionUniqueness.exists === true
+                      }
+                    >
                       {isSubmitting ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Student' : 'Add Student')}
                     </button>
                   </div>

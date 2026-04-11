@@ -577,16 +577,20 @@ const getMyLeaveApplications = async (req, res) => {
              FROM leave_applications la
              INNER JOIN students st ON la.student_id = st.id AND st.is_active = true
              LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-             LEFT JOIN parents p ON st.parent_id = p.id
              WHERE la.student_id IS NOT NULL
                AND (st.user_id IS NULL OR st.user_id != $1)
                AND (
                  (LOWER(TRIM(COALESCE(st.email, ''))) = $2 AND $2 != '')
                  OR (TRIM(COALESCE(st.phone, '')) = $3 AND $3 != '')
-                 OR (LOWER(TRIM(COALESCE(p.father_email, ''))) = $2 AND $2 != '')
-                 OR (LOWER(TRIM(COALESCE(p.mother_email, ''))) = $2 AND $2 != '')
-                 OR (TRIM(COALESCE(p.father_phone, '')) = $3 AND $3 != '')
-                 OR (TRIM(COALESCE(p.mother_phone, '')) = $3 AND $3 != '')
+                 OR EXISTS (
+                   SELECT 1 FROM guardians gx
+                   INNER JOIN users ux ON ux.id = gx.user_id
+                   WHERE gx.student_id = st.id AND gx.is_active = true
+                     AND (
+                       (LOWER(TRIM(COALESCE(ux.email, ''))) = $2 AND $2 != '')
+                       OR (TRIM(COALESCE(ux.phone, '')) = $3 AND $3 != '')
+                     )
+                 )
                )
              ORDER BY la.start_date DESC NULLS LAST
              LIMIT $4`,

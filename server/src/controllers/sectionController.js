@@ -175,6 +175,7 @@ const createSection = async (req, res) => {
         createdByArg,
       ]
     );
+    await query('UPDATE classes SET has_sections = true, modified_at = NOW() WHERE id = $1', [class_id]);
     return success(res, 201, 'Section created successfully', result.rows[0]);
   } catch (error) {
     console.error('Error creating section:', error);

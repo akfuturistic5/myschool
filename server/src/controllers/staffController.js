@@ -173,7 +173,30 @@ async function unlinkDriverStaff(client, staffId) {
   );
 }
 
-const STAFF_SELECT = `
+/** Base staff list/detail query (works when drivers.staff_id does not exist yet). */
+const STAFF_SELECT_BASE = `
+      SELECT
+        s.*,
+        s.user_id,
+        bg.blood_group AS blood_group_label,
+        d.department_name AS department_name,
+        d.department_name AS department,
+        des.designation_name AS designation_name,
+        des.designation_name AS designation,
+        NULL::character varying(50) AS driver_license_number,
+        NULL::date AS driver_license_expiry,
+        u.role_id AS user_role_id,
+        ur_u.role_name AS user_role_name
+      FROM staff s
+      LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
+      LEFT JOIN departments d ON s.department_id = d.id
+      LEFT JOIN designations des ON s.designation_id = des.id
+      LEFT JOIN users u ON u.id = s.user_id
+      LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
+`;
+
+/** After migrations/012_driver_designation_and_drivers_staff_id.sql — join driver licence onto staff. */
+const STAFF_SELECT_WITH_DRIVERS = `
       SELECT
         s.*,
         s.user_id,
@@ -195,9 +218,30 @@ const STAFF_SELECT = `
       LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
 `;
 
+let cachedStaffSelectSql = null;
+
+/** Pick query shape once per process: drivers.staff_id is required for the driver JOIN. */
+async function getStaffSelectSql() {
+  if (cachedStaffSelectSql !== null) {
+    return cachedStaffSelectSql;
+  }
+  try {
+    const r = await query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'drivers' AND column_name = 'staff_id'
+       LIMIT 1`
+    );
+    cachedStaffSelectSql = r.rows.length > 0 ? STAFF_SELECT_WITH_DRIVERS : STAFF_SELECT_BASE;
+  } catch {
+    cachedStaffSelectSql = STAFF_SELECT_BASE;
+  }
+  return cachedStaffSelectSql;
+}
+
 async function fetchStaffRowById(staffId) {
+  const staffSelect = await getStaffSelectSql();
   const result = await query(
-    `${STAFF_SELECT}
+    `${staffSelect}
       WHERE s.id = $1`,
     [staffId]
   );
@@ -207,15 +251,16 @@ async function fetchStaffRowById(staffId) {
 // Get all staff members
 const getAllStaff = async (req, res) => {
   try {
+    const staffSelect = await getStaffSelectSql();
     const result = await query(`
-      ${STAFF_SELECT}
+      ${staffSelect}
       WHERE s.is_active = true
       ORDER BY s.first_name ASC, s.last_name ASC
     `);
 
     return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
-    console.error('Error fetching staff:', error);
+    console.error('Error fetching staff:', error?.message || error);
     return errorResponse(res, 500, 'Failed to fetch staff');
   }
 };
@@ -230,8 +275,9 @@ const getStaffById = async (req, res) => {
       return errorResponse(res, 401, 'Not authenticated');
     }
 
+    const staffSelect = await getStaffSelectSql();
     const result = await query(
-      `${STAFF_SELECT}
+      `${staffSelect}
       WHERE s.id = $1 AND s.is_active = true`,
       [id]
     );
@@ -249,7 +295,7 @@ const getStaffById = async (req, res) => {
 
     return success(res, 200, 'Staff fetched successfully', row);
   } catch (error) {
-    console.error('Error fetching staff by ID:', error);
+    console.error('Error fetching staff by ID:', error?.message || error);
     return errorResponse(res, 500, 'Failed to fetch staff');
   }
 };

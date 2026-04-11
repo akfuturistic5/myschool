@@ -193,7 +193,9 @@ const masterPool = (() => {
 // Ensure master_db has required tables for production auth/tenant isolation.
 // This is safe/idempotent and prevents runtime failures if init-master-database.js
 // wasn't run during deployment.
-(async () => {
+// Kept as a promise so closePool() can await it — scripts that require() this module
+// and call closePool() must not end masterPool while these queries are still running.
+const masterSchemaBootstrapPromise = (async () => {
   try {
     await masterPool.query(`
       CREATE TABLE IF NOT EXISTS tenant_sessions (
@@ -351,6 +353,7 @@ const executeTransaction = async (callback) => {
 };
 
 const closePool = async () => {
+  await masterSchemaBootstrapPromise;
   await Promise.all(
     Array.from(tenantPools.values()).map((p) => p.end())
   );
@@ -366,6 +369,7 @@ module.exports = {
   masterQuery,
   executeTransaction,
   closePool,
+  masterSchemaBootstrapPromise,
   runWithTenant,
   getCurrentTenantDbName,
   getPrimaryDbName,
