@@ -18,78 +18,88 @@ const getAllUsers = async (req, res) => {
       // Filter by role - join with role-specific tables for extra data
       const roleNum = parseInt(role_id, 10);
       if (roleNum === ROLES.STUDENT) {
-        // Students: users + students + class + section
+        // Students: users + students + class + section (one row per user)
         result = await query(`
-          SELECT 
+          SELECT DISTINCT ON (u.id)
             u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
             u.role_id, u.is_active, u.created_at,
+            ur.role_name,
             s.id as student_id, s.admission_number, s.roll_number, s.gender,
             s.date_of_birth, s.admission_date, s.photo_url,
             c.class_name, sec.section_name
           FROM users u
+          LEFT JOIN user_roles ur ON u.role_id = ur.id
           LEFT JOIN students s ON u.id = s.user_id AND s.is_active = true
           LEFT JOIN classes c ON s.class_id = c.id
           LEFT JOIN sections sec ON s.section_id = sec.id
           WHERE u.is_active = true AND u.role_id = $1
-          ORDER BY u.first_name ASC, u.last_name ASC
+          ORDER BY u.id, s.id ASC NULLS LAST, u.first_name ASC, u.last_name ASC
         `, [roleNum]);
       } else if (roleNum === ROLES.TEACHER) {
-        // Teachers: users + staff + teachers + class + subject
+        // Teachers: one row per user (multiple teacher assignments collapse to one representative row)
         result = await query(`
-          SELECT 
+          SELECT DISTINCT ON (u.id)
             u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
             u.role_id, u.is_active, u.created_at,
+            ur.role_name,
             st.id as staff_id, st.employee_code, st.joining_date, st.photo_url,
             st.designation_id, st.department_id,
             t.id as teacher_id, t.status as teacher_status,
             c.class_name, sub.subject_name, d.designation_name
           FROM users u
+          LEFT JOIN user_roles ur ON u.role_id = ur.id
           LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
           LEFT JOIN teachers t ON st.id = t.staff_id
           LEFT JOIN classes c ON t.class_id = c.id
           LEFT JOIN subjects sub ON t.subject_id = sub.id
           LEFT JOIN designations d ON st.designation_id = d.id
           WHERE u.is_active = true AND u.role_id = $1
-          ORDER BY u.first_name ASC, u.last_name ASC
+          ORDER BY u.id, t.id ASC NULLS LAST, u.first_name ASC, u.last_name ASC
         `, [roleNum]);
       } else if (roleNum === 4 || roleNum === 5) {
         // Parents (4) and Guardians (5): users table only
         result = await query(`
           SELECT 
             u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
-            u.role_id, u.is_active, u.created_at
+            u.role_id, u.is_active, u.created_at,
+            ur.role_name
           FROM users u
+          LEFT JOIN user_roles ur ON u.role_id = ur.id
           WHERE u.is_active = true AND u.role_id = $1
           ORDER BY u.first_name ASC, u.last_name ASC
         `, [roleNum]);
       } else {
-        // Other roles (e.g. admin) - basic user data
+        // Other roles (e.g. admin, administrative) - basic user data
         result = await query(`
-          SELECT 
+          SELECT DISTINCT ON (u.id)
             u.id, u.username, u.first_name, u.last_name, u.phone, u.email,
             u.role_id, u.is_active, u.created_at,
+            ur.role_name,
             c.class_name, sec.section_name
           FROM users u
+          LEFT JOIN user_roles ur ON u.role_id = ur.id
           LEFT JOIN students s ON u.id = s.user_id
           LEFT JOIN classes c ON s.class_id = c.id
           LEFT JOIN sections sec ON s.section_id = sec.id
           WHERE u.is_active = true AND u.role_id = $1
-          ORDER BY u.id ASC
+          ORDER BY u.id, s.id ASC NULLS LAST
         `, [roleNum]);
       }
     } else {
-      // No filter - all users
+      // No filter - all users (one row per user)
       result = await query(`
-        SELECT 
+        SELECT DISTINCT ON (u.id)
           u.*,
+          ur.role_name,
           c.class_name,
           sec.section_name
         FROM users u
+        LEFT JOIN user_roles ur ON u.role_id = ur.id
         LEFT JOIN students s ON u.id = s.user_id
         LEFT JOIN classes c ON s.class_id = c.id
         LEFT JOIN sections sec ON s.section_id = sec.id
         WHERE u.is_active = true
-        ORDER BY u.id ASC
+        ORDER BY u.id, s.id ASC NULLS LAST
       `);
     }
 

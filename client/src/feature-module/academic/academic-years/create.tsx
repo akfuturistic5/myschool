@@ -83,8 +83,9 @@ const AcademicYearCreate = () => {
               <div className="card-header bg-white border-bottom py-3">
                 <h5 className="mb-0">Academic session details</h5>
                 <p className="text-muted small mb-0 mt-1">
-                  End date is optional at creation. When the session finishes, open this year on the Academic Years page
-                  and record the closing date.
+                  End date is optional on this form. If you leave it unset, the system saves a provisional closing date
+                  (one year after the start date, minus one day) so the record is valid in all databases; you can adjust
+                  it later on the year detail page when the session ends.
                 </p>
               </div>
               <div className="card-body">

@@ -29,6 +29,28 @@ function formatPgDateOnly(d) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/**
+ * Default closing date when the client omits end_date. Used only if the DB still has
+ * NOT NULL on academic_years.end_date (run migrations/008_academic_years_end_date_nullable.sql to allow NULL).
+ * One calendar year after start, minus one day (e.g. 2026-04-10 → 2027-04-09).
+ */
+function provisionalEndDateFromStart(startDateStr) {
+  const s = normalizeDateString(startDateStr);
+  if (!s || s.length < 10) return null;
+  const y = parseInt(s.slice(0, 4), 10);
+  const m = parseInt(s.slice(5, 7), 10) - 1;
+  const day = parseInt(s.slice(8, 10), 10);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return null;
+  const d = new Date(y, m, day);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setFullYear(d.getFullYear() + 1);
+  d.setDate(d.getDate() - 1);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
 // Active years only — header dropdowns and general use
 const getAllAcademicYears = async (req, res) => {
   try {
@@ -167,6 +189,7 @@ async function getAcademicYearUsageCounts(id) {
       (SELECT COUNT(*)::int FROM fee_structures fs WHERE fs.academic_year_id = $1) AS fee_structures_count,
       (SELECT COUNT(*)::int FROM exams e WHERE e.academic_year_id = $1) AS exams_count,
       (SELECT COUNT(*)::int FROM holidays h WHERE h.academic_year_id = $1) AS holidays_count,
+      (SELECT COUNT(*)::int FROM class_syllabus csy WHERE csy.academic_year_id = $1) AS class_syllabus_count,
       (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.to_academic_year_id = $1) AS promotions_into_count,
       (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.from_academic_year_id = $1) AS promotions_from_count,
       (SELECT COUNT(*)::int FROM attendance a WHERE a.academic_year_id = $1) AS attendance_records_count,
@@ -215,6 +238,16 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
+    // If omitted: NULL is correct once migration 008 is applied; legacy schemas require NOT NULL.
+    // Use a one-year-minus-one-day provisional end so INSERT always succeeds.
+    const endInsert = end_date || provisionalEndDateFromStart(start_date);
+    if (!endInsert) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Invalid or missing start date; cannot create academic year',
+      });
+    }
+
     const created_by = await resolveStaffIdForUser(req.user?.id);
     const is_current = isCurrent === true;
     const is_active = isActive === false ? false : true;
@@ -227,7 +260,7 @@ const createAcademicYear = async (req, res) => {
         `INSERT INTO academic_years (year_name, start_date, end_date, is_current, is_active, created_by)
          VALUES ($1, $2::date, $3::date, $4, $5, $6)
          RETURNING *`,
-        [year_name, start_date, end_date || null, is_current, is_active, created_by]
+        [year_name, start_date, endInsert, is_current, is_active, created_by]
       );
       return ins.rows[0];
     });
@@ -244,10 +277,13 @@ const createAcademicYear = async (req, res) => {
         message: 'An academic year with this name already exists',
       });
     }
-    console.error('Error creating academic year:', error);
+    console.error('Error creating academic year:', error?.code, error?.message, error);
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to create academic year',
+      ...(process.env.NODE_ENV !== 'production' && error?.message
+        ? { detail: String(error.message) }
+        : {}),
     });
   }
 };

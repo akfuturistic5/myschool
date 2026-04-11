@@ -50,8 +50,8 @@ const NOTICE_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 /** Roles that can access dashboard operational stats */
 const ADMIN_DASHBOARD_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
-/** Roles that can manage users */
-const USER_MANAGER_ROLES = [ROLES.ADMIN];
+/** Roles that can manage users (list / inspect accounts; same as headmaster + administrative) */
+const USER_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can list all students (not just /me or by class) */
 const STUDENT_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
