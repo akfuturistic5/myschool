@@ -13,6 +13,7 @@ import { useTodos } from "../../../core/hooks/useTodos";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useAcademicYears } from "../../../core/hooks/useAcademicYears";
 import { EventsCard } from "../shared/EventsCard";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 import { Calendar } from "primereact/calendar";
 import type { Nullable } from "primereact/ts-helpers";
 import dayjs from "dayjs";
@@ -214,6 +215,9 @@ const StudentDasboard = () => {
             </div>
           </div>
           {/* /Page Header */}
+          <div className="row">
+            <HolidayDashboardCard />
+          </div>
           {studentLoading && (
             <div className="d-flex justify-content-center align-items-center p-5">
               <div className="spinner-border text-primary" role="status">

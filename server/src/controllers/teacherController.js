@@ -1157,11 +1157,25 @@ const getTeacherClassAttendance = async (req, res) => {
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = $1
              AND cs.class_id = a.class_id
-             AND (cs.section_id = a.section_id OR (cs.section_id IS NULL AND a.section_id IS NULL))
+             AND (cs.section_id = a.section_id OR cs.section_id IS NULL)
          )
          OR EXISTS (
            SELECT 1 FROM teachers t
            WHERE t.id = $2 AND t.class_id = a.class_id
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM teachers t
+           INNER JOIN sections sec ON sec.section_teacher_id = t.staff_id
+           WHERE t.id = $1
+             AND sec.id = a.section_id
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM teachers t
+           INNER JOIN classes c ON c.class_teacher_id = t.staff_id
+           WHERE t.id = $1
+             AND c.id = a.class_id
          )
        )
        ${academicYearFilter}

@@ -11,6 +11,7 @@ import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
 import { EventsCard } from "../shared/EventsCard";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 type StatsRangeKey = "thisMonth" | "thisYear" | "lastWeek";
 type LeaveRangeKey = "thisMonth" | "thisYear" | "lastWeek";
@@ -186,6 +187,9 @@ const ParentDashboard = () => {
             )}
           </div>
           {/* /Page Header */}
+          <div className="row">
+            <HolidayDashboardCard />
+          </div>
           <div className="row">
             {/* Profile */}
             <div className="col-xxl-5 col-xl-12 d-flex">

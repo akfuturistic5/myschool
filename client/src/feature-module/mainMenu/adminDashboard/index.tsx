@@ -31,6 +31,7 @@ import {
   useDashboardStudentActivity,
   useDashboardMyTodos,
 } from "../../../core/hooks/useDashboardData";
+import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 function toYMD(d: Date): string {
   const y = d.getFullYear();
@@ -57,46 +58,6 @@ function endOfWeekSunday(ref: Date): Date {
 const AdminDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
-  const [leaveFeedback, setLeaveFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
-
-  const handleLeaveApprove = async (id: number) => {
-    if (leaveActionId) return;
-    setLeaveActionId(id);
-    setLeaveFeedback(null);
-    try {
-      const res = await apiService.updateLeaveApplicationStatus(id, "approved");
-      if (res?.status === "SUCCESS") {
-        setLeaveFeedback({ type: "success", text: "Leave approved." });
-        refetchLeaves();
-      } else {
-        setLeaveFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Could not approve leave.";
-      setLeaveFeedback({ type: "danger", text: msg });
-    }
-    setLeaveActionId(null);
-  };
-
-  const handleLeaveReject = async (id: number) => {
-    if (leaveActionId) return;
-    setLeaveActionId(id);
-    setLeaveFeedback(null);
-    try {
-      const res = await apiService.updateLeaveApplicationStatus(id, "rejected");
-      if (res?.status === "SUCCESS") {
-        setLeaveFeedback({ type: "success", text: "Leave rejected." });
-        refetchLeaves();
-      } else {
-        setLeaveFeedback({ type: "danger", text: res?.message || "Could not reject leave." });
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Could not reject leave.";
-      setLeaveFeedback({ type: "danger", text: msg });
-    }
-    setLeaveActionId(null);
-  };
   const [date, setDate] = useState<Nullable<Date>>(null);
   const [attendanceRange, setAttendanceRange] = useState<"today" | "yesterday" | "all_time">("today");
   const [feePeriod, setFeePeriod] = useState<"all" | "month" | "year" | "90d">("all");
@@ -191,6 +152,7 @@ const AdminDashboard = () => {
     limit: 10,
     canUseAdminList: true,
     pendingOnly: true,
+    applicantType: "staff",
     academicYearId,
     leaveFrom: leaveWindow.from ?? undefined,
     leaveTo: leaveWindow.to ?? undefined,
@@ -223,10 +185,8 @@ const AdminDashboard = () => {
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId, feePeriod });
 
   const stuAtt = attendanceToday.students;
-  const teachAtt = attendanceToday.teachers;
   const staffAtt = attendanceToday.staff;
   const studentMarked = stuAtt.totalMarked > 0;
-  const teachMarked = teachAtt.totalMarked > 0;
   const staffMarked = staffAtt.totalMarked > 0;
   function SampleNextArrow(props: any) {
     const { style, onClick } = props;
@@ -343,34 +303,6 @@ const AdminDashboard = () => {
       },
     ],
   };
-  const teacherDonutChart = {
-    chart: {
-      height: 218,
-      width: 218,
-      type: "donut",
-      toolbar: {
-        show: false,
-      },
-    },
-    labels: ["Present", "On leave"],
-    legend: {
-      show: false,
-    },
-    colors: ["#3D5EE1", "#E82646"],
-    series: teachMarked
-      ? [teachAtt.present, teachAtt.absent]
-      : [0, 0],
-    responsive: [
-      {
-        breakpoint: 480,
-        options: {
-          chart: {
-            width: 180,
-          },
-        },
-      },
-    ],
-  };
   const staffDonutChart = {
     chart: {
       height: 218,
@@ -380,14 +312,14 @@ const AdminDashboard = () => {
         show: false,
       },
     },
-    labels: ["Present", "On leave"],
+    labels: ["Present", "Absent", "Late"],
     legend: {
       show: false,
     },
-    colors: ["#3D5EE1", "#E82646"],
+    colors: ["#3D5EE1", "#E82646", "#EAB300"],
     series: staffMarked
-      ? [staffAtt.present, staffAtt.absent]
-      : [0, 0],
+      ? [staffAtt.present, staffAtt.absent, staffAtt.late]
+      : [0, 0, 0],
     responsive: [
       {
         breakpoint: 480,
@@ -603,6 +535,7 @@ const AdminDashboard = () => {
             </div>
             {/* /Page Header */}
             <div className="row">
+              <HolidayDashboardCard />
               <div className="col-md-12">
                 {recentActivity && (
                   <div className="alert-message">
@@ -975,15 +908,6 @@ const AdminDashboard = () => {
                           <Link
                             to="#"
                             data-bs-toggle="tab"
-                            data-bs-target="#teachers"
-                          >
-                            Teachers
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            to="#"
-                            data-bs-toggle="tab"
                             data-bs-target="#staff"
                           >
                             Staff
@@ -1049,63 +973,13 @@ const AdminDashboard = () => {
                           </Link>
                         </div>
                       </div>
-                      <div className="tab-pane fade" id="teachers">
-                        <div className="row gx-3">
-                          <div className="col-sm-4">
-                            <div className="card bg-light-300 shadow-none border-0">
-                              <div className="card-body p-3 text-center">
-                                <h5>{teachAtt.present}</h5>
-                                <p className="fs-12">Present (est.)</p>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="col-sm-4">
-                            <div className="card bg-light-300 shadow-none border-0">
-                              <div className="card-body p-3 text-center">
-                                <h5>{teachAtt.absent}</h5>
-                                <p className="fs-12">On approved leave</p>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="col-sm-4">
-                            <div className="card bg-light-300 shadow-none border-0">
-                              <div className="card-body p-3 text-center">
-                                <h5>—</h5>
-                                <p className="fs-12">Late</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="small text-muted text-center mb-2">
-                          {attendanceRange === "all_time"
-                            ? "All-time teacher attendance is not stored in the database. Use Today or Yesterday for a same-day estimate from approved leave, or open Teacher Attendance / HRM."
-                            : `No teacher clock-in table; &quot;Absent&quot; is teachers on approved leave on ${attendanceToday.date || attendanceDateStr} (${teachAtt.totalMarked} active in scope).`}
-                        </p>
-                        <div className="text-center">
-                          <ReactApexChart
-                            id="teacher-chart"
-                            className="mb-4"
-                            options={teacherDonutChart}
-                            series={teacherDonutChart.series}
-                            type="donut"
-                            height={210}
-                          />
-                          <Link
-                            to={routes.teacherAttendance}
-                            className="btn btn-light"
-                          >
-                            <i className="ti ti-calendar-share me-1" />
-                            View All
-                          </Link>
-                        </div>
-                      </div>
                       <div className="tab-pane fade" id="staff">
                         <div className="row gx-3">
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
                                 <h5>{staffAtt.present}</h5>
-                                <p className="fs-12">Present (est.)</p>
+                                <p className="fs-12">Present</p>
                               </div>
                             </div>
                           </div>
@@ -1113,14 +987,14 @@ const AdminDashboard = () => {
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
                                 <h5>{staffAtt.absent}</h5>
-                                <p className="fs-12">On approved leave</p>
+                                <p className="fs-12">Absent</p>
                               </div>
                             </div>
                           </div>
                           <div className="col-sm-4">
                             <div className="card bg-light-300 shadow-none border-0">
                               <div className="card-body p-3 text-center">
-                                <h5>—</h5>
+                                <h5>{staffAtt.late}</h5>
                                 <p className="fs-12">Late</p>
                               </div>
                             </div>
@@ -1128,8 +1002,10 @@ const AdminDashboard = () => {
                         </div>
                         <p className="small text-muted text-center mb-2">
                           {attendanceRange === "all_time"
-                            ? "All-time staff attendance is not stored. Use Today or Yesterday for a same-day leave-based estimate, or Staff Attendance / HRM."
-                            : `Staff figures use approved leave vs active staff for ${attendanceToday.date || attendanceDateStr} (${staffAtt.totalMarked} in scope). Use HRM for detailed records.`}
+                            ? "All-time staff attendance marks are not aggregated here. Pick Today or Yesterday to see counts from Staff Attendance (includes teachers and other staff)."
+                            : staffMarked
+                              ? `${attendanceToday.date || attendanceDateStr}: ${staffAtt.totalMarked} staff rows in staff_attendance · ${staffAtt.attendancePct}% attended (present + late + half-day). Teachers are included with all staff.`
+                              : `No staff attendance rows for ${attendanceToday.date || attendanceDateStr}. Open Staff Attendance under HRM to mark everyone on staff, including teachers.`}
                         </p>
                         <div className="text-center">
                           <ReactApexChart
@@ -1602,20 +1478,6 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                   <div className="card-body">
-                    {leaveFeedback && (
-                      <div
-                        className={`alert alert-${leaveFeedback.type === "success" ? "success" : "danger"} py-2 px-3 small mb-3`}
-                        role="alert"
-                      >
-                        {leaveFeedback.text}
-                        <button
-                          type="button"
-                          className="btn-close float-end mt-0"
-                          aria-label="Dismiss"
-                          onClick={() => setLeaveFeedback(null)}
-                        />
-                      </div>
-                    )}
                     {leaveLoading && (
                       <p className="mb-0 text-muted small">Loading leave requests...</p>
                     )}
@@ -1649,26 +1511,9 @@ const AdminDashboard = () => {
                                 <p className="text-truncate">{item.role}</p>
                               </div>
                             </div>
-                            <div className="d-flex align-items-center">
-                              <button
-                                type="button"
-                                className="avatar avatar-xs p-0 btn btn-success me-1"
-                                onClick={() => item.id != null && handleLeaveApprove(Number(item.id))}
-                                disabled={leaveActionId != null || (item.status || "").toLowerCase() === "approved"}
-                                title="Approve"
-                              >
-                                <i className="ti ti-checks" />
-                              </button>
-                              <button
-                                type="button"
-                                className="avatar avatar-xs p-0 btn btn-danger"
-                                onClick={() => item.id != null && handleLeaveReject(Number(item.id))}
-                                disabled={leaveActionId != null || (item.status || "").toLowerCase() === "rejected"}
-                                title="Reject"
-                              >
-                                <i className="ti ti-x" />
-                              </button>
-                            </div>
+                            <span className="badge badge-soft-info text-capitalize">
+                              {item.status || "pending"}
+                            </span>
                           </div>
                           <div className="d-flex align-items-center justify-content-between border-top pt-3">
                             <p className="mb-0">

@@ -54,6 +54,10 @@ const TeacherModal = ({ staffId, onLeaveApplied }: TeacherModalProps) => {
       alert("Please select From Date and To Date.");
       return;
     }
+    if (!applyReason.trim()) {
+      alert("Please enter a reason.");
+      return;
+    }
     const fromStr = applyFromDate.format("YYYY-MM-DD");
     const toStr = applyToDate.format("YYYY-MM-DD");
     if (toStr < fromStr) {
@@ -67,7 +71,7 @@ const TeacherModal = ({ staffId, onLeaveApplied }: TeacherModalProps) => {
         staff_id: staffId,
         start_date: fromStr,
         end_date: toStr,
-        reason: applyReason.trim() || null,
+        reason: applyReason.trim(),
       });
       if (res?.status === "SUCCESS") {
         onLeaveApplied?.();
@@ -249,7 +253,7 @@ const TeacherModal = ({ staffId, onLeaveApplied }: TeacherModalProps) => {
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Enter reason (optional)"
+                        placeholder="Enter reason"
                         value={applyReason}
                         onChange={(e) => setApplyReason(e.target.value)}
                       />

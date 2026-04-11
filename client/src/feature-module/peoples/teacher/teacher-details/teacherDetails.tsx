@@ -20,6 +20,7 @@ const TeacherDetails = () => {
   const teacherId = state?.teacherId ?? state?.teacher?.id;
   const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
   const [loading, setLoading] = useState(!!teacherId);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Redirect to Teacher List if no teacherId is provided (e.g., clicked from sidebar)
   // MUST be before any early returns to follow Rules of Hooks
@@ -34,12 +35,20 @@ const TeacherDetails = () => {
   useEffect(() => {
     if (teacherId) {
       setLoading(true);
+      setLoadError(null);
       apiService
         .getTeacherById(teacherId)
         .then((res: any) => {
-          if (res?.data) setTeacher(res.data);
+          if (res?.data) {
+            setTeacher(res.data);
+            return;
+          }
+          setTeacher(null);
         })
-        .catch(() => {})
+        .catch((err: unknown) => {
+          setTeacher(null);
+          setLoadError((err as Error)?.message || 'Unable to load teacher details.');
+        })
         .finally(() => setLoading(false));
     }
   }, [teacherId]);
@@ -69,6 +78,23 @@ const TeacherDetails = () => {
             </div>
             <span className="ms-2">Redirecting to Teacher List...</span>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!teacher) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="alert alert-danger m-3" role="alert">
+            <i className="ti ti-alert-circle me-2" />
+            {loadError || 'Teacher details are not available.'}
+          </div>
+          <button type="button" className="btn btn-outline-primary ms-3" onClick={() => navigate(-1)}>
+            <i className="ti ti-arrow-left me-1" />
+            Go Back
+          </button>
         </div>
       </div>
     );

@@ -45,6 +45,8 @@ const LeaveReport = () => {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [leaveTypesLoading, setLeaveTypesLoading] = useState(true);
   const [leaveTypesError, setLeaveTypesError] = useState<string | null>(null);
+  const [selectedClass, setSelectedClass] = useState<any>(classes[0]);
+  const [selectedSection, setSelectedSection] = useState<any>(sections[0]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +153,8 @@ const LeaveReport = () => {
         rollNo: student.roll_number || "—",
         avatar: student.photo_url || "",
         gender: student.gender || "",
+        className: student.class_name || student.class || "",
+        sectionName: student.section_name || student.section || "",
         medicalUsed: usage.medical,
         medicalAvailable: Math.max(leaveTypeConfig.medical.max - usage.medical, 0),
         casualUsed: usage.casual,
@@ -164,6 +168,15 @@ const LeaveReport = () => {
       };
     });
   }, [leaveApplications, leaveTypeConfig, students]);
+  const filteredData = useMemo(() => {
+    return data.filter((row: any) => {
+      const classVal = String(selectedClass?.value || "").toLowerCase();
+      const sectionVal = String(selectedSection?.value || "").toLowerCase();
+      const classOk = !classVal || classVal === "all" || String(row.className || "").toLowerCase().includes(classVal);
+      const sectionOk = !sectionVal || sectionVal === "all" || String(row.sectionName || "").toLowerCase().includes(sectionVal);
+      return classOk && sectionOk;
+    });
+  }, [data, selectedClass, selectedSection]);
   const columns = [
     {
       title: "",
@@ -352,7 +365,8 @@ const LeaveReport = () => {
                               <CommonSelect
                                 className="select"
                                 options={classes}
-                                defaultValue={classes[0]}
+                                value={selectedClass}
+                                onChange={(opt: any) => setSelectedClass(opt)}
                               />
                             </div>
                           </div>
@@ -362,14 +376,22 @@ const LeaveReport = () => {
                               <CommonSelect
                                 className="select"
                                 options={sections}
-                                defaultValue={sections[0]}
+                                value={selectedSection}
+                                onChange={(opt: any) => setSelectedSection(opt)}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link
+                          to="#"
+                          className="btn btn-light me-3"
+                          onClick={() => {
+                            setSelectedClass(classes[0]);
+                            setSelectedSection(sections[0]);
+                          }}
+                        >
                           Reset
                         </Link>
                         <button type="submit" className="btn btn-primary">
@@ -429,7 +451,7 @@ const LeaveReport = () => {
               ) : (
                 <>
                   {/* Student List */}
-                  <Table dataSource={data} columns={columns} />
+                  <Table dataSource={filteredData} columns={columns} />
                   {/* /Student List */}
                 </>
               )}

@@ -3,6 +3,8 @@ const { parsePagination } = require('../utils/pagination');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { canAccessStudent, canAccessClass, parseId } = require('../utils/accessControl');
+const { listHolidaysInRange, buildHolidayDateSet, applyHolidayOverride } = require('../utils/holidayUtils');
+const { toYmd } = require('../utils/dateOnly');
 const {
   createStudentUser,
   isUserEmailTaken,
@@ -2005,6 +2007,18 @@ const getTeacherStudents = async (req, res) => {
     if (teacherCheck.rows.length === 0) {
       return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
     }
+    const teacherIds = [...new Set(teacherCheck.rows.map((row) => parseInt(row.id, 10)).filter((id) => Number.isFinite(id)))];
+    const staffIds = [...new Set(teacherCheck.rows.map((row) => parseInt(row.staff_id, 10)).filter((id) => Number.isFinite(id)))];
+    if (teacherIds.length === 0 || staffIds.length === 0) {
+      return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
+    }
+
+    const params = [teacherIds, staffIds];
+    let academicYearClause = '';
+    if (hasAcademicYearFilter) {
+      params.push(academicYearId);
+      academicYearClause = ` AND s.academic_year_id = $${params.length}`;
+    }
     const teacherId = teacherCheck.rows[0].id;
     const staffId = parseId(teacherCheck.rows[0].staff_id);
 
@@ -2015,6 +2029,7 @@ const getTeacherStudents = async (req, res) => {
       `SELECT
         s.id, s.admission_number, s.roll_number, s.first_name, s.last_name, s.gender,
         s.date_of_birth, s.phone, s.email, s.class_id, s.section_id, s.photo_url,
+        COALESCE(s.is_active, true) AS is_active,
         c.class_name, sec.section_name
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
@@ -2022,12 +2037,24 @@ const getTeacherStudents = async (req, res) => {
        WHERE s.is_active = true AND (
          EXISTS (
            SELECT 1 FROM class_schedules cs
-           WHERE cs.teacher_id = $1
+           WHERE cs.teacher_id = ANY($1::int[])
              AND cs.class_id = s.class_id
              AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+             AND (cs.academic_year_id = s.academic_year_id OR cs.academic_year_id IS NULL)
          )
          OR EXISTS (
            SELECT 1 FROM teachers t
+            WHERE t.id = ANY($1::int[]) AND t.class_id = s.class_id
+         )
+         OR EXISTS (
+           SELECT 1 FROM sections sec_map
+           WHERE sec_map.id = s.section_id
+             AND sec_map.section_teacher_id = ANY($2::int[])
+         )
+         OR EXISTS (
+           SELECT 1 FROM classes c_map
+           WHERE c_map.id = s.class_id
+             AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
             WHERE t.id = $2 AND t.class_id = s.class_id
          )
        )${academicYearClause}
@@ -2070,9 +2097,13 @@ const getStudentById = async (req, res) => {
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
       ay.year_name as academic_year_name,
+      cls_t.id as class_teacher_id,
       cls_t.staff_id as class_teacher_staff_id,
       cls_staff.first_name as class_teacher_first_name,
       cls_staff.last_name as class_teacher_last_name,
+      cls_staff.phone as class_teacher_phone,
+      cls_staff.email as class_teacher_email,
+      cls_staff.address as class_teacher_address,
       bg.blood_group as blood_group_name,
       cast_t.cast_name,
       mt.language_name as mother_tongue_name,
@@ -2099,7 +2130,7 @@ const getStudentById = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
-      LEFT JOIN teachers cls_t ON c.class_teacher_id = cls_t.id
+      LEFT JOIN teachers cls_t ON (c.class_teacher_id = cls_t.id OR c.class_teacher_id = cls_t.staff_id)
       LEFT JOIN staff cls_staff ON cls_t.staff_id = cls_staff.id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
@@ -2853,15 +2884,28 @@ const getStudentAttendance = async (req, res) => {
       return v;
     };
 
+    let minDate = null;
+    let maxDate = null;
+    result.rows.forEach((r) => {
+      const d = String(r.attendance_date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    });
+    const holidays = minDate && maxDate ? await listHolidaysInRange(minDate, maxDate) : [];
+    const holidayDates = buildHolidayDateSet(holidays, minDate, maxDate);
+
     const records = result.rows.map((r) => {
       const status = normalizeStatus(r.status);
+      const attendanceDate = String(r.attendance_date || '').slice(0, 10);
+      const isHoliday = holidayDates.has(attendanceDate);
       return {
         id: r.id,
         studentId: r.student_id,
         classId: r.class_id,
         sectionId: r.section_id,
         attendanceDate: r.attendance_date,
-        status,
+        status: applyHolidayOverride(status, isHoliday),
         checkInTime: r.check_in_time,
         checkOutTime: r.check_out_time,
         markedBy: r.marked_by,
@@ -3161,12 +3205,34 @@ const getGradeReport = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
     }
 
-    const access = await canAccessClass(req, classId);
-    if (!access.ok) {
-      return res.status(access.status || 403).json({
-        status: 'ERROR',
-        message: access.message || 'Access denied',
-      });
+    const roleId = Number(req.user?.role_id);
+    const roleName = String(req.user?.role_name || '').trim().toLowerCase();
+    const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
+
+    let teacherIds = [];
+    let teacherStaffIds = [];
+    if (isTeacher) {
+      const teacherRes = await query(
+        `SELECT t.id, t.staff_id
+         FROM teachers t
+         INNER JOIN staff st ON st.id = t.staff_id
+         WHERE st.user_id = $1
+           AND st.is_active = true`,
+        [req.user?.id]
+      );
+      teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
+      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.staff_id)).filter(Boolean);
+      if (!teacherIds.length || !teacherStaffIds.length) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+      }
+    } else {
+      const access = await canAccessClass(req, classId);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({
+          status: 'ERROR',
+          message: access.message || 'Access denied',
+        });
+      }
     }
 
     const scopedStudentsWhere = ['s.class_id = $1', 's.is_active = true'];
@@ -3179,6 +3245,24 @@ const getGradeReport = async (req, res) => {
     if (academicYearId) {
       scopedStudentsParams.push(academicYearId);
       scopedStudentsWhere.push(`s.academic_year_id = $${scopedStudentsParams.length}`);
+    }
+    if (isTeacher) {
+      scopedStudentsParams.push(teacherIds);
+      scopedStudentsWhere.push(`(
+        EXISTS (
+          SELECT 1
+          FROM class_schedules cs
+          WHERE cs.teacher_id = ANY($${scopedStudentsParams.length}::int[])
+            AND cs.class_id = s.class_id
+            AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM teachers t
+          WHERE t.id = ANY($${scopedStudentsParams.length}::int[])
+            AND t.class_id = s.class_id
+        )
+      )`);
     }
 
     const scopedWhereSql = scopedStudentsWhere.join(' AND ');
@@ -3374,19 +3458,40 @@ const getAttendanceReport = async (req, res) => {
     const academicYearId = parseId(req.query.academic_year_id);
     const month = String(req.query.month || '').trim();
 
-    if (!classId) {
-      return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
-    }
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({ status: 'ERROR', message: 'month must be in YYYY-MM format' });
     }
 
-    const access = await canAccessClass(req, classId);
-    if (!access.ok) {
-      return res.status(access.status || 403).json({
-        status: 'ERROR',
-        message: access.message || 'Access denied',
-      });
+    const roleId = Number(req.user?.role_id);
+    const roleName = String(req.user?.role_name || '').trim().toLowerCase();
+    const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
+
+    // For teachers, we scope rows directly to assigned students (class_schedules/homeroom mapping)
+    // instead of relying on broader class access checks.
+    let teacherIds = [];
+    let teacherStaffIds = [];
+    if (isTeacher) {
+      const teacherRes = await query(
+        `SELECT t.id, t.staff_id
+         FROM teachers t
+         INNER JOIN staff st ON st.id = t.staff_id
+         WHERE st.user_id = $1
+           AND st.is_active = true`,
+        [req.user?.id]
+      );
+      teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
+      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.staff_id)).filter(Boolean);
+      if (!teacherIds.length || !teacherStaffIds.length) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+      }
+    } else if (classId) {
+      const access = await canAccessClass(req, classId);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({
+          status: 'ERROR',
+          message: access.message || 'Access denied',
+        });
+      }
     }
 
     const monthStart = new Date(`${month}-01T00:00:00.000Z`);
@@ -3395,8 +3500,13 @@ const getAttendanceReport = async (req, res) => {
     }
     const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
 
-    const rosterWhere = ['s.class_id = $1', 's.is_active = true'];
-    const rosterParams = [classId];
+    const rosterWhere = ['s.is_active = true'];
+    const rosterParams = [];
+
+    if (classId) {
+      rosterParams.push(classId);
+      rosterWhere.push(`s.class_id = $${rosterParams.length}`);
+    }
 
     if (sectionId) {
       rosterParams.push(sectionId);
@@ -3405,6 +3515,42 @@ const getAttendanceReport = async (req, res) => {
     if (academicYearId) {
       rosterParams.push(academicYearId);
       rosterWhere.push(`s.academic_year_id = $${rosterParams.length}`);
+    }
+    if (isTeacher) {
+      rosterParams.push(teacherIds);
+      const teacherIdsParamRef = `$${rosterParams.length}`;
+      rosterParams.push(teacherStaffIds);
+      const staffIdsParamRef = `$${rosterParams.length}`;
+      rosterWhere.push(`(
+        EXISTS (
+          SELECT 1
+          FROM class_schedules cs
+          WHERE cs.teacher_id = ANY(${teacherIdsParamRef}::int[])
+            AND cs.class_id = s.class_id
+            AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM teachers t
+          WHERE t.id = ANY(${teacherIdsParamRef}::int[])
+            AND t.class_id = s.class_id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM sections sec_map
+          WHERE sec_map.id = s.section_id
+            AND sec_map.section_teacher_id = ANY(${staffIdsParamRef}::int[])
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM classes c_map
+          WHERE c_map.id = s.class_id
+            AND (
+              c_map.class_teacher_id = ANY(${teacherIdsParamRef}::int[])
+              OR c_map.class_teacher_id = ANY(${staffIdsParamRef}::int[])
+            )
+        )
+      )`);
     }
 
     const rosterRes = await query(
@@ -3429,7 +3575,7 @@ const getAttendanceReport = async (req, res) => {
     const attendanceRes = await query(
       `SELECT
          a.student_id,
-         a.attendance_date,
+         a.attendance_date::date AS attendance_date,
          a.status
        FROM attendance a
        INNER JOIN students s ON s.id = a.student_id
@@ -3451,17 +3597,36 @@ const getAttendanceReport = async (req, res) => {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
+    const monthLast = new Date(monthEnd);
+    monthLast.setUTCDate(monthLast.getUTCDate() - 1);
+    const monthLastIso = monthLast.toISOString().slice(0, 10);
+    const holidays = await listHolidaysInRange(monthStart.toISOString().slice(0, 10), monthLastIso);
+    const holidayDates = buildHolidayDateSet(
+      holidays,
+      monthStart.toISOString().slice(0, 10),
+      monthLastIso
+    );
+
     const attendanceByStudent = new Map();
     attendanceRes.rows.forEach((row) => {
       const studentKey = String(row.student_id);
       if (!attendanceByStudent.has(studentKey)) {
         attendanceByStudent.set(studentKey, {});
       }
-      attendanceByStudent.get(studentKey)[String(row.attendance_date).slice(0, 10)] = normalizeAttendanceStatus(row.status);
+      const day = toYmd(row.attendance_date);
+      if (!day) return;
+      const normalized = normalizeAttendanceStatus(row.status);
+      attendanceByStudent.get(studentKey)[day] = applyHolidayOverride(normalized, holidayDates.has(day));
     });
 
     const rows = rosterRes.rows.map((student) => {
       const daily = attendanceByStudent.get(String(student.id)) || {};
+      days.forEach((day) => {
+        if (holidayDates.has(day.date)) {
+          daily[day.date] = 'holiday';
+        }
+      });
+
       const summary = {
         present: 0,
         late: 0,
@@ -3508,14 +3673,10 @@ const getAttendanceReport = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching attendance report:', error);
-    res.status(200).json({
-      status: 'SUCCESS',
-      message: 'Attendance report not available',
-      data: {
-        month: null,
-        days: [],
-        rows: [],
-      },
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch attendance report',
+      code: 'ATTENDANCE_REPORT_FAILED',
     });
   }
 };

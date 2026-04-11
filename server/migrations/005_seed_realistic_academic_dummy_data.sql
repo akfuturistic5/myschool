@@ -358,7 +358,7 @@ BEGIN
   SELECT
     t.username,
     t.email,
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('98' || LPAD(t.seq_no::text, 8, '0')), gen_salt('bf', 10)),
     v_student_role_id,
     t.first_name,
     t.last_name,
@@ -475,7 +475,7 @@ BEGIN
   SELECT
     'father_' || lower(replace(s.admission_number, '-', '_')),
     lower(replace(s.admission_number, '-', '.')) || '.father@myschool.local',
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('97' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
     v_parent_role_id,
     'Imran',
     (s.last_name || ' Sr'),
@@ -498,7 +498,7 @@ BEGIN
   SELECT
     'mother_' || lower(replace(s.admission_number, '-', '_')),
     lower(replace(s.admission_number, '-', '.')) || '.mother@myschool.local',
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('96' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
     v_parent_role_id,
     'Sana',
     (s.last_name || ' Sr'),
@@ -563,7 +563,7 @@ BEGIN
     SELECT
       'guardian_' || lower(replace(s.admission_number, '-', '_')),
       lower(replace(s.admission_number, '-', '.')) || '.guardian@myschool.local',
-      '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+      crypt(('95' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
       v_guardian_role_id,
       'Rafiq',
       (s.last_name || ' Uncle'),
@@ -680,6 +680,46 @@ BEGIN
   ) m
   WHERE t.id = m.teacher_id
     AND m.subject_id IS NOT NULL;
+
+  -- ---------------------------------------------------------------------------
+  -- 17) Seed attendance snapshots (student/teacher/staff)
+  -- ---------------------------------------------------------------------------
+  INSERT INTO attendance (student_id, class_id, section_id, attendance_date, status, remarks, academic_year_id)
+  SELECT
+    s.id,
+    s.class_id,
+    s.section_id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    s.academic_year_id
+  FROM students s
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  WHERE s.class_id IS NOT NULL
+  ON CONFLICT (student_id, attendance_date) DO NOTHING;
+
+  INSERT INTO teacher_attendance (teacher_id, attendance_date, status, remark, academic_year_id)
+  SELECT
+    t.id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    t.academic_year_id
+  FROM teachers t
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  ON CONFLICT (teacher_id, attendance_date) DO NOTHING;
+
+  INSERT INTO staff_attendance (staff_id, attendance_date, status, remark, academic_year_id)
+  SELECT
+    st.id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    st.academic_year_id
+  FROM staff st
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  WHERE st.is_active = true
+  ON CONFLICT (staff_id, attendance_date) DO NOTHING;
 
 END $$;
 

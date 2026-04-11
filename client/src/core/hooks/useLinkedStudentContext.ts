@@ -39,15 +39,26 @@ export const useLinkedStudentContext = ({
     return parseStudentId(parents[0]?.student_id);
   }, [isParentRole, parents]);
 
+  const queryStudentId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const search = new URLSearchParams(window.location.search || "");
+      return parseStudentId(search.get("studentId"));
+    } catch {
+      return null;
+    }
+  }, [routeStudentId, locationState]);
+
   const resolvedStudentId = useMemo(() => {
     return (
       parseStudentId(routeStudentId) ??
+      queryStudentId ??
       parseStudentId(locationState?.studentId) ??
       parseStudentId(locationState?.student?.id) ??
       (isStudentRole ? parseStudentId(currentStudent?.id) : null) ??
       fallbackParentStudentId
     );
-  }, [routeStudentId, locationState, isStudentRole, currentStudent, fallbackParentStudentId]);
+  }, [routeStudentId, queryStudentId, locationState, isStudentRole, currentStudent, fallbackParentStudentId]);
 
   const [student, setStudent] = useState<any>(() => {
     if (locationState?.student) return locationState.student;
@@ -75,10 +86,10 @@ export const useLinkedStudentContext = ({
     }
 
     if (isStudentRole && parseStudentId(currentStudent?.id) === resolvedStudentId) {
+      // Pre-fill quickly for UX, then continue and fetch full student details (class teacher, lookups, etc.)
+      // from /students/:id, which applies ownership checks server-side.
       setStudent(currentStudent);
       setLoadError(null);
-      setLoading(false);
-      return;
     }
 
     let cancelled = false;

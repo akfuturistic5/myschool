@@ -12,6 +12,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../core/data/redux/authSlice";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -21,9 +22,12 @@ const compareNumber = (left: unknown, right: unknown) =>
 
 const DailyAttendance = () => {
   const routes = all_routes;
+  const user = useSelector(selectUser);
+  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classesWithSections } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [teacherScopeRows, setTeacherScopeRows] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
@@ -31,6 +35,18 @@ const DailyAttendance = () => {
   const [error, setError] = useState<string | null>(null);
 
   const classOptions = useMemo(() => {
+    if (isTeacherRole) {
+      const seen = new Map<string, { value: string; label: string }>();
+      (Array.isArray(teacherScopeRows) ? teacherScopeRows : []).forEach((row: any) => {
+        const classId = row?.class_id;
+        if (classId == null || seen.has(String(classId))) return;
+        seen.set(String(classId), {
+          value: String(classId),
+          label: row?.class_name || `Class ${classId}`,
+        });
+      });
+      return Array.from(seen.values());
+    }
     const seen = new Map<string, { value: string; label: string }>();
     (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
       if (row?.classId == null || seen.has(String(row.classId))) return;
@@ -40,7 +56,29 @@ const DailyAttendance = () => {
       });
     });
     return Array.from(seen.values());
-  }, [classesWithSections]);
+  }, [classesWithSections, isTeacherRole, teacherScopeRows]);
+
+  useEffect(() => {
+    if (!isTeacherRole) {
+      setTeacherScopeRows([]);
+      return;
+    }
+    let cancelled = false;
+    const loadTeacherScope = async () => {
+      try {
+        const response = await apiService.getTeacherStudents(academicYearId);
+        if (!cancelled && response?.status === "SUCCESS") {
+          setTeacherScopeRows(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (_) {
+        if (!cancelled) setTeacherScopeRows([]);
+      }
+    };
+    loadTeacherScope();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTeacherRole, academicYearId]);
 
   useEffect(() => {
     if (!selectedClassId && classOptions.length > 0) {
@@ -219,28 +257,18 @@ const DailyAttendance = () => {
                   <Link to={routes.attendanceReport}>Attendance Report</Link>
                 </li>
                 <li>
-                  <Link to={routes.studentAttendanceType} >
-                    Students Attendance Type
-                  </Link>
-                </li>
-                <li>
                   <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
                 </li>
-                <li>
-                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
-                </li>
+                {!isTeacherRole && (
+                  <>
+                    <li>
+                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                    </li>
+                    <li>
+                      <Link to={routes.staffReport}>Staff Report</Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
             {/* /List Tab */}

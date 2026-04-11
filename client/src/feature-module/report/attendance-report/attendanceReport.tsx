@@ -12,6 +12,7 @@ import type { TableData } from "../../../core/data/interface";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../core/data/redux/authSlice";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -26,12 +27,29 @@ const statusClassMap: Record<string, string> = {
   absent: "bg-danger",
   holiday: "bg-info",
 };
+const statusShortLabel = (status: string | null | undefined) => {
+  const s = String(status || "").trim().toLowerCase();
+  if (s === "present") return "P";
+  if (s === "late") return "L";
+  if (s === "absent") return "A";
+  if (s === "holiday") return "H";
+  if (s === "half_day" || s === "halfday") return "F";
+  return "";
+};
+const formatStatusLabel = (status: string | null | undefined) => {
+  const s = String(status || "").trim().toLowerCase();
+  if (!s) return "Not Marked";
+  return s.replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+};
 
 const AttendanceReport = () => {
   const routes = all_routes;
+  const user = useSelector(selectUser);
+  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classesWithSections } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [teacherScopeRows, setTeacherScopeRows] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(dayjs().format("YYYY-MM"));
@@ -40,6 +58,18 @@ const AttendanceReport = () => {
   const [error, setError] = useState<string | null>(null);
 
   const classOptions = useMemo(() => {
+    if (isTeacherRole) {
+      const seen = new Map<string, { value: string; label: string }>();
+      (Array.isArray(teacherScopeRows) ? teacherScopeRows : []).forEach((row: any) => {
+        const classId = row?.class_id;
+        if (classId == null || seen.has(String(classId))) return;
+        seen.set(String(classId), {
+          value: String(classId),
+          label: row?.class_name || `Class ${classId}`,
+        });
+      });
+      return Array.from(seen.values());
+    }
     const seen = new Map<string, { value: string; label: string }>();
     (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
       if (row?.classId == null || seen.has(String(row.classId))) return;
@@ -49,9 +79,26 @@ const AttendanceReport = () => {
       });
     });
     return Array.from(seen.values());
-  }, [classesWithSections]);
+  }, [classesWithSections, isTeacherRole, teacherScopeRows]);
 
   const sectionOptions = useMemo(() => {
+    if (isTeacherRole) {
+      const base = [{ value: "", label: "All Sections" }];
+      const seen = new Set<string>();
+      const items = (Array.isArray(teacherScopeRows) ? teacherScopeRows : [])
+        .filter((row: any) => String(row?.class_id ?? "") === String(selectedClassId || ""))
+        .filter((row: any) => row?.section_id != null)
+        .map((row: any) => ({
+          value: String(row.section_id),
+          label: row?.section_name || `Section ${row.section_id}`,
+        }))
+        .filter((item) => {
+          if (seen.has(item.value)) return false;
+          seen.add(item.value);
+          return true;
+        });
+      return base.concat(items);
+    }
     const base = [{ value: "", label: "All Sections" }];
     const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
       .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
@@ -68,7 +115,29 @@ const AttendanceReport = () => {
         return true;
       })
     );
-  }, [classesWithSections, selectedClassId]);
+  }, [classesWithSections, selectedClassId, isTeacherRole, teacherScopeRows]);
+
+  useEffect(() => {
+    if (!isTeacherRole) {
+      setTeacherScopeRows([]);
+      return;
+    }
+    let cancelled = false;
+    const loadTeacherScope = async () => {
+      try {
+        const response = await apiService.getTeacherStudents(academicYearId);
+        if (!cancelled && response?.status === "SUCCESS") {
+          setTeacherScopeRows(Array.isArray(response.data) ? response.data : []);
+        }
+      } catch (_) {
+        if (!cancelled) setTeacherScopeRows([]);
+      }
+    };
+    loadTeacherScope();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTeacherRole, academicYearId]);
 
   useEffect(() => {
     if (!selectedClassId && classOptions.length > 0) {
@@ -144,7 +213,30 @@ const AttendanceReport = () => {
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
           const cls = status ? statusClassMap[status] || "bg-light" : "";
-          return <span className={`attendance-range ${cls}`.trim()} style={!status ? { opacity: 0.15 } : undefined}></span>;
+          const short = statusShortLabel(status);
+          return (
+            <span
+              className={`attendance-range ${cls}`.trim()}
+              style={
+                !status
+                  ? { opacity: 0.15, width: 22, height: 18, display: "inline-flex" }
+                  : {
+                      width: 22,
+                      height: 18,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#fff",
+                    }
+              }
+              title={status ? `${day.date}: ${formatStatusLabel(status)}` : `${day.date}: Not Marked`}
+            >
+              {short}
+            </span>
+          );
         },
       })),
     [reportData.days]
@@ -282,26 +374,18 @@ const AttendanceReport = () => {
                   </Link>
                 </li>
                 <li>
-                  <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
-                </li>
-                <li>
                   <Link to={routes.dailyAttendance}>Daily Attendance</Link>
                 </li>
-                <li>
-                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
-                </li>
+                {!isTeacherRole && (
+                  <>
+                    <li>
+                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                    </li>
+                    <li>
+                      <Link to={routes.staffReport}>Staff Report</Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
           </div>

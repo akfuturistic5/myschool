@@ -2,12 +2,13 @@ const express = require('express');
 const { protectApi } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/rbacMiddleware');
 const { validate } = require('../utils/validate');
-const { createLeaveApplicationSchema, updateLeaveStatusSchema } = require('../validations/leaveValidation');
+const { createLeaveApplicationSchema, updateLeaveStatusSchema, cancelLeaveSchema } = require('../validations/leaveValidation');
 const { LEAVE_APPROVER_ROLES, LEAVE_LIST_ALL_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
   getLeaveTypes,
   createLeaveApplication,
   updateLeaveApplicationStatus,
+  cancelLeaveApplication,
   getLeaveApplications,
   getMyLeaveApplications,
   getParentChildrenLeaves,
@@ -24,6 +25,8 @@ router.post('/', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), validate(crea
 
 // PUT /api/leave-applications/:id - update status (approve/reject) - Admin/HR only
 router.put('/:id', protectApi, requireRole(LEAVE_APPROVER_ROLES), validate(updateLeaveStatusSchema, 'body'), updateLeaveApplicationStatus);
+// POST /api/leave-applications/:id/cancel - applicant can cancel their own pending leave
+router.post('/:id/cancel', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), validate(cancelLeaveSchema, 'body'), cancelLeaveApplication);
 
 // GET /api/leave-applications/me - current student's or staff's leaves
 router.get('/me', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), getMyLeaveApplications);
