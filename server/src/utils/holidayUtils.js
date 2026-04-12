@@ -7,6 +7,28 @@ const normalizeDateString = (value) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
+/** Civil calendar Sunday for YYYY-MM-DD (UTC date parts — matches school date keys). */
+function isSundayYmd(ymd) {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!parts) return false;
+  const y = Number(parts[1]);
+  const m = Number(parts[2]) - 1;
+  const d = Number(parts[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return false;
+  return new Date(Date.UTC(y, m, d)).getUTCDay() === 0;
+}
+
+function weeklySundayHoliday(ymd) {
+  return {
+    id: null,
+    title: 'Weekly holiday (Sunday)',
+    description: 'Scheduled weekly off',
+    start_date: ymd,
+    end_date: ymd,
+    holiday_type: 'weekly',
+  };
+}
+
 async function listHolidaysInRange(startDate, endDate, academicYearId = null) {
   const start = normalizeDateString(startDate);
   const end = normalizeDateString(endDate);
@@ -34,6 +56,12 @@ async function listHolidaysInRange(startDate, endDate, academicYearId = null) {
 async function getHolidayForDate(date, academicYearId = null) {
   const normalized = normalizeDateString(date);
   if (!normalized) return null;
+  // Sundays are always the configured weekly off for attendance (roster uses holiday_type `weekly`).
+  // If we queried DB first, a "Sunday" / weekend row in `holidays` would win with holiday_type `school`
+  // and UI would show generic "Holiday" instead of "Weekly holiday" for teachers and others.
+  if (isSundayYmd(normalized)) {
+    return weeklySundayHoliday(normalized);
+  }
   const yearId = Number(academicYearId);
   const hasAcademicYear = Number.isFinite(yearId) && yearId > 0;
   const result = await query(
@@ -76,6 +104,14 @@ function buildHolidayDateSet(holidays = [], rangeStart, rangeEnd) {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
   });
+
+  const sun = new Date(startDate);
+  while (sun <= endDate) {
+    if (sun.getUTCDay() === 0) {
+      set.add(sun.toISOString().slice(0, 10));
+    }
+    sun.setUTCDate(sun.getUTCDate() + 1);
+  }
 
   return set;
 }

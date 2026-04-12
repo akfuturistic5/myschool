@@ -44,6 +44,15 @@ const StaffsAttendance = () => {
   const [attError, setAttError] = useState<string | null>(null);
   const [monthHolidayDates, setMonthHolidayDates] = useState<string[]>([]);
   const [monthHolidayTitles, setMonthHolidayTitles] = useState<Record<string, string>>({});
+  const [holidayRefreshTick, setHolidayRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") setHolidayRefreshTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   const loadAttendance = useCallback(async () => {
     if (!Number.isFinite(pk) || pk <= 0) return;
@@ -99,11 +108,23 @@ const StaffsAttendance = () => {
           if (Number.isNaN(cursor.getTime()) || Number.isNaN(until.getTime()) || cursor > until) return;
           while (cursor <= until) {
             const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-            dates.add(d);
-            if (!titleByDate[d]) titleByDate[d] = title;
+            if (d >= startDate && d <= endDate) {
+              dates.add(d);
+              if (!titleByDate[d]) titleByDate[d] = title;
+            }
             cursor.setDate(cursor.getDate() + 1);
           }
         });
+        let sundayCursor = new Date(`${startDate}T00:00:00`);
+        const monthEnd = new Date(`${endDate}T00:00:00`);
+        while (sundayCursor <= monthEnd) {
+          if (sundayCursor.getDay() === 0) {
+            const d = `${sundayCursor.getFullYear()}-${String(sundayCursor.getMonth() + 1).padStart(2, "0")}-${String(sundayCursor.getDate()).padStart(2, "0")}`;
+            dates.add(d);
+            if (!titleByDate[d]) titleByDate[d] = "Weekly Holiday";
+          }
+          sundayCursor.setDate(sundayCursor.getDate() + 1);
+        }
         if (!disposed) {
           setMonthHolidayDates(Array.from(dates));
           setMonthHolidayTitles(titleByDate);
@@ -119,7 +140,7 @@ const StaffsAttendance = () => {
     return () => {
       disposed = true;
     };
-  }, [selectedMonth, academicYearId]);
+  }, [selectedMonth, academicYearId, holidayRefreshTick]);
 
   const rowsWithHolidays = useMemo(() => {
     const existing = Array.isArray(rows) ? [...rows] : [];
@@ -135,7 +156,10 @@ const StaffsAttendance = () => {
         generated.push({
           attendance_date: d,
           status: "holiday",
-          remark: `Holiday: ${monthHolidayTitles[d] || "Holiday"}`,
+          remark:
+            monthHolidayTitles[d] === "Weekly Holiday"
+              ? "Weekly Holiday"
+              : `Holiday: ${monthHolidayTitles[d] || "Holiday"}`,
         });
       }
     }

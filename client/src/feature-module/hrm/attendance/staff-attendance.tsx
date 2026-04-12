@@ -5,6 +5,7 @@ import { useDesignations } from "../../../core/hooks/useDesignations";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { apiService } from "../../../core/services/apiService";
+import { formatRosterHolidayStatus } from "./rosterHolidayLabels";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
@@ -17,10 +18,18 @@ const normalizeTimeForInput = (value: unknown): string => {
   return `${match[1]}:${match[2]}`;
 };
 
+const getTodayLocalYMD = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 const StaffAttendance = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayLocalYMD();
   const [attendanceDate, setAttendanceDate] = useState(today);
   const [departmentId, setDepartmentId] = useState<number | null>(null);
   const [designationId, setDesignationId] = useState<number | null>(null);
@@ -33,6 +42,15 @@ const StaffAttendance = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activeHoliday, setActiveHoliday] = useState<any>(null);
+  /** Past dates: roster is view-only until user clicks Edit, then Save changes persists (server upserts). */
+  const [pastDateEditMode, setPastDateEditMode] = useState(false);
+
+  const isPastMarkingDate = attendanceDate < today;
+  const markingFieldsLocked = !!activeHoliday || (isPastMarkingDate && !pastDateEditMode);
+
+  useEffect(() => {
+    setPastDateEditMode(attendanceDate >= getTodayLocalYMD());
+  }, [attendanceDate]);
 
   const { departments } = useDepartments();
   const { designations } = useDesignations();
@@ -102,12 +120,24 @@ const StaffAttendance = () => {
           designationId,
         })),
       });
-      setMessage("Staff attendance saved successfully.");
+      setMessage(isPastMarkingDate ? "Staff attendance updated successfully." : "Staff attendance saved successfully.");
+      if (isPastMarkingDate) setPastDateEditMode(false);
+      await fetchRoster();
     } catch (err: any) {
       setError(err?.message || "Failed to save staff attendance");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePrimaryMarkingAction = () => {
+    if (isPastMarkingDate && !pastDateEditMode) {
+      setPastDateEditMode(true);
+      setMessage(null);
+      setError(null);
+      return;
+    }
+    void handleSave();
   };
 
   const statusOptions = ["present", "late", "absent", "half_day"];
@@ -169,8 +199,19 @@ const StaffAttendance = () => {
                   </select>
                 </div>
                 <div className="col-md-3 d-flex align-items-end">
-                  <button type="button" className="btn btn-primary w-100" onClick={handleSave} disabled={saving || loading || rows.length === 0 || !!activeHoliday}>
-                    {saving ? "Saving..." : "Save Attendance"}
+                  <button
+                    type="button"
+                    className="btn btn-primary w-100"
+                    onClick={handlePrimaryMarkingAction}
+                    disabled={saving || loading || rows.length === 0 || !!activeHoliday}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : isPastMarkingDate && !pastDateEditMode
+                        ? "Edit Attendance"
+                        : isPastMarkingDate
+                          ? "Save changes"
+                          : "Save Attendance"}
                   </button>
                 </div>
               </div>
@@ -196,29 +237,43 @@ const StaffAttendance = () => {
                         <tr key={r.entity_id}>
                           <td>{r.entity_name}</td>
                           <td>
-                            <select
-                              className="form-select"
-                              value={rowState[r.entity_id]?.status || "present"}
-                              disabled={!!activeHoliday}
-                              onChange={(e) =>
-                                setRowState((prev) => ({
-                                  ...prev,
-                                  [r.entity_id]: {
-                                    status: e.target.value,
-                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
-                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
-                                    remark: prev[r.entity_id]?.remark || "",
-                                  },
-                                }))
-                              }
-                            >
-                              {statusOptions.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-                            </select>
+                            {activeHoliday ? (
+                              <span className="fw-medium text-body-secondary">
+                                {formatRosterHolidayStatus(rowState[r.entity_id]?.status) ||
+                                  (String(activeHoliday?.holiday_type || "").toLowerCase() === "weekly"
+                                    ? "Weekly holiday"
+                                    : "Holiday")}
+                              </span>
+                            ) : (
+                              <select
+                                className="form-select"
+                                value={rowState[r.entity_id]?.status || "present"}
+                                disabled={markingFieldsLocked}
+                                onChange={(e) =>
+                                  setRowState((prev) => ({
+                                    ...prev,
+                                    [r.entity_id]: {
+                                      status: e.target.value,
+                                      checkInTime: prev[r.entity_id]?.checkInTime || "",
+                                      checkOutTime: prev[r.entity_id]?.checkOutTime || "",
+                                      remark: prev[r.entity_id]?.remark || "",
+                                    },
+                                  }))
+                                }
+                              >
+                                {statusOptions.map((s) => (
+                                  <option key={s} value={s}>
+                                    {s.replace("_", " ")}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </td>
                           <td>
                             <input
                               type="time"
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.checkInTime || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({
@@ -237,6 +292,7 @@ const StaffAttendance = () => {
                             <input
                               type="time"
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.checkOutTime || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({
@@ -254,6 +310,7 @@ const StaffAttendance = () => {
                           <td>
                             <input
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.remark || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({

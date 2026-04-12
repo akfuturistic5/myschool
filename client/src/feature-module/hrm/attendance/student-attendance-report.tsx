@@ -10,6 +10,7 @@ import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
+import { formatRosterHolidayStatus } from "./rosterHolidayLabels";
 
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
@@ -17,20 +18,23 @@ const statusClassMap: Record<string, string> = {
   half_day: "bg-dark",
   absent: "bg-danger",
   holiday: "bg-info",
+  weekly_holiday: "bg-info",
 };
 const statusShortLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
   if (s === "present") return "P";
   if (s === "late") return "L";
   if (s === "absent") return "A";
-  if (s === "holiday") return "H";
+  if (s === "holiday" || s === "weekly_holiday") return "H";
   if (s === "half_day" || s === "halfday") return "F";
   return "";
 };
 const formatStatusLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
   if (!s) return "Not Marked";
-  return s.replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  if (s === "weekly_holiday") return "Weekly holiday";
+  if (s === "holiday") return "Holiday";
+  return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 };
 
 const getTodayLocalYMD = () => {
@@ -210,7 +214,11 @@ const StudentAttendanceReport = () => {
           </Link>
         ),
       },
-      { title: "Status", dataIndex: "status", render: (s: string) => (s ? String(s).replace("_", " ") : "Not Marked") },
+      {
+        title: "Status",
+        dataIndex: "status",
+        render: (s: string) => formatRosterHolidayStatus(s) || formatStatusLabel(s),
+      },
       { title: "Check In", dataIndex: "checkInTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
       { title: "Check Out", dataIndex: "checkOutTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
       { title: "Remark", dataIndex: "remark", render: (v: string) => (v && v.trim() ? v : "—") },

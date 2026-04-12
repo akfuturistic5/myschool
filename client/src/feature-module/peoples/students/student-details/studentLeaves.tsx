@@ -118,6 +118,15 @@ const StudentLeaves = () => {
   const [todayHoliday, setTodayHoliday] = useState<{ title?: string; start_date?: string; end_date?: string } | null>(null);
   const [historyHolidayDates, setHistoryHolidayDates] = useState<string[]>([]);
   const [historyHolidayTitles, setHistoryHolidayTitles] = useState<Record<string, string>>({});
+  const [holidayRefreshTick, setHolidayRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") setHolidayRefreshTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useStudentAttendance(effectiveStudentId ?? null);
   const attendanceRecords = attendanceData?.records ?? [];
@@ -161,15 +170,20 @@ const StudentLeaves = () => {
       try {
         const now = new Date();
         const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-        const currentMonthStart = `${today.slice(0, 7)}-01`;
+        const ym = today.slice(0, 7);
+        const currentMonthStart = `${ym}-01`;
+        const [cy, cm] = ym.split("-").map(Number);
+        const currentMonthEnd = `${cy}-${String(cm).padStart(2, "0")}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
         const recordDates = (Array.isArray(attendanceRecords) ? attendanceRecords : [])
           .map((r: any) => toYmd(r?.attendanceDate))
           .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
           .sort();
+        const recordMax = recordDates.length ? recordDates[recordDates.length - 1] : "";
         const startDate = recordDates[0] && recordDates[0] < currentMonthStart ? recordDates[0] : currentMonthStart;
+        const endDate = [today, currentMonthEnd, recordMax].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).reduce((a, b) => (a >= b ? a : b), today);
         const res = await apiService.getHolidays({
           startDate,
-          endDate: today,
+          endDate,
           academicYearId: currentAcademicYear?.id,
         });
         if (disposed) return;
@@ -185,7 +199,7 @@ const StudentLeaves = () => {
           const until = new Date(`${he}T00:00:00`);
           while (cursor <= until) {
             const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-            if (d <= today) {
+            if (d >= startDate && d <= endDate) {
               dates.add(d);
               if (!titleMap[d]) titleMap[d] = title;
             }
@@ -205,7 +219,7 @@ const StudentLeaves = () => {
     return () => {
       disposed = true;
     };
-  }, [attendanceRecords, currentAcademicYear?.id]);
+  }, [attendanceRecords, currentAcademicYear?.id, holidayRefreshTick]);
 
   const handleCancelLeave = async (id?: number) => {
     if (!id || cancelingLeaveId != null) return;
@@ -384,12 +398,17 @@ const StudentLeaves = () => {
     const dateKeys = Array.from(byDate.keys()).sort();
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const currentMonthStart = `${today.slice(0, 7)}-01`;
+    const ym = today.slice(0, 7);
+    const currentMonthStart = `${ym}-01`;
+    const [cy, cm] = ym.split("-").map(Number);
+    const currentMonthEnd = `${cy}-${String(cm).padStart(2, "0")}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
     const startDate = dateKeys[0] && dateKeys[0] < currentMonthStart ? dateKeys[0] : currentMonthStart;
-    if (startDate) {
-      let cursor = new Date(`${startDate}T00:00:00`);
-      const until = new Date(`${today}T00:00:00`);
-      while (cursor <= until) {
+    const recordMax = dateKeys.length ? dateKeys[dateKeys.length - 1] : "";
+    const endDate = [today, currentMonthEnd, recordMax].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).reduce((a, b) => (a >= b ? a : b), today);
+    if (currentMonthStart) {
+      let cursor = new Date(`${currentMonthStart}T00:00:00`);
+      const untilMonth = new Date(`${currentMonthEnd}T00:00:00`);
+      while (cursor <= untilMonth) {
         const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
         if (isSunday(d)) {
           const existing = byDate.get(d);
@@ -412,7 +431,7 @@ const StudentLeaves = () => {
     const holidaySet = new Set((Array.isArray(historyHolidayDates) ? historyHolidayDates : []).map((d) => toYmd(d)));
     const holidayTitleByDate = historyHolidayTitles || {};
     holidaySet.forEach((d) => {
-      if (!d || d > today) return;
+      if (!d || d < startDate || d > endDate) return;
       const existing = byDate.get(d);
       const explicitTitle = holidayTitleByDate[d];
       if (!isMarkedAttendanceStatus(existing?.status)) {

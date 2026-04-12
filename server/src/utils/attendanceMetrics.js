@@ -15,7 +15,8 @@ function emptySummary() {
 function buildSummaryFromRows(rows = []) {
   const summary = emptySummary();
   for (const row of rows) {
-    const status = String(row?.status || '').trim().toLowerCase();
+    let status = String(row?.status || '').trim().toLowerCase();
+    if (status === 'weekly_holiday') status = 'holiday';
     if (STATUS_KEYS.includes(status)) {
       summary[status] += 1;
       summary.total_marked += 1;

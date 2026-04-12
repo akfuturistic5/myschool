@@ -46,6 +46,15 @@ const TeacherLeave = () => {
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [monthHolidayDates, setMonthHolidayDates] = useState<string[]>([]);
   const [monthHolidayTitles, setMonthHolidayTitles] = useState<Record<string, string>>({});
+  const [holidayRefreshTick, setHolidayRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") setHolidayRefreshTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   // Always fetch full teacher by ID when teacherId is available to ensure we have complete data
   useEffect(() => {
@@ -148,8 +157,6 @@ const TeacherLeave = () => {
         const rows = Array.isArray(res?.data) ? res.data : [];
         const dates = new Set<string>();
         const titleByDate: Record<string, string> = {};
-        const today = new Date();
-        const todayYmd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
         rows.forEach((h: any) => {
           const hs = String(h?.start_date || "").slice(0, 10);
           const he = String(h?.end_date || "").slice(0, 10);
@@ -160,7 +167,7 @@ const TeacherLeave = () => {
           if (Number.isNaN(cursor.getTime()) || Number.isNaN(until.getTime()) || cursor > until) return;
           while (cursor <= until) {
             const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
-            if (d <= todayYmd) {
+            if (d >= startDate && d <= endDate) {
               dates.add(d);
               if (!titleByDate[d]) titleByDate[d] = title;
             }
@@ -168,11 +175,10 @@ const TeacherLeave = () => {
           }
         });
 
-        // Weekly holiday rule: every Sunday should auto-show in history, only when date has reached.
+        // Weekly holiday: every Sunday in the selected calendar month (including future dates in that month).
         let sundayCursor = new Date(`${startDate}T00:00:00`);
         const monthEnd = new Date(`${endDate}T00:00:00`);
-        const until = monthEnd < today ? monthEnd : today;
-        while (sundayCursor <= until) {
+        while (sundayCursor <= monthEnd) {
           if (sundayCursor.getDay() === 0) {
             const d = `${sundayCursor.getFullYear()}-${String(sundayCursor.getMonth() + 1).padStart(2, "0")}-${String(sundayCursor.getDate()).padStart(2, "0")}`;
             dates.add(d);
@@ -195,7 +201,7 @@ const TeacherLeave = () => {
     return () => {
       cancelled = true;
     };
-  }, [attendanceMonth, effectiveAcademicYearId]);
+  }, [attendanceMonth, effectiveAcademicYearId, holidayRefreshTick]);
 
   const attendanceRowsWithHoliday = useMemo(() => {
     const existing = Array.isArray(attendanceRows) ? [...attendanceRows] : [];
