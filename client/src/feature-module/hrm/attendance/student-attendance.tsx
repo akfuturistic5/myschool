@@ -37,20 +37,23 @@ const statusClassMap: Record<string, string> = {
   half_day: "bg-dark",
   absent: "bg-danger",
   holiday: "bg-info",
+  weekly_holiday: "bg-info",
 };
 const statusShortLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
   if (s === "present") return "P";
   if (s === "late") return "L";
   if (s === "absent") return "A";
-  if (s === "holiday") return "H";
+  if (s === "holiday" || s === "weekly_holiday") return "H";
   if (s === "half_day" || s === "halfday") return "F";
   return "";
 };
 const formatStatusLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
   if (!s) return "Not Marked";
-  return s.replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  if (s === "weekly_holiday") return "Weekly holiday";
+  if (s === "holiday") return "Holiday";
+  return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 };
 const toDateKey = (value: unknown) => {
   const raw = String(value || "").trim();
@@ -104,6 +107,15 @@ const StudentAttendance = () => {
   const [departmentId, setDepartmentId] = useState<number | null>(null);
   const [designationId, setDesignationId] = useState<number | null>(null);
   const [activeHoliday, setActiveHoliday] = useState<any>(null);
+  /** Past dates: view-only until Edit, then Save changes (server upserts). */
+  const [pastDateEditMode, setPastDateEditMode] = useState(false);
+  const isPastMarkingDate = attendanceDate < today;
+  const markingFieldsLocked = !!activeHoliday || (isPastMarkingDate && !pastDateEditMode);
+
+  useEffect(() => {
+    setPastDateEditMode(attendanceDate >= getTodayLocalYMD());
+  }, [attendanceDate]);
+
   const markingReturnTo = useMemo(() => {
     const search = new URLSearchParams();
     if (classId != null) search.set("classId", String(classId));
@@ -479,12 +491,25 @@ const StudentAttendance = () => {
           sectionId: r.section_id || sectionId,
         })),
       });
-      setMessage("Student attendance saved successfully.");
+      setMessage(isPastMarkingDate ? "Student attendance updated successfully." : "Student attendance saved successfully.");
+      if (isPastMarkingDate) setPastDateEditMode(false);
+      await fetchRoster();
     } catch (err: any) {
       setError(err?.message || "Failed to save student attendance");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePrimaryMarkingAction = () => {
+    if (!canEditStudentAttendance) return;
+    if (isPastMarkingDate && !pastDateEditMode) {
+      setPastDateEditMode(true);
+      setMessage(null);
+      setError(null);
+      return;
+    }
+    void handleSave();
   };
 
   return (
@@ -605,8 +630,19 @@ const StudentAttendance = () => {
               )}
               <div className="col-md-3 d-flex align-items-end">
                 {canEditStudentAttendance ? (
-                  <button type="button" className="btn btn-primary w-100" onClick={handleSave} disabled={saving || loading || rows.length === 0 || !!activeHoliday}>
-                    {saving ? "Saving..." : "Save Attendance"}
+                  <button
+                    type="button"
+                    className="btn btn-primary w-100"
+                    onClick={handlePrimaryMarkingAction}
+                    disabled={saving || loading || rows.length === 0 || !!activeHoliday}
+                  >
+                    {saving
+                      ? "Saving..."
+                      : isPastMarkingDate && !pastDateEditMode
+                        ? "Edit Attendance"
+                        : isPastMarkingDate
+                          ? "Save changes"
+                          : "Save Attendance"}
                   </button>
                 ) : (
                   <div className="w-100 alert alert-info py-2 px-3 mb-0">
@@ -673,6 +709,7 @@ const StudentAttendance = () => {
                           {canEditStudentAttendance && !activeHoliday ? (
                             <select
                               className="form-select"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.status || "present"}
                               onChange={(e) =>
                                 setRowState((prev) => ({
@@ -697,6 +734,7 @@ const StudentAttendance = () => {
                             <input
                               type="time"
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.checkInTime || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({
@@ -720,6 +758,7 @@ const StudentAttendance = () => {
                             <input
                               type="time"
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.checkOutTime || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({
@@ -743,6 +782,7 @@ const StudentAttendance = () => {
                             <input
                               type="text"
                               className="form-control"
+                              disabled={markingFieldsLocked}
                               value={rowState[r.entity_id]?.remark || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({

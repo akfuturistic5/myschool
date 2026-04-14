@@ -21,6 +21,12 @@ const TABLE_BY_ENTITY = {
   staff: 'staff_attendance',
 };
 
+/** Roster-only status: weekly Sunday vs configured holiday (not stored as weekly_holiday in DB). */
+const rosterHolidayMarkingStatus = (activeHoliday) => {
+  if (!activeHoliday) return null;
+  return String(activeHoliday.holiday_type || '').toLowerCase() === 'weekly' ? 'weekly_holiday' : 'holiday';
+};
+
 const normalizeStatus = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'halfday') return 'half_day';
@@ -349,8 +355,9 @@ const getMarkingRoster = async (req, res) => {
         ORDER BY s.first_name ASC, s.last_name ASC`;
       const roster = await query(sql, params);
       const activeHoliday = await getHolidayForDate(date, academic_year_id);
-      const rows = activeHoliday
-        ? (roster.rows || []).map((row) => ({ ...row, status: 'holiday' }))
+      const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
+      const rows = holidayMark
+        ? (roster.rows || []).map((row) => ({ ...row, status: holidayMark }))
         : roster.rows;
       return success(res, 200, 'Student attendance roster fetched', rows, { holiday: activeHoliday || null });
     }
@@ -387,8 +394,9 @@ const getMarkingRoster = async (req, res) => {
       ORDER BY st.first_name ASC, st.last_name ASC`;
     const roster = await query(sql, params);
     const activeHoliday = await getHolidayForDate(date, academic_year_id);
-    const rows = activeHoliday
-      ? (roster.rows || []).map((row) => ({ ...row, status: 'holiday' }))
+    const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
+    const rows = holidayMark
+      ? (roster.rows || []).map((row) => ({ ...row, status: holidayMark }))
       : roster.rows;
     return success(res, 200, 'Staff attendance roster fetched', rows, { holiday: activeHoliday || null });
   } catch (err) {
@@ -573,8 +581,9 @@ const getAttendanceDayWise = async (req, res) => {
 
     const result = await query(sql, params);
     const activeHoliday = await getHolidayForDate(date, academic_year_id);
-    const rows = activeHoliday
-      ? (result.rows || []).map((row) => ({ ...row, status: 'holiday' }))
+    const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
+    const rows = holidayMark
+      ? (result.rows || []).map((row) => ({ ...row, status: holidayMark }))
       : result.rows;
     return success(res, 200, 'Day-wise attendance fetched', {
       rows,
