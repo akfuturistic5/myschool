@@ -115,6 +115,17 @@ function buildTeacherSidebar() {
             { label: "My Leave & Attendance", link: routes.teacherLeaves },
           ],
         },
+        {
+          label: "Examinations",
+          icon: "ti ti-clipboard-list",
+          submenu: true,
+          showSubRoute: false,
+          submenuItems: [
+            { label: "Exams", link: routes.exam },
+            { label: "Exam Timetable", link: routes.examAttendance },
+            { label: "Exam Result", link: routes.examResult },
+          ],
+        },
       ],
     },
     {
@@ -249,11 +260,14 @@ function buildStudentSidebar() {
           showSubRoute: false,
         },
         {
-          label: "Exam & Results",
-          icon: "ti ti-bookmark-edit",
-          link: routes.studentResult,
-          submenu: false,
+          label: "Examinations",
+          icon: "ti ti-clipboard-list",
+          submenu: true,
           showSubRoute: false,
+          submenuItems: [
+            { label: "Exam Timetable", link: routes.examAttendance, showSubRoute: false },
+            { label: "Exam Result", link: routes.examResult, showSubRoute: false },
+          ],
         },
       ],
     },
@@ -349,11 +363,14 @@ function buildParentSidebar() {
           showSubRoute: false,
         },
         {
-          label: "Exam & Results",
-          icon: "ti ti-bookmark-edit",
-          link: routes.studentResult,
-          submenu: false,
+          label: "Examinations",
+          icon: "ti ti-clipboard-list",
+          submenu: true,
           showSubRoute: false,
+          submenuItems: [
+            { label: "Exam Timetable", link: routes.examAttendance, showSubRoute: false },
+            { label: "Exam Result", link: routes.examResult, showSubRoute: false },
+          ],
         },
       ],
     },
@@ -452,6 +469,28 @@ function buildAdministrativeSidebar() {
         );
       }
 
+      if (section.label === "Academic") {
+        const hasExaminations = (nextSection.submenuItems || []).some(
+          (item) => item.label === "Examinations"
+        );
+        if (!hasExaminations) {
+          nextSection.submenuItems = [
+            ...(nextSection.submenuItems || []),
+            {
+              label: "Examinations",
+              icon: "ti ti-clipboard-list",
+              submenu: true,
+              showSubRoute: false,
+              submenuItems: [
+                { label: "Exams", link: routes.exam },
+                { label: "Schedule", link: routes.examAttendance },
+                { label: "Exam Result", link: routes.examResult },
+              ],
+            },
+          ];
+        }
+      }
+
       return nextSection;
     });
 }
@@ -462,9 +501,14 @@ function buildAdministrativeSidebar() {
  */
 export function getSidebarDataForRole(role: string | undefined | null): typeof SidebarData {
   const normalizedRole = (role || "Admin").trim();
+  const roleLower = normalizedRole.toLowerCase();
   const roleKey = normalizedRole.charAt(0).toUpperCase() + normalizedRole.slice(1).toLowerCase();
 
-  if (isHeadmasterRole(role)) {
+  const headmasterLike =
+    isHeadmasterRole(role) || roleLower.includes("headmaster") || roleLower.includes("administrator");
+  const administrativeLike = isAdministrativeRole(role) || roleLower.includes("administrative");
+
+  if (headmasterLike) {
     return SidebarData.map((section) => {
       if (section.label !== "Reports") return section;
       return {
@@ -476,7 +520,7 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
     });
   }
 
-  if (isAdministrativeRole(role)) {
+  if (administrativeLike) {
     return buildAdministrativeSidebar();
   }
 

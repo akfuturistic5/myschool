@@ -233,18 +233,29 @@ async function canAccessClass(req, classId) {
     );
     if (!tRes.rows.length) return { ok: false, status: 403, message: 'Access denied' };
     const teacherIds = tRes.rows.map((r) => parseId(r.id)).filter(Boolean);
+    const staffIds = tRes.rows.map((r) => parseId(r.staff_id)).filter(Boolean);
     const teacherClassIds = tRes.rows.map((r) => parseId(r.class_id)).filter(Boolean);
     if (teacherClassIds.includes(cid)) return { ok: true };
 
-    const staffIdForSchedule = parseId(teacher.staff_id);
-    if (!staffIdForSchedule) return { ok: false, status: 403, message: 'Access denied' };
+    if (staffIds.length > 0) {
+      const cls = await query(
+        `SELECT 1
+         FROM classes c
+         WHERE c.id = $1
+           AND (c.class_teacher_id = ANY($2::int[]) OR c.class_teacher_id = ANY($3::int[]))
+         LIMIT 1`,
+        [cid, teacherIds, staffIds]
+      ).catch(() => ({ rows: [] }));
+      if (cls.rows && cls.rows.length > 0) return { ok: true };
+    }
 
     const cs = await query(
       `SELECT 1
        FROM class_schedules cs
-       WHERE cs.teacher_id = ANY($1::int[]) AND cs.class_id = $2
+       WHERE cs.class_id = $2
+         AND (cs.teacher_id = ANY($1::int[]) OR cs.teacher_id = ANY($3::int[]))
        LIMIT 1`,
-      [teacherIds, cid]
+      [teacherIds, cid, staffIds]
     ).catch(() => ({ rows: [] }));
     if (cs.rows && cs.rows.length > 0) return { ok: true };
 
@@ -289,6 +300,7 @@ module.exports = {
   parseId,
   getAuthContext,
   isAdmin,
+  isTeacherRole,
   canAccessStudent,
   canAccessClass,
   resolveTeacherIdForUser,

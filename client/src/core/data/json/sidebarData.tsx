@@ -228,11 +228,10 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
-          { label: "Exam", link: routes.exam },
-          { label: "Exam Schedule", link: routes.examSchedule },
+          { label: "Exams", link: routes.exam },
+          { label: "Schedule", link: routes.examAttendance },
+          { label: "Exam Result", link: routes.examResult },
           { label: "Grade", link: routes.grade },
-          { label: "Exam Attendance", link: routes.examAttendance },
-          { label: "Exam Results", link: routes.examResult },
         ],
       },
       {

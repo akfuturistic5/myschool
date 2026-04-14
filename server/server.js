@@ -73,6 +73,8 @@ const schoolProfileRoutes = require('./src/routes/schoolProfileRoutes');
 const bonafideRoutes = require('./src/routes/bonafideRoutes');
 const libraryRoutes = require('./src/routes/libraryRoutes');
 const accountsRoutes = require('./src/routes/accountsRoutes');
+const examModuleRoutes = require('./src/routes/examModuleRoutes');
+const examSubjectsRoutes = require('./src/routes/examSubjectsRoutes');
 const settingsRoutes = require('./src/routes/settingsRoutes');
 const settingsController = require('./src/controllers/settingsController');
 const { protectApi } = require('./src/middleware/authMiddleware');
@@ -349,6 +351,8 @@ app.use('/api/school/profile', schoolProfileRoutes);
 app.use('/api/bonafide', bonafideRoutes);
 app.use('/api/library', libraryRoutes);
 app.use('/api/accounts', accountsRoutes);
+app.use('/api/exams', examModuleRoutes);
+app.use('/api/exam-subjects', examSubjectsRoutes);
 app.use('/api/settings', settingsRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)

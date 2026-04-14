@@ -1,15 +1,22 @@
 import { Link, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
 import StudentBreadcrumb from "./studentBreadcrumb";
 import { useStudentExamResults } from "../../../../core/hooks/useStudentExamResults";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { getSchoolLogoSrc } from "../../../../core/utils/schoolLogo";
+import { apiService } from "../../../../core/services/apiService";
 
 interface StudentDetailsLocationState {
   studentId?: number;
   student?: any;
+  fromExamResult?: boolean;
+  returnTo?: string;
 }
 
 const StudentResult = () => {
@@ -19,8 +26,18 @@ const StudentResult = () => {
   const { studentId, student, loading } = useLinkedStudentContext({
     locationState: state,
   });
+  const { user } = useCurrentUser();
+  const returnToExamResult = typeof state?.returnTo === "string" ? state.returnTo : "";
+  const forwardedState = student
+    ? {
+        studentId: student.id,
+        student,
+        ...(returnToExamResult ? { fromExamResult: true, returnTo: returnToExamResult } : {}),
+      }
+    : undefined;
 
   const { data: examResultsData, loading: examLoading, error: examError } = useStudentExamResults(studentId ?? null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const exams = useMemo(() => {
     const list = Array.isArray(examResultsData?.exams) ? examResultsData.exams : [];
@@ -42,6 +59,195 @@ const StudentResult = () => {
   }, [exams]);
 
   const showLoading = loading;
+
+  const handleExportPdf = async () => {
+    if (!exams.length) return;
+    try {
+      setExportingPdf(true);
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const lineHeight = 18;
+      let y = margin;
+
+      const ensureSpace = (required = lineHeight) => {
+        if (y + required > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+
+      const schoolProfileRes = await apiService.getSchoolProfile().catch(() => null);
+      const schoolProfile = (schoolProfileRes as any)?.data || {};
+      const schoolName = schoolProfile.school_name || user?.school_name || "PreSkool";
+      const schoolAddress =
+        schoolProfile.address ||
+        [schoolProfile.city, schoolProfile.state, schoolProfile.country].filter(Boolean).join(", ") ||
+        "";
+      const logoSource = schoolProfile.logo_url || user?.school_logo || getSchoolLogoSrc(user as any);
+
+      const toAbsoluteUrl = (raw: string) => {
+        if (!raw) return "";
+        if (/^https?:\/\//i.test(raw) || raw.startsWith("data:")) return raw;
+        if (raw.startsWith("/")) return `${window.location.origin}${raw}`;
+        return `${window.location.origin}/${raw.replace(/^\/+/, "")}`;
+      };
+      const logoUrl = toAbsoluteUrl(String(logoSource || ""));
+
+      const logoToDataUrl = async () => {
+        if (!logoUrl) return "";
+        if (logoUrl.startsWith("data:")) {
+          const isSupported = /^data:image\/(png|jpeg|jpg);/i.test(logoUrl);
+          return isSupported ? logoUrl : "";
+        }
+        try {
+          const res = await fetch(logoUrl, { credentials: "include", cache: "no-store" });
+          if (!res.ok) return "";
+          const blob = await res.blob();
+          const mime = String(blob.type || "").toLowerCase();
+          if (!(mime === "image/png" || mime === "image/jpeg" || mime === "image/jpg")) {
+            // Skip unsupported formats like SVG/BMP/WEBP for jsPDF image embedding.
+            return "";
+          }
+          return await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(String(reader.result || ""));
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(blob);
+          });
+        } catch {
+          return "";
+        }
+      };
+      const logoDataUrl = await logoToDataUrl();
+
+      doc.setFillColor(15, 41, 90);
+      doc.rect(0, 0, pageWidth, 96, "F");
+      if (logoDataUrl) {
+        try {
+          const format = /data:image\/png/i.test(logoDataUrl) ? "PNG" : "JPEG";
+          doc.addImage(logoDataUrl, format, margin, 18, 56, 56);
+        } catch {
+          // If logo rendering fails, continue PDF export without logo.
+        }
+      }
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text(String(schoolName), margin + 70, 42);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      if (schoolAddress) doc.text(String(schoolAddress), margin + 70, 62);
+      doc.text(`Generated: ${new Date().toLocaleString("en-GB")}`, margin + 70, 78);
+      y = 118;
+
+      const title = `${student?.first_name || ""} ${student?.last_name || ""}`.trim() || "Student";
+      const classSection = `${student?.class_name || student?.className || student?.class_id || "-"} / ${
+        student?.section_name || student?.sectionName || student?.section_id || "-"
+      }`;
+      doc.setTextColor(20, 20, 20);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.text(`Exam Result Report: ${title}`, margin, y);
+      y += 22;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.text(`Class / Section: ${classSection}`, margin, y);
+      y += lineHeight;
+      doc.text(`Total Exams: ${overallSummary.totalExams}`, margin, y);
+      y += lineHeight;
+      doc.text(`Passed Exams: ${overallSummary.passCount}`, margin, y);
+      y += lineHeight;
+      doc.text(
+        `Average Percentage: ${overallSummary.averagePercentage != null ? `${overallSummary.averagePercentage}%` : "N/A"}`,
+        margin,
+        y
+      );
+      y += 22;
+
+      exams.forEach((exam: any, examIdx: number) => {
+        ensureSpace(48);
+        doc.setFont("helvetica", "bold");
+        doc.text(
+          `${examIdx + 1}. ${exam.examLabel || exam.examName || "Exam"} (${exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A"})`,
+          margin,
+          y
+        );
+        y += lineHeight;
+
+        const summary = exam.summary || {};
+        doc.setFont("helvetica", "normal");
+        doc.text(
+          `Exam Type: ${exam.examType || "-"}  Date: ${
+            exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A"
+          }`,
+          margin,
+          y
+        );
+        y += lineHeight;
+
+        const bodyRows = (exam.subjects || []).map((s: any) => [
+          s.subjectName || "-",
+          s.subjectCode || "-",
+          s.subjectMode || "-",
+          s.maxMarks ?? "N/A",
+          s.minMarks ?? "N/A",
+          s.isAbsent ? "ABSENT" : (s.marksObtained ?? "N/A"),
+          s.result || "N/A",
+        ]);
+        autoTable(doc, {
+          startY: y,
+          theme: "grid",
+          head: [["Subject", "Code", "Mode", "Max Marks", "Min Marks", "Marks Obtained", "Result"]],
+          body: bodyRows,
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 10, cellPadding: 5, lineColor: [220, 220, 220] },
+          headStyles: { fillColor: [22, 63, 138], textColor: [255, 255, 255] },
+          alternateRowStyles: { fillColor: [247, 249, 252] },
+          columnStyles: {
+            6: { halign: "center" },
+          },
+          didParseCell: (data: any) => {
+            if (data.section === "body" && data.column.index === 6) {
+              const val = String(data.cell.raw || "").toLowerCase();
+              if (val === "pass") data.cell.styles.textColor = [0, 128, 0];
+              if (val === "fail") data.cell.styles.textColor = [200, 0, 0];
+            }
+          },
+        });
+        y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 14 : y + 14;
+
+        // Important summary band (below table): bold + colored + fixed sequence.
+        ensureSpace(30);
+        doc.setFillColor(16, 38, 84);
+        doc.roundedRect(margin, y, pageWidth - margin * 2, 24, 4, 4, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        const summaryLine = [
+          `Total: ${summary.totalMax ?? "N/A"}`,
+          `Passing: ${summary.totalMin ?? "N/A"}`,
+          `Obtained: ${summary.totalObtained ?? "N/A"}`,
+          `Percentage: ${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`,
+          `Grade: ${summary.grade || "N/A"}`,
+          `Result: ${summary.overallResult || "N/A"}`,
+        ].join("    ");
+        doc.text(summaryLine, margin + 10, y + 16);
+        doc.setTextColor(20, 20, 20);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        y += 34;
+      });
+
+      const safeName = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "student";
+      doc.save(`${safeName}_exam_results.pdf`);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (showLoading) {
     return (
       <div className="page-wrapper">
@@ -70,11 +276,19 @@ const StudentResult = () => {
               <div className="row">
                 <div className="col-md-12">
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
+                    {returnToExamResult && (
+                      <li className="me-2">
+                        <Link to={returnToExamResult} className="btn btn-outline-primary btn-sm">
+                          <i className="ti ti-arrow-left me-1" />
+                          Back to Exam Result
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={routes.studentDetail}
                         className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
+                        state={forwardedState}
                       >
                         <i className="ti ti-school me-2" />
                         Student Details
@@ -84,7 +298,7 @@ const StudentResult = () => {
                       <Link
                         to={routes.studentTimeTable}
                         className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
+                        state={forwardedState}
                       >
                         <i className="ti ti-table-options me-2" />
                         Time Table
@@ -94,7 +308,7 @@ const StudentResult = () => {
                       <Link
                         to={routes.studentLeaves}
                         className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
+                        state={forwardedState}
                       >
                         <i className="ti ti-calendar-due me-2" />
                         Leave &amp; Attendance
@@ -104,7 +318,7 @@ const StudentResult = () => {
                       <Link
                         to={routes.studentFees}
                         className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
+                        state={forwardedState}
                       >
                         <i className="ti ti-report-money me-2" />
                         Fees
@@ -114,7 +328,7 @@ const StudentResult = () => {
                       <Link
                         to={routes.studentResult}
                         className="nav-link active"
-                        state={student ? { studentId: student.id, student } : undefined}
+                        state={forwardedState}
                       >
                         <i className="ti ti-bookmark-edit me-2" />
                         Exam &amp; Results
@@ -152,8 +366,16 @@ const StudentResult = () => {
                   </div>
 
                   <div className="card">
-                    <div className="card-header">
+                    <div className="card-header d-flex align-items-center justify-content-between">
                       <h4 className="mb-0">Exam &amp; Results</h4>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleExportPdf}
+                        disabled={exportingPdf || examLoading || exams.length === 0}
+                      >
+                        {exportingPdf ? "Exporting..." : "Export PDF"}
+                      </button>
                     </div>
                     <div className="card-body">
                       {examError && (
@@ -220,6 +442,8 @@ const StudentResult = () => {
                                         <thead className="thead-light">
                                           <tr>
                                             <th>Subject</th>
+                                            <th>Code</th>
+                                            <th>Mode</th>
                                             <th>Max Marks</th>
                                             <th>Min Marks</th>
                                             <th>Marks Obtained</th>
@@ -232,9 +456,11 @@ const StudentResult = () => {
                                             return (
                                               <tr key={`${collapseId}-subject-${subject.subjectId ?? subjectIndex}`}>
                                                 <td>{subject.subjectName || "Subject"}</td>
+                                                <td>{subject.subjectCode || "-"}</td>
+                                                <td>{subject.subjectMode || "-"}</td>
                                                 <td>{subject.maxMarks ?? "N/A"}</td>
                                                 <td>{subject.minMarks ?? "N/A"}</td>
-                                                <td>{subject.marksObtained ?? "N/A"}</td>
+                                                <td>{subject.isAbsent ? "ABSENT" : (subject.marksObtained ?? "N/A")}</td>
                                                 <td className="text-end">
                                                   <span
                                                     className={`badge ${subjectPass ? "badge-soft-success" : "badge-soft-danger"} d-inline-flex align-items-center`}
@@ -248,12 +474,15 @@ const StudentResult = () => {
                                           })}
                                           <tr>
                                             <td className="bg-dark text-white">Subjects : {exam.subjects.length}</td>
+                                            <td className="bg-dark text-white">-</td>
+                                            <td className="bg-dark text-white">-</td>
                                             <td className="bg-dark text-white">Total : {summary.totalMax ?? "N/A"}</td>
                                             <td className="bg-dark text-white">Passing : {summary.totalMin ?? "N/A"}</td>
                                             <td className="bg-dark text-white">Obtained : {summary.totalObtained ?? "N/A"}</td>
                                             <td className="bg-dark text-white text-end">
                                               <div className="d-flex align-items-center justify-content-end gap-2">
                                                 <span>{summary.percentage != null ? `${summary.percentage}%` : "N/A"}</span>
+                                                <span className="text-warning">{summary.grade || "N/A"}</span>
                                                 <span className={isPass ? "text-success" : "text-danger"}>
                                                   {summary.overallResult || "N/A"}
                                                 </span>

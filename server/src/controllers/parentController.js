@@ -353,10 +353,6 @@ const getAllParents = async (req, res) => {
       const teacherParams = [teacherIds, teacherStaffIds];
       const academicYearClause = hasYearFilter ? ` AND s.academic_year_id = $${teacherParams.length + 1}` : '';
       if (hasYearFilter) teacherParams.push(academicYearId);
-      const teacherId = parseId(teacherCheck.rows[0].id);
-      const staffId = parseId(teacherCheck.rows[0].staff_id);
-      const academicYearClause = hasYearFilter ? ' AND s.academic_year_id = $3' : '';
-      const teacherParams = hasYearFilter ? [staffId, teacherId, academicYearId] : [staffId, teacherId];
 
       const result = await query(
         `SELECT ${parentListSelectSql}
@@ -382,7 +378,6 @@ const getAllParents = async (req, res) => {
               SELECT 1 FROM classes c_map
               WHERE c_map.id = s.class_id
                 AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
-              WHERE t.id = $2 AND t.class_id = s.class_id
             )
           )${academicYearClause}
         ORDER BY s.first_name ASC, s.last_name ASC`,

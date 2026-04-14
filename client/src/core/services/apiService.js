@@ -491,6 +491,82 @@ class ApiService {
     return this.makeRequest(`/students/${studentId}/exam-results`);
   }
 
+  async listExams(query = {}) {
+    const search = new URLSearchParams();
+    if (query.academic_year_id != null && query.academic_year_id !== '') {
+      search.set('academic_year_id', String(query.academic_year_id));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/exams${qs ? `?${qs}` : ''}`);
+  }
+
+  async createExam(payload) {
+    return this.makeRequest('/exams', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getExamManageContext(examId) {
+    return this.makeRequest(`/exams/${examId}/manage-context`);
+  }
+
+  async listExamSubjectsQuery(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exams/subjects/list?${search.toString()}`);
+  }
+
+  async getExamSubjectOptions(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exams/subjects/options?${search.toString()}`);
+  }
+
+  async getExamSubjectsContext(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/context?${search.toString()}`);
+  }
+
+  async saveExamSubjects(payload) {
+    return this.makeRequest('/exams/subjects/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveExamSubjectSetup(payload) {
+    return this.makeRequest('/exam-subjects/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async viewExamSchedule(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/schedule?${search.toString()}`);
+  }
+
+  async viewExamResults(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/results?${search.toString()}`);
+  }
+
+  async listSelfExams(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/self-exams?${search.toString()}`);
+  }
+
+  async getExamMarksContext(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/marks-context?${search.toString()}`);
+  }
+
+  async saveExamMarks(payload) {
+    return this.makeRequest('/exam-subjects/marks-save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getGradeReport(params = {}) {
     const search = new URLSearchParams();
     if (params.classId != null) search.set('class_id', String(params.classId));
@@ -1551,6 +1627,7 @@ class ApiService {
       });
     } finally {
       clearCachedCsrfToken();
+      clearTenantBearerToken();
     }
   }
 
