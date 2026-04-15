@@ -1,114 +1,260 @@
-import { useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-
-import {
-  activeList,
-  gradeOne,
-  gradePercentage,
-  gradePoints,
-  marksFrom,
-  marksUpto,
-} from "../../../../core/common/selectoption/selectoption";
+import Swal from "sweetalert2";
 import Table from "../../../../core/common/dataTable/index";
-import { gradetable } from "../../../../core/data/json/grade";
-import type { TableData } from "../../../../core/data/interface";
-import CommonSelect from "../../../../core/common/commonSelect";
-import PredefinedDateRanges from "../../../../core/common/datePicker";
+import { apiService } from "../../../../core/services/apiService";
 import { all_routes } from "../../../router/all_routes";
 import TooltipOption from "../../../../core/common/tooltipOption";
+
+type GradeRow = {
+  id: number;
+  grade: string;
+  min_percentage: number;
+  max_percentage: number;
+  percentage_label?: string;
+  status: string;
+};
+
+type GradeForm = {
+  grade: string;
+  min_percentage: string;
+  max_percentage: string;
+};
+
 const Grade = () => {
   const routes = all_routes;
-  const data = gradetable;
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
+  const [rows, setRows] = useState<GradeRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState<GradeForm>({
+    grade: "",
+    min_percentage: "",
+    max_percentage: "",
+  });
+  const [editForm, setEditForm] = useState<GradeForm>({
+    grade: "",
+    min_percentage: "",
+    max_percentage: "",
+  });
+
+  const extractErrorMessage = (err: any, fallback: string) => {
+    const raw = String(err?.message || "").trim();
+    const jsonStart = raw.indexOf("{");
+    if (jsonStart >= 0) {
+      try {
+        const parsed = JSON.parse(raw.slice(jsonStart));
+        const msg = String(parsed?.message || parsed?.error || "").trim();
+        if (msg) return msg;
+      } catch {
+        // fall through to plain message parsing
+      }
+    }
+    if (raw) return raw;
+    return fallback;
+  };
+
+  const resetAddForm = () => {
+    setAddForm({
+      grade: "",
+      min_percentage: "",
+      max_percentage: "",
+    });
+  };
+
+  const resetEditState = () => {
+    setEditingId(null);
+    setIsEditModalOpen(false);
+    setEditForm({
+      grade: "",
+      min_percentage: "",
+      max_percentage: "",
+    });
+  };
+
+  const loadGrades = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await apiService.getExamGradeScale();
+      const data = Array.isArray((res as any)?.data) ? (res as any).data : [];
+      setRows(data);
+      if (!data.length) {
+        setMessage("No grade scale configured.");
+      }
+    } catch (e: any) {
+      setRows([]);
+      setMessage(e?.message || "Failed to load grade scale.");
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadGrades();
+  }, []);
+
+  const onEdit = (row: GradeRow) => {
+    const resolvedId = Number((row as any)?.id);
+    if (!Number.isFinite(resolvedId) || resolvedId <= 0) {
+      void Swal.fire("Error", "Selected grade could not be opened for edit. Please refresh and try again.", "error");
+      return;
+    }
+    setEditingId(resolvedId);
+    setEditForm({
+      grade: String((row as any)?.grade || ""),
+      min_percentage: String((row as any)?.min_percentage ?? ""),
+      max_percentage: String((row as any)?.max_percentage ?? ""),
+    });
+    setIsEditModalOpen(true);
+    setMessage(null);
+  };
+
+  const onDelete = async (id: number, grade: string) => {
+    const confirm = await Swal.fire({
+      title: "Delete Grade?",
+      text: `Are you sure you want to delete "${grade}"?`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Delete",
+      cancelButtonText: "Cancel",
+    });
+    if (!confirm.isConfirmed) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiService.deleteExamGradeScale(id);
+      await loadGrades();
+      if (editingId === id) resetEditState();
+      await Swal.fire("Success", "Grade deleted successfully.", "success");
+    } catch (e: any) {
+      await Swal.fire("Error", extractErrorMessage(e, "Failed to delete grade."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onSubmitAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      grade: addForm.grade.trim(),
+      min_percentage: Number(addForm.min_percentage),
+      max_percentage: Number(addForm.max_percentage),
+      is_active: true,
+    };
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiService.createExamGradeScale(payload);
+      await Swal.fire("Success", "Grade added successfully.", "success");
+      resetAddForm();
+      await loadGrades();
+    } catch (err: any) {
+      await Swal.fire("Error", extractErrorMessage(err, "Failed to save grade."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onSubmitEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId) return;
+    const payload = {
+      grade: editForm.grade.trim(),
+      min_percentage: Number(editForm.min_percentage),
+      max_percentage: Number(editForm.max_percentage),
+      is_active: true,
+    };
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiService.updateExamGradeScale(editingId, payload);
+      await Swal.fire("Success", "Grade updated successfully.", "success");
+      resetEditState();
+      await loadGrades();
+    } catch (err: any) {
+      await Swal.fire("Error", extractErrorMessage(err, "Failed to update grade."), "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const tableData = useMemo(
+    () =>
+      rows.map((r) => ({
+        id: Number(r.id),
+        grade: String(r.grade || "-"),
+        percentage: String(r.percentage_label || `${r.min_percentage ?? 0}% - ${Math.floor(Number(r.max_percentage ?? 0))}%`),
+        status: String(r.status || "Active"),
+        raw: r,
+      })),
+    [rows]
+  );
+
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: ( record: any) => (
+      render: (value: any) => (
         <>
           <Link to="#" className="link-primary">
-            {record.id}
+            {value}
           </Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
+      sorter: (a: any, b: any) => Number(a.id) - Number(b.id),
     },
     {
       title: "Grade",
       dataIndex: "grade",
-      sorter: (a: TableData, b: TableData) => a.grade.length - b.grade.length,
+      sorter: (a: any, b: any) => a.grade.localeCompare(b.grade),
     },
     {
       title: "Percentage",
       dataIndex: "percentage",
-      sorter: (a: TableData, b: TableData) =>
-        a.percentage.length - b.percentage.length,
-    },
-    {
-      title: "Grade Points",
-      dataIndex: "gradePoints",
-      sorter: (a: TableData, b: TableData) =>
-        a.gradePoints.length - b.gradePoints.length,
+      sorter: (a: any, b: any) => a.percentage.localeCompare(b.percentage),
     },
     {
       title: "Status",
       dataIndex: "status",
-      render: () => (
+      render: (value: any) => (
         <>
           <span className="badge badge-soft-success d-inline-flex align-items-center">
-            <i className="ti ti-circle-filled fs-5 me-1"></i>Active
+            <i className="ti ti-circle-filled fs-5 me-1"></i>{value || "Active"}
           </span>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: (a: any, b: any) => a.status.localeCompare(b.status),
     },
     {
       title: "Action",
       dataIndex: "action",
-      render: () => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_grade"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </>
+      key: "action",
+      render: (_: any, record: any) => (
+        <div className="d-flex gap-2">
+          <button
+            className="btn btn-sm btn-outline-primary"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit((record?.raw || record) as GradeRow);
+            }}
+            disabled={saving}
+          >
+            Edit
+          </button>
+          <button
+            className="btn btn-sm btn-outline-danger"
+            type="button"
+            onClick={() => onDelete(Number(record.id), String(record.grade))}
+            disabled={saving}
+          >
+            Delete
+          </button>
+        </div>
       ),
     },
   ];
@@ -136,365 +282,138 @@ const Grade = () => {
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
             <TooltipOption />
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_grade"
-                >
-                  <i className="ti ti-square-rounded-plus-filled me-2" />
-                  Add Grade
-                </Link>
-              </div>
             </div>
           </div>
           {/* /Page Header */}
-          {/* Guardians List */}
+          {message && <div className="alert alert-warning">{message}</div>}
+
+          <div className="card mb-3">
+            <div className="card-header">
+              <h5 className="mb-0">Add Grade</h5>
+            </div>
+            <div className="card-body">
+              <form onSubmit={onSubmitAdd}>
+                <div className="row g-3">
+                  <div className="col-md-3">
+                    <label className="form-label">Grade</label>
+                    <input
+                      className="form-control"
+                      value={addForm.grade}
+                      onChange={(e) => setAddForm((prev) => ({ ...prev, grade: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label className="form-label">Min %</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="form-control"
+                      value={addForm.min_percentage}
+                      onChange={(e) => setAddForm((prev) => ({ ...prev, min_percentage: e.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="col-md-3">
+                    <label className="form-label">Max %</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="form-control"
+                      value={addForm.max_percentage}
+                      onChange={(e) => setAddForm((prev) => ({ ...prev, max_percentage: e.target.value }))}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 d-flex gap-2">
+                  <button className="btn btn-primary" type="submit" disabled={saving}>
+                    {saving ? "Saving..." : "Add Grade"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Grade List</h4>
-              <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                <PredefinedDateRanges />
-                </div>
-                <div className="dropdown mb-3 me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                    data-bs-auto-close="outside"
-                  >
-                    <i className="ti ti-filter me-2" />
-                    Filter
-                  </Link>
-                  <div className="dropdown-menu drop-width"  ref={dropdownMenuRef}>
-                    <form >
-                      <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
-                      </div>
-                      <div className="p-3 border-bottom pb-0">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Grade</label>
-                              <CommonSelect
-                                className="select"
-                                options={gradeOne}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Percentage</label>
-                              <CommonSelect
-                                className="select"
-                                options={gradePercentage}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
-                          Reset
-                        </Link>
-                        <Link
-                            to="#"
-                            className="btn btn-primary"
-                            onClick={handleApplyClick}
-                          >
-                            Apply
-                          </Link>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
-              </div>
+              {loading && <p className="text-muted mb-3">Loading...</p>}
             </div>
             <div className="card-body p-0 py-3">
-              {/* Guardians List */}
-              <Table columns={columns} dataSource={data} Selection={true} />
-
-              {/* /Guardians List */}
+              <Table columns={columns} dataSource={tableData} Selection={false} />
             </div>
           </div>
-          {/* /Guardians List */}
+          {isEditModalOpen && (
+            <>
+              <div className="modal fade show d-block" tabIndex={-1} role="dialog" aria-modal="true">
+                <div className="modal-dialog modal-md modal-dialog-centered" role="document">
+                  <div className="modal-content">
+                    <div className="modal-header">
+                      <h5 className="modal-title">Edit Grade</h5>
+                      <button type="button" className="btn-close" onClick={resetEditState} disabled={saving}></button>
+                    </div>
+                    <div className="modal-body">
+                      <form onSubmit={onSubmitEdit}>
+                        <div className="row g-3">
+                          <div className="col-12">
+                            <label className="form-label">Grade</label>
+                            <input
+                              className="form-control"
+                              value={editForm.grade}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, grade: e.target.value }))}
+                              required
+                            />
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label">Min %</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              className="form-control"
+                              value={editForm.min_percentage}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, min_percentage: e.target.value }))}
+                              required
+                            />
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label">Max %</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              className="form-control"
+                              value={editForm.max_percentage}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, max_percentage: e.target.value }))}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-3 d-flex gap-2">
+                          <button className="btn btn-primary" type="submit" disabled={saving}>
+                            {saving ? "Saving..." : "Update Grade"}
+                          </button>
+                          <button type="button" className="btn btn-outline-secondary" onClick={resetEditState} disabled={saving}>
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-backdrop fade show"></div>
+            </>
+          )}
         </div>
       </div>
-      <>
-        <div className="d-flex align-items-center">
-          <div className="dropdown">
-            <Link
-              to="#"
-              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
-            >
-              <i className="ti ti-dots-vertical fs-14" />
-            </Link>
-            <ul className="dropdown-menu dropdown-menu-right p-3">
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#edit_grade"
-                >
-                  <i className="ti ti-edit-circle me-2" />
-                  Edit
-                </Link>
-              </li>
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  data-bs-toggle="modal"
-                  data-bs-target="#delete-modal"
-                >
-                  <i className="ti ti-trash-x me-2" />
-                  Delete
-                </Link>
-              </li>
-            </ul>
-          </div>
-        </div>
-        {/* Add Grade */}
-        <div className="modal fade" id="add_grade">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add Grade</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form>
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Grade</label>
-                        <input type="text" className="form-control" />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Marks From(%)</label>
-                        <CommonSelect className="select" options={marksFrom} />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Marks Upto(%)</label>
-                        <CommonSelect className="select" options={marksUpto} />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Grade Points</label>
-                        <CommonSelect
-                          className="select"
-                          options={gradePoints}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Status</label>
-                        <CommonSelect className="select" options={activeList} />
-                      </div>
-                      <div className="mb-0">
-                        <label className="form-label">Description</label>
-                        <textarea
-                          className="form-control"
-                          rows={4}
-                          defaultValue={""}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    className="btn btn-primary"
-                    data-bs-dismiss="modal"
-                  >
-                    Add Grade
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Add Grade */}
-        {/* Edit Grade */}
-        <div className="modal fade" id="edit_grade">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit Grade</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form>
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Grade</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Grade"
-                          defaultValue="O"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Marks From(%)</label>
-                        <CommonSelect
-                          className="select"
-                          options={marksFrom}
-                          defaultValue={marksFrom[1]}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Marks Upto(%)</label>
-                        <CommonSelect
-                          className="select"
-                          options={marksUpto}
-                          defaultValue={marksUpto[1]}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Grade Points</label>
-                        <CommonSelect
-                          className="select"
-                          options={gradePoints}
-                          defaultValue={gradePoints[1]}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Status</label>
-                        <CommonSelect
-                          className="select"
-                          options={activeList}
-                          defaultValue={activeList[1]}
-                        />
-                      </div>
-                      <div className="mb-0">
-                        <label className="form-label">Description</label>
-                        <textarea
-                          className="form-control"
-                          rows={4}
-                          placeholder="Add Comment"
-                          defaultValue={""}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    className="btn btn-primary"
-                    data-bs-dismiss="modal"
-                  >
-                    Save Changes
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Edit Grade */}
-        {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form>
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <Link
-                      to="#"
-                      className="btn btn-danger"
-                      data-bs-dismiss="modal"
-                    >
-                      Yes, Delete
-                    </Link>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Delete Modal */}
-      </>
     </div>
   );
 };

@@ -19,6 +19,7 @@ const {
   STUDENT_CONTACT_LATERAL_JOINS,
 } = require('../utils/studentContactSync');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
+const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScaleService');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -3042,16 +3043,7 @@ const getStudentExamResults = async (req, res) => {
 
     // Group results by exam (exam_id) and build a UI-friendly structure
     const examsMap = new Map();
-    const getExamGrade = (percentage) => {
-      const p = Number(percentage);
-      if (!Number.isFinite(p)) return null;
-      if (p >= 91) return 'A+';
-      if (p >= 86) return 'A';
-      if (p >= 76) return 'B+';
-      if (p >= 66) return 'B';
-      if (p >= 50) return 'C';
-      return 'D';
-    };
+    const gradeScale = await loadActiveGradeScale();
 
     rows.rows.forEach((r) => {
       const examId = parseId(r.exam_id);
@@ -3126,7 +3118,7 @@ const getStudentExamResults = async (req, res) => {
         totalObtained,
         percentage: percentage != null ? Number(percentage.toFixed(2)) : null,
         overallResult,
-        grade: percentage != null ? getExamGrade(percentage) : null,
+        grade: percentage != null ? getGradeFromScale(percentage, gradeScale) : null,
       };
     });
 
@@ -3156,18 +3148,6 @@ const normalizeAttendanceStatus = (s) => {
   if (v === 'late' || v === 'l') return 'late';
   if (v === 'holiday' || v === 'h') return 'holiday';
   return v || null;
-};
-
-const getSummaryGrade = (percentage) => {
-  const p = Number(percentage);
-  if (!Number.isFinite(p)) return null;
-  if (p >= 90) return 'O';
-  if (p >= 80) return 'A+';
-  if (p >= 70) return 'A';
-  if (p >= 60) return 'B+';
-  if (p >= 50) return 'B';
-  if (p >= 35) return 'C';
-  return 'F';
 };
 
 const getGradeReport = async (req, res) => {
@@ -3380,6 +3360,7 @@ const getGradeReport = async (req, res) => {
       };
     });
 
+    const gradeScale = await loadActiveGradeScale();
     const subjects = Array.from(subjectMap.values());
     const rows = Array.from(studentsMap.values()).map((student) => {
       const subjectEntries = subjects.map((subject) => student.subjectMarks[String(subject.subjectId)]).filter(Boolean);
@@ -3397,7 +3378,7 @@ const getGradeReport = async (req, res) => {
           totalMin,
           percentage,
           overallResult,
-          grade: getSummaryGrade(percentage),
+          grade: percentage == null ? null : getGradeFromScale(percentage, gradeScale),
         },
       };
     });

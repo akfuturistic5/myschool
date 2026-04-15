@@ -12,6 +12,7 @@ import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
+import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
 
 type RosterRow = {
   entity_id: number;
@@ -456,6 +457,53 @@ const StudentAttendance = () => {
     [activeReportDayColumns, canEditStudentAttendance, reportViewType]
   );
 
+  const exportRows = useMemo(() => {
+    const dayKeys = (Array.isArray(activeReportDays) ? activeReportDays : []).map((d: any) => d?.date).filter(Boolean);
+    const sourceRows =
+      !canEditStudentAttendance && reportViewType === "staff"
+        ? staffReportData.rows
+        : reportRows;
+
+    return (Array.isArray(sourceRows) ? sourceRows : []).map((row: any) => {
+      const base: Record<string, any> = {
+        Name: row.name || "",
+        Percentage: row.summary?.percentage ?? 0,
+        Present: row.summary?.present ?? 0,
+        Late: row.summary?.late ?? 0,
+        Absent: row.summary?.absent ?? 0,
+        Holiday: row.summary?.holiday ?? 0,
+        HalfDay: row.summary?.halfDay ?? 0,
+      };
+
+      dayKeys.forEach((day) => {
+        base[day] = formatStatusLabel(row.daily?.[day]);
+      });
+      return base;
+    });
+  }, [activeReportDays, canEditStudentAttendance, reportViewType, staffReportData.rows, reportRows]);
+
+  const handleExportPdf = () => {
+    try {
+      const typeLabel = (!canEditStudentAttendance && reportViewType === "staff") ? "Staff" : "Student";
+      exportAttendancePdf(
+        `${typeLabel} Attendance Report (${attendanceMonth})`,
+        `${typeLabel.toLowerCase()}-attendance-report-${attendanceMonth}`,
+        exportRows
+      );
+    } catch (err: any) {
+      setReportError(err?.message || "Export failed");
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const typeLabel = (!canEditStudentAttendance && reportViewType === "staff") ? "Staff" : "Student";
+      exportAttendanceExcel(`${typeLabel.toLowerCase()}-attendance-report-${attendanceMonth}`, exportRows);
+    } catch (err: any) {
+      setReportError(err?.message || "Export failed");
+    }
+  };
+
   useEffect(() => {
     if (!isTeacher) return;
     if (classId == null && classOptions.length > 0) {
@@ -525,7 +573,7 @@ const StudentAttendance = () => {
               </ol>
             </nav>
           </div>
-          <TooltipOption />
+          <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
         </div>
 
         <div className="card">

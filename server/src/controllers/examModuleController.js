@@ -4,6 +4,12 @@ const { success, error } = require('../utils/responseHelper');
 const { getAuthContext, isAdmin, parseId, isTeacherRole } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
 const { getParentsForUser } = require('../utils/parentUserMatch');
+const {
+  DEFAULT_GRADE_SCALE,
+  loadActiveGradeScale,
+  getGradeFromScale,
+  isMissingTableError,
+} = require('../utils/gradeScaleService');
 
 const createExamSchema = Joi.object({
   exam_name: Joi.string().trim().min(2).max(150).required(),
@@ -83,15 +89,215 @@ const saveExamMarksSchema = Joi.object({
     .required(),
 });
 
-const getGradeFromPercentage = (percentage) => {
-  const p = Number(percentage);
-  if (!Number.isFinite(p)) return null;
-  if (p >= 91) return 'A+';
-  if (p >= 86) return 'A';
-  if (p >= 76) return 'B+';
-  if (p >= 66) return 'B';
-  if (p >= 50) return 'C';
-  return 'D';
+const getGradeScale = async (_req, res) => {
+  try {
+    const scaleRows = await loadActiveGradeScale();
+    const rows = scaleRows.map((item, idx) => ({
+      id: item.id ?? idx + 1,
+      grade: item.grade,
+      min_percentage: Number(item.min_percentage),
+      max_percentage: Number(item.max_percentage),
+      percentage_label: `${Number(item.min_percentage)}% - ${Math.floor(Number(item.max_percentage))}%`,
+      status: item.is_active === false ? 'Inactive' : 'Active',
+    }));
+    return success(res, 200, 'Grade scale fetched', rows, { count: rows.length });
+  } catch (e) {
+    console.error('getGradeScale', e);
+    return error(res, 500, 'Failed to fetch grade scale');
+  }
+};
+
+const upsertGradeScaleSchema = Joi.object({
+  grade: Joi.string().trim().min(1).max(20).required(),
+  min_percentage: Joi.number().min(0).max(100).required(),
+  max_percentage: Joi.number().min(0).max(100).required(),
+  is_active: Joi.boolean().default(true),
+});
+
+function validateNoGradeOverlap(rows, currentId = null) {
+  const activeRows = (rows || []).filter((r) => r.is_active !== false && Number(r.id) !== Number(currentId));
+  for (let i = 0; i < activeRows.length; i += 1) {
+    const a = activeRows[i];
+    const aMin = Number(a.min_percentage);
+    const aMax = Number(a.max_percentage);
+    for (let j = i + 1; j < activeRows.length; j += 1) {
+      const b = activeRows[j];
+      const bMin = Number(b.min_percentage);
+      const bMax = Number(b.max_percentage);
+      if (aMin <= bMax && bMin <= aMax) {
+        return `Grade ranges overlap between "${a.grade}" and "${b.grade}"`;
+      }
+    }
+  }
+  return null;
+}
+
+const createGradeScale = async (req, res) => {
+  try {
+    const { value, error: validationError } = upsertGradeScaleSchema.validate(req.body || {}, { abortEarly: true });
+    if (validationError) return error(res, 400, validationError.message);
+    if (Number(value.min_percentage) > Number(value.max_percentage)) {
+      return error(res, 400, 'min_percentage cannot be greater than max_percentage');
+    }
+    const created = await executeTransaction(async (client) => {
+      const allRowsRes = await client.query(
+        `SELECT
+           id,
+           grad AS grade,
+           min_precentage AS min_percentage,
+           max_precentage AS max_percentage,
+           is_active
+         FROM exam_grade`
+      );
+      const allRows = allRowsRes.rows || [];
+      const conflict = validateNoGradeOverlap(
+        [...allRows, { ...value, id: -1 }],
+        null
+      );
+      if (value.is_active !== false && conflict) {
+        const errObj = new Error(conflict);
+        errObj.statusCode = 409;
+        throw errObj;
+      }
+      const ins = await client.query(
+        `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
+         VALUES ($1, $2, $3, $4)
+         RETURNING
+           id,
+           grad AS grade,
+           min_precentage AS min_percentage,
+           max_precentage AS max_percentage,
+           is_active,
+           created_at,
+           modified_at`,
+        [
+          value.grade,
+          Number(value.min_percentage),
+          Number(value.max_percentage),
+          value.is_active !== false,
+        ]
+      );
+      return ins.rows[0];
+    });
+    return success(res, 201, 'Grade scale created', created);
+  } catch (e) {
+    if (e?.statusCode) return error(res, e.statusCode, e.message || 'Failed to create grade scale');
+    if (isMissingTableError(e)) {
+      return error(res, 503, 'Grade table not found. Run migration 032_exam_grade_scale.sql');
+    }
+    console.error('createGradeScale', e);
+    return error(res, 500, 'Failed to create grade scale');
+  }
+};
+
+const updateGradeScale = async (req, res) => {
+  try {
+    const gradeId = parseId(req.params.id);
+    if (!gradeId) return error(res, 400, 'Invalid grade id');
+    const { value, error: validationError } = upsertGradeScaleSchema.validate(req.body || {}, { abortEarly: true });
+    if (validationError) return error(res, 400, validationError.message);
+    if (Number(value.min_percentage) > Number(value.max_percentage)) {
+      return error(res, 400, 'min_percentage cannot be greater than max_percentage');
+    }
+    const updated = await executeTransaction(async (client) => {
+      const exists = await client.query('SELECT id FROM exam_grade WHERE id = $1 LIMIT 1', [gradeId]);
+      if (!exists.rows.length) {
+        const errObj = new Error('Grade scale not found');
+        errObj.statusCode = 404;
+        throw errObj;
+      }
+      const allRowsRes = await client.query(
+        `SELECT
+           id,
+           grad AS grade,
+           min_precentage AS min_percentage,
+           max_precentage AS max_percentage,
+           is_active
+         FROM exam_grade`
+      );
+      const allRows = (allRowsRes.rows || []).map((r) =>
+        Number(r.id) === Number(gradeId)
+          ? {
+              ...r,
+              grade: value.grade,
+              min_percentage: Number(value.min_percentage),
+              max_percentage: Number(value.max_percentage),
+              is_active: value.is_active !== false,
+            }
+          : r
+      );
+      const conflict = validateNoGradeOverlap(allRows, gradeId);
+      if (value.is_active !== false && conflict) {
+        const errObj = new Error(conflict);
+        errObj.statusCode = 409;
+        throw errObj;
+      }
+      const upd = await client.query(
+        `UPDATE exam_grade
+         SET grad = $1,
+             min_precentage = $2,
+             max_precentage = $3,
+             is_active = $4,
+             modified_at = NOW()
+         WHERE id = $5
+         RETURNING
+           id,
+           grad AS grade,
+           min_precentage AS min_percentage,
+           max_precentage AS max_percentage,
+           is_active,
+           created_at,
+           modified_at`,
+        [
+          value.grade,
+          Number(value.min_percentage),
+          Number(value.max_percentage),
+          value.is_active !== false,
+          gradeId,
+        ]
+      );
+      return upd.rows[0];
+    });
+    return success(res, 200, 'Grade scale updated', updated);
+  } catch (e) {
+    if (e?.statusCode) return error(res, e.statusCode, e.message || 'Failed to update grade scale');
+    if (isMissingTableError(e)) {
+      return error(res, 503, 'Grade table not found. Run migration 032_exam_grade_scale.sql');
+    }
+    console.error('updateGradeScale', e);
+    return error(res, 500, 'Failed to update grade scale');
+  }
+};
+
+const deleteGradeScale = async (req, res) => {
+  try {
+    const gradeId = parseId(req.params.id);
+    if (!gradeId) return error(res, 400, 'Invalid grade id');
+    const del = await query(
+      `DELETE FROM exam_grade WHERE id = $1 RETURNING id`,
+      [gradeId]
+    );
+    if (!del.rows.length) return error(res, 404, 'Grade scale not found');
+    const remaining = await query(`SELECT COUNT(*)::int AS c FROM exam_grade WHERE is_active = true`);
+    if (Number(remaining.rows?.[0]?.c || 0) === 0) {
+      // Never allow all active rows to be deleted; restore defaults for safe grading.
+      for (const item of DEFAULT_GRADE_SCALE) {
+        await query(
+          `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
+           VALUES ($1, $2, $3, true)
+           ON CONFLICT DO NOTHING`,
+          [item.grade, item.min_percentage, item.max_percentage]
+        );
+      }
+    }
+    return success(res, 200, 'Grade scale deleted', { id: gradeId });
+  } catch (e) {
+    if (isMissingTableError(e)) {
+      return error(res, 503, 'Grade table not found. Run migration 032_exam_grade_scale.sql');
+    }
+    console.error('deleteGradeScale', e);
+    return error(res, 500, 'Failed to delete grade scale');
+  }
 };
 
 function validateNoExamSlotCollision(rows = []) {
@@ -985,9 +1191,10 @@ async function viewExamResults(req, res) {
        ORDER BY st.first_name ASC, st.last_name ASC`,
       [examId, classId, sectionId]
     );
+    const gradeScale = await loadActiveGradeScale();
     const withGrade = (rows.rows || []).map((r) => ({
       ...r,
-      grade: r.percentage == null ? null : getGradeFromPercentage(r.percentage),
+      grade: r.percentage == null ? null : getGradeFromScale(r.percentage, gradeScale),
     }));
     return success(res, 200, 'Result loaded', withGrade);
   } catch (e) {
@@ -1560,6 +1767,10 @@ async function createExam(req, res) {
 module.exports = {
   listExams,
   createExam,
+  getGradeScale,
+  createGradeScale,
+  updateGradeScale,
+  deleteGradeScale,
   getManageContext,
   listExamSubjects,
   listExamSubjectOptions,

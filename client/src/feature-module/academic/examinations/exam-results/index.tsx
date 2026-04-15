@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { all_routes } from "../../../router/all_routes";
 import { apiService } from "../../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
@@ -38,6 +40,10 @@ const ExamResult = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [studentDetailsById, setStudentDetailsById] = useState<Record<number, any>>({});
+  const [studentDetailsError, setStudentDetailsError] = useState<string | null>(null);
+  const [actionLoadingKey, setActionLoadingKey] = useState<string | null>(null);
   const [autoLoadFromQuery, setAutoLoadFromQuery] = useState(false);
   const hasHydratedFromQueryRef = useRef(false);
 
@@ -156,6 +162,123 @@ const ExamResult = () => {
     return `${routes.examResult}${qs ? `?${qs}` : ""}`;
   }, [routes.examResult, selectedExamId, classId, sectionId]);
 
+  const selectedClassSectionLabel = useMemo(() => {
+    const match = contextRows.find(
+      (r: any) => String(r.class_id) === String(classId) && String(r.section_id) === String(sectionId)
+    );
+    if (match) {
+      return `${match.class_name || "-"} / ${match.section_name || "-"}`;
+    }
+    return `${classId || "-"} / ${sectionId || "-"}`;
+  }, [contextRows, classId, sectionId]);
+
+  const escapeHtml = (value: any) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const getSchoolHeaderInfo = async () => {
+    const schoolProfileRes = await apiService.getSchoolProfile().catch(() => null);
+    const schoolProfile = (schoolProfileRes as any)?.data || {};
+    const schoolName = schoolProfile.school_name || (user as any)?.school_name || "School";
+    const schoolAddress =
+      schoolProfile.address ||
+      [schoolProfile.city, schoolProfile.state, schoolProfile.country].filter(Boolean).join(", ") ||
+      "Address not available";
+    return { schoolName, schoolAddress };
+  };
+
+  const buildPdfStudentPage = (doc: any, row: any, detail: any, schoolName: string, schoolAddress: string) => {
+    const examLabel = detail.examLabel || detail.examName || "Exam";
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 28;
+    let y = 34;
+
+    doc.setFillColor(15, 41, 90);
+    doc.rect(0, 0, pageWidth, 78, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(String(schoolName), margin, 28);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(String(schoolAddress), margin, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("Student Exam Result", margin, 60);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(`Student: ${row.student_name || "-"}`, margin, 74);
+    doc.text(`Exam: ${examLabel}`, 260, 74);
+    doc.text(`Class / Section: ${selectedClassSectionLabel}`, 460, 74);
+    doc.text(`Date: ${formatDate(detail.examDate)}`, 690, 74);
+    y = 96;
+
+    const subjectRows = detail.subjects || [];
+    const rowCount = Math.max(subjectRows.length, 1);
+    const reservedBottom = 52; // summary + bottom breathing space
+    const headerRowHeight = 24;
+    const availableBodyHeight = Math.max(120, pageHeight - y - reservedBottom - headerRowHeight);
+    // Keep rows compact enough so full result stays on a single page.
+    // Earlier dynamic height could become too large and spill to page 2.
+    const computedRowHeight = Math.floor(availableBodyHeight / rowCount);
+    const dynamicRowHeight = Math.min(34, Math.max(22, computedRowHeight));
+
+    autoTable(doc, {
+      startY: y,
+      theme: "grid",
+      margin: { left: margin, right: margin },
+      head: [["Subject", "Code", "Mode", "Max", "Pass", "Obtained", "Status"]],
+      body: subjectRows.map((s: any) => [
+        s.subjectName || "-",
+        s.subjectCode || "-",
+        s.subjectMode || "-",
+        s.maxMarks ?? "-",
+        s.minMarks ?? "-",
+        s.isAbsent ? "ABSENT" : (s.marksObtained ?? "-"),
+        s.result || "-",
+      ]),
+      headStyles: { fillColor: [22, 63, 138], textColor: [255, 255, 255] },
+      styles: { fontSize: 10, cellPadding: 6, minCellHeight: dynamicRowHeight },
+    });
+
+    const summaryY = ((doc as any).lastAutoTable?.finalY || y) + 12;
+    const summary = detail.summary || {};
+    doc.setFillColor(16, 38, 84);
+    doc.roundedRect(margin, summaryY, pageWidth - margin * 2, 26, 4, 4, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(
+      [
+        `Total: ${summary.totalMax ?? "N/A"}`,
+        `Passing: ${summary.totalMin ?? "N/A"}`,
+        `Obtained: ${summary.totalObtained ?? "N/A"}`,
+        `Percentage: ${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`,
+        `Grade: ${summary.grade || "N/A"}`,
+        `Result: ${summary.overallResult || "N/A"}`,
+      ].join("    "),
+      margin + 8,
+      summaryY + 17
+    );
+  };
+
+  const getDetailedRowsForBulk = async () => {
+    const entries = await Promise.all(
+      rows.map(async (r: any) => {
+        const sid = Number(r.student_id);
+        if (!Number.isFinite(sid) || sid <= 0) return null;
+        const detail = await getStudentDetailForSelectedExam(sid);
+        return detail ? { row: r, detail } : null;
+      })
+    );
+    return entries.filter(Boolean) as Array<{ row: any; detail: any }>;
+  };
+
   const classOptions = useMemo(() => {
     const m = new Map<string, string>();
     contextRows.forEach((r) => m.set(r.class_id, r.class_name));
@@ -165,6 +288,43 @@ const ExamResult = () => {
     () => contextRows.filter((r) => r.class_id === classId),
     [contextRows, classId]
   );
+
+  const loadAllStudentDetailedResults = async (summaryRows: any[], examIdToUse: string) => {
+    const examIdNum = Number(normalizeExamId(examIdToUse));
+    if (!Number.isFinite(examIdNum) || examIdNum <= 0 || !summaryRows.length) {
+      setStudentDetailsById({});
+      return;
+    }
+    setDetailsLoading(true);
+    setStudentDetailsError(null);
+    try {
+      const detailEntries = await Promise.all(
+        summaryRows.map(async (r: any) => {
+          const studentId = Number(r.student_id);
+          if (!Number.isFinite(studentId) || studentId <= 0) return null;
+          const res = await apiService.getStudentExamResults(studentId);
+          const exams = (res as any)?.data?.exams || [];
+          const examDetail =
+            exams.find((ex: any) => Number(ex.examId) === examIdNum) ||
+            exams.find((ex: any) => Number(ex.exam_id) === examIdNum) ||
+            null;
+          return examDetail ? [studentId, examDetail] : null;
+        })
+      );
+      const mapped: Record<number, any> = {};
+      detailEntries.forEach((entry) => {
+        if (!entry) return;
+        const [studentId, detail] = entry as [number, any];
+        mapped[studentId] = detail;
+      });
+      setStudentDetailsById(mapped);
+    } catch (e: any) {
+      setStudentDetailsById({});
+      setStudentDetailsError(e?.message || "Failed to load full student-wise details");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   const loadResults = async (examIdOverride?: string) => {
     const fallbackExamId = exams.length ? normalizeExamId(exams[0]?.id) : "";
@@ -210,6 +370,8 @@ const ExamResult = () => {
     }
     setLoading(true);
     setMessage(null);
+    setStudentDetailsById({});
+    setStudentDetailsError(null);
     try {
       const res = await apiService.viewExamResults({
         exam_id: examIdToUse,
@@ -219,11 +381,326 @@ const ExamResult = () => {
       const data = (res as any)?.data || [];
       setRows(data);
       if (!data.length) setMessage("No result found for selected filters.");
+      if (!selfOnly && data.length) {
+        await loadAllStudentDetailedResults(data, examIdToUse);
+      }
     } catch (e: any) {
       setRows([]);
       setMessage(e?.message || "Failed to load exam results");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getStudentDetailForSelectedExam = async (studentId: number) => {
+    const existing = studentDetailsById[studentId];
+    if (existing) return existing;
+    const examIdNum = Number(normalizeExamId(selectedExamId));
+    const res = await apiService.getStudentExamResults(studentId);
+    const exams = (res as any)?.data?.exams || [];
+    const examDetail =
+      exams.find((ex: any) => Number(ex.examId) === examIdNum) ||
+      exams.find((ex: any) => Number(ex.exam_id) === examIdNum) ||
+      null;
+    if (examDetail) {
+      setStudentDetailsById((prev) => ({ ...prev, [studentId]: examDetail }));
+    }
+    return examDetail;
+  };
+
+  const formatDate = (value: any) => {
+    if (!value) return "N/A";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "N/A";
+    return d.toLocaleDateString("en-GB");
+  };
+
+  const handleExportStudentPdf = async (row: any) => {
+    const studentId = Number(row?.student_id);
+    if (!Number.isFinite(studentId) || studentId <= 0) return;
+    const loadingKey = `pdf-${studentId}`;
+    setActionLoadingKey(loadingKey);
+    try {
+      const detail = await getStudentDetailForSelectedExam(studentId);
+      if (!detail) {
+        setMessage("Detailed result is not available for this student.");
+        return;
+      }
+
+      const { schoolName, schoolAddress } = await getSchoolHeaderInfo();
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      buildPdfStudentPage(doc, row, detail, schoolName, schoolAddress);
+      const examLabel = detail.examLabel || detail.examName || "Exam";
+      const safeStudent = String(row.student_name || "student").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
+      const safeExam = String(examLabel).replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_");
+      doc.save(`${safeStudent || "student"}_${safeExam || "exam"}_result.pdf`);
+    } catch (e: any) {
+      setMessage(e?.message || "Failed to export student result PDF");
+    } finally {
+      setActionLoadingKey((prev) => (prev === loadingKey ? null : prev));
+    }
+  };
+
+  const handlePrintStudentResult = async (row: any) => {
+    const studentId = Number(row?.student_id);
+    if (!Number.isFinite(studentId) || studentId <= 0) return;
+    const loadingKey = `print-${studentId}`;
+    setActionLoadingKey(loadingKey);
+    try {
+      const detail = await getStudentDetailForSelectedExam(studentId);
+      if (!detail) {
+        setMessage("Detailed result is not available for this student.");
+        return;
+      }
+
+      const { schoolName, schoolAddress } = await getSchoolHeaderInfo();
+
+      const examLabel = detail.examLabel || detail.examName || "Exam";
+      const summary = detail.summary || {};
+      const rowCount = Math.max((detail.subjects || []).length, 1);
+      const dynamicRowHeightPx = Math.max(30, Math.floor(360 / rowCount));
+      const subjectsHtml = (detail.subjects || [])
+        .map(
+          (s: any) => `
+            <tr style="height:${dynamicRowHeightPx}px;">
+              <td>${s.subjectName || "-"}</td>
+              <td>${s.subjectCode || "-"}</td>
+              <td>${s.subjectMode || "-"}</td>
+              <td>${s.maxMarks ?? "-"}</td>
+              <td>${s.minMarks ?? "-"}</td>
+              <td>${s.isAbsent ? "ABSENT" : (s.marksObtained ?? "-")}</td>
+              <td>${s.result || "-"}</td>
+            </tr>
+          `
+        )
+        .join("");
+
+      const html = `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Student Exam Result</title>
+            <style>
+              @page { size: A4 landscape; margin: 8mm; }
+              html, body { width: 297mm; height: 210mm; margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+              .sheet { box-sizing: border-box; width: 100%; height: 100%; padding: 8mm; }
+              h1 { margin: 0 0 8px 0; font-size: 18px; }
+              .school { margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #102654; }
+              .school-address { margin: 0 0 10px 0; font-size: 11px; color: #444; }
+              .meta { margin: 0 0 10px 0; font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; }
+              th, td { border: 1px solid #7f8fb0; padding: 8px; text-align: left; }
+              th { background-color: #163f8a !important; color: #ffffff !important; font-weight: 700; }
+              .summary { margin-top: 8px; background-color: #102654 !important; color: #ffffff !important; border: 1px solid #102654; padding: 8px; font-size: 11px; font-weight: 700; }
+              tr { page-break-inside: avoid; }
+            </style>
+          </head>
+          <body>
+            <div class="sheet">
+              <p class="school">${escapeHtml(schoolName)}</p>
+              <p class="school-address">${escapeHtml(schoolAddress)}</p>
+              <h1>Student Exam Result</h1>
+              <p class="meta">
+                <span><strong>Student:</strong> ${escapeHtml(row.student_name || "-")}</span>
+                <span><strong>Exam:</strong> ${escapeHtml(examLabel)}</span>
+                <span><strong>Class / Section:</strong> ${escapeHtml(selectedClassSectionLabel)}</span>
+                <span><strong>Date:</strong> ${formatDate(detail.examDate)}</span>
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Code</th>
+                    <th>Mode</th>
+                    <th>Max</th>
+                    <th>Pass</th>
+                    <th>Obtained</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${subjectsHtml}</tbody>
+              </table>
+              <div class="summary">
+                Total: ${summary.totalMax ?? "N/A"} &nbsp;&nbsp;
+                Passing: ${summary.totalMin ?? "N/A"} &nbsp;&nbsp;
+                Obtained: ${summary.totalObtained ?? "N/A"} &nbsp;&nbsp;
+                Percentage: ${summary.percentage != null ? `${summary.percentage}%` : "N/A"} &nbsp;&nbsp;
+                Grade: ${summary.grade || "N/A"} &nbsp;&nbsp;
+                Result: ${summary.overallResult || "N/A"}
+              </div>
+            </div>
+            <script>
+              window.onload = function () {
+                window.print();
+                setTimeout(function(){ window.close(); }, 200);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+
+      const printWindow = window.open("", "_blank", "width=1200,height=800");
+      if (!printWindow) {
+        setMessage("Popup blocked. Please allow popups to print.");
+        return;
+      }
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (e: any) {
+      setMessage(e?.message || "Failed to print student result");
+    } finally {
+      setActionLoadingKey((prev) => (prev === loadingKey ? null : prev));
+    }
+  };
+
+  const handleExportAllStudentsPdf = async () => {
+    if (rows.length === 0) return;
+    const loadingKey = "pdf-all";
+    setActionLoadingKey(loadingKey);
+    try {
+      const { schoolName, schoolAddress } = await getSchoolHeaderInfo();
+      const items = await getDetailedRowsForBulk();
+      if (!items.length) {
+        setMessage("Detailed result is not available for selected students.");
+        return;
+      }
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      items.forEach((item, idx) => {
+        if (idx > 0) doc.addPage();
+        buildPdfStudentPage(doc, item.row, item.detail, schoolName, schoolAddress);
+      });
+      const examName = String(exams.find((e: any) => String(e.id) === String(selectedExamId))?.exam_name || "exam")
+        .replace(/[^\w\- ]+/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+      doc.save(`all_students_${examName || "exam"}_result.pdf`);
+    } catch (e: any) {
+      setMessage(e?.message || "Failed to export all student results");
+    } finally {
+      setActionLoadingKey((prev) => (prev === loadingKey ? null : prev));
+    }
+  };
+
+  const handlePrintAllStudents = async () => {
+    if (rows.length === 0) return;
+    const loadingKey = "print-all";
+    setActionLoadingKey(loadingKey);
+    try {
+      const { schoolName, schoolAddress } = await getSchoolHeaderInfo();
+      const items = await getDetailedRowsForBulk();
+      if (!items.length) {
+        setMessage("Detailed result is not available for selected students.");
+        return;
+      }
+      const sheetsHtml = items
+        .map(({ row, detail }) => {
+          const examLabel = detail.examLabel || detail.examName || "Exam";
+          const summary = detail.summary || {};
+          const rowCount = Math.max((detail.subjects || []).length, 1);
+          const dynamicRowHeightPx = Math.max(30, Math.floor(360 / rowCount));
+          const subjectsHtml = (detail.subjects || [])
+            .map(
+              (s: any) => `
+                <tr style="height:${dynamicRowHeightPx}px;">
+                  <td>${escapeHtml(s.subjectName || "-")}</td>
+                  <td>${escapeHtml(s.subjectCode || "-")}</td>
+                  <td>${escapeHtml(s.subjectMode || "-")}</td>
+                  <td>${escapeHtml(s.maxMarks ?? "-")}</td>
+                  <td>${escapeHtml(s.minMarks ?? "-")}</td>
+                  <td>${escapeHtml(s.isAbsent ? "ABSENT" : (s.marksObtained ?? "-"))}</td>
+                  <td>${escapeHtml(s.result || "-")}</td>
+                </tr>
+              `
+            )
+            .join("");
+          return `
+            <div class="sheet">
+              <p class="school">${escapeHtml(schoolName)}</p>
+              <p class="school-address">${escapeHtml(schoolAddress)}</p>
+              <h1>Student Exam Result</h1>
+              <p class="meta">
+                <span><strong>Student:</strong> ${escapeHtml(row.student_name || "-")}</span>
+                <span><strong>Exam:</strong> ${escapeHtml(examLabel)}</span>
+                <span><strong>Class / Section:</strong> ${escapeHtml(selectedClassSectionLabel)}</span>
+                <span><strong>Date:</strong> ${escapeHtml(formatDate(detail.examDate))}</span>
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Code</th>
+                    <th>Mode</th>
+                    <th>Max</th>
+                    <th>Pass</th>
+                    <th>Obtained</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>${subjectsHtml}</tbody>
+              </table>
+              <div class="summary">
+                Total: ${escapeHtml(summary.totalMax ?? "N/A")} &nbsp;&nbsp;
+                Passing: ${escapeHtml(summary.totalMin ?? "N/A")} &nbsp;&nbsp;
+                Obtained: ${escapeHtml(summary.totalObtained ?? "N/A")} &nbsp;&nbsp;
+                Percentage: ${escapeHtml(summary.percentage != null ? `${summary.percentage}%` : "N/A")} &nbsp;&nbsp;
+                Grade: ${escapeHtml(summary.grade || "N/A")} &nbsp;&nbsp;
+                Result: ${escapeHtml(summary.overallResult || "N/A")}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      const html = `
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>All Students Exam Result</title>
+            <style>
+              @page { size: A4 landscape; margin: 8mm; }
+              html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+              .sheet { box-sizing: border-box; width: 297mm; min-height: 210mm; padding: 8mm; page-break-after: always; }
+              .sheet:last-child { page-break-after: auto; }
+              h1 { margin: 0 0 8px 0; font-size: 18px; }
+              .school { margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #102654; }
+              .school-address { margin: 0 0 10px 0; font-size: 11px; color: #444; }
+              .meta { margin: 0 0 10px 0; font-size: 12px; display: flex; gap: 18px; flex-wrap: wrap; }
+              table { width: 100%; border-collapse: collapse; font-size: 11px; }
+              th, td { border: 1px solid #7f8fb0; padding: 8px; text-align: left; }
+              th { background-color: #163f8a !important; color: #ffffff !important; font-weight: 700; }
+              .summary { margin-top: 8px; background-color: #102654 !important; color: #ffffff !important; border: 1px solid #102654; padding: 8px; font-size: 11px; font-weight: 700; }
+              tr { page-break-inside: avoid; }
+            </style>
+          </head>
+          <body>
+            ${sheetsHtml}
+            <script>
+              window.onload = function () {
+                window.print();
+                setTimeout(function(){ window.close(); }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `;
+
+      const printWindow = window.open("", "_blank", "width=1200,height=800");
+      if (!printWindow) {
+        setMessage("Popup blocked. Please allow popups to print.");
+        return;
+      }
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+    } catch (e: any) {
+      setMessage(e?.message || "Failed to print all student results");
+    } finally {
+      setActionLoadingKey((prev) => (prev === loadingKey ? null : prev));
     }
   };
 
@@ -633,6 +1110,144 @@ const ExamResult = () => {
             </div>
           </div>
         </div>
+
+        {!selfOnly && rows.length > 0 && (
+          <div className="card mt-3">
+            <div className="card-header d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">Detailed Result (All Students)</h5>
+              <div className="d-flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={handleExportAllStudentsPdf}
+                  disabled={detailsLoading || actionLoadingKey === "pdf-all" || rows.length === 0}
+                >
+                  {actionLoadingKey === "pdf-all" ? "Exporting..." : "Export All PDF"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={handlePrintAllStudents}
+                  disabled={detailsLoading || actionLoadingKey === "print-all" || rows.length === 0}
+                >
+                  {actionLoadingKey === "print-all" ? "Printing..." : "Print All"}
+                </button>
+              </div>
+            </div>
+            <div className="card-body">
+              {detailsLoading && (
+                <div className="alert alert-info mb-3">Loading full detailed result...</div>
+              )}
+              {studentDetailsError && (
+                <div className="alert alert-warning mb-3">{studentDetailsError}</div>
+              )}
+              {!detailsLoading && !studentDetailsError && (
+                <div className="accordion accordions-items-seperate" id="exam-result-all-student-details">
+                  {rows.map((r: any, idx: number) => {
+                    const studentId = Number(r.student_id);
+                    const detail = studentDetailsById[studentId];
+                    const collapseId = `exam-detail-student-${studentId || idx}`;
+                    return (
+                      <div className="accordion-item" key={collapseId}>
+                        <h2 className="accordion-header">
+                          <button
+                            className={`accordion-button ${idx === 0 ? "" : "collapsed"}`}
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target={`#${collapseId}`}
+                            aria-expanded={idx === 0}
+                            aria-controls={collapseId}
+                          >
+                            <span className="me-3">{r.student_name || "-"}</span>
+                            <span className="text-muted small me-3">Obtained: {r.total_obtained ?? "-"}</span>
+                            <span className="text-muted small me-3">Max: {r.total_max ?? "-"}</span>
+                            <span className="text-muted small me-3">Percentage: {r.percentage == null ? "-" : r.percentage}</span>
+                            <span className="text-muted small me-3">Grade: {r.grade || "-"}</span>
+                            <span className="text-muted small">Status: {r.result_status || "-"}</span>
+                          </button>
+                        </h2>
+                        <div
+                          id={collapseId}
+                          className={`accordion-collapse collapse ${idx === 0 ? "show" : ""}`}
+                          data-bs-parent="#exam-result-all-student-details"
+                        >
+                          <div className="accordion-body">
+                            <div className="d-flex justify-content-end gap-2 mb-3">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary"
+                                onClick={() => handleExportStudentPdf(r)}
+                                disabled={actionLoadingKey === `pdf-${Number(r.student_id)}` || detailsLoading}
+                              >
+                                {actionLoadingKey === `pdf-${Number(r.student_id)}` ? "Exporting..." : "Export PDF"}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-secondary"
+                                onClick={() => handlePrintStudentResult(r)}
+                                disabled={actionLoadingKey === `print-${Number(r.student_id)}` || detailsLoading}
+                              >
+                                {actionLoadingKey === `print-${Number(r.student_id)}` ? "Printing..." : "Print"}
+                              </button>
+                            </div>
+                            {!detail && (
+                              <div className="alert alert-warning mb-0">
+                                Selected exam detail is not available for this student.
+                              </div>
+                            )}
+
+                            {detail && (
+                              <div className="table-responsive">
+                                <table className="table align-middle">
+                                  <thead>
+                                    <tr>
+                                      <th>Subject</th>
+                                      <th>Code</th>
+                                      <th>Mode</th>
+                                      <th>Max Marks</th>
+                                      <th>Min Marks</th>
+                                      <th>Marks Obtained</th>
+                                      <th>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(detail.subjects || []).map((subject: any, sidx: number) => (
+                                      <tr key={`${subject.subjectId || subject.subject_id || sidx}`}>
+                                        <td>{subject.subjectName || "-"}</td>
+                                        <td>{subject.subjectCode || "-"}</td>
+                                        <td>{subject.subjectMode || "-"}</td>
+                                        <td>{subject.maxMarks ?? "-"}</td>
+                                        <td>{subject.minMarks ?? "-"}</td>
+                                        <td>{subject.isAbsent ? "ABSENT" : (subject.marksObtained ?? "-")}</td>
+                                        <td>{subject.result || "-"}</td>
+                                      </tr>
+                                    ))}
+                                    <tr>
+                                      <td className="bg-dark text-white">Subjects: {(detail.subjects || []).length}</td>
+                                      <td className="bg-dark text-white">-</td>
+                                      <td className="bg-dark text-white">-</td>
+                                      <td className="bg-dark text-white">Total: {detail.summary?.totalMax ?? "N/A"}</td>
+                                      <td className="bg-dark text-white">Passing: {detail.summary?.totalMin ?? "N/A"}</td>
+                                      <td className="bg-dark text-white">Obtained: {detail.summary?.totalObtained ?? "N/A"}</td>
+                                      <td className="bg-dark text-white">
+                                        {detail.summary?.percentage != null ? `${detail.summary.percentage}%` : "N/A"} |{" "}
+                                        {detail.summary?.grade || "N/A"} | {detail.summary?.overallResult || "N/A"}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

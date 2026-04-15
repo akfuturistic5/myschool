@@ -560,6 +560,31 @@ class ApiService {
     return this.makeRequest(`/exam-subjects/marks-context?${search.toString()}`);
   }
 
+  async getExamGradeScale() {
+    return this.makeRequest('/exam-subjects/grade-scale');
+  }
+
+  async createExamGradeScale(payload) {
+    return this.makeRequest('/exam-subjects/grade-scale', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateExamGradeScale(id, payload) {
+    return this.makeRequest(`/exam-subjects/grade-scale/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteExamGradeScale(id) {
+    return this.makeRequest(`/exam-subjects/grade-scale/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({}),
+    });
+  }
+
   async saveExamMarks(payload) {
     return this.makeRequest('/exam-subjects/marks-save', {
       method: 'POST',
@@ -697,12 +722,42 @@ class ApiService {
   }
 
   // Religions
-  async getReligions() {
-    return this.makeRequest('/religions');
+  async getReligions(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/religions${qs ? `?${qs}` : ''}`);
   }
 
   async getReligionById(id) {
     return this.makeRequest(`/religions/${id}`);
+  }
+
+  async createReligion(payload) {
+    return this.makeRequest('/religions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateReligion(id, payload) {
+    return this.makeRequest(`/religions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleReligionStatus(id) {
+    return this.makeRequest(`/religions/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteReligion(id) {
+    return this.makeRequest(`/religions/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Casts

@@ -13,6 +13,7 @@ import { useClassesWithSections } from "../../../core/hooks/useClassesWithSectio
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { selectUser } from "../../../core/data/redux/authSlice";
+import { exportAttendanceExcel, exportAttendancePdf } from "./exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -308,6 +309,42 @@ const AttendanceReport = () => {
     [dayColumns]
   );
 
+  const exportRows = useMemo(() => {
+    const dayKeys = (Array.isArray(reportData?.days) ? reportData.days : []).map((d: any) => d?.date).filter(Boolean);
+    return data.map((row: any) => {
+      const base: Record<string, any> = {
+        Student: row.name || "",
+        RollNo: row.rollNo || "",
+        Percentage: row.summary?.percentage ?? 0,
+        Present: row.summary?.present ?? 0,
+        Late: row.summary?.late ?? 0,
+        Absent: row.summary?.absent ?? 0,
+        Holiday: row.summary?.holiday ?? 0,
+        HalfDay: row.summary?.halfDay ?? 0,
+      };
+      dayKeys.forEach((day) => {
+        base[day] = formatStatusLabel(row.daily?.[day]);
+      });
+      return base;
+    });
+  }, [data, reportData]);
+
+  const handleExportPdf = () => {
+    try {
+      exportAttendancePdf(`Student Attendance Report (${reportData.month || selectedMonth})`, `student-attendance-report-${selectedMonth}`, exportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      exportAttendanceExcel(`student-attendance-report-${selectedMonth}`, exportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
   const handleApply = (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault();
     if (dropdownMenuRef.current) {
@@ -337,31 +374,7 @@ const AttendanceReport = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-              <div className="dropdown me-2 mb-2">
-                <Link
-                  to="#"
-                  className="dropdown-toggle btn btn-light fw-medium d-inline-flex align-items-center"
-                  data-bs-toggle="dropdown"
-                >
-                  <i className="ti ti-file-export me-2" />
-                  Export
-                </Link>
-                <ul className="dropdown-menu dropdown-menu-end p-3">
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-pdf me-1" />
-                      Export as PDF
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-xls me-1" />
-                      Export as Excel
-                    </Link>
-                  </li>
-                </ul>
-              </div>
+              <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
             </div>
           </div>
 

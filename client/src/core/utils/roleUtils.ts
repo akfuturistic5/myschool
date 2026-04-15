@@ -24,6 +24,7 @@ const ADMINISTRATIVE_ROLE_IDS = new Set([6]);
 
 const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
   '/administrative/',
+  '/academic-settings/',
   '/student/',
   '/teacher/',
   '/parent/',
@@ -39,6 +40,8 @@ const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
 
 const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
   all_routes.administrativeDashboard,
+  all_routes.schoolSettings,
+  all_routes.religion,
   all_routes.bonafideGenerator,
   all_routes.chat,
   all_routes.callHistory,
@@ -210,7 +213,6 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/website-settings/',
   '/system-settings/',
   '/financial-settings/',
-  '/academic-settings/',
   '/other-settings/',
   '/content/',
 ];

@@ -11,6 +11,7 @@ import { useSections } from "../../../core/hooks/useSections";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import { formatRosterHolidayStatus } from "./rosterHolidayLabels";
+import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
 
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
@@ -326,6 +327,62 @@ const StudentAttendanceReport = () => {
     [reportDayColumns, reportReturnTo]
   );
 
+  const reportExportRows = useMemo(() => {
+    const dayKeys = (Array.isArray(reportData?.days) ? reportData.days : []).map((d: any) => d?.date).filter(Boolean);
+    return reportRows.map((row: any) => {
+      const base: Record<string, any> = {
+        Student: row.name || "",
+        RollNo: row.rollNo || "",
+        Percentage: row.summary?.percentage ?? 0,
+        Present: row.summary?.present ?? 0,
+        Late: row.summary?.late ?? 0,
+        Absent: row.summary?.absent ?? 0,
+        Holiday: row.summary?.holiday ?? 0,
+        HalfDay: row.summary?.halfDay ?? 0,
+      };
+      dayKeys.forEach((day) => {
+        base[day] = formatStatusLabel(row.daily?.[day]);
+      });
+      return base;
+    });
+  }, [reportData, reportRows]);
+
+  const dayExportRows = useMemo(
+    () =>
+      dayTableData.map((row: any) => ({
+        Student: row.name || "",
+        Status: formatRosterHolidayStatus(row.status) || formatStatusLabel(row.status),
+        CheckIn: row.checkInTime ? String(row.checkInTime).slice(0, 5) : "",
+        CheckOut: row.checkOutTime ? String(row.checkOutTime).slice(0, 5) : "",
+        Remark: row.remark || "",
+      })),
+    [dayTableData]
+  );
+
+  const handleExportPdf = () => {
+    try {
+      if (mode === "day") {
+        exportAttendancePdf(`Student Attendance Report (${attendanceDate})`, `student-attendance-day-${attendanceDate}`, dayExportRows);
+        return;
+      }
+      exportAttendancePdf(`Student Attendance Report (${attendanceMonth})`, `student-attendance-month-${attendanceMonth}`, reportExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      if (mode === "day") {
+        exportAttendanceExcel(`student-attendance-day-${attendanceDate}`, dayExportRows);
+        return;
+      }
+      exportAttendanceExcel(`student-attendance-month-${attendanceMonth}`, reportExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
   return (
     <div className="page-wrapper">
       <div className="content">
@@ -339,7 +396,9 @@ const StudentAttendanceReport = () => {
               </ol>
             </nav>
           </div>
-          <TooltipOption />
+          <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+            <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
+          </div>
         </div>
 
         <div className="card">
