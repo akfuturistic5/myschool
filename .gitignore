@@ -1,0 +1,42 @@
+server/.env
+
+# Node
+node_modules/
+
+# Env (keep client/.env.production committed so Render gets VITE_API_URL for build)
+.env
+.env.local
+.env.development
+client/.env
+server/uploads/
+server/storage/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Build
+dist/
+build/
+out/
+
+# Node-gyp / native build junk
+node-gyp/
+node-gyp-build/
+node-gyp-builds/
+*.node
+*.log
+*.cmd
+*.vcxproj*
+*.sln
+*.pdb
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+

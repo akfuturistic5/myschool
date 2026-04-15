@@ -1,0 +1,17 @@
+-- Optional: Run this manually ONLY if your time_slots (or schedule) table 
+-- does not have status/is_active and modified_at columns.
+-- The SCHEDULE section needs these to support active/inactive status and edit persistence.
+--
+-- For time_slots table:
+-- ALTER TABLE time_slots ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+-- ALTER TABLE time_slots ADD COLUMN IF NOT EXISTS modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+--
+-- If you use a separate "schedule" table instead:
+-- CREATE TABLE IF NOT EXISTS schedule (
+--   id SERIAL PRIMARY KEY,
+--   pass_key VARCHAR(50),
+--   start_time TIME,
+--   end_time TIME,
+--   status VARCHAR(20) DEFAULT 'Active',
+--   modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- );

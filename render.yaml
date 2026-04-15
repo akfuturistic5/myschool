@@ -1,0 +1,17 @@
+# Render Blueprint: Backend as Docker (required for Create School / tenant provisioning)
+# Tenant provisioning uses controlled SQL import inside the app runtime.
+# Add env vars in Render Dashboard → Environment (DATABASE_URL, PROVISIONING_SOURCE_DATABASE_URL, etc.)
+
+services:
+  - type: web
+    name: myschool-backend
+    runtime: docker
+    rootDir: server
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: SCHOOL_LOGO_STORAGE_ROOT
+        value: /var/data/myschool/school-logos
+    disk:
+      name: myschool-uploads
+      mountPath: /var/data
+      sizeGB: 1

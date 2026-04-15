@@ -1,0 +1,672 @@
+================================================================================
+SCHOOL MANAGEMENT SYSTEM
+COMPLETED WORK
+================================================================================
+
+This document describes work that is completed or partially completed, based on
+analysis of the current codebase. Classification uses Completed, Partial, or
+Pending only where noted for the grouped ancillary module.
+
+
+--------------------------------------------------------------------------------
+**AUTHENTICATION AND AUTHORIZATION**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+Tenant login, session restore, CSRF header usage, Super Admin login separated
+
+Backend Status
+Tenant auth routes, JWT cookies, CSRF on unsafe methods, login rate limit,
+protectApi on tenant APIs, inactive student or teacher blocking where implemented
+
+Key Features Implemented
+Institute number plus username plus password for schools, separate Super Admin
+auth, logout and me style endpoints
+
+Notes
+Optional bearer mode for tenant API documented in server for production
+
+
+--------------------------------------------------------------------------------
+**MULTI TENANT SYSTEM**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+API calls go to tenant context after login
+
+Backend Status
+Master database for schools, per school tenant databases, provisioning
+referenced in project docs and tenantProvisioningService.js
+
+Key Features Implemented
+School registry, tenant DB selection after institute number resolution
+
+Notes
+None
+
+
+--------------------------------------------------------------------------------
+**ROLE BASED ACCESS CONTROL**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+DashboardGuard, canAccessPath, sidebarDataUtils limit menus by role,
+Administrative blocked from many settings paths
+
+Backend Status
+requireRole on routes, accessControl.js for student record checks, role
+constants in roles.js
+
+Key Features Implemented
+Headmaster as Admin role id 1, Administrative role id 6, Teacher, Student,
+Parent, Guardian, separate Super Admin
+
+Notes
+School Admin in your naming matches Headmaster slash Admin role in code
+
+
+--------------------------------------------------------------------------------
+**SUPER ADMIN PANEL**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+superAdmin screens for login, dashboard, schools list, school edit, profile
+offcanvas
+
+Backend Status
+superAdminRoutes.js schools CRUD metadata, status, delete with challenge,
+platform stats, superAdminAuthRoutes.js
+
+Key Features Implemented
+Create school, update school fields, active or disabled status, delete flow
+with password confirmation
+
+Notes
+None
+
+
+--------------------------------------------------------------------------------
+**NOTICE BOARD**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+notice-board.tsx uses useNoticeBoard hook against API
+
+Backend Status
+Full CRUD routes with NOTICE_MANAGER_ROLES for writes
+
+Key Features Implemented
+List notices, create update delete for managers, read for all authenticated
+
+Notes
+None
+
+
+--------------------------------------------------------------------------------
+**BONAFIDE CERTIFICATES**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+Bonafide generator UI and PDF layout components
+
+Backend Status
+bonafideRoutes.js and bonafideController.js, student route GET bonafide
+
+Key Features Implemented
+Download PDF for allowed users per access rules
+
+Notes
+None
+
+
+--------------------------------------------------------------------------------
+**SCHOOL PROFILE AND BRANDING**
+--------------------------------------------------------------------------------
+
+Status
+Completed
+
+Frontend Status
+School settings page, logo display components, upload hooks
+
+Backend Status
+schoolProfileRoutes.js, logo storage utilities
+
+Key Features Implemented
+Load and update school profile including logo
+
+Notes
+None
+
+
+--------------------------------------------------------------------------------
+**HEADMASTER DASHBOARD AND LEADERSHIP METRICS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Large dashboard with many hooks for stats, fees, finance summary, performers,
+leaves with approve and reject calling API
+
+Backend Status
+dashboardRoutes.js and dashboardController.js provide multiple aggregates
+
+Key Features Implemented
+Counts, routines, notices, events for dashboard, leave approve and reject for
+Headmaster
+
+Notes
+Some widgets depend on data volume and schema
+
+
+--------------------------------------------------------------------------------
+**ADMINISTRATIVE DASHBOARD AND OPERATIONS UI**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Dedicated dashboard with quick links, events, leaves list, routine, notices
+from APIs
+
+Backend Status
+Same APIs as other roles where allowed
+
+Key Features Implemented
+Operational overview without full Headmaster only stats
+
+Notes
+Leave approval is not available for this role in backend routes
+
+
+--------------------------------------------------------------------------------
+**STUDENT MANAGEMENT**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+List, grid, detail tabs, add and edit flows wired to APIs for core fields,
+promotion page loads real students but promote action has no API calls in file
+
+Backend Status
+List, get, create, update, attendance, exam results, login details, class
+scoped endpoints
+
+Key Features Implemented
+CRUD for students, related detail views, bonafide link
+
+Notes
+Student promotion workflow is UI only without matching save API in
+student-promotion
+
+
+--------------------------------------------------------------------------------
+**TEACHER MANAGEMENT**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+List, grid, detail pages, edit teacher saves via updateTeacher API, add teacher
+screen ends with link back without create API
+
+Backend Status
+List, get, routine, class attendance, update teacher, no POST create teacher
+route in teacherRoutes.js
+
+Key Features Implemented
+View teachers, update teacher record, routine and attendance helpers
+
+Notes
+New teacher creation from UI is not wired to a create endpoint
+
+
+--------------------------------------------------------------------------------
+**PARENT AND GUARDIAN REGISTRY**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Parent and guardian list and grid pages with hooks
+
+Backend Status
+Parent and guardian routes and controllers with RBAC
+
+Key Features Implemented
+Directory style access for staff roles, linkage model for parent guardian to
+students
+
+Notes
+Data quality of links drives parent guardian dashboards
+
+
+--------------------------------------------------------------------------------
+**ACADEMIC STRUCTURE AND SCHEDULING**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Classes, sections, subjects, rooms, routine, timetable, syllabus pages, many
+use hooks and API
+
+Backend Status
+Academic year, class, section, subject, schedule, class room, syllabus routes
+
+Key Features Implemented
+Core CRUD and reads for academic entities
+
+Notes
+Some academic subpages may still rely on template data where hooks are absent
+
+
+--------------------------------------------------------------------------------
+**ATTENDANCE**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Student attendance page, report pages, teacher dashboard attendance widgets
+using hooks
+
+Backend Status
+Student attendance endpoint, teacher class attendance, report endpoints on
+students
+
+Key Features Implemented
+Recording and reporting paths used by integrated screens
+
+Notes
+Coverage varies by report screen
+
+
+--------------------------------------------------------------------------------
+**LEAVE APPLICATIONS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+List leaves, approve request page for Headmaster, dashboards show leaves
+
+Backend Status
+Create leave, list mine, parent and guardian scoped lists, status update
+Headmaster only
+
+Key Features Implemented
+Apply and list, approve reject for Headmaster only
+
+Notes
+Administrative cannot approve per LEAVE_APPROVER_ROLES and frontend block
+
+
+--------------------------------------------------------------------------------
+**FEES**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Collect fees uses useFeeCollections, student fees tab uses student fees API,
+fees group type master assign pages use static JSON demo data
+
+Backend Status
+Fee collections list, student fee detail, structures list, collect POST, RBAC
+on routes
+
+Key Features Implemented
+Collect fees list and payment create, per student fee breakdown
+
+Notes
+Fee configuration screens are not backed by dedicated fee setup APIs in the
+same way
+
+
+--------------------------------------------------------------------------------
+**EXAMS AND RESULTS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Student and parent dashboards show exam results via hooks, grade report page
+calls API, exam admin pages use static exam JSON
+
+Backend Status
+GET students id exam-results, grade report endpoint used by grade report UI
+
+Key Features Implemented
+Read only aggregated exam results for permitted users, class grade report
+
+Notes
+No dedicated exam CRUD API mounted in server.js for the examination admin UI
+
+
+--------------------------------------------------------------------------------
+**EVENTS AND CALENDAR**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Dashboards use hooks for upcoming events, main events.tsx calendar page does
+not import API service
+
+Backend Status
+Events CRUD for EVENT_MANAGER_ROLES on school events
+
+Key Features Implemented
+API complete for events, dashboard consumption
+
+Notes
+Full calendar management UI not wired to the same API on the main events page
+
+
+--------------------------------------------------------------------------------
+**COMMUNICATION AND PRODUCTIVITY TOOLS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Chat, email, todo, notes, file manager, call history routes exist in app shell
+
+Backend Status
+Routes for chats, calls, calendar, emails, todos, notes, files mounted in
+server.js
+
+Key Features Implemented
+REST style CRUD surfaces on server for these resources
+
+Notes
+End to end product polish and business rules vary by screen
+
+
+--------------------------------------------------------------------------------
+**TRANSPORT**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Transport management pages exist
+
+Backend Status
+GET for routes, pickups, vehicles, drivers, PUT updates require Admin role id
+1 only not Administrative
+
+Key Features Implemented
+Read transport master data, Headmaster can update via API
+
+Notes
+Administrative role may be blocked on transport updates by route definition
+
+
+--------------------------------------------------------------------------------
+**HOSTEL**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Hostel list, type, room pages
+
+Backend Status
+GET hostels, GET hostel rooms, PUT hostel room update Admin only, no POST
+create hostel in hostelRoutes.js
+
+Key Features Implemented
+View hostels and rooms, limited update
+
+Notes
+Full operational hostel lifecycle not exposed on API
+
+
+--------------------------------------------------------------------------------
+**STAFF DIRECTORY**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Staff list and detail style pages in HRM area
+
+Backend Status
+GET staff list requires people manager roles, get by id wider
+
+Key Features Implemented
+Read staff records for permitted roles
+
+Notes
+Staff create update may overlap add staff UI versus actual routes scope
+
+
+--------------------------------------------------------------------------------
+**REPORTING CENTER**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Attendance, class, student, grade, leave, fees reports exist, grade report
+uses real API
+
+Backend Status
+Student grade and attendance report endpoints, dashboard stats
+
+Key Features Implemented
+Grade report wired, others mixed
+
+Notes
+Some reports still template or partial data
+
+
+--------------------------------------------------------------------------------
+**SCHOOL LEVEL SETTINGS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Religion and school settings wired, other setting routes mostly present in
+router
+
+Backend Status
+Religion and related reference data routes, school profile
+
+Key Features Implemented
+Academic settings that map to existing APIs
+
+Notes
+Many settings pages are Headmaster only on frontend and may lack backend
+persistence
+
+
+--------------------------------------------------------------------------------
+**USER MANAGEMENT AND GLOBAL SETTINGS**
+--------------------------------------------------------------------------------
+
+Status
+Partial
+
+Frontend Status
+Manage users and roles UI exists in router
+
+Backend Status
+GET users list and get user Admin only in userRoutes.js
+
+Key Features Implemented
+Read only user listing for Headmaster
+
+Notes
+No full user create update delete API bundle visible in userRoutes.js
+
+
+--------------------------------------------------------------------------------
+**LIBRARY SPORTS FINANCE ACCOUNTS MEMBERSHIP SUPPORT CONTENT**
+--------------------------------------------------------------------------------
+
+Status
+Pending for production backend alignment
+
+Frontend Status
+Routes and template pages exist in router for these areas
+
+Backend Status
+No dedicated library, sports, accounts, membership, support, or CMS modules in
+server.js route list
+
+Key Features Implemented
+UI shell only from template
+
+Notes
+Classified Pending for integrated product, listed here for honesty on template
+pages
+
+
+================================================================================
+ROLE SUMMARY (COMPLETED WORK DOCUMENT)
+================================================================================
+
+
+**SUPER ADMIN**
+
+Working
+Platform login, school lifecycle, stats, metadata edit, delete flow
+
+Missing
+Not applicable for tenant day to day modules
+
+
+**SCHOOL ADMIN EQUALS HEADMASTER IN THIS CODEBASE**
+
+Working
+Full tenant feature access on frontend except blocked paths for other roles,
+dashboards, approvals, settings access
+
+Missing
+Same gaps as module list where feature is Partial
+
+
+**HEADMASTER**
+
+Working
+Admin dashboard, leave approve, user list API, transport and hostel updates on
+API where Admin only
+
+Missing
+Exam admin UI data layer, teacher create API, student promotion persist,
+events page API wiring
+
+
+**TEACHER**
+
+Working
+Dashboard, routine API, scoped students, notices, events on dashboard,
+attendance report links, leave apply
+
+Missing
+Broad admin features intentionally hidden
+
+
+**STUDENT**
+
+Working
+Dashboard, own attendance and fees and exam results where exposed
+
+Missing
+Features not built for student role
+
+
+**PARENT**
+
+Working
+Dashboard, child selection, fees and attendance and exam hooks
+
+Missing
+Depends on correct parent student linkage in database
+
+
+**GUARDIAN**
+
+Working
+Dashboard with wards, fees, leaves, events cards
+
+Missing
+Chart series empty in code for exam and attendance trends unless extended
+
+
+**ADMINISTRATIVE**
+
+Working
+Dashboard, quick links, access to student teacher academic management report
+prefixes per roleUtils
+
+Missing
+Leave approval, settings prefixes blocked, transport PUT may be Admin only,
+approve request path blocked on frontend
+
+
+================================================================================
+SUMMARY (COMPLETED WORK DOCUMENT)
+================================================================================
+
+Total Modules
+29
+
+Completed count
+7
+
+Partial count
+21
+
+Pending count
+1
+
+Notes on counts
+The single Pending row is the grouped ancillary block. If you split Library,
+Sports, Finance, Membership, Support, and Content into six modules, Pending
+count becomes 6 and Total becomes 34.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

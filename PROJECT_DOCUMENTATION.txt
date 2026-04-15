@@ -1,0 +1,675 @@
+PROJECT DOCUMENTATION
+
+DOCUMENT SUMMARY
+
+This document provides a complete overview of the system including architecture, modules, application flow, user roles, sitemap, milestones, and testing approach.
+
+The system is currently built with a strong multi tenant foundation and several active modules. Some modules are partially implemented and some are planned for future phases.
+
+This document is intended to give a clear understanding of the current system status and the planned roadmap.
+
+
+SECTION 1 PROJECT OVERVIEW
+
+This project is a multi tenant school management system built to support multiple schools on one software platform while keeping each school isolated at the data level. The frontend is built with React. The backend is built with Node.js and Express. PostgreSQL is used as the database layer.
+
+The purpose of the system is to manage school operations in one central platform. It is designed to replace manual records, disconnected spreadsheets, and separate tools with one structured application. The system covers administration, academics, student records, attendance, fee related operations, communication, reporting, and school configuration.
+
+The main users of the system are Super Admin, Headmaster, Administrative staff, Teacher, Student, and Parent. The codebase also supports Guardian as an additional user role. Each role sees a different dashboard and works only with the data and actions allowed for that role.
+
+This system is needed because school operations involve many users, large amounts of data, and frequent day to day actions. A multi tenant model allows one platform to serve many schools while keeping school data separated. This supports central platform control, standardised processes, easier onboarding of new schools, and lower operational duplication.
+
+The high level architecture is clear. The frontend handles screens, forms, dashboards, and user interaction. The backend handles authentication, authorization, tenant selection, validation, and business rules. The database layer is split into one master database and separate tenant databases. The master database stores platform level information such as school records and Super Admin data. Each school has its own tenant database for school operations. This architecture is suitable for a SaaS model where one platform serves many institutions.
+
+At the current stage, the system can be understood in three clear status groups. Completed areas include the core platform foundation, multi tenant design, authentication, role based access, Super Admin school management, dashboards, student management, teacher management, parent and guardian access, academic class structure, school profile settings, and selected attendance, fee, notice, transport, hostel, and bonafide functions. Partially implemented areas include exams, reports, communication tools, fee workflows, transport expansion, hostel expansion, and some operational management screens. Planned areas include broader finance, full library, sports, advanced HRM, complete user management, deeper settings coverage, support functions, membership features, and a more refined Administrative user interface.
+
+SECTION 2 CURRENT SYSTEM FEATURES
+
+The current system already includes a strong working foundation and several live business features. The implementation status below separates what is currently active from areas that are only partial.
+
+Current features
+
+Authentication is implemented. Tenant users log in with institute number, username, and password. The backend verifies the school, selects the correct tenant database, validates the user, and creates the session. Secure cookie based authentication is in place. CSRF protection is also present. The system can restore a user session after page reload through the authenticated user check. Super Admin login is handled separately from school users.
+
+Multi tenant support is implemented. The platform uses one master database to store school registry information and separate tenant databases for each school. Once a user is authenticated, requests are handled in the correct tenant database. School creation is also supported at platform level through tenant database provisioning.
+
+Role based access is implemented. The backend enforces access by role and also applies record level checks where needed. The active tenant roles are Headmaster through the Admin role, Administrative, Teacher, Student, Parent, and Guardian. A separate Super Admin role exists above all tenant schools.
+
+Super Admin platform management is implemented. The platform contains a dedicated Super Admin area for login, school creation, school updates, school status control, and overall tenant management.
+
+Role based dashboards are implemented. Dashboard screens exist for Headmaster, Administrative, Teacher, Student, Parent, Guardian, and Super Admin. The strongest dashboards are the school leadership and student related dashboards, which already show real operational data.
+
+Student management is mostly implemented. The current system supports student list view, student grid view, student details, student creation, student updates, student promotion, attendance access, exam result access, fee related views, login details access where permitted, and bonafide generation.
+
+Teacher management is mostly implemented. The current system supports teacher list view, teacher grid view, teacher details, teacher routine related access, and teacher dashboard usage.
+
+Parent and Guardian access is mostly implemented. Parent and Guardian records exist in the system and role based access to linked student information is available. Parent and Guardian dashboards are also present.
+
+Classes and academic foundation are mostly implemented. The live academic structure includes academic years, classes, sections, subjects, schedules, and connected academic pages. The classes area is one of the more mature modules in the current system.
+
+Attendance and leave are partly to mostly implemented. Attendance data is already used by dashboards and reporting. Leave application and approval related functionality is also present in the backend.
+
+Fee related operations are partly implemented with real backend APIs. The backend supports fee collections list, student fee details, fee structures list, and fee collection create actions. Fee information also appears on dashboards and report screens. However, fees group, fees type, fees master, and fees assign screens are not yet fully connected to complete production workflows.
+
+Notice board is implemented in a practical form. Notices can be stored and displayed through backend support. Event support exists, but event related screens are not equally complete.
+
+Transport is partly implemented. The current module includes routes, pickup points, vehicles, drivers, and vehicle assignment pages with backend presence.
+
+Hostel is partly implemented. Hostel and hostel room screens are available, but the module is not yet complete as a full end to end operational process.
+
+School profile settings are implemented. The school profile area can load and update school information including name and logo.
+
+Partial features
+
+Reports are mixed. Some reports use real data and practical filters. Other report screens still behave like placeholders or partly connected pages.
+
+Communication and productivity tools are mixed. Chat, email, notes, todo, file manager, calendar, and call history have active backend APIs with create, read, update, and delete support. Notice board and events also have active backend routes. At the same time, some communication interface pages are still utility or template style and are not yet complete end to end business workflows.
+
+Exams are partial. Student exam results and related reporting exist in connected areas. However, full exam administration screens are not complete across the module.
+
+Library, Sports, Finance Accounts, Membership, many advanced settings pages, support pages, content pages, and several user management screens are not yet complete production modules. These areas exist in the interface but many of them still require backend completion, interface wiring, or both.
+
+SECTION 3 USER ROLES AND RESPONSIBILITIES
+
+Super Admin
+
+The Super Admin is the platform level owner. This role works above all schools and is not limited to one tenant. The Super Admin can log in to the platform administration area, create schools, update school records, control school status, and oversee tenant provisioning. This role is responsible for platform administration, school onboarding, and tenant lifecycle management.
+
+The Super Admin cannot be treated as a normal school user inside daily tenant operations. This role is not intended for classroom work, school attendance handling, teacher routine management, or student level operational tasks inside one school.
+
+Headmaster
+
+The Headmaster is the highest school level authority inside a tenant. In the backend this role is implemented through the Admin role and shown in the product as Headmaster. The Headmaster owns school level control. This role can access the main dashboard, people management, academic structure, fee related areas, attendance related areas, announcements, reports, transport, hostel, and school settings.
+
+The Headmaster is responsible for supervising school operations, reviewing academic performance, monitoring administration, maintaining data accuracy, and taking school level decisions within the current tenant.
+
+The Headmaster cannot manage platform wide school onboarding or control other schools on the platform. That authority belongs to the Super Admin.
+
+Administrative
+
+The Administrative role supports operational work inside the school. This role does not own the school at policy level, but it supports daily execution. It has broad access to student records, teacher related sections, academic areas, reports, announcements, management modules, and selected application tools.
+
+The Administrative role is responsible for office operations, record maintenance, school documentation, process coordination, and day to day support to school leadership.
+
+The Administrative role cannot access all admin only configuration areas and cannot perform platform level actions. Some restricted routes and approval related actions are intentionally blocked for this role.
+
+Teacher
+
+The Teacher role is focused on academic and classroom related work. Teachers can access their dashboard, routine related screens, selected student information, notices, events, and some attendance related data. Backend checks ensure that teacher access is limited to allowed student records and relevant school data.
+
+The Teacher is responsible for classroom engagement, reviewing student progress, using academic information, and supporting school operations within the limits of the teaching role.
+
+The Teacher cannot access broad administrative controls, school wide settings, or unrestricted people management functions.
+
+Student
+
+The Student role is a self service role. Students can access their own dashboard and view personal attendance, class routine, fee related information, exam related information, and other personal academic details that the system currently exposes.
+
+The Student is responsible for tracking academic progress, monitoring attendance, reviewing school notices, and staying informed about personal school obligations.
+
+The Student cannot access other student records, school administration areas, or configuration pages.
+
+Parent
+
+The Parent role is designed to monitor linked child records. Parents can access their dashboard and view child related information such as attendance, fee position, and selected academic details where the relationship is correctly linked in the system.
+
+The Parent is responsible for monitoring student progress, reviewing attendance and fee status, and staying informed through school communication.
+
+The Parent cannot manage school wide records, update school settings, or access unrelated student data.
+
+Role separation summary
+
+The responsibility model is intentionally separated. The Headmaster is the decision making and control role inside one school. The Administrative role is the execution and support role for daily school operations. Teacher, Student, Parent, and Guardian are limited use roles designed around teaching, self service, or linked student visibility. The Super Admin remains above all schools and controls the platform, not daily school activity.
+
+SECTION 4 COMPLETE APPLICATION FLOW
+
+Super Admin flow
+
+Step 1 The Super Admin opens the platform login page.
+
+Step 2 The Super Admin enters platform credentials.
+
+Step 3 The backend validates these credentials against the master database.
+
+Step 4 If authentication is successful, the system creates the Super Admin session.
+
+Step 5 The Super Admin is redirected to the platform dashboard.
+
+Step 6 The Super Admin reviews school records, creates new schools, updates existing schools, or changes school status when required.
+
+Step 7 All platform level actions are handled in the master database context because they are not school specific operations.
+
+School creation flow
+
+Step 1 The Super Admin opens the school creation screen.
+
+Step 2 The Super Admin enters the school name, institute number, and initial admin details.
+
+Step 3 The backend checks whether the institute number already exists in the master database.
+
+Step 4 If the institute number is valid, the system generates a tenant database name for the new school.
+
+Step 5 The tenant provisioning service creates a new tenant database from the prepared template structure.
+
+Step 6 The school record is saved in the master database.
+
+Step 7 The initial Headmaster or school admin account is created in the new tenant database.
+
+Step 8 The school becomes available for normal tenant login based on its active status.
+
+User login flow
+
+Step 1 The user opens the school login page.
+
+Step 2 The user enters institute number, username, and password.
+
+Step 3 The backend uses the institute number to identify the correct school in the master database.
+
+Step 4 The backend resolves the tenant database linked to that school.
+
+Step 5 The backend verifies the user credentials inside the tenant database.
+
+Step 6 If the credentials are valid, the backend creates the authenticated session and returns user context.
+
+Step 7 The frontend stores the authenticated state and redirects the user to the dashboard for that role.
+
+Step 8 On later page loads, the frontend calls the authenticated user endpoint so the session can be restored without forcing another login.
+
+Role based access flow
+
+Step 1 An authenticated user requests a page or API action.
+
+Step 2 The backend reads the active session and identifies the tenant context.
+
+Step 3 The backend reads the user role.
+
+Step 4 The route level authorization check confirms whether the role is allowed to access the requested area.
+
+Step 5 If the request is for sensitive record data, the backend also checks ownership or direct relation to that record.
+
+Step 6 If both checks pass, the backend continues with the business logic.
+
+Step 7 If any check fails, the backend returns an authorization error and the action is blocked.
+
+Data flow between frontend backend database
+
+Step 1 The user performs an action in the React interface.
+
+Step 2 The frontend sends the request to the Express API.
+
+Step 3 The backend validates authentication, role, tenant context, and request data.
+
+Step 4 The backend selects the correct database context. This may be the master database for platform actions or the tenant database for school actions.
+
+Step 5 The backend performs the database read or write operation.
+
+Step 6 The backend returns a structured response to the frontend.
+
+Step 7 The frontend updates the visible screen, dashboard, list, form, or report based on the returned result.
+
+Daily usage flow of system
+
+Step 1 School users log in at the beginning of the day and enter their role specific dashboards.
+
+Step 2 The Headmaster or Administrative team reviews notices, attendance, fee position, and current school activity.
+
+Step 3 Teachers check routine, class related tasks, and student academic information available to them.
+
+Step 4 Students and Parents review attendance, notices, and personal or linked academic information.
+
+Step 5 Throughout the day users move between student records, academic structure, communication screens, and management modules depending on role.
+
+Step 6 The system stores all school level activity in the correct tenant database, which keeps each school separated from all other schools on the platform.
+
+SECTION 5 MODULES BREAKDOWN
+
+Student management
+
+Purpose
+
+This module manages student records and student related school operations.
+
+Features
+
+The current module includes student list, student grid, student details, student creation, student update, student promotion, attendance access, exam result access, fee related views, login details access where permitted, and bonafide generation.
+
+Actions available
+
+Authorized users can add students, update student records, view student profiles, review attendance and result information, check fee related details, and generate bonafide documents.
+
+Teacher management
+
+Purpose
+
+This module manages teacher records and teacher related operational views.
+
+Features
+
+The current module includes teacher list, teacher grid, teacher details, teacher routine access, and teacher dashboard support.
+
+Actions available
+
+Authorized users can view teacher records, update teacher information, and use teacher related operational screens.
+
+Classes and academic
+
+Purpose
+
+This module provides the academic structure used by the rest of the system.
+
+Features
+
+The current academic foundation includes academic years, classes, sections, subjects, schedules, and related academic screens. This is one of the stronger connected areas in the application.
+
+Actions available
+
+Authorized users can review class structures, update classes and sections, and work with the academic setup used by student, teacher, and reporting workflows.
+
+Fees and finance
+
+Purpose
+
+This module manages fee related school operations and financial visibility.
+
+Features
+
+The current implementation includes active fee APIs for fee collections list, student fee details, fee structures list, and fee collection create actions. Fee data is also used in dashboard and report areas. Some fee management screens are active, while others still need full business wiring.
+
+Actions available
+
+Authorized users can review fee related information, inspect student fee status, collect fees through backend supported flow, and use fee data in reports and dashboards. Full finance and accounting workflows are not yet complete.
+
+Attendance
+
+Purpose
+
+This module tracks attendance and supports attendance monitoring by role.
+
+Features
+
+Attendance information is already used in dashboards and reports. Student attendance access exists, and leave related workflows are also connected to this area.
+
+Actions available
+
+Authorized users can review attendance data, use attendance reports, and process leave related actions where supported by their role.
+
+Exams
+
+Purpose
+
+This module is intended to manage examinations, grading, results, and exam review.
+
+Features
+
+The current live capability includes backend supported student exam result access and grade report usage based on exam result data. Full exam management pages such as complete exam setup, schedule administration, and broad result administration are not yet complete across the system.
+
+Actions available
+
+Users can view available exam outcomes in connected screens. Full exam setup, schedule control, and result management still require further completion.
+
+Communication
+
+Purpose
+
+This module supports school communication and day to day productivity tools.
+
+Features
+
+The current module includes notice board, event related screens, chat, email, notes, todo, file manager, calendar, and call related pages. Backend APIs are active for notice board, events, chat, email, notes, todo, files, calendar, and calls. Some pages are fully connected, while some still need deeper business workflow completion.
+
+Actions available
+
+Users can view and manage notices and events where role allows, and can use chat, email, notes, todo, files, calendar, and call tools through active backend APIs. Some advanced communication workflows are still partial.
+
+Reports
+
+Purpose
+
+This module supports management review and operational analysis.
+
+Features
+
+The application includes attendance, fee, grade, class, leave, and student report screens. Backend APIs actively support attendance reports, grade reports, fee collection reporting, and dashboard reporting endpoints. Some report screens are connected to real data flows, while others still need backend completion or interface refinement.
+
+Actions available
+
+Users can open report screens, apply available filters, and review operational outputs in reports connected to live APIs. This includes attendance and grade reporting from student report endpoints and fee related outputs from fee APIs.
+
+Transport hostel library
+
+Purpose
+
+These modules support school logistics, facilities, and student service operations.
+
+Features
+
+Transport currently includes routes, pickup points, vehicles, drivers, and vehicle assignment screens. Hostel currently includes hostel and hostel room related screens. Library screens are present in the user interface but are not yet complete as a full backend supported business module.
+
+Actions available
+
+Users can work with the currently available transport functions and selected hostel functions. Library actions remain limited until the module is fully implemented.
+
+User management
+
+Purpose
+
+This module is intended to control users, roles, permissions, and account administration.
+
+Features
+
+The interface includes user management, roles and permissions, and delete request screens. The backend includes user and role related routes, but the full management workflow is not yet complete across all user administration pages.
+
+Actions available
+
+Basic role aware access exists in the platform. Full user administration, role control, and permission management still require further completion.
+
+Settings
+
+Purpose
+
+This module controls school and system configuration.
+
+Features
+
+The strongest active settings area is school profile settings, which supports school information and logo updates. Many other settings pages are visible in the frontend but are not yet backed by complete production grade configuration logic.
+
+Actions available
+
+Authorized users can maintain active school profile settings. Broader settings actions will become more useful as the remaining configuration modules are completed.
+
+SECTION 6 SITE MAP
+
+Application sitemap
+
+Authentication
+
+Login
+Forgot Password
+Reset Password
+Email Verification
+Two Step Verification
+
+Dashboards
+
+Super Admin Dashboard
+Headmaster Dashboard
+Administrative Dashboard
+Teacher Dashboard
+Student Dashboard
+Parent Dashboard
+Guardian Dashboard
+
+People
+
+Students
+All Students
+Student List
+Student Details
+Student Promotion
+Bonafide
+
+Teachers
+All Teachers
+Teacher List
+Teacher Details
+Teacher Routine
+
+Parents
+All Parents
+Parent List
+
+Guardians
+All Guardians
+Guardian List
+
+Academic
+
+Classes
+Schedule Classes
+Class Room
+Class Routine
+Section
+Subject
+Syllabus
+Time Table
+Home Work
+Exam
+Exam Schedule
+Grade
+Exam Attendance
+Exam Results
+Academic Reasons
+
+Management
+
+Fees Group
+Fees Type
+Fees Master
+Fees Assign
+Collect Fees
+Library Members
+Library Books
+Issue Book
+Return Book
+Sports
+Players
+Hostel List
+Hostel Rooms
+Hostel Type
+Transport Routes
+Transport Pickup Points
+Transport Vehicle Drivers
+Transport Vehicle
+Transport Assign Vehicle
+
+HRM
+
+Staff
+Departments
+Designation
+Student Attendance
+Teacher Attendance
+Staff Attendance
+List Leaves
+Approve Request
+Holidays
+Payroll
+
+Announcements
+
+Notice Board
+Events
+
+Reports
+
+Attendance Report
+Student Attendance Type
+Teacher Report
+Staff Report
+Teacher Day Wise
+Staff Day Wise
+Student Day Wise
+Daily Attendance
+Class Report
+Student Report
+Grade Report
+Leave Report
+Fees Report
+
+Application tools
+
+Chat
+Call History
+Calendar
+Email
+Todo
+Notes
+File Manager
+
+Settings
+
+General Settings
+Website Settings
+App Settings
+System Settings
+Financial Settings
+Academic Settings
+Other Settings
+
+Profile and utility pages
+
+Profile
+Error Pages
+Blank Page
+Coming Soon
+Under Maintenance
+
+Headmaster sitemap
+
+The Headmaster sitemap includes the Headmaster Dashboard, People, Academic, Management, HRM, Announcements, Reports, Application tools, active School Settings, and Profile. This is the broadest school level navigation model in the system.
+
+Administrative sitemap
+
+The Administrative sitemap includes the Administrative Dashboard, student and teacher areas, academic sections, management modules, HRM, reports, announcements, application tools, bonafide, and Profile. This role is intentionally restricted from some admin only configuration routes and selected protected actions.
+
+Teacher sitemap
+
+The Teacher sitemap includes the Teacher Dashboard, teacher routine related areas, allowed student views, announcements, selected reports where available, application tools, and Profile. This sitemap is narrower because the Teacher role is designed for controlled academic access rather than school wide administration.
+
+SECTION 7 WHAT IS MISSING AND WHAT WILL BE ADDED
+
+Features already completed
+
+The completed foundation includes tenant aware authentication, Super Admin login, school provisioning, tenant isolation through separate databases, role based access control, major dashboards, student management, teacher management, parent and guardian linkage, academic class structure, school profile settings, notice board support, bonafide generation, and basic transport and hostel support.
+
+Features not yet fully built
+
+The following areas exist but are not fully complete as production modules. These include full exam administration, several report screens, much of the library module, sports, deeper finance and accounts workflows, broader HRM operations, advanced user management, support pages, membership features, and many non school profile settings pages.
+
+Some of these areas already have backend routes but incomplete user interface wiring. This includes communication APIs, fee APIs, and key report APIs that are live but not fully matched by every screen. Other areas have interface screens but no full backend implementation yet. These sections should not be treated as complete production scope.
+
+Features planned for future
+
+Planned future work should focus on full exam workflows, complete fee workflow coverage across all fee screens, stronger attendance operations, completion of remaining report screens, mature transport and hostel administration, complete library management, expanded HRM, stronger user and role administration, richer communication features, and broader school and platform settings.
+
+Administrative UI as planned feature
+
+An Administrative dashboard already exists, but the Administrative user experience should be improved as a planned feature. This work should deliver a cleaner role specific interface, better office workflow screens, clearer access boundaries, and navigation that focuses only on active business functions relevant to Administrative staff.
+
+SECTION 8 MILESTONES AND ROADMAP
+
+Phase 1 foundation
+
+This phase established the technical base of the platform. It includes project setup, frontend and backend structure, PostgreSQL integration, multi tenant database design, authentication, session handling, security middleware, and initial school onboarding. This phase is completed in practical terms and gives the product a stable base for continued growth.
+
+Phase 2 core modules
+
+This phase delivered the modules required for day to day school use. It includes dashboards, student management, teacher management, parent and guardian linkage, academic structure, selected attendance capability, selected fee capability, school profile settings, and notice board support. This phase is largely completed, although some related screens still need refinement. It provides a practical operating core for controlled school use.
+
+Phase 3 advanced features
+
+This phase expands the platform beyond the core school workflow. It includes exam completion, stronger reporting, deeper communication tools, richer transport and hostel operations, expanded leave handling, and additional operational analysis. This phase is in progress and currently mixed between live and partial modules. The current architecture is capable of supporting this expansion without a platform redesign.
+
+Phase 4 administrative module
+
+This phase focuses on making the Administrative role fully production ready. It should include a dedicated Administrative UI, office focused forms and workflow screens, cleaner route control, clearer permissions, and stronger alignment between the Administrative experience and actual backend capabilities. This phase is planned and should be treated as a business priority because it will improve day to day usability for non teaching staff.
+
+Phase 5 optimisation and testing
+
+This phase prepares the system for wider controlled release. It includes end to end testing, role based regression testing, tenant isolation verification, performance review, API validation review, security hardening, interface cleanup, and removal or completion of placeholder screens. This phase is still required before full production confidence is reached. Once completed, the product will be in a strong position for wider rollout and long term scale.
+
+SECTION 9 TESTING STRATEGY
+
+Functional testing
+
+Functional testing should confirm that each active module performs the expected business action. This includes successful login, failed login, logout, dashboard loading, school creation, student creation, student update, teacher management, class editing, fee review, notice display, and bonafide generation.
+
+Practical scenario examples include creating a school from the Super Admin area, logging in as the new Headmaster, creating a student, updating that student record, and confirming that the new student appears correctly in list and detail views.
+
+Role based testing
+
+Each role should be tested with a separate account. The main check is whether each role sees the correct dashboard, correct menu, correct pages, and correct data.
+
+Practical scenarios should include the following. A Headmaster should be able to open school level modules without access errors. An Administrative user should be able to work on operational pages but should be blocked from restricted settings routes. A Teacher should only see allowed student records. A Student should only see personal data. A Parent should only see linked child data. A Super Admin should manage schools but should not behave like a tenant school user.
+
+API testing
+
+API testing should validate response correctness, input validation, tenant routing, and authorization logic. Every important route should be tested with valid input, invalid input, missing input, wrong role, and wrong tenant context.
+
+Practical scenarios include sending a valid student creation request, sending the same request with missing required fields, calling a teacher only route with a student account, and calling tenant data endpoints after session expiry.
+
+UI testing
+
+UI testing should confirm that the user interface behaves correctly for the current release scope. This includes menu visibility, form validation, page loading, filter behavior, redirect logic, empty states, and error states.
+
+Practical scenarios include refreshing the browser after login, moving between dashboards and module pages, opening report filters, viewing attendance screens, and confirming that incomplete placeholder pages are identified before release sign off.
+
+Security testing
+
+Security testing should confirm that authentication and data protection controls behave correctly. This includes testing login failures, logout behavior, session expiry, CSRF handling, unauthorized access attempts, and tenant isolation.
+
+Practical scenarios include attempting to use one tenant account to access another tenant data, attempting to open restricted routes with a lower role, and verifying that protected API calls fail when the session is expired or invalid.
+
+Performance testing
+
+Performance testing should confirm that the system remains responsive with realistic school data. The focus should be on login speed, dashboard loading, student lists, report generation, and repeated usage across multiple schools.
+
+Practical scenarios include loading large student lists, opening dashboards with realistic data volume, generating attendance or fee reports for a full month, and observing system response under multiple active users.
+
+Example test cases
+
+Example 1 Verify that a Super Admin can create a new school and that the school receives its own tenant database and initial Headmaster account.
+
+Example 2 Verify that a Headmaster can log in with institute number and access school specific student, teacher, and class data.
+
+Example 3 Verify that an Administrative user can manage daily operational pages but is blocked from restricted admin only routes.
+
+Example 4 Verify that a Teacher can view only allowed student records and cannot access school wide administrative settings.
+
+Example 5 Verify that a Student can view only personal attendance, schedule, and result information.
+
+Example 6 Verify that a Parent can view only linked child data and cannot access unrelated student records.
+
+Example 7 Verify that one tenant school cannot read or update data from another tenant school.
+
+Example 8 Verify that fee and attendance reports return the correct records for the selected school and academic context.
+
+SECTION 10 SECURITY AND STABILITY
+
+Authentication security
+
+The system uses secure server side authentication with JWT validation, cookie based session handling, and CSRF protection. Tenant login requires institute number as well as user credentials, which helps the system identify the correct school before user validation. Super Admin authentication is fully separate from tenant user authentication.
+
+Data isolation between tenants
+
+The strongest stability feature in the platform is tenant isolation. Each school operates on its own tenant database, while the master database is reserved for platform level records. After login, the backend resolves the correct tenant context for each request. This design reduces the risk of cross school data exposure.
+
+Role based protection
+
+The backend applies role based access control and also checks ownership for sensitive records. This means access is enforced by the server, not only by frontend menus. Even if a user attempts to access a screen or route directly, the backend still decides whether the request is allowed.
+
+API validation
+
+The backend includes structured validation for key business entities. It also uses parameterized SQL queries, which helps reduce SQL injection risk. Security middleware, rate limiting, controlled CORS, and central error handling add further protection and stability.
+
+Future improvements
+
+The next security and stability improvements should include stronger automatic credential policy for generated accounts, reduced dependence on browser stored bearer token mode where possible, more centralised record level authorization, schema consistency across environments, completion of configuration APIs, and broader automated regression coverage across all active tenant roles.
+
+SECTION 11 FINAL SUMMARY
+
+Current system status
+
+The system has a strong technical foundation and a meaningful set of live school management functions. Completed areas include multi tenant provisioning, platform school management, tenant authentication, role based access, dashboards, student management, teacher management, parent and guardian access, academic structure, school profile settings, notice board support, bonafide generation, and selected fee, attendance, transport, and hostel capability.
+
+Partially implemented areas include deeper fee workflows, exam administration, report screen completion, communication workflow completion, transport expansion, hostel expansion, and several management pages that still need full business completion.
+
+Planned areas include advanced Administrative UI, broader finance and accounts, full library operations, sports, expanded HRM, stronger user and permission management, broader settings coverage, support features, and membership related functions.
+
+Readiness level
+
+The current product is not a fully complete end to end school ERP across every visible menu item. However, it is also not an early prototype. It is best described as a solid platform foundation with several active business modules, several partial modules, and several planned modules. Core architecture readiness is high. Business module readiness is mixed. The design is scalable, the tenant model is suitable for growth, and the roadmap can be delivered in planned phases without changing the core architecture.
+
+Next steps
+
+The next management step should be to define which modules are part of the near term release and which are still planned. After that, the team should complete the Administrative UI refinement, finish the highest priority partial modules, remove or complete placeholder screens, run full role based and tenant based testing, and complete final security and performance hardening before broader production approval.

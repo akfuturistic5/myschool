@@ -1,0 +1,28 @@
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\core\common\Taginput\index.tsx
+  Line 10:9 - no-empty-pattern - Unexpected empty object pattern.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\hrm\attendance\student-attendance.tsx
+  Line 23:9 - no-empty-pattern - Unexpected empty array pattern.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\mainMenu\adminDashboard\index.tsx
+  Line 41:17 - no-empty - Empty block statement.
+  Line 51:17 - no-empty - Empty block statement.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\management\transport\transportModal.tsx
+  Line 92:19 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+  Line 112:20 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+  Line 169:20 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\management\transport\transportPickupPoints.tsx
+  Line 109:34 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\management\transport\transportRoutes.tsx
+  Line 109:33 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\management\transport\transportVehicleDrivers.tsx
+  Line 138:34 - no-prototype-builtins - Do not access Object.prototype method 'hasOwnProperty' from target object.
+
+FILE: C:\Users\Aabid\OneDrive\Desktop\myschool\client\src\feature-module\peoples\students\studentModals.tsx
+  Line 215:20 - no-empty - Empty block statement.
+  Line 278:19 - no-empty - Empty block statement.
