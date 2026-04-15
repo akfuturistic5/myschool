@@ -25,9 +25,18 @@ export const useLinkedStudentContext = ({
 }: UseLinkedStudentContextOptions = {}) => {
   const { user: currentUser } = useCurrentUser();
   const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent();
-  const role = (currentUser?.role || "").toString().trim().toLowerCase();
-  const isStudentRole = role === "student";
-  const isParentRole = role === "parent";
+  const roleTokens = [
+    currentUser?.role,
+    (currentUser as any)?.role_name,
+    (currentUser as any)?.display_role,
+  ]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean);
+  const role = roleTokens[0] || "";
+  const isStudentRole = roleTokens.some((r) => r === "student" || r.includes("student"));
+  const isParentRole = roleTokens.some(
+    (r) => r === "parent" || r === "guardian" || r === "father" || r === "mother" || r.includes("parent") || r.includes("guardian")
+  );
 
   const {
     parents,

@@ -1,350 +1,256 @@
-import  { useRef } from "react";
-import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
-import PredefinedDateRanges from "../../../../core/common/datePicker";
-import CommonSelect from "../../../../core/common/commonSelect";
-import {
-  allClass,
-  classSection,
-  weeklytest,
-} from "../../../../core/common/selectoption/selectoption";
+import { useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
+import { apiService } from "../../../../core/services/apiService";
 import { all_routes } from "../../../router/all_routes";
-import TooltipOption from "../../../../core/common/tooltipOption";
-import { examattendance } from "../../../../core/data/json/exam_attendance";
-import type { TableData } from "../../../../core/data/interface";
-import Table from "../../../../core/common/dataTable/index";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 
 const ExamAttendance = () => {
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const routes = all_routes;
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { user, loading: userLoading } = useCurrentUser();
+  const roleTokens = [user?.role_name, user?.role, (user as any)?.display_role]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean);
+  const selfOnly = roleTokens.some(
+    (r) =>
+      r === "student" ||
+      r === "parent" ||
+      r === "guardian" ||
+      r === "father" ||
+      r === "mother" ||
+      r.includes("student") ||
+      r.includes("parent") ||
+      r.includes("guardian")
+  );
+
+  const [exams, setExams] = useState<any[]>([]);
+  const [selectedExamId, setSelectedExamId] = useState<string>("");
+  const [classId, setClassId] = useState<string>("");
+  const [sectionId, setSectionId] = useState<string>("");
+  const [contextRows, setContextRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (userLoading || !user?.id) return;
+        if (selfOnly) {
+          const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
+          if (cancelled) return;
+          const nextExams = (res as any)?.data || [];
+          setExams(nextExams);
+          if (nextExams.length > 0) {
+            setSelectedExamId(String(nextExams[0].id));
+            setMessage(null);
+          } else {
+            setMessage("No exam timetable is assigned for your class and section yet.");
+          }
+          return;
+        }
+
+        const res = await apiService.listExams({ academic_year_id: academicYearId || undefined });
+        if (cancelled) return;
+        setExams((res as any)?.data || []);
+      } catch {
+        if (!cancelled) setExams([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId, selfOnly, userLoading, user?.id]);
+
+  useEffect(() => {
+    if (!selectedExamId || selfOnly) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiService.getExamManageContext(Number(selectedExamId));
+        const classes = (res as any)?.data?.classes || [];
+        const flat: any[] = [];
+        for (const c of classes) {
+          for (const s of c.sections || []) {
+            flat.push({
+              class_id: String(c.class_id),
+              class_name: c.class_name,
+              section_id: String(s.section_id),
+              section_name: s.section_name,
+            });
+          }
+        }
+        if (cancelled) return;
+        setContextRows(flat);
+        if (flat.length > 0) {
+          setClassId(flat[0].class_id);
+          setSectionId(flat[0].section_id);
+        }
+      } catch {
+        if (!cancelled) setContextRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedExamId, selfOnly]);
+
+  const classOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    contextRows.forEach((r) => m.set(r.class_id, r.class_name));
+    return [...m.entries()].map(([id, name]) => ({ id, name }));
+  }, [contextRows]);
+
+  const sectionOptions = useMemo(
+    () => contextRows.filter((r) => r.class_id === classId),
+    [contextRows, classId]
+  );
+
+  const loadSchedule = async () => {
+    if (!selectedExamId) {
+      setMessage("Please select exam.");
+      return;
+    }
+    if (!selfOnly && (!classId || !sectionId)) {
+      setMessage("Please select class and section.");
+      return;
+    }
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await apiService.viewExamSchedule({
+        exam_id: selectedExamId,
+        class_id: selfOnly ? undefined : classId,
+        section_id: selfOnly ? undefined : sectionId,
+      });
+      const data = (res as any)?.data || [];
+      setRows(data);
+      if (!data.length) setMessage("No timetable found for selected filters.");
+    } catch (e: any) {
+      setRows([]);
+      setMessage(e?.message || "Failed to load exam timetable");
+    } finally {
+      setLoading(false);
     }
   };
-  const data = examattendance;
-  const columns = [
-    {
-      title: "ID",
-      dataIndex: "id",
-      render: (record: any) => (
-        <>
-          <Link to="#" className="link-primary">
-            {record.id}
-          </Link>
-        </>
-      ),
-      sorter: (a: any, b: any) => a.id.length - b.id.length,
-    },
-    {
-      title: "Student Name",
-      dataIndex: "studentName",
-      render: (text: string, record: any) => (
-        <div className="d-flex align-items-center">
-          <Link to={routes.studentDetail} className="avatar avatar-md">
-            <ImageWithBasePath
-              src={record.img}
-              className="img-fluid rounded-circle"
-              alt="img"
-            />
-          </Link>
-          <div className="ms-2">
-            <p className="text-dark mb-0">
-              <Link to={routes.studentDetail}>{text}</Link>
-            </p>
-            <span className="fs-12">{record.rollNo}</span>
-          </div>
-        </div>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.studentName.length - b.studentName.length,
-    },
-    {
-      title: "English",
-      dataIndex: "english",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-danger">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.english.length - b.english.length,
-    },
-    {
-      title: "Spanish",
-      dataIndex: "spanish",
-      render: (text: string, ) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-danger">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.spanish.length - b.spanish.length,
-    },
-    {
-      title: "Physics",
-      dataIndex: "physics",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-pending">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.physics.length - b.physics.length,
-    },
-    {
-      title: "Chemistry",
-      dataIndex: "chemistry",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-pending">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.chemistry.length - b.chemistry.length,
-    },
-    {
-      title: "Maths",
-      dataIndex: "maths",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-pending">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.maths.length - b.maths.length,
-    },
-    {
-      title: "Computer",
-      dataIndex: "computer",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-danger">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.computer.length - b.computer.length,
-    },
-    {
-      title: "Env Science",
-      dataIndex: "envScience",
-      render: (text: string) => (
-        <>
-          {text === "green" ? (
-           <span className="attendance-range bg-success">
-            </span>
-          ) : (
-            <span className="attendance-range bg-pending">
-          </span>
-          )}
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.envScience.length - b.envScience.length,
-    },
-    
-  ];
+
   return (
-    <div>
-      <>
-        {/* Page Wrapper */}
-        <div className="page-wrapper">
-          <div className="content">
-            {/* Page Header */}
-            <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
-              <div className="my-auto mb-2">
-                <h3 className="page-title mb-1">Exam Attendance</h3>
-                <nav>
-                  <ol className="breadcrumb mb-0">
-                    <li className="breadcrumb-item">
-                      <Link to={routes.adminDashboard}>Dashboard</Link>
-                    </li>
-                    <li className="breadcrumb-item">
-                      <Link to="#">Report</Link>
-                    </li>
-                    <li className="breadcrumb-item active" aria-current="page">
-                      Exam Attendance
-                    </li>
-                  </ol>
-                </nav>
+    <div className="page-wrapper">
+      <div className="content">
+        <div className="page-header d-flex justify-content-between align-items-center">
+          <h3 className="page-title mb-0">Exam Timetable</h3>
+          <Link to={routes.exam} className="btn btn-light">
+            Back to exams
+          </Link>
+        </div>
+
+        {message && <div className="alert alert-warning">{message}</div>}
+
+        <div className="card mb-3">
+          <div className="card-body">
+            <div className="row g-3 align-items-end">
+              <div className="col-md-4">
+                <label className="form-label">Exam</label>
+                <select className="form-select" value={selectedExamId} onChange={(e) => setSelectedExamId(e.target.value)}>
+                  <option value="">Select exam</option>
+                  {exams.map((ex: any) => (
+                    <option key={ex.id} value={ex.id}>
+                      {ex.exam_name} ({ex.exam_type})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-              </div>
-            </div>
-            {/* /Page Header */}
-            <div className="attendance-types page-header justify-content-end">
-              <ul className="attendance-type-list">
-                <li>
-                  <span className="attendance-icon bg-success">
-                    <i className="ti ti-checks" />
-                  </span>
-                  Present
-                </li>
-                <li>
-                  <span className="attendance-icon bg-danger">
-                    <i className="ti ti-x" />
-                  </span>
-                  Absent
-                </li>
-                <li>
-                  <span className="attendance-icon bg-pending">
-                    <i className="ti ti-clock-x" />
-                  </span>
-                  Late
-                </li>
-              </ul>
-            </div>
-            {/* Attendance List */}
-            <div className="card">
-              <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                <h4 className="mb-3">Exam Attendance</h4>
-                <div className="d-flex align-items-center flex-wrap">
-                  <div className="input-icon-start mb-3 me-2 position-relative">
-                    <PredefinedDateRanges />
-                  </div>
-                  <div className="dropdown mb-3 me-2">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
-                      data-bs-auto-close="outside"
+              {!selfOnly && (
+                <>
+                  <div className="col-md-3">
+                    <label className="form-label">Class</label>
+                    <select
+                      className="form-select"
+                      value={classId}
+                      onChange={(e) => {
+                        setClassId(e.target.value);
+                        setSectionId("");
+                      }}
                     >
-                      <i className="ti ti-filter me-2" />
-                      Filter
-                    </Link>
-                    <div className="dropdown-menu drop-width">
-                      <form>
-                        <div className="d-flex align-items-center border-bottom p-3">
-                          <h4>Filter</h4>
-                        </div>
-                        <div className="p-3 border-bottom pb-0">
-                          <div className="row">
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Class</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={allClass}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Section</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={classSection}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Exam Type</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={weeklytest}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
-                            Reset
-                          </Link>
-                          <Link
-                            to={routes.studentGrid}
-                            className="btn btn-primary"
-                            onClick={handleApplyClick}
-                          >
-                            Apply
-                          </Link>
-                        </div>
-                      </form>
-                    </div>
+                      <option value="">Select class</option>
+                      {classOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div className="dropdown mb-3">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
-                    >
-                      <i className="ti ti-sort-ascending-2 me-2" />
-                      Sort by A-Z
-                    </Link>
-                    <ul className="dropdown-menu p-3">
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1 active">
-                          Ascending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Descending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Recently Viewed
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Recently Added
-                        </Link>
-                      </li>
-                    </ul>
+                  <div className="col-md-3">
+                    <label className="form-label">Section</label>
+                    <select className="form-select" value={sectionId} onChange={(e) => setSectionId(e.target.value)}>
+                      <option value="">Select section</option>
+                      {sectionOptions.map((s) => (
+                        <option key={s.section_id} value={s.section_id}>
+                          {s.section_name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                </div>
-              </div>
-              <div className="card-body p-0 py-3">
-                {/* Student List */}
-                <Table columns={columns} dataSource={data} Selection={true} />
-                {/* /Student List */}
+                </>
+              )}
+              <div className="col-md-2">
+                <button type="button" className="btn btn-primary w-100" onClick={loadSchedule} disabled={loading}>
+                  {loading ? "Loading..." : "View"}
+                </button>
               </div>
             </div>
-            {/* /Attendance List */}
           </div>
         </div>
-        {/* /Page Wrapper */}
-      </>
+
+        <div className="card">
+          <div className="card-body">
+            <div className="table-responsive">
+              <table className="table align-middle">
+                <thead>
+                  <tr>
+                    <th>Exam</th>
+                    <th>Class</th>
+                    <th>Section</th>
+                    <th>Subject</th>
+                    <th>Code</th>
+                    <th>Date</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Max</th>
+                    <th>Pass</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r: any, idx: number) => (
+                    <tr key={`${r.exam_id}-${r.subject_id}-${idx}`}>
+                      <td>{r.exam_name}</td>
+                      <td>{r.class_name || "-"}</td>
+                      <td>{r.section_name || "-"}</td>
+                      <td>{r.subject_name}</td>
+                      <td>{r.subject_code || "-"}</td>
+                      <td>{r.exam_date ? String(r.exam_date).slice(0, 10) : "-"}</td>
+                      <td>{r.start_time ? String(r.start_time).slice(0, 5) : "-"}</td>
+                      <td>{r.end_time ? String(r.end_time).slice(0, 5) : "-"}</td>
+                      <td>{r.max_marks}</td>
+                      <td>{r.passing_marks}</td>
+                    </tr>
+                  ))}
+                  {!rows.length && !loading && (
+                    <tr>
+                      <td colSpan={10} className="text-center text-muted">
+                        No data
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

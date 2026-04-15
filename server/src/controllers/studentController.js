@@ -2019,12 +2019,7 @@ const getTeacherStudents = async (req, res) => {
       params.push(academicYearId);
       academicYearClause = ` AND s.academic_year_id = $${params.length}`;
     }
-    const teacherId = teacherCheck.rows[0].id;
-    const staffId = parseId(teacherCheck.rows[0].staff_id);
 
-    const academicYearClause = hasAcademicYearFilter ? ' AND s.academic_year_id = $3' : '';
-    const params = hasAcademicYearFilter ? [staffId, teacherId, academicYearId] : [staffId, teacherId];
-    // Get the students
     const result = await query(
       `SELECT
         s.id, s.admission_number, s.roll_number, s.first_name, s.last_name, s.gender,
@@ -2055,7 +2050,6 @@ const getTeacherStudents = async (req, res) => {
            SELECT 1 FROM classes c_map
            WHERE c_map.id = s.class_id
              AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
-            WHERE t.id = $2 AND t.class_id = s.class_id
          )
        )${academicYearClause}
        ORDER BY s.first_name ASC, s.last_name ASC`,
@@ -2941,64 +2935,104 @@ const getStudentAttendance = async (req, res) => {
 // - Falls back gracefully to empty data if expected columns/tables are missing
 const getStudentExamResults = async (req, res) => {
   try {
-    const studentId = parseId(req.params.studentId);
-    if (!studentId) {
+    const resolveLatestLinkedStudentId = async (studentId) => {
+      const sid = parseId(studentId);
+      if (!sid) return null;
+      const latest = await query(
+        `WITH base AS (
+           SELECT id, user_id, admission_number, roll_number
+           FROM students
+           WHERE id = $1
+           LIMIT 1
+         )
+         SELECT s2.id AS student_id
+         FROM base b
+         INNER JOIN students s2
+           ON COALESCE(s2.is_active, true) = true
+          AND (
+            (b.user_id IS NOT NULL AND s2.user_id = b.user_id)
+            OR (COALESCE(NULLIF(TRIM(b.admission_number), ''), '') <> '' AND s2.admission_number = b.admission_number)
+            OR (COALESCE(NULLIF(TRIM(b.roll_number), ''), '') <> '' AND s2.roll_number = b.roll_number)
+          )
+         ORDER BY s2.id DESC
+         LIMIT 1`,
+        [sid]
+      );
+      return parseId(latest.rows?.[0]?.student_id) || sid;
+    };
+
+    const requestedStudentId = parseId(req.params.studentId);
+    if (!requestedStudentId) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
 
-    const access = await canAccessStudent(req, studentId);
+    const access = await canAccessStudent(req, requestedStudentId);
     if (!access.ok) {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
-    let rows = [];
-    try {
-      // Primary path: exam_results joined with exams and subjects, ordered by exam date / modified_at
-      const result = await query(
-        `SELECT 
-           er.*,
-           e.exam_name,
-           e.exam_type,
-           e.exam_date,
-           e.total_marks AS exam_total_marks,
-           e.passing_marks AS exam_passing_marks,
-           s.subject_name
-         FROM exam_results er
-         LEFT JOIN exams e ON er.exam_id = e.id
-         LEFT JOIN subjects s ON er.subject_id = s.id
-         WHERE er.student_id = $1
-         ORDER BY 
-           COALESCE(e.exam_date, er.modified_at, er.created_at, NOW()) DESC,
-           er.exam_id NULLS LAST,
-           s.subject_name NULLS LAST`,
-        [studentId]
-      );
-      rows = result.rows;
-    } catch (primaryErr) {
-      // Fallback: be tolerant to missing columns/tables – never break the app
-      console.warn('Primary exam results query failed, falling back to simpler query:', primaryErr.message);
-      try {
-        const fallback = await query(
-          `SELECT 
-             er.*,
-             e.exam_name,
-             e.exam_type,
-             e.total_marks AS exam_total_marks,
-             e.passing_marks AS exam_passing_marks
-           FROM exam_results er
-           LEFT JOIN exams e ON er.exam_id = e.id
-           WHERE er.student_id = $1
-           ORDER BY COALESCE(er.modified_at, er.created_at, NOW()) DESC, er.exam_id NULLS LAST`,
-          [studentId]
-        );
-        rows = fallback.rows;
-      } catch (fallbackErr) {
-        console.warn('Fallback exam results query failed, returning empty data:', fallbackErr.message);
-        rows = [];
-      }
-    }
+    // Parent/guardian mappings can point to an older student row after promotions.
+    // Normalize to latest active row of the same user so exam pages stay consistent.
+    const studentId = await resolveLatestLinkedStudentId(requestedStudentId);
 
-    if (!rows || rows.length === 0) {
+    const schemaCols = await query(
+      `SELECT table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
+    );
+    const examSubjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+    const examResultsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_results' && ['exam_component'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+    const subjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'subjects' && ['practical_hours'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+
+    const hasEsComponent = examSubjectsCols.has('exam_component');
+    const hasErComponent = examResultsCols.has('exam_component');
+    const hasPracticalHours = subjectsCols.has('practical_hours');
+
+    const rows = await query(
+      `SELECT
+         es.exam_id,
+         e.exam_name,
+         e.exam_type,
+         es.exam_date,
+         es.subject_id,
+         s.subject_name,
+         s.subject_code,
+         COALESCE(es.max_marks, 100) AS max_marks,
+         COALESCE(es.passing_marks, 35) AS passing_marks,
+         ${hasEsComponent ? 'es.exam_component' : "NULL::text AS exam_component"},
+         ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+         er.marks_obtained,
+         COALESCE(er.is_absent, false) AS is_absent
+       FROM students st
+       INNER JOIN exam_subjects es
+         ON es.class_id = st.class_id
+        AND es.section_id = st.section_id
+       INNER JOIN exams e ON e.id = es.exam_id
+       INNER JOIN subjects s ON s.id = es.subject_id
+       LEFT JOIN exam_results er
+         ON er.exam_id = es.exam_id
+        AND er.student_id = st.id
+        AND er.subject_id = es.subject_id
+        ${hasEsComponent && hasErComponent ? 'AND COALESCE(er.exam_component,\'theory\') = COALESCE(es.exam_component,\'theory\')' : ''}
+       WHERE st.id = $1
+       ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
+      [studentId]
+    );
+
+    if (!rows.rows || rows.rows.length === 0) {
       return res.status(200).json({
         status: 'SUCCESS',
         message: 'No exam results found for this student',
@@ -3006,43 +3040,27 @@ const getStudentExamResults = async (req, res) => {
       });
     }
 
-    // Batch fetch subject names (JOIN may not resolve if subject_id is null or column name differs)
-    let subjectMap = {};
-    const subjectIds = [...new Set(rows.map((r) => r.subject_id ?? r.subject ?? r.subjectid).filter((id) => id != null && !Number.isNaN(Number(id))))];
-    if (subjectIds.length > 0) {
-      try {
-        const subjRes = await query('SELECT id, subject_name FROM subjects WHERE id = ANY($1)', [subjectIds]);
-        subjRes.rows.forEach((s) => {
-          subjectMap[s.id] = s;
-          subjectMap[Number(s.id)] = s;
-          subjectMap[String(s.id)] = s;
-        });
-      } catch (e) {
-        console.warn('Subject names lookup for exam results failed:', e.message);
-      }
-    }
-
     // Group results by exam (exam_id) and build a UI-friendly structure
     const examsMap = new Map();
-
-    const normalizeResult = (val) => {
-      const s = (val || '').toString().trim().toLowerCase();
-      if (!s) return null;
-      if (['pass', 'p', 'passed'].includes(s)) return 'Pass';
-      if (['fail', 'f', 'failed'].includes(s)) return 'Fail';
-      return val;
+    const getExamGrade = (percentage) => {
+      const p = Number(percentage);
+      if (!Number.isFinite(p)) return null;
+      if (p >= 91) return 'A+';
+      if (p >= 86) return 'A';
+      if (p >= 76) return 'B+';
+      if (p >= 66) return 'B';
+      if (p >= 50) return 'C';
+      return 'D';
     };
 
-    rows.forEach((r) => {
-      const examId = r.exam_id || r.examid || r.exam || null;
-      const key = examId != null ? String(examId) : `unknown-${r.id}`;
-      const examTotalMarks = r.exam_total_marks != null ? Number(r.exam_total_marks) : null;
-      const examPassingMarks = r.exam_passing_marks != null ? Number(r.exam_passing_marks) : null;
+    rows.rows.forEach((r) => {
+      const examId = parseId(r.exam_id);
+      const key = String(examId);
 
       if (!examsMap.has(key)) {
-        const examName = r.exam_name || r.examname || r.name || 'Exam';
-        const examType = r.exam_type || r.type || null;
-        const examDate = r.exam_date || r.date || r.exam_date_time || null;
+        const examName = r.exam_name || 'Exam';
+        const examType = r.exam_type || null;
+        const examDate = r.exam_date || null;
         const labelParts = [];
         if (examType) labelParts.push(examType);
         if (examName && !labelParts.includes(examName)) labelParts.push(examName);
@@ -3054,8 +3072,6 @@ const getStudentExamResults = async (req, res) => {
           examType,
           examDate,
           examLabel,
-          examTotalMarks,
-          examPassingMarks,
           subjects: [],
           summary: {
             totalMax: 0,
@@ -3068,82 +3084,41 @@ const getStudentExamResults = async (req, res) => {
       }
 
       const exam = examsMap.get(key);
-      const rawMax = r.max_marks ?? r.max_mark ?? r.total_marks ?? r.full_marks ?? r.total ?? null;
-      const rawMin = r.min_marks ?? r.pass_marks ?? r.min_mark ?? r.min ?? null;
-      const rawObtained = r.marks_obtained ?? r.obtained_marks ?? r.marks ?? r.marks_scored ?? r.score ?? null;
+      const maxMarks = Number(r.max_marks || 0);
+      const minMarks = Number(r.passing_marks || 0);
+      const obtained = r.is_absent ? null : (r.marks_obtained != null ? Number(r.marks_obtained) : null);
 
-      let maxMarks = rawMax != null ? Number(rawMax) : null;
-      let minMarks = rawMin != null ? Number(rawMin) : null;
-      const obtained = rawObtained != null ? Number(rawObtained) : null;
+      const component = String(r.exam_component || '').toLowerCase();
+      let subjectMode = 'Theory';
+      if (component.includes('practical')) subjectMode = 'Practical';
+      else if (Number(r.practical_hours || 0) > 0) subjectMode = 'Practical';
 
-      const rawResult = r.result || r.result_status || r.status || null;
-      let result = normalizeResult(rawResult);
-
-      if (!result) {
-        if (maxMarks != null && maxMarks > 0 && obtained != null) {
-          const threshold = minMarks != null && minMarks > 0 ? minMarks : Math.round(maxMarks * 0.35);
-          result = obtained >= threshold ? 'Pass' : 'Fail';
-        } else {
-          result = null;
-        }
-      }
-
-      const subjId = r.subject_id ?? r.subject ?? r.subjectid;
-      const subj = subjId != null ? (subjectMap[subjId] ?? subjectMap[Number(subjId)] ?? subjectMap[String(subjId)]) : null;
-      const subjectName = r.subject_name || (typeof r.subject === 'string' ? r.subject : null) || subj?.subject_name || null;
+      let result = 'N/A';
+      if (r.is_absent) result = 'Fail';
+      else if (obtained != null) result = obtained >= minMarks ? 'Pass' : 'Fail';
 
       exam.subjects.push({
-        subjectId: subjId ?? null,
-        subjectName: subjectName || 'Subject',
+        subjectId: parseId(r.subject_id),
+        subjectName: r.subject_name || 'Subject',
+        subjectCode: r.subject_code || null,
+        subjectMode,
         maxMarks,
         minMarks,
         marksObtained: obtained,
+        isAbsent: !!r.is_absent,
         result,
       });
     });
 
-    // Compute per-exam summary and fill per-subject max/min from exams table when missing
+    // Compute per-exam summary strictly from timetable plan + entered marks.
     examsMap.forEach((exam) => {
-      const examTotalMarks = exam.examTotalMarks;
-      const examPassingMarks = exam.examPassingMarks;
-      const totalObtained = exam.subjects.reduce((sum, s) => sum + (Number(s.marksObtained) || 0), 0);
-
-      let totalMax = examTotalMarks != null && examTotalMarks > 0 ? examTotalMarks : 0;
-      let totalMin = examPassingMarks != null && examPassingMarks > 0 ? examPassingMarks : 0;
-
-      if (totalMax === 0) {
-        exam.subjects.forEach((s) => {
-          if (s.maxMarks != null) totalMax += Number(s.maxMarks || 0);
-        });
-      }
-      if (totalMin === 0) {
-        exam.subjects.forEach((s) => {
-          if (s.minMarks != null) totalMin += Number(s.minMarks || 0);
-        });
-      }
-
-      const numSubjects = exam.subjects.length || 1;
-      const perSubjectMax = examTotalMarks != null && examTotalMarks > 0 ? examTotalMarks / numSubjects : null;
-      const perSubjectMin = examPassingMarks != null && examPassingMarks > 0 ? examPassingMarks / numSubjects : null;
-
-      exam.subjects.forEach((s) => {
-        if (s.maxMarks == null && perSubjectMax != null) {
-          s.maxMarks = Math.round(perSubjectMax * 100) / 100;
-        }
-        if (s.minMarks == null && perSubjectMin != null) {
-          s.minMarks = Math.round(perSubjectMin * 100) / 100;
-        }
-        if (s.result == null && s.maxMarks != null && s.maxMarks > 0 && s.marksObtained != null) {
-          const threshold = s.minMarks != null && s.minMarks > 0 ? s.minMarks : Math.round(s.maxMarks * 0.35);
-          s.result = s.marksObtained >= threshold ? 'Pass' : 'Fail';
-        }
-      });
-
+      const totalMax = exam.subjects.reduce((sum, s) => sum + Number(s.maxMarks || 0), 0);
+      const totalMin = exam.subjects.reduce((sum, s) => sum + Number(s.minMarks || 0), 0);
+      const totalObtained = exam.subjects.reduce((sum, s) => sum + (s.isAbsent ? 0 : Number(s.marksObtained || 0)), 0);
+      const hasPending = exam.subjects.some((s) => !s.isAbsent && s.marksObtained == null);
+      const hasFail = exam.subjects.some((s) => s.result === 'Fail');
       const percentage = totalMax > 0 ? (totalObtained / totalMax) * 100 : null;
-      const overallResult =
-        totalMax > 0
-          ? (totalObtained >= totalMin ? 'Pass' : 'Fail')
-          : null;
+      const overallResult = hasPending ? 'Pending' : (hasFail ? 'Fail' : 'Pass');
 
       exam.summary = {
         totalMax,
@@ -3151,6 +3126,7 @@ const getStudentExamResults = async (req, res) => {
         totalObtained,
         percentage: percentage != null ? Number(percentage.toFixed(2)) : null,
         overallResult,
+        grade: percentage != null ? getExamGrade(percentage) : null,
       };
     });
 
