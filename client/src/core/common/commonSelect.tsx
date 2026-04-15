@@ -12,10 +12,11 @@ export interface SelectProps {
   value?: string | null;
   onChange?: (value: string | null) => void;
   className?: string;
-  styles?: any; 
+  styles?: any;
+  placeholder?: string;
 }
 
-const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, className }) => {
+const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, className, placeholder }) => {
   const safeOptions = Array.isArray(options)
     ? options.filter(
         (option): option is Option =>
@@ -76,7 +77,7 @@ const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onC
       options={safeOptions}
       value={selectedOption}
       onChange={handleChange}
-      placeholder="Select"
+      placeholder={placeholder || "Select"}
     />
   );
 };

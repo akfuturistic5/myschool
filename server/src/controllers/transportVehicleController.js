@@ -1,192 +1,345 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 
 function getDriverDisplayName(driverRow) {
   if (!driverRow) return null;
-  if (driverRow.driver_name != null && String(driverRow.driver_name).trim() !== '') return String(driverRow.driver_name).trim();
-  if (driverRow.name != null && String(driverRow.name).trim() !== '') return String(driverRow.name).trim();
-  const first = driverRow.first_name != null ? String(driverRow.first_name).trim() : '';
-  const last = driverRow.last_name != null ? String(driverRow.last_name).trim() : '';
-  return [first, last].filter(Boolean).join(' ').trim() || null;
+  return driverRow.driver_name ?? driverRow.name ?? null;
 }
 
-function getRouteDisplayName(routeRow) {
-  if (!routeRow) return null;
-  return routeRow.route_name ?? routeRow.name ?? null;
-}
-
-function getPickupDisplayName(pickupRow) {
-  if (!pickupRow) return null;
-  return (
-    pickupRow.address ??
-    pickupRow.pickup_point ??
-    pickupRow.name ??
-    pickupRow.location ??
-    pickupRow.point_name ??
-    pickupRow.point_address ??
-    null
-  );
-}
-
-// Pickup point comes from route.start_point: either direct text or FK id to pickup_points
-function getPickupPointFromRoute(route, pickupMap) {
-  if (!route || route.start_point == null) return null;
-  const sp = route.start_point;
-  const isId = typeof sp === 'number' || (typeof sp === 'string' && /^\d+$/.test(String(sp).trim()));
-  if (isId) {
-    const pickup = pickupMap[Number(sp)] ?? pickupMap[String(sp)];
-    return pickup ? getPickupDisplayName(pickup) : null;
-  }
-  return String(sp).trim() || null;
-}
-
-function mapVehicleRow(row, driverMap = {}, routeMap = {}, pickupMap = {}) {
+function mapVehicleRow(row, driverMap = {}) {
   const driver = driverMap[row.driver_id];
-  const routeId = row.route_id ?? row.route;
-  const route = routeMap[routeId] ?? routeMap[Number(routeId)] ?? routeMap[String(routeId)];
   return {
     id: row.id,
-    vehicle_code: row.vehicle_code ?? row.code ?? row.id,
-    vehicle_number: row.vehicle_number ?? row.vehicle_no ?? row.number ?? '',
-    vehicle_model: row.vehicle_model ?? row.model ?? null,
+    vehicle_code: row.vehicle_code ?? `VEH-${String(row.id).padStart(4, '0')}`,
+    vehicle_number: row.vehicle_number ?? '',
+    vehicle_model: row.vehicle_model ?? '',
+    made_of_year: row.made_of_year ?? '',
+    registration_number: row.registration_number ?? '',
+    chassis_number: row.chassis_number ?? '',
+    seat_capacity: row.seat_capacity ?? '',
+    gps_device_id: row.gps_device_id ?? '',
+    academic_year_id: row.academic_year_id ?? null,
     driver_id: row.driver_id ?? null,
-    route_id: routeId ?? null,
-    registration_number: row.ragistration_number ?? row.registration_number ?? row.registration_no ?? null,
-    chassis_number: row.chassis_number ?? row.chassis_no ?? null,
-    gps_device_id: row.gps_device_id ?? row.gps_id ?? null,
-    year: row.made_of_year ?? row.year ?? null,
+    route_id: row.route_id ?? null,
     is_active: row.is_active !== false && row.is_active !== 'f',
-    photo_url: row.photo_url ?? row.photo ?? null,
+    photo_url: row.photo_url || null,
     created_at: row.created_at,
-    driver_name: driver ? getDriverDisplayName(driver) : null,
-    driver_phone: driver ? (driver.phone ?? null) : null,
-    driver_photo_url: driver ? (driver.photo_url ?? driver.photo ?? null) : null,
-    route: route ? getRouteDisplayName(route) : null,
-    pickup_point: getPickupPointFromRoute(route, pickupMap)
+    updated_at: row.updated_at,
+    // Joined details for listing/view
+    driver_name: driver ? getDriverDisplayName(driver) : (row.driver_name || 'N/A'),
+    driver_phone: driver ? (driver.phone ?? 'N/A') : (row.driver_phone || 'N/A'),
+    route_name: row.route_name || 'N/A',
+    point_name: row.point_name || 'N/A'
   };
 }
 
 const getAllVehicles = async (req, res) => {
   try {
-    const vehiclesResult = await query('SELECT * FROM vehicles ORDER BY id ASC');
-    const driverIds = [...new Set(vehiclesResult.rows.map((v) => v.driver_id).filter(Boolean))];
-    const routeIds = [...new Set(vehiclesResult.rows.map((v) => v.route_id ?? v.route).filter(Boolean))];
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      academic_year_id,
+      status,
+      route_id,
+      sortField = 'id',
+      sortOrder = 'ASC'
+    } = req.query;
 
-    let driverMap = {};
-    if (driverIds.length > 0) {
-      const driversResult = await query('SELECT * FROM drivers WHERE id = ANY($1)', [driverIds]);
-      driversResult.rows.forEach((d) => { driverMap[d.id] = d; });
+    const offset = (page - 1) * limit;
+    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
+    let whereClause = 'WHERE v.deleted_at IS NULL';
+    const queryParams = [];
+
+    if (search) {
+      queryParams.push(`%${search}%`);
+      whereClause += ` AND (v.vehicle_number ILIKE $${queryParams.length} OR v.vehicle_model ILIKE $${queryParams.length} OR d.driver_name ILIKE $${queryParams.length} OR r.route_name ILIKE $${queryParams.length})`;
     }
-    let routeMap = {};
-    let pickupMap = {};
-    if (routeIds.length > 0) {
-      const routesResult = await query('SELECT * FROM routes WHERE id = ANY($1)', [routeIds]);
-      routesResult.rows.forEach((r) => {
-        routeMap[r.id] = r;
-        routeMap[Number(r.id)] = r;
-        routeMap[String(r.id)] = r;
-      });
-      // Pickup point = route.start_point. If start_point is an ID, resolve from pickup_points.
-      const startPointIds = routesResult.rows
-        .map((r) => r.start_point)
-        .filter((sp) => {
-          if (sp == null) return false;
-          if (typeof sp === 'number') return true;
-          if (typeof sp === 'string' && /^\d+$/.test(String(sp).trim())) return true;
-          return false;
-        });
-      const uniqueIds = [...new Set(startPointIds.map((id) => Number(id)))];
-      if (uniqueIds.length > 0) {
-        const pickupsResult = await query('SELECT * FROM pickup_points WHERE id = ANY($1)', [uniqueIds]);
-        pickupsResult.rows.forEach((p) => {
-          pickupMap[p.id] = p;
-          pickupMap[Number(p.id)] = p;
-          pickupMap[String(p.id)] = p;
-        });
+
+    if (status !== undefined && status !== '') {
+      const isActive = status === 'active' || status === 'true' || status === true;
+      queryParams.push(isActive);
+      whereClause += ` AND v.is_active = $${queryParams.length}`;
+    }
+
+    if (route_id && route_id !== 'all') {
+      queryParams.push(parseInt(route_id));
+      whereClause += ` AND v.route_id = $${queryParams.length}`;
+    }
+    if (scopedAcademicYearId) {
+      queryParams.push(scopedAcademicYearId);
+      whereClause += ` AND v.academic_year_id = $${queryParams.length}`;
+    }
+
+    // Sorting
+    const allowedSortFields = ['id', 'vehicle_number', 'vehicle_model', 'made_of_year', 'is_active', 'created_at', 'driver_name', 'route_name', 'point_name'];
+    let finalSortField = 'v.id';
+    if (allowedSortFields.includes(sortField)) {
+        if (sortField === 'driver_name') finalSortField = 'd.driver_name';
+        else if (sortField === 'route_name') finalSortField = 'r.route_name';
+        else if (sortField === 'point_name') finalSortField = 'point_name'; // Uses the alias from subquery
+        else finalSortField = `v.${sortField}`;
+    }
+    const finalSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+    // Count query - Joined with routes and pickup_points via the new relationship
+    const countResult = await query(
+      `SELECT COUNT(*) FROM vehicles v 
+       LEFT JOIN drivers d ON v.driver_id = d.id 
+       LEFT JOIN routes r ON v.route_id = r.id
+       ${whereClause}`,
+      queryParams
+    );
+    const totalCount = parseInt(countResult.rows[0].count);
+
+    // Data query
+    const dataResult = await query(
+      `SELECT v.*, d.driver_name, d.phone as driver_phone, r.route_name,
+       (SELECT string_agg(pp_sub.point_name, ', ') 
+        FROM route_stops rs_sub 
+        JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id 
+        WHERE rs_sub.route_id = r.id) as point_name
+       FROM vehicles v
+       LEFT JOIN drivers d ON v.driver_id = d.id
+       LEFT JOIN routes r ON v.route_id = r.id
+       ${whereClause} 
+       ORDER BY ${finalSortField} ${finalSortOrder} 
+       LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`,
+      [...queryParams, limit, offset]
+    );
+
+    // Prepare driver map for mapping
+    const driverMap = {};
+    dataResult.rows.forEach(row => {
+      if (row.driver_id) {
+        driverMap[row.driver_id] = { driver_name: row.driver_name, phone: row.driver_phone };
       }
-    }
+    });
 
-    const data = vehiclesResult.rows.map((row) => mapVehicleRow(row, driverMap, routeMap, pickupMap));
-    return success(res, 200, 'Transport vehicles fetched successfully', data, { count: data.length });
+    const data = dataResult.rows.map((row) => mapVehicleRow(row, driverMap));
+
+    return success(res, 200, 'Vehicles fetched successfully', data, {
+      totalCount,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalCount / limit)
+    });
   } catch (error) {
-    console.error('Error fetching transport vehicles:', error);
-    return errorResponse(res, 500, 'Failed to fetch transport vehicles');
+    console.error('Error fetching vehicles:', error);
+    return errorResponse(res, 500, 'Failed to fetch vehicles');
   }
 };
 
 const getVehicleById = async (req, res) => {
   try {
     const { id } = req.params;
-    const vehiclesResult = await query('SELECT * FROM vehicles WHERE id = $1', [id]);
-    if (vehiclesResult.rows.length === 0) {
-      return errorResponse(res, 404, 'Vehicle not found');
-    }
-    const row = vehiclesResult.rows[0];
-    let driverMap = {};
-    let routeMap = {};
-    let pickupMap = {};
-    if (row.driver_id) {
-      const driversResult = await query('SELECT * FROM drivers WHERE id = $1', [row.driver_id]);
-      if (driversResult.rows.length > 0) driverMap[row.driver_id] = driversResult.rows[0];
-    }
-    const routeId = row.route_id ?? row.route;
-    if (routeId) {
-      const routesResult = await query('SELECT * FROM routes WHERE id = $1', [routeId]);
-      if (routesResult.rows.length > 0) {
-        const routeRow = routesResult.rows[0];
-        routeMap[routeId] = routeRow;
-        routeMap[Number(routeId)] = routeRow;
-        routeMap[String(routeId)] = routeRow;
-        const sp = routeRow.start_point;
-        const isId = sp != null && (typeof sp === 'number' || (typeof sp === 'string' && /^\d+$/.test(String(sp).trim())));
-        if (isId) {
-          const pickupsResult = await query('SELECT * FROM pickup_points WHERE id = $1', [Number(sp)]);
-          if (pickupsResult.rows.length > 0) {
-            const p = pickupsResult.rows[0];
-            pickupMap[Number(sp)] = p;
-            pickupMap[String(sp)] = p;
-          }
-        }
-      }
-    }
-    return success(res, 200, 'Transport vehicle fetched successfully', mapVehicleRow(row, driverMap, routeMap, pickupMap));
-  } catch (error) {
-    console.error('Error fetching transport vehicle:', error);
-    return errorResponse(res, 500, 'Failed to fetch transport vehicle');
-  }
-};
-
-// Update vehicle (currently only updates status flag)
-const updateVehicle = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { is_active } = req.body;
-
-    // Convert is_active to boolean
-    let isActiveBoolean = false;
-    if (is_active === true || is_active === 'true' || is_active === 1 || is_active === 't' || is_active === 'T') {
-      isActiveBoolean = true;
-    } else if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'f' || is_active === 'F') {
-      isActiveBoolean = false;
-    }
-
     const result = await query(`
-      UPDATE vehicles
-      SET is_active = $1,
-          modified_at = NOW()
-      WHERE id = $2
-      RETURNING *
-    `, [isActiveBoolean, id]);
+      SELECT v.*, d.driver_name, d.phone as driver_phone, r.route_name,
+      (SELECT string_agg(pp_sub.point_name, ', ') 
+       FROM route_stops rs_sub 
+       JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id 
+       WHERE rs_sub.route_id = r.id) as point_name
+      FROM vehicles v
+      LEFT JOIN drivers d ON v.driver_id = d.id
+      LEFT JOIN routes r ON v.route_id = r.id
+      WHERE v.id = $1 AND v.deleted_at IS NULL
+    `, [id]);
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Vehicle not found');
     }
 
-    return success(res, 200, 'Vehicle updated successfully', result.rows[0]);
+    const row = result.rows[0];
+    const driverMap = { [row.driver_id]: { driver_name: row.driver_name, phone: row.driver_phone } };
+    
+    return success(res, 200, 'Vehicle fetched successfully', mapVehicleRow(row, driverMap));
   } catch (error) {
-    console.error('Error updating vehicle:', error);
-    return errorResponse(res, 500, 'Failed to update vehicle');
+    console.error('Error fetching vehicle:', error);
+    return errorResponse(res, 500, 'Failed to fetch vehicle');
   }
 };
 
-module.exports = { getAllVehicles, getVehicleById, updateVehicle };
+const createVehicle = async (req, res) => {
+  try {
+    const { 
+      vehicle_number, 
+      vehicle_model, 
+      made_of_year, 
+      registration_number, 
+      chassis_number, 
+      seat_capacity, 
+      gps_device_id, 
+      driver_id, 
+      route_id,
+      academic_year_id,
+      is_active 
+    } = req.body;
+
+    if (!vehicle_number) {
+      return errorResponse(res, 400, 'Vehicle number is required');
+    }
+
+    const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
+    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
+
+    // Map frontend fields to DB column names
+    const model = vehicle_model;
+    const seating_capacity = seat_capacity;
+
+    const result = await query(`
+      INSERT INTO vehicles (
+        vehicle_number, model, made_of_year, registration_number, 
+        chassis_number, seating_capacity, gps_device_id, driver_id, route_id, is_active, academic_year_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `, [
+      vehicle_number, 
+      model || '', 
+      made_of_year ? parseInt(made_of_year) : null, 
+      registration_number || '', 
+      chassis_number || '', 
+      seating_capacity ? parseInt(seating_capacity) : null, 
+      gps_device_id || '', 
+      driver_id ? parseInt(driver_id) : null, 
+      route_id ? parseInt(route_id) : null,
+      isActiveValue,
+      scopedAcademicYearId
+    ]);
+
+    return success(res, 201, 'Vehicle created successfully', result.rows[0]);
+  } catch (error) {
+    console.error('Error creating vehicle:', error);
+    return errorResponse(res, 500, 'Failed to create vehicle');
+  }
+};
+
+const updateVehicle = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const numericId = parseInt(id);
+
+    if (isNaN(numericId)) {
+      return errorResponse(res, 400, 'Invalid vehicle ID');
+    }
+
+    const {
+      vehicle_number,
+      vehicle_model: model,
+      made_of_year,
+      registration_number,
+      chassis_number,
+      seat_capacity: seating_capacity,
+      gps_device_id,
+      driver_id,
+      route_id,
+      academic_year_id,
+      is_active
+    } = req.body;
+
+    const updates = [];
+    const values = [];
+    let i = 1;
+
+    if (vehicle_number !== undefined) {
+      updates.push(`vehicle_number = $${i++}`);
+      values.push(vehicle_number);
+    }
+    if (model !== undefined) {
+      updates.push(`model = $${i++}`);
+      values.push(model || '');
+    }
+    if (made_of_year !== undefined) {
+      updates.push(`made_of_year = $${i++}`);
+      values.push(made_of_year ? parseInt(made_of_year) : null);
+    }
+    if (registration_number !== undefined) {
+      updates.push(`registration_number = $${i++}`);
+      values.push(registration_number || '');
+    }
+    if (chassis_number !== undefined) {
+      updates.push(`chassis_number = $${i++}`);
+      values.push(chassis_number || '');
+    }
+    if (seating_capacity !== undefined) {
+      updates.push(`seating_capacity = $${i++}`);
+      values.push(seating_capacity ? parseInt(seating_capacity) : null);
+    }
+    if (gps_device_id !== undefined) {
+      updates.push(`gps_device_id = $${i++}`);
+      values.push(gps_device_id || '');
+    }
+    if (driver_id !== undefined) {
+      updates.push(`driver_id = $${i++}`);
+      values.push(driver_id ? parseInt(driver_id) : null);
+    }
+    if (route_id !== undefined) {
+      updates.push(`route_id = $${i++}`);
+      values.push(route_id ? parseInt(route_id) : null);
+    }
+    if (academic_year_id !== undefined) {
+      updates.push(`academic_year_id = $${i++}`);
+      values.push(toPositiveInt(academic_year_id));
+    }
+    if (is_active !== undefined) {
+      const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
+      updates.push(`is_active = $${i++}`);
+      values.push(isActiveValue);
+    }
+
+    if (updates.length === 0) {
+      return errorResponse(res, 400, 'No fields to update');
+    }
+
+    values.push(numericId);
+    const result = await query(`
+      UPDATE vehicles
+      SET ${updates.join(', ')}
+      WHERE id = $${i} AND deleted_at IS NULL
+      RETURNING *
+    `, values);
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, 404, 'Vehicle not found');
+    }
+
+    return success(res, 200, 'Vehicle updated successfully', mapVehicleRow(result.rows[0]));
+  } catch (error) {
+    console.error('Error updating transport vehicle:', error);
+    return errorResponse(res, 500, error.message || 'Failed to update vehicle');
+  }
+};
+
+const deleteVehicle = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const numericId = parseInt(id);
+    
+    if (isNaN(numericId)) {
+      return errorResponse(res, 400, 'Invalid vehicle ID');
+    }
+
+    const result = await query(
+      'UPDATE vehicles SET deleted_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+      [numericId]
+    );
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, 404, 'Vehicle not found or already deleted');
+    }
+
+    return success(res, 200, 'Vehicle deleted successfully');
+  } catch (error) {
+    console.error('Error deleting vehicle:', error);
+    return errorResponse(res, 500, 'Failed to delete vehicle');
+  }
+};
+
+module.exports = {
+  getAllVehicles,
+  getVehicleById,
+  createVehicle,
+  updateVehicle,
+  deleteVehicle
+};

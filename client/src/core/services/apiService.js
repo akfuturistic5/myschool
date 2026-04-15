@@ -1101,18 +1101,64 @@ class ApiService {
   }
 
   // Transport
-  async getTransportRoutes() {
-    return this.makeRequest('/transport/routes');
+  async getTransportRoutes(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.pickup_point_id && params.pickup_point_id !== 'all') searchParams.set('pickup_point_id', params.pickup_point_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/routes${qs ? `?${qs}` : ''}`);
   }
 
   async getTransportRouteById(id) {
     return this.makeRequest(`/transport/routes/${id}`);
   }
 
+  async createTransportRoute(routeData) {
+    return this.makeRequest('/transport/routes', {
+      method: 'POST',
+      body: JSON.stringify(routeData)
+    });
+  }
+
   async updateTransportRoute(id, routeData) {
     return this.makeRequest(`/transport/routes/${id}`, {
       method: 'PUT',
       body: JSON.stringify(routeData)
+    });
+  }
+
+  async deleteTransportRoute(id) {
+    return this.makeRequest(`/transport/routes/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getTransportPickupPoints(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.route_id) searchParams.set('route_id', params.route_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/pickup-points${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportPickupPoint(pickupData) {
+    return this.makeRequest('/transport/pickup-points', {
+      method: 'POST',
+      body: JSON.stringify(pickupData)
     });
   }
 
@@ -1123,10 +1169,67 @@ class ApiService {
     });
   }
 
+  async deleteTransportPickupPoint(id) {
+    return this.makeRequest(`/transport/pickup-points/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getTransportVehicles(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.route_id) searchParams.set('route_id', params.route_id);
+    if (params.pickup_point_id) searchParams.set('pickup_point_id', params.pickup_point_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/vehicles${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportVehicle(vehicleData) {
+    return this.makeRequest('/transport/vehicles', {
+      method: 'POST',
+      body: JSON.stringify(vehicleData)
+    });
+  }
+
   async updateTransportVehicle(id, vehicleData) {
     return this.makeRequest(`/transport/vehicles/${id}`, {
       method: 'PUT',
       body: JSON.stringify(vehicleData)
+    });
+  }
+
+  async deleteTransportVehicle(id) {
+    return this.makeRequest(`/transport/vehicles/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getTransportDrivers(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.role && params.role !== 'all') searchParams.set('role', params.role);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/drivers${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportDriver(driverData) {
+    return this.makeRequest('/transport/drivers', {
+      method: 'POST',
+      body: JSON.stringify(driverData)
     });
   }
 
@@ -1137,24 +1240,53 @@ class ApiService {
     });
   }
 
-  async getTransportPickupPoints() {
-    return this.makeRequest('/transport/pickup-points');
+  async deleteTransportDriver(id) {
+    return this.makeRequest(`/transport/drivers/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async deleteTransportAssignment(vehicleId) {
+    return this.makeRequest(`/transport/assignments/${vehicleId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getTransportAssignments(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.route_id && params.route_id !== 'all') searchParams.set('route_id', params.route_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/assignments${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportAssignment(assignmentData) {
+    return this.makeRequest('/transport/assignments', {
+      method: 'POST',
+      body: JSON.stringify(assignmentData)
+    });
+  }
+
+  async updateTransportAssignment(id, assignmentData) {
+    return this.makeRequest(`/transport/assignments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(assignmentData)
+    });
   }
 
   async getTransportPickupPointById(id) {
     return this.makeRequest(`/transport/pickup-points/${id}`);
   }
 
-  async getTransportVehicles() {
-    return this.makeRequest('/transport/vehicles');
-  }
-
   async getTransportVehicleById(id) {
     return this.makeRequest(`/transport/vehicles/${id}`);
-  }
-
-  async getTransportDrivers() {
-    return this.makeRequest('/transport/drivers');
   }
 
   async getTransportDriverById(id) {

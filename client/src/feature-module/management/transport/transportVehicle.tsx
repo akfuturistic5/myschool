@@ -1,123 +1,159 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
-import PredefinedDateRanges from "../../../core/common/datePicker";
+import { Link } from "react-router-dom";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  driverFilter2,
-  driverName,
-  GPSDevice,
-  status,
-  vehicleModel,
-  VehicleNumber,
-} from "../../../core/common/selectoption/selectoption";
-import type { TableData } from "../../../core/data/interface";
+import { status as statusOptions } from "../../../core/common/selectoption/selectoption";
 import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
-import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import { Link } from "react-router-dom";
 import { useTransportVehicles } from "../../../core/hooks/useTransportVehicles";
-import { apiService } from "../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportVehicle = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, error, fallbackData, refetch } = useTransportVehicles();
-  const data = apiData?.length ? apiData : fallbackData;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  
+  // State for dynamic features
+  const [params, setParams] = useState({
+    page: 1,
+    limit: 10,
+    search: "",
+    status: "",
+    sortField: "id",
+    sortOrder: "ASC"
+  });
+
+  const { data, loading, metadata, refetch } = useTransportVehicles(params);
+
   const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
-  const [editVehicleStatus, setEditVehicleStatus] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const handleApplyClick = () => {
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [draftStatus, setDraftStatus] = useState("all");
+
+  useEffect(() => {
+    setParams((prev) => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
+  }, [academicYearId]);
+
+  const handleApplyClick = (e: any) => {
+    e.preventDefault();
+    setParams(prev => ({ ...prev, status: draftStatus, page: 1 }));
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const onPageChange = (page: number, pageSize: number) => {
+    setParams(prev => ({ ...prev, page, limit: pageSize }));
+  };
+
+  const onSort = (field: string, order: string) => {
+    setParams(prev => ({
+      ...prev,
+      sortField: field,
+      sortOrder: order === "ascend" ? "ASC" : "DESC"
+    }));
+  };
+
+  const onRefresh = async () => {
+    await refetch();
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed',
+      text: 'Data updated successfully',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  };
+
+  const handleExportExcel = () => {
+    const exportData = (data as any[]).map((item: any) => ({
+      ID: item.id,
+      "Vehicle No": item.vehicleNo,
+      Model: item.vehicleModel,
+      "Made of Year": item.madeofYear,
+      "Registration No": item.registrationNo,
+      "Chassis No": item.chassisNo,
+      "GPS Device ID": item.gps,
+      Status: item.status
+    }));
+    exportToExcel(exportData, `Transport_Vehicles_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Vehicle No", dataKey: "vehicleNo" },
+      { title: "Model", dataKey: "vehicleModel" },
+      { title: "Made of Year", dataKey: "madeofYear" },
+      { title: "Registration No", dataKey: "registrationNo" },
+      { title: "Chassis No", dataKey: "chassisNo" },
+      { title: "GPS Device ID", dataKey: "gps" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(data, "Transport Vehicles List", `Transport_Vehicles_${new Date().toISOString().split('T')[0]}`, cols);
+  };
+
+  const handlePrint = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Vehicle No", dataKey: "vehicleNo" },
+      { title: "Model", dataKey: "vehicleModel" },
+      { title: "Made of Year", dataKey: "madeofYear" },
+      { title: "Registration No", dataKey: "registrationNo" },
+      { title: "Chassis No", dataKey: "chassisNo" },
+      { title: "GPS Device ID", dataKey: "gps" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Transport Vehicles List", cols, data);
+  };
+
   const columns = [
     {
       title: "ID",
-      dataIndex: "id",
+      dataIndex: "displayId",
+      sorter: true,
       render: (text: string) => (
         <Link to="#" className="link-primary">
           {text}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => a.id.length - b.id.length,
     },
     {
       title: "Vehicle No",
       dataIndex: "vehicleNo",
-      sorter: (a: TableData, b: TableData) =>
-        (a.vehicleNo || '').length - (b.vehicleNo || '').length,
+      sorter: true,
     },
     {
       title: "Vehicle Model",
       dataIndex: "vehicleModel",
-      sorter: (a: TableData, b: TableData) =>
-        a.vehicleModel.length - b.vehicleModel.length,
+      sorter: true,
     },
     {
       title: "Made of Year",
       dataIndex: "madeofYear",
-      sorter: (a: TableData, b: TableData) =>
-        a.madeofYear.length - b.madeofYear.length,
+      sorter: true,
     },
     {
       title: "Registration No",
       dataIndex: "registrationNo",
-      sorter: (a: TableData, b: TableData) =>
-        a.registrationNo.length - b.registrationNo.length,
+      sorter: true,
     },
     {
       title: "Chassis No",
       dataIndex: "chassisNo",
       render: (text: string) => (
-        <span className="badge bg-soft-light">{text}</span>
+        <span className="badge bg-soft-info">{text}</span>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.chassisNo.length - b.chassisNo.length,
+      sorter: true,
     },
     {
       title: "GPS Device ID",
       dataIndex: "gps",
-      sorter: (a: TableData, b: TableData) => a.gps.length - b.gps.length,
+      sorter: true,
     },
-    {
-      title: " ",
-      dataIndex: "phone",
-      render: () => (
-        <Link
-          to="#"
-          className="btn btn-light live track"
-          data-bs-toggle="modal"
-          data-bs-target="#live_track"
-        >
-          Live Track
-        </Link>
-      ),
-    },
-    {
-      title: "Driver",
-      dataIndex: "name",
-      render: (text: string, record: any) => (
-        <div className="d-flex align-items-center">
-          <Link to="#" className="avatar avatar-md">
-            <ImageWithBasePath
-              src={record.img}
-              className="img-fluid rounded-circle"
-              alt="img"
-            />
-          </Link>
-          <div className="ms-2">
-            <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
-            </p>
-            <span className="fs-12">{record.phone}</span>
-          </div>
-        </div>
-      ),
-      sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
-    },
-
     {
       title: "Status",
       dataIndex: "status",
@@ -136,86 +172,64 @@ const TransportVehicle = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+      sorter: true,
     },
-
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const vehicle = record.originalData || record;
-                      let status = true;
-                      if (vehicle && Object.prototype.hasOwnProperty.call(vehicle, "is_active")) {
-                        status =
-                          vehicle.is_active === true ||
-                          vehicle.is_active === 1 ||
-                          vehicle.is_active === "true";
-                      } else if (record.status) {
-                        status = record.status === "Active";
-                      }
-                      setEditVehicleStatus(status);
-                      setSelectedVehicle(record);
-                      setTimeout(() => {
-                        const modalElement = document.getElementById('edit_vehicle');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-                            modal.show();
-                          }
-                        }
-                      }, 100);
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-right p-3">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#edit_vehicle"
+                  onClick={() => setSelectedVehicle(record)}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#delete-modal"
+                  onClick={() => {
+                    setDeleteId(record.originalData?.id || record.id);
+                    setSelectedVehicle(record);
+                  }}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Delete
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Transport</h3>
+              <h3 className="page-title mb-1">Vehicles</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -225,19 +239,25 @@ const TransportVehicle = () => {
                     <Link to="#">Management</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                    Transport
+                    Vehicles
                   </li>
                 </ol>
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption 
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
                   data-bs-toggle="modal"
                   data-bs-target="#add_vehicle"
+                  onClick={() => setSelectedVehicle(null)}
                 >
                   <i className="ti ti-square-rounded-plus me-2" />
                   Add Vehicle
@@ -245,15 +265,11 @@ const TransportVehicle = () => {
               </div>
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Students List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Transport</h4>
+              <h4 className="mb-3">Vehicles List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -264,198 +280,73 @@ const TransportVehicle = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
-                    <form>
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                    <form onSubmit={handleApplyClick}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Vehicle Number
-                              </label>
-                              <CommonSelect
-                                className="select"
-                                options={VehicleNumber}
-                                defaultValue={undefined}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Model</label>
-                              <CommonSelect
-                                className="select"
-                                options={vehicleModel}
-                                defaultValue={vehicleModel[0]}
-                              />
-                            </div>
-                          </div>
                           <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Name</label>
-                              <CommonSelect
-                                className="select"
-                                options={driverName}
-                                defaultValue={driverName[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">GPS Device</label>
-                              <CommonSelect
-                                className="select"
-                                options={GPSDevice}
-                                defaultValue={undefined}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-0">
-                              <label className="form-label">Driver</label>
-                              <CommonSelect
-                                className="select"
-                                options={driverName}
-                                defaultValue={undefined}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={status}
-                                defaultValue={status[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-0">
-                              <label className="form-label">More Filter</label>
-                              <CommonSelect
-                                className="select"
-                                options={driverFilter2}
-                                defaultValue={driverFilter2[0]}
+                                options={[{ value: "all", label: "All Status" }, ...statusOptions.map(s => ({ value: s.value.toLowerCase(), label: s.label }))]}
+                                value={draftStatus}
+                                onChange={(val: string | null) => setDraftStatus(val === "all" || val === "All" ? "all" : (val?.toLowerCase() || "all"))}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link to="#" className="btn btn-light me-3" onClick={() => {
+                          setDraftStatus("all");
+                          setParams({ ...params, status: "all", page: 1 });
+                        }}>
                           Reset
                         </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
-                        >
+                        <button type="submit" className="btn btn-primary">
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
+
             <div className="card-body p-0 py-3">
-              {error && (
-                <div className="alert alert-warning mx-3 mt-3 mb-0" role="alert">
-                  Could not load vehicles from server. Showing sample data. Check that the server is running on port 5000.
-                </div>
-              )}
-              {loading && (
-                <div className="text-center py-4">
-                  <span className="spinner-border spinner-border-sm me-2" />
-                  Loading vehicles...
-                </div>
-              )}
-              {!loading && (
-                <Table dataSource={data} columns={columns} Selection={true} />
-              )}
+               <Table 
+                 dataSource={data} 
+                 columns={columns} 
+                 Selection={true} 
+                 pagination={{
+                   current: metadata.page,
+                   pageSize: metadata.limit,
+                   total: metadata.totalCount,
+                   showSizeChanger: true,
+                   onChange: onPageChange
+                 }}
+                 onTableChange={(pagination: any, filters: any, sorter: any) => {
+                   if (sorter.field) {
+                     onSort(sorter.field, sorter.order);
+                   }
+                 }}
+               />
             </div>
           </div>
-          {/* /Students List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
+
       <TransportModal
         selectedVehicle={selectedVehicle}
-        editVehicleStatus={editVehicleStatus}
-        setEditVehicleStatus={setEditVehicleStatus}
-        isUpdating={isUpdating}
-        setIsUpdating={setIsUpdating}
-        onVehicleUpdate={async () => {
-          const vehicleId = selectedVehicle?.originalData?.id || selectedVehicle?.id;
-          if (!vehicleId || isUpdating) return;
-
-          setIsUpdating(true);
-          try {
-            const updateData = {
-              is_active: editVehicleStatus,
-            };
-
-            const response = await apiService.updateTransportVehicle(vehicleId, updateData);
-
-            if (response && response.status === "SUCCESS") {
-              const modalElement = document.getElementById("edit_vehicle");
-              if (modalElement) {
-                const bootstrap = (window as any).bootstrap;
-                if (bootstrap && bootstrap.Modal) {
-                  const modal = bootstrap.Modal.getInstance(modalElement);
-                  if (modal) modal.hide();
-                }
-              }
-              await refetch();
-              setSelectedVehicle(null);
-            } else {
-              alert(response?.message || "Failed to update vehicle");
-            }
-          } catch (err: any) {
-            console.error("Error updating vehicle:", err);
-            alert(err?.message || "Failed to update vehicle. Please try again.");
-          } finally {
-            setIsUpdating(false);
-          }
+        deleteId={deleteId}
+        onSuccess={() => {
+          refetch();
+          setSelectedVehicle(null);
+          setDeleteId(null);
         }}
       />
     </>

@@ -1,11 +1,16 @@
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { driverName, PickupPoint2, routesList, VehicleNumber } from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import dayjs from "dayjs";
 import { DatePicker } from "antd";
+
+import { apiService } from "../../../core/services/apiService";
+import Swal from "sweetalert2";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 interface TransportModalProps {
   selectedRoute?: any;
@@ -42,6 +47,8 @@ interface TransportModalProps {
   onDriverUpdate?: () => Promise<void>;
   onAssignUpdate?: () => Promise<void>;
   onVehicleUpdate?: () => Promise<void>;
+  onSuccess?: () => void;
+  deleteId?: number | string | null;
 }
 
 const TransportModal = ({
@@ -78,107 +85,549 @@ const TransportModal = ({
   onPickupUpdate,
   onDriverUpdate,
   onAssignUpdate,
-  onVehicleUpdate
+  onVehicleUpdate,
+  onSuccess,
+  deleteId
 }: TransportModalProps) => {
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  // State for Add/Edit Route
+  const [routeName, setRouteName] = useState("");
+  const [distanceKm, setDistanceKm] = useState<string | number>("");
+  const [routeStatus, setRouteStatus] = useState(true);
+  const [stops, setStops] = useState<any[]>([{ pickup_point_id: "", pickup_time: "", drop_time: "", order_index: 0 }]);
+
+  // State for Assign Vehicle
+  const [assignRouteId, setAssignRouteId] = useState("");
+  const [assignVehicleId, setAssignVehicleId] = useState("");
+  const [assignDriverId, setAssignDriverId] = useState("");
+  const [assignStatus, setAssignStatus] = useState(true);
+
+  // Lists for dropdowns
+  const [pickupsData, setPickupsData] = useState<any[]>([]);
+  const [vehiclesData, setVehiclesData] = useState<any[]>([]);
+  const [routesData, setRoutesData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch initial data for dropdowns
+  useEffect(() => {
+    const fetchSelectData = async () => {
+      try {
+        const [pickups, vehicles, routes] = await Promise.all([
+          apiService.getTransportPickupPoints({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined }),
+          apiService.getTransportVehicles({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined }),
+          apiService.getTransportRoutes({ limit: 1000, academic_year_id: academicYearId ?? undefined })
+        ]);
+        if (pickups.status === "SUCCESS") setPickupsData(pickups.data);
+        if (vehicles.status === "SUCCESS") setVehiclesData(vehicles.data);
+        if (routes.status === "SUCCESS") setRoutesData(routes.data);
+      } catch (err) {
+        console.error("Failed to fetch select data:", err);
+      }
+    };
+    fetchSelectData();
+  }, [academicYearId]);
+
   // Update form fields when selectedRoute changes
   useEffect(() => {
-    if (selectedRoute && setEditRouteName && setEditRouteStatus) {
+    if (selectedRoute) {
       const route = selectedRoute.originalData || selectedRoute;
-      // Use route_name from originalData, or fallback to mapped routes property
-      const routeName = route.route_name || selectedRoute.routes || '';
-      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-      // Fallback to status string if is_active is not available
-      let routeStatus = true; // default to active
-      if (Object.prototype.hasOwnProperty.call(route, 'is_active')) {
-        routeStatus = route.is_active === true || route.is_active === 1 || route.is_active === 'true';
-      } else if (selectedRoute.status) {
-        routeStatus = selectedRoute.status === 'Active';
+      setRouteName(route.route_name || "");
+      setDistanceKm(route.distance_km || "");
+      setRouteStatus(route.is_active === 1 || route.is_active === true || route.status === "Active");
+
+      if (route.stops && Array.isArray(route.stops)) {
+        setStops(route.stops.map((s: any) => ({
+          id: s.id,
+          pickup_point_id: String(s.pickup_point_id || ""),
+          pickup_time: s.pickup_time || "",
+          drop_time: s.drop_time || "",
+          order_index: s.order_index
+        })));
+      } else {
+        setStops([{ pickup_point_id: "", pickup_time: "", drop_time: "", order_index: 0 }]);
       }
-
-      setEditRouteName(routeName);
-      setEditRouteStatus(routeStatus);
+    } else {
+      setRouteName("");
+      setDistanceKm("");
+      setRouteStatus(true);
+      setStops([{ pickup_point_id: "", pickup_time: "", drop_time: "", order_index: 0 }]);
     }
-  }, [selectedRoute, setEditRouteName, setEditRouteStatus]);
+  }, [selectedRoute]);
 
-  // Update form fields when selectedPickupPoint changes
+  // Update Assign Vehicle form
   useEffect(() => {
-    if (selectedPickupPoint && setEditPickupAddress && setEditPickupStatus) {
-      const pickup = selectedPickupPoint.originalData || selectedPickupPoint;
-      // Use address from originalData, or fallback to mapped pickupPoint property
-      const pickupAddress = pickup.address || selectedPickupPoint.pickupPoint || '';
-      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-      // Fallback to status string if is_active is not available
-      let pickupStatus = true; // default to active
-      if (Object.prototype.hasOwnProperty.call(pickup, 'is_active')) {
-        pickupStatus = pickup.is_active === true || pickup.is_active === 1 || pickup.is_active === 'true';
-      } else if (selectedPickupPoint.status) {
-        pickupStatus = selectedPickupPoint.status === 'Active';
+    if (selectedAssignment) {
+      const assign = selectedAssignment.originalData || selectedAssignment;
+      setAssignRouteId(String(assign.route_id || ""));
+      setAssignVehicleId(String(assign.vehicle_id || ""));
+      setAssignDriverId(String(assign.driver_id || ""));
+      setAssignStatus(assign.is_active === 1 || assign.is_active === true || assign.status === "Active");
+    } else {
+      setAssignRouteId("");
+      setAssignVehicleId("");
+      setAssignDriverId("");
+      setAssignStatus(true);
+    }
+  }, [selectedAssignment]);
+
+  const handleAddStop = () => {
+    setStops([...stops, { pickup_point_id: "", pickup_time: "", drop_time: "", order_index: stops.length }]);
+  };
+
+  const handleRemoveStop = (index: number) => {
+    const newStops = [...stops];
+    newStops.splice(index, 1);
+    setStops(newStops);
+  };
+
+  const handleStopChange = (index: number, field: string, value: any) => {
+    const newStops = [...stops];
+    newStops[index] = { ...newStops[index], [field]: value };
+    setStops(newStops);
+  };
+
+  const handleFormError = (err: any, defaultTitle = "Error") => {
+    console.error(`${defaultTitle}:`, err);
+    let errorMessage = err.message || "An unexpected error occurred";
+    
+    // Attempt to extract message from our API error format: "HTTP error! status: 400, message: {...}"
+    if (errorMessage.includes('message: ')) {
+      try {
+        const jsonPart = errorMessage.split('message: ')[1];
+        const parsed = JSON.parse(jsonPart);
+        errorMessage = parsed.message || errorMessage;
+      } catch (e) {
+        // Fallback to original if parse fails
+      }
+    }
+
+    Swal.fire({
+      icon: 'error',
+      title: defaultTitle,
+      text: errorMessage
+    });
+  };
+
+  const handleAddRoute = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        route_name: routeName,
+        distance_km: distanceKm,
+        academic_year_id: academicYearId ?? undefined,
+        is_active: !!routeStatus,
+        stops: stops.filter(s => s.pickup_point_id) // Only send stops with a selected point
+      };
+
+      let res;
+      // Robust updateId detection
+      const updateId = selectedRoute?.originalData?.id || 
+                       (selectedRoute?.id && !isNaN(Number(selectedRoute.id)) ? Number(selectedRoute.id) : null);
+
+      if (updateId) {
+        res = await apiService.updateTransportRoute(updateId, payload);
+      } else {
+        res = await apiService.createTransportRoute(payload);
       }
 
-      setEditPickupAddress(pickupAddress);
-      setEditPickupStatus(pickupStatus);
+      if (res?.status === "SUCCESS") {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: updateId ? 'Route updated successfully' : 'Route created successfully',
+          timer: 1500,
+          showConfirmButton: false
+        });
+        
+        await handleCallback('route');
+        
+        // Close modal
+        const modalId = updateId ? 'edit_routes' : 'add_routes';
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+      } else {
+        throw new Error(res?.message || 'Failed to save route');
+      }
+    } catch (err: any) {
+      console.error('Route Save Error:', err);
+      handleFormError(err, "Failed to save route");
+    } finally {
+      setLoading(false);
     }
-  }, [selectedPickupPoint, setEditPickupAddress, setEditPickupStatus]);
+  };
 
-  // Update status when selectedAssignment changes (assign vehicle page)
+  const handleAddAssignment = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (!assignRouteId || !assignVehicleId || !assignDriverId) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Validation Error',
+          text: 'Please select route, vehicle and driver'
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        vehicle_id: Number(assignVehicleId),
+        route_id: Number(assignRouteId),
+        driver_id: Number(assignDriverId),
+        academic_year_id: academicYearId ?? undefined,
+        is_active: !!assignStatus
+      };
+
+      let res;
+      const assignmentId = selectedAssignment?.originalData?.id || selectedAssignment?.id || null;
+      if (assignmentId) {
+        res = await apiService.updateTransportAssignment(assignmentId, payload);
+      } else {
+        res = await apiService.createTransportAssignment(payload);
+      }
+
+      if (res?.status === "SUCCESS") {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Vehicle assigned successfully',
+          timer: 1500,
+          showConfirmButton: false
+        });
+        
+        await handleCallback('assign');
+        
+        const modalId = selectedAssignment ? 'edit_assign_vehicle' : 'add_assign_vehicle';
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+      } else {
+        throw new Error(res?.message || 'Failed to assign vehicle');
+      }
+    } catch (err: any) {
+      console.error('Assign Error:', err);
+      handleFormError(err, "Failed to save assignment");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // State for Pickup Points
+  const [pointName, setPointName] = useState("");
+  const [pointStatus, setPointStatus] = useState(true);
+
   useEffect(() => {
-    if (selectedAssignment && setEditAssignStatus) {
-      const assignment = selectedAssignment.originalData || selectedAssignment;
-      let status = true;
-      if (assignment && Object.prototype.hasOwnProperty.call(assignment, "is_active")) {
-        status =
-          assignment.is_active === true ||
-          assignment.is_active === 1 ||
-          assignment.is_active === "true";
-      } else if (selectedAssignment.status) {
-        status = selectedAssignment.status === "Active";
-      }
-      setEditAssignStatus(status);
+    if (selectedPickupPoint) {
+      const p = selectedPickupPoint.originalData || selectedPickupPoint;
+      setPointName(p.point_name || "");
+      setPointStatus(p.is_active === 1 || p.is_active === true || p.status === "Active");
+    } else {
+      setPointName("");
+      setPointStatus(true);
     }
-  }, [selectedAssignment, setEditAssignStatus]);
+  }, [selectedPickupPoint]);
 
-  // Update status when selectedVehicle changes
+  const handleAddPickupPoint = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      // Robust updateId detection
+      const updateId = selectedPickupPoint?.originalData?.id || 
+                       (selectedPickupPoint?.id && !isNaN(Number(selectedPickupPoint.id)) ? Number(selectedPickupPoint.id) : null);
+
+      // Frontend Duplicate Check
+      const isDuplicate = pickupsData.some(p =>
+        p.point_name.toLowerCase() === pointName.trim().toLowerCase() &&
+        p.id !== updateId
+      );
+
+      if (isDuplicate) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Duplicate Name',
+          text: 'A pickup point with this name already exists.'
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        point_name: pointName.trim(),
+        academic_year_id: academicYearId ?? undefined,
+        is_active: !!pointStatus
+      };
+
+      let res;
+      if (updateId) {
+        res = await apiService.updateTransportPickupPoint(updateId, payload);
+      } else {
+        res = await apiService.createTransportPickupPoint(payload);
+      }
+
+      if (res?.status === "SUCCESS") {
+        await handleCallback('pickup');
+        
+        // Close modal
+        const modalId = updateId ? 'edit_pickup' : 'add_pickup';
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+
+        Swal.fire({
+          icon: 'success',
+          title: updateId ? 'Updated!' : 'Created!',
+          text: res.message || `Pickup point ${updateId ? 'updated' : 'created'} successfully`,
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } else {
+        throw new Error(res?.message || 'Failed to save pickup point');
+      }
+    } catch (err: any) {
+      console.error('Pickup Save Error:', err);
+      handleFormError(err, "Failed to save pickup point");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // State for Drivers
+  const [driverNameInput, setDriverNameInput] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [driverLicense, setDriverLicense] = useState("");
+  const [driverRole, setDriverRole] = useState("driver");
+  const [driverAddressInput, setDriverAddressInput] = useState("");
+  const [driverStatus, setDriverStatus] = useState(true);
+
   useEffect(() => {
-    if (selectedVehicle && setEditVehicleStatus) {
-      const vehicle = selectedVehicle.originalData || selectedVehicle;
-      let status = true;
-      if (vehicle && Object.prototype.hasOwnProperty.call(vehicle, "is_active")) {
-        status =
-          vehicle.is_active === true ||
-          vehicle.is_active === 1 ||
-          vehicle.is_active === "true";
-      } else if (selectedVehicle.status) {
-        status = selectedVehicle.status === "Active";
-      }
-      setEditVehicleStatus(status);
+    if (selectedDriver) {
+      const d = selectedDriver.originalData || selectedDriver;
+      setDriverNameInput(d.name || d.driver_name || "");
+      setDriverPhone(d.phone || d.driver_phone || "");
+      setDriverLicense(d.license_number || d.driverLicenseNo || "");
+      setDriverRole((d.role || "driver").toLowerCase());
+      setDriverAddressInput(d.address || "");
+      setDriverStatus(d.is_active === 1 || d.is_active === true || d.status === "Active");
+    } else {
+      setDriverNameInput("");
+      setDriverPhone("");
+      setDriverLicense("");
+      setDriverRole("driver");
+      setDriverAddressInput("");
+      setDriverStatus(true);
     }
-  }, [selectedVehicle, setEditVehicleStatus]);
+  }, [selectedDriver]);
 
-  // Update form fields when selectedDriver changes
+  const handleAddDriver = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      // 10-digit phone validation
+      const phoneDigits = driverPhone.replace(/\D/g, '');
+      if (phoneDigits.length !== 10) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Error',
+          text: 'Phone number must be exactly 10 digits'
+        });
+        setLoading(false);
+        return;
+      }
+      if (driverRole === "driver" && !driverLicense.trim()) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Error',
+          text: 'Driving license number is required for driver role'
+        });
+        setLoading(false);
+        return;
+      }
+
+      const payload = {
+        name: driverNameInput,
+        phone: phoneDigits, // Send clean 10-digit phone
+        role: driverRole,
+        academic_year_id: academicYearId ?? undefined,
+        license_number: driverRole === "conductor" ? null : driverLicense,
+        address: driverAddressInput,
+        is_active: !!driverStatus
+      };
+
+      let res;
+      // More robust updateId detection
+      const updateId = selectedDriver?.originalData?.id || 
+                       (selectedDriver?.id && !isNaN(Number(selectedDriver.id)) ? Number(selectedDriver.id) : null);
+      
+      console.log('Driver operation:', { isUpdate: !!updateId, updateId, payload });
+
+      if (updateId) {
+        res = await apiService.updateTransportDriver(updateId, payload);
+      } else {
+        res = await apiService.createTransportDriver(payload);
+      }
+
+      if (res?.status === "SUCCESS") {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: updateId ? 'Driver updated successfully' : 'Driver added successfully',
+          timer: 1500,
+          showConfirmButton: false
+        });
+        
+        handleCallback('driver');
+
+        // Close modal
+        const modalId = updateId ? 'edit_driver' : 'add_driver';
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+      } else {
+        throw new Error(res?.message || 'Failed to save driver');
+      }
+    } catch (err: any) {
+      console.error('Driver Save Error details:', err);
+      handleFormError(err, "Failed to save driver");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // State for Vehicles
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [chassisNo, setChassisNo] = useState("");
+  const [registrationNo, setRegistrationNo] = useState("");
+  const [seatCapacity, setSeatCapacity] = useState("");
+  const [gpsTrackingId, setGpsTrackingId] = useState("");
+  const [madeOfYear, setMadeOfYear] = useState<any>(null);
+  const [vehicleStatus, setVehicleStatusState] = useState(true);
+
   useEffect(() => {
-    if (selectedDriver && setEditDriverName && setEditDriverPhone && setEditDriverLicense && setEditDriverAddress && setEditDriverStatus) {
-      const driver = selectedDriver.originalData || selectedDriver;
-      // Get driver name (could be from name, driver_name, or first_name + last_name)
-      const driverName = driver.name || driver.driver_name || selectedDriver.name || '';
-      const driverPhone = driver.phone || selectedDriver.phone || '';
-      const driverLicense = driver.license_number || selectedDriver.driverLicenseNo || '';
-      const driverAddress = driver.address || selectedDriver.address || '';
-      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-      // Fallback to status string if is_active is not available
-      let driverStatus = true; // default to active
-      if (Object.prototype.hasOwnProperty.call(driver, 'is_active')) {
-        driverStatus = driver.is_active === true || driver.is_active === 1 || driver.is_active === 'true';
-      } else if (selectedDriver.status) {
-        driverStatus = selectedDriver.status === 'Active';
+    if (selectedVehicle) {
+      const v = selectedVehicle.originalData || selectedVehicle;
+      setVehicleNo(v.vehicle_number || "");
+      setVehicleModel(v.vehicle_model || "");
+      setChassisNo(v.chassis_number || "");
+      setRegistrationNo(v.registration_number || "");
+      setSeatCapacity(v.seat_capacity || v.seating_capacity || "");
+      setGpsTrackingId(v.gps_device_id || v.gps_tracking_id || "");
+      setMadeOfYear(v.made_of_year ? dayjs(`01-01-${v.made_of_year}`) : null);
+      setVehicleStatusState(v.is_active === 1 || v.is_active === true || v.status === "Active");
+    } else {
+      setVehicleNo("");
+      setVehicleModel("");
+      setChassisNo("");
+      setRegistrationNo("");
+      setSeatCapacity("");
+      setGpsTrackingId("");
+      setMadeOfYear(null);
+      setVehicleStatusState(true);
+    }
+  }, [selectedVehicle]);
+
+  const handleAddVehicle = async (e: any) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        vehicle_number: vehicleNo,
+        vehicle_model: vehicleModel,
+        chassis_number: chassisNo,
+        registration_number: registrationNo,
+        seat_capacity: seatCapacity,
+        gps_device_id: gpsTrackingId,
+        made_of_year: madeOfYear ? madeOfYear.year() : null,
+        academic_year_id: academicYearId ?? undefined,
+        is_active: !!vehicleStatus
+      };
+
+      let res;
+      // Robust updateId detection
+      const updateId = selectedVehicle?.originalData?.id || 
+                       (selectedVehicle?.id && !isNaN(Number(selectedVehicle.id)) ? Number(selectedVehicle.id) : null);
+
+      if (updateId) {
+        res = await apiService.updateTransportVehicle(updateId, payload);
+      } else {
+        res = await apiService.createTransportVehicle(payload);
       }
 
-      setEditDriverName(driverName);
-      setEditDriverPhone(driverPhone);
-      setEditDriverLicense(driverLicense);
-      setEditDriverAddress(driverAddress);
-      setEditDriverStatus(driverStatus);
+      if (res?.status === "SUCCESS") {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: updateId ? 'Vehicle updated successfully' : 'Vehicle added successfully',
+          timer: 1500,
+          showConfirmButton: false
+        });
+        
+        handleCallback('vehicle');
+
+        // Close modal
+        const modalId = updateId ? 'edit_vehicle' : 'add_vehicle';
+        const modalElement = document.getElementById(modalId);
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: res?.message || 'Failed to save vehicle'
+        });
+      }
+    } catch (err: any) {
+      handleFormError(err, "Failed to save vehicle");
+    } finally {
+      setLoading(false);
     }
-  }, [selectedDriver, setEditDriverName, setEditDriverPhone, setEditDriverLicense, setEditDriverAddress, setEditDriverStatus]);
+  };
+
+  const getDriversOptions = () => {
+    // We already fetch drivers list indirectly via vehicle response or I should fetch it separately?
+    // In useEffect I'm not fetching drivers separately. I'll add drivers fetch to the same useEffect.
+  };
+
+  // Update initial fetch to include drivers
+  const [driversData, setDriversData] = useState<any[]>([]);
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      try {
+        const res = await apiService.getTransportDrivers({ status: 'active', limit: 1000 });
+        if (res.status === "SUCCESS") setDriversData(res.data);
+      } catch (err) {
+        console.error("Failed to fetch drivers:", err);
+      }
+    };
+    fetchDrivers();
+  }, []);
 
   const today = new Date()
   const year = today.getFullYear()
@@ -194,12 +643,79 @@ const TransportModal = ({
     const modalElement = document.getElementById('modal-datepicker2');
     return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
   };
+
+  const handleDelete = async (e: any) => {
+    e.preventDefault();
+    if (!deleteId) return;
+    setLoading(true);
+    try {
+      let res;
+      
+      // We check the states in a specific order. 
+      // To be safe, we prioritize Vehicles and Drivers as they are most active.
+      if (selectedVehicle && (selectedVehicle.dbId === deleteId || selectedVehicle.id === deleteId || selectedVehicle.originalData?.id === deleteId)) {
+        res = await apiService.deleteTransportVehicle(deleteId);
+      } else if (selectedDriver && (selectedDriver.dbId === deleteId || selectedDriver.id === deleteId || selectedDriver.originalData?.id === deleteId)) {
+        res = await apiService.deleteTransportDriver(deleteId);
+      } else if (selectedRoute && (selectedRoute.dbId === deleteId || selectedRoute.id === deleteId || selectedRoute.originalData?.id === deleteId)) {
+        res = await apiService.deleteTransportRoute(deleteId);
+      } else if (selectedPickupPoint && (selectedPickupPoint.dbId === deleteId || selectedPickupPoint.id === deleteId || selectedPickupPoint.originalData?.id === deleteId)) {
+        res = await apiService.deleteTransportPickupPoint(deleteId);
+      } else if (selectedAssignment) {
+        res = await apiService.deleteTransportAssignment(deleteId);
+      } else {
+        // Fallback for cases where direct matching might fail due to ID types
+        if (selectedVehicle) res = await apiService.deleteTransportVehicle(deleteId);
+        else if (selectedDriver) res = await apiService.deleteTransportDriver(deleteId);
+        else if (selectedRoute) res = await apiService.deleteTransportRoute(deleteId);
+        else if (selectedPickupPoint) res = await apiService.deleteTransportPickupPoint(deleteId);
+      }
+
+      if (res?.status === "SUCCESS") {
+        if (onSuccess) onSuccess();
+        if (selectedRoute && onRouteUpdate) await onRouteUpdate();
+        if (selectedPickupPoint && onPickupUpdate) await onPickupUpdate();
+        if (selectedDriver && onDriverUpdate) await onDriverUpdate();
+        if (selectedAssignment && onAssignUpdate) await onAssignUpdate();
+        if (selectedVehicle && onVehicleUpdate) await onVehicleUpdate();
+
+        // Close modal
+        const modalElement = document.getElementById('delete-modal');
+        if (modalElement) {
+          const bootstrap = (window as any).bootstrap;
+          if (bootstrap && bootstrap.Modal) {
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            if (modal) modal.hide();
+          }
+        }
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: res?.message || 'Failed to delete item'
+        });
+      }
+    } catch (err: any) {
+      handleFormError(err, "Delete failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCallback = async (type: string) => {
+    if (onSuccess) onSuccess();
+    if (type === 'route' && onRouteUpdate) await onRouteUpdate();
+    if (type === 'pickup' && onPickupUpdate) await onPickupUpdate();
+    if (type === 'driver' && onDriverUpdate) await onDriverUpdate();
+    if (type === 'assign' && onAssignUpdate) await onAssignUpdate();
+    if (type === 'vehicle' && onVehicleUpdate) await onVehicleUpdate();
+  };
   return (
     <>
       <>
         {/* Add Route */}
         <div className="modal fade" id="add_routes">
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Add Route</h4>
@@ -212,44 +728,125 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddRoute}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Route Name</label>
-                        <input type="text" className="form-control" />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. North Route"
+                          value={routeName}
+                          onChange={(e) => setRouteName(e.target.value)}
+                          required
+                        />
                       </div>
-                    </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
-                      <div className="status-title">
-                        <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
+                      <div className="mb-3">
+                        <label className="form-label">Distance (KM)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="form-control"
+                          placeholder="Enter Distance"
+                          value={distanceKm}
+                          onChange={(e) => setDistanceKm(e.target.value)}
+                        />
                       </div>
-                      <div className="status-toggle modal-status">
-                        <input type="checkbox" id="user1" className="check" />
-                        <label htmlFor="user1" className="checktoggle">
-                          {" "}
-                        </label>
+
+                      <div className="mb-3">
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <label className="form-label mb-0">Route Stops</label>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={handleAddStop}>
+                            <i className="ti ti-plus me-1"></i>Add Stop
+                          </button>
+                        </div>
+                        <div className="table-responsive border rounded">
+                          <table className="table table-nowrap mb-0">
+                            <thead className="thead-light">
+                              <tr>
+                                <th style={{ width: '40%' }}>Pickup Point</th>
+                                <th>Pickup Time</th>
+                                <th>Drop Time</th>
+                                <th style={{ width: '50px' }}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stops.map((stop, index) => (
+                                <tr key={`stop-add-${index}`}>
+                                  <td>
+                                    <CommonSelect
+                                      className="select"
+                                      options={[{ value: "", label: "Select Point" }, ...pickupsData.map(p => ({ value: String(p.id), label: p.point_name }))]}
+                                      value={String(stop.pickup_point_id || "")}
+                                      onChange={(v: any) => handleStopChange(index, 'pickup_point_id', v || "")}
+                                      placeholder="Point"
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="time"
+                                      className="form-control form-control-sm"
+                                      value={stop.pickup_time}
+                                      onChange={(e) => handleStopChange(index, 'pickup_time', e.target.value)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="time"
+                                      className="form-control form-control-sm"
+                                      value={stop.drop_time}
+                                      onChange={(e) => handleStopChange(index, 'drop_time', e.target.value)}
+                                    />
+                                  </td>
+                                  <td className="text-center">
+                                    <Link to="#" className="text-danger" onClick={() => handleRemoveStop(index)}>
+                                      <i className="ti ti-trash"></i>
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                        <div className="status-title">
+                          <h5>Status</h5>
+                          <label className="form-label mb-0" htmlFor="add_route_status">
+                            {routeStatus ? "Active" : "Inactive"}
+                          </label>
+                        </div>
+                        <div className="form-check form-switch">
+                          <input
+                            id="add_route_status"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={routeStatus}
+                            onChange={(e) => setRouteStatus(e.target.checked)}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    data-bs-dismiss="modal"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
+                    disabled={loading}
                   >
-                    Add Route
-                  </Link>
+                    {loading ? "Adding..." : "Add Route Stop"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -258,7 +855,7 @@ const TransportModal = ({
         {/* Add Route*/}
         {/* Edit Route */}
         <div className="modal fade" id="edit_routes">
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Edit Route</h4>
@@ -271,7 +868,7 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddRoute}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -281,61 +878,113 @@ const TransportModal = ({
                           type="text"
                           className="form-control"
                           placeholder="Enter Route Name"
-                          value={editRouteName || ''}
-                          onChange={(e) => setEditRouteName && setEditRouteName(e.target.value)}
+                          value={routeName}
+                          onChange={(e) => setRouteName(e.target.value)}
+                          required
                         />
                       </div>
-                    </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
-                      <div className="status-title">
-                        <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
+                      <div className="mb-3">
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <label className="form-label mb-0">Route Stops</label>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={handleAddStop}>
+                            <i className="ti ti-plus me-1"></i>Add Stop
+                          </button>
+                        </div>
+                        <div className="table-responsive border rounded">
+                          <table className="table table-nowrap mb-0">
+                            <thead className="thead-light">
+                              <tr>
+                                <th style={{ width: '40%' }}>Pickup Point</th>
+                                <th>Pickup Time</th>
+                                <th>Drop Time</th>
+                                <th style={{ width: '50px' }}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stops.map((stop, index) => (
+                                <tr key={`stop-edit-${index}`}>
+                                  <td>
+                                    <CommonSelect
+                                      className="select"
+                                      options={[{ value: "", label: "Select Point" }, ...pickupsData.map(p => ({ value: String(p.id), label: p.point_name }))]}
+                                      value={String(stop.pickup_point_id || "")}
+                                      onChange={(v: any) => handleStopChange(index, 'pickup_point_id', v || "")}
+                                      placeholder="Point"
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="time"
+                                      className="form-control form-control-sm"
+                                      value={stop.pickup_time}
+                                      onChange={(e) => handleStopChange(index, 'pickup_time', e.target.value)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="time"
+                                      className="form-control form-control-sm"
+                                      value={stop.drop_time}
+                                      onChange={(e) => handleStopChange(index, 'drop_time', e.target.value)}
+                                    />
+                                  </td>
+                                  <td className="text-center">
+                                    <Link to="#" className="text-danger" onClick={() => handleRemoveStop(index)}>
+                                      <i className="ti ti-trash"></i>
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                      <div className="status-toggle modal-status">
+                      <div className="mb-3">
+                        <label className="form-label">Distance (KM)</label>
                         <input
-                          type="checkbox"
-                          id="user2"
-                          className="check"
-                          checked={editRouteStatus}
-                          onChange={(e) => setEditRouteStatus && setEditRouteStatus(e.target.checked)}
+                          type="number"
+                          step="0.1"
+                          className="form-control"
+                          placeholder="Enter Distance"
+                          value={distanceKm}
+                          onChange={(e) => setDistanceKm(e.target.value)}
                         />
-                        <label htmlFor="user2" className="checktoggle">
-                          {" "}
-                        </label>
+                      </div>
+                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                        <div className="status-title">
+                          <h5>Status</h5>
+                          <label className="form-label mb-0" htmlFor="edit_route_status">
+                            {routeStatus ? "Active" : "Inactive"}
+                          </label>
+                        </div>
+                        <div className="form-check form-switch">
+                          <input
+                            id="edit_route_status"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={routeStatus}
+                            onChange={(e) => setRouteStatus(e.target.checked)}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (onRouteUpdate) {
-                        await onRouteUpdate();
-                      } else {
-                        // Fallback: just close modal
-                        const modalElement = document.getElementById('edit_routes');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) modal.hide();
-                          }
-                        }
-                      }
-                    }}
+                    disabled={loading}
                   >
-                    {isUpdating ? 'Updating...' : 'Save Changes'}
-                  </Link>
+                    {loading ? "Updating..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -349,7 +998,7 @@ const TransportModal = ({
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
               <div className="modal-header">
-                <h4 className="modal-title">Assign New Vehicle</h4>
+                <h4 className="modal-title">Assign Vehicle</h4>
                 <button
                   type="button"
                   className="btn-close custom-btn-close"
@@ -359,62 +1008,84 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddAssignment}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Select Route</label>
-
                         <CommonSelect
                           className="select"
-                          options={routesList}
-                          defaultValue={undefined}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">
-                          Select Pickup Point
-                        </label>
-                        <CommonSelect
-                          className="select"
-                          options={PickupPoint2}
-                          defaultValue={undefined}
+                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({
+                            value: String(r.id),
+                            label: `${r.route_name}`
+                          }))]}
+                          value={String(assignRouteId || "")}
+                          onChange={(v: any) => setAssignRouteId(v || "")}
+                          placeholder="Select Route"
                         />
                       </div>
                       <div className="mb-0">
                         <label className="form-label">Select Vehicle</label>
                         <CommonSelect
                           className="select"
-                          options={VehicleNumber}
-                          defaultValue={undefined}
+                          options={[{ value: "", label: "Select Vehicle" }, ...vehiclesData.map(v => ({ value: String(v.id), label: `${v.vehicle_number}` }))]}
+                          value={String(assignVehicleId || "")}
+                          onChange={(v: any) => setAssignVehicleId(v || "")}
+                          placeholder="Select Vehicle"
+                        />
+                      </div>
+                      <div className="mb-0 mt-3">
+                        <label className="form-label">Select Driver</label>
+                        <CommonSelect
+                          className="select"
+                          options={[{ value: "", label: "Select Driver" }, ...driversData.map(d => ({ value: String(d.id), label: `${d.name || d.driver_name} (${d.phone || d.driver_phone})` }))]}
+                          value={String(assignDriverId || "")}
+                          onChange={(v: any) => setAssignDriverId(v || "")}
+                          placeholder="Select Driver"
                         />
                       </div>
                     </div>
+                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                        <div className="status-title">
+                          <h5>Status</h5>
+                          <label className="form-label mb-0" htmlFor="add_assign_status">
+                            {assignStatus ? "Active" : "Inactive"}
+                          </label>
+                        </div>
+                        <div className="form-check form-switch">
+                          <input
+                            id="add_assign_status"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={assignStatus}
+                            onChange={(e) => setAssignStatus(e.target.checked)}
+                          />
+                        </div>
+                      </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    data-bs-dismiss="modal"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
+                    disabled={loading}
                   >
-                    Assign Now
-                  </Link>
+                    {loading ? "Assigning..." : "Assign Now"}
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         </div>
-        {/* Add Assign New Vehicle */}
-        {/* Edit Assign New Vehicle */}
+
         <div className="modal fade" id="edit_assign_vehicle">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -429,7 +1100,7 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddAssignment}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -437,29 +1108,36 @@ const TransportModal = ({
                         <label className="form-label">Select Route</label>
                         <CommonSelect
                           className="select"
-                          options={routesList}
-                          defaultValue={selectedAssignment?.originalData?.route || selectedAssignment?.route ? routesList.find((r: any) => r.value === selectedAssignment.originalData?.route || r.label === selectedAssignment.route) || routesList[0] : routesList[0]}
-                          key={`assign-route-${selectedAssignment?.id || 'new'}`}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">
-                          Select Pickup Point
-                        </label>
-                        <CommonSelect
-                          className="select"
-                          options={PickupPoint2}
-                          defaultValue={selectedAssignment?.originalData?.pickup_point || selectedAssignment?.pickupPoint ? PickupPoint2.find((p: any) => p.value === selectedAssignment.originalData?.pickup_point || p.label === selectedAssignment.pickupPoint) || PickupPoint2[0] : PickupPoint2[0]}
-                          key={`assign-pickup-${selectedAssignment?.id || 'new'}`}
+                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({
+                            value: String(r.id),
+                            label: `${r.route_name} (${r.stops?.map((s: any) => s.point_name).join(', ') || 'No Stops'})`
+                          }))]}
+                          value={String(assignRouteId || "")}
+                          onChange={(v: any) => setAssignRouteId(v || "")}
+                          key={`route-sel-edit-${assignRouteId}`}
+                          placeholder="Select Route"
                         />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Select Vehicle</label>
                         <CommonSelect
                           className="select"
-                          options={VehicleNumber}
-                          defaultValue={selectedAssignment?.originalData?.vehicle_number || selectedAssignment?.vehicle ? VehicleNumber.find((v: any) => v.value === selectedAssignment.originalData?.vehicle_number || v.label === selectedAssignment.vehicle) || VehicleNumber[0] : VehicleNumber[0]}
-                          key={`assign-vehicle-${selectedAssignment?.id || 'new'}`}
+                          options={[{ value: "", label: "Select Vehicle" }, ...vehiclesData.map(v => ({ value: String(v.id || v.vehicle_id), label: `${v.vehicle_number}` }))]}
+                          value={String(assignVehicleId || "")}
+                          onChange={(v: any) => setAssignVehicleId(v || "")}
+                          key={`vehicle-sel-edit-${assignVehicleId}`}
+                          placeholder="Select Vehicle"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Select Driver</label>
+                        <CommonSelect
+                          className="select"
+                          options={[{ value: "", label: "Select Driver" }, ...driversData.map(d => ({ value: String(d.id), label: `${d.name || d.driver_name} (${d.phone || d.driver_phone})` }))]}
+                          value={String(assignDriverId || "")}
+                          onChange={(v: any) => setAssignDriverId(v || "")}
+                          key={`driver-sel-edit-${assignDriverId}`}
+                          placeholder="Select Driver"
                         />
                       </div>
                       <div className="assigned-driver">
@@ -467,66 +1145,51 @@ const TransportModal = ({
                         <div className="assigned-driver-info">
                           <span className="driver-img">
                             <ImageWithBasePath
-                              src={selectedAssignment?.originalData?.driver_photo_url || selectedAssignment?.originalData?.photo_url || selectedAssignment?.img || "assets/img/parents/parent-01.jpg"}
+                              src={selectedAssignment?.originalData?.photo_url || "assets/img/parents/parent-01.jpg"}
                               alt="Img"
                             />
                           </span>
                           <div>
-                            <h5>{selectedAssignment?.originalData?.driver_name || selectedAssignment?.name || "N/A"}</h5>
-                            <span>{selectedAssignment?.originalData?.driver_phone || selectedAssignment?.phone || "N/A"}</span>
+                            <h5>{selectedAssignment?.originalData?.driver_name || "N/A"}</h5>
+                            <span>{selectedAssignment?.originalData?.driver_phone || "N/A"}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="modal-satus-toggle d-flex align-items-center justify-content-between mt-2">
+                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
                         <div className="status-title">
                           <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="status-toggle modal-status">
-                          <input
-                            type="checkbox"
-                            id="assign-status"
-                            className="check"
-                            checked={editAssignStatus}
-                            onChange={(e) => setEditAssignStatus && setEditAssignStatus(e.target.checked)}
-                          />
-                          <label htmlFor="assign-status" className="checktoggle">
-                            {" "}
+                          <label className="form-label mb-0" htmlFor="edit_assign_status">
+                            {assignStatus ? "Active" : "Inactive"}
                           </label>
+                        </div>
+                        <div className="form-check form-switch">
+                          <input
+                            id="edit_assign_status"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={assignStatus}
+                            onChange={(e) => setAssignStatus(e.target.checked)}
+                          />
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (onAssignUpdate) {
-                        await onAssignUpdate();
-                      } else {
-                        const modalElement = document.getElementById('edit_assign_vehicle');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) modal.hide();
-                          }
-                        }
-                      }
-                    }}
+                    disabled={loading}
                   >
-                    {isUpdating ? 'Updating...' : 'Assign Now'}
-                  </Link>
+                    {loading ? "Updating..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -550,51 +1213,62 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddPickupPoint}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Pickup Point</label>
-                        <input type="text" className="form-control" />
+                        <label className="form-label">Pickup Point Name</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Central Station"
+                          value={pointName}
+                          onChange={(e) => setPointName(e.target.value)}
+                          required
+                        />
                       </div>
                     </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
                       <div className="status-title">
                         <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
-                      </div>
-                      <div className="status-toggle modal-status">
-                        <input type="checkbox" id="user1" className="check" />
-                        <label htmlFor="user1" className="checktoggle">
-                          {" "}
+                        <label className="form-label mb-0" htmlFor="add_pickup_status">
+                          {pointStatus ? "Active" : "Inactive"}
                         </label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          id="add_pickup_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={pointStatus}
+                          onChange={(e) => setPointStatus(e.target.checked)}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    data-bs-dismiss="modal"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
+                    disabled={loading}
                   >
-                    Add Pickup Point
-                  </Link>
+                    {loading ? "Adding..." : "Add Pickup Point"}
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         </div>
-        {/* Add Pickup */}
-        {/* Edit Pickup */}
+
         <div className="modal fade" id="edit_pickup">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -609,71 +1283,56 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddPickupPoint}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Pickup Point</label>
+                        <label className="form-label">Pickup Point Name</label>
                         <input
                           type="text"
                           className="form-control"
                           placeholder="Enter Pickup Point"
-                          value={editPickupAddress || ''}
-                          onChange={(e) => setEditPickupAddress && setEditPickupAddress(e.target.value)}
+                          value={pointName}
+                          onChange={(e) => setPointName(e.target.value)}
+                          required
                         />
                       </div>
                     </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
                       <div className="status-title">
                         <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
-                      </div>
-                      <div className="status-toggle modal-status">
-                        <input
-                          type="checkbox"
-                          id="pickup-status"
-                          className="check"
-                          checked={editPickupStatus}
-                          onChange={(e) => setEditPickupStatus && setEditPickupStatus(e.target.checked)}
-                        />
-                        <label htmlFor="pickup-status" className="checktoggle">
-                          {" "}
+                        <label className="form-label mb-0" htmlFor="edit_pickup_status">
+                          {pointStatus ? "Active" : "Inactive"}
                         </label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          id="edit_pickup_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={pointStatus}
+                          onChange={(e) => setPointStatus(e.target.checked)}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (onPickupUpdate) {
-                        await onPickupUpdate();
-                      } else {
-                        // Fallback: just close modal
-                        const modalElement = document.getElementById('edit_pickup');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) modal.hide();
-                          }
-                        }
-                      }
-                    }}
+                    disabled={loading}
                   >
-                    {isUpdating ? 'Updating...' : 'Save Changes'}
-                  </Link>
+                    {loading ? "Updating..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -697,69 +1356,108 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddDriver}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Name</label>
-                        <input type="text" className="form-control" />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. John Doe"
+                          value={driverNameInput}
+                          onChange={(e) => setDriverNameInput(e.target.value)}
+                          required
+                        />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Phone Number</label>
-                        <input type="text" className="form-control" />
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. +1234567890"
+                          value={driverPhone}
+                          onChange={(e) => setDriverPhone(e.target.value)}
+                          required
+                        />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label">
-                          Driving License Number
-                        </label>
+                        <label className="form-label">Role</label>
+                        <CommonSelect
+                          className="select"
+                          options={[
+                            { value: "driver", label: "Driver" },
+                            { value: "conductor", label: "Conductor" }
+                          ]}
+                          value={driverRole}
+                          onChange={(v: string | null) => setDriverRole(v || "driver")}
+                        />
+                      </div>
+                      {driverRole === "driver" && (
+                      <div className="mb-3">
+                        <label className="form-label">Driving License Number</label>
                         <input
                           type="text"
                           className="form-control"
                           placeholder="Enter Driving License Number"
+                          value={driverLicense}
+                          onChange={(e) => setDriverLicense(e.target.value)}
+                          required
                         />
                       </div>
+                      )}
                       <div className="mb-3">
                         <label className="form-label">Address</label>
-                        <input type="text" className="form-control" />
+                        <textarea
+                          className="form-control"
+                          rows={3}
+                          placeholder="Enter Address"
+                          value={driverAddressInput}
+                          onChange={(e) => setDriverAddressInput(e.target.value)}
+                        ></textarea>
                       </div>
                     </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2">
                       <div className="status-title">
                         <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
-                      </div>
-                      <div className="status-toggle modal-status">
-                        <input type="checkbox" id="user1" className="check" />
-                        <label htmlFor="user1" className="checktoggle">
-                          {" "}
+                        <label className="form-label mb-0" htmlFor="add_driver_status">
+                          {driverStatus ? "Active" : "Inactive"}
                         </label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          id="add_driver_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={driverStatus}
+                          onChange={(e) => setDriverStatus(e.target.checked)}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    data-bs-dismiss="modal"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
+                    disabled={loading}
                   >
-                    Add Driver
-                  </Link>
+                    {loading ? "Adding..." : "Add Driver"}
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         </div>
-        {/* Add Driver */}
-        {/* Edit Driver */}
+
         <div className="modal fade" id="edit_driver">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
@@ -774,7 +1472,7 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddDriver}>
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
@@ -784,8 +1482,9 @@ const TransportModal = ({
                           type="text"
                           className="form-control"
                           placeholder="Enter Name"
-                          value={editDriverName || ''}
-                          onChange={(e) => setEditDriverName && setEditDriverName(e.target.value)}
+                          value={driverNameInput}
+                          onChange={(e) => setDriverNameInput(e.target.value)}
+                          required
                         />
                       </div>
                       <div className="mb-3">
@@ -794,83 +1493,81 @@ const TransportModal = ({
                           type="text"
                           className="form-control"
                           placeholder="Enter Phone Number"
-                          value={editDriverPhone || ''}
-                          onChange={(e) => setEditDriverPhone && setEditDriverPhone(e.target.value)}
+                          value={driverPhone}
+                          onChange={(e) => setDriverPhone(e.target.value)}
+                          required
                         />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label">
-                          Driving License Number
-                        </label>
+                        <label className="form-label">Role</label>
+                        <CommonSelect
+                          className="select"
+                          options={[
+                            { value: "driver", label: "Driver" },
+                            { value: "conductor", label: "Conductor" }
+                          ]}
+                          value={driverRole}
+                          onChange={(v: string | null) => setDriverRole(v || "driver")}
+                        />
+                      </div>
+                      {driverRole === "driver" && (
+                      <div className="mb-3">
+                        <label className="form-label">Driving License Number</label>
                         <input
                           type="text"
                           className="form-control"
                           placeholder="Enter Driving License Number"
-                          value={editDriverLicense || ''}
-                          onChange={(e) => setEditDriverLicense && setEditDriverLicense(e.target.value)}
+                          value={driverLicense}
+                          onChange={(e) => setDriverLicense(e.target.value)}
+                          required
                         />
                       </div>
+                      )}
                       <div className="mb-3">
                         <label className="form-label">Address</label>
-                        <input
-                          type="text"
+                        <textarea
                           className="form-control"
+                          rows={3}
                           placeholder="Enter Address"
-                          value={editDriverAddress || ''}
-                          onChange={(e) => setEditDriverAddress && setEditDriverAddress(e.target.value)}
-                        />
+                          value={driverAddressInput}
+                          onChange={(e) => setDriverAddressInput(e.target.value)}
+                        ></textarea>
                       </div>
                     </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2">
                       <div className="status-title">
                         <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
-                      </div>
-                      <div className="status-toggle modal-status">
-                        <input
-                          type="checkbox"
-                          id="driver-status"
-                          className="check"
-                          checked={editDriverStatus}
-                          onChange={(e) => setEditDriverStatus && setEditDriverStatus(e.target.checked)}
-                        />
-                        <label htmlFor="driver-status" className="checktoggle">
-                          {" "}
+                        <label className="form-label mb-0" htmlFor="edit_driver_status">
+                          {driverStatus ? "Active" : "Inactive"}
                         </label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          id="edit_driver_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={driverStatus}
+                          onChange={(e) => setDriverStatus(e.target.checked)}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (onDriverUpdate) {
-                        await onDriverUpdate();
-                      } else {
-                        // Fallback: just close modal
-                        const modalElement = document.getElementById('edit_driver');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) modal.hide();
-                          }
-                        }
-                      }
-                    }}
+                    disabled={loading}
                   >
-                    {isUpdating ? 'Updating...' : 'Save Changes'}
-                  </Link>
+                    {loading ? "Updating..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -881,10 +1578,12 @@ const TransportModal = ({
       <>
         {/* Add New Vehicle */}
         <div className="modal fade" id="add_vehicle">
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <div className="modal-header">
-                <h4 className="modal-title">Add New Vehicle</h4>
+                <div className="d-flex align-items-center">
+                  <h4 className="modal-title">Add New Vehicle</h4>
+                </div>
                 <button
                   type="button"
                   className="btn-close custom-btn-close"
@@ -894,347 +1593,286 @@ const TransportModal = ({
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form>
+              <form onSubmit={handleAddVehicle}>
                 <div className="modal-body" id='modal-datepicker'>
                   <div className="row">
-                    <div className="col-md-12">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle No</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle Model</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Made of Year</label>
-                            <div className="date-pic">
-                              <DatePicker
-                                className="form-control datetimepicker"
-                                format={{
-                                  format: "DD-MM-YYYY",
-                                  type: "mask",
-                                }}
-                                getPopupContainer={getModalContainer}
-                                defaultValue=""
-                                placeholder="16 May 2024"
-                              />
-                              <span className="cal-icon">
-                                <i className="ti ti-calendar" />
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Registration No
-                            </label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Chassis No</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Chassis No"
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Seat Capacity</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
+                    <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">GPS Tracking ID</label>
-                        <input type="text" className="form-control" />
-                      </div>
-                      <hr />
-                      <div className="mb-3">
-                        <h4>Driver details</h4>
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Select Driver</label>
-                        <CommonSelect
-                          className="select"
-                          options={driverName}
-                          defaultValue={undefined}
+                        <label className="form-label">Vehicle No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. SC-1234"
+                          value={vehicleNo}
+                          onChange={(e) => setVehicleNo(e.target.value)}
+                          required
                         />
                       </div>
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Driver License</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Driver Contact No
-                            </label>
-                            <input type="text" className="form-control" />
-                          </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Vehicle Model</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Scania G-Series"
+                          value={vehicleModel}
+                          onChange={(e) => setVehicleModel(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Made of Year</label>
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            picker="year"
+                            format="YYYY"
+                            getPopupContainer={getModalContainer}
+                            value={madeOfYear}
+                            onChange={(date) => setMadeOfYear(date)}
+                            placeholder="Select Year"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
                         </div>
                       </div>
                     </div>
-                    <div className="mb-0">
-                      <label className="form-label">Driver Address</label>
-                      <input type="text" className="form-control" />
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Registration No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Enter Registration No"
+                          value={registrationNo}
+                          onChange={(e) => setRegistrationNo(e.target.value)}
+                          required
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    data-bs-dismiss="modal"
-                    className="btn btn-primary"
-                  >
-                    Add New Vehicle
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Add New Vehicle */}
-        {/* Edit New Vehicle */}
-        <div className="modal fade" id="edit_vehicle">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header align-items-center">
-                <div className="d-flex align-items-center">
-                  <h4 className="modal-title">Edit Vehicle</h4>
-                  <span className="badge badge-soft-primary ms-2" key={`edit-vehicle-id-${selectedVehicle?.id || 'new'}`}>
-                    ID : {selectedVehicle?.originalData?.vehicle_code ?? selectedVehicle?.id ?? '—'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form>
-                <div className="modal-body" id='modal-datepicker2'>
-                  <div className="row">
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Chassis No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Enter Chassis No"
+                          value={chassisNo}
+                          onChange={(e) => setChassisNo(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Seat Capacity</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          placeholder="e.g. 50"
+                          value={seatCapacity}
+                          onChange={(e) => setSeatCapacity(e.target.value)}
+                        />
+                      </div>
+                    </div>
                     <div className="col-md-12">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle No</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Vehicle No"
-                              defaultValue={selectedVehicle?.originalData?.vehicle_number ?? selectedVehicle?.vehicleNo ?? ''}
-                              key={`edit-vehicle-no-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle Model</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Vehicle Model"
-                              defaultValue={selectedVehicle?.originalData?.vehicle_model ?? selectedVehicle?.vehicleModel ?? ''}
-                              key={`edit-vehicle-model-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Made of Year</label>
-                            <div className="date-pic">
-                              <DatePicker
-                                className="form-control datetimepicker"
-                                format={{
-                                  format: "DD-MM-YYYY",
-                                  type: "mask",
-                                }}
-                                getPopupContainer={getModalContainer2}
-                                defaultValue={selectedVehicle?.originalData?.year || selectedVehicle?.madeofYear ? dayjs(`${selectedVehicle?.originalData?.year ?? selectedVehicle?.madeofYear}-01-01`) : defaultValue}
-                                placeholder="16 May 2024"
-                                key={`edit-vehicle-year-${selectedVehicle?.id || 'new'}`}
-                              />
-                              <span className="cal-icon">
-                                <i className="ti ti-calendar" />
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Registration No
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Registration No"
-                              defaultValue={selectedVehicle?.originalData?.registration_number ?? selectedVehicle?.registrationNo ?? ''}
-                              key={`edit-vehicle-reg-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Chassis No</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={selectedVehicle?.originalData?.chassis_number ?? selectedVehicle?.chassisNo ?? ''}
-                              key={`edit-vehicle-chassis-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Seat Capacity</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Seat Capacity"
-                              defaultValue={selectedVehicle?.originalData?.seat_capacity ?? ''}
-                              key={`edit-vehicle-seat-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                      </div>
                       <div className="mb-3">
                         <label className="form-label">GPS Tracking ID</label>
                         <input
                           type="text"
                           className="form-control"
                           placeholder="Enter GPS Tracking ID"
-                          defaultValue={selectedVehicle?.originalData?.gps_device_id ?? selectedVehicle?.gps ?? ''}
-                          key={`edit-vehicle-gps-${selectedVehicle?.id || 'new'}`}
+                          value={gpsTrackingId}
+                          onChange={(e) => setGpsTrackingId(e.target.value)}
                         />
                       </div>
-                      <hr />
-                      <div className="mb-3">
-                        <h4>Driver details</h4>
+                    </div>
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                      <div className="status-title">
+                        <h5>Vehicle Status</h5>
+                        <label className="form-label mb-0" htmlFor="add_vehicle_status">
+                          {vehicleStatus ? "Active" : "Inactive"}
+                        </label>
                       </div>
-                      <div className="mb-3">
-                        <label className="form-label">Select Driver</label>
-                        <CommonSelect
-                          className="select"
-                          options={driverName}
-                          defaultValue={selectedVehicle?.originalData?.driver_name || selectedVehicle?.name ? driverName.find((d: any) => d.label === (selectedVehicle?.originalData?.driver_name ?? selectedVehicle?.name) || d.value === (selectedVehicle?.originalData?.driver_name ?? selectedVehicle?.name)) || driverName[0] : driverName[0]}
-                          key={`edit-vehicle-driver-${selectedVehicle?.id || 'new'}`}
+                      <div className="form-check form-switch">
+                        <input
+                          id="add_vehicle_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={vehicleStatus}
+                          onChange={(e) => setVehicleStatusState(e.target.checked)}
                         />
                       </div>
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Driver License</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Driver License"
-                              defaultValue={selectedVehicle?.originalData?.driver_license ?? ''}
-                              key={`edit-vehicle-license-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Driver Contact No
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              placeholder="Enter Driver Contact No"
-                              defaultValue={selectedVehicle?.originalData?.driver_phone ?? selectedVehicle?.phone ?? ''}
-                              key={`edit-vehicle-phone-${selectedVehicle?.id || 'new'}`}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mb-0">
-                      <label className="form-label">Driver Address</label>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Enter Driver Address"
-                        defaultValue={selectedVehicle?.originalData?.driver_address ?? ''}
-                        key={`edit-vehicle-address-${selectedVehicle?.id || 'new'}`}
-                      />
-                    </div>
-                  </div>
-                  <div className="modal-satus-toggle d-flex align-items-center justify-content-between mt-3">
-                    <div className="status-title">
-                      <h5>Status</h5>
-                      <p>Change the Status by toggle </p>
-                    </div>
-                    <div className="status-toggle modal-status">
-                      <input
-                        type="checkbox"
-                        id="vehicle-status"
-                        className="check"
-                        checked={editVehicleStatus}
-                        onChange={(e) => setEditVehicleStatus && setEditVehicleStatus(e.target.checked)}
-                      />
-                      <label htmlFor="vehicle-status" className="checktoggle">
-                        {" "}
-                      </label>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
                   >
                     Cancel
-                  </Link>
-                  <Link
-                    to="#"
+                  </button>
+                  <button
+                    type="submit"
                     className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      if (onVehicleUpdate) {
-                        await onVehicleUpdate();
-                      } else {
-                        const modalElement = document.getElementById('edit_vehicle');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) modal.hide();
-                          }
-                        }
-                      }
-                    }}
+                    disabled={loading}
                   >
-                    {isUpdating ? 'Updating...' : 'Save Vehicle'}
-                  </Link>
+                    {loading ? "Adding..." : "Add Vehicle"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal fade" id="edit_vehicle">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <div className="d-flex align-items-center">
+                  <h4 className="modal-title">Edit Vehicle</h4>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close custom-btn-close"
+                  data-bs-dismiss="modal"
+                  aria-label="Close"
+                >
+                  <i className="ti ti-x" />
+                </button>
+              </div>
+              <form onSubmit={handleAddVehicle}>
+                <div className="modal-body" id='modal-datepicker2'>
+                  <div className="row">
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Vehicle No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. SC-1234"
+                          value={vehicleNo}
+                          onChange={(e) => setVehicleNo(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Vehicle Model</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Scania G-Series"
+                          value={vehicleModel}
+                          onChange={(e) => setVehicleModel(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Made of Year</label>
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            picker="year"
+                            format="YYYY"
+                            getPopupContainer={getModalContainer2}
+                            value={madeOfYear}
+                            onChange={(date) => setMadeOfYear(date)}
+                            key={`edit-year-v-${selectedVehicle?.id}`}
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Registration No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={registrationNo}
+                          onChange={(e) => setRegistrationNo(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Chassis No</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={chassisNo}
+                          onChange={(e) => setChassisNo(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Seat Capacity</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={seatCapacity}
+                          onChange={(e) => setSeatCapacity(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-12">
+                      <div className="mb-3">
+                        <label className="form-label">GPS Tracking ID</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={gpsTrackingId}
+                          onChange={(e) => setGpsTrackingId(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                      <div className="status-title">
+                        <h5>Vehicle Status</h5>
+                        <label className="form-label mb-0" htmlFor="edit_vehicle_status">
+                          {vehicleStatus ? "Active" : "Inactive"}
+                        </label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          id="edit_vehicle_status"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={vehicleStatus}
+                          onChange={(e) => setVehicleStatusState(e.target.checked)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-light me-2"
+                    data-bs-dismiss="modal"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={loading}
+                  >
+                    {loading ? "Updating..." : "Save Changes"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -1336,9 +1974,9 @@ const TransportModal = ({
                   <Link
                     to="#"
                     className="btn btn-danger"
-                    data-bs-dismiss="modal"
+                    onClick={handleDelete}
                   >
-                    Yes, Delete
+                    {loading ? "Deleting..." : "Yes, Delete"}
                   </Link>
                 </div>
               </div>

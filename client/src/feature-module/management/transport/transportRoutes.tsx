@@ -1,11 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
-  routesList,
-  status,
+  status as statusOptions,
 } from "../../../core/common/selectoption/selectoption";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
@@ -13,38 +11,146 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import { useTransportRoutes } from "../../../core/hooks/useTransportRoutes";
 import { apiService } from "../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportRoutes = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, error, fallbackData, refetch } = useTransportRoutes();
-  const data = apiData?.length ? apiData : fallbackData;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  
+  const { 
+    data, 
+    loading, 
+    error, 
+    total, 
+    params, 
+    setParams, 
+    refetch 
+  } = useTransportRoutes();
+
   const [selectedRoute, setSelectedRoute] = useState<any>(null);
-  const [editRouteName, setEditRouteName] = useState('');
-  const [editRouteStatus, setEditRouteStatus] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const handleApplyClick = () => {
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [pickupsData, setPickupsData] = useState<any[]>([]);
+  const [draftFilters, setDraftFilters] = useState({
+    pickup_point_id: "all",
+    status: "all",
+  });
+
+  // Fetch Pickup Points for Filter
+  useEffect(() => {
+    const fetchPickups = async () => {
+      try {
+        const res = await apiService.getTransportPickupPoints({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined });
+        if (res.status === "SUCCESS") {
+          setPickupsData(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch pickup points:", err);
+      }
+    };
+    fetchPickups();
+  }, [academicYearId]);
+
+  useEffect(() => {
+    setParams({ ...params, academic_year_id: academicYearId ?? undefined, page: 1 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYearId]);
+
+  const handleSearch = (val: string) => {
+    setParams({ ...params, search: val, page: 1 });
+  };
+
+  const handleApplyClick = (e: any) => {
+    e.preventDefault();
+    setParams({
+      ...params,
+      page: 1,
+      pickup_point_id: draftFilters.pickup_point_id,
+      status: draftFilters.status,
+    });
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const onRefresh = async () => {
+    await refetch();
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed',
+      text: 'Data updated successfully',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  };
+
+  const handleExportExcel = () => {
+    const exportData = data.map(item => ({
+      ID: item.id,
+      Route: item.routes,
+      "Distance (KM)": item.distance_km,
+      Stops: item.stopsSummary,
+      Status: item.status,
+      "Added On": item.addedOn
+    }));
+    exportToExcel(exportData, `Transport_Routes_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Route", dataKey: "routes" },
+      { title: "Distance (KM)", dataKey: "distance_km" },
+      { title: "Stops", dataKey: "stopsSummary" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(data, "Transport Routes List", `Transport_Routes_${new Date().toISOString().split('T')[0]}`, cols);
+  };
+
+  const handlePrint = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Route", dataKey: "routes" },
+      { title: "Distance (KM)", dataKey: "distance_km" },
+      { title: "Stops", dataKey: "stopsSummary" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Transport Routes List", cols, data);
+  };
+
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: any, record: any) => (
+      render: (text: any) => (
         <Link to="#" className="link-primary">
-          {text || record.id || 'N/A'}
+          {text || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
+      sorter: true,
     },
     {
       title: "Routes",
       dataIndex: "routes",
-
-      sorter: (a: TableData, b: TableData) =>
-        a.routes.length - b.routes.length,
+      sorter: true,
+    },
+    {
+      title: "Distance (KM)",
+      dataIndex: "distance_km",
+      sorter: true,
+    },
+    {
+      title: "Stops",
+      dataIndex: "stopsSummary",
+      sorter: true,
+      render: (text: string) => (
+        <span className="text-truncate d-inline-block" style={{ maxWidth: '200px' }} title={text}>
+          {text}
+        </span>
+      )
     },
     {
       title: "Status",
@@ -52,110 +158,81 @@ const TransportRoutes = () => {
       render: (text: string) => (
         <>
           {text === "Active" ? (
-            <span
-              className="badge badge-soft-success d-inline-flex align-items-center"
-            >
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
             </span>
-          ) :
-            (
-              <span
-                className="badge badge-soft-danger d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            )}
+          ) : (
+            <span className="badge badge-soft-danger d-inline-flex align-items-center">
+              <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
+            </span>
+          )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.status.length - b.status.length,
+      sorter: true,
     },
-    {
-      title: "Added On",
-      dataIndex: "addedOn",
-      sorter: (a: TableData, b: TableData) =>
-        a.addedOn.length - b.addedOn.length,
-    },
-
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // Set form data from record
-                      const route = record.originalData || record;
-                      // Use route_name from originalData, or fallback to mapped routes property
-                      const routeName = route.route_name || record.routes || '';
-                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-                      // Fallback to status string if is_active is not available
-                      let routeStatus = true; // default to active
-                      if (Object.prototype.hasOwnProperty.call(route, 'is_active')) {
-                        routeStatus = route.is_active === true || route.is_active === 1 || route.is_active === 'true';
-                      } else if (record.status) {
-                        routeStatus = record.status === 'Active';
-                      }
-
-                      setEditRouteName(routeName);
-                      setEditRouteStatus(routeStatus);
-                      setSelectedRoute(record);
-
-                      setTimeout(() => {
-                        const modalElement = document.getElementById('edit_routes');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-                            modal.show();
-                          }
-                        }
-                      }, 100);
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-right p-3">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#edit_routes"
+                  onClick={() => setSelectedRoute(record)}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#delete-modal"
+                  onClick={() => {
+                    setDeleteId(record.originalData?.id || record.id);
+                    setSelectedRoute(record);
+                  }}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Delete
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
+
+  const handleTableChange = (pagination: any, filters: any, sorter: any) => {
+    setParams({
+      ...params,
+      page: pagination.current,
+      limit: pagination.pageSize,
+      sortField: sorter.field || params.sortField,
+      sortOrder: sorter.order === 'descend' ? 'DESC' : 'ASC'
+    });
+  };
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Routes</h3>
@@ -174,29 +251,31 @@ const TransportRoutes = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption 
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
                   data-bs-toggle="modal"
                   data-bs-target="#add_routes"
+                  onClick={() => setSelectedRoute(null)}
                 >
                   <i className="ti ti-square-rounded-plus me-2" />
-                  Add Route
+                  Add Route Stop
                 </Link>
               </div>
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Students List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Routes</h4>
+              <h4 className="mb-3">Routes List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -207,11 +286,8 @@ const TransportRoutes = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
-                    <form>
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                    <form onSubmit={handleApplyClick}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
@@ -219,143 +295,82 @@ const TransportRoutes = () => {
                         <div className="row">
                           <div className="col-md-12">
                             <div className="mb-3">
-                              <label className="form-label">Routes</label>
+                              <label className="form-label">Pickup Point</label>
                               <CommonSelect
                                 className="select"
-                                options={routesList}
-                                defaultValue={undefined}
+                                options={[{ value: 'all', label: 'All Points' }, ...pickupsData.map(p => ({ value: p.id.toString(), label: p.point_name })) ]}
+                                value={draftFilters.pickup_point_id}
+                                onChange={(val: string | null) => {
+                                  const newVal = val === 'all' || val === 'All' ? 'all' : (val || 'all');
+                                  setDraftFilters((prev) => ({ ...prev, pickup_point_id: newVal }));
+                                }}
                               />
                             </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
+                            <div className="mb-0">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={status}
-                                defaultValue={status[0]}
+                                options={[{ value: 'all', label: 'All Status' }, ...statusOptions.map(s => ({ value: s.value.toLowerCase(), label: s.label } ))]}
+                                value={draftFilters.status}
+                                onChange={(val: string | null) => {
+                                  setDraftFilters((prev) => ({ ...prev, status: val === 'All' || val === 'all' ? 'all' : (val?.toLowerCase() || 'all') }));
+                                }}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
-                          Reset
-                        </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
+                        <button 
+                          type="button" 
+                          className="btn btn-light me-3" 
+                          onClick={() => {
+                            setDraftFilters({ status: 'all', pickup_point_id: 'all' });
+                            setParams({ ...params, status: 'all', search: '', page: 1, pickup_point_id: 'all' });
+                          }}
                         >
+                          Reset
+                        </button>
+                        <button type="submit" className="btn btn-primary">
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </div>
             <div className="card-body p-0 py-3">
               {error && (
-                <div className="alert alert-warning mx-3 mt-3 mb-0" role="alert">
-                  Could not load routes from server. Showing sample data. Please check API connectivity and login session.
+                <div className="alert alert-warning mx-3" role="alert">
+                  {error}.
                 </div>
               )}
-              {loading && (
-                <div className="text-center py-4">
-                  <span className="spinner-border spinner-border-sm me-2" />
-                  Loading routes...
-                </div>
-              )}
-              {!loading && (
-                <Table dataSource={data} columns={columns} Selection={true} />
-              )}
-              {/* /Student List */}
+              <Table 
+                dataSource={data} 
+                columns={columns} 
+                Selection={true} 
+                loading={loading}
+                pagination={{
+                  total: total,
+                  current: params.page,
+                  pageSize: params.limit,
+                  showSizeChanger: true,
+                }}
+                onChange={handleTableChange}
+              />
             </div>
           </div>
-          {/* /Students List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
+
       <TransportModal
         selectedRoute={selectedRoute}
-        editRouteName={editRouteName}
-        setEditRouteName={setEditRouteName}
-        editRouteStatus={editRouteStatus}
-        setEditRouteStatus={setEditRouteStatus}
-        isUpdating={isUpdating}
-        setIsUpdating={setIsUpdating}
-        onRouteUpdate={async () => {
-          const routeId = selectedRoute?.originalData?.id || selectedRoute?.id;
-          if (!routeId || isUpdating) return;
-
-          setIsUpdating(true);
-          try {
-            const updateData = {
-              route_name: editRouteName.trim(),
-              is_active: editRouteStatus
-            };
-
-            const response = await apiService.updateTransportRoute(routeId, updateData);
-
-            if (response && response.status === 'SUCCESS') {
-              // Close modal
-              const modalElement = document.getElementById('edit_routes');
-              if (modalElement) {
-                const bootstrap = (window as any).bootstrap;
-                if (bootstrap && bootstrap.Modal) {
-                  const modal = bootstrap.Modal.getInstance(modalElement);
-                  if (modal) modal.hide();
-                }
-              }
-              // Refetch list
-              await refetch();
-              // Reset form
-              setSelectedRoute(null);
-              setEditRouteName('');
-              setEditRouteStatus(true);
-            } else {
-              alert(response?.message || 'Failed to update route');
-            }
-          } catch (error: any) {
-            console.error('Error updating route:', error);
-            alert(error?.message || 'Failed to update route. Please try again.');
-          } finally {
-            setIsUpdating(false);
-          }
+        deleteId={deleteId}
+        onSuccess={() => {
+          refetch();
+          setSelectedRoute(null);
+          setDeleteId(null);
         }}
       />
     </>
