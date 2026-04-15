@@ -285,9 +285,9 @@ const FeesGroup = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Fees Group List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                  <div className="mb-3 me-2">
+                  {/* <div className="mb-3 me-2">
                     <PredefinedDateRanges onChange={(range: [any, any]) => setDateRange(range)} />
-                  </div>
+                  </div> */}
                   <div className="dropdown mb-3 me-2">
                     <Link
                       to="#"
