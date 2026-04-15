@@ -1,56 +1,69 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 import { transportAssignData } from '../data/json/transport_assign';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-// Assignments are represented by vehicles: each vehicle row has driver_id = assigned driver.
-export const useTransportAssignments = () => {
+export const useTransportAssignments = (params = {}) => {
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [metadata, setMetadata] = useState({
+    totalCount: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0
+  });
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getTransportVehicles();
-      const list = Array.isArray(response) ? response : (response?.data ?? []);
-      if (Array.isArray(list)) {
+      
+      const combinedParams = { ...params, ...overrides };
+      const response = await apiService.getTransportAssignments(combinedParams);
+      
+      if (response && response.status === "SUCCESS") {
+        const list = response.data || [];
         const mapped = list.map((row, index) => ({
-          key: String(row.id ?? index + 1),
-          id: row.vehicle_code ?? row.id ?? String(index + 1),
-          route: row.route ?? '—',
-          pickupPoint: row.pickup_point ?? '—',
-          vehicle: row.vehicle_number ?? 'N/A',
-          name: row.driver_name ?? 'N/A',
-          img: row.driver_photo_url || row.photo_url || defaultImg,
-          phone: row.driver_phone ?? 'N/A',
+          key: String(row.id || index + 1),
+          id: row.assignment_code || String(row.id),
+          route: row.route_name || '—',
+          pickupPoint: row.point_name || '—',
+          vehicle: row.vehicle_number || 'N/A',
+          name: row.driver_name || 'N/A',
+          img: row.photo_url || defaultImg,
+          phone: row.driver_phone || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
-          originalData: row, // Store original data for edit modal
+          originalData: row,
         }));
+        
         setData(mapped);
+        if (response.metadata) {
+          setMetadata(response.metadata);
+        }
       } else {
         setData([]);
       }
     } catch (err) {
-      console.error('Error fetching transport assignments (vehicles):', err);
-      setError(err?.message ?? 'Failed to fetch assignments');
+      console.error('Error fetching transport assignments:', err);
+      setError(err?.message || 'Failed to fetch assignments');
       setData([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [params]);
 
   useEffect(() => {
     fetchAssignments();
-  }, []);
+  }, [fetchAssignments]);
 
   return {
     data,
     loading,
     error,
+    metadata,
     refetch: fetchAssignments,
     fallbackData: transportAssignData,
   };

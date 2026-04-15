@@ -18,6 +18,7 @@
     "db:migrate:library": "node scripts/run-library-migration.js",
     "db:migrate:accounts": "node scripts/run-accounts-migration.js",
     "db:migrate:fees": "node scripts/run-fees-migration.js",
+    "db:migrate:transport": "node scripts/run-transport-migration.js",
     "test": "node --test",
     "test:attendance": "node --test test/attendanceValidation.test.js"
   },
