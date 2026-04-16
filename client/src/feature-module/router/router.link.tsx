@@ -71,6 +71,7 @@ import ExpensesCategory from "../accounts/expenses-category";
 import Invoice from "../accounts/invoice";
 import Events from "../announcements/events";
 import NoticeBoard from "../announcements/notice-board";
+import Enquiries from "../enquiries";
 import AllBlogs from "../content/blog/allBlogs";
 import BlogCategories from "../content/blog/blogCategories";
 import BlogComments from "../content/blog/blogComments";
@@ -1246,6 +1247,11 @@ export const publicRoutes = [
   {
     path: routes.noticeBoard,
     element: <NoticeBoard />,
+    route: Route,
+  },
+  {
+    path: routes.enquiries,
+    element: <Enquiries />,
     route: Route,
   },
 

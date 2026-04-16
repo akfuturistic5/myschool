@@ -1,10 +1,28 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { getDashboardForRole } from "../../../core/utils/roleUtils";
 import { apiService } from "../../../core/services/apiService";
+import Swal from "sweetalert2";
+
+function toDateOnly(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+function addDaysIso(dateOnly: string, days: number): string | null {
+  const s = toDateOnly(dateOnly);
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  // Noon local time avoids DST edge issues when adding days.
+  const d = new Date(`${s}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 const AcademicYearCreate = () => {
   const routes = all_routes;
@@ -17,6 +35,50 @@ const AcademicYearCreate = () => {
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasAnyYears, setHasAnyYears] = useState(false);
+  const [previousEndDate, setPreviousEndDate] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await apiService.getAcademicYearsManage();
+        const data = Array.isArray(res?.data) ? res.data : [];
+        const any = data.length > 0;
+        // "Previous/last" year = latest by start_date (tie-breaker id).
+        let latest = null;
+        for (const row of data) {
+          const sd = toDateOnly(row?.start_date) || "";
+          const id = Number(row?.id) || 0;
+          if (!latest) {
+            latest = { sd, id, ed: toDateOnly(row?.end_date) };
+            continue;
+          }
+          if (sd.localeCompare(latest.sd) > 0 || (sd === latest.sd && id > latest.id)) {
+            latest = { sd, id, ed: toDateOnly(row?.end_date) };
+          }
+        }
+        if (mounted) {
+          setHasAnyYears(any);
+          setPreviousEndDate(latest?.ed ?? null);
+        }
+      } catch {
+        // Non-blocking: if this fails, user can still select any date; backend will enforce rules.
+        if (mounted) {
+          setHasAnyYears(false);
+          setPreviousEndDate(null);
+        }
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const minStartDate = useMemo(() => {
+    if (!previousEndDate) return null;
+    return addDaysIso(previousEndDate, 1);
+  }, [previousEndDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +86,19 @@ const AcademicYearCreate = () => {
     const name = yearName.trim();
     if (!name || !startDate) {
       setError("Year name and start date are required.");
+      return;
+    }
+    if (hasAnyYears && !previousEndDate) {
+      await Swal.fire({
+        icon: "warning",
+        title: "End date required",
+        text: "Please fill the current/previous academic year end date before creating a new academic year.",
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+    if (minStartDate && startDate && startDate.localeCompare(minStartDate) < 0) {
+      setError(`Start date must be after the previous academic year end date (${previousEndDate}).`);
       return;
     }
     setSubmitting(true);
@@ -42,6 +117,20 @@ const AcademicYearCreate = () => {
       navigate(routes.academicYears, { replace: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create academic year";
+      const lower = String(msg).toLowerCase();
+      const duplicateName =
+        lower.includes("already exists") ||
+        lower.includes("duplicate key") ||
+        lower.includes("academic year with this name");
+      if (duplicateName) {
+        await Swal.fire({
+          icon: "warning",
+          title: "Duplicate academic year name",
+          text: "Same academic year name already exists. Please enter a different year name.",
+          confirmButtonText: "OK",
+        });
+        return;
+      }
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -83,9 +172,9 @@ const AcademicYearCreate = () => {
               <div className="card-header bg-white border-bottom py-3">
                 <h5 className="mb-0">Academic session details</h5>
                 <p className="text-muted small mb-0 mt-1">
-                  End date is optional on this form. If you leave it unset, the system saves a provisional closing date
-                  (one year after the start date, minus one day) so the record is valid in all databases; you can adjust
-                  it later on the year detail page when the session ends.
+                  End date is optional on this form and can be filled later from the academic year detail page when
+                  the session ends. Note: you must record the end date of the current/previous year before creating the
+                  next academic year.
                 </p>
               </div>
               <div className="card-body">
@@ -122,8 +211,15 @@ const AcademicYearCreate = () => {
                       className="form-control"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
+                      min={minStartDate || undefined}
                       required
                     />
+                    {previousEndDate && minStartDate && (
+                      <div className="form-text">
+                        The previous academic year ends on <strong>{previousEndDate}</strong>. Start date must be{" "}
+                        <strong>{minStartDate}</strong> or later.
+                      </div>
+                    )}
                   </div>
                   <div className="mb-3 form-check">
                     <input

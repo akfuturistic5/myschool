@@ -235,6 +235,13 @@ export const SidebarData = [
         ],
       },
       {
+        label: "Enquiries",
+        link: routes.enquiries,
+        icon: "ti ti-message-dots",
+        showSubRoute: false,
+        submenu: false,
+      },
+      {
         label: "Reasons",
         link: routes.AcademicReason,
         icon: "ti ti-lifebuoy",

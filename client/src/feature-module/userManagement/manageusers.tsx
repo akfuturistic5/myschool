@@ -8,11 +8,43 @@ import { Reason } from "../../core/common/selectoption/selectoption";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
 import { useUsers } from "../../core/hooks/useUsers";
+import { exportToExcel, exportToPDF, printData } from "../../core/utils/exportUtils";
 
 const Manageusers = () => {
   const routes = all_routes;
   const { users, loading, error, refetch } = useUsers();
   const data = users;
+  const exportColumns = [
+    { title: "User ID", dataKey: "id" },
+    { title: "Role", dataKey: "role" },
+    { title: "Name", dataKey: "name" },
+    { title: "Class", dataKey: "class" },
+    { title: "Section", dataKey: "section" },
+    { title: "Date Joined", dataKey: "dateOfJoined" },
+    { title: "Status", dataKey: "status" },
+  ];
+  const exportRows = data.map((row: any) => ({
+    id: row?.id ?? "—",
+    role: row?.role ?? "—",
+    name: row?.name ?? "—",
+    class: row?.class ?? "—",
+    section: row?.section ?? "—",
+    dateOfJoined: row?.dateOfJoined ?? "—",
+    status: row?.status ?? "—",
+  }));
+  const exportFileBase = `users-list-${new Date().toISOString().split("T")[0]}`;
+
+  const handleExportPdf = () => {
+    exportToPDF(exportRows, "Users List", exportFileBase, exportColumns);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(exportRows, exportFileBase, "Users");
+  };
+
+  const handlePrint = () => {
+    printData("Users List", exportColumns, exportRows);
+  };
   const columns = [
     {
       title: "User ID",
@@ -101,7 +133,12 @@ const Manageusers = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={refetch}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
                 {/* <div className="mb-2">
                   <Link
                     to="#"
