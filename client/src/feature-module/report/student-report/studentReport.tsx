@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import Table from "../../../core/common/dataTable/index";
 import { Link } from "react-router-dom";
@@ -9,20 +9,29 @@ import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import {
   classSection,
-  classSylabus,
   gender,
   status,
-  studentName,
 } from "../../../core/common/selectoption/selectoption";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useStudents } from "../../../core/hooks/useStudents";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import type { Dayjs } from "dayjs";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
 
 const StudentReport = () => {
-  const { students, loading, error } = useStudents();
+  const { students, loading, error, refetch } = useStudents();
   const routes = all_routes;
+  const [selectedClass, setSelectedClass] = useState<string>("All");
+  const [selectedSection, setSelectedSection] = useState<string>("All");
+  const [selectedGender, setSelectedGender] = useState<string>("All");
+  const [selectedStatus, setSelectedStatus] = useState<string>("All");
+  const [selectedDateRange, setSelectedDateRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [appliedClass, setAppliedClass] = useState<string>("All");
+  const [appliedSection, setAppliedSection] = useState<string>("All");
+  const [appliedGender, setAppliedGender] = useState<string>("All");
+  const [appliedStatus, setAppliedStatus] = useState<string>("All");
   const data = useMemo(
     () =>
       (Array.isArray(students) ? students : []).map((student: any, index: number) => ({
@@ -40,13 +49,126 @@ const StudentReport = () => {
           [student.guardian_first_name, student.guardian_last_name].filter(Boolean).join(" ") ||
           "—",
         dateOfJoin: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
+        dateOfJoinRaw: student.admission_date ? new Date(student.admission_date).toISOString().slice(0, 10) : "",
         dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+        dobRaw: student.date_of_birth ? new Date(student.date_of_birth).toISOString().slice(0, 10) : "",
         status: student.is_active ? "Active" : "Inactive",
         imgSrc: student.photo_url || "",
         parentImgSrc: "",
       })),
     [students]
   );
+  const classOptions = useMemo(() => {
+    const uniqueClasses = Array.from(
+      new Set(
+        data
+          .map((item) => String(item.class || "").trim())
+          .filter((value) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    return [{ value: "All", label: "All Classes" }, ...uniqueClasses.map((value) => ({ value, label: value }))];
+  }, [data]);
+
+  const sectionOptions = useMemo(() => {
+    const uniqueSections = Array.from(
+      new Set(
+        data
+          .map((item) => String(item.section || "").trim())
+          .filter((value) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+
+    return [{ value: "All", label: "All Sections" }, ...uniqueSections.map((value) => ({ value, label: value }))];
+  }, [data]);
+
+  const filteredData = useMemo(
+    () =>
+      data.filter((row) => {
+        const classMatched = appliedClass === "All" || row.class === appliedClass;
+        const sectionMatched = appliedSection === "All" || row.section === appliedSection;
+        const genderMatched = appliedGender === "All" || row.gender === appliedGender;
+        const statusMatched = appliedStatus === "All" || row.status === appliedStatus;
+        const dateMatched =
+          !selectedDateRange ||
+          ((row.dateOfJoinRaw &&
+            row.dateOfJoinRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
+            row.dateOfJoinRaw <= selectedDateRange[1].format("YYYY-MM-DD")) ||
+            (row.dobRaw &&
+              row.dobRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
+              row.dobRaw <= selectedDateRange[1].format("YYYY-MM-DD")));
+        return classMatched && sectionMatched && genderMatched && statusMatched && dateMatched;
+      }),
+    [appliedClass, appliedGender, appliedSection, appliedStatus, data, selectedDateRange]
+  );
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Name", dataKey: "name" },
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Gender", dataKey: "gender" },
+      { title: "Parent", dataKey: "parent" },
+      { title: "Date Of Join", dataKey: "dateOfJoin" },
+      { title: "DOB", dataKey: "dob" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const handleExportExcel = () => {
+    const exportData = filteredData.map((row) => ({
+      "Admission No": row.admissionNo,
+      "Roll No": row.rollNo,
+      Name: row.name,
+      Class: row.class,
+      Section: row.section,
+      Gender: row.gender,
+      Parent: row.parent,
+      "Date Of Join": row.dateOfJoin,
+      DOB: row.dob,
+      Status: row.status,
+    }));
+
+    exportToExcel(exportData, `StudentReport_${new Date().toISOString().split("T")[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    exportToPDF(
+      filteredData,
+      "Student Report List",
+      `StudentReport_${new Date().toISOString().split("T")[0]}`,
+      exportColumns
+    );
+  };
+
+  const handlePrint = () => {
+    printData("Student Report List", exportColumns, filteredData);
+  };
+
+  const handleApplyClick = () => {
+    setAppliedClass(selectedClass);
+    setAppliedSection(selectedSection);
+    setAppliedGender(selectedGender);
+    setAppliedStatus(selectedStatus);
+    if (dropdownMenuRef.current) {
+      dropdownMenuRef.current.classList.remove("show");
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSelectedClass("All");
+    setSelectedSection("All");
+    setSelectedGender("All");
+    setSelectedStatus("All");
+    setAppliedClass("All");
+    setAppliedSection("All");
+    setAppliedGender("All");
+    setAppliedStatus("All");
+    setSelectedDateRange(null);
+  };
   const columns = [
     {
       title: "Admission No",
@@ -160,11 +282,6 @@ const StudentReport = () => {
     },
   ];
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
-    }
-  };
   return (
     <div>
       <>
@@ -190,7 +307,12 @@ const StudentReport = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-                <TooltipOption />
+                <TooltipOption
+                  onRefresh={refetch}
+                  onPrint={handlePrint}
+                  onExportExcel={handleExportExcel}
+                  onExportPdf={handleExportPDF}
+                />
               </div>
             </div>
             {/* /Page Header */}
@@ -199,8 +321,8 @@ const StudentReport = () => {
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                 <h4 className="mb-3">Student Report List</h4>
                 <div className="d-flex align-items-center flex-wrap">
-                  <div className="input-icon-start mb-3 me-2 position-relative">
-                    <PredefinedDateRanges />
+                  <div className="mb-3 me-2">
+                    <PredefinedDateRanges onChange={(range: [Dayjs, Dayjs]) => setSelectedDateRange(range)} />
                   </div>
                   <div className="dropdown mb-3 me-2">
                     <Link
@@ -227,7 +349,9 @@ const StudentReport = () => {
                                 <label className="form-label">Class</label>
                                 <CommonSelect
                                   className="select"
-                                  options={classSylabus}
+                                  options={classOptions}
+                                  value={selectedClass}
+                                  onChange={(value: any) => setSelectedClass(String(value))}
                                 />
                               </div>
                             </div>
@@ -236,16 +360,9 @@ const StudentReport = () => {
                                 <label className="form-label">Section</label>
                                 <CommonSelect
                                   className="select"
-                                  options={classSection}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Name</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={studentName}
+                                  options={sectionOptions}
+                                  value={selectedSection}
+                                  onChange={(value: any) => setSelectedSection(String(value))}
                                 />
                               </div>
                             </div>
@@ -255,6 +372,8 @@ const StudentReport = () => {
                                 <CommonSelect
                                   className="select"
                                   options={gender}
+                                  value={selectedGender}
+                                  onChange={(value: any) => setSelectedGender(String(value))}
                                 />
                               </div>
                             </div>
@@ -264,21 +383,15 @@ const StudentReport = () => {
                                 <CommonSelect
                                   className="select"
                                   options={status}
+                                  value={selectedStatus}
+                                  onChange={(value: any) => setSelectedStatus(String(value))}
                                 />
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="mb-0">
-                                <label className="form-label">
-                                  Date of Join
-                                </label>
-                                <input type="date" className="form-control" />
                               </div>
                             </div>
                           </div>
                         </div>
                         <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
+                          <Link to="#" className="btn btn-light me-3" onClick={handleResetFilters}>
                             Reset
                           </Link>
                           <Link
@@ -291,38 +404,6 @@ const StudentReport = () => {
                         </div>
                       </form>
                     </div>
-                  </div>
-                  <div className="dropdown mb-3">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
-                    >
-                      <i className="ti ti-sort-ascending-2 me-2" />
-                      Sort by A-Z
-                    </Link>
-                    <ul className="dropdown-menu p-3">
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1 active">
-                          Ascending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Descending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Recently Viewed
-                        </Link>
-                      </li>
-                      <li>
-                        <Link to="#" className="dropdown-item rounded-1">
-                          Recently Added
-                        </Link>
-                      </li>
-                    </ul>
                   </div>
                 </div>
               </div>
@@ -342,7 +423,7 @@ const StudentReport = () => {
                 ) : (
                   <>
                     {/* Student List */}
-                    <Table columns={columns} dataSource={data} Selection={true} />
+                    <Table columns={columns} dataSource={filteredData} Selection={true} />
                     {/* /Student List */}
                   </>
                 )}
