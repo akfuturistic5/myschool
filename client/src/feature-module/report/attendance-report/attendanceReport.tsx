@@ -9,11 +9,10 @@ import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import type { TableData } from "../../../core/data/interface";
-import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { selectUser } from "../../../core/data/redux/authSlice";
-import { exportAttendanceExcel, exportAttendancePdf } from "./exportUtils";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -28,15 +27,14 @@ const statusClassMap: Record<string, string> = {
   absent: "bg-danger",
   holiday: "bg-info",
 };
-const statusShortLabel = (status: string | null | undefined) => {
-  const s = String(status || "").trim().toLowerCase();
-  if (s === "present") return "P";
-  if (s === "late") return "L";
-  if (s === "absent") return "A";
-  if (s === "holiday") return "H";
-  if (s === "half_day" || s === "halfday") return "F";
-  return "";
+const statusTextMap: Record<string, string> = {
+  present: "P",
+  absent: "A",
+  late: "L",
+  holiday: "H",
+  half_day: "HD",
 };
+
 const formatStatusLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
   if (!s) return "Not Marked";
@@ -48,103 +46,95 @@ const AttendanceReport = () => {
   const user = useSelector(selectUser);
   const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classesWithSections } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const [teacherScopeRows, setTeacherScopeRows] = useState<any[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [sectionsByClassId, setSectionsByClassId] = useState<Record<string, Array<{ value: string; label: string }>>>(
+    {}
+  );
+  const [selectedClassId, setSelectedClassId] = useState<string>("all");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>(dayjs().format("YYYY-MM"));
+  const [appliedClassId, setAppliedClassId] = useState<string>("all");
+  const [appliedSectionId, setAppliedSectionId] = useState<string>("");
+  const [appliedMonth, setAppliedMonth] = useState<string>(dayjs().format("YYYY-MM"));
+  const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const classOptions = useMemo(() => {
-    if (isTeacherRole) {
-      const seen = new Map<string, { value: string; label: string }>();
-      (Array.isArray(teacherScopeRows) ? teacherScopeRows : []).forEach((row: any) => {
-        const classId = row?.class_id;
-        if (classId == null || seen.has(String(classId))) return;
-        seen.set(String(classId), {
-          value: String(classId),
-          label: row?.class_name || `Class ${classId}`,
-        });
-      });
-      return Array.from(seen.values());
-    }
-    const seen = new Map<string, { value: string; label: string }>();
-    (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
-      if (row?.classId == null || seen.has(String(row.classId))) return;
-      seen.set(String(row.classId), {
-        value: String(row.classId),
-        label: row.className || `Class ${row.classId}`,
-      });
-    });
-    return Array.from(seen.values());
-  }, [classesWithSections, isTeacherRole, teacherScopeRows]);
-
-  const sectionOptions = useMemo(() => {
-    if (isTeacherRole) {
-      const base = [{ value: "", label: "All Sections" }];
-      const seen = new Set<string>();
-      const items = (Array.isArray(teacherScopeRows) ? teacherScopeRows : [])
-        .filter((row: any) => String(row?.class_id ?? "") === String(selectedClassId || ""))
-        .filter((row: any) => row?.section_id != null)
-        .map((row: any) => ({
-          value: String(row.section_id),
-          label: row?.section_name || `Section ${row.section_id}`,
-        }))
-        .filter((item) => {
-          if (seen.has(item.value)) return false;
-          seen.add(item.value);
-          return true;
-        });
-      return base.concat(items);
-    }
-    const base = [{ value: "", label: "All Sections" }];
-    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
-      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
-      .filter((row: any) => row?.sectionId != null)
-      .map((row: any) => ({
-        value: String(row.sectionId),
-        label: row.sectionName || `Section ${row.sectionId}`,
-      }));
-    const seen = new Set<string>();
-    return base.concat(
-      items.filter((item) => {
-        if (seen.has(item.value)) return false;
-        seen.add(item.value);
-        return true;
-      })
-    );
-  }, [classesWithSections, selectedClassId, isTeacherRole, teacherScopeRows]);
-
   useEffect(() => {
-    if (!isTeacherRole) {
-      setTeacherScopeRows([]);
-      return;
-    }
     let cancelled = false;
-    const loadTeacherScope = async () => {
+
+    const fetchFilterOptions = async () => {
       try {
-        const response = await apiService.getTeacherStudents(academicYearId);
-        if (!cancelled && response?.status === "SUCCESS") {
-          setTeacherScopeRows(Array.isArray(response.data) ? response.data : []);
+        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+
+        if (cancelled) return;
+
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data) ? classesResult.value : null;
+        const classesFallbackResponse =
+          academicYearId &&
+          (!classesResponse || (Array.isArray(classesResponse.data) && classesResponse.data.length === 0))
+            ? await apiService.getClasses().catch(() => null)
+            : null;
+        const classes = Array.isArray(classesResponse?.data)
+          ? classesResponse.data
+          : Array.isArray(classesFallbackResponse?.data)
+            ? classesFallbackResponse.data
+            : [];
+        const sections =
+          sectionsResult.status === "fulfilled" && Array.isArray(sectionsResult.value?.data) ? sectionsResult.value.data : [];
+        const nextClassOptions = [{ value: "all", label: "All Classes" }, ...classes.map((item: any) => ({
+          value: String(item.id),
+          label: item.class_name || `Class ${item.id}`,
+        }))];
+
+        const nextSectionsByClassId: Record<string, Array<{ value: string; label: string }>> = {};
+        sections.forEach((section: any) => {
+          const classKey = String(section.class_id);
+          if (!nextSectionsByClassId[classKey]) {
+            nextSectionsByClassId[classKey] = [];
+          }
+          nextSectionsByClassId[classKey].push({
+            value: String(section.id),
+            label: section.section_name || `Section ${section.id}`,
+          });
+        });
+
+        setClassOptions(nextClassOptions);
+        setSectionsByClassId(nextSectionsByClassId);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load class/section options");
+          setClassOptions([{ value: "all", label: "All Classes" }]);
+          setSectionsByClassId({});
         }
-      } catch (_) {
-        if (!cancelled) setTeacherScopeRows([]);
       }
     };
-    loadTeacherScope();
+
+    fetchFilterOptions();
     return () => {
       cancelled = true;
     };
-  }, [isTeacherRole, academicYearId]);
+  }, [academicYearId]);
 
-  useEffect(() => {
-    if (!selectedClassId && classOptions.length > 0) {
-      setSelectedClassId(classOptions[0].value);
+  const sectionOptions = useMemo(() => {
+    if (selectedClassId === "all") {
+      const allRows = Object.values(sectionsByClassId).flat();
+      const seen = new Set<string>();
+      const uniqueRows = allRows.filter((item) => {
+        if (seen.has(item.value)) return false;
+        seen.add(item.value);
+        return true;
+      });
+      return [{ value: "", label: "All Sections" }, ...uniqueRows];
     }
-  }, [classOptions, selectedClassId]);
+    const classKey = String(selectedClassId || "");
+    const rows = Array.isArray(sectionsByClassId[classKey]) ? sectionsByClassId[classKey] : [];
+    return [{ value: "", label: "All Sections" }, ...rows];
+  }, [sectionsByClassId, selectedClassId]);
 
   useEffect(() => {
     if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
@@ -153,12 +143,6 @@ const AttendanceReport = () => {
   }, [sectionOptions, selectedSectionId]);
 
   useEffect(() => {
-    if (!selectedClassId) {
-      setReportData({ month: selectedMonth, days: [], rows: [] });
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchReport = async () => {
@@ -166,18 +150,18 @@ const AttendanceReport = () => {
         setLoading(true);
         setError(null);
         const res = await apiService.getAttendanceReport({
-          classId: selectedClassId,
-          sectionId: selectedSectionId || null,
+          classId: appliedClassId !== "all" ? appliedClassId : null,
+          sectionId: appliedSectionId || null,
           academicYearId,
-          month: selectedMonth,
+          month: appliedMonth,
         });
         if (!cancelled) {
-          setReportData(res?.data || { month: selectedMonth, days: [], rows: [] });
+          setReportData(res?.data || { month: appliedMonth, days: [], rows: [] });
         }
       } catch (err: any) {
         if (!cancelled) {
           setError(err?.message || "Failed to fetch attendance report");
-          setReportData({ month: selectedMonth, days: [], rows: [] });
+          setReportData({ month: appliedMonth, days: [], rows: [] });
         }
       } finally {
         if (!cancelled) {
@@ -190,7 +174,7 @@ const AttendanceReport = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selectedClassId, selectedSectionId, selectedMonth]);
+  }, [academicYearId, appliedClassId, appliedSectionId, appliedMonth, refreshTick]);
 
   const data = useMemo(
     () =>
@@ -214,28 +198,34 @@ const AttendanceReport = () => {
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
           const cls = status ? statusClassMap[status] || "bg-light" : "";
-          const short = statusShortLabel(status);
+          const hasStatus = Boolean(status);
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
               style={
-                !status
-                  ? { opacity: 0.15, width: 22, height: 18, display: "inline-flex" }
-                  : {
-                      width: 22,
-                      height: 18,
+                hasStatus
+                  ? {
                       display: "inline-flex",
+                      width: 22,
+                      height: 22,
+                      borderRadius: 999,
                       alignItems: "center",
                       justifyContent: "center",
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 700,
                       color: "#fff",
+                      fontWeight: 700,
+                      fontSize: 11,
+                      lineHeight: 1,
+                    }
+                  : {
+                      display: "inline-flex",
+                      minWidth: 14,
+                      justifyContent: "center",
+                      color: "#6c757d",
+                      fontWeight: 600,
                     }
               }
-              title={status ? `${day.date}: ${formatStatusLabel(status)}` : `${day.date}: Not Marked`}
             >
-              {short}
+              {hasStatus ? statusTextMap[status] || "-" : "-"}
             </span>
           );
         },
@@ -250,7 +240,10 @@ const AttendanceReport = () => {
         dataIndex: "name",
         render: (text: string, record: any) => (
           <div className="d-flex align-items-center">
-            <Link to="#" className="avatar avatar-md">
+            <Link
+              to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+              className="avatar avatar-md"
+            >
               <ImageWithBasePath
                 src={record.img}
                 className="img-fluid rounded-circle"
@@ -260,7 +253,9 @@ const AttendanceReport = () => {
             </Link>
             <div className="ms-2">
               <p className="text-dark mb-0">
-                <Link to="#">{text || "—"}</Link>
+                <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>
+                  {text || "—"}
+                </Link>
               </p>
               <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
             </div>
@@ -300,7 +295,7 @@ const AttendanceReport = () => {
         render: (_text: any, record: any) => record.summary?.holiday ?? 0,
       },
       {
-        title: "F",
+        title: "HD",
         key: "halfDay",
         render: (_text: any, record: any) => record.summary?.halfDay ?? 0,
       },
@@ -309,47 +304,100 @@ const AttendanceReport = () => {
     [dayColumns]
   );
 
-  const exportRows = useMemo(() => {
-    const dayKeys = (Array.isArray(reportData?.days) ? reportData.days : []).map((d: any) => d?.date).filter(Boolean);
-    return data.map((row: any) => {
-      const base: Record<string, any> = {
-        Student: row.name || "",
-        RollNo: row.rollNo || "",
-        Percentage: row.summary?.percentage ?? 0,
-        Present: row.summary?.present ?? 0,
-        Late: row.summary?.late ?? 0,
-        Absent: row.summary?.absent ?? 0,
-        Holiday: row.summary?.holiday ?? 0,
-        HalfDay: row.summary?.halfDay ?? 0,
-      };
-      dayKeys.forEach((day) => {
-        base[day] = formatStatusLabel(row.daily?.[day]);
-      });
-      return base;
-    });
-  }, [data, reportData]);
-
-  const handleExportPdf = () => {
-    try {
-      exportAttendancePdf(`Student Attendance Report (${reportData.month || selectedMonth})`, `student-attendance-report-${selectedMonth}`, exportRows);
-    } catch (err: any) {
-      setError(err?.message || "Export failed");
-    }
-  };
-
-  const handleExportExcel = () => {
-    try {
-      exportAttendanceExcel(`student-attendance-report-${selectedMonth}`, exportRows);
-    } catch (err: any) {
-      setError(err?.message || "Export failed");
-    }
-  };
+  // Export rows/columns are defined further down (including day-wise columns).
 
   const handleApply = (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault();
+    setAppliedClassId(selectedClassId);
+    setAppliedSectionId(selectedSectionId);
+    setAppliedMonth(selectedMonth);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
+  };
+
+  const handleReset = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const fallbackClass = "all";
+    setSelectedClassId(fallbackClass);
+    setSelectedSectionId("");
+    setSelectedMonth(dayjs().format("YYYY-MM"));
+    setAppliedClassId(fallbackClass);
+    setAppliedSectionId("");
+    setAppliedMonth(dayjs().format("YYYY-MM"));
+  };
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Student", dataKey: "name" },
+      { title: "Section", dataKey: "sectionName" },
+      { title: "Attendance %", dataKey: "attendancePercentage" },
+      { title: "Present", dataKey: "presentCount" },
+      { title: "Late", dataKey: "lateCount" },
+      { title: "Absent", dataKey: "absentCount" },
+      { title: "Holiday", dataKey: "holidayCount" },
+      { title: "Half Day", dataKey: "halfDayCount" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => ({
+        admissionNo: row.admissionNo || "—",
+        rollNo: row.rollNo || "—",
+        name: row.name || "—",
+        sectionName: row.sectionName || "—",
+        attendancePercentage: `${row.summary?.percentage ?? 0}%`,
+        presentCount: row.summary?.present ?? 0,
+        lateCount: row.summary?.late ?? 0,
+        absentCount: row.summary?.absent ?? 0,
+        holidayCount: row.summary?.holiday ?? 0,
+        halfDayCount: row.summary?.halfDay ?? 0,
+        daily: row.daily || {},
+      })),
+    [data]
+  );
+
+  const handleExportExcel = () => {
+    const dayExportColumns = (Array.isArray(reportData.days) ? reportData.days : []).map((day: any) => ({
+      key: String(day.date),
+      label: `${String(day.day).padStart(2, "0")} ${String(day.weekdayShort || "").toUpperCase()}`,
+    }));
+    const rows = exportRows.map((item) => {
+      const baseRow: Record<string, string | number> = {
+        "Admission No": item.admissionNo,
+        "Roll No": item.rollNo,
+        Student: item.name,
+        Section: item.sectionName,
+        "Attendance %": item.attendancePercentage,
+        Present: item.presentCount,
+        Late: item.lateCount,
+        Absent: item.absentCount,
+        Holiday: item.holidayCount,
+        "Half Day": item.halfDayCount,
+      };
+      dayExportColumns.forEach((col) => {
+        const status = item.daily?.[col.key];
+        baseRow[col.label] = status ? statusTextMap[status] || "-" : "-";
+      });
+      return baseRow;
+    });
+    exportToExcel(rows, `AttendanceReport_${appliedMonth}`);
+  };
+
+  const handleExportPDF = () => {
+    exportToPDF(exportRows, "Attendance Report", `AttendanceReport_${appliedMonth}`, exportColumns);
+  };
+
+  const handlePrint = () => {
+    printData("Attendance Report", exportColumns, exportRows);
+  };
+
+  const handleRefresh = () => {
+    setRefreshTick((prev) => prev + 1);
   };
 
   return (
@@ -374,7 +422,12 @@ const AttendanceReport = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
 
@@ -455,7 +508,7 @@ const AttendanceReport = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef} onClick={(e) => e.stopPropagation()}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -469,7 +522,7 @@ const AttendanceReport = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(value)}
+                                onChange={(value) => setSelectedClassId(String(value || "all"))}
                               />
                             </div>
                           </div>
@@ -493,6 +546,7 @@ const AttendanceReport = () => {
                                 value={dayjs(`${selectedMonth}-01`)}
                                 onChange={(value: Dayjs | null) => setSelectedMonth((value || dayjs()).format("YYYY-MM"))}
                                 allowClear={false}
+                                getPopupContainer={() => dropdownMenuRef.current || document.body}
                               />
                             </div>
                           </div>
@@ -502,11 +556,7 @@ const AttendanceReport = () => {
                         <Link
                           to="#"
                           className="btn btn-light me-3"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setSelectedSectionId("");
-                            setSelectedMonth(dayjs().format("YYYY-MM"));
-                          }}
+                          onClick={handleReset}
                         >
                           Reset
                         </Link>

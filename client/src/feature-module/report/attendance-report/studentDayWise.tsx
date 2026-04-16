@@ -6,29 +6,29 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
 import type { TableData } from "../../../core/data/interface";
+import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { selectUser } from "../../../core/data/redux/authSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
 
-const compareNumber = (left: unknown, right: unknown) =>
-  Number(left ?? 0) - Number(right ?? 0);
-
-const DailyAttendance = () => {
+const StudentDayWise = () => {
   const routes = all_routes;
-  const user = useSelector(selectUser);
-  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
+  const [sectionsByClassId, setSectionsByClassId] = useState<Record<string, Array<{ value: string; label: string }>>>(
+    {}
+  );
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [appliedClassId, setAppliedClassId] = useState<string>("all");
+  const [appliedSectionId, setAppliedSectionId] = useState<string>("");
   const [appliedDate, setAppliedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
@@ -41,31 +41,49 @@ const DailyAttendance = () => {
     const fetchFilterOptions = async () => {
       try {
         const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
-        const classesResult = await classesPromise.catch(() => null);
+        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
         if (cancelled) return;
 
-        const fallbackClasses =
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data) ? classesResult.value : null;
+        const classesFallbackResponse =
           academicYearId &&
-          (!Array.isArray(classesResult?.data) || classesResult.data.length === 0)
+          (!classesResponse || (Array.isArray(classesResponse.data) && classesResponse.data.length === 0))
             ? await apiService.getClasses().catch(() => null)
             : null;
-        const classes = Array.isArray(classesResult?.data)
-          ? classesResult.data
-          : Array.isArray(fallbackClasses?.data)
-            ? fallbackClasses.data
+        const classes = Array.isArray(classesResponse?.data)
+          ? classesResponse.data
+          : Array.isArray(classesFallbackResponse?.data)
+            ? classesFallbackResponse.data
             : [];
+        const sections =
+          sectionsResult.status === "fulfilled" && Array.isArray(sectionsResult.value?.data) ? sectionsResult.value.data : [];
 
-        setClassOptions([
-          { value: "all", label: "All Classes" },
-          ...classes.map((item: any) => ({
+        const nextClassOptions = [{ value: "all", label: "All Classes" }].concat(
+          classes.map((item: any) => ({
             value: String(item.id),
             label: item.class_name || `Class ${item.id}`,
-          })),
-        ]);
+          }))
+        );
+        const nextSectionsByClassId: Record<string, Array<{ value: string; label: string }>> = {};
+        sections.forEach((section: any) => {
+          const classKey = String(section.class_id);
+          if (!nextSectionsByClassId[classKey]) {
+            nextSectionsByClassId[classKey] = [];
+          }
+          nextSectionsByClassId[classKey].push({
+            value: String(section.id),
+            label: section.section_name || `Section ${section.id}`,
+          });
+        });
+
+        setClassOptions(nextClassOptions);
+        setSectionsByClassId(nextSectionsByClassId);
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || "Failed to load class options");
+          setError(err?.message || "Failed to load class/section options");
           setClassOptions([{ value: "all", label: "All Classes" }]);
+          setSectionsByClassId({});
         }
       }
     };
@@ -76,6 +94,27 @@ const DailyAttendance = () => {
     };
   }, [academicYearId]);
 
+  const sectionOptions = useMemo(() => {
+    if (selectedClassId === "all") {
+      const allRows = Object.values(sectionsByClassId).flat();
+      const seen = new Set<string>();
+      const uniqueRows = allRows.filter((item) => {
+        if (seen.has(item.value)) return false;
+        seen.add(item.value);
+        return true;
+      });
+      return [{ value: "", label: "All Sections" }, ...uniqueRows];
+    }
+    const rows = Array.isArray(sectionsByClassId[String(selectedClassId)]) ? sectionsByClassId[String(selectedClassId)] : [];
+    return [{ value: "", label: "All Sections" }, ...rows];
+  }, [sectionsByClassId, selectedClassId]);
+
+  useEffect(() => {
+    if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
+      setSelectedSectionId("");
+    }
+  }, [sectionOptions, selectedSectionId]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -85,6 +124,7 @@ const DailyAttendance = () => {
         setError(null);
         const res = await apiService.getAttendanceReport({
           classId: appliedClassId !== "all" ? appliedClassId : null,
+          sectionId: appliedSectionId || null,
           academicYearId,
           month: dayjs(appliedDate).format("YYYY-MM"),
         });
@@ -93,7 +133,7 @@ const DailyAttendance = () => {
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || "Failed to fetch daily attendance");
+          setError(err?.message || "Failed to fetch student day wise report");
           setReportData({ month: null, days: [], rows: [] });
         }
       } finally {
@@ -105,11 +145,12 @@ const DailyAttendance = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, appliedClassId, appliedDate, refreshTick]);
+  }, [academicYearId, appliedClassId, appliedSectionId, appliedDate, refreshTick]);
 
   const handleApplyClick = (e: React.MouseEvent) => {
     e.preventDefault();
     setAppliedClassId(selectedClassId);
+    setAppliedSectionId(selectedSectionId);
     setAppliedDate(selectedDate);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -120,8 +161,10 @@ const DailyAttendance = () => {
     e.preventDefault();
     const today = dayjs().format("YYYY-MM-DD");
     setSelectedClassId("all");
+    setSelectedSectionId("");
     setSelectedDate(today);
     setAppliedClassId("all");
+    setAppliedSectionId("");
     setAppliedDate(today);
   };
 
@@ -129,109 +172,115 @@ const DailyAttendance = () => {
 
   const data = useMemo(() => {
     const dayKey = dayjs(appliedDate).format("YYYY-MM-DD");
-    const grouped = new Map<string, any>();
+    return (Array.isArray(reportData.rows) ? reportData.rows : [])
+      .map((row: any, index: number) => {
+        const status = row.daily?.[dayKey];
+        if (!status) return null;
+        const label =
+          status === "present" ? "Present" :
+          status === "late" ? "Late" :
+          status === "absent" ? "Absent" :
+          status === "half_day" ? "Half Day" :
+          status === "holiday" ? "Holiday" : "—";
+        const badgeClass =
+          status === "present" ? "badge-soft-success" :
+          status === "late" ? "badge-soft-warning" :
+          status === "absent" ? "badge-soft-danger" :
+          status === "half_day" ? "badge-soft-primary" :
+          "badge-soft-info";
 
-    (Array.isArray(reportData.rows) ? reportData.rows : []).forEach((row: any) => {
-      const status = row.daily?.[dayKey];
-      const groupKey = row.sectionName || "N/A";
-      const current = grouped.get(groupKey) || {
-        key: groupKey,
-        class: classOptions.find((item) => item.value === selectedClassId)?.label || "—",
-        section: row.sectionName || "N/A",
-        present: 0,
-        absent: 0,
-        total: 0,
-      };
-
-      if (status) {
-        current.total += 1;
-        if (status === "present" || status === "late") current.present += 1;
-        if (status === "absent" || status === "half_day") current.absent += 1;
-      }
-      grouped.set(groupKey, current);
-    });
-
-    return Array.from(grouped.values()).map((item) => ({
-      ...item,
-      percentage: item.total > 0 ? Number(((item.present / item.total) * 100).toFixed(2)) : 0,
-      absentPercentage: item.total > 0 ? Number(((item.absent / item.total) * 100).toFixed(2)) : 0,
-    }));
-  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
+        return {
+          key: String(index + 1),
+          studentId: row.studentId,
+          admissionNo: row.admissionNo || "—",
+          rollNo: row.rollNo || "—",
+          name: row.name || "—",
+          img: row.img || "",
+          gender: row.gender || "",
+          attendance: label,
+          badgeClass,
+        };
+      })
+      .filter(Boolean);
+  }, [appliedDate, reportData.rows]);
 
   const exportColumns = useMemo(
     () => [
-      { title: "Class", dataKey: "class" },
-      { title: "Section", dataKey: "section" },
-      { title: "Total Present", dataKey: "present" },
-      { title: "Total Absent", dataKey: "absent" },
-      { title: "Present %", dataKey: "percentageLabel" },
-      { title: "Absent %", dataKey: "absentPercentageLabel" },
+      { title: "S.No", dataKey: "key" },
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Name", dataKey: "name" },
+      { title: "Attendance", dataKey: "attendance" },
     ],
     []
   );
 
-  const exportRows = useMemo(
-    () =>
-      data.map((row: any) => ({
-        ...row,
-        percentageLabel: `${Number(row.percentage ?? 0).toFixed(2)}%`,
-        absentPercentageLabel: `${Number(row.absentPercentage ?? 0).toFixed(2)}%`,
-      })),
-    [data]
-  );
-
   const handleExportExcel = () => {
-    const rows = exportRows.map((row: any) => ({
-      Class: row.class,
-      Section: row.section,
-      "Total Present": row.present,
-      "Total Absent": row.absent,
-      "Present %": row.percentageLabel,
-      "Absent %": row.absentPercentageLabel,
+    const rows = data.map((row: any) => ({
+      "S.No": row.key,
+      "Admission No": row.admissionNo,
+      "Roll No": row.rollNo,
+      Name: row.name,
+      Attendance: row.attendance,
     }));
-    exportToExcel(rows, `DailyAttendance_${appliedDate}`);
+    exportToExcel(rows, `StudentDayWise_${appliedDate}`);
   };
 
   const handleExportPDF = () => {
-    exportToPDF(exportRows, "Daily Attendance", `DailyAttendance_${appliedDate}`, exportColumns);
+    exportToPDF(data, "Student Day Wise Report", `StudentDayWise_${appliedDate}`, exportColumns);
   };
 
   const handlePrint = () => {
-    printData("Daily Attendance", exportColumns, exportRows);
+    printData("Student Day Wise Report", exportColumns, data);
   };
 
   const columns = [
     {
-      title: "Class",
-      dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
+      title: "S.No",
+      dataIndex: "key",
+      sorter: (a: TableData, b: TableData) => compareText(a?.key, b?.key),
     },
     {
-      title: " Section",
-      dataIndex: "section",
-      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
+      title: " Adminssion No",
+      dataIndex: "admissionNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
     },
     {
-      title: " Total Present",
-      dataIndex: "present",
-      sorter: (a: TableData, b: TableData) => compareNumber(a?.present, b?.present),
+      title: " Roll No",
+      dataIndex: "rollNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.rollNo, b?.rollNo),
     },
     {
-      title: " Total Absent",
-      dataIndex: "absent",
-      sorter: (a: TableData, b: TableData) => compareNumber(a?.absent, b?.absent),
+      title: " Name",
+      dataIndex: "name",
+      render: (text: string, record: any) => (
+        <div className="d-flex align-items-center">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
+            <ImageWithBasePath
+              src={record.img}
+              className="img-fluid rounded-circle"
+              alt="img"
+              gender={record.gender}
+            />
+          </Link>
+          <div className="ms-2">
+            <p className="text-dark mb-0">
+              <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>{text}</Link>
+            </p>
+          </div>
+        </div>
+      ),
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
     },
     {
-      title: " Present %",
-      dataIndex: "percentage",
-      sorter: (a: any, b: any) => compareNumber(a?.percentage, b?.percentage),
-      render: (value: number) => `${Number(value ?? 0).toFixed(2)}%`,
-    },
-    {
-      title: " Absent %",
-      dataIndex: "absentPercentage",
-      sorter: (a: any, b: any) => compareNumber(a?.absentPercentage, b?.absentPercentage),
-      render: (value: number) => `${Number(value ?? 0).toFixed(2)}%`,
+      title: " Attendance",
+      dataIndex: "attendance",
+      render: (text: string, record: any) => (
+        <span className={`badge ${record.badgeClass} d-inline-flex align-items-center`}>
+          <i className="ti ti-circle-filled fs-5 me-1"></i>{text}
+        </span>
+      ),
+      sorter: (a: TableData, b: TableData) => compareText(a?.attendance, b?.attendance),
     },
   ];
   return (
@@ -242,7 +291,7 @@ const DailyAttendance = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Daily Attendance</h3>
+              <h3 className="page-title mb-1">Student Day Wise Report</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -252,7 +301,7 @@ const DailyAttendance = () => {
                     <Link to="#">Report</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Daily Attendance
+                    Student Day Wise Report
                   </li>
                 </ol>
               </nav>
@@ -276,28 +325,40 @@ const DailyAttendance = () => {
                   <Link to={routes.attendanceReport}>Attendance Report</Link>
                 </li>
                 <li>
-                  <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
+                  <Link to={routes.studentAttendanceType}>
+                    Students Attendance Type
+                  </Link>
                 </li>
-                {!isTeacherRole && (
-                  <>
-                    <li>
-                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                    </li>
-                    <li>
-                      <Link to={routes.staffReport}>Staff Report</Link>
-                    </li>
-                  </>
-                )}
+                <li>
+                  <Link to={routes.dailyAttendance}>Daily Attendance</Link>
+                </li>
+                <li>
+                  <Link to={routes.studentDayWise} className="active">
+                    Student Day Wise
+                  </Link>
+                </li>
+                <li>
+                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
+                </li>
+                <li>
+                  <Link to={routes.teacherReport}>Teacher Report</Link>
+                </li>
+                <li>
+                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                </li>
+                <li>
+                  <Link to={routes.staffReport}>Staff Report</Link>
+                </li>
               </ul>
             </div>
             {/* /List Tab */}
           </div>
           {/* /Filter Section */}
-         
+
           {/* Attendance List */}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Daily Attendance</h4>
+              <h4 className="mb-3">Student Day Wise Report</h4>
               <div className="d-flex align-items-center flex-wrap">
                 <div className="dropdown mb-3 me-2">
                   <Link
@@ -316,9 +377,10 @@ const DailyAttendance = () => {
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-12">
+                          <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Class</label>
+
                               <CommonSelect
                                 className="select"
                                 options={classOptions}
@@ -327,10 +389,22 @@ const DailyAttendance = () => {
                               />
                             </div>
                           </div>
+                          <div className="col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Section</label>
+                              <CommonSelect
+                                className="select"
+                                options={sectionOptions}
+                                value={selectedSectionId ?? ""}
+                                onChange={(value) => setSelectedSectionId(value ?? "")}
+                              />
+                            </div>
+                          </div>
                           <div className="col-md-12">
                             <div className="mb-3">
-                              <label className="form-label">Attendance Date</label>
-
+                              <label className="form-label">
+                                Attendance Date
+                              </label>
                               <DatePicker
                                 className="form-control datetimepicker"
                                 value={dayjs(selectedDate)}
@@ -371,7 +445,7 @@ const DailyAttendance = () => {
                   <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>
                   </div>
-                  <p className="mt-2 mb-0">Loading daily attendance...</p>
+                  <p className="mt-2 mb-0">Loading student day wise report...</p>
                 </div>
               ) : (
                 <Table dataSource={data} columns={columns} Selection={false} />
@@ -386,4 +460,4 @@ const DailyAttendance = () => {
   );
 };
 
-export default DailyAttendance;
+export default StudentDayWise;

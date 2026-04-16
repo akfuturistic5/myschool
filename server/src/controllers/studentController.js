@@ -3423,8 +3423,7 @@ const getAttendanceReport = async (req, res) => {
     const roleName = String(req.user?.role_name || '').trim().toLowerCase();
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
 
-    // For teachers, we scope rows directly to assigned students (class_schedules/homeroom mapping)
-    // instead of relying on broader class access checks.
+    // Teachers are scoped to their mapped students via schedules/homeroom mappings.
     let teacherIds = [];
     let teacherStaffIds = [];
     if (isTeacher) {
@@ -3451,11 +3450,18 @@ const getAttendanceReport = async (req, res) => {
       }
     }
 
-    const monthStart = new Date(`${month}-01T00:00:00.000Z`);
-    if (Number.isNaN(monthStart.getTime())) {
+    const monthParts = month.split('-');
+    const monthYear = Number(monthParts[0]);
+    const monthNumber = Number(monthParts[1]);
+    if (!Number.isInteger(monthYear) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid month' });
     }
-    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+    const monthStartDate = new Date(Date.UTC(monthYear, monthNumber - 1, 1));
+    const monthEndDate = new Date(Date.UTC(monthYear, monthNumber, 1));
+    const monthStartDateStr = `${String(monthYear).padStart(4, '0')}-${String(monthNumber).padStart(2, '0')}-01`;
+    const monthEndDateStr = `${String(monthEndDate.getUTCFullYear()).padStart(4, '0')}-${String(
+      monthEndDate.getUTCMonth() + 1
+    ).padStart(2, '0')}-01`;
 
     const rosterWhere = ['s.is_active = true'];
     const rosterParams = [];
@@ -3528,7 +3534,7 @@ const getAttendanceReport = async (req, res) => {
       rosterParams
     );
 
-    const attendanceParams = [...rosterParams, monthStart.toISOString().slice(0, 10), monthEnd.toISOString().slice(0, 10)];
+    const attendanceParams = [...rosterParams, monthStartDateStr, monthEndDateStr];
     const attendanceRes = await query(
       `SELECT
          a.student_id,
@@ -3543,9 +3549,16 @@ const getAttendanceReport = async (req, res) => {
       attendanceParams
     );
 
+    const todayUtc = new Date();
+    const todayUtcDateOnly = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()));
+    const isCurrentMonth =
+      monthYear === todayUtcDateOnly.getUTCFullYear() && monthNumber === todayUtcDateOnly.getUTCMonth() + 1;
+    const reportEndDateExclusive =
+      isCurrentMonth && todayUtcDateOnly < monthEndDate ? new Date(todayUtcDateOnly.getTime() + (24 * 60 * 60 * 1000)) : monthEndDate;
+
     const days = [];
-    const cursor = new Date(monthStart);
-    while (cursor < monthEnd) {
+    const cursor = new Date(monthStartDate);
+    while (cursor < reportEndDateExclusive) {
       days.push({
         day: cursor.getUTCDate(),
         date: cursor.toISOString().slice(0, 10),
