@@ -3261,29 +3261,40 @@ const getAttendanceReport = async (req, res) => {
     const academicYearId = parseId(req.query.academic_year_id);
     const month = String(req.query.month || '').trim();
 
-    if (!classId) {
-      return res.status(400).json({ status: 'ERROR', message: 'class_id is required' });
-    }
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({ status: 'ERROR', message: 'month must be in YYYY-MM format' });
     }
 
-    const access = await canAccessClass(req, classId);
-    if (!access.ok) {
-      return res.status(access.status || 403).json({
-        status: 'ERROR',
-        message: access.message || 'Access denied',
-      });
+    if (classId) {
+      const access = await canAccessClass(req, classId);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({
+          status: 'ERROR',
+          message: access.message || 'Access denied',
+        });
+      }
     }
 
-    const monthStart = new Date(`${month}-01T00:00:00.000Z`);
-    if (Number.isNaN(monthStart.getTime())) {
+    const monthParts = month.split('-');
+    const monthYear = Number(monthParts[0]);
+    const monthNumber = Number(monthParts[1]);
+    if (!Number.isInteger(monthYear) || !Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 12) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid month' });
     }
-    const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1));
+    const monthStartDate = new Date(Date.UTC(monthYear, monthNumber - 1, 1));
+    const monthEndDate = new Date(Date.UTC(monthYear, monthNumber, 1));
+    const monthStartDateStr = `${String(monthYear).padStart(4, '0')}-${String(monthNumber).padStart(2, '0')}-01`;
+    const monthEndDateStr = `${String(monthEndDate.getUTCFullYear()).padStart(4, '0')}-${String(
+      monthEndDate.getUTCMonth() + 1
+    ).padStart(2, '0')}-01`;
 
-    const rosterWhere = ['s.class_id = $1', 's.is_active = true'];
-    const rosterParams = [classId];
+    const rosterWhere = ['s.is_active = true'];
+    const rosterParams = [];
+
+    if (classId) {
+      rosterParams.push(classId);
+      rosterWhere.push(`s.class_id = $${rosterParams.length}`);
+    }
 
     if (sectionId) {
       rosterParams.push(sectionId);
@@ -3312,7 +3323,7 @@ const getAttendanceReport = async (req, res) => {
       rosterParams
     );
 
-    const attendanceParams = [...rosterParams, monthStart.toISOString().slice(0, 10), monthEnd.toISOString().slice(0, 10)];
+    const attendanceParams = [...rosterParams, monthStartDateStr, monthEndDateStr];
     const attendanceRes = await query(
       `SELECT
          a.student_id,
@@ -3327,9 +3338,16 @@ const getAttendanceReport = async (req, res) => {
       attendanceParams
     );
 
+    const todayUtc = new Date();
+    const todayUtcDateOnly = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate()));
+    const isCurrentMonth =
+      monthYear === todayUtcDateOnly.getUTCFullYear() && monthNumber === todayUtcDateOnly.getUTCMonth() + 1;
+    const reportEndDateExclusive =
+      isCurrentMonth && todayUtcDateOnly < monthEndDate ? new Date(todayUtcDateOnly.getTime() + (24 * 60 * 60 * 1000)) : monthEndDate;
+
     const days = [];
-    const cursor = new Date(monthStart);
-    while (cursor < monthEnd) {
+    const cursor = new Date(monthStartDate);
+    while (cursor < reportEndDateExclusive) {
       days.push({
         day: cursor.getUTCDate(),
         date: cursor.toISOString().slice(0, 10),
@@ -3344,11 +3362,27 @@ const getAttendanceReport = async (req, res) => {
       if (!attendanceByStudent.has(studentKey)) {
         attendanceByStudent.set(studentKey, {});
       }
-      attendanceByStudent.get(studentKey)[String(row.attendance_date).slice(0, 10)] = normalizeAttendanceStatus(row.status);
+      const attendanceDateKey =
+        row.attendance_date instanceof Date
+          ? `${String(row.attendance_date.getFullYear()).padStart(4, '0')}-${String(
+              row.attendance_date.getMonth() + 1
+            ).padStart(2, '0')}-${String(row.attendance_date.getDate()).padStart(2, '0')}`
+          : String(row.attendance_date || '').slice(0, 10);
+      attendanceByStudent.get(studentKey)[attendanceDateKey] = normalizeAttendanceStatus(row.status);
     });
 
     const rows = rosterRes.rows.map((student) => {
-      const daily = attendanceByStudent.get(String(student.id)) || {};
+      const recordedDaily = attendanceByStudent.get(String(student.id)) || {};
+      const daily = {};
+      days.forEach((d) => {
+        const existingStatus = recordedDaily[d.date];
+        if (existingStatus) {
+          daily[d.date] = existingStatus;
+          return;
+        }
+        const isSunday = new Date(`${d.date}T00:00:00.000Z`).getUTCDay() === 0;
+        daily[d.date] = isSunday ? 'holiday' : 'absent';
+      });
       const summary = {
         present: 0,
         late: 0,

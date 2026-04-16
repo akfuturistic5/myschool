@@ -194,7 +194,10 @@ const StudentReport = () => {
       render: (_text:any, record: any) => (
         <>
           <div className="d-flex align-items-center">
-            <Link to="#" className="avatar avatar-md">
+            <Link
+              to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}
+              className="avatar avatar-md"
+            >
               <ImageWithBasePath
                 src={record.imgSrc}
                 className="img-fluid rounded-circle"
@@ -204,7 +207,9 @@ const StudentReport = () => {
             </Link>
             <div className="ms-2">
               <p className="text-dark mb-0">
-                <Link to="#">{record.name}</Link>
+                <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>
+                  {record.name}
+                </Link>
               </p>
             </div>
           </div>
@@ -233,17 +238,8 @@ const StudentReport = () => {
       render: (_text:any, record: any) => (
         <>
           <div className="d-flex align-items-center">
-            <Link to="#" className="avatar avatar-md">
-              <ImageWithBasePath
-                src={record.parentImgSrc}
-                className="img-fluid rounded-circle"
-                alt="img"
-              />
-            </Link>
             <div className="ms-2">
-              <p className="text-dark mb-0">
-                <Link to="#">{record.parent}</Link>
-              </p>
+              <p className="text-dark mb-0">{record.parent}</p>
             </div>
           </div>
         </>

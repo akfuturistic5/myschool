@@ -3,16 +3,15 @@ import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
-import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -20,51 +19,95 @@ const compareText = (left: unknown, right: unknown) =>
 const StudentDayWise = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classesWithSections } = useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
+  const [sectionsByClassId, setSectionsByClassId] = useState<Record<string, Array<{ value: string; label: string }>>>(
+    {}
+  );
+  const [selectedClassId, setSelectedClassId] = useState<string>("all");
+  const [selectedSectionId, setSelectedSectionId] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const [appliedClassId, setAppliedClassId] = useState<string>("all");
+  const [appliedSectionId, setAppliedSectionId] = useState<string>("");
+  const [appliedDate, setAppliedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const classOptions = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>();
-    (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
-      if (row?.classId == null || seen.has(String(row.classId))) return;
-      seen.set(String(row.classId), {
-        value: String(row.classId),
-        label: row.className || `Class ${row.classId}`,
-      });
-    });
-    return Array.from(seen.values());
-  }, [classesWithSections]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchFilterOptions = async () => {
+      try {
+        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+        if (cancelled) return;
+
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data) ? classesResult.value : null;
+        const classesFallbackResponse =
+          academicYearId &&
+          (!classesResponse || (Array.isArray(classesResponse.data) && classesResponse.data.length === 0))
+            ? await apiService.getClasses().catch(() => null)
+            : null;
+        const classes = Array.isArray(classesResponse?.data)
+          ? classesResponse.data
+          : Array.isArray(classesFallbackResponse?.data)
+            ? classesFallbackResponse.data
+            : [];
+        const sections =
+          sectionsResult.status === "fulfilled" && Array.isArray(sectionsResult.value?.data) ? sectionsResult.value.data : [];
+
+        const nextClassOptions = [{ value: "all", label: "All Classes" }].concat(
+          classes.map((item: any) => ({
+            value: String(item.id),
+            label: item.class_name || `Class ${item.id}`,
+          }))
+        );
+        const nextSectionsByClassId: Record<string, Array<{ value: string; label: string }>> = {};
+        sections.forEach((section: any) => {
+          const classKey = String(section.class_id);
+          if (!nextSectionsByClassId[classKey]) {
+            nextSectionsByClassId[classKey] = [];
+          }
+          nextSectionsByClassId[classKey].push({
+            value: String(section.id),
+            label: section.section_name || `Section ${section.id}`,
+          });
+        });
+
+        setClassOptions(nextClassOptions);
+        setSectionsByClassId(nextSectionsByClassId);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load class/section options");
+          setClassOptions([{ value: "all", label: "All Classes" }]);
+          setSectionsByClassId({});
+        }
+      }
+    };
+
+    fetchFilterOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId]);
 
   const sectionOptions = useMemo(() => {
-    const base = [{ value: "", label: "All Sections" }];
-    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
-      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
-      .filter((row: any) => row?.sectionId != null)
-      .map((row: any) => ({
-        value: String(row.sectionId),
-        label: row.sectionName || `Section ${row.sectionId}`,
-      }));
-    const seen = new Set<string>();
-    return base.concat(
-      items.filter((item) => {
+    if (selectedClassId === "all") {
+      const allRows = Object.values(sectionsByClassId).flat();
+      const seen = new Set<string>();
+      const uniqueRows = allRows.filter((item) => {
         if (seen.has(item.value)) return false;
         seen.add(item.value);
         return true;
-      })
-    );
-  }, [classesWithSections, selectedClassId]);
-
-  useEffect(() => {
-    if (!selectedClassId && classOptions.length > 0) {
-      setSelectedClassId(classOptions[0].value);
+      });
+      return [{ value: "", label: "All Sections" }, ...uniqueRows];
     }
-  }, [classOptions, selectedClassId]);
+    const rows = Array.isArray(sectionsByClassId[String(selectedClassId)]) ? sectionsByClassId[String(selectedClassId)] : [];
+    return [{ value: "", label: "All Sections" }, ...rows];
+  }, [sectionsByClassId, selectedClassId]);
 
   useEffect(() => {
     if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
@@ -73,12 +116,6 @@ const StudentDayWise = () => {
   }, [sectionOptions, selectedSectionId]);
 
   useEffect(() => {
-    if (!selectedClassId) {
-      setReportData({ month: null, days: [], rows: [] });
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchReport = async () => {
@@ -86,10 +123,10 @@ const StudentDayWise = () => {
         setLoading(true);
         setError(null);
         const res = await apiService.getAttendanceReport({
-          classId: selectedClassId,
-          sectionId: selectedSectionId || null,
+          classId: appliedClassId !== "all" ? appliedClassId : null,
+          sectionId: appliedSectionId || null,
           academicYearId,
-          month: dayjs(selectedDate).format("YYYY-MM"),
+          month: dayjs(appliedDate).format("YYYY-MM"),
         });
         if (!cancelled) {
           setReportData(res?.data || { month: null, days: [], rows: [] });
@@ -108,16 +145,33 @@ const StudentDayWise = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selectedClassId, selectedSectionId, selectedDate]);
+  }, [academicYearId, appliedClassId, appliedSectionId, appliedDate, refreshTick]);
 
-  const handleApplyClick = () => {
+  const handleApplyClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setAppliedClassId(selectedClassId);
+    setAppliedSectionId(selectedSectionId);
+    setAppliedDate(selectedDate);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
 
+  const handleResetFilters = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const today = dayjs().format("YYYY-MM-DD");
+    setSelectedClassId("all");
+    setSelectedSectionId("");
+    setSelectedDate(today);
+    setAppliedClassId("all");
+    setAppliedSectionId("");
+    setAppliedDate(today);
+  };
+
+  const handleRefresh = () => setRefreshTick((prev) => prev + 1);
+
   const data = useMemo(() => {
-    const dayKey = dayjs(selectedDate).format("YYYY-MM-DD");
+    const dayKey = dayjs(appliedDate).format("YYYY-MM-DD");
     return (Array.isArray(reportData.rows) ? reportData.rows : [])
       .map((row: any, index: number) => {
         const status = row.daily?.[dayKey];
@@ -137,6 +191,7 @@ const StudentDayWise = () => {
 
         return {
           key: String(index + 1),
+          studentId: row.studentId,
           admissionNo: row.admissionNo || "—",
           rollNo: row.rollNo || "—",
           name: row.name || "—",
@@ -147,7 +202,37 @@ const StudentDayWise = () => {
         };
       })
       .filter(Boolean);
-  }, [reportData.rows, selectedDate]);
+  }, [appliedDate, reportData.rows]);
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "S.No", dataKey: "key" },
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Name", dataKey: "name" },
+      { title: "Attendance", dataKey: "attendance" },
+    ],
+    []
+  );
+
+  const handleExportExcel = () => {
+    const rows = data.map((row: any) => ({
+      "S.No": row.key,
+      "Admission No": row.admissionNo,
+      "Roll No": row.rollNo,
+      Name: row.name,
+      Attendance: row.attendance,
+    }));
+    exportToExcel(rows, `StudentDayWise_${appliedDate}`);
+  };
+
+  const handleExportPDF = () => {
+    exportToPDF(data, "Student Day Wise Report", `StudentDayWise_${appliedDate}`, exportColumns);
+  };
+
+  const handlePrint = () => {
+    printData("Student Day Wise Report", exportColumns, data);
+  };
 
   const columns = [
     {
@@ -170,7 +255,7 @@ const StudentDayWise = () => {
       dataIndex: "name",
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link to="#" className="avatar avatar-md">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
             <ImageWithBasePath
               src={record.img}
               className="img-fluid rounded-circle"
@@ -180,7 +265,7 @@ const StudentDayWise = () => {
           </Link>
           <div className="ms-2">
             <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
+              <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>{text}</Link>
             </p>
           </div>
         </div>
@@ -222,31 +307,12 @@ const StudentDayWise = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-              <div className="dropdown me-2 mb-2">
-                <Link
-                  to="#"
-                  className="dropdown-toggle btn btn-light fw-medium d-inline-flex align-items-center"
-                  data-bs-toggle="dropdown"
-                >
-                  <i className="ti ti-file-export me-2" />
-                  Export
-                </Link>
-                <ul className="dropdown-menu  dropdown-menu-end p-3">
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-pdf me-1" />
-                      Export as PDF
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-xls me-1" />
-                      Export as Excel{" "}
-                    </Link>
-                  </li>
-                </ul>
-              </div>
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
           {/* /Page Header */}
@@ -294,9 +360,6 @@ const StudentDayWise = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Student Day Wise Report</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -307,11 +370,7 @@ const StudentDayWise = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                    id="modal-datepicker"
-                  >
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef} onClick={(e) => e.stopPropagation()}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -326,7 +385,7 @@ const StudentDayWise = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(value)}
+                                onChange={(value) => setSelectedClassId(String(value || "all"))}
                               />
                             </div>
                           </div>
@@ -352,13 +411,14 @@ const StudentDayWise = () => {
                                 onChange={(value: Dayjs | null) => setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))}
                                 allowClear={false}
                                 format="DD-MM-YYYY"
+                                getPopupContainer={() => dropdownMenuRef.current || document.body}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link to="#" className="btn btn-light me-3" onClick={handleResetFilters}>
                           Reset
                         </Link>
                         <Link
@@ -371,38 +431,6 @@ const StudentDayWise = () => {
                       </div>
                     </form>
                   </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </div>

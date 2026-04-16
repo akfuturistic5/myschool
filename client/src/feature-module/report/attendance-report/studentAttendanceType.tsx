@@ -3,17 +3,15 @@ import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
-import dayjs, { Dayjs } from "dayjs";
-import { DatePicker } from "antd";
+import dayjs from "dayjs";
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
-import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useStudents } from "../../../core/hooks/useStudents";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -21,91 +19,63 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
-const attendanceTypeOptions = [
-  { value: "present", label: "Present" },
-  { value: "late", label: "Late" },
-  { value: "half_day", label: "Half Day" },
-  { value: "absent", label: "Absent" },
-  { value: "holiday", label: "Holiday" },
-];
-
 const StudentAttendanceType = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classesWithSections } = useClassesWithSections(academicYearId);
   const { students } = useStudents();
-  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [selectedAttendanceType, setSelectedAttendanceType] = useState<string>("present");
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
+  const [selectedClassId, setSelectedClassId] = useState<string>("all");
+  const [appliedClassId, setAppliedClassId] = useState<string>("all");
+  const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const classOptions = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string }>();
-    (Array.isArray(classesWithSections) ? classesWithSections : []).forEach((row: any) => {
-      if (row?.classId == null || seen.has(String(row.classId))) return;
-      seen.set(String(row.classId), {
-        value: String(row.classId),
-        label: row.className || `Class ${row.classId}`,
-      });
-    });
-    return Array.from(seen.values());
-  }, [classesWithSections]);
+  useEffect(() => {
+    let cancelled = false;
 
-  const sectionOptions = useMemo(() => {
-    const base = [{ value: "", label: "All Sections" }];
-    const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
-      .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
-      .filter((row: any) => row?.sectionId != null)
-      .map((row: any) => ({
-        value: String(row.sectionId),
-        label: row.sectionName || `Section ${row.sectionId}`,
-      }));
-    const seen = new Set<string>();
-    return base.concat(
-      items.filter((item) => {
-        if (seen.has(item.value)) return false;
-        seen.add(item.value);
-        return true;
-      })
-    );
-  }, [classesWithSections, selectedClassId]);
+    const fetchFilterOptions = async () => {
+      try {
+        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+        if (cancelled) return;
 
-  const studentOptions = useMemo(() => {
-    const base = [{ value: "", label: "All Students" }];
-    const items = (Array.isArray(students) ? students : [])
-      .filter((student: any) => !selectedClassId || String(student.class_id) === String(selectedClassId))
-      .filter((student: any) => !selectedSectionId || String(student.section_id) === String(selectedSectionId))
-      .map((student: any) => ({
-        value: String(student.id),
-        label: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "Student",
-      }));
-    return base.concat(items);
-  }, [selectedClassId, selectedSectionId, students]);
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data) ? classesResult.value : null;
+        const classesFallbackResponse =
+          academicYearId &&
+          (!classesResponse || (Array.isArray(classesResponse.data) && classesResponse.data.length === 0))
+            ? await apiService.getClasses().catch(() => null)
+            : null;
+        const classes = Array.isArray(classesResponse?.data)
+          ? classesResponse.data
+          : Array.isArray(classesFallbackResponse?.data)
+            ? classesFallbackResponse.data
+            : [];
+        void sectionsResult;
 
-  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+        const nextClassOptions = [{ value: "all", label: "All Classes" }].concat(
+          classes.map((item: any) => ({
+            value: String(item.id),
+            label: item.class_name || `Class ${item.id}`,
+          }))
+        );
+        setClassOptions(nextClassOptions);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load class/section options");
+          setClassOptions([{ value: "all", label: "All Classes" }]);
+        }
+      }
+    };
+
+    fetchFilterOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [academicYearId]);
 
   useEffect(() => {
-    if (!selectedClassId && classOptions.length > 0) {
-      setSelectedClassId(classOptions[0].value);
-    }
-  }, [classOptions, selectedClassId]);
-
-  useEffect(() => {
-    if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
-      setSelectedSectionId("");
-    }
-  }, [sectionOptions, selectedSectionId]);
-
-  useEffect(() => {
-    if (!selectedClassId) {
-      setReportData({ month: null, days: [], rows: [] });
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     const fetchReport = async () => {
@@ -113,10 +83,10 @@ const StudentAttendanceType = () => {
         setLoading(true);
         setError(null);
         const res = await apiService.getAttendanceReport({
-          classId: selectedClassId,
-          sectionId: selectedSectionId || null,
+          classId: appliedClassId !== "all" ? appliedClassId : null,
+          sectionId: null,
           academicYearId,
-          month: dayjs(selectedDate).format("YYYY-MM"),
+          month: dayjs().format("YYYY-MM"),
         });
         if (!cancelled) {
           setReportData(res?.data || { month: null, days: [], rows: [] });
@@ -135,18 +105,21 @@ const StudentAttendanceType = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selectedClassId, selectedSectionId, selectedDate]);
+  }, [academicYearId, appliedClassId, refreshTick]);
 
-  const getModalContainer = () => {
-    const modalElement = document.getElementById("modal-datepicker");
-    return modalElement ? modalElement : document.body;
-  };
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
+    setAppliedClassId(selectedClassId);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+  const handleResetFilters = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setSelectedClassId("all");
+    setAppliedClassId("all");
+  };
+  const handleRefresh = () => setRefreshTick((prev) => prev + 1);
 
   const studentMap = useMemo(() => {
     const map = new Map<string, any>();
@@ -158,12 +131,19 @@ const StudentAttendanceType = () => {
 
   const data = useMemo(() => {
     return (Array.isArray(reportData.rows) ? reportData.rows : [])
-      .filter((row: any) => !selectedStudentId || String(row.studentId) === selectedStudentId)
       .map((row: any, index: number) => {
         const student = studentMap.get(String(row.studentId)) || {};
-        const count = Object.values(row.daily || {}).filter((status) => status === selectedAttendanceType).length;
+        const counts = Object.values(row.daily || {}).reduce(
+          (acc: Record<string, number>, status: any) => {
+            const key = String(status || "");
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          },
+          { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 }
+        );
         return {
           key: String(index + 1),
+          studentId: row.studentId,
           admissionNo: row.admissionNo || "—",
           date: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
           name: row.name || "—",
@@ -172,18 +152,69 @@ const StudentAttendanceType = () => {
           class: student.class_name || "—",
           dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
           fatherName: student.father_name || student.mother_name || "—",
-          count,
+          count: Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0),
+          presentCount: counts.present || 0,
+          lateCount: counts.late || 0,
+          halfDayCount: counts.half_day || 0,
+          absentCount: counts.absent || 0,
+          holidayCount: counts.holiday || 0,
         };
       });
-  }, [reportData.rows, selectedAttendanceType, selectedStudentId, studentMap]);
+  }, [reportData.rows, studentMap]);
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Date of Admission", dataKey: "date" },
+      { title: "Student Name", dataKey: "name" },
+      { title: "Class", dataKey: "class" },
+      { title: "Date of Birth", dataKey: "dob" },
+      { title: "Father Name", dataKey: "fatherName" },
+      { title: "Count", dataKey: "count" },
+      { title: "Present", dataKey: "presentCount" },
+      { title: "Late", dataKey: "lateCount" },
+      { title: "Half Day", dataKey: "halfDayCount" },
+      { title: "Absent", dataKey: "absentCount" },
+      { title: "Holiday", dataKey: "holidayCount" },
+    ],
+    []
+  );
+  const handleExportExcel = () => {
+    const rows = data.map((row: any) => ({
+      "Admission No": row.admissionNo,
+      "Date of Admission": row.date,
+      "Student Name": row.name,
+      Class: row.class,
+      "Date of Birth": row.dob,
+      "Father Name": row.fatherName,
+      Count: row.count,
+      Present: row.presentCount,
+      Late: row.lateCount,
+      "Half Day": row.halfDayCount,
+      Absent: row.absentCount,
+      Holiday: row.holidayCount,
+    }));
+    exportToExcel(rows, `StudentAttendanceType_${dayjs().format("YYYY-MM-DD")}`);
+  };
+  const handleExportPDF = () => {
+    exportToPDF(
+      data,
+      "Students Attendance Type",
+      `StudentAttendanceType_${dayjs().format("YYYY-MM-DD")}`,
+      exportColumns
+    );
+  };
+  const handlePrint = () => {
+    printData("Students Attendance Type", exportColumns, data);
+  };
 
   const columns = [
     {
       title: "Admission No",
       dataIndex: "admissionNo",
-      render: (text: string) => (
+      render: (text: string, record: any) => (
         <>
-          <Link to="#" className="link-primary">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="link-primary">
             {text}
           </Link>
         </>
@@ -201,7 +232,7 @@ const StudentAttendanceType = () => {
       dataIndex: "name",
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link to="#" className="avatar avatar-md">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
             <ImageWithBasePath
               src={record.img}
               className="img-fluid rounded-circle"
@@ -211,7 +242,7 @@ const StudentAttendanceType = () => {
           </Link>
           <div className="ms-2">
             <p className="text-dark mb-0">
-              <Link to="#">{text}</Link>
+              <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>{text}</Link>
             </p>
           </div>
         </div>
@@ -231,13 +262,38 @@ const StudentAttendanceType = () => {
     {
       title: "Father Name",
       dataIndex: "fatherName",
-      sorter: (a: TableData, b: TableData) => compareText(a?.fatherName, b?.fatherName),
+      sorter: (a: any, b: any) => compareText(a?.fatherName, b?.fatherName),
     },
-
     {
       title: "Count",
       dataIndex: "count",
-      sorter: (a: TableData, b: TableData) => compareNumber(a?.count, b?.count),
+      sorter: (a: any, b: any) => compareNumber(a?.count, b?.count),
+    },
+
+    {
+      title: "Present",
+      dataIndex: "presentCount",
+      sorter: (a: any, b: any) => compareNumber(a?.presentCount, b?.presentCount),
+    },
+    {
+      title: "Late",
+      dataIndex: "lateCount",
+      sorter: (a: any, b: any) => compareNumber(a?.lateCount, b?.lateCount),
+    },
+    {
+      title: "Half Day",
+      dataIndex: "halfDayCount",
+      sorter: (a: any, b: any) => compareNumber(a?.halfDayCount, b?.halfDayCount),
+    },
+    {
+      title: "Absent",
+      dataIndex: "absentCount",
+      sorter: (a: any, b: any) => compareNumber(a?.absentCount, b?.absentCount),
+    },
+    {
+      title: "Holiday",
+      dataIndex: "holidayCount",
+      sorter: (a: any, b: any) => compareNumber(a?.holidayCount, b?.holidayCount),
     },
   ];
   return (
@@ -264,31 +320,12 @@ const StudentAttendanceType = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-              <div className="dropdown me-2 mb-2">
-                <Link
-                  to="#"
-                  className="dropdown-toggle btn btn-light fw-medium d-inline-flex align-items-center"
-                  data-bs-toggle="dropdown"
-                >
-                  <i className="ti ti-file-export me-2" />
-                  Export
-                </Link>
-                <ul className="dropdown-menu  dropdown-menu-end p-3">
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-pdf me-1" />
-                      Export as PDF
-                    </Link>
-                  </li>
-                  <li>
-                    <Link to="#" className="dropdown-item rounded-1">
-                      <i className="ti ti-file-type-xls me-1" />
-                      Export as Excel{" "}
-                    </Link>
-                  </li>
-                </ul>
-              </div>
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
           {/* /Page Header */}
@@ -334,9 +371,6 @@ const StudentAttendanceType = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Students Attendance Type</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -347,11 +381,7 @@ const StudentAttendanceType = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                    id="modal-datepicker"
-                  >
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef} onClick={(e) => e.stopPropagation()}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -366,69 +396,17 @@ const StudentAttendanceType = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(value)}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Section</label>
-                              <CommonSelect
-                                className="select"
-                                options={sectionOptions}
-                                value={selectedSectionId ?? ""}
-                                onChange={(value) => setSelectedSectionId(value ?? "")}
+                                onChange={(value) => setSelectedClassId(String(value || "all"))}
                               />
                             </div>
                           </div>
                           <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Name</label>
-                              <CommonSelect
-                                className="select"
-                                options={studentOptions}
-                                value={selectedStudentId}
-                                onChange={(value) => setSelectedStudentId(value ?? "")}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Attendance Type</label>
-                              <CommonSelect
-                                className="select"
-                                options={attendanceTypeOptions}
-                                value={selectedAttendanceType}
-                                onChange={(value) => setSelectedAttendanceType(value || "present")}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-0">
-                              <label className="form-label">Date of Admission</label>
-                              <div className="date-pic">
-                                <DatePicker
-                                  className="form-control datetimepicker"
-                                  format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                  }}
-                                  getPopupContainer={getModalContainer}
-                                  value={dayjs(selectedDate)}
-                                  onChange={(value: Dayjs | null) => setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))}
-                                  placeholder="16 May 2024"
-                                  allowClear={false}
-                                />
-                                <span className="cal-icon">
-                                  <i className="ti ti-calendar" />
-                                </span>
-                              </div>
-                            </div>
+                            <div className="mb-0" />
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link to="#" className="btn btn-light me-3" onClick={handleResetFilters}>
                           Reset
                         </Link>
                         <Link
@@ -441,38 +419,6 @@ const StudentAttendanceType = () => {
                       </div>
                     </form>
                   </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </div>
