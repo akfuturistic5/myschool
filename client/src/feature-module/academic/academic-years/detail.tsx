@@ -406,8 +406,12 @@ const AcademicYearDetail = () => {
                       />
                       <div className="form-text">Leave empty until the session officially ends.</div>
                     </div>
-                    <div className="col-md-6 d-flex align-items-end">
+                    <div className="col-md-6">
+                      <label className="form-label d-block invisible" htmlFor="d-clear-end">
+                        Clear end date
+                      </label>
                       <button
+                        id="d-clear-end"
                         type="button"
                         className="btn btn-outline-secondary"
                         onClick={handleClearEndDate}

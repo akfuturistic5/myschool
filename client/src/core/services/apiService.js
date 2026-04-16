@@ -659,6 +659,27 @@ class ApiService {
     });
   }
 
+  async getEnquiries(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null) search.set('academic_year_id', String(params.academic_year_id));
+    if (params.status) search.set('status', String(params.status));
+    if (params.search) search.set('search', String(params.search));
+    if (params.enquiry_date) search.set('enquiry_date', String(params.enquiry_date));
+    if (params.from_date) search.set('from_date', String(params.from_date));
+    if (params.to_date) search.set('to_date', String(params.to_date));
+    if (params.month) search.set('month', String(params.month));
+    if (params.added_by) search.set('added_by', String(params.added_by));
+    const qs = search.toString();
+    return this.makeRequest(`/enquiries${qs ? `?${qs}` : ''}`);
+  }
+
+  async createEnquiry(payload) {
+    return this.makeRequest('/enquiries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async saveAttendance(payload) {
     return this.makeRequest('/attendance', {
       method: 'POST',
@@ -1113,6 +1134,10 @@ class ApiService {
     return this.makeRequest(`/users/${id}`);
   }
 
+  async getDeleteAccountRequests() {
+    return this.makeRequest('/users/delete-account-requests');
+  }
+
   /**
    * Real-time uniqueness for mobile / email (optional excludeId for edit).
    * @param {{ mobile?: string, email?: string, excludeId?: number|null }} params
@@ -1139,6 +1164,26 @@ class ApiService {
 
   async getUserRoleById(id) {
     return this.makeRequest(`/user-roles/${id}`);
+  }
+
+  async createUserRole(payload) {
+    return this.makeRequest('/user-roles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateUserRole(id, payload) {
+    return this.makeRequest(`/user-roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteUserRole(id) {
+    return this.makeRequest(`/user-roles/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Dashboard stats (optional academicYearId for Headmaster/Teacher year filter)

@@ -127,6 +127,13 @@ function buildTeacherSidebar() {
             { label: "Exam Result", link: routes.examResult },
           ],
         },
+        {
+          label: "Enquiries",
+          link: routes.enquiries,
+          icon: "ti ti-message-dots",
+          showSubRoute: false,
+          submenu: false,
+        },
       ],
     },
     {
@@ -487,6 +494,22 @@ function buildAdministrativeSidebar() {
                 { label: "Schedule", link: routes.examAttendance },
                 { label: "Exam Result", link: routes.examResult },
               ],
+            },
+          ];
+        }
+      }
+
+      if (section.label === "Academic") {
+        const hasEnquiries = (nextSection.submenuItems || []).some((item) => item.label === "Enquiries");
+        if (!hasEnquiries) {
+          nextSection.submenuItems = [
+            ...(nextSection.submenuItems || []),
+            {
+              label: "Enquiries",
+              link: routes.enquiries,
+              icon: "ti ti-message-dots",
+              showSubRoute: false,
+              submenu: false,
             },
           ];
         }

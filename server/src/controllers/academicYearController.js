@@ -29,26 +29,12 @@ function formatPgDateOnly(d) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
-/**
- * Default closing date when the client omits end_date. Used only if the DB still has
- * NOT NULL on academic_years.end_date (run migrations/008_academic_years_end_date_nullable.sql to allow NULL).
- * One calendar year after start, minus one day (e.g. 2026-04-10 → 2027-04-09).
- */
-function provisionalEndDateFromStart(startDateStr) {
-  const s = normalizeDateString(startDateStr);
-  if (!s || s.length < 10) return null;
-  const y = parseInt(s.slice(0, 4), 10);
-  const m = parseInt(s.slice(5, 7), 10) - 1;
-  const day = parseInt(s.slice(8, 10), 10);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return null;
-  const d = new Date(y, m, day);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setFullYear(d.getFullYear() + 1);
-  d.setDate(d.getDate() - 1);
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
+function makeHttpError(status, code, message, data) {
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  if (data !== undefined) err.data = data;
+  return err;
 }
 
 // Active years only — header dropdowns and general use
@@ -238,21 +224,37 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
-    // If omitted: NULL is correct once migration 008 is applied; legacy schemas require NOT NULL.
-    // Use a one-year-minus-one-day provisional end so INSERT always succeeds.
-    const endInsert = end_date || provisionalEndDateFromStart(start_date);
-    if (!endInsert) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'Invalid or missing start date; cannot create academic year',
-      });
-    }
+    // End date is intentionally nullable at creation time and should be filled
+    // later when the academic year closes.
+    const endInsert = end_date || null;
 
     const created_by = await resolveStaffIdForUser(req.user?.id);
     const is_current = isCurrent === true;
     const is_active = isActive === false ? false : true;
 
     const row = await executeTransaction(async (client) => {
+      // Enforce: you cannot open a new year until the latest year has an end date recorded.
+      // Lock the latest row to serialize concurrent creates.
+      const latest = await client.query(
+        'SELECT id, year_name, start_date, end_date FROM academic_years ORDER BY start_date DESC NULLS LAST, id DESC LIMIT 1 FOR UPDATE'
+      );
+      const latestRow = latest.rows?.[0] || null;
+      const latestEnd = latestRow?.end_date != null ? formatPgDateOnly(latestRow.end_date) : null;
+      if (latestRow && !latestEnd) {
+        throw makeHttpError(
+          409,
+          'ACADEMIC_YEAR_PREVIOUS_END_DATE_REQUIRED',
+          'Please set the current/previous academic year end date before creating a new academic year.'
+        );
+      }
+      if (latestEnd && compareIsoDates(start_date, latestEnd) <= 0) {
+        throw makeHttpError(
+          400,
+          'ACADEMIC_YEAR_START_DATE_TOO_EARLY',
+          `Start date must be after the previous academic year end date (${latestEnd}).`
+        );
+      }
+
       if (is_current) {
         await client.query('UPDATE academic_years SET is_current = false');
       }
@@ -271,10 +273,25 @@ const createAcademicYear = async (req, res) => {
       data: row,
     });
   } catch (error) {
+    if (error && error.status && error.code && error.message) {
+      return res.status(error.status).json({
+        status: 'ERROR',
+        code: error.code,
+        message: error.message,
+        ...(error.data !== undefined ? { data: error.data } : {}),
+      });
+    }
     if (error && error.code === '23505') {
       return res.status(409).json({
         status: 'ERROR',
         message: 'An academic year with this name already exists',
+      });
+    }
+    if (error && error.code === '23502') {
+      return res.status(500).json({
+        status: 'ERROR',
+        message:
+          'Database schema does not allow empty end date. Please run migration 008 (academic_years_end_date_nullable) and retry.',
       });
     }
     console.error('Error creating academic year:', error?.code, error?.message, error);

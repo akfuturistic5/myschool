@@ -311,6 +311,7 @@ export const all_routes = {
   // announcements routes
   events: "/announcements/events",
   noticeBoard: "/announcements/notice-board",
+  enquiries: "/enquiries",
 
   //Report
   attendanceReport: "/report/attendance-report",
