@@ -2,7 +2,7 @@ const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const { requireRole } = require('../middleware/rbacMiddleware');
-const { ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
+const { ADMIN_ROLE_IDS, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const { getProfile, updateProfile, uploadLogo, getLogo } = require('../controllers/schoolProfileController');
 const { ensureTenantLogoDir, sanitizeTenant } = require('../utils/schoolLogoStorage');
 
@@ -37,8 +37,8 @@ const upload = multer({
 
 router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getProfile);
 router.get('/logo/:tenant/:filename', requireRole(ALL_AUTHENTICATED_ROLES), getLogo);
-router.patch('/', requireRole([ROLES.ADMIN]), updateProfile);
-router.post('/logo', requireRole([ROLES.ADMIN]), upload.single('logo'), uploadLogo);
+router.patch('/', requireRole(ADMIN_ROLE_IDS), updateProfile);
+router.post('/logo', requireRole(ADMIN_ROLE_IDS), upload.single('logo'), uploadLogo);
 
 module.exports = router;
 

@@ -241,6 +241,20 @@ export const SidebarData = [
         showSubRoute: false,
         submenu: false,
       },
+      {
+        label: "School Settings",
+        link: routes.schoolSettings,
+        icon: "ti ti-settings",
+        showSubRoute: false,
+        submenu: false,
+      },
+      {
+        label: "Religion",
+        link: routes.religion,
+        icon: "ti ti-building-church",
+        showSubRoute: false,
+        submenu: false,
+      },
     ],
   },
   {

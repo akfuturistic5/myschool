@@ -19,6 +19,7 @@ const ROLE_DASHBOARD_MAP: Record<string, { label: string; link: string }> = {
 
 const ADMINISTRATIVE_VISIBLE_SECTIONS = new Set([
   "MAIN",
+  "Settings",
   "Peoples",
   "Academic",
   "MANAGEMENT",

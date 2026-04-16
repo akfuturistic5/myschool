@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -37,12 +38,18 @@ const StudentResult = () => {
     : undefined;
 
   const { data: examResultsData, loading: examLoading, error: examError } = useStudentExamResults(studentId ?? null);
-  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingPdfExamId, setExportingPdfExamId] = useState<number | null>(null);
+  const [exportingExcelExamId, setExportingExcelExamId] = useState<number | null>(null);
 
   const exams = useMemo(() => {
     const list = Array.isArray(examResultsData?.exams) ? examResultsData.exams : [];
     return list.filter((exam: any) => Array.isArray(exam.subjects) && exam.subjects.length > 0);
   }, [examResultsData]);
+  const displayClassSection = useMemo(() => {
+    const cls = student?.class_name || student?.className || student?.class_id || "-";
+    const sec = student?.section_name || student?.sectionName || student?.section_id || "-";
+    return `${cls} / ${sec}`;
+  }, [student]);
 
   const overallSummary = useMemo(() => {
     if (exams.length === 0) {
@@ -60,10 +67,10 @@ const StudentResult = () => {
 
   const showLoading = loading;
 
-  const handleExportPdf = async () => {
-    if (!exams.length) return;
+  const handleExportPdf = async (selectedExam: any) => {
+    if (!selectedExam) return;
     try {
-      setExportingPdf(true);
+      setExportingPdfExamId(Number(selectedExam?.examId ?? -1));
       const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
@@ -167,7 +174,7 @@ const StudentResult = () => {
       );
       y += 22;
 
-      exams.forEach((exam: any, examIdx: number) => {
+      [selectedExam].forEach((exam: any, examIdx: number) => {
         ensureSpace(48);
         doc.setFont("helvetica", "bold");
         doc.text(
@@ -242,9 +249,93 @@ const StudentResult = () => {
       });
 
       const safeName = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "student";
-      doc.save(`${safeName}_exam_results.pdf`);
+      const safeExamName = String(selectedExam?.examLabel || selectedExam?.examName || "exam")
+        .replace(/[^\w\- ]+/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+      doc.save(`${safeName}_${safeExamName}_result.pdf`);
     } finally {
-      setExportingPdf(false);
+      setExportingPdfExamId(null);
+    }
+  };
+  const handleExportExcel = async (selectedExam: any) => {
+    if (!selectedExam) return;
+    try {
+      setExportingExcelExamId(Number(selectedExam?.examId ?? -1));
+      const studentName = `${student?.first_name || ""} ${student?.last_name || ""}`.trim() || "Student";
+      const classSection = `${student?.class_name || student?.className || student?.class_id || "-"} / ${
+        student?.section_name || student?.sectionName || student?.section_id || "-"
+      }`;
+      const rows: Record<string, string | number>[] = [];
+
+      [selectedExam].forEach((exam: any, examIdx: number) => {
+        const summary = exam.summary || {};
+        const examLabel = exam.examLabel || exam.examName || `Exam ${examIdx + 1}`;
+        const examDate = exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A";
+        const examTotal = summary.totalMax ?? "N/A";
+        const examPassing = summary.totalMin ?? "N/A";
+        const examObtained = summary.totalObtained ?? "N/A";
+        const examPercentage = summary.percentage != null ? `${summary.percentage}%` : "N/A";
+        const examGrade = summary.grade || "N/A";
+        const overallResult = summary.overallResult || "N/A";
+
+        (exam.subjects || []).forEach((subject: any) => {
+          rows.push({
+            Student: studentName,
+            ClassSection: classSection,
+            Exam: examLabel,
+            ExamType: exam.examType || "-",
+            ExamDate: examDate,
+            Subject: subject.subjectName || "-",
+            SubjectCode: subject.subjectCode || "-",
+            Mode: subject.subjectMode || "-",
+            MaxMarks: Number(subject.maxMarks ?? 0),
+            MinMarks: Number(subject.minMarks ?? 0),
+            MarksObtained: subject.isAbsent ? "ABSENT" : String(subject.marksObtained ?? "N/A"),
+            SubjectResult: subject.result || "N/A",
+            ExamTotal: "",
+            ExamPassing: "",
+            ExamObtained: "",
+            ExamPercentage: "",
+            ExamGrade: "",
+            OverallResult: "",
+          });
+        });
+
+        rows.push({
+          Student: "",
+          ClassSection: "",
+          Exam: examLabel,
+          ExamType: "",
+          ExamDate: "",
+          Subject: "EXAM SUMMARY",
+          SubjectCode: "",
+          Mode: "",
+          MaxMarks: "",
+          MinMarks: "",
+          MarksObtained: "",
+          SubjectResult: "",
+          ExamTotal: String(examTotal),
+          ExamPassing: String(examPassing),
+          ExamObtained: String(examObtained),
+          ExamPercentage: examPercentage,
+          ExamGrade: examGrade,
+          OverallResult: overallResult,
+        });
+      });
+
+      if (rows.length === 0) return;
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Exam Results");
+      const safeName = studentName.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "student";
+      const safeExamName = String(selectedExam?.examLabel || selectedExam?.examName || "exam")
+        .replace(/[^\w\- ]+/g, "")
+        .trim()
+        .replace(/\s+/g, "_");
+      XLSX.writeFile(workbook, `${safeName}_${safeExamName}_result.xlsx`);
+    } finally {
+      setExportingExcelExamId(null);
     }
   };
 
@@ -368,14 +459,6 @@ const StudentResult = () => {
                   <div className="card">
                     <div className="card-header d-flex align-items-center justify-content-between">
                       <h4 className="mb-0">Exam &amp; Results</h4>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={handleExportPdf}
-                        disabled={exportingPdf || examLoading || exams.length === 0}
-                      >
-                        {exportingPdf ? "Exporting..." : "Export PDF"}
-                      </button>
                     </div>
                     <div className="card-body">
                       {examError && (
@@ -429,6 +512,7 @@ const StudentResult = () => {
                                           })
                                         : "Date not available"}
                                     </span>
+                                    <span className="text-muted small ms-3">Class / Section: {displayClassSection}</span>
                                   </button>
                                 </h2>
                                 <div
@@ -437,6 +521,47 @@ const StudentResult = () => {
                                   data-bs-parent="#student-exam-results"
                                 >
                                   <div className="accordion-body">
+                                    <div className="d-flex justify-content-end mb-3">
+                                      <div className="dropdown">
+                                        <button
+                                          type="button"
+                                          className="btn btn-primary btn-sm dropdown-toggle"
+                                          data-bs-toggle="dropdown"
+                                          disabled={
+                                            examLoading ||
+                                            exportingPdfExamId === Number(exam.examId ?? -1) ||
+                                            exportingExcelExamId === Number(exam.examId ?? -1)
+                                          }
+                                        >
+                                          {exportingPdfExamId === Number(exam.examId ?? -1) ||
+                                          exportingExcelExamId === Number(exam.examId ?? -1)
+                                            ? "Exporting..."
+                                            : "Export"}
+                                        </button>
+                                        <ul className="dropdown-menu dropdown-menu-end">
+                                          <li>
+                                            <button
+                                              type="button"
+                                              className="dropdown-item"
+                                              onClick={() => handleExportPdf(exam)}
+                                            >
+                                              <i className="ti ti-file-type-pdf me-2" />
+                                              Export PDF
+                                            </button>
+                                          </li>
+                                          <li>
+                                            <button
+                                              type="button"
+                                              className="dropdown-item"
+                                              onClick={() => handleExportExcel(exam)}
+                                            >
+                                              <i className="ti ti-file-type-xls me-2" />
+                                              Export Excel
+                                            </button>
+                                          </li>
+                                        </ul>
+                                      </div>
+                                    </div>
                                     <div className="table-responsive">
                                       <table className="table">
                                         <thead className="thead-light">

@@ -10,10 +10,18 @@ async function ensureSchoolProfile(defaultSchoolName = null) {
       id SERIAL PRIMARY KEY,
       school_name VARCHAR(255) NOT NULL,
       logo_url TEXT NULL,
+      phone VARCHAR(30) NULL,
+      email VARCHAR(255) NULL,
+      fax VARCHAR(30) NULL,
+      address TEXT NULL,
       created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
   `);
+  await query(`ALTER TABLE school_profile ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NULL`);
+  await query(`ALTER TABLE school_profile ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL`);
+  await query(`ALTER TABLE school_profile ADD COLUMN IF NOT EXISTS fax VARCHAR(30) NULL`);
+  await query(`ALTER TABLE school_profile ADD COLUMN IF NOT EXISTS address TEXT NULL`);
 
   const existing = await query('SELECT id FROM school_profile ORDER BY id ASC LIMIT 1');
   if (existing.rows && existing.rows.length > 0) {
@@ -30,7 +38,7 @@ async function ensureSchoolProfile(defaultSchoolName = null) {
 async function getSchoolProfile(defaultSchoolName = null) {
   await ensureSchoolProfile(defaultSchoolName);
   const result = await query(
-    `SELECT id, school_name, logo_url, created_at, updated_at
+    `SELECT id, school_name, logo_url, phone, email, fax, address, created_at, updated_at
      FROM school_profile
      ORDER BY id ASC
      LIMIT 1`

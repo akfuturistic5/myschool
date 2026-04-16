@@ -7,15 +7,22 @@ import { useDispatch } from "react-redux";
 import { patchAuthUser } from "../../../core/data/redux/authSlice";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { alertLogoUploadError, alertLogoUploadSuccess } from "../../../core/utils/schoolLogoUploadAlerts";
-import { isHeadmasterRole } from "../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
 import SchoolLogoImage from "../../../core/common/schoolLogoImage";
 
 const SchoolSettings = () => {
   const route = all_routes;
   const dispatch = useDispatch();
   const { user } = useCurrentUser();
-  const isAdmin = useMemo(() => isHeadmasterRole(user), [user]);
+  const isAdmin = useMemo(
+    () => isHeadmasterRole(user) || isAdministrativeRole(user),
+    [user]
+  );
   const [schoolName, setSchoolName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [fax, setFax] = useState("");
+  const [address, setAddress] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,6 +37,10 @@ const SchoolSettings = () => {
       const res = await apiService.getSchoolProfile();
       const data = res?.data || {};
       setSchoolName(data.school_name || "");
+      setPhone(data.phone || "");
+      setEmail(data.email || "");
+      setFax(data.fax || "");
+      setAddress(data.address || "");
       setLogoUrl(data.logo_url || "");
     } catch (e) {
       setError((e as Error)?.message || "Failed to load school profile");
@@ -45,11 +56,49 @@ const SchoolSettings = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
+    const trimmedName = schoolName.trim();
+    const trimmedPhone = phone.trim();
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedFax = fax.trim();
+    const trimmedAddress = address.trim();
+
+    if (!trimmedName) {
+      setError("School name is required.");
+      return;
+    }
+    if (trimmedName.length > 255) {
+      setError("School name must be 255 characters or fewer.");
+      return;
+    }
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (trimmedPhone.length > 30 || trimmedFax.length > 30) {
+      setError("Phone and fax must be 30 characters or fewer.");
+      return;
+    }
+    if (trimmedAddress.length > 2000) {
+      setError("Address must be 2000 characters or fewer.");
+      return;
+    }
+
     try {
       setSaving(true);
       setMessage("");
       setError("");
-      await apiService.updateSchoolProfile({ school_name: schoolName });
+      await apiService.updateSchoolProfile({
+        school_name: trimmedName,
+        phone: trimmedPhone || null,
+        email: trimmedEmail || null,
+        fax: trimmedFax || null,
+        address: trimmedAddress || null,
+      });
+      setSchoolName(trimmedName);
+      setPhone(trimmedPhone);
+      setEmail(trimmedEmail);
+      setFax(trimmedFax);
+      setAddress(trimmedAddress);
       setMessage("School profile updated successfully.");
     } catch (e) {
       setError((e as Error)?.message || "Failed to update school profile");
@@ -102,7 +151,7 @@ const SchoolSettings = () => {
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
-                    <Link to="index">Dashboard</Link>
+                    <Link to={route.adminDashboard}>Dashboard</Link>
                   </li>
                   <li className="breadcrumb-item">
                     <Link to="#">Settings</Link>
@@ -119,12 +168,14 @@ const SchoolSettings = () => {
                   placement="top"
                   overlay={<Tooltip id="tooltip-top">Refresh</Tooltip>}
                 >
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-outline-light bg-white btn-icon me-1"
+                    onClick={() => loadProfile()}
+                    disabled={loading || saving}
                   >
                     <i className="ti ti-refresh" />
-                  </Link>
+                  </button>
                 </OverlayTrigger>
               </div>
             </div>
@@ -138,9 +189,6 @@ const SchoolSettings = () => {
                 >
                   School Settings
                 </Link>
-                <Link to={route.religion} className="d-block rounded p-2">
-                  Religion
-                </Link>
               </div>
             </div>
             <div className="col-xxl-10 col-xl-9">
@@ -152,7 +200,12 @@ const SchoolSettings = () => {
                       <p>School Settings Configuration</p>
                     </div>
                     <div className="mb-3">
-                      <button className="btn btn-light me-2" type="button">
+                      <button
+                        className="btn btn-light me-2"
+                        type="button"
+                        onClick={() => loadProfile()}
+                        disabled={loading || saving}
+                      >
                         Cancel
                       </button>
                       <button className="btn btn-primary" type="submit" disabled={!isAdmin || saving || loading}>
@@ -163,7 +216,7 @@ const SchoolSettings = () => {
                   {loading && <div className="alert alert-info">Loading school profile...</div>}
                   {!!message && <div className="alert alert-success">{message}</div>}
                   {!!error && <div className="alert alert-danger">{error}</div>}
-                  {!isAdmin && <div className="alert alert-warning">Only Admin can edit school settings.</div>}
+                  {!isAdmin && <div className="alert alert-warning">Only Headmaster or Administrative can edit school settings.</div>}
                   <div className="d-md-flex">
                     <div className="row flex-fill">
                       <div className="col-xl-10">
@@ -234,6 +287,10 @@ const SchoolSettings = () => {
                                   type="text"
                                   className="form-control"
                                   placeholder="Enter Phone Number"
+                                  value={phone}
+                                  onChange={(e) => setPhone(e.target.value)}
+                                  maxLength={30}
+                                  disabled={!isAdmin || loading || saving}
                                 />
                               </div>
                             </div>
@@ -253,6 +310,10 @@ const SchoolSettings = () => {
                                   type="email"
                                   className="form-control"
                                   placeholder="Enter Email"
+                                  value={email}
+                                  onChange={(e) => setEmail(e.target.value)}
+                                  maxLength={255}
+                                  disabled={!isAdmin || loading || saving}
                                 />
                               </div>
                             </div>
@@ -272,6 +333,10 @@ const SchoolSettings = () => {
                                   type="text"
                                   className="form-control"
                                   placeholder="Enter Fax"
+                                  value={fax}
+                                  onChange={(e) => setFax(e.target.value)}
+                                  maxLength={30}
+                                  disabled={!isAdmin || loading || saving}
                                 />
                               </div>
                             </div>
@@ -290,8 +355,11 @@ const SchoolSettings = () => {
                                 <textarea
                                   rows={4}
                                   className="form-control"
-                                  placeholder="Add Comment"
-                                  defaultValue={""}
+                                  placeholder="Enter address"
+                                  value={address}
+                                  onChange={(e) => setAddress(e.target.value)}
+                                  maxLength={2000}
+                                  disabled={!isAdmin || loading || saving}
                                 />
                               </div>
                             </div>

@@ -4,11 +4,19 @@ const sharp = require('sharp');
 const { query, masterQuery } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getSchoolProfile, ensureSchoolProfile } = require('../services/schoolProfileService');
+const { sanitizeChatText } = require('../utils/htmlSanitize');
 const {
   resolveExistingLogoPath,
   sanitizeFilename,
   sanitizeTenant,
 } = require('../utils/schoolLogoStorage');
+
+function normalizeOptionalText(value, maxLen) {
+  if (value == null) return null;
+  const next = sanitizeChatText(value);
+  if (!next) return null;
+  return next.slice(0, maxLen);
+}
 
 /** Resize large logos to fit within 512×512 (keeps aspect ratio); reduces upload failures and layout issues. */
 async function optimizeSchoolLogoInPlace(filePath) {
@@ -81,18 +89,35 @@ const getProfile = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    const schoolName = (req.body?.school_name || '').toString().trim();
+    const schoolName = sanitizeChatText(req.body?.school_name || '');
     if (!schoolName) {
       return errorResponse(res, 400, 'school_name is required');
+    }
+    if (schoolName.length > 255) {
+      return errorResponse(res, 400, 'school_name must be 255 characters or fewer');
+    }
+
+    const phone = normalizeOptionalText(req.body?.phone, 30);
+    const fax = normalizeOptionalText(req.body?.fax, 30);
+    const address = normalizeOptionalText(req.body?.address, 2000);
+    const emailRaw = normalizeOptionalText(req.body?.email, 255);
+    const email = emailRaw ? emailRaw.toLowerCase() : null;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return errorResponse(res, 400, 'email must be a valid email address');
     }
 
     await ensureSchoolProfile(req.user?.school_name || null);
     const updated = await query(
       `UPDATE school_profile
-       SET school_name = $1, updated_at = NOW()
+       SET school_name = $1,
+           phone = $2,
+           email = $3,
+           fax = $4,
+           address = $5,
+           updated_at = NOW()
        WHERE id = (SELECT id FROM school_profile ORDER BY id ASC LIMIT 1)
-       RETURNING id, school_name, logo_url, created_at, updated_at`,
-      [schoolName]
+       RETURNING id, school_name, logo_url, phone, email, fax, address, created_at, updated_at`,
+      [schoolName, phone, email, fax, address]
     );
 
     return success(res, 200, 'School profile updated', updated.rows[0] || null);
@@ -156,7 +181,7 @@ const uploadLogo = async (req, res) => {
       `UPDATE school_profile
        SET logo_url = $1, updated_at = NOW()
        WHERE id = (SELECT id FROM school_profile ORDER BY id ASC LIMIT 1)
-       RETURNING id, school_name, logo_url, created_at, updated_at`,
+       RETURNING id, school_name, logo_url, phone, email, fax, address, created_at, updated_at`,
       [logoUrl]
     );
 
