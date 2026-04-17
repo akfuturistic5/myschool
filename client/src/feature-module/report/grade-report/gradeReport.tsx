@@ -10,6 +10,7 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -17,17 +18,22 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
+const SECTION_ALL = "all";
+const EXAM_LATEST = "latest";
+
 const GradeReport = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classesWithSections } = useClassesWithSections(academicYearId);
+  const { classesWithSections, loading: classesLoading, error: classesError, refetch: refetchClasses } =
+    useClassesWithSections(academicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [selectedExamId, setSelectedExamId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(SECTION_ALL);
+  const [selectedExamId, setSelectedExamId] = useState<string>(EXAM_LATEST);
   const [reportData, setReportData] = useState<any>({ selectedExam: null, availableExams: [], subjects: [], rows: [] });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const classOptions = useMemo(() => {
     const seen = new Map<string, { value: string; label: string }>();
@@ -42,7 +48,7 @@ const GradeReport = () => {
   }, [classesWithSections]);
 
   const sectionOptions = useMemo(() => {
-    const base = [{ value: "", label: "All Sections" }];
+    const base = [{ value: SECTION_ALL, label: "All Sections" }];
     const items = (Array.isArray(classesWithSections) ? classesWithSections : [])
       .filter((row: any) => String(row.classId) === String(selectedClassId || ""))
       .filter((row: any) => row?.sectionId != null)
@@ -63,7 +69,7 @@ const GradeReport = () => {
 
   const examOptions = useMemo(
     () =>
-      [{ value: "", label: "Latest Exam" }].concat(
+      [{ value: EXAM_LATEST, label: "Latest Exam" }].concat(
         (Array.isArray(reportData.availableExams) ? reportData.availableExams : []).map((exam: any) => ({
           value: String(exam.examId),
           label: [exam.examName, exam.examType].filter(Boolean).join(" - ") || `Exam ${exam.examId}`,
@@ -79,10 +85,22 @@ const GradeReport = () => {
   }, [classOptions, selectedClassId]);
 
   useEffect(() => {
-    if (selectedSectionId && !sectionOptions.some((option) => option.value === selectedSectionId)) {
-      setSelectedSectionId("");
+    if (selectedSectionId !== SECTION_ALL && !sectionOptions.some((option) => option.value === selectedSectionId)) {
+      setSelectedSectionId(SECTION_ALL);
     }
   }, [sectionOptions, selectedSectionId]);
+
+  useEffect(() => {
+    if (selectedExamId !== EXAM_LATEST && !examOptions.some((option) => option.value === selectedExamId)) {
+      setSelectedExamId(EXAM_LATEST);
+    }
+  }, [examOptions, selectedExamId]);
+
+  useEffect(() => {
+    if (selectedClassId && !classOptions.some((o) => o.value === selectedClassId)) {
+      setSelectedClassId(classOptions[0]?.value ?? null);
+    }
+  }, [classOptions, selectedClassId]);
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -99,17 +117,16 @@ const GradeReport = () => {
         setError(null);
         const res = await apiService.getGradeReport({
           classId: selectedClassId,
-          sectionId: selectedSectionId || null,
+          sectionId: selectedSectionId === SECTION_ALL ? null : selectedSectionId,
           academicYearId,
-          examId: selectedExamId || null,
+          examId: selectedExamId === EXAM_LATEST ? null : selectedExamId,
         });
-        const payload = res?.data || { selectedExam: null, availableExams: [], subjects: [], rows: [] };
+        const payload =
+          res && typeof res === "object" && res.data != null && !Array.isArray(res.data)
+            ? res.data
+            : { selectedExam: null, availableExams: [], subjects: [], rows: [] };
         if (!cancelled) {
           setReportData(payload);
-          const nextExamId = payload?.selectedExam?.examId != null ? String(payload.selectedExam.examId) : "";
-          if ((selectedExamId || "") !== nextExamId) {
-            setSelectedExamId(nextExamId);
-          }
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -127,7 +144,7 @@ const GradeReport = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selectedClassId, selectedSectionId, selectedExamId]);
+  }, [academicYearId, selectedClassId, selectedSectionId, selectedExamId, refreshTick]);
 
   const data = useMemo(
     () =>
@@ -164,17 +181,21 @@ const GradeReport = () => {
         title: "Admission No",
         dataIndex: "admissionNo",
         key: "admissionNo",
-        sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
-        render: (text: any) => <Link to="#" className="link-primary">{text || "—"}</Link>,
+        sorter: (a: TableData, b: TableData) => compareText((a as any)?.admissionNo, (b as any)?.admissionNo),
+        render: (text: any) => (
+          <Link to="#" className="link-primary">
+            {text || "—"}
+          </Link>
+        ),
       },
       {
         title: "Student Name",
         dataIndex: "studentName",
         key: "studentName",
-        sorter: (a: TableData, b: TableData) => compareText(a?.studentName, b?.studentName),
+        sorter: (a: TableData, b: TableData) => compareText((a as any)?.studentName, (b as any)?.studentName),
         render: (text: any, record: any) => (
           <div className="d-flex align-items-center">
-            <Link to={routes.studentDetail} className="avatar avatar-md">
+            <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
               <ImageWithBasePath
                 src={record.avatar}
                 className="img-fluid rounded-circle"
@@ -184,7 +205,9 @@ const GradeReport = () => {
             </Link>
             <div className="ms-2">
               <p className="text-dark mb-0">
-                <Link to={routes.studentDetail}>{text || "—"}</Link>
+                <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>
+                  {text || "—"}
+                </Link>
               </p>
               <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
             </div>
@@ -215,8 +238,75 @@ const GradeReport = () => {
         sorter: (a: any, b: any) => compareText(a?.summary?.grade, b?.summary?.grade),
       },
     ],
-    [routes.studentDetail, subjectColumns]
+    [routes.studentDetail, routes.studentList, subjectColumns]
   );
+
+  const exportColumns = useMemo(() => {
+    const subjectCols = (Array.isArray(reportData.subjects) ? reportData.subjects : []).map((s: any) => ({
+      title: s.subjectName || `Subject ${s.subjectId}`,
+      dataKey: `subj_${s.subjectId}`,
+    }));
+    return [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Student Name", dataKey: "studentName" },
+      { title: "Roll No", dataKey: "rollNo" },
+      ...subjectCols,
+      { title: "Total", dataKey: "totalObtained" },
+      { title: "Percent(%)", dataKey: "percentage" },
+      { title: "Grade", dataKey: "grade" },
+    ];
+  }, [reportData.subjects]);
+
+  const exportRows = useMemo(() => {
+    const subjects = Array.isArray(reportData.subjects) ? reportData.subjects : [];
+    return data.map((row: any) => {
+      const flat: Record<string, string | number> = {
+        admissionNo: row.admissionNo ?? "—",
+        studentName: row.studentName ?? "—",
+        rollNo: row.rollNo ?? "—",
+        totalObtained: row.summary?.totalObtained ?? "—",
+        percentage: row.summary?.percentage ?? "—",
+        grade: row.summary?.grade ?? "—",
+      };
+      subjects.forEach((s: any) => {
+        const marks = row.subjectMarks?.[String(s.subjectId)];
+        flat[`subj_${s.subjectId}`] =
+          !marks ? "—" : marks.isAbsent ? "AB" : (marks.marksObtained ?? "—");
+      });
+      return flat;
+    });
+  }, [data, reportData.subjects]);
+
+  const handleExportExcel = () => {
+    const subjects = Array.isArray(reportData.subjects) ? reportData.subjects : [];
+    const rows = data.map((row: any) => {
+      const o: Record<string, string | number> = {
+        "Admission No": row.admissionNo ?? "—",
+        "Student Name": row.studentName ?? "—",
+        "Roll No": row.rollNo ?? "—",
+        Total: row.summary?.totalObtained ?? "—",
+        "Percent(%)": row.summary?.percentage ?? "—",
+        Grade: row.summary?.grade ?? "—",
+      };
+      subjects.forEach((s: any) => {
+        const marks = row.subjectMarks?.[String(s.subjectId)];
+        const label = s.subjectName || `Subject ${s.subjectId}`;
+        o[label] = !marks ? "—" : marks.isAbsent ? "AB" : (marks.marksObtained ?? "—");
+      });
+      return o;
+    });
+    const stamp = new Date().toISOString().split("T")[0];
+    exportToExcel(rows, `GradeReport_${stamp}`);
+  };
+
+  const handleExportPDF = () => {
+    const stamp = new Date().toISOString().split("T")[0];
+    exportToPDF(exportRows, "Grade Report", `GradeReport_${stamp}`, exportColumns);
+  };
+
+  const handlePrint = () => {
+    printData("Grade Report", exportColumns, exportRows);
+  };
 
   const handleApply = (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault();
@@ -224,6 +314,15 @@ const GradeReport = () => {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const tableLoading = classesLoading || loading;
+  const noClassConfigured = !classesLoading && classOptions.length === 0;
+  const noExamData =
+    !tableLoading &&
+    !error &&
+    selectedClassId &&
+    Array.isArray(reportData.availableExams) &&
+    reportData.availableExams.length === 0;
 
   return (
     <div>
@@ -247,7 +346,15 @@ const GradeReport = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={() => {
+                  refetchClasses();
+                  setRefreshTick((t) => t + 1);
+                }}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
 
@@ -257,7 +364,8 @@ const GradeReport = () => {
                 <h4 className="mb-1">Grade Report List</h4>
                 {reportData.selectedExam && (
                   <p className="text-muted mb-0">
-                    Showing {reportData.selectedExam.examName || "Latest Exam"}
+                    Showing {reportData.selectedExam.examName || "Exam"} —{" "}
+                    {[reportData.selectedExam.examType].filter(Boolean).join(" ")}
                   </p>
                 )}
               </div>
@@ -286,7 +394,7 @@ const GradeReport = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(value)}
+                                onChange={(value) => setSelectedClassId(value || null)}
                               />
                             </div>
                           </div>
@@ -296,8 +404,8 @@ const GradeReport = () => {
                               <CommonSelect
                                 className="select"
                                 options={sectionOptions}
-                                value={selectedSectionId ?? ""}
-                                onChange={(value) => setSelectedSectionId(value ?? "")}
+                                value={selectedSectionId}
+                                onChange={(value) => setSelectedSectionId(value || SECTION_ALL)}
                               />
                             </div>
                           </div>
@@ -307,8 +415,8 @@ const GradeReport = () => {
                               <CommonSelect
                                 className="select"
                                 options={examOptions}
-                                value={selectedExamId ?? ""}
-                                onChange={(value) => setSelectedExamId(value ?? "")}
+                                value={selectedExamId}
+                                onChange={(value) => setSelectedExamId(value || EXAM_LATEST)}
                               />
                             </div>
                           </div>
@@ -320,8 +428,8 @@ const GradeReport = () => {
                           className="btn btn-light me-3"
                           onClick={(e) => {
                             e.preventDefault();
-                            setSelectedSectionId("");
-                            setSelectedExamId("");
+                            setSelectedSectionId(SECTION_ALL);
+                            setSelectedExamId(EXAM_LATEST);
                           }}
                         >
                           Reset
@@ -336,12 +444,23 @@ const GradeReport = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {error && (
+              {(error || classesError) && (
                 <div className="alert alert-danger mx-3 mt-3 mb-0" role="alert">
-                  {error}
+                  {error || classesError}
                 </div>
               )}
-              {loading ? (
+              {noClassConfigured && (
+                <div className="alert alert-info mx-3 mt-3 mb-0" role="alert">
+                  No classes found for the selected academic year. Choose an academic year that has classes, or add
+                  classes in Academic Settings.
+                </div>
+              )}
+              {noExamData && (
+                <div className="alert alert-info mx-3 mt-3 mb-0" role="alert">
+                  No exam results are recorded for this class yet. Enter marks in Exam Results to see the grade report.
+                </div>
+              )}
+              {tableLoading ? (
                 <div className="text-center py-5">
                   <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>

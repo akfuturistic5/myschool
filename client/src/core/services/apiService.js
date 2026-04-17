@@ -1318,7 +1318,11 @@ class ApiService {
   // Fees (optional academicYearId for year filter)
   async getFeeCollectionsList(params = {}) {
     const searchParams = new URLSearchParams();
-    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    const academicYear =
+      params.academicYearId ?? params.academic_year_id ?? params.academicYear ?? null;
+    if (academicYear != null && academicYear !== '') {
+      searchParams.set('academic_year_id', String(academicYear));
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/fees/collections${qs ? `?${qs}` : ''}`);
   }

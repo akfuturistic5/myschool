@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
+/** Normalize list endpoints: `{ data: T[] }`, bare `T[]`, or null. */
+const asArray = (response) => {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.data)) return response.data;
+  return [];
+};
+
 export const useClassesWithSections = (academicYearId = null) => {
   const [classesWithSections, setClassesWithSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,9 +30,9 @@ export const useClassesWithSections = (academicYearId = null) => {
         apiService.getSubjects()
       ]);
       
-      const classes = classesResponse.data || [];
-      const sections = sectionsResponse.data || [];
-      const subjects = subjectsResponse.data || [];
+      const classes = asArray(classesResponse);
+      const sections = asArray(sectionsResponse);
+      const subjects = asArray(subjectsResponse);
       
       // Build subject count per class (subjects have class_id)
       const subjectCountByClass = {};
