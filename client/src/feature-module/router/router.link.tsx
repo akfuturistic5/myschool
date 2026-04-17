@@ -161,6 +161,7 @@ import FeesReport from "../report/fees-report/feesReport";
 import GradeReport from "../report/grade-report/gradeReport";
 import LeaveReport from "../report/leave-report/leaveReport";
 import StudentReport from "../report/student-report/studentReport";
+import TeacherReport from "../report/teacher-report/teacherReport";
 import Religion from "../settings/academicSettings/religion";
 import SchoolSettings from "../settings/academicSettings/schoolSettings";
 import CustomFields from "../settings/appSettings/customFields";
@@ -1470,7 +1471,7 @@ export const publicRoutes = [
   },
   {
     path: routes.teacherReport,
-    element: <StaffReport />,
+    element: <TeacherReport />,
     route: Route,
   },
   {

@@ -454,6 +454,13 @@ export const SidebarData = [
         submenu: false,
       },
       {
+        label: "Teacher Report",
+        link: routes.teacherReport,
+        icon: "ti ti-school",
+        showSubRoute: false,
+        submenu: false,
+      },
+      {
         label: "Grade Report",
         link: routes.gradeReport,
         icon: "ti ti-calendar-x",
