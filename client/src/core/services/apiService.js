@@ -1783,21 +1783,50 @@ class ApiService {
   }
 
   // Hostels
-  async getHostels() {
-    return this.makeRequest('/hostels');
+  async getHostels(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      search.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostels${qs ? `?${qs}` : ''}`);
   }
 
   async getHostelById(id) {
     return this.makeRequest(`/hostels/${id}`);
   }
 
+  async createHostel(data) {
+    return this.makeRequest('/hostels', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostel(id, data) {
+    return this.makeRequest(`/hostels/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteHostel(id) {
+    return this.makeRequest(`/hostels/${id}`, { method: 'DELETE' });
+  }
+
   // Hostel Rooms
-  async getHostelRooms() {
-    return this.makeRequest('/hostel-rooms');
+  async getHostelRooms(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      search.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostel-rooms${qs ? `?${qs}` : ''}`);
   }
 
   async getHostelRoomById(id) {
     return this.makeRequest(`/hostel-rooms/${id}`);
+  }
+
+  async createHostelRoom(roomData) {
+    return this.makeRequest('/hostel-rooms', {
+      method: 'POST',
+      body: JSON.stringify(roomData),
+    });
   }
 
   async updateHostelRoom(id, roomData) {
@@ -1807,6 +1836,10 @@ class ApiService {
     });
   }
 
+  async deleteHostelRoom(id) {
+    return this.makeRequest(`/hostel-rooms/${id}`, { method: 'DELETE' });
+  }
+
   // Room Types
   async getRoomTypes() {
     return this.makeRequest('/room-types');
@@ -1814,6 +1847,18 @@ class ApiService {
 
   async getRoomTypeById(id) {
     return this.makeRequest(`/room-types/${id}`);
+  }
+
+  async createRoomType(data) {
+    return this.makeRequest('/room-types', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateRoomType(id, data) {
+    return this.makeRequest(`/room-types/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteRoomType(id) {
+    return this.makeRequest(`/room-types/${id}`, { method: 'DELETE' });
   }
 
   // Health check
