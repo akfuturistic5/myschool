@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import '@ant-design/v5-patch-for-react-19';
 import { base_path } from "./environment";
 import "../node_modules/bootstrap/dist/css/bootstrap.min.css";
 // Single Bootstrap JS entry: registers Dropdown/Modal data-api once on `document`.

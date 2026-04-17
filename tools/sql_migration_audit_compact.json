@@ -1,0 +1,5510 @@
+{
+  "root": "c:/Users/Aabid/OneDrive/Desktop/myschool",
+  "sql_file_count": 72,
+  "files": [
+    {
+      "file": "server/migrations/001_init_full_schema.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "The",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "schools",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "super_admin_audit_log",
+        "super_admin_users",
+        "teacher_routines",
+        "teachers",
+        "tenant_sessions",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "schools",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "schools",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "super_admin_audit_log",
+        "super_admin_users",
+        "teacher_routines",
+        "teachers",
+        "tenant_sessions",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "alter_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "columns_by_table": {
+        "schools": [
+          "created_at",
+          "db_name",
+          "deleted_at",
+          "id",
+          "institute_number",
+          "logo",
+          "school_name",
+          "status",
+          "type"
+        ],
+        "super_admin_users": [
+          "created_at",
+          "email",
+          "id",
+          "is_active",
+          "password_hash",
+          "role",
+          "updated_at",
+          "username"
+        ],
+        "tenant_sessions": [
+          "created_at",
+          "db_name",
+          "expires_at",
+          "id",
+          "institute_number",
+          "ip_address",
+          "revoked_at",
+          "school_id",
+          "session_hash",
+          "tenant_user_id",
+          "user_agent"
+        ],
+        "super_admin_audit_log": [
+          "action",
+          "created_at",
+          "details",
+          "id",
+          "ip_address",
+          "resource_id",
+          "resource_type",
+          "super_admin_id",
+          "user_agent"
+        ],
+        "academic_years": [
+          "created_at",
+          "created_by",
+          "end_date",
+          "id",
+          "is_active",
+          "is_current",
+          "modified_at",
+          "start_date",
+          "year_name"
+        ],
+        "addresses": [
+          "created_at",
+          "current_address",
+          "id",
+          "permanent_address",
+          "person_id",
+          "role_id",
+          "user_id"
+        ],
+        "attendance": [
+          "academic_year_id",
+          "attendance_date",
+          "check_in_time",
+          "check_out_time",
+          "class_id",
+          "created_at",
+          "created_by",
+          "id",
+          "marked_by",
+          "modified_at",
+          "remarks",
+          "section_id",
+          "status",
+          "student_id"
+        ],
+        "blocked_users": [
+          "blocked_user_id",
+          "created_at",
+          "id",
+          "user_id"
+        ],
+        "blood_groups": [
+          "blood_group",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "calendar_events": [
+          "created_at",
+          "description",
+          "end_date",
+          "event_color",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "calls": [
+          "call_date",
+          "call_type",
+          "created_at",
+          "duration",
+          "id",
+          "phone_number",
+          "recipient_id",
+          "user_id"
+        ],
+        "casts": [
+          "cast_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_id"
+        ],
+        "chat_settings": [
+          "cleared_at",
+          "created_at",
+          "disappearing_seconds",
+          "id",
+          "is_muted",
+          "muted_until",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "chats": [
+          "created_at",
+          "file_url",
+          "id",
+          "is_pinned",
+          "is_read",
+          "message",
+          "message_type",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "class_rooms": [
+          "building",
+          "capacity",
+          "created_at",
+          "description",
+          "floor",
+          "id",
+          "modified_at",
+          "room_no",
+          "status"
+        ],
+        "class_schedules": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "day_of_week",
+          "id",
+          "is_active",
+          "modified_at",
+          "room_number",
+          "section_id",
+          "subject_id",
+          "teacher_id",
+          "time_slot_id"
+        ],
+        "class_syllabus": [
+          "academic_year_id",
+          "class_id",
+          "class_name",
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "section_id",
+          "section_name",
+          "status",
+          "subject_group"
+        ],
+        "classes": [
+          "academic_year_id",
+          "class_code",
+          "class_fee",
+          "class_name",
+          "class_teacher_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students"
+        ],
+        "departments": [
+          "created_at",
+          "created_by",
+          "department_code",
+          "department_name",
+          "description",
+          "head_of_department",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "designations": [
+          "created_at",
+          "created_by",
+          "department_id",
+          "description",
+          "designation_name",
+          "id",
+          "is_active",
+          "modified_at",
+          "salary_range_max",
+          "salary_range_min"
+        ],
+        "document_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "document_type",
+          "id",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "documents": [
+          "created_at",
+          "created_by",
+          "document_name",
+          "document_type_id",
+          "expiry_date",
+          "file_path",
+          "file_size",
+          "id",
+          "is_active",
+          "is_verified",
+          "modified_at",
+          "remarks",
+          "staff_id",
+          "student_id",
+          "upload_date",
+          "verified_by",
+          "verified_date"
+        ],
+        "drivers": [
+          "address",
+          "created_at",
+          "created_by",
+          "driver_name",
+          "email",
+          "emergency_contact",
+          "employee_code",
+          "id",
+          "is_active",
+          "joining_date",
+          "license_expiry",
+          "license_number",
+          "modified_at",
+          "phone",
+          "salary"
+        ],
+        "emails": [
+          "attachment_url",
+          "body",
+          "created_at",
+          "folder",
+          "has_attachment",
+          "id",
+          "is_important",
+          "is_read",
+          "is_starred",
+          "recipient_email",
+          "sender_email",
+          "sender_id",
+          "sent_at",
+          "subject",
+          "updated_at",
+          "user_id"
+        ],
+        "events": [
+          "attachment_url",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "event_category",
+          "event_color",
+          "event_for",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "target_class_ids",
+          "target_section_ids",
+          "title",
+          "updated_at"
+        ],
+        "exam_results": [
+          "created_at",
+          "created_by",
+          "exam_id",
+          "grade",
+          "id",
+          "is_absent",
+          "is_active",
+          "marks_obtained",
+          "modified_at",
+          "remarks",
+          "student_id",
+          "subject_id"
+        ],
+        "exams": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "exam_name",
+          "exam_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "start_date",
+          "total_marks"
+        ],
+        "fee_collections": [
+          "amount_paid",
+          "collected_by",
+          "created_at",
+          "created_by",
+          "fee_structure_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "payment_date",
+          "payment_method",
+          "receipt_number",
+          "remarks",
+          "student_id",
+          "transaction_id"
+        ],
+        "fee_structures": [
+          "academic_year_id",
+          "amount",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "due_date",
+          "fee_name",
+          "fee_type",
+          "id",
+          "installment_allowed",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "files": [
+          "created_at",
+          "file_type",
+          "file_url",
+          "id",
+          "is_folder",
+          "is_shared",
+          "mime_type",
+          "name",
+          "parent_folder_id",
+          "shared_with",
+          "size",
+          "updated_at",
+          "user_id"
+        ],
+        "guardians": [
+          "address",
+          "annual_income",
+          "created_at",
+          "created_by",
+          "email",
+          "first_name",
+          "guardian_type",
+          "id",
+          "is_active",
+          "is_emergency_contact",
+          "is_primary_contact",
+          "last_name",
+          "modified_at",
+          "occupation",
+          "office_address",
+          "phone",
+          "relation",
+          "student_id",
+          "user_id"
+        ],
+        "holidays": [
+          "academic_year_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "holiday_name",
+          "holiday_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "start_date"
+        ],
+        "hostel_rooms": [
+          "created_at",
+          "created_by",
+          "current_occupancy",
+          "facilities",
+          "floor_number",
+          "hostel_id",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "monthly_fee",
+          "room_number",
+          "room_type_id"
+        ],
+        "hostels": [
+          "address",
+          "contact_number",
+          "created_at",
+          "created_by",
+          "facilities",
+          "hostel_name",
+          "hostel_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "rules",
+          "total_rooms",
+          "warden_id"
+        ],
+        "houses": [
+          "created_at",
+          "created_by",
+          "description",
+          "house_captain",
+          "house_color",
+          "house_name",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "languages": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "is_compulsory",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "leave_applications": [
+          "applicant_type",
+          "approved_by",
+          "approved_date",
+          "created_at",
+          "created_by",
+          "emergency_contact",
+          "end_date",
+          "id",
+          "is_active",
+          "leave_type_id",
+          "medical_certificate_path",
+          "modified_at",
+          "reason",
+          "rejection_reason",
+          "staff_id",
+          "start_date",
+          "status",
+          "student_id",
+          "total_days"
+        ],
+        "leave_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "leave_type",
+          "max_days",
+          "modified_at",
+          "requires_medical_certificate"
+        ],
+        "library_book_issues": [
+          "book_id",
+          "created_at",
+          "created_by",
+          "due_date",
+          "fine_amount",
+          "id",
+          "is_active",
+          "issue_date",
+          "issued_by",
+          "modified_at",
+          "remarks",
+          "return_date",
+          "returned_to",
+          "staff_id",
+          "status",
+          "student_id"
+        ],
+        "library_books": [
+          "author",
+          "available_copies",
+          "book_location",
+          "book_price",
+          "book_title",
+          "category_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "isbn",
+          "modified_at",
+          "publication_year",
+          "publisher",
+          "total_copies"
+        ],
+        "library_categories": [
+          "category_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "medical_conditions": [
+          "condition_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "requires_medication",
+          "severity_level"
+        ],
+        "mother_tongues": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "notes": [
+          "content",
+          "created_at",
+          "id",
+          "is_deleted",
+          "is_important",
+          "priority",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "notice_board": [
+          "content",
+          "created_at",
+          "created_by",
+          "id",
+          "message_to",
+          "modified_at",
+          "title"
+        ],
+        "parents": [
+          "created_at",
+          "father_email",
+          "father_image_url",
+          "father_name",
+          "father_occupation",
+          "father_phone",
+          "id",
+          "mother_email",
+          "mother_image_url",
+          "mother_name",
+          "mother_occupation",
+          "mother_phone",
+          "student_id",
+          "updated_at",
+          "user_id"
+        ],
+        "pickup_points": [
+          "address",
+          "created_at",
+          "created_by",
+          "distance_from_school",
+          "drop_time",
+          "id",
+          "is_active",
+          "landmark",
+          "modified_at",
+          "pickup_time",
+          "point_name",
+          "route_id",
+          "sequence_order"
+        ],
+        "religions": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_name"
+        ],
+        "reports": [
+          "created_at",
+          "id",
+          "reason",
+          "reported_user_id",
+          "user_id"
+        ],
+        "room_types": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "room_fee",
+          "room_type"
+        ],
+        "routes": [
+          "created_at",
+          "created_by",
+          "description",
+          "end_point",
+          "estimated_time",
+          "id",
+          "is_active",
+          "modified_at",
+          "route_code",
+          "route_fee",
+          "route_name",
+          "start_point",
+          "total_distance"
+        ],
+        "sections": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students",
+          "room_number",
+          "section_name",
+          "section_teacher_id"
+        ],
+        "staff": [
+          "address",
+          "blood_group_id",
+          "created_at",
+          "created_by",
+          "date_of_birth",
+          "department_id",
+          "designation_id",
+          "email",
+          "emergency_contact_name",
+          "emergency_contact_phone",
+          "employee_code",
+          "experience_years",
+          "first_name",
+          "gender",
+          "id",
+          "is_active",
+          "joining_date",
+          "last_name",
+          "modified_at",
+          "phone",
+          "photo_url",
+          "qualification",
+          "salary",
+          "user_id"
+        ],
+        "student_medical_conditions": [
+          "created_at",
+          "created_by",
+          "diagnosed_date",
+          "doctor_contact",
+          "doctor_name",
+          "id",
+          "is_active",
+          "medical_condition_id",
+          "medication",
+          "modified_at",
+          "special_instructions",
+          "student_id"
+        ],
+        "student_promotions": [
+          "created_at",
+          "created_by",
+          "from_academic_year_id",
+          "from_class_id",
+          "from_section_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "promoted_by",
+          "promotion_date",
+          "remarks",
+          "status",
+          "student_id",
+          "to_academic_year_id",
+          "to_class_id",
+          "to_section_id"
+        ],
+        "students": [
+          "aadhar_no",
+          "academic_year_id",
+          "address",
+          "address_id",
+          "admission_date",
+          "admission_number",
+          "bank_name",
+          "blood_group_id",
+          "branch",
+          "cast_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "current_address",
+          "date_of_birth",
+          "email",
+          "first_name",
+          "gender",
+          "gr_number",
+          "guardian_id",
+          "hostel_id",
+          "hostel_room_id",
+          "house_id",
+          "id",
+          "ifsc",
+          "is_active",
+          "is_hostel_required",
+          "is_transport_required",
+          "known_allergies",
+          "last_name",
+          "medical_condition",
+          "medications",
+          "modified_at",
+          "mother_tongue_id",
+          "nationality",
+          "other_information",
+          "parent_id",
+          "pen_number",
+          "permanent_address",
+          "phone",
+          "photo_url",
+          "pickup_point_id",
+          "place_of_birth",
+          "previous_school",
+          "previous_school_address",
+          "religion_id",
+          "roll_number",
+          "route_id",
+          "section_id",
+          "sibiling_1",
+          "sibiling_1_class",
+          "sibiling_2",
+          "sibiling_2_class",
+          "unique_student_ids",
+          "user_id",
+          "vehicle_number"
+        ],
+        "subjects": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "practical_hours",
+          "subject_code",
+          "subject_name",
+          "teacher_id",
+          "theory_hours",
+          "total_marks"
+        ],
+        "teacher_routines": [
+          "academic_year_id",
+          "class_schedule_id",
+          "created_at",
+          "created_by",
+          "id",
+          "is_active",
+          "modified_at",
+          "teacher_id"
+        ],
+        "teachers": [
+          "bank_name",
+          "blood_group",
+          "branch",
+          "class_id",
+          "contract_type",
+          "created_at",
+          "current_address",
+          "facebook",
+          "father_name",
+          "id",
+          "id_number",
+          "ifsc",
+          "instagram",
+          "languages_known",
+          "linkedin",
+          "marital_status",
+          "mother_name",
+          "pan_number",
+          "permanent_address",
+          "previous_school_address",
+          "previous_school_name",
+          "previous_school_phone",
+          "shift",
+          "staff_id",
+          "status",
+          "subject_id",
+          "twitter",
+          "updated_at",
+          "work_location",
+          "youtube"
+        ],
+        "time_slots": [
+          "created_at",
+          "created_by",
+          "duration",
+          "end_time",
+          "id",
+          "is_active",
+          "is_break",
+          "modified_at",
+          "slot_name",
+          "start_time"
+        ],
+        "todos": [
+          "assigned_to",
+          "created_at",
+          "description",
+          "due_date",
+          "id",
+          "is_important",
+          "priority",
+          "status",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "user_roles": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "permissions",
+          "role_name"
+        ],
+        "users": [
+          "avatar",
+          "created_at",
+          "created_by",
+          "current_address",
+          "email",
+          "first_name",
+          "id",
+          "is_active",
+          "last_login",
+          "last_name",
+          "modified_at",
+          "password_hash",
+          "permanent_address",
+          "phone",
+          "role_id",
+          "username"
+        ],
+        "vehicles": [
+          "brand",
+          "chassis_number",
+          "created_at",
+          "created_by",
+          "driver_id",
+          "fitness_certificate_expiry",
+          "fuel_type",
+          "gps_device_id",
+          "id",
+          "insurance_expiry",
+          "is_active",
+          "made_of_year",
+          "model",
+          "modified_at",
+          "permit_expiry",
+          "registration_number",
+          "route_id",
+          "seating_capacity",
+          "vehicle_number",
+          "vehicle_type"
+        ],
+        "school_profile": [
+          "created_at",
+          "id",
+          "logo_url",
+          "school_name",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 237939
+    },
+    {
+      "file": "server/migrations/002_create_student_promotions.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "student_promotions"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections",
+        "staff",
+        "students"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "student_promotions"
+      ],
+      "alter_tables": [
+        "student_promotions"
+      ],
+      "columns_by_table": {
+        "student_promotions": [
+          "created_at",
+          "created_by",
+          "from_academic_year_id",
+          "from_class_id",
+          "from_section_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "promoted_by",
+          "promotion_date",
+          "remarks",
+          "status",
+          "student_id",
+          "to_academic_year_id",
+          "to_class_id",
+          "to_section_id"
+        ]
+      },
+      "size_bytes": 8619
+    },
+    {
+      "file": "server/migrations/002_library_module.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "library_books",
+        "library_members"
+      ],
+      "references": [
+        "staff",
+        "students"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "library_members"
+      ],
+      "alter_tables": [
+        "library_books",
+        "library_members"
+      ],
+      "columns_by_table": {
+        "library_members": [
+          "card_number",
+          "created_at",
+          "created_by",
+          "date_joined",
+          "id",
+          "is_active",
+          "member_type",
+          "modified_at",
+          "staff_id",
+          "student_id"
+        ]
+      },
+      "size_bytes": 3005
+    },
+    {
+      "file": "server/migrations/003_library_academic_year.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "library_books",
+        "library_members"
+      ],
+      "references": [
+        "academic_years"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "library_books",
+        "library_members"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 3125
+    },
+    {
+      "file": "server/migrations/003_parents_father_mother_user_ids.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "parents"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "parents"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 782
+    },
+    {
+      "file": "server/migrations/004_accounts_module.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "accounts_income",
+        "accounts_invoices",
+        "accounts_transactions"
+      ],
+      "references": [
+        "academic_years",
+        "accounts_income"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "accounts_income",
+        "accounts_invoices",
+        "accounts_transactions"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "accounts_income": [
+          "academic_year_id",
+          "amount",
+          "created_at",
+          "description",
+          "id",
+          "income_date",
+          "income_name",
+          "invoice_no",
+          "modified_at",
+          "payment_method",
+          "source"
+        ],
+        "accounts_invoices": [
+          "academic_year_id",
+          "amount",
+          "created_at",
+          "description",
+          "due_date",
+          "id",
+          "invoice_date",
+          "invoice_number",
+          "modified_at",
+          "payment_method",
+          "status"
+        ],
+        "accounts_transactions": [
+          "academic_year_id",
+          "amount",
+          "created_at",
+          "description",
+          "id",
+          "income_id",
+          "modified_at",
+          "payment_method",
+          "status",
+          "transaction_date",
+          "transaction_type"
+        ]
+      },
+      "size_bytes": 3485
+    },
+    {
+      "file": "server/migrations/004_fix_swapped_teacher_student_role_ids.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 815
+    },
+    {
+      "file": "server/migrations/004_teachers_resume_joining_modified_at.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "teachers"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "teachers"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 837
+    },
+    {
+      "file": "server/migrations/005_accounts_expenses_and_tx_expense_fk.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "accounts_expense_categories",
+        "accounts_expenses",
+        "accounts_transactions"
+      ],
+      "references": [
+        "academic_years",
+        "accounts_expense_categories",
+        "accounts_expenses"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "accounts_expense_categories",
+        "accounts_expenses"
+      ],
+      "alter_tables": [
+        "accounts_transactions"
+      ],
+      "columns_by_table": {
+        "accounts_expense_categories": [
+          "academic_year_id",
+          "category_name",
+          "created_at",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "accounts_expenses": [
+          "academic_year_id",
+          "amount",
+          "category_id",
+          "created_at",
+          "description",
+          "expense_date",
+          "expense_name",
+          "id",
+          "invoice_no",
+          "modified_at",
+          "payment_method",
+          "status"
+        ]
+      },
+      "size_bytes": 4085
+    },
+    {
+      "file": "server/migrations/005_seed_realistic_academic_dummy_data.sql",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "addresses",
+        "attendance",
+        "blood_groups",
+        "casts",
+        "class",
+        "classes",
+        "guardians",
+        "houses",
+        "languages",
+        "mother_tongues",
+        "parents",
+        "religions",
+        "sections",
+        "staff_attendance",
+        "students",
+        "subjects",
+        "teacher_attendance",
+        "teachers",
+        "tmp_seed_students",
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 27667
+    },
+    {
+      "file": "server/migrations/006_global_settings.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "settings"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "settings"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "settings": [
+          "created_at",
+          "id",
+          "setting_group",
+          "setting_key",
+          "setting_value",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 570
+    },
+    {
+      "file": "server/migrations/006_reseed_multi_academic_year_dummy_data.sql",
+      "ops": [
+        "DELETE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "addresses",
+        "attendance",
+        "blood_groups",
+        "casts",
+        "class",
+        "classes",
+        "guardians",
+        "houses",
+        "languages",
+        "mother_tongues",
+        "parents",
+        "religions",
+        "sections",
+        "staff_attendance",
+        "students",
+        "subjects",
+        "teacher_attendance",
+        "teachers",
+        "tmp_seed_students",
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 27044
+    },
+    {
+      "file": "server/migrations/007_create_leaving_students.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "leaving_students"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections",
+        "staff",
+        "students"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "leaving_students"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "leaving_students": [
+          "admission_number",
+          "created_at",
+          "created_by",
+          "id",
+          "is_active",
+          "joining_academic_year_id",
+          "joining_class_id",
+          "joining_date",
+          "joining_section_id",
+          "last_academic_year_id",
+          "last_class_id",
+          "last_class_result",
+          "last_section_id",
+          "leaving_date",
+          "left_by",
+          "modified_at",
+          "reason",
+          "remarks",
+          "student_first_name",
+          "student_id",
+          "student_last_name"
+        ]
+      },
+      "size_bytes": 2142
+    },
+    {
+      "file": "server/migrations/008_academic_years_end_date_nullable.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "academic_years"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "academic_years"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 249
+    },
+    {
+      "file": "server/migrations/009_guardian_registry_hardening.sql",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "guardians",
+        "students"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 4643
+    },
+    {
+      "file": "server/migrations/010_assign_section_teachers_round_robin.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "sections"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1169
+    },
+    {
+      "file": "server/migrations/010_fees_module_enterprise.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "fees_assign",
+        "fees_assign_details",
+        "fees_collect",
+        "fees_collect_details",
+        "fees_groups",
+        "fees_master",
+        "fees_types"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "fees_assign",
+        "fees_assign_details",
+        "fees_collect",
+        "fees_groups",
+        "fees_master",
+        "fees_types",
+        "students"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "fees_assign",
+        "fees_assign_details",
+        "fees_collect",
+        "fees_collect_details",
+        "fees_groups",
+        "fees_master",
+        "fees_types"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "fees_groups": [
+          "academic_year_id",
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "name",
+          "status"
+        ],
+        "fees_types": [
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "name"
+        ],
+        "fees_master": [
+          "academic_year_id",
+          "amount",
+          "created_at",
+          "fees_group_id",
+          "fees_type_id",
+          "id",
+          "modified_at",
+          "status"
+        ],
+        "fees_assign": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "fees_group_id",
+          "id",
+          "modified_at",
+          "status",
+          "student_id"
+        ],
+        "fees_assign_details": [
+          "academic_year_id",
+          "amount",
+          "created_at",
+          "fees_assign_id",
+          "fees_master_id",
+          "id",
+          "modified_at",
+          "status"
+        ],
+        "fees_collect": [
+          "academic_year_id",
+          "created_at",
+          "id",
+          "modified_at",
+          "payment_date",
+          "payment_mode",
+          "receipt_no",
+          "remarks",
+          "student_id",
+          "total_paid"
+        ],
+        "fees_collect_details": [
+          "created_at",
+          "fees_assign_details_id",
+          "fees_collect_id",
+          "id",
+          "paid_amount"
+        ]
+      },
+      "size_bytes": 4631
+    },
+    {
+      "file": "server/migrations/010_parent_persons.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "parent_persons",
+        "students"
+      ],
+      "references": [
+        "parent_persons"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "parent_persons"
+      ],
+      "alter_tables": [
+        "students"
+      ],
+      "columns_by_table": {
+        "parent_persons": [
+          "address",
+          "created_at",
+          "email",
+          "full_name",
+          "id",
+          "occupation",
+          "phone",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 1630
+    },
+    {
+      "file": "server/migrations/011_add_status_to_fees_types.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_types"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "fees_types"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 86
+    },
+    {
+      "file": "server/migrations/011_reconcile_student_promotions_state.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "classes",
+        "sections",
+        "students"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1975
+    },
+    {
+      "file": "server/migrations/011_teacher_assignments.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "classes",
+        "teacher_assignments"
+      ],
+      "references": [
+        "classes",
+        "sections",
+        "subjects",
+        "teachers"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "teacher_assignments"
+      ],
+      "alter_tables": [
+        "classes"
+      ],
+      "columns_by_table": {
+        "teacher_assignments": [
+          "class_id",
+          "created_at",
+          "id",
+          "section_id",
+          "subject_id",
+          "teacher_id",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 1947
+    },
+    {
+      "file": "server/migrations/012_add_code_to_fees_types.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_types"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "fees_types"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 67
+    },
+    {
+      "file": "server/migrations/012_driver_designation_and_drivers_staff_id.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "designations",
+        "drivers"
+      ],
+      "references": [
+        "staff"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "drivers"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 963
+    },
+    {
+      "file": "server/migrations/013_add_fine_details_to_fees_master.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_master"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "fees_master"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 324
+    },
+    {
+      "file": "server/migrations/013_user_role_driver.sql",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "user_roles",
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 904
+    },
+    {
+      "file": "server/migrations/014_backfill_drivers_to_staff_users.sql",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "drivers",
+        "staff",
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 6135
+    },
+    {
+      "file": "server/migrations/014_fix_fees_assign_unique_constraint.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_assign"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "fees_assign"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 555
+    },
+    {
+      "file": "server/migrations/015_attendance_module_completion.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "IF",
+        "staff_attendance",
+        "teacher_attendance"
+      ],
+      "references": [
+        "academic_years",
+        "staff",
+        "teachers"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "staff_attendance",
+        "teacher_attendance"
+      ],
+      "alter_tables": [
+        "IF"
+      ],
+      "columns_by_table": {
+        "teacher_attendance": [
+          "academic_year_id",
+          "attendance_date",
+          "check_in_time",
+          "check_out_time",
+          "created_at",
+          "id",
+          "marked_by",
+          "remark",
+          "status",
+          "teacher_id",
+          "updated_at"
+        ],
+        "staff_attendance": [
+          "academic_year_id",
+          "attendance_date",
+          "check_in_time",
+          "check_out_time",
+          "created_at",
+          "id",
+          "marked_by",
+          "remark",
+          "staff_id",
+          "status",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 3062
+    },
+    {
+      "file": "server/migrations/016_attendance_hardening_and_audit.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "attendance",
+        "staff_attendance",
+        "teacher_attendance"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "attendance"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1518
+    },
+    {
+      "file": "server/migrations/017_backfill_teacher_class_subject_from_mappings.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "teachers"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 3060
+    },
+    {
+      "file": "server/migrations/017_fix_dummy_seed_user_passwords_to_phone.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1116
+    },
+    {
+      "file": "server/migrations/018_unify_teacher_into_staff_attendance.sql",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "staff_attendance"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1034
+    },
+    {
+      "file": "server/migrations/019_exams_results_module_upgrade.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "references": [
+        "exam_subjects",
+        "exams",
+        "sections",
+        "subjects"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "exam_subjects"
+      ],
+      "alter_tables": [
+        "exam_results",
+        "exams"
+      ],
+      "columns_by_table": {
+        "exam_subjects": [
+          "created_at",
+          "created_by",
+          "exam_component",
+          "exam_id",
+          "id",
+          "is_active",
+          "max_marks",
+          "modified_at",
+          "passing_marks",
+          "subject_id"
+        ]
+      },
+      "size_bytes": 2808
+    },
+    {
+      "file": "server/migrations/019_leave_applications_approval_columns.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "leave_applications"
+      ],
+      "references": [
+        "staff"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "leave_applications"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1852
+    },
+    {
+      "file": "server/migrations/020_exams_results_uniqueness_and_component.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_results"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "exam_results"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1389
+    },
+    {
+      "file": "server/migrations/020_holiday_management_module.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "holidays"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "holidays"
+      ],
+      "alter_tables": [
+        "holidays"
+      ],
+      "columns_by_table": {
+        "holidays": [
+          "academic_year_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "holiday_name",
+          "holiday_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "start_date",
+          "title",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 3142
+    },
+    {
+      "file": "server/migrations/021_exams_result_finalization.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exams"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "exams"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 675
+    },
+    {
+      "file": "server/migrations/021_users_occupation.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "users"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1321
+    },
+    {
+      "file": "server/migrations/022_teacher_assignments_unique_slot.sql",
+      "ops": [
+        "DELETE"
+      ],
+      "tables": [
+        "teacher_assignments"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1363
+    },
+    {
+      "file": "server/migrations/023_exams_unique_definition.sql",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 413
+    },
+    {
+      "file": "server/migrations/024_exam_subjects_schedule_fields.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exam_subjects"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "exam_subjects"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 216
+    },
+    {
+      "file": "server/migrations/025_remove_exams_results_module.sql",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 232
+    },
+    {
+      "file": "server/migrations/026_apply_current_subjects_to_all_classes.sql",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "subjects",
+        "tmp_subject_source"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 3269
+    },
+    {
+      "file": "server/migrations/027_backfill_section_teachers_round_robin.sql",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "sections"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 1749
+    },
+    {
+      "file": "server/migrations/028_exams_results_module.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_classes",
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "exam_classes",
+        "exam_subjects",
+        "exams",
+        "sections",
+        "students",
+        "subjects",
+        "users"
+      ],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "exam_classes",
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "alter_tables": [
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "columns_by_table": {
+        "exams": [
+          "academic_year_id",
+          "created_at",
+          "created_by",
+          "description",
+          "exam_name",
+          "exam_type",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "exam_classes": [
+          "class_id",
+          "exam_id"
+        ],
+        "exam_subjects": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "end_time",
+          "exam_date",
+          "exam_id",
+          "id",
+          "is_active",
+          "max_marks",
+          "modified_at",
+          "passing_marks",
+          "section_id",
+          "start_time",
+          "subject_id"
+        ],
+        "exam_results": [
+          "created_at",
+          "created_by",
+          "entered_by",
+          "exam_id",
+          "exam_subject_id",
+          "grade",
+          "id",
+          "is_absent",
+          "is_active",
+          "marks_obtained",
+          "modified_at",
+          "remarks",
+          "student_id",
+          "subject_id"
+        ]
+      },
+      "size_bytes": 10044
+    },
+    {
+      "file": "server/migrations/029_exam_subjects_drop_legacy_component_unique.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exam_subjects"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "exam_subjects"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 539
+    },
+    {
+      "file": "server/migrations/030_remove_dummy_seed_subjects.sql",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "class_schedules",
+        "exam_results",
+        "exam_subjects",
+        "subjects",
+        "teachers"
+      ],
+      "references": [
+        "in"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 2043
+    },
+    {
+      "file": "server/migrations/031_exam_subjects_exam_class_integrity.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "exam_classes",
+        "exam_subjects"
+      ],
+      "references": [
+        "exam_classes"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "exam_subjects"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1112
+    },
+    {
+      "file": "server/migrations/032_exam_grade_scale.sql",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "exam_grade"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "exam_grade"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "exam_grade": [
+          "created_at",
+          "grad",
+          "id",
+          "is_active",
+          "max_precentage",
+          "min_precentage",
+          "modified_at"
+        ]
+      },
+      "size_bytes": 1703
+    },
+    {
+      "file": "server/migrations/033_school_profile_contact_fields.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "IF"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "IF"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 322
+    },
+    {
+      "file": "server/migrations/034_account_delete_requests.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "account_delete_requests"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "account_delete_requests"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "account_delete_requests": [
+          "created_at",
+          "delete_request_date",
+          "id",
+          "reason",
+          "requested_by",
+          "requisition_date",
+          "reviewed_at",
+          "reviewed_by",
+          "status",
+          "updated_at",
+          "user_id"
+        ]
+      },
+      "size_bytes": 1318
+    },
+    {
+      "file": "server/migrations/035_enquiries_module.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "enquiries"
+      ],
+      "references": [
+        "academic_years",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "enquiries"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "enquiries": [
+          "academic_year_id",
+          "address",
+          "created_at",
+          "created_by",
+          "description",
+          "email",
+          "enquiry_about",
+          "enquiry_date",
+          "follow_up_date",
+          "id",
+          "mobile_number",
+          "name",
+          "status",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 1216
+    },
+    {
+      "file": "server/migrations/036_enquiries_drop_follow_up_date.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "enquiries"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "enquiries"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 135
+    },
+    {
+      "file": "server/migrations/archive/04_migrarion.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "parents",
+        "teachers"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "parents",
+        "teachers"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1709
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_guardian_role_to_user_roles.sql",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "user_roles"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 731
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_notice_board_message_to_column.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "notice_board"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "notice_board"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 229
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_students_gr_number.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "UPDATE",
+        "students"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "students"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1013
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_user_id_to_parents_guardians.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "guardians",
+        "parents"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "guardians",
+        "parents"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 891
+    },
+    {
+      "file": "server/migrations/archive/legacy/chat_settings_and_blocked.sql",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "blocked_users",
+        "chat_settings",
+        "reports"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "blocked_users",
+        "chat_settings",
+        "reports"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "chat_settings": [
+          "cleared_at",
+          "created_at",
+          "disappearing_seconds",
+          "id",
+          "is_muted",
+          "muted_until",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "blocked_users": [
+          "blocked_user_id",
+          "created_at",
+          "id",
+          "user_id"
+        ],
+        "reports": [
+          "created_at",
+          "id",
+          "reason",
+          "reported_user_id",
+          "user_id"
+        ]
+      },
+      "size_bytes": 1863
+    },
+    {
+      "file": "server/migrations/archive/legacy/class_syllabus_add_foreign_keys.sql",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "class_syllabus"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "class_syllabus"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 753
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_application_tables.sql",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "ON",
+        "calendar_events",
+        "calls",
+        "chats",
+        "emails",
+        "files",
+        "notes",
+        "todos"
+      ],
+      "references": [
+        "files",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "calendar_events",
+        "calls",
+        "chats",
+        "emails",
+        "files",
+        "notes",
+        "todos"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "chats": [
+          "created_at",
+          "file_url",
+          "id",
+          "is_pinned",
+          "is_read",
+          "message",
+          "message_type",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "calls": [
+          "call_date",
+          "call_type",
+          "created_at",
+          "duration",
+          "id",
+          "phone_number",
+          "recipient_id",
+          "user_id"
+        ],
+        "calendar_events": [
+          "created_at",
+          "description",
+          "end_date",
+          "event_color",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "emails": [
+          "attachment_url",
+          "body",
+          "created_at",
+          "folder",
+          "has_attachment",
+          "id",
+          "is_important",
+          "is_read",
+          "is_starred",
+          "recipient_email",
+          "sender_email",
+          "sender_id",
+          "sent_at",
+          "subject",
+          "updated_at",
+          "user_id"
+        ],
+        "todos": [
+          "assigned_to",
+          "created_at",
+          "description",
+          "due_date",
+          "id",
+          "is_important",
+          "priority",
+          "status",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "notes": [
+          "content",
+          "created_at",
+          "id",
+          "is_deleted",
+          "is_important",
+          "priority",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "files": [
+          "created_at",
+          "file_type",
+          "file_url",
+          "id",
+          "is_folder",
+          "is_shared",
+          "mime_type",
+          "name",
+          "parent_folder_id",
+          "shared_with",
+          "size",
+          "updated_at",
+          "user_id"
+        ]
+      },
+      "size_bytes": 13250
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_class_rooms_table.sql",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "class_rooms"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "class_rooms"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "class_rooms": [
+          "building",
+          "capacity",
+          "created_at",
+          "description",
+          "floor",
+          "id",
+          "modified_at",
+          "room_no",
+          "status"
+        ]
+      },
+      "size_bytes": 2566
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_class_syllabus_table.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "class_syllabus"
+      ],
+      "references": [
+        "classes",
+        "sections"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "class_syllabus"
+      ],
+      "alter_tables": [
+        "class_syllabus"
+      ],
+      "columns_by_table": {
+        "class_syllabus": [
+          "academic_year_id",
+          "class_id",
+          "class_name",
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "section_id",
+          "section_name",
+          "status",
+          "subject_group"
+        ]
+      },
+      "size_bytes": 2260
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_events_table.sql",
+      "ops": [
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "ON",
+        "events"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "events"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "events": [
+          "attachment_url",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "event_category",
+          "event_color",
+          "event_for",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "target_class_ids",
+          "target_section_ids",
+          "title",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 1405
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_leave_tables.sql",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "leave_applications",
+        "leave_types"
+      ],
+      "references": [
+        "leave_types",
+        "staff",
+        "students",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "leave_applications",
+        "leave_types"
+      ],
+      "alter_tables": [],
+      "columns_by_table": {
+        "leave_types": [
+          "created_at",
+          "description",
+          "id",
+          "is_active",
+          "leave_type",
+          "max_days_per_year"
+        ],
+        "leave_applications": [
+          "applied_at",
+          "end_date",
+          "id",
+          "leave_type_id",
+          "no_of_days",
+          "reason",
+          "remarks",
+          "reviewed_at",
+          "reviewed_by",
+          "staff_id",
+          "start_date",
+          "status",
+          "student_id"
+        ]
+      },
+      "size_bytes": 2281
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_notice_board_table.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "CREATE",
+        "ON",
+        "modified_at",
+        "notice_board"
+      ],
+      "references": [
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "notice_board"
+      ],
+      "alter_tables": [
+        "notice_board"
+      ],
+      "columns_by_table": {
+        "notice_board": [
+          "content",
+          "created_at",
+          "created_by",
+          "id",
+          "message_to",
+          "modified_at",
+          "title"
+        ]
+      },
+      "size_bytes": 3297
+    },
+    {
+      "file": "server/migrations/archive/legacy/fix_fee_collections_payment_method_constraint.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "existing",
+        "fee_collections",
+        "fee_collectionsatte"
+      ],
+      "references": [],
+      "unsafe_drop": true,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [
+        "fee_collections"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 1076
+    },
+    {
+      "file": "server/migrations/archive/legacy/fix_users_id_sequence.sql",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 180
+    },
+    {
+      "file": "server/migrations/archive/legacy/remove_duplicate_students.sql",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "fee_collections",
+        "guardians",
+        "leave_applications",
+        "parents",
+        "references",
+        "student_attendance",
+        "students"
+      ],
+      "references": [
+        "then"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [],
+      "alter_tables": [],
+      "columns_by_table": {},
+      "size_bytes": 3255
+    },
+    {
+      "file": "server/migrations/archive/legacy/schedule_table_add_status_modified.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "schedule",
+        "time_slots"
+      ],
+      "references": [],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "schedule"
+      ],
+      "alter_tables": [
+        "time_slots"
+      ],
+      "columns_by_table": {},
+      "size_bytes": 748
+    },
+    {
+      "file": "server/sql/template_schema.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "The",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "alter_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "columns_by_table": {
+        "academic_years": [
+          "created_at",
+          "created_by",
+          "end_date",
+          "id",
+          "is_active",
+          "is_current",
+          "modified_at",
+          "start_date",
+          "year_name"
+        ],
+        "addresses": [
+          "created_at",
+          "current_address",
+          "id",
+          "permanent_address",
+          "person_id",
+          "role_id",
+          "user_id"
+        ],
+        "attendance": [
+          "academic_year_id",
+          "attendance_date",
+          "check_in_time",
+          "check_out_time",
+          "class_id",
+          "created_at",
+          "created_by",
+          "id",
+          "marked_by",
+          "modified_at",
+          "remarks",
+          "section_id",
+          "status",
+          "student_id"
+        ],
+        "blocked_users": [
+          "blocked_user_id",
+          "created_at",
+          "id",
+          "user_id"
+        ],
+        "blood_groups": [
+          "blood_group",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "calendar_events": [
+          "created_at",
+          "description",
+          "end_date",
+          "event_color",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "calls": [
+          "call_date",
+          "call_type",
+          "created_at",
+          "duration",
+          "id",
+          "phone_number",
+          "recipient_id",
+          "user_id"
+        ],
+        "casts": [
+          "cast_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_id"
+        ],
+        "chat_settings": [
+          "cleared_at",
+          "created_at",
+          "disappearing_seconds",
+          "id",
+          "is_muted",
+          "muted_until",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "chats": [
+          "created_at",
+          "file_url",
+          "id",
+          "is_pinned",
+          "is_read",
+          "message",
+          "message_type",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "class_rooms": [
+          "building",
+          "capacity",
+          "created_at",
+          "description",
+          "floor",
+          "id",
+          "modified_at",
+          "room_no",
+          "status"
+        ],
+        "class_schedules": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "day_of_week",
+          "id",
+          "is_active",
+          "modified_at",
+          "room_number",
+          "section_id",
+          "subject_id",
+          "teacher_id",
+          "time_slot_id"
+        ],
+        "class_syllabus": [
+          "academic_year_id",
+          "class_id",
+          "class_name",
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "section_id",
+          "section_name",
+          "status",
+          "subject_group"
+        ],
+        "classes": [
+          "academic_year_id",
+          "class_code",
+          "class_fee",
+          "class_name",
+          "class_teacher_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students"
+        ],
+        "departments": [
+          "created_at",
+          "created_by",
+          "department_code",
+          "department_name",
+          "description",
+          "head_of_department",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "designations": [
+          "created_at",
+          "created_by",
+          "department_id",
+          "description",
+          "designation_name",
+          "id",
+          "is_active",
+          "modified_at",
+          "salary_range_max",
+          "salary_range_min"
+        ],
+        "document_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "document_type",
+          "id",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "documents": [
+          "created_at",
+          "created_by",
+          "document_name",
+          "document_type_id",
+          "expiry_date",
+          "file_path",
+          "file_size",
+          "id",
+          "is_active",
+          "is_verified",
+          "modified_at",
+          "remarks",
+          "staff_id",
+          "student_id",
+          "upload_date",
+          "verified_by",
+          "verified_date"
+        ],
+        "drivers": [
+          "address",
+          "created_at",
+          "created_by",
+          "driver_name",
+          "email",
+          "emergency_contact",
+          "employee_code",
+          "id",
+          "is_active",
+          "joining_date",
+          "license_expiry",
+          "license_number",
+          "modified_at",
+          "phone",
+          "salary"
+        ],
+        "emails": [
+          "attachment_url",
+          "body",
+          "created_at",
+          "folder",
+          "has_attachment",
+          "id",
+          "is_important",
+          "is_read",
+          "is_starred",
+          "recipient_email",
+          "sender_email",
+          "sender_id",
+          "sent_at",
+          "subject",
+          "updated_at",
+          "user_id"
+        ],
+        "events": [
+          "attachment_url",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "event_category",
+          "event_color",
+          "event_for",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "target_class_ids",
+          "target_section_ids",
+          "title",
+          "updated_at"
+        ],
+        "exam_results": [
+          "created_at",
+          "created_by",
+          "exam_id",
+          "grade",
+          "id",
+          "is_absent",
+          "is_active",
+          "marks_obtained",
+          "modified_at",
+          "remarks",
+          "student_id",
+          "subject_id"
+        ],
+        "exams": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "exam_name",
+          "exam_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "start_date",
+          "total_marks"
+        ],
+        "fee_collections": [
+          "amount_paid",
+          "collected_by",
+          "created_at",
+          "created_by",
+          "fee_structure_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "payment_date",
+          "payment_method",
+          "receipt_number",
+          "remarks",
+          "student_id",
+          "transaction_id"
+        ],
+        "fee_structures": [
+          "academic_year_id",
+          "amount",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "due_date",
+          "fee_name",
+          "fee_type",
+          "id",
+          "installment_allowed",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "files": [
+          "created_at",
+          "file_type",
+          "file_url",
+          "id",
+          "is_folder",
+          "is_shared",
+          "mime_type",
+          "name",
+          "parent_folder_id",
+          "shared_with",
+          "size",
+          "updated_at",
+          "user_id"
+        ],
+        "guardians": [
+          "address",
+          "annual_income",
+          "created_at",
+          "created_by",
+          "email",
+          "first_name",
+          "guardian_type",
+          "id",
+          "is_active",
+          "is_emergency_contact",
+          "is_primary_contact",
+          "last_name",
+          "modified_at",
+          "occupation",
+          "office_address",
+          "phone",
+          "relation",
+          "student_id",
+          "user_id"
+        ],
+        "holidays": [
+          "academic_year_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "holiday_name",
+          "holiday_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "start_date"
+        ],
+        "hostel_rooms": [
+          "created_at",
+          "created_by",
+          "current_occupancy",
+          "facilities",
+          "floor_number",
+          "hostel_id",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "monthly_fee",
+          "room_number",
+          "room_type_id"
+        ],
+        "hostels": [
+          "address",
+          "contact_number",
+          "created_at",
+          "created_by",
+          "facilities",
+          "hostel_name",
+          "hostel_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "rules",
+          "total_rooms",
+          "warden_id"
+        ],
+        "houses": [
+          "created_at",
+          "created_by",
+          "description",
+          "house_captain",
+          "house_color",
+          "house_name",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "languages": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "is_compulsory",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "leave_applications": [
+          "applicant_type",
+          "approved_by",
+          "approved_date",
+          "created_at",
+          "created_by",
+          "emergency_contact",
+          "end_date",
+          "id",
+          "is_active",
+          "leave_type_id",
+          "medical_certificate_path",
+          "modified_at",
+          "reason",
+          "rejection_reason",
+          "staff_id",
+          "start_date",
+          "status",
+          "student_id",
+          "total_days"
+        ],
+        "leave_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "leave_type",
+          "max_days",
+          "modified_at",
+          "requires_medical_certificate"
+        ],
+        "library_book_issues": [
+          "book_id",
+          "created_at",
+          "created_by",
+          "due_date",
+          "fine_amount",
+          "id",
+          "is_active",
+          "issue_date",
+          "issued_by",
+          "modified_at",
+          "remarks",
+          "return_date",
+          "returned_to",
+          "staff_id",
+          "status",
+          "student_id"
+        ],
+        "library_books": [
+          "author",
+          "available_copies",
+          "book_location",
+          "book_price",
+          "book_title",
+          "category_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "isbn",
+          "modified_at",
+          "publication_year",
+          "publisher",
+          "total_copies"
+        ],
+        "library_categories": [
+          "category_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "medical_conditions": [
+          "condition_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "requires_medication",
+          "severity_level"
+        ],
+        "mother_tongues": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "notes": [
+          "content",
+          "created_at",
+          "id",
+          "is_deleted",
+          "is_important",
+          "priority",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "notice_board": [
+          "content",
+          "created_at",
+          "created_by",
+          "id",
+          "message_to",
+          "modified_at",
+          "title"
+        ],
+        "parents": [
+          "created_at",
+          "father_email",
+          "father_image_url",
+          "father_name",
+          "father_occupation",
+          "father_phone",
+          "id",
+          "mother_email",
+          "mother_image_url",
+          "mother_name",
+          "mother_occupation",
+          "mother_phone",
+          "student_id",
+          "updated_at",
+          "user_id"
+        ],
+        "pickup_points": [
+          "address",
+          "created_at",
+          "created_by",
+          "distance_from_school",
+          "drop_time",
+          "id",
+          "is_active",
+          "landmark",
+          "modified_at",
+          "pickup_time",
+          "point_name",
+          "route_id",
+          "sequence_order"
+        ],
+        "religions": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_name"
+        ],
+        "reports": [
+          "created_at",
+          "id",
+          "reason",
+          "reported_user_id",
+          "user_id"
+        ],
+        "room_types": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "room_fee",
+          "room_type"
+        ],
+        "routes": [
+          "created_at",
+          "created_by",
+          "description",
+          "end_point",
+          "estimated_time",
+          "id",
+          "is_active",
+          "modified_at",
+          "route_code",
+          "route_fee",
+          "route_name",
+          "start_point",
+          "total_distance"
+        ],
+        "sections": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students",
+          "room_number",
+          "section_name",
+          "section_teacher_id"
+        ],
+        "staff": [
+          "address",
+          "blood_group_id",
+          "created_at",
+          "created_by",
+          "date_of_birth",
+          "department_id",
+          "designation_id",
+          "email",
+          "emergency_contact_name",
+          "emergency_contact_phone",
+          "employee_code",
+          "experience_years",
+          "first_name",
+          "gender",
+          "id",
+          "is_active",
+          "joining_date",
+          "last_name",
+          "modified_at",
+          "phone",
+          "photo_url",
+          "qualification",
+          "salary",
+          "user_id"
+        ],
+        "student_medical_conditions": [
+          "created_at",
+          "created_by",
+          "diagnosed_date",
+          "doctor_contact",
+          "doctor_name",
+          "id",
+          "is_active",
+          "medical_condition_id",
+          "medication",
+          "modified_at",
+          "special_instructions",
+          "student_id"
+        ],
+        "student_promotions": [
+          "created_at",
+          "created_by",
+          "from_academic_year_id",
+          "from_class_id",
+          "from_section_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "promoted_by",
+          "promotion_date",
+          "remarks",
+          "status",
+          "student_id",
+          "to_academic_year_id",
+          "to_class_id",
+          "to_section_id"
+        ],
+        "students": [
+          "aadhar_no",
+          "academic_year_id",
+          "address",
+          "address_id",
+          "admission_date",
+          "admission_number",
+          "bank_name",
+          "blood_group_id",
+          "branch",
+          "cast_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "current_address",
+          "date_of_birth",
+          "email",
+          "first_name",
+          "gender",
+          "gr_number",
+          "guardian_id",
+          "hostel_id",
+          "hostel_room_id",
+          "house_id",
+          "id",
+          "ifsc",
+          "is_active",
+          "is_hostel_required",
+          "is_transport_required",
+          "known_allergies",
+          "last_name",
+          "medical_condition",
+          "medications",
+          "modified_at",
+          "mother_tongue_id",
+          "nationality",
+          "other_information",
+          "parent_id",
+          "pen_number",
+          "permanent_address",
+          "phone",
+          "photo_url",
+          "pickup_point_id",
+          "place_of_birth",
+          "previous_school",
+          "previous_school_address",
+          "religion_id",
+          "roll_number",
+          "route_id",
+          "section_id",
+          "sibiling_1",
+          "sibiling_1_class",
+          "sibiling_2",
+          "sibiling_2_class",
+          "unique_student_ids",
+          "user_id",
+          "vehicle_number"
+        ],
+        "subjects": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "practical_hours",
+          "subject_code",
+          "subject_name",
+          "teacher_id",
+          "theory_hours",
+          "total_marks"
+        ],
+        "teacher_routines": [
+          "academic_year_id",
+          "class_schedule_id",
+          "created_at",
+          "created_by",
+          "id",
+          "is_active",
+          "modified_at",
+          "teacher_id"
+        ],
+        "teachers": [
+          "bank_name",
+          "blood_group",
+          "branch",
+          "class_id",
+          "contract_type",
+          "created_at",
+          "current_address",
+          "facebook",
+          "father_name",
+          "id",
+          "id_number",
+          "ifsc",
+          "instagram",
+          "languages_known",
+          "linkedin",
+          "marital_status",
+          "mother_name",
+          "pan_number",
+          "permanent_address",
+          "previous_school_address",
+          "previous_school_name",
+          "previous_school_phone",
+          "shift",
+          "staff_id",
+          "status",
+          "subject_id",
+          "twitter",
+          "updated_at",
+          "work_location",
+          "youtube"
+        ],
+        "time_slots": [
+          "created_at",
+          "created_by",
+          "duration",
+          "end_time",
+          "id",
+          "is_active",
+          "is_break",
+          "modified_at",
+          "slot_name",
+          "start_time"
+        ],
+        "todos": [
+          "assigned_to",
+          "created_at",
+          "description",
+          "due_date",
+          "id",
+          "is_important",
+          "priority",
+          "status",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "user_roles": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "permissions",
+          "role_name"
+        ],
+        "users": [
+          "avatar",
+          "created_at",
+          "created_by",
+          "current_address",
+          "email",
+          "first_name",
+          "id",
+          "is_active",
+          "last_login",
+          "last_name",
+          "modified_at",
+          "password_hash",
+          "permanent_address",
+          "phone",
+          "role_id",
+          "username"
+        ],
+        "vehicles": [
+          "brand",
+          "chassis_number",
+          "created_at",
+          "created_by",
+          "driver_id",
+          "fitness_certificate_expiry",
+          "fuel_type",
+          "gps_device_id",
+          "id",
+          "insurance_expiry",
+          "is_active",
+          "made_of_year",
+          "model",
+          "modified_at",
+          "permit_expiry",
+          "registration_number",
+          "route_id",
+          "seating_capacity",
+          "vehicle_number",
+          "vehicle_type"
+        ],
+        "school_profile": [
+          "created_at",
+          "id",
+          "logo_url",
+          "school_name",
+          "updated_at"
+        ]
+      },
+      "size_bytes": 233914
+    },
+    {
+      "file": "server/sql/template_schemas.sql",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "unsafe_drop": false,
+      "unsafe_truncate": false,
+      "create_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "alter_tables": [
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "columns_by_table": {
+        "academic_years": [
+          "created_at",
+          "created_by",
+          "end_date",
+          "id",
+          "is_active",
+          "is_current",
+          "modified_at",
+          "start_date",
+          "year_name"
+        ],
+        "addresses": [
+          "created_at",
+          "current_address",
+          "id",
+          "permanent_address",
+          "person_id",
+          "role_id",
+          "user_id"
+        ],
+        "attendance": [
+          "academic_year_id",
+          "attendance_date",
+          "check_in_time",
+          "check_out_time",
+          "class_id",
+          "created_at",
+          "created_by",
+          "id",
+          "marked_by",
+          "modified_at",
+          "remarks",
+          "section_id",
+          "status",
+          "student_id"
+        ],
+        "blocked_users": [
+          "blocked_user_id",
+          "created_at",
+          "id",
+          "user_id"
+        ],
+        "blood_groups": [
+          "blood_group",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "calendar_events": [
+          "created_at",
+          "description",
+          "end_date",
+          "event_color",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "calls": [
+          "call_date",
+          "call_type",
+          "created_at",
+          "duration",
+          "id",
+          "phone_number",
+          "recipient_id",
+          "user_id"
+        ],
+        "casts": [
+          "cast_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_id"
+        ],
+        "chat_settings": [
+          "cleared_at",
+          "created_at",
+          "disappearing_seconds",
+          "id",
+          "is_muted",
+          "muted_until",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "chats": [
+          "created_at",
+          "file_url",
+          "id",
+          "is_pinned",
+          "is_read",
+          "message",
+          "message_type",
+          "recipient_id",
+          "updated_at",
+          "user_id"
+        ],
+        "class_rooms": [
+          "building",
+          "capacity",
+          "created_at",
+          "description",
+          "floor",
+          "id",
+          "modified_at",
+          "room_no",
+          "status"
+        ],
+        "class_schedules": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "day_of_week",
+          "id",
+          "is_active",
+          "modified_at",
+          "room_number",
+          "section_id",
+          "subject_id",
+          "teacher_id",
+          "time_slot_id"
+        ],
+        "class_syllabus": [
+          "academic_year_id",
+          "class_id",
+          "class_name",
+          "created_at",
+          "description",
+          "id",
+          "modified_at",
+          "section_id",
+          "section_name",
+          "status",
+          "subject_group"
+        ],
+        "classes": [
+          "academic_year_id",
+          "class_code",
+          "class_fee",
+          "class_name",
+          "class_teacher_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students"
+        ],
+        "departments": [
+          "created_at",
+          "created_by",
+          "department_code",
+          "department_name",
+          "description",
+          "head_of_department",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "designations": [
+          "created_at",
+          "created_by",
+          "department_id",
+          "description",
+          "designation_name",
+          "id",
+          "is_active",
+          "modified_at",
+          "salary_range_max",
+          "salary_range_min"
+        ],
+        "document_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "document_type",
+          "id",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "documents": [
+          "created_at",
+          "created_by",
+          "document_name",
+          "document_type_id",
+          "expiry_date",
+          "file_path",
+          "file_size",
+          "id",
+          "is_active",
+          "is_verified",
+          "modified_at",
+          "remarks",
+          "staff_id",
+          "student_id",
+          "upload_date",
+          "verified_by",
+          "verified_date"
+        ],
+        "drivers": [
+          "address",
+          "created_at",
+          "created_by",
+          "driver_name",
+          "email",
+          "emergency_contact",
+          "employee_code",
+          "id",
+          "is_active",
+          "joining_date",
+          "license_expiry",
+          "license_number",
+          "modified_at",
+          "phone",
+          "salary"
+        ],
+        "emails": [
+          "attachment_url",
+          "body",
+          "created_at",
+          "folder",
+          "has_attachment",
+          "id",
+          "is_important",
+          "is_read",
+          "is_starred",
+          "recipient_email",
+          "sender_email",
+          "sender_id",
+          "sent_at",
+          "subject",
+          "updated_at",
+          "user_id"
+        ],
+        "events": [
+          "attachment_url",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "event_category",
+          "event_color",
+          "event_for",
+          "id",
+          "is_all_day",
+          "location",
+          "start_date",
+          "target_class_ids",
+          "target_section_ids",
+          "title",
+          "updated_at"
+        ],
+        "exam_results": [
+          "created_at",
+          "created_by",
+          "exam_id",
+          "grade",
+          "id",
+          "is_absent",
+          "is_active",
+          "marks_obtained",
+          "modified_at",
+          "remarks",
+          "student_id",
+          "subject_id"
+        ],
+        "exams": [
+          "academic_year_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "exam_name",
+          "exam_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "start_date",
+          "total_marks"
+        ],
+        "fee_collections": [
+          "amount_paid",
+          "collected_by",
+          "created_at",
+          "created_by",
+          "fee_structure_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "payment_date",
+          "payment_method",
+          "receipt_number",
+          "remarks",
+          "student_id",
+          "transaction_id"
+        ],
+        "fee_structures": [
+          "academic_year_id",
+          "amount",
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "due_date",
+          "fee_name",
+          "fee_type",
+          "id",
+          "installment_allowed",
+          "is_active",
+          "is_mandatory",
+          "modified_at"
+        ],
+        "files": [
+          "created_at",
+          "file_type",
+          "file_url",
+          "id",
+          "is_folder",
+          "is_shared",
+          "mime_type",
+          "name",
+          "parent_folder_id",
+          "shared_with",
+          "size",
+          "updated_at",
+          "user_id"
+        ],
+        "guardians": [
+          "address",
+          "annual_income",
+          "created_at",
+          "created_by",
+          "email",
+          "first_name",
+          "guardian_type",
+          "id",
+          "is_active",
+          "is_emergency_contact",
+          "is_primary_contact",
+          "last_name",
+          "modified_at",
+          "occupation",
+          "office_address",
+          "phone",
+          "relation",
+          "student_id",
+          "user_id"
+        ],
+        "holidays": [
+          "academic_year_id",
+          "created_at",
+          "created_by",
+          "description",
+          "end_date",
+          "holiday_name",
+          "holiday_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "start_date"
+        ],
+        "hostel_rooms": [
+          "created_at",
+          "created_by",
+          "current_occupancy",
+          "facilities",
+          "floor_number",
+          "hostel_id",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "monthly_fee",
+          "room_number",
+          "room_type_id"
+        ],
+        "hostels": [
+          "address",
+          "contact_number",
+          "created_at",
+          "created_by",
+          "facilities",
+          "hostel_name",
+          "hostel_type",
+          "id",
+          "is_active",
+          "modified_at",
+          "rules",
+          "total_rooms",
+          "warden_id"
+        ],
+        "houses": [
+          "created_at",
+          "created_by",
+          "description",
+          "house_captain",
+          "house_color",
+          "house_name",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "languages": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "is_compulsory",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "leave_applications": [
+          "applicant_type",
+          "approved_by",
+          "approved_date",
+          "created_at",
+          "created_by",
+          "emergency_contact",
+          "end_date",
+          "id",
+          "is_active",
+          "leave_type_id",
+          "medical_certificate_path",
+          "modified_at",
+          "reason",
+          "rejection_reason",
+          "staff_id",
+          "start_date",
+          "status",
+          "student_id",
+          "total_days"
+        ],
+        "leave_types": [
+          "applicable_for",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "leave_type",
+          "max_days",
+          "modified_at",
+          "requires_medical_certificate"
+        ],
+        "library_book_issues": [
+          "book_id",
+          "created_at",
+          "created_by",
+          "due_date",
+          "fine_amount",
+          "id",
+          "is_active",
+          "issue_date",
+          "issued_by",
+          "modified_at",
+          "remarks",
+          "return_date",
+          "returned_to",
+          "staff_id",
+          "status",
+          "student_id"
+        ],
+        "library_books": [
+          "author",
+          "available_copies",
+          "book_location",
+          "book_price",
+          "book_title",
+          "category_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "isbn",
+          "modified_at",
+          "publication_year",
+          "publisher",
+          "total_copies"
+        ],
+        "library_categories": [
+          "category_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at"
+        ],
+        "medical_conditions": [
+          "condition_name",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "requires_medication",
+          "severity_level"
+        ],
+        "mother_tongues": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "language_code",
+          "language_name",
+          "modified_at"
+        ],
+        "notes": [
+          "content",
+          "created_at",
+          "id",
+          "is_deleted",
+          "is_important",
+          "priority",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "notice_board": [
+          "content",
+          "created_at",
+          "created_by",
+          "id",
+          "message_to",
+          "modified_at",
+          "title"
+        ],
+        "parents": [
+          "created_at",
+          "father_email",
+          "father_image_url",
+          "father_name",
+          "father_occupation",
+          "father_phone",
+          "id",
+          "mother_email",
+          "mother_image_url",
+          "mother_name",
+          "mother_occupation",
+          "mother_phone",
+          "student_id",
+          "updated_at",
+          "user_id"
+        ],
+        "pickup_points": [
+          "address",
+          "created_at",
+          "created_by",
+          "distance_from_school",
+          "drop_time",
+          "id",
+          "is_active",
+          "landmark",
+          "modified_at",
+          "pickup_time",
+          "point_name",
+          "route_id",
+          "sequence_order"
+        ],
+        "religions": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "religion_name"
+        ],
+        "reports": [
+          "created_at",
+          "id",
+          "reason",
+          "reported_user_id",
+          "user_id"
+        ],
+        "room_types": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_occupancy",
+          "modified_at",
+          "room_fee",
+          "room_type"
+        ],
+        "routes": [
+          "created_at",
+          "created_by",
+          "description",
+          "end_point",
+          "estimated_time",
+          "id",
+          "is_active",
+          "modified_at",
+          "route_code",
+          "route_fee",
+          "route_name",
+          "start_point",
+          "total_distance"
+        ],
+        "sections": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "max_students",
+          "modified_at",
+          "no_of_students",
+          "room_number",
+          "section_name",
+          "section_teacher_id"
+        ],
+        "staff": [
+          "address",
+          "blood_group_id",
+          "created_at",
+          "created_by",
+          "date_of_birth",
+          "department_id",
+          "designation_id",
+          "email",
+          "emergency_contact_name",
+          "emergency_contact_phone",
+          "employee_code",
+          "experience_years",
+          "first_name",
+          "gender",
+          "id",
+          "is_active",
+          "joining_date",
+          "last_name",
+          "modified_at",
+          "phone",
+          "photo_url",
+          "qualification",
+          "salary",
+          "user_id"
+        ],
+        "student_medical_conditions": [
+          "created_at",
+          "created_by",
+          "diagnosed_date",
+          "doctor_contact",
+          "doctor_name",
+          "id",
+          "is_active",
+          "medical_condition_id",
+          "medication",
+          "modified_at",
+          "special_instructions",
+          "student_id"
+        ],
+        "student_promotions": [
+          "created_at",
+          "created_by",
+          "from_academic_year_id",
+          "from_class_id",
+          "from_section_id",
+          "id",
+          "is_active",
+          "modified_at",
+          "promoted_by",
+          "promotion_date",
+          "remarks",
+          "status",
+          "student_id",
+          "to_academic_year_id",
+          "to_class_id",
+          "to_section_id"
+        ],
+        "students": [
+          "aadhar_no",
+          "academic_year_id",
+          "address",
+          "address_id",
+          "admission_date",
+          "admission_number",
+          "bank_name",
+          "blood_group_id",
+          "branch",
+          "cast_id",
+          "class_id",
+          "created_at",
+          "created_by",
+          "current_address",
+          "date_of_birth",
+          "email",
+          "first_name",
+          "gender",
+          "guardian_id",
+          "hostel_id",
+          "hostel_room_id",
+          "house_id",
+          "id",
+          "ifsc",
+          "is_active",
+          "is_hostel_required",
+          "is_transport_required",
+          "known_allergies",
+          "last_name",
+          "medical_condition",
+          "medications",
+          "modified_at",
+          "mother_tongue_id",
+          "nationality",
+          "other_information",
+          "parent_id",
+          "pen_number",
+          "permanent_address",
+          "phone",
+          "photo_url",
+          "pickup_point_id",
+          "place_of_birth",
+          "previous_school",
+          "previous_school_address",
+          "religion_id",
+          "roll_number",
+          "route_id",
+          "section_id",
+          "sibiling_1",
+          "sibiling_1_class",
+          "sibiling_2",
+          "sibiling_2_class",
+          "unique_student_ids",
+          "user_id",
+          "vehicle_number"
+        ],
+        "subjects": [
+          "class_id",
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "passing_marks",
+          "practical_hours",
+          "subject_code",
+          "subject_name",
+          "teacher_id",
+          "theory_hours",
+          "total_marks"
+        ],
+        "teacher_routines": [
+          "academic_year_id",
+          "class_schedule_id",
+          "created_at",
+          "created_by",
+          "id",
+          "is_active",
+          "modified_at",
+          "teacher_id"
+        ],
+        "teachers": [
+          "bank_name",
+          "blood_group",
+          "branch",
+          "class_id",
+          "contract_type",
+          "created_at",
+          "current_address",
+          "facebook",
+          "father_name",
+          "id",
+          "id_number",
+          "ifsc",
+          "instagram",
+          "languages_known",
+          "linkedin",
+          "marital_status",
+          "mother_name",
+          "pan_number",
+          "permanent_address",
+          "previous_school_address",
+          "previous_school_name",
+          "previous_school_phone",
+          "shift",
+          "staff_id",
+          "status",
+          "subject_id",
+          "twitter",
+          "updated_at",
+          "work_location",
+          "youtube"
+        ],
+        "time_slots": [
+          "created_at",
+          "created_by",
+          "duration",
+          "end_time",
+          "id",
+          "is_active",
+          "is_break",
+          "modified_at",
+          "slot_name",
+          "start_time"
+        ],
+        "todos": [
+          "assigned_to",
+          "created_at",
+          "description",
+          "due_date",
+          "id",
+          "is_important",
+          "priority",
+          "status",
+          "tag",
+          "title",
+          "updated_at",
+          "user_id"
+        ],
+        "user_roles": [
+          "created_at",
+          "created_by",
+          "description",
+          "id",
+          "is_active",
+          "modified_at",
+          "permissions",
+          "role_name"
+        ],
+        "users": [
+          "avatar",
+          "created_at",
+          "created_by",
+          "current_address",
+          "email",
+          "first_name",
+          "id",
+          "is_active",
+          "last_login",
+          "last_name",
+          "modified_at",
+          "password_hash",
+          "permanent_address",
+          "phone",
+          "role_id",
+          "username"
+        ],
+        "vehicles": [
+          "brand",
+          "chassis_number",
+          "created_at",
+          "created_by",
+          "driver_id",
+          "fitness_certificate_expiry",
+          "fuel_type",
+          "gps_device_id",
+          "id",
+          "insurance_expiry",
+          "is_active",
+          "made_of_year",
+          "model",
+          "modified_at",
+          "permit_expiry",
+          "registration_number",
+          "route_id",
+          "seating_capacity",
+          "vehicle_number",
+          "vehicle_type"
+        ]
+      },
+      "size_bytes": 176058
+    }
+  ]
+}

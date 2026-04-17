@@ -1,0 +1,7124 @@
+{
+  "generated_at": "2026-04-16T14:08:48.359Z",
+  "database": "school_db",
+  "sql_file_count": 72,
+  "execute_count": 0,
+  "skip_count": 72,
+  "execution_order": [],
+  "cycle_detected": false,
+  "results": [
+    {
+      "file": "server/migrations/001_init_full_schema.sql",
+      "category": "init_dump",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "The",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "schools",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "super_admin_audit_log",
+        "super_admin_users",
+        "teacher_routines",
+        "teachers",
+        "tenant_sessions",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "schools",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [
+          "schools",
+          "super_admin_audit_log",
+          "super_admin_users",
+          "tenant_sessions"
+        ],
+        "create_existing_tables": [
+          "academic_years",
+          "addresses",
+          "attendance",
+          "blocked_users",
+          "blood_groups",
+          "calendar_events",
+          "calls",
+          "casts",
+          "chat_settings",
+          "chats",
+          "class_rooms",
+          "class_schedules",
+          "class_syllabus",
+          "classes",
+          "departments",
+          "designations",
+          "document_types",
+          "documents",
+          "drivers",
+          "emails",
+          "events",
+          "exam_results",
+          "exams",
+          "fee_collections",
+          "fee_structures",
+          "files",
+          "guardians",
+          "holidays",
+          "hostel_rooms",
+          "hostels",
+          "houses",
+          "languages",
+          "leave_applications",
+          "leave_types",
+          "library_book_issues",
+          "library_books",
+          "library_categories",
+          "medical_conditions",
+          "mother_tongues",
+          "notes",
+          "notice_board",
+          "parents",
+          "pickup_points",
+          "religions",
+          "reports",
+          "room_types",
+          "routes",
+          "school_profile",
+          "sections",
+          "staff",
+          "student_medical_conditions",
+          "student_promotions",
+          "students",
+          "subjects",
+          "teacher_routines",
+          "teachers",
+          "time_slots",
+          "todos",
+          "user_roles",
+          "users",
+          "vehicles"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_student_id_subject_id_key"
+          }
+        ],
+        "existing_constraints": [
+          {
+            "table": "students",
+            "name": "aadhar_unique"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_pkey"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_year_name_key"
+          },
+          {
+            "table": "addresses",
+            "name": "addresses_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_attendance_date_key"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_pkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_blocked_user_id_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_blood_group_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_pkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_pkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_pkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_cast_name_key"
+          },
+          {
+            "table": "casts",
+            "name": "casts_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_recipient_id_key"
+          },
+          {
+            "table": "chats",
+            "name": "chats_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_room_no_key"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_pkey"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "class_syllabus_pkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_class_code_key"
+          },
+          {
+            "table": "classes",
+            "name": "classes_pkey"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_code_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_name_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_pkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_designation_name_key"
+          },
+          {
+            "table": "designations",
+            "name": "designations_pkey"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_document_type_key"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_pkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_pkey"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_employee_code_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_license_number_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_pkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_pkey"
+          },
+          {
+            "table": "events",
+            "name": "events_pkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_pkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_receipt_number_key"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_pkey"
+          },
+          {
+            "table": "files",
+            "name": "files_pkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_pkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_pkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_room_number_key"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_pkey"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_hostel_name_key"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_pkey"
+          },
+          {
+            "table": "houses",
+            "name": "houses_house_name_key"
+          },
+          {
+            "table": "houses",
+            "name": "houses_pkey"
+          },
+          {
+            "table": "languages",
+            "name": "languages_language_name_key"
+          },
+          {
+            "table": "languages",
+            "name": "languages_pkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_pkey"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_leave_type_key"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_pkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_pkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_isbn_key"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_pkey"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_category_name_key"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_pkey"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_condition_name_key"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_pkey"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_language_name_key"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_pkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_pkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_pkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_pkey"
+          },
+          {
+            "table": "students",
+            "name": "pen_number_unique"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_religion_name_key"
+          },
+          {
+            "table": "reports",
+            "name": "reports_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_room_type_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_pkey"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_code_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_section_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_pkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_email_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_employee_code_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_pkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_pkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_pkey"
+          },
+          {
+            "table": "students",
+            "name": "students_admission_number_key"
+          },
+          {
+            "table": "students",
+            "name": "students_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_subject_code_key"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_pkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pan_number_key"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pkey"
+          },
+          {
+            "table": "time_slots",
+            "name": "time_slots_pkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_pkey"
+          },
+          {
+            "table": "students",
+            "name": "unique_student_ids_unique"
+          },
+          {
+            "table": "parents",
+            "name": "unique_student_parents"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_pkey"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_role_name_key"
+          },
+          {
+            "table": "users",
+            "name": "users_email_key"
+          },
+          {
+            "table": "users",
+            "name": "users_pkey"
+          },
+          {
+            "table": "users",
+            "name": "users_username_key"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_pkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_vehicle_number_key"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_academic_year_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_class_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_marked_by_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_section_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_blocked_user_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_fkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_user_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_recipient_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_user_id_fkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_religion_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_recipient_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_recipient_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_user_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_academic_year_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_class_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_section_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_subject_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_teacher_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_time_slot_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_academic_year_id_fkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_department_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_document_type_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_staff_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_student_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_verified_by_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_sender_id_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_user_id_fkey"
+          },
+          {
+            "table": "events",
+            "name": "events_created_by_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_student_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_subject_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_academic_year_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_class_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_collected_by_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_fee_structure_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_student_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_academic_year_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_class_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_parent_folder_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_user_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "fk_classes_teacher"
+          },
+          {
+            "table": "departments",
+            "name": "fk_departments_head"
+          },
+          {
+            "table": "hostels",
+            "name": "fk_hostels_warden"
+          },
+          {
+            "table": "parents",
+            "name": "fk_parents_student"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_role"
+          },
+          {
+            "table": "sections",
+            "name": "fk_sections_teacher"
+          },
+          {
+            "table": "students",
+            "name": "fk_student_address"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_guardian"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_hostel"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_parent"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_class"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_section"
+          },
+          {
+            "table": "teachers",
+            "name": "fk_teachers_staff"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_user"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_student_id_fkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_user_id_fkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_academic_year_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_room_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_approved_by_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_leave_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_staff_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_student_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_book_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_issued_by_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_returned_to_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_staff_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_student_id_fkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_category_id_fkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_user_id_fkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_created_by_fkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_user_id_fkey"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_route_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_reported_user_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_user_id_fkey"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_blood_group_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_department_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_designation_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_user_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_medical_condition_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_section_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_promoted_by_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_academic_year_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_blood_group_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_cast_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_class_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_hostel_room_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_house_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_mother_tongue_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_pickup_point_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_religion_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_route_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_user_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_class_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_teacher_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_academic_year_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_class_schedule_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_teacher_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_class_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_subject_id_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_assigned_to_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_user_id_fkey"
+          },
+          {
+            "table": "users",
+            "name": "users_role_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_driver_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_route_id_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "attendance",
+            "name": "idx_attendance_date"
+          },
+          {
+            "table": "attendance",
+            "name": "idx_attendance_student"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_blocked_user_id"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_user_id"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_end_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_start_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_user_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_call_date"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_recipient_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_user_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_recipient_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_user_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_created_at"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_recipient_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_user_id"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_room_no"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_status"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_class_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_created_at"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_section_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_status"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_folder"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sender_id"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sent_at"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_user_id"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_created_by"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_end_date"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_category"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_for"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_start_date"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_student"
+          },
+          {
+            "table": "fee_collections",
+            "name": "idx_fee_collections_student"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_created_at"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_file_type"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_is_folder"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_parent_folder_id"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_user_id"
+          },
+          {
+            "table": "guardians",
+            "name": "idx_guardians_user_id"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "idx_library_issues_status"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_created_at"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_is_deleted"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_priority"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_user_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_father_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_mother_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_student_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_reported_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_user_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_admission_number"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_class_section"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_guardian_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_parent_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_class_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_status"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_subject_id"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_due_date"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_priority"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_status"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "pg_dump-style schema/template file (not safe to replay onto existing DB)"
+      ]
+    },
+    {
+      "file": "server/migrations/002_create_student_promotions.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "student_promotions"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections",
+        "staff",
+        "students"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "student_promotions"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_section_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_section_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_promoted_by_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "student_promotions",
+            "name": "idx_student_promotions_student_id"
+          },
+          {
+            "table": "student_promotions",
+            "name": "idx_student_promotions_to_academic_year_id"
+          },
+          {
+            "table": "student_promotions",
+            "name": "idx_student_promotions_promotion_date"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/002_library_module.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "library_books",
+        "library_members"
+      ],
+      "references": [
+        "staff",
+        "students"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "library_members"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "library_books",
+            "column": "book_code"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "library_members",
+            "name": "library_members_card_number_key"
+          },
+          {
+            "table": "library_members",
+            "name": "library_members_student_id_fkey"
+          },
+          {
+            "table": "library_members",
+            "name": "library_members_staff_id_fkey"
+          }
+        ],
+        "pending_indexes": [
+          {
+            "table": "library_books",
+            "name": "idx_library_books_book_code"
+          },
+          {
+            "table": "library_members",
+            "name": "idx_library_members_one_student"
+          },
+          {
+            "table": "library_members",
+            "name": "idx_library_members_one_staff"
+          }
+        ],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/003_library_academic_year.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "library_books",
+        "library_members"
+      ],
+      "references": [
+        "academic_years"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "library_books",
+            "column": "academic_year_id"
+          },
+          {
+            "table": "library_members",
+            "column": "academic_year_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "library_books",
+            "name": "library_books_academic_year_id_fkey"
+          },
+          {
+            "table": "library_members",
+            "name": "library_members_academic_year_id_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "library_books",
+            "name": "idx_library_books_academic_year"
+          },
+          {
+            "table": "library_members",
+            "name": "idx_library_members_academic_year"
+          },
+          {
+            "table": "library_members",
+            "name": "idx_library_members_student_year"
+          },
+          {
+            "table": "library_members",
+            "name": "idx_library_members_staff_year"
+          },
+          {
+            "table": "library_books",
+            "name": "idx_library_books_book_code_year"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/003_parents_father_mother_user_ids.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "parents"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "parents",
+            "column": "father_user_id"
+          },
+          {
+            "table": "parents",
+            "column": "mother_user_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "parents",
+            "name": "idx_parents_father_user_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_mother_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/004_accounts_module.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "accounts_income",
+        "accounts_invoices",
+        "accounts_transactions"
+      ],
+      "references": [
+        "academic_years",
+        "accounts_income"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "accounts_income",
+          "accounts_invoices",
+          "accounts_transactions"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "accounts_income",
+            "name": "idx_accounts_income_year"
+          },
+          {
+            "table": "accounts_income",
+            "name": "idx_accounts_income_date"
+          },
+          {
+            "table": "accounts_invoices",
+            "name": "idx_accounts_invoices_number_year"
+          },
+          {
+            "table": "accounts_invoices",
+            "name": "idx_accounts_invoices_year"
+          },
+          {
+            "table": "accounts_transactions",
+            "name": "idx_accounts_transactions_year"
+          },
+          {
+            "table": "accounts_transactions",
+            "name": "idx_accounts_transactions_income"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/004_fix_swapped_teacher_student_role_ids.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/004_teachers_resume_joining_modified_at.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "teachers"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "teachers",
+            "column": "resume"
+          },
+          {
+            "table": "teachers",
+            "column": "joining_letter"
+          },
+          {
+            "table": "teachers",
+            "column": "modified_at"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/005_accounts_expenses_and_tx_expense_fk.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "accounts_expense_categories",
+        "accounts_expenses",
+        "accounts_transactions"
+      ],
+      "references": [
+        "academic_years",
+        "accounts_expense_categories",
+        "accounts_expenses"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "accounts_expense_categories",
+          "accounts_expenses"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "accounts_transactions",
+            "column": "expense_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "accounts_transactions",
+            "name": "accounts_transactions_expense_id_fkey"
+          },
+          {
+            "table": "accounts_transactions",
+            "name": "accounts_transactions_income_xor_expense"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "accounts_expense_categories",
+            "name": "idx_accounts_expense_categories_name_year"
+          },
+          {
+            "table": "accounts_expense_categories",
+            "name": "idx_accounts_expense_categories_year"
+          },
+          {
+            "table": "accounts_expenses",
+            "name": "idx_accounts_expenses_invoice_year"
+          },
+          {
+            "table": "accounts_expenses",
+            "name": "idx_accounts_expenses_year"
+          },
+          {
+            "table": "accounts_expenses",
+            "name": "idx_accounts_expenses_category"
+          },
+          {
+            "table": "accounts_expenses",
+            "name": "idx_accounts_expenses_date"
+          },
+          {
+            "table": "accounts_transactions",
+            "name": "idx_accounts_transactions_expense"
+          },
+          {
+            "table": "accounts_income",
+            "name": "idx_accounts_income_invoice_year"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/005_seed_realistic_academic_dummy_data.sql",
+      "category": "migration",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "addresses",
+        "attendance",
+        "blood_groups",
+        "casts",
+        "class",
+        "classes",
+        "guardians",
+        "houses",
+        "languages",
+        "mother_tongues",
+        "parents",
+        "religions",
+        "sections",
+        "staff_attendance",
+        "students",
+        "subjects",
+        "teacher_attendance",
+        "teachers",
+        "tmp_seed_students",
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/006_global_settings.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "settings"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "settings"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "settings",
+            "name": "idx_settings_group"
+          },
+          {
+            "table": "settings",
+            "name": "idx_settings_key"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/006_reseed_multi_academic_year_dummy_data.sql",
+      "category": "migration",
+      "ops": [
+        "DELETE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "addresses",
+        "attendance",
+        "blood_groups",
+        "casts",
+        "class",
+        "classes",
+        "guardians",
+        "houses",
+        "languages",
+        "mother_tongues",
+        "parents",
+        "religions",
+        "sections",
+        "staff_attendance",
+        "students",
+        "subjects",
+        "teacher_attendance",
+        "teachers",
+        "tmp_seed_students",
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/007_create_leaving_students.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "leaving_students"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections",
+        "staff",
+        "students"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "leaving_students"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "leaving_students",
+            "name": "idx_leaving_students_student_id"
+          },
+          {
+            "table": "leaving_students",
+            "name": "idx_leaving_students_leaving_date"
+          },
+          {
+            "table": "leaving_students",
+            "name": "uq_leaving_students_student_active_leave"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/008_academic_years_end_date_nullable.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "academic_years"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/009_guardian_registry_hardening.sql",
+      "category": "migration",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "guardians",
+        "students"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "guardians",
+            "name": "uq_guardians_student_email"
+          },
+          {
+            "table": "guardians",
+            "name": "uq_guardians_student_phone"
+          },
+          {
+            "table": "guardians",
+            "name": "uq_guardians_one_primary_per_student"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/010_assign_section_teachers_round_robin.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "sections"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/010_fees_module_enterprise.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "fees_assign",
+        "fees_assign_details",
+        "fees_collect",
+        "fees_collect_details",
+        "fees_groups",
+        "fees_master",
+        "fees_types"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "fees_assign",
+        "fees_assign_details",
+        "fees_collect",
+        "fees_groups",
+        "fees_master",
+        "fees_types",
+        "students"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "fees_assign",
+          "fees_assign_details",
+          "fees_collect",
+          "fees_collect_details",
+          "fees_groups",
+          "fees_master",
+          "fees_types"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "fees_groups",
+            "name": "idx_fees_groups_ay"
+          },
+          {
+            "table": "fees_master",
+            "name": "idx_fees_master_group"
+          },
+          {
+            "table": "fees_master",
+            "name": "idx_fees_master_ay"
+          },
+          {
+            "table": "fees_assign",
+            "name": "idx_fees_assign_student"
+          },
+          {
+            "table": "fees_assign",
+            "name": "idx_fees_assign_ay"
+          },
+          {
+            "table": "fees_assign_details",
+            "name": "idx_fees_assign_details_assign"
+          },
+          {
+            "table": "fees_collect",
+            "name": "idx_fees_collect_student"
+          },
+          {
+            "table": "fees_collect",
+            "name": "idx_fees_collect_ay"
+          },
+          {
+            "table": "fees_collect_details",
+            "name": "idx_fees_collect_details_header"
+          },
+          {
+            "table": "fees_collect_details",
+            "name": "idx_fees_collect_details_assign"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/010_parent_persons.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "parent_persons",
+        "students"
+      ],
+      "references": [
+        "parent_persons"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "parent_persons"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "students",
+            "column": "father_person_id"
+          },
+          {
+            "table": "students",
+            "column": "mother_person_id"
+          },
+          {
+            "table": "students",
+            "column": "guardian_person_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "parent_persons",
+            "name": "idx_parent_persons_phone_digits"
+          },
+          {
+            "table": "parent_persons",
+            "name": "idx_parent_persons_email_lower"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_father_person"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_mother_person"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_guardian_person"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/011_add_status_to_fees_types.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_types"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "fees_types",
+            "column": "status"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/011_reconcile_student_promotions_state.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "classes",
+        "sections",
+        "students"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/011_teacher_assignments.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "classes",
+        "teacher_assignments"
+      ],
+      "references": [
+        "classes",
+        "sections",
+        "subjects",
+        "teachers"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "teacher_assignments"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "classes",
+            "column": "has_sections"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [
+          {
+            "table": "teacher_assignments",
+            "name": "uq_teacher_assignments_with_section"
+          },
+          {
+            "table": "teacher_assignments",
+            "name": "uq_teacher_assignments_no_section"
+          }
+        ],
+        "existing_indexes": [
+          {
+            "table": "teacher_assignments",
+            "name": "idx_teacher_assignments_teacher"
+          },
+          {
+            "table": "teacher_assignments",
+            "name": "idx_teacher_assignments_class"
+          },
+          {
+            "table": "teacher_assignments",
+            "name": "idx_teacher_assignments_section"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/012_add_code_to_fees_types.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_types"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "fees_types",
+            "column": "code"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/012_driver_designation_and_drivers_staff_id.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "designations",
+        "drivers"
+      ],
+      "references": [
+        "staff"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "drivers",
+            "column": "staff_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "drivers",
+            "name": "idx_drivers_staff_id_unique"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/013_add_fine_details_to_fees_master.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_master"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "fees_master",
+            "column": "due_date"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/013_user_role_driver.sql",
+      "category": "migration",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "user_roles",
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/014_backfill_drivers_to_staff_users.sql",
+      "category": "migration",
+      "ops": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "drivers",
+        "staff",
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/014_fix_fees_assign_unique_constraint.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "fees_assign"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "fees_assign",
+            "name": "fees_assign_student_year_group_unique"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/015_attendance_module_completion.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "IF",
+        "staff_attendance",
+        "teacher_attendance"
+      ],
+      "references": [
+        "academic_years",
+        "staff",
+        "teachers"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "staff_attendance",
+          "teacher_attendance"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "attendance",
+            "name": "idx_attendance_date"
+          },
+          {
+            "table": "attendance",
+            "name": "idx_attendance_class_section_date"
+          },
+          {
+            "table": "teacher_attendance",
+            "name": "idx_teacher_attendance_date"
+          },
+          {
+            "table": "teacher_attendance",
+            "name": "idx_teacher_attendance_year"
+          },
+          {
+            "table": "staff_attendance",
+            "name": "idx_staff_attendance_date"
+          },
+          {
+            "table": "staff_attendance",
+            "name": "idx_staff_attendance_year"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/016_attendance_hardening_and_audit.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "attendance",
+        "staff_attendance",
+        "teacher_attendance"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "attendance",
+            "name": "attendance_class_section_required_check"
+          }
+        ],
+        "pending_indexes": [
+          {
+            "table": "teacher_attendance",
+            "name": "idx_teacher_attendance_year_date"
+          }
+        ],
+        "existing_indexes": [
+          {
+            "table": "attendance",
+            "name": "idx_attendance_year_date"
+          },
+          {
+            "table": "staff_attendance",
+            "name": "idx_staff_attendance_year_date"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/017_backfill_teacher_class_subject_from_mappings.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "teachers"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/017_fix_dummy_seed_user_passwords_to_phone.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/018_unify_teacher_into_staff_attendance.sql",
+      "category": "migration",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "staff_attendance"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/019_exams_results_module_upgrade.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "references": [
+        "exam_subjects",
+        "exams",
+        "sections",
+        "subjects"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "exam_subjects"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "exams",
+            "column": "section_id"
+          },
+          {
+            "table": "exam_results",
+            "column": "exam_subject_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "exams",
+            "name": "exams_section_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_subject_id_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exams",
+            "name": "idx_exams_class_section_year"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "idx_exam_subjects_exam"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "idx_exam_subjects_subject"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_exam_student"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_exam_subject"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/019_leave_applications_approval_columns.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "leave_applications"
+      ],
+      "references": [
+        "staff"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "leave_applications",
+            "column": "approved_by"
+          },
+          {
+            "table": "leave_applications",
+            "column": "approved_date"
+          },
+          {
+            "table": "leave_applications",
+            "column": "rejection_reason"
+          },
+          {
+            "table": "leave_applications",
+            "column": "modified_at"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_approved_by_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/020_exams_results_uniqueness_and_component.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_results"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "exam_results",
+            "column": "exam_component"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_component_check"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_student_id_subject_component_key"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_exam_subject_component"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/020_holiday_management_module.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "holidays"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "holidays"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "holidays",
+            "column": "title"
+          },
+          {
+            "table": "holidays",
+            "column": "updated_at"
+          },
+          {
+            "table": "holidays",
+            "column": "modified_at"
+          },
+          {
+            "table": "holidays",
+            "column": "is_active"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "holidays",
+            "name": "holidays_holiday_type_check"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_date_range_check"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "holidays",
+            "name": "idx_holidays_start_end"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/021_exams_result_finalization.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exams"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "exams",
+            "column": "is_finalized"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "exams",
+            "name": "exams_finalized_by_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exams",
+            "name": "idx_exams_finalized"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/021_users_occupation.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "users"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "users",
+            "column": "occupation"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/022_teacher_assignments_unique_slot.sql",
+      "category": "migration",
+      "ops": [
+        "DELETE"
+      ],
+      "tables": [
+        "teacher_assignments"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "teacher_assignments",
+            "name": "uq_teacher_assignments_class_section_subject"
+          },
+          {
+            "table": "teacher_assignments",
+            "name": "uq_teacher_assignments_class_subject_no_section"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/023_exams_unique_definition.sql",
+      "category": "migration",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exams",
+            "name": "uq_exams_class_section_year_name_type_dates"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/024_exam_subjects_schedule_fields.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exam_subjects"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "exam_subjects",
+            "column": "exam_date"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/025_remove_exams_results_module.sql",
+      "category": "migration",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/026_apply_current_subjects_to_all_classes.sql",
+      "category": "migration",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "subjects",
+        "tmp_subject_source"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/027_backfill_section_teachers_round_robin.sql",
+      "category": "migration",
+      "ops": [
+        "UPDATE"
+      ],
+      "tables": [
+        "sections"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/028_exams_results_module.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "exam_classes",
+        "exam_results",
+        "exam_subjects",
+        "exams"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "exam_classes",
+        "exam_subjects",
+        "exams",
+        "sections",
+        "students",
+        "subjects",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "exam_classes",
+          "exam_results",
+          "exam_subjects",
+          "exams"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "exams",
+            "column": "is_finalized"
+          },
+          {
+            "table": "exam_subjects",
+            "column": "class_id"
+          },
+          {
+            "table": "exam_results",
+            "column": "exam_subject_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "exams",
+            "name": "exams_finalized_by_fkey"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "exam_subjects_class_id_fkey"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "exam_subjects_section_id_fkey"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "exam_subjects_exam_class_section_subject_key"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "exam_subjects_exam_class_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_subject_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_student_subject_key"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_absent_marks_check"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exams",
+            "name": "idx_exams_finalized"
+          },
+          {
+            "table": "exam_classes",
+            "name": "idx_exam_classes_class_id"
+          },
+          {
+            "table": "exam_classes",
+            "name": "idx_exam_classes_exam_id"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "idx_exam_subjects_exam"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "idx_exam_subjects_class_section"
+          },
+          {
+            "table": "exam_subjects",
+            "name": "idx_exam_subjects_subject"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_student_exam"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_exam"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/029_exam_subjects_drop_legacy_component_unique.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "exam_subjects"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/030_remove_dummy_seed_subjects.sql",
+      "category": "migration",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "class_schedules",
+        "exam_results",
+        "exam_subjects",
+        "subjects",
+        "teachers"
+      ],
+      "references": [
+        "in"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/031_exam_subjects_exam_class_integrity.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "exam_classes",
+        "exam_subjects"
+      ],
+      "references": [
+        "exam_classes"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "exam_subjects",
+            "name": "exam_subjects_exam_class_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/032_exam_grade_scale.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "exam_grade"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "exam_grade"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "exam_grade",
+            "name": "exam_grade_grade_unique_ci"
+          },
+          {
+            "table": "exam_grade",
+            "name": "exam_grade_active_sort_idx"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/033_school_profile_contact_fields.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "IF"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/034_account_delete_requests.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "account_delete_requests"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "account_delete_requests"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "account_delete_requests",
+            "name": "idx_account_delete_requests_user_id"
+          },
+          {
+            "table": "account_delete_requests",
+            "name": "idx_account_delete_requests_requisition_date"
+          },
+          {
+            "table": "account_delete_requests",
+            "name": "idx_account_delete_requests_status"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/035_enquiries_module.sql",
+      "category": "migration",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "enquiries"
+      ],
+      "references": [
+        "academic_years",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "enquiries"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "enquiries",
+            "name": "idx_enquiries_date"
+          },
+          {
+            "table": "enquiries",
+            "name": "idx_enquiries_academic_year"
+          },
+          {
+            "table": "enquiries",
+            "name": "idx_enquiries_created_by"
+          },
+          {
+            "table": "enquiries",
+            "name": "idx_enquiries_mobile"
+          }
+        ],
+        "missing_columns_from_create_blocks": [
+          {
+            "table": "enquiries",
+            "column": "follow_up_date",
+            "source": "CREATE_TABLE"
+          }
+        ]
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/036_enquiries_drop_follow_up_date.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "enquiries"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/04_migrarion.sql",
+      "category": "migration",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "parents",
+        "teachers"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "teachers",
+            "column": "resume"
+          },
+          {
+            "table": "teachers",
+            "column": "joining_letter"
+          },
+          {
+            "table": "teachers",
+            "column": "modified_at"
+          },
+          {
+            "table": "parents",
+            "column": "father_user_id"
+          },
+          {
+            "table": "parents",
+            "column": "mother_user_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "parents",
+            "name": "idx_parents_father_user_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_mother_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_guardian_role_to_user_roles.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "INSERT"
+      ],
+      "tables": [
+        "user_roles"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_notice_board_message_to_column.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "notice_board"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "notice_board",
+            "column": "message_to"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_students_gr_number.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "UPDATE",
+        "students"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "students",
+            "column": "gr_number"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "students",
+            "name": "idx_students_gr_number_unique"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/add_user_id_to_parents_guardians.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "guardians",
+        "parents"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "parents",
+            "column": "user_id"
+          },
+          {
+            "table": "guardians",
+            "column": "user_id"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "parents",
+            "name": "idx_parents_user_id"
+          },
+          {
+            "table": "guardians",
+            "name": "idx_guardians_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/chat_settings_and_blocked.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "blocked_users",
+        "chat_settings",
+        "reports"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "blocked_users",
+          "chat_settings",
+          "reports"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_user_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_recipient_id"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_user_id"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_blocked_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_reported_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/class_syllabus_add_foreign_keys.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE"
+      ],
+      "tables": [
+        "class_syllabus"
+      ],
+      "references": [
+        "academic_years",
+        "classes",
+        "sections"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_class"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_section"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_academic_year"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_application_tables.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "ON",
+        "calendar_events",
+        "calls",
+        "chats",
+        "emails",
+        "files",
+        "notes",
+        "todos"
+      ],
+      "references": [
+        "files",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "calendar_events",
+          "calls",
+          "chats",
+          "emails",
+          "files",
+          "notes",
+          "todos"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "chats",
+            "name": "idx_chats_user_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_recipient_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_created_at"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_user_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_recipient_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_call_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_user_id"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_start_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_end_date"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_user_id"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sender_id"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_folder"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sent_at"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_user_id"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_status"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_priority"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_due_date"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_user_id"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_is_deleted"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_priority"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_created_at"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_user_id"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_parent_folder_id"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_file_type"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_is_folder"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_created_at"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_class_rooms_table.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "class_rooms"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "class_rooms"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_room_no"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_status"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_class_syllabus_table.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "class_syllabus"
+      ],
+      "references": [
+        "classes",
+        "sections"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "class_syllabus"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_class"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_section"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_class_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_section_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_status"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_created_at"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_events_table.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "ON",
+        "events"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "events"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "events",
+            "name": "idx_events_start_date"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_end_date"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_created_by"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_for"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_category"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_leave_tables.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "CREATE_TABLE",
+        "INSERT"
+      ],
+      "tables": [
+        "leave_applications",
+        "leave_types"
+      ],
+      "references": [
+        "leave_types",
+        "staff",
+        "students",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "leave_applications",
+          "leave_types"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [
+          {
+            "table": "leave_applications",
+            "name": "idx_leave_applications_student_id"
+          },
+          {
+            "table": "leave_applications",
+            "name": "idx_leave_applications_staff_id"
+          },
+          {
+            "table": "leave_applications",
+            "name": "idx_leave_applications_leave_type_id"
+          },
+          {
+            "table": "leave_applications",
+            "name": "idx_leave_applications_start_date"
+          },
+          {
+            "table": "leave_applications",
+            "name": "idx_leave_applications_status"
+          }
+        ],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": [
+          {
+            "table": "leave_types",
+            "column": "max_days_per_year",
+            "source": "CREATE_TABLE"
+          },
+          {
+            "table": "leave_applications",
+            "column": "applied_at",
+            "source": "CREATE_TABLE"
+          },
+          {
+            "table": "leave_applications",
+            "column": "no_of_days",
+            "source": "CREATE_TABLE"
+          },
+          {
+            "table": "leave_applications",
+            "column": "remarks",
+            "source": "CREATE_TABLE"
+          },
+          {
+            "table": "leave_applications",
+            "column": "reviewed_at",
+            "source": "CREATE_TABLE"
+          },
+          {
+            "table": "leave_applications",
+            "column": "reviewed_by",
+            "source": "CREATE_TABLE"
+          }
+        ]
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/create_notice_board_table.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "INSERT",
+        "UPDATE"
+      ],
+      "tables": [
+        "CREATE",
+        "ON",
+        "modified_at",
+        "notice_board"
+      ],
+      "references": [
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "notice_board"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "notice_board",
+            "column": "modified_at"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [
+          {
+            "table": "notice_board",
+            "name": "idx_notice_board_created_at"
+          },
+          {
+            "table": "notice_board",
+            "name": "idx_notice_board_modified_at"
+          }
+        ],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/fix_fee_collections_payment_method_constraint.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "existing",
+        "fee_collections",
+        "fee_collectionsatte"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_payment_method_check"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains DROP/TRUNCATE/DROP COLUMN (forbidden by safety rules)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/fix_users_id_sequence.sql",
+      "category": "legacy_archive",
+      "ops": [],
+      "tables": [],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "nothing pending vs current schema (already applied or no-op)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/remove_duplicate_students.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "DELETE",
+        "UPDATE"
+      ],
+      "tables": [
+        "fee_collections",
+        "guardians",
+        "leave_applications",
+        "parents",
+        "references",
+        "student_attendance",
+        "students"
+      ],
+      "references": [
+        "then"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "contains UPDATE/DELETE (forbidden by safety rules: no overwrites/deletes)"
+      ]
+    },
+    {
+      "file": "server/migrations/archive/legacy/schedule_table_add_status_modified.sql",
+      "category": "legacy_archive",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE"
+      ],
+      "tables": [
+        "schedule",
+        "time_slots"
+      ],
+      "references": [],
+      "detected": {
+        "create_missing_tables": [
+          "schedule"
+        ],
+        "create_existing_tables": [],
+        "pending_add_columns": [],
+        "existing_add_columns": [
+          {
+            "table": "time_slots",
+            "column": "is_active"
+          },
+          {
+            "table": "time_slots",
+            "column": "modified_at"
+          }
+        ],
+        "pending_constraints": [],
+        "existing_constraints": [],
+        "pending_indexes": [],
+        "existing_indexes": [],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "legacy archive migration (skipped by default)",
+        "pending changes detected; can be run if explicitly needed"
+      ]
+    },
+    {
+      "file": "server/sql/template_schema.sql",
+      "category": "template_dump",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "The",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "school_profile",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "academic_years",
+          "addresses",
+          "attendance",
+          "blocked_users",
+          "blood_groups",
+          "calendar_events",
+          "calls",
+          "casts",
+          "chat_settings",
+          "chats",
+          "class_rooms",
+          "class_schedules",
+          "class_syllabus",
+          "classes",
+          "departments",
+          "designations",
+          "document_types",
+          "documents",
+          "drivers",
+          "emails",
+          "events",
+          "exam_results",
+          "exams",
+          "fee_collections",
+          "fee_structures",
+          "files",
+          "guardians",
+          "holidays",
+          "hostel_rooms",
+          "hostels",
+          "houses",
+          "languages",
+          "leave_applications",
+          "leave_types",
+          "library_book_issues",
+          "library_books",
+          "library_categories",
+          "medical_conditions",
+          "mother_tongues",
+          "notes",
+          "notice_board",
+          "parents",
+          "pickup_points",
+          "religions",
+          "reports",
+          "room_types",
+          "routes",
+          "school_profile",
+          "sections",
+          "staff",
+          "student_medical_conditions",
+          "student_promotions",
+          "students",
+          "subjects",
+          "teacher_routines",
+          "teachers",
+          "time_slots",
+          "todos",
+          "user_roles",
+          "users",
+          "vehicles"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_student_id_subject_id_key"
+          }
+        ],
+        "existing_constraints": [
+          {
+            "table": "students",
+            "name": "aadhar_unique"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_pkey"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_year_name_key"
+          },
+          {
+            "table": "addresses",
+            "name": "addresses_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_attendance_date_key"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_pkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_blocked_user_id_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_blood_group_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_pkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_pkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_pkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_cast_name_key"
+          },
+          {
+            "table": "casts",
+            "name": "casts_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_recipient_id_key"
+          },
+          {
+            "table": "chats",
+            "name": "chats_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_room_no_key"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_pkey"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "class_syllabus_pkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_class_code_key"
+          },
+          {
+            "table": "classes",
+            "name": "classes_pkey"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_code_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_name_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_pkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_designation_name_key"
+          },
+          {
+            "table": "designations",
+            "name": "designations_pkey"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_document_type_key"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_pkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_pkey"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_employee_code_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_license_number_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_pkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_pkey"
+          },
+          {
+            "table": "events",
+            "name": "events_pkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_pkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_receipt_number_key"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_pkey"
+          },
+          {
+            "table": "files",
+            "name": "files_pkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_pkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_pkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_room_number_key"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_pkey"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_hostel_name_key"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_pkey"
+          },
+          {
+            "table": "houses",
+            "name": "houses_house_name_key"
+          },
+          {
+            "table": "houses",
+            "name": "houses_pkey"
+          },
+          {
+            "table": "languages",
+            "name": "languages_language_name_key"
+          },
+          {
+            "table": "languages",
+            "name": "languages_pkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_pkey"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_leave_type_key"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_pkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_pkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_isbn_key"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_pkey"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_category_name_key"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_pkey"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_condition_name_key"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_pkey"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_language_name_key"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_pkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_pkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_pkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_pkey"
+          },
+          {
+            "table": "students",
+            "name": "pen_number_unique"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_religion_name_key"
+          },
+          {
+            "table": "reports",
+            "name": "reports_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_room_type_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_pkey"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_code_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_section_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_pkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_email_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_employee_code_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_pkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_pkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_pkey"
+          },
+          {
+            "table": "students",
+            "name": "students_admission_number_key"
+          },
+          {
+            "table": "students",
+            "name": "students_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_subject_code_key"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_pkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pan_number_key"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pkey"
+          },
+          {
+            "table": "time_slots",
+            "name": "time_slots_pkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_pkey"
+          },
+          {
+            "table": "students",
+            "name": "unique_student_ids_unique"
+          },
+          {
+            "table": "parents",
+            "name": "unique_student_parents"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_pkey"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_role_name_key"
+          },
+          {
+            "table": "users",
+            "name": "users_email_key"
+          },
+          {
+            "table": "users",
+            "name": "users_pkey"
+          },
+          {
+            "table": "users",
+            "name": "users_username_key"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_pkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_vehicle_number_key"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_academic_year_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_class_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_marked_by_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_section_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_blocked_user_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_fkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_user_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_recipient_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_user_id_fkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_religion_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_recipient_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_recipient_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_user_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_academic_year_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_class_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_section_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_subject_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_teacher_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_time_slot_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_academic_year_id_fkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_department_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_document_type_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_staff_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_student_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_verified_by_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_sender_id_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_user_id_fkey"
+          },
+          {
+            "table": "events",
+            "name": "events_created_by_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_student_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_subject_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_academic_year_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_class_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_collected_by_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_fee_structure_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_student_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_academic_year_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_class_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_parent_folder_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_user_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "fk_classes_teacher"
+          },
+          {
+            "table": "departments",
+            "name": "fk_departments_head"
+          },
+          {
+            "table": "hostels",
+            "name": "fk_hostels_warden"
+          },
+          {
+            "table": "parents",
+            "name": "fk_parents_student"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_role"
+          },
+          {
+            "table": "sections",
+            "name": "fk_sections_teacher"
+          },
+          {
+            "table": "students",
+            "name": "fk_student_address"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_guardian"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_hostel"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_parent"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_class"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_section"
+          },
+          {
+            "table": "teachers",
+            "name": "fk_teachers_staff"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_user"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_student_id_fkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_user_id_fkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_academic_year_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_room_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_approved_by_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_leave_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_staff_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_student_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_book_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_issued_by_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_returned_to_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_staff_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_student_id_fkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_category_id_fkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_user_id_fkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_created_by_fkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_user_id_fkey"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_route_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_reported_user_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_user_id_fkey"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_blood_group_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_department_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_designation_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_user_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_medical_condition_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_section_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_promoted_by_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_academic_year_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_blood_group_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_cast_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_class_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_hostel_room_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_house_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_mother_tongue_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_pickup_point_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_religion_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_route_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_user_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_class_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_teacher_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_academic_year_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_class_schedule_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_teacher_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_class_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_subject_id_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_assigned_to_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_user_id_fkey"
+          },
+          {
+            "table": "users",
+            "name": "users_role_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_driver_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_route_id_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "attendance",
+            "name": "idx_attendance_date"
+          },
+          {
+            "table": "attendance",
+            "name": "idx_attendance_student"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_blocked_user_id"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_user_id"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_end_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_start_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_user_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_call_date"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_recipient_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_user_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_recipient_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_user_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_created_at"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_recipient_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_user_id"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_room_no"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_status"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_class_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_created_at"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_section_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_status"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_folder"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sender_id"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sent_at"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_user_id"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_created_by"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_end_date"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_category"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_for"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_start_date"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_student"
+          },
+          {
+            "table": "fee_collections",
+            "name": "idx_fee_collections_student"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_created_at"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_file_type"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_is_folder"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_parent_folder_id"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_user_id"
+          },
+          {
+            "table": "guardians",
+            "name": "idx_guardians_user_id"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "idx_library_issues_status"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_created_at"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_is_deleted"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_priority"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_user_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_father_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_mother_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_student_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_reported_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_user_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_admission_number"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_class_section"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_guardian_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_parent_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_class_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_status"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_subject_id"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_due_date"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_priority"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_status"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "pg_dump-style schema/template file (not safe to replay onto existing DB)"
+      ]
+    },
+    {
+      "file": "server/sql/template_schemas.sql",
+      "category": "template_dump",
+      "ops": [
+        "ALTER_TABLE",
+        "CREATE_TABLE",
+        "UPDATE"
+      ],
+      "tables": [
+        "CASCADE",
+        "ON",
+        "academic_years",
+        "addresses",
+        "attendance",
+        "blocked_users",
+        "blood_groups",
+        "calendar_events",
+        "calls",
+        "casts",
+        "chat_settings",
+        "chats",
+        "class_rooms",
+        "class_schedules",
+        "class_syllabus",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "documents",
+        "drivers",
+        "emails",
+        "events",
+        "exam_results",
+        "exams",
+        "fee_collections",
+        "fee_structures",
+        "files",
+        "guardians",
+        "holidays",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "languages",
+        "leave_applications",
+        "leave_types",
+        "library_book_issues",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "notes",
+        "notice_board",
+        "parents",
+        "pickup_points",
+        "religions",
+        "reports",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "student_medical_conditions",
+        "student_promotions",
+        "students",
+        "subjects",
+        "teacher_routines",
+        "teachers",
+        "time_slots",
+        "todos",
+        "user_roles",
+        "users",
+        "vehicles"
+      ],
+      "references": [
+        "academic_years",
+        "addresses",
+        "blood_groups",
+        "casts",
+        "class_schedules",
+        "classes",
+        "departments",
+        "designations",
+        "document_types",
+        "drivers",
+        "exams",
+        "fee_structures",
+        "files",
+        "guardians",
+        "hostel_rooms",
+        "hostels",
+        "houses",
+        "leave_types",
+        "library_books",
+        "library_categories",
+        "medical_conditions",
+        "mother_tongues",
+        "parents",
+        "pickup_points",
+        "religions",
+        "room_types",
+        "routes",
+        "sections",
+        "staff",
+        "students",
+        "subjects",
+        "time_slots",
+        "user_roles",
+        "users"
+      ],
+      "detected": {
+        "create_missing_tables": [],
+        "create_existing_tables": [
+          "academic_years",
+          "addresses",
+          "attendance",
+          "blocked_users",
+          "blood_groups",
+          "calendar_events",
+          "calls",
+          "casts",
+          "chat_settings",
+          "chats",
+          "class_rooms",
+          "class_schedules",
+          "class_syllabus",
+          "classes",
+          "departments",
+          "designations",
+          "document_types",
+          "documents",
+          "drivers",
+          "emails",
+          "events",
+          "exam_results",
+          "exams",
+          "fee_collections",
+          "fee_structures",
+          "files",
+          "guardians",
+          "holidays",
+          "hostel_rooms",
+          "hostels",
+          "houses",
+          "languages",
+          "leave_applications",
+          "leave_types",
+          "library_book_issues",
+          "library_books",
+          "library_categories",
+          "medical_conditions",
+          "mother_tongues",
+          "notes",
+          "notice_board",
+          "parents",
+          "pickup_points",
+          "religions",
+          "reports",
+          "room_types",
+          "routes",
+          "sections",
+          "staff",
+          "student_medical_conditions",
+          "student_promotions",
+          "students",
+          "subjects",
+          "teacher_routines",
+          "teachers",
+          "time_slots",
+          "todos",
+          "user_roles",
+          "users",
+          "vehicles"
+        ],
+        "pending_add_columns": [],
+        "existing_add_columns": [],
+        "pending_constraints": [
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_student_id_subject_id_key"
+          }
+        ],
+        "existing_constraints": [
+          {
+            "table": "students",
+            "name": "aadhar_unique"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_pkey"
+          },
+          {
+            "table": "academic_years",
+            "name": "academic_years_year_name_key"
+          },
+          {
+            "table": "addresses",
+            "name": "addresses_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_pkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_attendance_date_key"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_pkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_blocked_user_id_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_blood_group_key"
+          },
+          {
+            "table": "blood_groups",
+            "name": "blood_groups_pkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_pkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_pkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_cast_name_key"
+          },
+          {
+            "table": "casts",
+            "name": "casts_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_pkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_recipient_id_key"
+          },
+          {
+            "table": "chats",
+            "name": "chats_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_pkey"
+          },
+          {
+            "table": "class_rooms",
+            "name": "class_rooms_room_no_key"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_pkey"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "class_syllabus_pkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_class_code_key"
+          },
+          {
+            "table": "classes",
+            "name": "classes_pkey"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_code_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_department_name_key"
+          },
+          {
+            "table": "departments",
+            "name": "departments_pkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_designation_name_key"
+          },
+          {
+            "table": "designations",
+            "name": "designations_pkey"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_document_type_key"
+          },
+          {
+            "table": "document_types",
+            "name": "document_types_pkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_pkey"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_employee_code_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_license_number_key"
+          },
+          {
+            "table": "drivers",
+            "name": "drivers_pkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_pkey"
+          },
+          {
+            "table": "events",
+            "name": "events_pkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_pkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_pkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_receipt_number_key"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_pkey"
+          },
+          {
+            "table": "files",
+            "name": "files_pkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_pkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_pkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_room_number_key"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_pkey"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_hostel_name_key"
+          },
+          {
+            "table": "hostels",
+            "name": "hostels_pkey"
+          },
+          {
+            "table": "houses",
+            "name": "houses_house_name_key"
+          },
+          {
+            "table": "houses",
+            "name": "houses_pkey"
+          },
+          {
+            "table": "languages",
+            "name": "languages_language_name_key"
+          },
+          {
+            "table": "languages",
+            "name": "languages_pkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_pkey"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_leave_type_key"
+          },
+          {
+            "table": "leave_types",
+            "name": "leave_types_pkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_pkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_isbn_key"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_pkey"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_category_name_key"
+          },
+          {
+            "table": "library_categories",
+            "name": "library_categories_pkey"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_condition_name_key"
+          },
+          {
+            "table": "medical_conditions",
+            "name": "medical_conditions_pkey"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_language_name_key"
+          },
+          {
+            "table": "mother_tongues",
+            "name": "mother_tongues_pkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_pkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_pkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_pkey"
+          },
+          {
+            "table": "students",
+            "name": "pen_number_unique"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_pkey"
+          },
+          {
+            "table": "religions",
+            "name": "religions_religion_name_key"
+          },
+          {
+            "table": "reports",
+            "name": "reports_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_pkey"
+          },
+          {
+            "table": "room_types",
+            "name": "room_types_room_type_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_pkey"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_code_key"
+          },
+          {
+            "table": "routes",
+            "name": "routes_route_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_section_name_key"
+          },
+          {
+            "table": "sections",
+            "name": "sections_pkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_email_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_employee_code_key"
+          },
+          {
+            "table": "staff",
+            "name": "staff_pkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_pkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_pkey"
+          },
+          {
+            "table": "students",
+            "name": "students_admission_number_key"
+          },
+          {
+            "table": "students",
+            "name": "students_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_pkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_subject_code_key"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_pkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pan_number_key"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_pkey"
+          },
+          {
+            "table": "time_slots",
+            "name": "time_slots_pkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_pkey"
+          },
+          {
+            "table": "students",
+            "name": "unique_student_ids_unique"
+          },
+          {
+            "table": "parents",
+            "name": "unique_student_parents"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_pkey"
+          },
+          {
+            "table": "user_roles",
+            "name": "user_roles_role_name_key"
+          },
+          {
+            "table": "users",
+            "name": "users_email_key"
+          },
+          {
+            "table": "users",
+            "name": "users_pkey"
+          },
+          {
+            "table": "users",
+            "name": "users_username_key"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_pkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_vehicle_number_key"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_academic_year_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_class_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_marked_by_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_section_id_fkey"
+          },
+          {
+            "table": "attendance",
+            "name": "attendance_student_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_blocked_user_id_fkey"
+          },
+          {
+            "table": "blocked_users",
+            "name": "blocked_users_user_id_fkey"
+          },
+          {
+            "table": "calendar_events",
+            "name": "calendar_events_user_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_recipient_id_fkey"
+          },
+          {
+            "table": "calls",
+            "name": "calls_user_id_fkey"
+          },
+          {
+            "table": "casts",
+            "name": "casts_religion_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_recipient_id_fkey"
+          },
+          {
+            "table": "chat_settings",
+            "name": "chat_settings_user_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_recipient_id_fkey"
+          },
+          {
+            "table": "chats",
+            "name": "chats_user_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_academic_year_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_class_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_section_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_subject_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_teacher_id_fkey"
+          },
+          {
+            "table": "class_schedules",
+            "name": "class_schedules_time_slot_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "classes_academic_year_id_fkey"
+          },
+          {
+            "table": "designations",
+            "name": "designations_department_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_document_type_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_staff_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_student_id_fkey"
+          },
+          {
+            "table": "documents",
+            "name": "documents_verified_by_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_sender_id_fkey"
+          },
+          {
+            "table": "emails",
+            "name": "emails_user_id_fkey"
+          },
+          {
+            "table": "events",
+            "name": "events_created_by_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_exam_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_student_id_fkey"
+          },
+          {
+            "table": "exam_results",
+            "name": "exam_results_subject_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_academic_year_id_fkey"
+          },
+          {
+            "table": "exams",
+            "name": "exams_class_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_collected_by_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_fee_structure_id_fkey"
+          },
+          {
+            "table": "fee_collections",
+            "name": "fee_collections_student_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_academic_year_id_fkey"
+          },
+          {
+            "table": "fee_structures",
+            "name": "fee_structures_class_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_parent_folder_id_fkey"
+          },
+          {
+            "table": "files",
+            "name": "files_user_id_fkey"
+          },
+          {
+            "table": "classes",
+            "name": "fk_classes_teacher"
+          },
+          {
+            "table": "departments",
+            "name": "fk_departments_head"
+          },
+          {
+            "table": "hostels",
+            "name": "fk_hostels_warden"
+          },
+          {
+            "table": "parents",
+            "name": "fk_parents_student"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_role"
+          },
+          {
+            "table": "sections",
+            "name": "fk_sections_teacher"
+          },
+          {
+            "table": "students",
+            "name": "fk_student_address"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_guardian"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_hostel"
+          },
+          {
+            "table": "students",
+            "name": "fk_students_parent"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_class"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "fk_syllabus_section"
+          },
+          {
+            "table": "teachers",
+            "name": "fk_teachers_staff"
+          },
+          {
+            "table": "addresses",
+            "name": "fk_user"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_student_id_fkey"
+          },
+          {
+            "table": "guardians",
+            "name": "guardians_user_id_fkey"
+          },
+          {
+            "table": "holidays",
+            "name": "holidays_academic_year_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_hostel_id_fkey"
+          },
+          {
+            "table": "hostel_rooms",
+            "name": "hostel_rooms_room_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_approved_by_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_leave_type_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_staff_id_fkey"
+          },
+          {
+            "table": "leave_applications",
+            "name": "leave_applications_student_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_book_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_issued_by_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_returned_to_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_staff_id_fkey"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "library_book_issues_student_id_fkey"
+          },
+          {
+            "table": "library_books",
+            "name": "library_books_category_id_fkey"
+          },
+          {
+            "table": "notes",
+            "name": "notes_user_id_fkey"
+          },
+          {
+            "table": "notice_board",
+            "name": "notice_board_created_by_fkey"
+          },
+          {
+            "table": "parents",
+            "name": "parents_user_id_fkey"
+          },
+          {
+            "table": "pickup_points",
+            "name": "pickup_points_route_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_reported_user_id_fkey"
+          },
+          {
+            "table": "reports",
+            "name": "reports_user_id_fkey"
+          },
+          {
+            "table": "sections",
+            "name": "sections_class_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_blood_group_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_department_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_designation_id_fkey"
+          },
+          {
+            "table": "staff",
+            "name": "staff_user_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_medical_condition_id_fkey"
+          },
+          {
+            "table": "student_medical_conditions",
+            "name": "student_medical_conditions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_from_section_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_promoted_by_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_student_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_academic_year_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_class_id_fkey"
+          },
+          {
+            "table": "student_promotions",
+            "name": "student_promotions_to_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_academic_year_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_blood_group_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_cast_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_class_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_hostel_room_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_house_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_mother_tongue_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_pickup_point_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_religion_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_route_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_section_id_fkey"
+          },
+          {
+            "table": "students",
+            "name": "students_user_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_class_id_fkey"
+          },
+          {
+            "table": "subjects",
+            "name": "subjects_teacher_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_academic_year_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_class_schedule_id_fkey"
+          },
+          {
+            "table": "teacher_routines",
+            "name": "teacher_routines_teacher_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_class_id_fkey"
+          },
+          {
+            "table": "teachers",
+            "name": "teachers_subject_id_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_assigned_to_fkey"
+          },
+          {
+            "table": "todos",
+            "name": "todos_user_id_fkey"
+          },
+          {
+            "table": "users",
+            "name": "users_role_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_driver_id_fkey"
+          },
+          {
+            "table": "vehicles",
+            "name": "vehicles_route_id_fkey"
+          }
+        ],
+        "pending_indexes": [],
+        "existing_indexes": [
+          {
+            "table": "attendance",
+            "name": "idx_attendance_date"
+          },
+          {
+            "table": "attendance",
+            "name": "idx_attendance_student"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_blocked_user_id"
+          },
+          {
+            "table": "blocked_users",
+            "name": "idx_blocked_users_user_id"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_end_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_start_date"
+          },
+          {
+            "table": "calendar_events",
+            "name": "idx_calendar_events_user_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_call_date"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_recipient_id"
+          },
+          {
+            "table": "calls",
+            "name": "idx_calls_user_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_recipient_id"
+          },
+          {
+            "table": "chat_settings",
+            "name": "idx_chat_settings_user_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_created_at"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_recipient_id"
+          },
+          {
+            "table": "chats",
+            "name": "idx_chats_user_id"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_room_no"
+          },
+          {
+            "table": "class_rooms",
+            "name": "idx_class_rooms_status"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_academic_year"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_class_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_created_at"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_section_id"
+          },
+          {
+            "table": "class_syllabus",
+            "name": "idx_class_syllabus_status"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_folder"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sender_id"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_sent_at"
+          },
+          {
+            "table": "emails",
+            "name": "idx_emails_user_id"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_created_by"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_end_date"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_category"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_event_for"
+          },
+          {
+            "table": "events",
+            "name": "idx_events_start_date"
+          },
+          {
+            "table": "exam_results",
+            "name": "idx_exam_results_student"
+          },
+          {
+            "table": "fee_collections",
+            "name": "idx_fee_collections_student"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_created_at"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_file_type"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_is_folder"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_parent_folder_id"
+          },
+          {
+            "table": "files",
+            "name": "idx_files_user_id"
+          },
+          {
+            "table": "guardians",
+            "name": "idx_guardians_user_id"
+          },
+          {
+            "table": "library_book_issues",
+            "name": "idx_library_issues_status"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_created_at"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_is_deleted"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_priority"
+          },
+          {
+            "table": "notes",
+            "name": "idx_notes_user_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_father_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_mother_email"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_student_id"
+          },
+          {
+            "table": "parents",
+            "name": "idx_parents_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_reported_user_id"
+          },
+          {
+            "table": "reports",
+            "name": "idx_reports_user_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_admission_number"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_class_section"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_guardian_id"
+          },
+          {
+            "table": "students",
+            "name": "idx_students_parent_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_class_id"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_status"
+          },
+          {
+            "table": "teachers",
+            "name": "idx_teachers_subject_id"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_due_date"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_priority"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_status"
+          },
+          {
+            "table": "todos",
+            "name": "idx_todos_user_id"
+          }
+        ],
+        "missing_columns_from_create_blocks": []
+      },
+      "decision": "SKIP",
+      "reasons": [
+        "pg_dump-style schema/template file (not safe to replay onto existing DB)"
+      ]
+    }
+  ]
+}
