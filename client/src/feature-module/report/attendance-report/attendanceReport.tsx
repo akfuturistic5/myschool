@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
@@ -13,6 +13,11 @@ import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import {
+  formatAttendanceDayHumanLabel,
+  getCompoundHolidayAttendancePart,
+  isHolidayAttendanceCompound,
+} from "../../../core/utils/attendanceReportStatus";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -35,14 +40,11 @@ const statusTextMap: Record<string, string> = {
   half_day: "HD",
 };
 
-const formatStatusLabel = (status: string | null | undefined) => {
-  const s = String(status || "").trim().toLowerCase();
-  if (!s) return "Not Marked";
-  return s.replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
-};
+const formatStatusLabel = (status: string | null | undefined) => formatAttendanceDayHumanLabel(status);
 
 const AttendanceReport = () => {
   const routes = all_routes;
+  const location = useLocation();
   const user = useSelector(selectUser);
   const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -197,35 +199,62 @@ const AttendanceReport = () => {
         key: day.date,
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
-          const cls = status ? statusClassMap[status] || "bg-light" : "";
           const hasStatus = Boolean(status);
+          const pillStyle = {
+            display: "inline-flex" as const,
+            width: 22,
+            height: 22,
+            borderRadius: 999,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+            color: "#fff",
+            fontWeight: 700 as const,
+            fontSize: 11,
+            lineHeight: 1,
+          };
+          if (!hasStatus) {
+            return (
+              <span
+                className="attendance-range"
+                style={{
+                  display: "inline-flex",
+                  minWidth: 14,
+                  justifyContent: "center",
+                  color: "#6c757d",
+                  fontWeight: 600,
+                }}
+                title={`${day.date}: Not Marked`}
+              >
+                -
+              </span>
+            );
+          }
+          if (isHolidayAttendanceCompound(status)) {
+            const rest = getCompoundHolidayAttendancePart(status);
+            const subText = statusTextMap[rest] || "?";
+            const subCls = statusClassMap[rest] || "bg-light";
+            return (
+              <span
+                style={{ display: "inline-flex", gap: 3, alignItems: "center" }}
+                title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
+              >
+                <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
+                  H
+                </span>
+                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                  {subText}
+                </span>
+              </span>
+            );
+          }
+          const cls = statusClassMap[status] || "bg-light";
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={
-                hasStatus
-                  ? {
-                      display: "inline-flex",
-                      width: 22,
-                      height: 22,
-                      borderRadius: 999,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#fff",
-                      fontWeight: 700,
-                      fontSize: 11,
-                      lineHeight: 1,
-                    }
-                  : {
-                      display: "inline-flex",
-                      minWidth: 14,
-                      justifyContent: "center",
-                      color: "#6c757d",
-                      fontWeight: 600,
-                    }
-              }
+              style={pillStyle}
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
             >
-              {hasStatus ? statusTextMap[status] || "-" : "-"}
+              {statusTextMap[status] || "-"}
             </span>
           );
         },
@@ -381,7 +410,7 @@ const AttendanceReport = () => {
       };
       dayExportColumns.forEach((col) => {
         const status = item.daily?.[col.key];
-        baseRow[col.label] = status ? statusTextMap[status] || "-" : "-";
+        baseRow[col.label] = status ? formatAttendanceDayHumanLabel(status) : "-";
       });
       return baseRow;
     });
@@ -440,17 +469,27 @@ const AttendanceReport = () => {
                   </Link>
                 </li>
                 <li>
+                  <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
+                </li>
+                <li>
                   <Link to={routes.dailyAttendance}>Daily Attendance</Link>
                 </li>
+                <li>
+                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
+                </li>
                 {!isTeacherRole && (
-                  <>
-                    <li>
-                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                    </li>
-                    <li>
-                      <Link to={routes.staffReport}>Staff Report</Link>
-                    </li>
-                  </>
+                  <li>
+                    <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                      Staff Day Wise
+                    </Link>
+                  </li>
+                )}
+                {!isTeacherRole && (
+                  <li>
+                    <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                      Staff Report
+                    </Link>
+                  </li>
                 )}
               </ul>
             </div>

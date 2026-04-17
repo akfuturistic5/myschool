@@ -46,6 +46,6 @@ export function exportRowsToPdf(title: string, headers: string[], rows: ExportCe
     headStyles: { fillColor: [66, 139, 202] },
     margin: { left: 40, right: 40 },
   });
-  const safe = title.replace(/[^\w\-]+/g, "_").slice(0, 60) || "export";
+  const safe = title.replace(/[^\w-]+/g, "_").slice(0, 60) || "export";
   doc.save(`${safe}.pdf`);
 }

@@ -5,13 +5,13 @@ import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import CommonSelect from "../../../core/common/commonSelect";
 import Table from "../../../core/common/dataTable/index";
+import dayjs from "dayjs";
 import type { TableData } from "../../../core/data/interface";
-import { DatePicker } from "antd";
-import dayjs, { Dayjs } from "dayjs";
+import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
-import { getDailyAttendancePresentAbsentBucket } from "../../../core/utils/attendanceReportStatus";
+import { tallyMonthAttendanceDay } from "../../../core/utils/attendanceReportStatus";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { selectUser } from "../../../core/data/redux/authSlice";
+import { useStudents } from "../../../core/hooks/useStudents";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
@@ -20,18 +20,14 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
-const DailyAttendance = () => {
+const StudentAttendanceType = () => {
   const routes = all_routes;
   const location = useLocation();
-  const user = useSelector(selectUser);
-  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const { students } = useStudents();
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [appliedClassId, setAppliedClassId] = useState<string>("all");
-  const [appliedDate, setAppliedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [refreshTick, setRefreshTick] = useState(0);
   const [reportData, setReportData] = useState<any>({ month: null, days: [], rows: [] });
   const [loading, setLoading] = useState(true);
@@ -43,30 +39,33 @@ const DailyAttendance = () => {
     const fetchFilterOptions = async () => {
       try {
         const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
-        const classesResult = await classesPromise.catch(() => null);
+        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
         if (cancelled) return;
 
-        const fallbackClasses =
+        const classesResponse =
+          classesResult.status === "fulfilled" && Array.isArray(classesResult.value?.data) ? classesResult.value : null;
+        const classesFallbackResponse =
           academicYearId &&
-          (!Array.isArray(classesResult?.data) || classesResult.data.length === 0)
+          (!classesResponse || (Array.isArray(classesResponse.data) && classesResponse.data.length === 0))
             ? await apiService.getClasses().catch(() => null)
             : null;
-        const classes = Array.isArray(classesResult?.data)
-          ? classesResult.data
-          : Array.isArray(fallbackClasses?.data)
-            ? fallbackClasses.data
+        const classes = Array.isArray(classesResponse?.data)
+          ? classesResponse.data
+          : Array.isArray(classesFallbackResponse?.data)
+            ? classesFallbackResponse.data
             : [];
+        void sectionsResult;
 
-        setClassOptions([
-          { value: "all", label: "All Classes" },
-          ...classes.map((item: any) => ({
+        const nextClassOptions = [{ value: "all", label: "All Classes" }].concat(
+          classes.map((item: any) => ({
             value: String(item.id),
             label: item.class_name || `Class ${item.id}`,
-          })),
-        ]);
+          }))
+        );
+        setClassOptions(nextClassOptions);
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || "Failed to load class options");
+          setError(err?.message || "Failed to load class/section options");
           setClassOptions([{ value: "all", label: "All Classes" }]);
         }
       }
@@ -87,15 +86,16 @@ const DailyAttendance = () => {
         setError(null);
         const res = await apiService.getAttendanceReport({
           classId: appliedClassId !== "all" ? appliedClassId : null,
+          sectionId: null,
           academicYearId,
-          month: dayjs(appliedDate).format("YYYY-MM"),
+          month: dayjs().format("YYYY-MM"),
         });
         if (!cancelled) {
           setReportData(res?.data || { month: null, days: [], rows: [] });
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || "Failed to fetch daily attendance");
+          setError(err?.message || "Failed to fetch student attendance type report");
           setReportData({ month: null, days: [], rows: [] });
         }
       } finally {
@@ -107,134 +107,191 @@ const DailyAttendance = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, appliedClassId, appliedDate, refreshTick]);
+  }, [academicYearId, appliedClassId, refreshTick]);
 
-  const handleApplyClick = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const handleApplyClick = () => {
     setAppliedClassId(selectedClassId);
-    setAppliedDate(selectedDate);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
-
   const handleResetFilters = (e: React.MouseEvent) => {
     e.preventDefault();
-    const today = dayjs().format("YYYY-MM-DD");
     setSelectedClassId("all");
-    setSelectedDate(today);
     setAppliedClassId("all");
-    setAppliedDate(today);
   };
-
   const handleRefresh = () => setRefreshTick((prev) => prev + 1);
 
-  const data = useMemo(() => {
-    const dayKey = dayjs(appliedDate).format("YYYY-MM-DD");
-    const grouped = new Map<string, any>();
-
-    (Array.isArray(reportData.rows) ? reportData.rows : []).forEach((row: any) => {
-      const status = row.daily?.[dayKey];
-      const groupKey = row.sectionName || "N/A";
-      const current = grouped.get(groupKey) || {
-        key: groupKey,
-        class: classOptions.find((item) => item.value === selectedClassId)?.label || "—",
-        section: row.sectionName || "N/A",
-        present: 0,
-        absent: 0,
-        total: 0,
-      };
-
-      if (status) {
-        current.total += 1;
-        const bucket = getDailyAttendancePresentAbsentBucket(status);
-        if (bucket === "present_side") current.present += 1;
-        if (bucket === "absent_side") current.absent += 1;
-      }
-      grouped.set(groupKey, current);
+  const studentMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (Array.isArray(students) ? students : []).forEach((student: any) => {
+      map.set(String(student.id), student);
     });
+    return map;
+  }, [students]);
 
-    return Array.from(grouped.values()).map((item) => ({
-      ...item,
-      percentage: item.total > 0 ? Number(((item.present / item.total) * 100).toFixed(2)) : 0,
-      absentPercentage: item.total > 0 ? Number(((item.absent / item.total) * 100).toFixed(2)) : 0,
-    }));
-  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
+  const data = useMemo(() => {
+    return (Array.isArray(reportData.rows) ? reportData.rows : [])
+      .map((row: any, index: number) => {
+        const student = studentMap.get(String(row.studentId)) || {};
+        const totals = { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 };
+        Object.values(row.daily || {}).forEach((status: any) => {
+          tallyMonthAttendanceDay(String(status), totals);
+        });
+        return {
+          key: String(index + 1),
+          studentId: row.studentId,
+          admissionNo: row.admissionNo || "—",
+          date: student.admission_date ? new Date(student.admission_date).toLocaleDateString() : "—",
+          name: row.name || "—",
+          img: row.img || "",
+          gender: row.gender || student.gender || "",
+          class: student.class_name || "—",
+          dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
+          fatherName: student.father_name || student.mother_name || "—",
+          count: Object.keys(row.daily || {}).length,
+          presentCount: totals.present,
+          lateCount: totals.late,
+          halfDayCount: totals.half_day,
+          absentCount: totals.absent,
+          holidayCount: totals.holiday,
+        };
+      });
+  }, [reportData.rows, studentMap]);
 
   const exportColumns = useMemo(
     () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Date of Admission", dataKey: "date" },
+      { title: "Student Name", dataKey: "name" },
       { title: "Class", dataKey: "class" },
-      { title: "Section", dataKey: "section" },
-      { title: "Total Present", dataKey: "present" },
-      { title: "Total Absent", dataKey: "absent" },
-      { title: "Present %", dataKey: "percentageLabel" },
-      { title: "Absent %", dataKey: "absentPercentageLabel" },
+      { title: "Date of Birth", dataKey: "dob" },
+      { title: "Father Name", dataKey: "fatherName" },
+      { title: "Count", dataKey: "count" },
+      { title: "Present", dataKey: "presentCount" },
+      { title: "Late", dataKey: "lateCount" },
+      { title: "Half Day", dataKey: "halfDayCount" },
+      { title: "Absent", dataKey: "absentCount" },
+      { title: "Holiday", dataKey: "holidayCount" },
     ],
     []
   );
-
-  const exportRows = useMemo(
-    () =>
-      data.map((row: any) => ({
-        ...row,
-        percentageLabel: `${Number(row.percentage ?? 0).toFixed(2)}%`,
-        absentPercentageLabel: `${Number(row.absentPercentage ?? 0).toFixed(2)}%`,
-      })),
-    [data]
-  );
-
   const handleExportExcel = () => {
-    const rows = exportRows.map((row: any) => ({
+    const rows = data.map((row: any) => ({
+      "Admission No": row.admissionNo,
+      "Date of Admission": row.date,
+      "Student Name": row.name,
       Class: row.class,
-      Section: row.section,
-      "Total Present": row.present,
-      "Total Absent": row.absent,
-      "Present %": row.percentageLabel,
-      "Absent %": row.absentPercentageLabel,
+      "Date of Birth": row.dob,
+      "Father Name": row.fatherName,
+      Count: row.count,
+      Present: row.presentCount,
+      Late: row.lateCount,
+      "Half Day": row.halfDayCount,
+      Absent: row.absentCount,
+      Holiday: row.holidayCount,
     }));
-    exportToExcel(rows, `DailyAttendance_${appliedDate}`);
+    exportToExcel(rows, `StudentAttendanceType_${dayjs().format("YYYY-MM-DD")}`);
   };
-
   const handleExportPDF = () => {
-    exportToPDF(exportRows, "Daily Attendance", `DailyAttendance_${appliedDate}`, exportColumns);
+    exportToPDF(
+      data,
+      "Students Attendance Type",
+      `StudentAttendanceType_${dayjs().format("YYYY-MM-DD")}`,
+      exportColumns
+    );
   };
-
   const handlePrint = () => {
-    printData("Daily Attendance", exportColumns, exportRows);
+    printData("Students Attendance Type", exportColumns, data);
   };
 
   const columns = [
+    {
+      title: "Admission No",
+      dataIndex: "admissionNo",
+      render: (text: string, record: any) => (
+        <>
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="link-primary">
+            {text}
+          </Link>
+        </>
+      ),
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
+    },
+    {
+      title: " Date of Admission",
+      dataIndex: "date",
+      sorter: (a: TableData, b: TableData) => compareText(a?.date, b?.date),
+    },
+
+    {
+      title: "Student Name",
+      dataIndex: "name",
+      render: (text: string, record: any) => (
+        <div className="d-flex align-items-center">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
+            <ImageWithBasePath
+              src={record.img}
+              className="img-fluid rounded-circle"
+              alt="img"
+              gender={record.gender}
+            />
+          </Link>
+          <div className="ms-2">
+            <p className="text-dark mb-0">
+              <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>{text}</Link>
+            </p>
+          </div>
+        </div>
+      ),
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
+    },
     {
       title: "Class",
       dataIndex: "class",
       sorter: (a: TableData, b: TableData) => compareText(a?.class, b?.class),
     },
     {
-      title: " Section",
-      dataIndex: "section",
-      sorter: (a: TableData, b: TableData) => compareText(a?.section, b?.section),
+      title: "Date of Birth",
+      dataIndex: "dob",
+      sorter: (a: TableData, b: TableData) => compareText(a?.dob, b?.dob),
     },
     {
-      title: " Total Present",
-      dataIndex: "present",
-      sorter: (a: TableData, b: TableData) => compareNumber(a?.present, b?.present),
+      title: "Father Name",
+      dataIndex: "fatherName",
+      sorter: (a: any, b: any) => compareText(a?.fatherName, b?.fatherName),
     },
     {
-      title: " Total Absent",
-      dataIndex: "absent",
-      sorter: (a: TableData, b: TableData) => compareNumber(a?.absent, b?.absent),
+      title: "Count",
+      dataIndex: "count",
+      sorter: (a: any, b: any) => compareNumber(a?.count, b?.count),
+    },
+
+    {
+      title: "Present",
+      dataIndex: "presentCount",
+      sorter: (a: any, b: any) => compareNumber(a?.presentCount, b?.presentCount),
     },
     {
-      title: " Present %",
-      dataIndex: "percentage",
-      sorter: (a: any, b: any) => compareNumber(a?.percentage, b?.percentage),
-      render: (value: number) => `${Number(value ?? 0).toFixed(2)}%`,
+      title: "Late",
+      dataIndex: "lateCount",
+      sorter: (a: any, b: any) => compareNumber(a?.lateCount, b?.lateCount),
     },
     {
-      title: " Absent %",
-      dataIndex: "absentPercentage",
-      sorter: (a: any, b: any) => compareNumber(a?.absentPercentage, b?.absentPercentage),
-      render: (value: number) => `${Number(value ?? 0).toFixed(2)}%`,
+      title: "Half Day",
+      dataIndex: "halfDayCount",
+      sorter: (a: any, b: any) => compareNumber(a?.halfDayCount, b?.halfDayCount),
+    },
+    {
+      title: "Absent",
+      dataIndex: "absentCount",
+      sorter: (a: any, b: any) => compareNumber(a?.absentCount, b?.absentCount),
+    },
+    {
+      title: "Holiday",
+      dataIndex: "holidayCount",
+      sorter: (a: any, b: any) => compareNumber(a?.holidayCount, b?.holidayCount),
     },
   ];
   return (
@@ -245,7 +302,7 @@ const DailyAttendance = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Daily Attendance</h3>
+              <h3 className="page-title mb-1">Students Attendance Type</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -255,7 +312,7 @@ const DailyAttendance = () => {
                     <Link to="#">Report</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Daily Attendance
+                    Students Attendance Type
                   </li>
                 </ol>
               </nav>
@@ -279,28 +336,26 @@ const DailyAttendance = () => {
                   <Link to={routes.attendanceReport}>Attendance Report</Link>
                 </li>
                 <li>
-                  <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
+                  <Link to={routes.studentAttendanceType} className="active">
+                    Students Attendance Type
+                  </Link>
                 </li>
                 <li>
-                  <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
+                  <Link to={routes.dailyAttendance}>Daily Attendance</Link>
                 </li>
                 <li>
                   <Link to={routes.studentDayWise}>Student Day Wise</Link>
                 </li>
-                {!isTeacherRole && (
-                  <>
-                    <li>
-                      <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
-                        Staff Day Wise
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
-                        Staff Report
-                      </Link>
-                    </li>
-                  </>
-                )}
+                <li>
+                  <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                    Staff Day Wise
+                  </Link>
+                </li>
+                <li>
+                  <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                    Staff Report
+                  </Link>
+                </li>
               </ul>
             </div>
             {/* /List Tab */}
@@ -310,7 +365,7 @@ const DailyAttendance = () => {
           {/* Attendance List */}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Daily Attendance</h4>
+              <h4 className="mb-3">Students Attendance Type</h4>
               <div className="d-flex align-items-center flex-wrap">
                 <div className="dropdown mb-3 me-2">
                   <Link
@@ -329,9 +384,10 @@ const DailyAttendance = () => {
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-12">
+                          <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Class</label>
+
                               <CommonSelect
                                 className="select"
                                 options={classOptions}
@@ -341,18 +397,7 @@ const DailyAttendance = () => {
                             </div>
                           </div>
                           <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Attendance Date</label>
-
-                              <DatePicker
-                                className="form-control datetimepicker"
-                                value={dayjs(selectedDate)}
-                                onChange={(value: Dayjs | null) => setSelectedDate((value || dayjs()).format("YYYY-MM-DD"))}
-                                allowClear={false}
-                                format="DD-MM-YYYY"
-                                getPopupContainer={() => dropdownMenuRef.current || document.body}
-                              />
-                            </div>
+                            <div className="mb-0" />
                           </div>
                         </div>
                       </div>
@@ -384,7 +429,7 @@ const DailyAttendance = () => {
                   <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>
                   </div>
-                  <p className="mt-2 mb-0">Loading daily attendance...</p>
+                  <p className="mt-2 mb-0">Loading students attendance type report...</p>
                 </div>
               ) : (
                 <Table dataSource={data} columns={columns} Selection={false} />
@@ -399,4 +444,4 @@ const DailyAttendance = () => {
   );
 };
 
-export default DailyAttendance;
+export default StudentAttendanceType;

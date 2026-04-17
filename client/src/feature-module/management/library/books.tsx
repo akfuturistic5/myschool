@@ -314,7 +314,7 @@ const Books = () => {
         publication_year: editForm.publication_year === "" ? null : Number(editForm.publication_year),
         category_id: editForm.category_id === "" ? null : Number(editForm.category_id),
         total_copies: Number(editForm.total_copies) || 1,
-        available_copies: Number(editForm.available_copies) ?? 0,
+        available_copies: Number(editForm.available_copies) || 0,
         book_price: editForm.book_price === "" ? null : Number(editForm.book_price),
         book_location: editForm.book_location || null,
         description: editForm.description || null,

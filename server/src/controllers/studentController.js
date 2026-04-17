@@ -3567,13 +3567,13 @@ const getAttendanceReport = async (req, res) => {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    const monthLast = new Date(monthEnd);
+    const monthLast = new Date(monthEndDate);
     monthLast.setUTCDate(monthLast.getUTCDate() - 1);
     const monthLastIso = monthLast.toISOString().slice(0, 10);
-    const holidays = await listHolidaysInRange(monthStart.toISOString().slice(0, 10), monthLastIso);
+    const holidays = await listHolidaysInRange(monthStartDate.toISOString().slice(0, 10), monthLastIso);
     const holidayDates = buildHolidayDateSet(
       holidays,
-      monthStart.toISOString().slice(0, 10),
+      monthStartDate.toISOString().slice(0, 10),
       monthLastIso
     );
 
@@ -3595,8 +3595,16 @@ const getAttendanceReport = async (req, res) => {
     const rows = rosterRes.rows.map((student) => {
       const daily = attendanceByStudent.get(String(student.id)) || {};
       days.forEach((day) => {
-        if (holidayDates.has(day.date)) {
-          daily[day.date] = 'holiday';
+        const existing = daily[day.date];
+        const isHoliday = holidayDates.has(day.date);
+        if (isHoliday) {
+          if (existing && existing !== 'holiday') {
+            daily[day.date] = `holiday_${existing}`;
+          } else if (!existing) {
+            daily[day.date] = 'holiday';
+          }
+        } else if (!existing) {
+          daily[day.date] = 'absent';
         }
       });
 
@@ -3610,6 +3618,16 @@ const getAttendanceReport = async (req, res) => {
       };
 
       Object.values(daily).forEach((status) => {
+        const s = String(status || '');
+        if (s.startsWith('holiday_') && s.length > 'holiday_'.length) {
+          summary.holiday += 1;
+          const rest = s.slice('holiday_'.length);
+          if (rest === 'present') summary.present += 1;
+          else if (rest === 'late') summary.late += 1;
+          else if (rest === 'absent') summary.absent += 1;
+          else if (rest === 'half_day') summary.halfDay += 1;
+          return;
+        }
         if (status === 'present') summary.present += 1;
         else if (status === 'late') summary.late += 1;
         else if (status === 'absent') summary.absent += 1;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { apiService } from "../../../core/services/apiService";
@@ -7,6 +7,7 @@ import { exportAttendanceExcel, exportAttendancePdf } from "./exportUtils";
 
 const StaffDayWiseLive = () => {
   const routes = all_routes;
+  const location = useLocation();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
@@ -53,6 +54,18 @@ const StaffDayWiseLive = () => {
       <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
         <div className="my-auto mb-2"><h3 className="page-title mb-1">Staff Day Wise Report</h3><ol className="breadcrumb mb-0"><li className="breadcrumb-item"><Link to={routes.adminDashboard}>Dashboard</Link></li><li className="breadcrumb-item active">Staff Day Wise</li></ol></div>
         <TooltipOption />
+      </div>
+      <div className="filter-wrapper">
+        <div className="list-tab">
+          <ul>
+            <li><Link to={routes.attendanceReport} className={location.pathname === routes.attendanceReport ? "active" : ""}>Attendance Report</Link></li>
+            <li><Link to={routes.studentAttendanceType} className={location.pathname === routes.studentAttendanceType ? "active" : ""}>Students Attendance Type</Link></li>
+            <li><Link to={routes.dailyAttendance} className={location.pathname === routes.dailyAttendance ? "active" : ""}>Daily Attendance</Link></li>
+            <li><Link to={routes.studentDayWise} className={location.pathname === routes.studentDayWise ? "active" : ""}>Student Day Wise</Link></li>
+            <li><Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>Staff Day Wise</Link></li>
+            <li><Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>Staff Report</Link></li>
+          </ul>
+        </div>
       </div>
       <div className="card"><div className="card-header"><div className="row g-2">
         <div className="col-md-3"><label className="form-label">Date</label><input type="date" className="form-control" value={date} onChange={(e) => setDate(e.target.value)} /></div>
