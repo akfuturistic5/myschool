@@ -1877,6 +1877,26 @@ class ApiService {
     });
   }
 
+  async getEventAttachments(eventId) {
+    return this.makeRequest(`/events/${eventId}/attachments`);
+  }
+
+  async uploadEventAttachment(eventId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.makeRequest(`/events/${eventId}/attachments`, {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  async deleteEventAttachment(eventId, attachmentId) {
+    return this.makeRequest(`/events/${eventId}/attachments/${attachmentId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Calendar Events
   async getCalendarEvents(params = {}) {
     const queryString = new URLSearchParams(params).toString();

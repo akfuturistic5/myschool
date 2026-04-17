@@ -43,10 +43,6 @@ const EventListItem = ({ ev, showTime = true }: { ev: EventItem; showTime?: bool
           </p>
         </div>
       </div>
-      <span className={`badge d-inline-flex align-items-center ${ev.is_all_day ? "badge-soft-danger" : "badge-soft-skyblue"}`}>
-        <i className="ti ti-circle-filled fs-5 me-1" />
-        {ev.is_all_day ? "Full Day" : "Half Day"}
-      </span>
     </div>
     {showTime && getTimeRange(ev) && (
       <p className="mb-0 mt-1 ms-5">
