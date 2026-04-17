@@ -15,7 +15,6 @@ const Datatable: React.FC<DatatableProps> = ({
   pagination: paginationProp,
   showSearch = true,
   onTableChange,
-  loading = false,
 }) => {
   const safeData = Array.isArray(dataSource) ? dataSource : [];
   const safeColumns = Array.isArray(columns) ? columns : [];

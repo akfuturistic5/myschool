@@ -3419,7 +3419,6 @@ const getAttendanceReport = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'month must be in YYYY-MM format' });
     }
 
-    if (classId) {
     const roleId = Number(req.user?.role_id);
     const roleName = String(req.user?.role_name || '').trim().toLowerCase();
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
@@ -3591,24 +3590,6 @@ const getAttendanceReport = async (req, res) => {
             ).padStart(2, '0')}-${String(row.attendance_date.getDate()).padStart(2, '0')}`
           : String(row.attendance_date || '').slice(0, 10);
       attendanceByStudent.get(studentKey)[attendanceDateKey] = normalizeAttendanceStatus(row.status);
-    });
-
-    const rows = rosterRes.rows.map((student) => {
-      const recordedDaily = attendanceByStudent.get(String(student.id)) || {};
-      const daily = {};
-      days.forEach((d) => {
-        const existingStatus = recordedDaily[d.date];
-        if (existingStatus) {
-          daily[d.date] = existingStatus;
-          return;
-        }
-        const isSunday = new Date(`${d.date}T00:00:00.000Z`).getUTCDay() === 0;
-        daily[d.date] = isSunday ? 'holiday' : 'absent';
-      });
-      const day = toYmd(row.attendance_date);
-      if (!day) return;
-      const normalized = normalizeAttendanceStatus(row.status);
-      attendanceByStudent.get(studentKey)[day] = applyHolidayOverride(normalized, holidayDates.has(day));
     });
 
     const rows = rosterRes.rows.map((student) => {

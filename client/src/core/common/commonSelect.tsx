@@ -1,4 +1,4 @@
-import  { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Select from "react-select";
 
 export type Option = {
@@ -17,7 +17,6 @@ export interface SelectProps {
   placeholder?: string;
 }
 
-const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, className, placeholder }) => {
 const CommonSelect: React.FC<SelectProps> = ({
   options,
   defaultValue,
