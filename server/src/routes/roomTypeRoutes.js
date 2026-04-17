@@ -1,14 +1,20 @@
 const express = require('express');
 const { requireRole } = require('../middleware/rbacMiddleware');
-const { ALL_AUTHENTICATED_ROLES } = require('../config/roles');
-const { getAllRoomTypes, getRoomTypeById } = require('../controllers/roomTypeController');
+const { ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
+const {
+  getAllRoomTypes,
+  getRoomTypeById,
+  createRoomType,
+  updateRoomType,
+  deleteRoomType,
+} = require('../controllers/roomTypeController');
 
 const router = express.Router();
 
-// Get all room types
 router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllRoomTypes);
-
-// Get room type by ID
+router.post('/', requireRole([ROLES.ADMIN, ROLES.ADMINISTRATIVE]), createRoomType);
 router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getRoomTypeById);
+router.put('/:id', requireRole([ROLES.ADMIN, ROLES.ADMINISTRATIVE]), updateRoomType);
+router.delete('/:id', requireRole([ROLES.ADMIN, ROLES.ADMINISTRATIVE]), deleteRoomType);
 
 module.exports = router;
