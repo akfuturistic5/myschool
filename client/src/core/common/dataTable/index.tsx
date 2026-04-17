@@ -8,6 +8,7 @@ import type { DatatableProps } from "../../data/interface"; // Ensure correct pa
 const Datatable: React.FC<DatatableProps> = ({
   columns,
   dataSource,
+  loading = false,
   Selection,
   selectedRowKeys: controlledSelectedKeys,
   onSelectionChange,
@@ -93,6 +94,29 @@ const Datatable: React.FC<DatatableProps> = ({
           </div>
         </div>
       ) : null}
+      {!Selections ?
+        <Table
+          className="table datanew dataTable no-footer"
+          rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
+          columns={safeColumns}
+          rowHoverable={false}
+          loading={loading}
+          dataSource={filteredDataSource ?? safeData}
+          pagination={paginationConfig}
+          onChange={onTableChange}
+        /> :
+        <Table
+          className="table datanew dataTable no-footer"
+          rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
+          rowSelection={rowSelection}
+          columns={safeColumns}
+          rowHoverable={false}
+          loading={loading}
+          dataSource={filteredDataSource ?? safeData}
+          pagination={paginationConfig}
+          onChange={onTableChange}
+        />}
+
       <Table
         className="table datanew dataTable no-footer"
         rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}

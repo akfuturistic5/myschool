@@ -70,6 +70,22 @@ const DailyAttendance = () => {
       }
     };
 
+
+        setClassOptions([
+          { value: "all", label: "All Classes" },
+          ...classes.map((item: any) => ({
+            value: String(item.id),
+            label: item.class_name || `Class ${item.id}`,
+          })),
+        ]);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load class options");
+          setClassOptions([{ value: "all", label: "All Classes" }]);
+        }
+      }
+    };
+
     fetchFilterOptions();
     return () => {
       cancelled = true;
@@ -155,6 +171,40 @@ const DailyAttendance = () => {
       ...item,
       percentage: item.total > 0 ? Number(((item.present / item.total) * 100).toFixed(2)) : 0,
       absentPercentage: item.total > 0 ? Number(((item.absent / item.total) * 100).toFixed(2)) : 0,
+    }));
+  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Total Present", dataKey: "present" },
+      { title: "Total Absent", dataKey: "absent" },
+      { title: "Present %", dataKey: "percentageLabel" },
+      { title: "Absent %", dataKey: "absentPercentageLabel" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => ({
+        ...row,
+        percentageLabel: `${Number(row.percentage ?? 0).toFixed(2)}%`,
+        absentPercentageLabel: `${Number(row.absentPercentage ?? 0).toFixed(2)}%`,
+      })),
+    [data]
+  );
+
+  const handleExportExcel = () => {
+    const rows = exportRows.map((row: any) => ({
+      Class: row.class,
+      Section: row.section,
+      "Total Present": row.present,
+      "Total Absent": row.absent,
+      "Present %": row.percentageLabel,
+      "Absent %": row.absentPercentageLabel,
+    }));
     }));
   }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
 

@@ -312,6 +312,9 @@ const deleteRoute = async (req, res) => {
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid route ID');
     }
+    return errorResponse(res, 500, 'Failed to update transport route');
+  }
+};
 
     const result = await query(
       'UPDATE routes SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
