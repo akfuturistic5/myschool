@@ -15,7 +15,6 @@ const Datatable: React.FC<DatatableProps> = ({
   pagination: paginationProp,
   showSearch = true,
   onTableChange,
-  loading = false,
 }) => {
   const safeData = Array.isArray(dataSource) ? dataSource : [];
   const safeColumns = Array.isArray(columns) ? columns : [];
@@ -94,7 +93,7 @@ const Datatable: React.FC<DatatableProps> = ({
           </div>
         </div>
       ) : null}
-      {!Selections ?
+      {!Selection ? (
         <Table
           className="table datanew dataTable no-footer"
           rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
@@ -104,7 +103,8 @@ const Datatable: React.FC<DatatableProps> = ({
           dataSource={filteredDataSource ?? safeData}
           pagination={paginationConfig}
           onChange={onTableChange}
-        /> :
+        />
+      ) : (
         <Table
           className="table datanew dataTable no-footer"
           rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
@@ -115,19 +115,8 @@ const Datatable: React.FC<DatatableProps> = ({
           dataSource={filteredDataSource ?? safeData}
           pagination={paginationConfig}
           onChange={onTableChange}
-        />}
-
-      <Table
-        className="table datanew dataTable no-footer"
-        rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
-        rowSelection={rowSelection}
-        columns={safeColumns}
-        rowHoverable={false}
-        loading={loading}
-        dataSource={filteredDataSource ?? safeData}
-        pagination={paginationConfig}
-        onChange={onTableChange}
-      />
+        />
+      )}
     </>
   );
 };

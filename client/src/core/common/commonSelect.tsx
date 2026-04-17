@@ -17,7 +17,6 @@ export interface SelectProps {
   placeholder?: string;
 }
 
-const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, className, placeholder }) => {
 const CommonSelect: React.FC<SelectProps> = ({
   options,
   defaultValue,

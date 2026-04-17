@@ -13,6 +13,12 @@ import { useDesignations } from "../../../core/hooks/useDesignations";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
+import {
+  formatAttendanceDayHumanLabel,
+  formatAttendanceDayShort,
+  getCompoundHolidayAttendancePart,
+  isHolidayAttendanceCompound,
+} from "../../../core/utils/attendanceReportStatus";
 
 type RosterRow = {
   entity_id: number;
@@ -40,22 +46,21 @@ const statusClassMap: Record<string, string> = {
   holiday: "bg-info",
   weekly_holiday: "bg-info",
 };
+const statusTextMapDay: Record<string, string> = {
+  present: "P",
+  late: "L",
+  absent: "A",
+  half_day: "F",
+  halfday: "F",
+  holiday: "H",
+  weekly_holiday: "H",
+};
 const statusShortLabel = (status: string | null | undefined) => {
   const s = String(status || "").trim().toLowerCase();
-  if (s === "present") return "P";
-  if (s === "late") return "L";
-  if (s === "absent") return "A";
-  if (s === "holiday" || s === "weekly_holiday") return "H";
   if (s === "half_day" || s === "halfday") return "F";
-  return "";
+  return formatAttendanceDayShort(status);
 };
-const formatStatusLabel = (status: string | null | undefined) => {
-  const s = String(status || "").trim().toLowerCase();
-  if (!s) return "Not Marked";
-  if (s === "weekly_holiday") return "Weekly holiday";
-  if (s === "holiday") return "Holiday";
-  return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-};
+const formatStatusLabel = (status: string | null | undefined) => formatAttendanceDayHumanLabel(status);
 const toDateKey = (value: unknown) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -378,27 +383,58 @@ const StudentAttendance = () => {
         key: day.date,
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
-          const cls = status ? statusClassMap[status] || "bg-light" : "";
+          const pillStyle = {
+            width: 20,
+            height: 16,
+            display: "inline-flex" as const,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+            borderRadius: 6,
+            fontSize: 9,
+            fontWeight: 700 as const,
+            color: "#fff",
+          };
+          if (!status) {
+            return (
+              <span
+                className="attendance-range"
+                style={{ opacity: 0.15, width: 22, height: 18, display: "inline-flex" }}
+                title={`${day.date}: Not Marked`}
+              />
+            );
+          }
+          if (isHolidayAttendanceCompound(status)) {
+            const rest = getCompoundHolidayAttendancePart(status);
+            const subText = statusTextMapDay[rest] || "?";
+            const subCls = statusClassMap[rest] || "bg-light";
+            return (
+              <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }} title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}>
+                <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
+                  H
+                </span>
+                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                  {subText}
+                </span>
+              </span>
+            );
+          }
+          const cls = statusClassMap[status] || "bg-light";
           const short = statusShortLabel(status);
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={
-                !status
-                  ? { opacity: 0.15, width: 22, height: 18, display: "inline-flex" }
-                  : {
-                      width: 22,
-                      height: 18,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#fff",
-                    }
-              }
-              title={status ? `${day.date}: ${formatStatusLabel(status)}` : `${day.date}: Not Marked`}
+              style={{
+                width: 22,
+                height: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#fff",
+              }}
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
             >
               {short}
             </span>

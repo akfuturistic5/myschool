@@ -152,6 +152,8 @@ import TeacherForm from "../peoples/teacher/teacherForm";
 import TeacherAssignments from "../peoples/teacher/teacher-assignments";
 import AttendanceReport from "../report/attendance-report/attendanceReport";
 import DailyAttendance from "../report/attendance-report/dailyAttendance";
+import StudentAttendanceType from "../report/attendance-report/studentAttendanceType";
+import StudentDayWise from "../report/attendance-report/studentDayWise";
 import StaffDayWise from "../report/attendance-report/staffDayWiseLive";
 import StaffReport from "../report/attendance-report/staffReportLive";
 import ClassReport from "../report/class-report/classReport";
@@ -1447,8 +1449,18 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.studentAttendanceType,
+    element: <StudentAttendanceType />,
+    route: Route,
+  },
+  {
+    path: routes.studentDayWise,
+    element: <StudentDayWise />,
+    route: Route,
+  },
+  {
     path: routes.teacherDayWise,
-    element: <Navigate to={routes.staffDayWise} replace />,
+    element: <StaffDayWise />,
     route: Route,
   },
   {
@@ -1458,7 +1470,7 @@ export const publicRoutes = [
   },
   {
     path: routes.teacherReport,
-    element: <Navigate to={routes.staffReport} replace />,
+    element: <StaffReport />,
     route: Route,
   },
   {

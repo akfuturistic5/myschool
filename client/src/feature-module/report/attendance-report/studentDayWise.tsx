@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -10,6 +10,10 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { apiService } from "../../../core/services/apiService";
+import {
+  formatAttendanceDayHumanLabel,
+  isHolidayAttendanceCompound,
+} from "../../../core/utils/attendanceReportStatus";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
@@ -18,6 +22,7 @@ const compareText = (left: unknown, right: unknown) =>
 
 const StudentDayWise = () => {
   const routes = all_routes;
+  const location = useLocation();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
@@ -176,18 +181,21 @@ const StudentDayWise = () => {
       .map((row: any, index: number) => {
         const status = row.daily?.[dayKey];
         if (!status) return null;
-        const label =
-          status === "present" ? "Present" :
-          status === "late" ? "Late" :
-          status === "absent" ? "Absent" :
-          status === "half_day" ? "Half Day" :
-          status === "holiday" ? "Holiday" : "—";
-        const badgeClass =
-          status === "present" ? "badge-soft-success" :
-          status === "late" ? "badge-soft-warning" :
-          status === "absent" ? "badge-soft-danger" :
-          status === "half_day" ? "badge-soft-primary" :
-          "badge-soft-info";
+        const label = formatAttendanceDayHumanLabel(status);
+        let badgeClass = "badge-soft-secondary";
+        if (isHolidayAttendanceCompound(status)) {
+          badgeClass = "badge-soft-info";
+        } else if (status === "present") {
+          badgeClass = "badge-soft-success";
+        } else if (status === "late") {
+          badgeClass = "badge-soft-warning";
+        } else if (status === "absent") {
+          badgeClass = "badge-soft-danger";
+        } else if (status === "half_day") {
+          badgeClass = "badge-soft-primary";
+        } else if (status === "holiday") {
+          badgeClass = "badge-soft-info";
+        }
 
         return {
           key: String(index + 1),
@@ -338,16 +346,14 @@ const StudentDayWise = () => {
                   </Link>
                 </li>
                 <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
+                  <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                    Staff Day Wise
+                  </Link>
                 </li>
                 <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
+                  <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                    Staff Report
+                  </Link>
                 </li>
               </ul>
             </div>

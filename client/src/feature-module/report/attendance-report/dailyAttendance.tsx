@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -9,6 +9,7 @@ import type { TableData } from "../../../core/data/interface";
 import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { apiService } from "../../../core/services/apiService";
+import { getDailyAttendancePresentAbsentBucket } from "../../../core/utils/attendanceReportStatus";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
@@ -21,6 +22,7 @@ const compareNumber = (left: unknown, right: unknown) =>
 
 const DailyAttendance = () => {
   const routes = all_routes;
+  const location = useLocation();
   const user = useSelector(selectUser);
   const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -71,20 +73,20 @@ const DailyAttendance = () => {
     };
 
 
-        setClassOptions([
-          { value: "all", label: "All Classes" },
-          ...classes.map((item: any) => ({
-            value: String(item.id),
-            label: item.class_name || `Class ${item.id}`,
-          })),
-        ]);
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err?.message || "Failed to load class options");
-          setClassOptions([{ value: "all", label: "All Classes" }]);
-        }
-      }
-    };
+    //     setClassOptions([
+    //       { value: "all", label: "All Classes" },
+    //       ...classes.map((item: any) => ({
+    //         value: String(item.id),
+    //         label: item.class_name || `Class ${item.id}`,
+    //       })),
+    //     ]);
+    //   } catch (err: any) {
+    //     if (!cancelled) {
+    //       setError(err?.message || "Failed to load class options");
+    //       setClassOptions([{ value: "all", label: "All Classes" }]);
+    //     }
+    //   }
+    // };
 
     fetchFilterOptions();
     return () => {
@@ -161,8 +163,9 @@ const DailyAttendance = () => {
 
       if (status) {
         current.total += 1;
-        if (status === "present" || status === "late") current.present += 1;
-        if (status === "absent" || status === "half_day") current.absent += 1;
+        const bucket = getDailyAttendancePresentAbsentBucket(status);
+        if (bucket === "present_side") current.present += 1;
+        if (bucket === "absent_side") current.absent += 1;
       }
       grouped.set(groupKey, current);
     });
@@ -205,41 +208,6 @@ const DailyAttendance = () => {
       "Present %": row.percentageLabel,
       "Absent %": row.absentPercentageLabel,
     }));
-    }));
-  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
-
-  const exportColumns = useMemo(
-    () => [
-      { title: "Class", dataKey: "class" },
-      { title: "Section", dataKey: "section" },
-      { title: "Total Present", dataKey: "present" },
-      { title: "Total Absent", dataKey: "absent" },
-      { title: "Present %", dataKey: "percentageLabel" },
-      { title: "Absent %", dataKey: "absentPercentageLabel" },
-    ],
-    []
-  );
-
-  const exportRows = useMemo(
-    () =>
-      data.map((row: any) => ({
-        ...row,
-        percentageLabel: `${Number(row.percentage ?? 0).toFixed(2)}%`,
-        absentPercentageLabel: `${Number(row.absentPercentage ?? 0).toFixed(2)}%`,
-      })),
-    [data]
-  );
-
-  const handleExportExcel = () => {
-    const rows = exportRows.map((row: any) => ({
-      Class: row.class,
-      Section: row.section,
-      "Total Present": row.present,
-      "Total Absent": row.absent,
-      "Present %": row.percentageLabel,
-      "Absent %": row.absentPercentageLabel,
-    }));
-    exportToExcel(rows, `DailyAttendance_${appliedDate}`);
   };
 
   const handleExportPDF = () => {
@@ -326,15 +294,25 @@ const DailyAttendance = () => {
                   <Link to={routes.attendanceReport}>Attendance Report</Link>
                 </li>
                 <li>
+                  <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
+                </li>
+                <li>
                   <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
+                </li>
+                <li>
+                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
                 </li>
                 {!isTeacherRole && (
                   <>
                     <li>
-                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                      <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                        Staff Day Wise
+                      </Link>
                     </li>
                     <li>
-                      <Link to={routes.staffReport}>Staff Report</Link>
+                      <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                        Staff Report
+                      </Link>
                     </li>
                   </>
                 )}

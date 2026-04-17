@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -9,6 +9,7 @@ import dayjs from "dayjs";
 import type { TableData } from "../../../core/data/interface";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
+import { tallyMonthAttendanceDay } from "../../../core/utils/attendanceReportStatus";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useStudents } from "../../../core/hooks/useStudents";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
@@ -21,6 +22,7 @@ const compareNumber = (left: unknown, right: unknown) =>
 
 const StudentAttendanceType = () => {
   const routes = all_routes;
+  const location = useLocation();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { students } = useStudents();
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
@@ -133,14 +135,10 @@ const StudentAttendanceType = () => {
     return (Array.isArray(reportData.rows) ? reportData.rows : [])
       .map((row: any, index: number) => {
         const student = studentMap.get(String(row.studentId)) || {};
-        const counts = Object.values(row.daily || {}).reduce(
-          (acc: Record<string, number>, status: any) => {
-            const key = String(status || "");
-            acc[key] = (acc[key] || 0) + 1;
-            return acc;
-          },
-          { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 }
-        );
+        const totals = { present: 0, late: 0, half_day: 0, absent: 0, holiday: 0 };
+        Object.values(row.daily || {}).forEach((status: any) => {
+          tallyMonthAttendanceDay(String(status), totals);
+        });
         return {
           key: String(index + 1),
           studentId: row.studentId,
@@ -152,12 +150,12 @@ const StudentAttendanceType = () => {
           class: student.class_name || "—",
           dob: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : "—",
           fatherName: student.father_name || student.mother_name || "—",
-          count: Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0),
-          presentCount: counts.present || 0,
-          lateCount: counts.late || 0,
-          halfDayCount: counts.half_day || 0,
-          absentCount: counts.absent || 0,
-          holidayCount: counts.holiday || 0,
+          count: Object.keys(row.daily || {}).length,
+          presentCount: totals.present,
+          lateCount: totals.late,
+          halfDayCount: totals.half_day,
+          absentCount: totals.absent,
+          holidayCount: totals.holiday,
         };
       });
   }, [reportData.rows, studentMap]);
@@ -349,16 +347,14 @@ const StudentAttendanceType = () => {
                   <Link to={routes.studentDayWise}>Student Day Wise</Link>
                 </li>
                 <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
+                  <Link to={routes.staffDayWise} className={location.pathname === routes.staffDayWise ? "active" : ""}>
+                    Staff Day Wise
+                  </Link>
                 </li>
                 <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
+                  <Link to={routes.staffReport} className={location.pathname === routes.staffReport ? "active" : ""}>
+                    Staff Report
+                  </Link>
                 </li>
               </ul>
             </div>
