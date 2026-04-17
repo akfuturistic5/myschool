@@ -1,4 +1,4 @@
-import  { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Select from "react-select";
 
 export type Option = {
@@ -13,10 +13,19 @@ export interface SelectProps {
   onChange?: (value: string | null) => void;
   onBlur?: () => void;
   className?: string;
-  styles?: any; 
+  styles?: any;
+  placeholder?: string;
 }
 
-const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onChange, onBlur, className }) => {
+const CommonSelect: React.FC<SelectProps> = ({
+  options,
+  defaultValue,
+  value,
+  onChange,
+  onBlur,
+  className,
+  placeholder,
+}) => {
   const safeOptions = Array.isArray(options)
     ? options.filter(
         (option): option is Option =>
@@ -78,7 +87,7 @@ const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, value, onC
       value={selectedOption}
       onChange={handleChange}
       onBlur={onBlur}
-      placeholder="Select"
+      placeholder={placeholder || "Select"}
     />
   );
 };

@@ -263,28 +263,33 @@ const enforceCsrf = (req, res, next) => {
 };
 app.use(enforceCsrf);
 
-// Login rate limiting - stricter (10 attempts per 15 min per IP)
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: parseInt(process.env.LOGIN_RATE_LIMIT_MAX || '10', 10),
-  message: { status: 'ERROR', message: 'Too many login attempts, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api/auth/login', loginLimiter);
-app.use('/super-admin/api/auth/login', loginLimiter);
+// Rate limiting - only applied in production to avoid disruption in local development.
+if (isProduction) {
+  // Login rate limiting - stricter (10 attempts per 15 min per IP)
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: parseInt(process.env.LOGIN_RATE_LIMIT_MAX || '10', 10),
+    message: { status: 'ERROR', message: 'Too many login attempts, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+  app.use('/api/auth/login', loginLimiter);
+  app.use('/super-admin/api/auth/login', loginLimiter);
 
-// Global API rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),
-  message: { status: 'ERROR', message: 'Too many requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/api/health'),
-});
-app.use('/api', limiter);
-app.use('/super-admin/api', limiter);
+  // Global API rate limiting
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: parseInt(process.env.RATE_LIMIT_MAX || '500', 10),
+    message: { status: 'ERROR', message: 'Too many requests, please try again later' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/api/health'),
+  });
+  app.use('/api', limiter);
+  app.use('/super-admin/api', limiter);
+} else {
+  console.log('[rate-limit] Disabled in development mode');
+}
 
 // Auth routes - public, no token needed
 app.use('/api/auth', authRoutes);

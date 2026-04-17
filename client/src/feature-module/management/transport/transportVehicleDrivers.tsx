@@ -1,52 +1,142 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  driverFilter,
-  driverName,
-  status,
-} from "../../../core/common/selectoption/selectoption";
-import type { TableData } from "../../../core/data/interface";
+import { status } from "../../../core/common/selectoption/selectoption";
 import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportDrivers } from "../../../core/hooks/useTransportDrivers";
-import { apiService } from "../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportVehicleDrivers = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, fallbackData, refetch } = useTransportDrivers();
-  const data = apiData?.length ? apiData : fallbackData;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  
+  // State for filters and pagination
+  const [params, setParams] = useState({
+    page: 1,
+    limit: 10,
+    search: "",
+    role: "all",
+    status: "",
+    sortField: "id",
+    sortOrder: "ASC"
+  });
+
+  const { data, loading, metadata, refetch } = useTransportDrivers(params);
+
   const [selectedDriver, setSelectedDriver] = useState<any>(null);
-  const [editDriverName, setEditDriverName] = useState('');
-  const [editDriverPhone, setEditDriverPhone] = useState('');
-  const [editDriverLicense, setEditDriverLicense] = useState('');
-  const [editDriverAddress, setEditDriverAddress] = useState('');
-  const [editDriverStatus, setEditDriverStatus] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [draftRole, setDraftRole] = useState("all");
+  const [draftStatus, setDraftStatus] = useState("all");
+
+  useEffect(() => {
+    setParams(prev => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
+  }, [academicYearId]);
+
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const onPageChange = (page: number, pageSize: number) => {
+    setParams(prev => ({ ...prev, page, limit: pageSize }));
+  };
+
+  const onSort = (field: string, order: string) => {
+    const sortFieldMap: Record<string, string> = {
+      id: "id",
+      name: "driver_name",
+      phone: "phone",
+      role: "role",
+      driverLicenseNo: "license_number",
+      status: "is_active",
+      createdAt: "created_at",
+    };
+    setParams(prev => ({
+      ...prev,
+      sortField: sortFieldMap[field] || "id",
+      sortOrder: order === "ascend" ? "ASC" : "DESC"
+    }));
+  };
+
+  const handleSearch = (value: string) => {
+    setParams(prev => ({ ...prev, search: value, page: 1 }));
+  };
+
+  const onRefresh = async () => {
+    await refetch();
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed',
+      text: 'Data updated successfully',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  };
+
+  const handleExportExcel = () => {
+    const exportData = (data as any[]).map((item: any) => ({
+      ID: item.id,
+      Name: item.name,
+      Role: item.role,
+      Phone: item.phone,
+      "License No": item.driverLicenseNo,
+      Address: item.address,
+      Status: item.status
+    }));
+    exportToExcel(exportData, `Transport_Drivers_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Name", dataKey: "name" },
+      { title: "Role", dataKey: "role" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "License No", dataKey: "driverLicenseNo" },
+      { title: "Address", dataKey: "address" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(data, "Transport Staff List", `Transport_Staff_${new Date().toISOString().split('T')[0]}`, cols);
+  };
+
+  const handlePrint = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Name", dataKey: "name" },
+      { title: "Role", dataKey: "role" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "License No", dataKey: "driverLicenseNo" },
+      { title: "Address", dataKey: "address" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Transport Staff List", cols, data);
+  };
+
   const columns = [
     {
       title: "ID",
-      dataIndex: "id",
-      render: (text: any, record: any) => (
+      dataIndex: "displayId",
+      sorter: true,
+      render: (text: any) => (
         <Link to="#" className="link-primary">
-          {text || record.id || 'N/A'}
+          {text || '—'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
     },
     {
-      title: "Driver",
+      title: "Name",
       dataIndex: "name",
+      sorter: true,
       render: (text: string, record: any) => (
         <div className="d-flex align-items-center">
           <Link to="#" className="avatar avatar-md">
@@ -63,28 +153,32 @@ const TransportVehicleDrivers = () => {
           </div>
         </div>
       ),
-      sorter: (a: TableData, b: TableData) => (String(a.name || '').length - String(b.name || '').length),
     },
     {
       title: "Phone Number",
       dataIndex: "phone",
-      sorter: (a: TableData, b: TableData) => a.phone.length - b.phone.length,
+      sorter: true,
+    },
+    {
+      title: "Role",
+      dataIndex: "role",
+      sorter: true,
     },
     {
       title: "Driver License No",
       dataIndex: "driverLicenseNo",
-      sorter: (a: TableData, b: TableData) =>
-        a.driverLicenseNo.length - b.driverLicenseNo.length,
+      render: (text: string, record: any) => (record.role === "Conductor" ? "N/A" : text),
+      sorter: true,
     },
     {
       title: "Address",
       dataIndex: "address",
-      sorter: (a: TableData, b: TableData) =>
-        a.address.length - b.address.length,
+      sorter: true,
     },
     {
       title: "Status",
       dataIndex: "status",
+      sorter: true,
       render: (text: string) => (
         <>
           {text === "Active" ? (
@@ -100,97 +194,63 @@ const TransportVehicleDrivers = () => {
           )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
     },
-
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // Set form data from record
-                      const driver = record.originalData || record;
-                      // Get driver name (could be from name, driver_name, or first_name + last_name)
-                      const driverName = driver.name || driver.driver_name || record.name || '';
-                      const driverPhone = driver.phone || record.phone || '';
-                      const driverLicense = driver.license_number || record.driverLicenseNo || '';
-                      const driverAddress = driver.address || record.address || '';
-                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-                      // Fallback to status string if is_active is not available
-                      let driverStatus = true; // default to active
-                      if (Object.prototype.hasOwnProperty.call(driver, 'is_active')) {
-                        driverStatus = driver.is_active === true || driver.is_active === 1 || driver.is_active === 'true';
-                      } else if (record.status) {
-                        driverStatus = record.status === 'Active';
-                      }
-
-                      setEditDriverName(driverName);
-                      setEditDriverPhone(driverPhone);
-                      setEditDriverLicense(driverLicense);
-                      setEditDriverAddress(driverAddress);
-                      setEditDriverStatus(driverStatus);
-                      setSelectedDriver(record);
-
-                      setTimeout(() => {
-                        const modalElement = document.getElementById('edit_driver');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-                            modal.show();
-                          }
-                        }
-                      }, 100);
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-right p-3">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#edit_driver"
+                  onClick={() => setSelectedDriver(record)}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#delete-modal"
+                  onClick={() => {
+                    setDeleteId(record.originalData?.id || record.id);
+                    setSelectedDriver(record);
+                  }}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Delete
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Drivers</h3>
+              <h3 className="page-title mb-1">Transport Staff</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -200,35 +260,37 @@ const TransportVehicleDrivers = () => {
                     <Link to="#">Management</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                    Drivers
+                    Transport Staff
                   </li>
                 </ol>
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption 
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
                   data-bs-toggle="modal"
                   data-bs-target="#add_driver"
+                  onClick={() => setSelectedDriver(null)}
                 >
                   <i className="ti ti-square-rounded-plus me-2" />
-                  Add Drivers
+                  Add Staff
                 </Link>
               </div>
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Students List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Drivers List</h4>
+              <h4 className="mb-3">Transport Staff List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -239,171 +301,91 @@ const TransportVehicleDrivers = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-6">
+                          <div className="col-md-12">
                             <div className="mb-3">
-                              <label className="form-label">Driver</label>
+                              <label className="form-label">Role</label>
                               <CommonSelect
                                 className="select"
-                                options={driverName}
-                                defaultValue={undefined}
+                                options={[
+                                  { value: "all", label: "All Roles" },
+                                  { value: "driver", label: "Driver" },
+                                  { value: "conductor", label: "Conductor" }
+                                ]}
+                                value={draftRole}
+                                onChange={(val: string | null) => setDraftRole(val || "all")}
                               />
                             </div>
-                          </div>
-                          <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={status}
-                                defaultValue={status[0]}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">More Filter</label>
-                              <CommonSelect
-                                className="select"
-                                options={driverFilter}
-                                defaultValue={undefined}
+                                options={[{ value: "all", label: "All Status" }, ...status.map(s => ({ value: s.value.toLowerCase(), label: s.label }))]}
+                                value={draftStatus}
+                                onChange={(val: string | null) => setDraftStatus(val === "all" || val === "All" ? "all" : (val?.toLowerCase() || "all"))}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
+                        <Link to="#" className="btn btn-light me-3" onClick={() => {
+                          setDraftRole("all");
+                          setDraftStatus("all");
+                          setParams({ ...params, role: "all", status: "all", page: 1 });
+                        }}>
                           Reset
                         </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
-                        >
+                        <Link to="#" className="btn btn-primary" onClick={() => {
+                          setParams(prev => ({ ...prev, role: draftRole, status: draftStatus, page: 1 }));
+                          handleApplyClick();
+                        }}>
                           Apply
                         </Link>
                       </div>
                     </form>
                   </div>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
+
             <div className="card-body p-0 py-3">
-              {loading && (
-                <div className="text-center py-4">
-                  <span className="spinner-border spinner-border-sm me-2" />
-                  Loading drivers...
-                </div>
-              )}
-              {!loading && (
-                <Table dataSource={data} columns={columns} Selection={true} />
-              )}
+               <Table 
+                 dataSource={data} 
+                 columns={columns} 
+                 Selection={true}
+                 loading={loading}
+                 pagination={{
+                   current: metadata.page,
+                   pageSize: metadata.limit,
+                   total: metadata.totalCount,
+                   showSizeChanger: true,
+                   onChange: onPageChange
+                 }}
+                 onTableChange={(pagination: any, filters: any, sorter: any) => {
+                   if (sorter.field) {
+                     onSort(sorter.field, sorter.order);
+                   }
+                 }}
+               />
             </div>
           </div>
-          {/* /Students List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
+
       <TransportModal
         selectedDriver={selectedDriver}
-        editDriverName={editDriverName}
-        setEditDriverName={setEditDriverName}
-        editDriverPhone={editDriverPhone}
-        setEditDriverPhone={setEditDriverPhone}
-        editDriverLicense={editDriverLicense}
-        setEditDriverLicense={setEditDriverLicense}
-        editDriverAddress={editDriverAddress}
-        setEditDriverAddress={setEditDriverAddress}
-        editDriverStatus={editDriverStatus}
-        setEditDriverStatus={setEditDriverStatus}
-        isUpdating={isUpdating}
-        setIsUpdating={setIsUpdating}
-        onDriverUpdate={async () => {
-          const driverId = selectedDriver?.originalData?.id || selectedDriver?.id;
-          if (!driverId || isUpdating) return;
-
-          setIsUpdating(true);
-          try {
-            const updateData = {
-              name: editDriverName.trim(),
-              phone: editDriverPhone.trim() || null,
-              license_number: editDriverLicense.trim() || null,
-              address: editDriverAddress.trim() || null,
-              is_active: editDriverStatus
-            };
-
-            const response = await apiService.updateTransportDriver(driverId, updateData);
-
-            if (response && response.status === 'SUCCESS') {
-              // Close modal
-              const modalElement = document.getElementById('edit_driver');
-              if (modalElement) {
-                const bootstrap = (window as any).bootstrap;
-                if (bootstrap && bootstrap.Modal) {
-                  const modal = bootstrap.Modal.getInstance(modalElement);
-                  if (modal) modal.hide();
-                }
-              }
-              // Refetch list
-              await refetch();
-              // Reset form
-              setSelectedDriver(null);
-              setEditDriverName('');
-              setEditDriverPhone('');
-              setEditDriverLicense('');
-              setEditDriverAddress('');
-              setEditDriverStatus(true);
-            } else {
-              alert(response?.message || 'Failed to update driver');
-            }
-          } catch (error: any) {
-            console.error('Error updating driver:', error);
-            alert(error?.message || 'Failed to update driver. Please try again.');
-          } finally {
-            setIsUpdating(false);
-          }
+        deleteId={deleteId}
+        onSuccess={() => {
+          refetch();
+          setSelectedDriver(null);
+          setDeleteId(null);
         }}
       />
     </>

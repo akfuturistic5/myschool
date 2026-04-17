@@ -1,50 +1,105 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  PickupPoint2,
-  status,
-} from "../../../core/common/selectoption/selectoption";
-import type { TableData } from "../../../core/data/interface";
+import { status as statusOptions } from "../../../core/common/selectoption/selectoption";
 import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import { useTransportPickupPoints } from "../../../core/hooks/useTransportPickupPoints";
 import { apiService } from "../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportPickupPoints = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { data: apiData, loading, fallbackData, refetch } = useTransportPickupPoints();
-  const data = apiData?.length ? apiData : fallbackData;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+
+  const {
+    data,
+    loading,
+    error,
+    metadata,
+    params,
+    setParams,
+    refetch,
+    handleTableChange
+  } = useTransportPickupPoints();
+
   const [selectedPickupPoint, setSelectedPickupPoint] = useState<any>(null);
-  const [editPickupAddress, setEditPickupAddress] = useState('');
-  const [editPickupStatus, setEditPickupStatus] = useState(true);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const handleApplyClick = () => {
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [draftStatus, setDraftStatus] = useState(params.status || "all");
+
+  useEffect(() => {
+    setParams((prev: any) => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYearId]);
+
+  const handleApplyClick = (e: any) => {
+    e.preventDefault();
+    setParams((prev: any) => ({ ...prev, status: draftStatus, page: 1 }));
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
+
+  const onRefresh = async () => {
+    await refetch();
+    Swal.fire({
+      icon: 'success',
+      title: 'Refreshed',
+      text: 'Data updated successfully',
+      timer: 1500,
+      showConfirmButton: false
+    });
+  };
+
+  const handleExportExcel = () => {
+    const exportData = (data as any[]).map((item: any) => ({
+      ID: item.id,
+      "Pickup Point": item.pickupPoint,
+      Status: item.status,
+      "Added On": item.addedOn
+    }));
+    exportToExcel(exportData, `Pickup_Points_${new Date().toISOString().split('T')[0]}`);
+  };
+
+  const handleExportPDF = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Pickup Point", dataKey: "pickupPoint" },
+      { title: "Status", dataKey: "status" },
+    ];
+    exportToPDF(data, "Pickup Points List", `Pickup_Points_${new Date().toISOString().split('T')[0]}`, cols);
+  };
+
+  const handlePrint = () => {
+    const cols = [
+      { title: "ID", dataKey: "id" },
+      { title: "Pickup Point", dataKey: "pickupPoint" },
+      { title: "Status", dataKey: "status" },
+    ];
+    printData("Pickup Points List", cols, data);
+  };
+
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: any, record: any) => (
+      render: (text: any) => (
         <Link to="#" className="link-primary">
-          {text || record.id || 'N/A'}
+          {text || 'N/A'}
         </Link>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
+      sorter: true,
     },
     {
       title: "Pickup Point",
       dataIndex: "pickupPoint",
-
-      sorter: (a: TableData, b: TableData) =>
-        a.pickupPoint.length - b.pickupPoint.length,
+      sorter: true,
     },
     {
       title: "Status",
@@ -52,110 +107,71 @@ const TransportPickupPoints = () => {
       render: (text: string) => (
         <>
           {text === "Active" ? (
-            <span
-              className="badge badge-soft-success d-inline-flex align-items-center"
-            >
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
             </span>
-          ) :
-            (
-              <span
-                className="badge badge-soft-danger d-inline-flex align-items-center"
-              >
-                <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
-              </span>
-            )}
+          ) : (
+            <span className="badge badge-soft-danger d-inline-flex align-items-center">
+              <i className='ti ti-circle-filled fs-5 me-1'></i>{text}
+            </span>
+          )}
         </>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        a.status.length - b.status.length,
+      sorter: true,
     },
-    {
-      title: "Added On",
-      dataIndex: "addedOn",
-      sorter: (a: TableData, b: TableData) =>
-        a.addedOn.length - b.addedOn.length,
-    },
-
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // Set form data from record
-                      const pickup = record.originalData || record;
-                      // Use address from originalData, or fallback to mapped pickupPoint property
-                      const pickupAddress = pickup.address || record.pickupPoint || '';
-                      // Check is_active from originalData (true/1 = active, false/0 = inactive)
-                      // Fallback to status string if is_active is not available
-                      let pickupStatus = true; // default to active
-                      if (Object.prototype.hasOwnProperty.call(pickup, 'is_active')) {
-                        pickupStatus = pickup.is_active === true || pickup.is_active === 1 || pickup.is_active === 'true';
-                      } else if (record.status) {
-                        pickupStatus = record.status === 'Active';
-                      }
-
-                      setEditPickupAddress(pickupAddress);
-                      setEditPickupStatus(pickupStatus);
-                      setSelectedPickupPoint(record);
-
-                      setTimeout(() => {
-                        const modalElement = document.getElementById('edit_pickup');
-                        if (modalElement) {
-                          const bootstrap = (window as any).bootstrap;
-                          if (bootstrap && bootstrap.Modal) {
-                            const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
-                            modal.show();
-                          }
-                        }
-                      }, 100);
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-right p-3">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#edit_pickup"
+                  onClick={() => setSelectedPickupPoint(record)}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  data-bs-toggle="modal"
+                  data-bs-target="#delete-modal"
+                  onClick={() => {
+                    setDeleteId(record.originalData?.id || record.id);
+                    setSelectedPickupPoint(record);
+                  }}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Delete
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Pickup Points</h3>
@@ -174,29 +190,31 @@ const TransportPickupPoints = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
                   data-bs-toggle="modal"
                   data-bs-target="#add_pickup"
+                  onClick={() => setSelectedPickupPoint(null)}
                 >
                   <i className="ti ti-square-rounded-plus me-2" />
-                  Add Pickup Points
+                  Add Pickup Point
                 </Link>
               </div>
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Students List */}
+
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Pickup Points List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -207,150 +225,77 @@ const TransportPickupPoints = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
-                    <form>
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
+                    <form onSubmit={handleApplyClick}>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
                           <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Pickup Points</label>
-                              <CommonSelect
-                                className="select"
-                                options={PickupPoint2}
-                                defaultValue={undefined}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
+                            <div className="mb-0">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
-                                options={status}
-                                defaultValue={status[0]}
+                                options={[{ value: 'all', label: 'All Status' }, ...statusOptions.map(s => ({ value: s.value.toLowerCase(), label: s.label }))]}
+                                value={draftStatus}
+                                onChange={(val: string | null) => setDraftStatus(val === 'All' || val === 'all' ? 'all' : (val?.toLowerCase() || 'all'))}
                               />
                             </div>
                           </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
-                          Reset
-                        </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
+                        <button
+                          type="button"
+                          className="btn btn-light me-3"
+                          onClick={() => {
+                            setDraftStatus('all');
+                            setParams((prev: any) => ({ ...prev, status: 'all', page: 1, limit: 10 }));
+                          }}
                         >
+                          Reset
+                        </button>
+                        <button type="submit" className="btn btn-primary">
                           Apply
-                        </Link>
+                        </button>
                       </div>
                     </form>
                   </div>
                 </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z{" "}
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              {loading && (
-                <div className="text-center py-4">
-                  <span className="spinner-border spinner-border-sm me-2" />
-                  Loading pickup points...
+              {error && (
+                <div className="alert alert-warning mx-3" role="alert">
+                  {error}.
                 </div>
               )}
-              {!loading && (
-                <Table dataSource={data} columns={columns} Selection={true} />
-              )}
-              {/* /Student List */}
+              <Table
+                dataSource={data}
+                columns={columns}
+                Selection={true}
+                loading={loading}
+                pagination={{
+                  total: metadata.total,
+                  current: params.page,
+                  pageSize: params.limit,
+                  showSizeChanger: true,
+                }}
+                onTableChange={handleTableChange}
+              />
             </div>
           </div>
-          {/* /Students List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
+
       <TransportModal
         selectedPickupPoint={selectedPickupPoint}
-        editPickupAddress={editPickupAddress}
-        setEditPickupAddress={setEditPickupAddress}
-        editPickupStatus={editPickupStatus}
-        setEditPickupStatus={setEditPickupStatus}
-        isUpdating={isUpdating}
-        setIsUpdating={setIsUpdating}
-        onPickupUpdate={async () => {
-          const pickupId = selectedPickupPoint?.originalData?.id || selectedPickupPoint?.id;
-          if (!pickupId || isUpdating) return;
-
-          setIsUpdating(true);
-          try {
-            const updateData = {
-              address: editPickupAddress.trim(),
-              is_active: editPickupStatus
-            };
-
-            const response = await apiService.updateTransportPickupPoint(pickupId, updateData);
-
-            if (response && response.status === 'SUCCESS') {
-              // Close modal
-              const modalElement = document.getElementById('edit_pickup');
-              if (modalElement) {
-                const bootstrap = (window as any).bootstrap;
-                if (bootstrap && bootstrap.Modal) {
-                  const modal = bootstrap.Modal.getInstance(modalElement);
-                  if (modal) modal.hide();
-                }
-              }
-              // Refetch list
-              await refetch();
-              // Reset form
-              setSelectedPickupPoint(null);
-              setEditPickupAddress('');
-              setEditPickupStatus(true);
-            } else {
-              alert(response?.message || 'Failed to update pickup point');
-            }
-          } catch (error: any) {
-            console.error('Error updating pickup point:', error);
-            alert(error?.message || 'Failed to update pickup point. Please try again.');
-          } finally {
-            setIsUpdating(false);
-          }
+        deleteId={deleteId}
+        onSuccess={() => {
+          refetch();
+          setSelectedPickupPoint(null);
+          setDeleteId(null);
         }}
       />
     </>

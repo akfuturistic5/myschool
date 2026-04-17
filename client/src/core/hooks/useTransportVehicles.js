@@ -1,59 +1,72 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
-import { transportVehicles } from '../data/json/transport_vehicle';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-export const useTransportVehicles = () => {
+export const useTransportVehicles = (params = {}) => {
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [metadata, setMetadata] = useState({
+    totalCount: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0
+  });
 
-  const fetchVehicles = async () => {
+  const fetchVehicles = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getTransportVehicles();
-      const list = Array.isArray(response) ? response : (response?.data ?? []);
-      if (Array.isArray(list)) {
+      
+      const combinedParams = { ...params, ...overrides };
+      const response = await apiService.getTransportVehicles(combinedParams);
+      
+      if (response && response.status === "SUCCESS") {
+        const list = response.data || [];
         const mapped = list.map((row, index) => ({
-          key: String(row.id ?? index + 1),
-          id: row.vehicle_code ?? String(row.id),
-          vehicleNo: row.vehicle_number ?? 'N/A',
-          vehicleModel: row.vehicle_model ?? 'N/A',
-          img: row.photo_url || row.driver_photo_url || defaultImg,
-          madeofYear: row.year != null ? String(row.year) : 'N/A',
-          registrationNo: row.registration_number ?? 'N/A',
-          chassisNo: row.chassis_number ?? 'N/A',
-          gps: row.gps_device_id ?? 'N/A',
-          name: row.driver_name ?? 'N/A',
-          phone: row.driver_phone ?? 'N/A',
+          key: String(row.id || index + 1),
+          id: row.id,
+          displayId: row.vehicle_code,
+          vehicleNo: row.vehicle_number || 'N/A',
+          vehicleModel: row.vehicle_model || row.model || 'N/A',
+          img: row.photo_url || defaultImg,
+          madeofYear: row.made_of_year || 'N/A',
+          registrationNo: row.registration_number || 'N/A',
+          chassisNo: row.chassis_number || 'N/A',
+          gps: row.gps_device_id || 'N/A',
+          name: row.driver_name || 'N/A',
+          phone: row.driver_phone || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           originalData: row,
         }));
+        
         setData(mapped);
+        if (response.metadata) {
+          setMetadata(response.metadata);
+        }
       } else {
         setData([]);
       }
     } catch (err) {
       console.error('Error fetching transport vehicles:', err);
-      setError(err?.message ?? 'Failed to fetch vehicles');
+      setError(err?.message || 'Failed to fetch vehicles');
       setData([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [params]);
 
   useEffect(() => {
     fetchVehicles();
-  }, []);
+  }, [fetchVehicles]);
 
   return {
     data,
     loading,
     error,
+    metadata,
     refetch: fetchVehicles,
-    fallbackData: transportVehicles,
   };
 };
