@@ -60,12 +60,20 @@ async function resetTenantDatabase(adminPool, dbName) {
 }
 
 function splitMigrationFile(text) {
-  const idx = text.indexOf(MARKER);
-  if (idx === -1) {
-    throw new Error(`Migration file missing marker "${MARKER}"`);
+  // Normalize line endings to LF for reliable splitting
+  const normalizedText = text.replace(/\r\n/g, '\n');
+  
+  // Look for the specific banner block regardless of exact surrounding newlines
+  const markerPattern = /-- ##############################################################################\n-- === TENANT_SCHEMA_BEGIN ===\n/;
+  const match = normalizedText.match(markerPattern);
+  
+  if (!match) {
+    throw new Error(`Migration file missing marker block:\n-- ##############################################################################\n-- === TENANT_SCHEMA_BEGIN ===`);
   }
-  const master = text.slice(0, idx).trim();
-  const tenant = text.slice(idx + MARKER.length).trim();
+  
+  const idx = match.index;
+  const master = normalizedText.slice(0, idx).trim();
+  const tenant = normalizedText.slice(idx + match[0].length).trim();
   return { master, tenant };
 }
 
