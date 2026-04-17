@@ -410,6 +410,43 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
   return userId;
 }
 
+/**
+ * Non-teaching staff (HRM directory) — default Administrative app role; use roleId for Driver (user_roles.id).
+ */
+async function createAdministrativeStaffUser(client, { email, phone, first_name, last_name, password, roleId }) {
+  const emailTrim = (email || '').toString().trim();
+  const phoneTrim = (phone || '').toString().trim();
+  const username = (emailTrim || phoneTrim || `staff_${Date.now()}`).toString().trim().slice(0, 50);
+
+  let rawPassword;
+  if (password != null && String(password).trim() !== '') {
+    rawPassword = String(password).trim();
+  } else if (phoneTrim) {
+    rawPassword = phoneTrim.replace(/\D/g, '') || phoneTrim;
+  } else {
+    rawPassword = generateTeacherInitialPassword();
+  }
+
+  const resolvedRoleId =
+    roleId != null && Number.isFinite(Number(roleId)) ? Number(roleId) : ROLES.ADMINISTRATIVE;
+
+  const userId = await createPersonUser(
+    client,
+    resolvedRoleId,
+    {
+      username,
+      email: emailTrim || null,
+      phone: phoneTrim || null,
+      first_name: (first_name || '').toString().trim() || null,
+      last_name: (last_name || '').toString().trim() || null,
+      password: rawPassword,
+    },
+    { rejectUsernameConflict: true }
+  );
+
+  return userId;
+}
+
 module.exports = {
   createPersonUser,
   createStudentUser,
@@ -417,5 +454,7 @@ module.exports = {
   createParentIndividualUser,
   createGuardianUser,
   createTeacherUser,
+  createAdministrativeStaffUser,
   isUserEmailTaken,
+  parseFullName,
 };

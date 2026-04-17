@@ -300,7 +300,7 @@ export interface DatatableProps {
   dataSource: any[]; // You can replace `any[]` with the specific type of dataSource you expect
   Selection?: boolean | undefined;
   loading?: boolean;
-  /** When provided with onSelectionChange, row selection is controlled by the parent. */
+  /** When provided with onSelectionChange, row selection is controlled by the parent component. */
   selectedRowKeys?: (string | number)[];
   onSelectionChange?: (selectedRowKeys: (string | number)[], selectedRows: any[]) => void;
   /** Ant Design Table pagination; pass total + onChange for server-side lists */

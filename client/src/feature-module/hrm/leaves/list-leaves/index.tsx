@@ -1,25 +1,71 @@
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useState } from "react";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
 import CommonSelect from "../../../../core/common/commonSelect";
-import { activeList, leaveType } from "../../../../core/common/selectoption/selectoption";
+import { leaveType } from "../../../../core/common/selectoption/selectoption";
 import { Link } from "react-router-dom";
 import { all_routes } from "../../../router/all_routes";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplications";
+import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
+import { useClasses } from "../../../../core/hooks/useClasses";
+import { useSections } from "../../../../core/hooks/useSections";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+
+const LEAVE_STATUS_OPTIONS = [
+  { value: "pending", label: "Pending" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 const ListLeaves = () => {
   const routes = all_routes;
   const { user: currentUser } = useCurrentUser();
-  const canUseAdminList = isHeadmasterRole(currentUser);
-  const isOwnLeavesOnly = isAdministrativeRole(currentUser);
+  const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
+  const roleId = Number(currentUser?.user_role_id ?? currentUser?.role_id);
+  const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
+  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
+  const isOwnLeavesOnly = false;
+  const [filterStatus, setFilterStatus] = useState<any>(null);
+  const [filterLeaveType, setFilterLeaveType] = useState<any>(null);
+  const [filterClass, setFilterClass] = useState<any>(null);
+  const [filterSection, setFilterSection] = useState<any>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const { leaveTypes } = useLeaveTypes();
+  const selectedClassId = Number(filterClass?.value);
+  const selectedSectionId = Number(filterSection?.value);
+  const { classes } = useClasses();
+  const { sections } = useSections(Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null);
+  const classOptions = useMemo(
+    () =>
+      (Array.isArray(classes) ? classes : []).map((c: any) => ({
+        value: c.id,
+        label: c.class_name || `Class ${c.id}`,
+      })),
+    [classes]
+  );
+  const sectionOptions = useMemo(
+    () =>
+      (Array.isArray(sections) ? sections : []).map((s: any) => ({
+        value: s.id,
+        label: s.section_name || `Section ${s.id}`,
+      })),
+    [sections]
+  );
+  const leaveTypeFilterId = Number(filterLeaveType?.value);
   const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     canUseAdminList,
     studentOnly: isOwnLeavesOnly,
+    status: filterStatus?.value ? String(filterStatus.value).toLowerCase() : null,
+    leaveTypeId: Number.isFinite(leaveTypeFilterId) && leaveTypeFilterId > 0 ? leaveTypeFilterId : null,
+    classId: Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
+    sectionId: Number.isFinite(selectedSectionId) && selectedSectionId > 0 ? selectedSectionId : null,
+    sortBy: "start_date",
+    sortOrder,
   });
 
   const data = useMemo(() => {
@@ -86,10 +132,11 @@ const ListLeaves = () => {
         const isApproved = t.toLowerCase().includes("approv");
         const isRejected = t.toLowerCase().includes("reject") || t.toLowerCase().includes("declin");
         const badgeClass = isApproved ? "badge-soft-success" : isRejected ? "badge-soft-danger" : "badge-soft-pending";
+        const label = t ? t.charAt(0).toUpperCase() + t.slice(1) : "Pending";
         return (
           <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
             <i className="ti ti-circle-filled fs-5 me-1" />
-            {t || "Pending"}
+            {label}
           </span>
         );
       },
@@ -156,7 +203,9 @@ const ListLeaves = () => {
                                
                                 <CommonSelect
                                   className="select"
-                                  options={leaveType}
+                                  options={leaveTypes.length > 0 ? leaveTypes : leaveType}
+                                  value={filterLeaveType}
+                                  onChange={(opt: any) => setFilterLeaveType(opt)}
                                 />
                               </div>
                             </div>
@@ -165,14 +214,50 @@ const ListLeaves = () => {
                                 <label className="form-label">Status</label>
                                 <CommonSelect
                                   className="select"
-                                  options={activeList}
+                                  options={LEAVE_STATUS_OPTIONS}
+                                  value={filterStatus}
+                                  onChange={(opt: any) => setFilterStatus(opt)}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-3 mt-3">
+                                <label className="form-label">Class</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={classOptions}
+                                  value={filterClass}
+                                  onChange={(opt: any) => {
+                                    setFilterClass(opt);
+                                    setFilterSection(null);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-0">
+                                <label className="form-label">Section</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={sectionOptions}
+                                  value={filterSection}
+                                  onChange={(opt: any) => setFilterSection(opt)}
                                 />
                               </div>
                             </div>
                           </div>
                         </div>
                         <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link to="#" className="btn btn-light me-3">
+                          <Link
+                            to="#"
+                            className="btn btn-light me-3"
+                            onClick={() => {
+                              setFilterLeaveType(null);
+                              setFilterStatus(null);
+                              setFilterClass(null);
+                              setFilterSection(null);
+                            }}
+                          >
                             Reset
                           </Link>
                           <Link
@@ -199,7 +284,8 @@ const ListLeaves = () => {
                       <li>
                         <Link
                           to="#"
-                          className="dropdown-item rounded-1 active"
+                          className={`dropdown-item rounded-1 ${sortOrder === "asc" ? "active" : ""}`}
+                          onClick={() => setSortOrder("asc")}
                         >
                           Ascending
                         </Link>
@@ -207,7 +293,8 @@ const ListLeaves = () => {
                       <li>
                         <Link
                           to="#"
-                          className="dropdown-item rounded-1"
+                          className={`dropdown-item rounded-1 ${sortOrder === "desc" ? "active" : ""}`}
+                          onClick={() => setSortOrder("desc")}
                         >
                           Descending
                         </Link>

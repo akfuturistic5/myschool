@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
+import { useTeachers } from "../../../core/hooks/useTeachers";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -24,11 +25,19 @@ type EditRow = {
   noOfStudents: number;
   noOfSubjects: number;
   status: string;
+  class_teacher_id: number | null;
+  section_teacher_id: number | null;
+  class_code?: string | null;
+  /** From `classes` row (same for all section rows of that class). */
+  max_students?: number | null;
+  class_fee?: number | string | null;
+  class_description?: string | null;
 };
 
 const Classes = () => {
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classesWithSections, loading, error, refetch } = useClassesWithSections(academicYearId);
+  const { teachers = [] } = useTeachers();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const editModalRef = useRef<HTMLDivElement | null>(null);
   const [editingRow, setEditingRow] = useState<EditRow | null>(null);
@@ -37,12 +46,43 @@ const Classes = () => {
   const [selectedDeleteRow, setSelectedDeleteRow] = useState<EditRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [addForm, setAddForm] = useState({ className: "", noOfStudents: "", isActive: true });
+  const [addForm, setAddForm] = useState({
+    className: "",
+    classCode: "",
+    maxStudents: "",
+    classFee: "",
+    description: "",
+    noOfStudents: "",
+    isActive: true,
+    classTeacherStaffId: "Select",
+  });
   const [filterClass, setFilterClass] = useState("Select");
   const [filterSection, setFilterSection] = useState("Select");
   const [filterStatus, setFilterStatus] = useState("Select");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [editForm, setEditForm] = useState({ className: "", sectionName: "", noOfStudents: "", noOfSubjects: "", isActive: true });
+  const [editForm, setEditForm] = useState({
+    className: "",
+    sectionName: "",
+    noOfStudents: "",
+    noOfSubjects: "",
+    isActive: true,
+    teacherStaffId: "Select",
+    classCode: "",
+    maxStudents: "",
+    classFee: "",
+    description: "",
+  });
+
+  const teacherSelectOptions = useMemo(
+    () => [
+      { value: "Select", label: "No teacher assigned" },
+      ...teachers.map((t: any) => ({
+        value: String(t.staff_id),
+        label: `${t.first_name || ""} ${t.last_name || ""}`.trim() || `Staff #${t.staff_id}`,
+      })),
+    ],
+    [teachers]
+  );
 
   useEffect(() => {
     if (editingRow) {
@@ -52,9 +92,27 @@ const Classes = () => {
         noOfStudents: String(editingRow.noOfStudents),
         noOfSubjects: String(editingRow.noOfSubjects),
         isActive: editingRow.status === "Active",
+        teacherStaffId:
+          editingRow.sectionId != null
+            ? editingRow.section_teacher_id != null
+              ? String(editingRow.section_teacher_id)
+              : "Select"
+            : editingRow.class_teacher_id != null
+              ? String(editingRow.class_teacher_id)
+              : "Select",
       });
     }
   }, [editingRow]);
+
+  /** Bootstrap sometimes leaves .modal-backdrop and body.modal-open after hide(); removes stuck overlay. */
+  const cleanupModalBackdrops = () => {
+    setTimeout(() => {
+      document.querySelectorAll(".modal-backdrop").forEach((node) => node.remove());
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    }, 150);
+  };
 
   const handleEditClick = (record: EditRow) => {
     setEditingRow(record);
@@ -72,13 +130,7 @@ const Classes = () => {
       if (modal) modal.hide();
     }
     setEditingRow(null);
-    // Fix: Remove leftover modal backdrop/overlay that blocks screen
-    setTimeout(() => {
-      document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
-      document.body.classList.remove("modal-open");
-      document.body.style.removeProperty("overflow");
-      document.body.style.removeProperty("padding-right");
-    }, 150);
+    cleanupModalBackdrops();
   };
 
   const handleEditSave = async (e: React.MouseEvent) => {
@@ -86,17 +138,34 @@ const Classes = () => {
     if (!editingRow) return;
     setSaving(true);
     try {
+      let staffId: number | null = null;
+      if (editForm.teacherStaffId && editForm.teacherStaffId !== "Select") {
+        const n = parseInt(String(editForm.teacherStaffId), 10);
+        staffId = Number.isNaN(n) ? null : n;
+      }
       if (editingRow.sectionId) {
         await apiService.updateSection(editingRow.sectionId, {
           section_name: editForm.sectionName,
           no_of_students: parseInt(editForm.noOfStudents, 10) || 0,
           is_active: editForm.isActive,
+          section_teacher_id: staffId,
         });
       } else {
+        const parseNum = (s: string) => {
+          const t = s.trim();
+          if (t === "") return null;
+          const n = Number(t);
+          return Number.isNaN(n) ? null : n;
+        };
         await apiService.updateClass(editingRow.classId, {
-          class_name: editForm.className,
-          no_of_students: parseInt(editForm.noOfStudents, 10) || null,
+          class_name: editForm.className.trim(),
+          class_code: editForm.classCode.trim() || null,
+          max_students: parseNum(editForm.maxStudents),
+          class_fee: parseNum(editForm.classFee),
+          description: editForm.description.trim() || null,
+          no_of_students: parseInt(editForm.noOfStudents, 10) || 0,
           is_active: editForm.isActive,
+          class_teacher_id: staffId,
         });
       }
       await refetch();
@@ -112,23 +181,77 @@ const Classes = () => {
 
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.className.trim() || !academicYearId) return;
+    if (!addForm.className.trim() || academicYearId == null) return;
+    const academicYearIdNum = Number(academicYearId);
+    if (!Number.isInteger(academicYearIdNum) || academicYearIdNum < 1) {
+      setMessage("Please select a valid academic year in the header.");
+      return;
+    }
     setAdding(true);
     try {
-      await apiService.createClass({
+      let classTeacherStaffId: number | null = null;
+      if (addForm.classTeacherStaffId && addForm.classTeacherStaffId !== "Select") {
+        const n = parseInt(String(addForm.classTeacherStaffId), 10);
+        classTeacherStaffId = Number.isNaN(n) ? null : n;
+      }
+      const parseOptInt = (s: string) => {
+        const t = s.trim();
+        if (t === "") return undefined;
+        const n = parseInt(t, 10);
+        return Number.isNaN(n) ? undefined : n;
+      };
+      const parseOptFee = (s: string) => {
+        const t = s.trim();
+        if (t === "") return undefined;
+        const n = Number(t);
+        return Number.isNaN(n) ? undefined : n;
+      };
+      const payload: Record<string, unknown> = {
         class_name: addForm.className.trim(),
-        academic_year_id: academicYearId,
+        academic_year_id: academicYearIdNum,
         no_of_students: addForm.noOfStudents ? parseInt(addForm.noOfStudents, 10) : 0,
         is_active: addForm.isActive,
+        class_teacher_id: classTeacherStaffId,
+      };
+      const code = addForm.classCode.trim();
+      if (code) payload.class_code = code;
+      const maxS = parseOptInt(addForm.maxStudents);
+      if (maxS !== undefined) payload.max_students = maxS;
+      const fee = parseOptFee(addForm.classFee);
+      if (fee !== undefined) payload.class_fee = fee;
+      const desc = addForm.description.trim();
+      if (desc) payload.description = desc;
+
+      const createRes = (await apiService.createClass(payload)) as {
+        status?: string;
+        message?: string;
+        data?: unknown;
+      };
+      if (createRes?.status !== "SUCCESS") {
+        throw new Error(createRes?.message || "Class was not created");
+      }
+      setAddForm({
+        className: "",
+        classCode: "",
+        maxStudents: "",
+        classFee: "",
+        description: "",
+        noOfStudents: "",
+        isActive: true,
+        classTeacherStaffId: "Select",
       });
-      setAddForm({ className: "", noOfStudents: "", isActive: true });
       await refetch();
       setMessage("Class created successfully");
-      const el = document.getElementById("add_class");
-      const modal = (window as any).bootstrap?.Modal?.getInstance(el);
-      modal?.hide();
-    } catch {
-      setMessage("Failed to create class");
+      const addEl = document.getElementById("add_class");
+      if (addEl) {
+        const bs = (window as any).bootstrap?.Modal;
+        const modal = bs?.getInstance(addEl) ?? bs?.getOrCreateInstance(addEl);
+        modal?.hide();
+      }
+      cleanupModalBackdrops();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create class";
+      setMessage(msg);
     } finally {
       setAdding(false);
     }
@@ -142,11 +265,23 @@ const Classes = () => {
       else await apiService.deleteClass(selectedDeleteRow.classId);
       await refetch();
       setMessage("Deleted successfully");
-      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"));
-      modal?.hide();
       setSelectedDeleteRow(null);
+      const delEl = document.getElementById("delete-modal");
+      if (delEl) {
+        const bs = (window as any).bootstrap?.Modal;
+        const modal = bs?.getInstance(delEl) ?? bs?.getOrCreateInstance(delEl);
+        modal?.hide();
+      }
+      cleanupModalBackdrops();
     } catch {
       setMessage("Failed to delete record");
+      const delEl = document.getElementById("delete-modal");
+      if (delEl) {
+        const bs = (window as any).bootstrap?.Modal;
+        const modal = bs?.getInstance(delEl) ?? bs?.getOrCreateInstance(delEl);
+        modal?.hide();
+      }
+      cleanupModalBackdrops();
     } finally {
       setDeleting(false);
     }
@@ -161,20 +296,30 @@ const Classes = () => {
   const route = all_routes;
 
   // Transform API data to match table structure (id = classes table ID)
-  const transformedData = classesWithSections.map((item: any, index: number) => ({
-    key: (index + 1).toString(),
-    id: item.classId,
-    class: item.className || 'N/A',
-    section: item.sectionName || 'N/A',
-    noOfStudents: item.noOfStudents || 0,
-    noOfSubjects: item.noOfSubjects || 0,
-    status: item.status || 'Active',
-    action: '',
-    classId: item.classId,
-    sectionId: item.sectionId ?? null,
-    className: item.className || 'N/A',
-    sectionName: item.sectionName || 'N/A',
-  }));
+  const transformedData = classesWithSections.map((item: any, index: number) => {
+    const teacherDisplay = [item.teacherFirstName, item.teacherLastName].filter(Boolean).join(" ").trim();
+    return {
+      key: (index + 1).toString(),
+      id: item.classId,
+      class: item.className || "N/A",
+      section: item.sectionName || "N/A",
+      teacher: teacherDisplay || "—",
+      noOfStudents: item.noOfStudents || 0,
+      noOfSubjects: item.noOfSubjects || 0,
+      status: item.status || "Active",
+      action: "",
+      classId: item.classId,
+      sectionId: item.sectionId ?? null,
+      className: item.className || "N/A",
+      sectionName: item.sectionName || "N/A",
+      class_teacher_id: item.class_teacher_id ?? null,
+      section_teacher_id: item.section_teacher_id ?? null,
+      class_code: item.classCode ?? null,
+      max_students: item.maxStudents ?? null,
+      class_fee: item.classFee ?? null,
+      class_description: item.classDescription ?? null,
+    };
+  });
   const dynamicClassOptions = useMemo(
     () => [{ value: "Select", label: "Select" }, ...Array.from(new Set(transformedData.map((r: any) => r.class))).map((v) => ({ value: v, label: v }))],
     [transformedData]
@@ -216,6 +361,12 @@ const Classes = () => {
       dataIndex: "section",
       sorter: (a: TableData, b: TableData) =>
         a.section.length - b.section.length,
+    },
+    {
+      title: "Class / Section teacher",
+      dataIndex: "teacher",
+      sorter: (a: TableData, b: TableData) =>
+        String(a.teacher || "").localeCompare(String(b.teacher || "")),
     },
     {
       title: "No of Student",
@@ -493,11 +644,11 @@ const Classes = () => {
           {/* /Classes List */}
         </div>
       </div>
-      ;{/* /Page Wrapper */}
+      {/* /Page Wrapper */}
       <>
         {/* Add Classes */}
         <div className="modal fade" id="add_class">
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Add Class</h4>
@@ -513,23 +664,63 @@ const Classes = () => {
               <form onSubmit={handleAddClass}>
                 <div className="modal-body">
                   <div className="row">
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Class name <span className="text-danger">*</span></label>
+                        <input type="text" className="form-control" maxLength={50} value={addForm.className} onChange={(e) => setAddForm((f) => ({ ...f, className: e.target.value }))} required />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Class code</label>
+                        <input type="text" className="form-control" maxLength={10} placeholder="e.g. C10" value={addForm.classCode} onChange={(e) => setAddForm((f) => ({ ...f, classCode: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Max students</label>
+                        <input type="number" className="form-control" min={1} max={10000} placeholder="Default 30 if empty" value={addForm.maxStudents} onChange={(e) => setAddForm((f) => ({ ...f, maxStudents: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Class fee</label>
+                        <input type="number" className="form-control" min={0} step="0.01" placeholder="Optional" value={addForm.classFee} onChange={(e) => setAddForm((f) => ({ ...f, classFee: e.target.value }))} />
+                      </div>
+                    </div>
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Class Name</label>
-                        <input type="text" className="form-control" value={addForm.className} onChange={(e) => setAddForm((f) => ({ ...f, className: e.target.value }))} />
+                        <label className="form-label">Description</label>
+                        <textarea className="form-control" rows={2} maxLength={5000} placeholder="Optional" value={addForm.description} onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))} />
                       </div>
+                    </div>
+                    <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Section</label>
-                        <input type="text" className="form-control" value="Manage section in Sections page" readOnly />
+                        <label className="form-label">Sections</label>
+                        <input type="text" className="form-control bg-light" value="Add sections from Academic → Sections after creating the class" readOnly />
                       </div>
+                    </div>
+                    <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">No of Students</label>
-                        <input type="text" className="form-control" value={addForm.noOfStudents} onChange={(e) => setAddForm((f) => ({ ...f, noOfStudents: e.target.value }))} />
+                        <label className="form-label">No of students</label>
+                        <input type="number" className="form-control" min={0} value={addForm.noOfStudents} onChange={(e) => setAddForm((f) => ({ ...f, noOfStudents: e.target.value }))} />
                       </div>
+                    </div>
+                    <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">No of Subjects</label>
-                        <input type="text" className="form-control" />
+                        <label className="form-label">Class teacher (optional)</label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherSelectOptions}
+                          defaultValue={teacherSelectOptions[0]}
+                          onChange={(v) => setAddForm((f) => ({ ...f, classTeacherStaffId: v || "Select" }))}
+                        />
                       </div>
+                    </div>
+                    <div className="col-12">
+                      <p className="text-muted small mb-2">Subject count is derived from the Class Subject module when subjects are linked to this class.</p>
+                    </div>
+                    <div className="col-md-12">
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
                           <h5>Status</h5>
@@ -559,7 +750,7 @@ const Classes = () => {
         {/* /Add Classes */}
         {/* Edit Classes */}
         <div className="modal fade" id="edit_class" ref={editModalRef}>
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-lg">
             <div className="modal-content">
               <div className="modal-header">
                 <h4 className="modal-title">Edit Class</h4>
@@ -585,6 +776,7 @@ const Classes = () => {
                           value={editForm.className}
                           onChange={(e) => setEditForm((f) => ({ ...f, className: e.target.value }))}
                           readOnly={!!editingRow?.sectionId}
+                          maxLength={50}
                         />
                       </div>
                       <div className="mb-3">
@@ -593,31 +785,100 @@ const Classes = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Section"
+                          maxLength={10}
                           value={editForm.sectionName}
                           onChange={(e) => setEditForm((f) => ({ ...f, sectionName: e.target.value }))}
                           readOnly={!editingRow?.sectionId}
                         />
                       </div>
+                    </div>
+                    {editingRow?.sectionId == null ? (
+                      <>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Class code</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              maxLength={10}
+                              value={editForm.classCode}
+                              onChange={(e) => setEditForm((f) => ({ ...f, classCode: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Max students</label>
+                            <input
+                              type="number"
+                              className="form-control"
+                              min={1}
+                              max={10000}
+                              placeholder="Empty clears (optional)"
+                              value={editForm.maxStudents}
+                              onChange={(e) => setEditForm((f) => ({ ...f, maxStudents: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Class fee</label>
+                            <input
+                              type="number"
+                              className="form-control"
+                              min={0}
+                              step="0.01"
+                              value={editForm.classFee}
+                              onChange={(e) => setEditForm((f) => ({ ...f, classFee: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-12">
+                          <div className="mb-3">
+                            <label className="form-label">Description</label>
+                            <textarea
+                              className="form-control"
+                              rows={2}
+                              maxLength={5000}
+                              value={editForm.description}
+                              onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+                    <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">No of Students</label>
                         <input
-                          type="text"
+                          type="number"
                           className="form-control"
-                          placeholder="Enter no of Students"
+                          min={0}
                           value={editForm.noOfStudents}
                           onChange={(e) => setEditForm((f) => ({ ...f, noOfStudents: e.target.value }))}
                         />
                       </div>
+                    </div>
+                    <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">No of Subjects</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter no of Subjects"
-                          value={editForm.noOfSubjects}
-                          onChange={(e) => setEditForm((f) => ({ ...f, noOfSubjects: e.target.value }))}
+                        <input type="text" className="form-control bg-light" readOnly value={editForm.noOfSubjects} />
+                      </div>
+                    </div>
+                    <div className="col-md-12">
+                      <div className="mb-3">
+                        <label className="form-label">
+                          {editingRow?.sectionId != null ? "Section teacher" : "Class teacher"}
+                        </label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherSelectOptions}
+                          value={editForm.teacherStaffId}
+                          onChange={(v) => setEditForm((f) => ({ ...f, teacherStaffId: v || "Select" }))}
                         />
                       </div>
+                    </div>
+                    <div className="col-md-12">
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
                           <h5>Status</h5>

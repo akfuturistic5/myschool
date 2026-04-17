@@ -414,6 +414,10 @@ const updateSchoolMetadata = async (req, res) => {
             id SERIAL PRIMARY KEY,
             school_name VARCHAR(255) NOT NULL,
             logo_url TEXT NULL,
+            phone VARCHAR(30) NULL,
+            email VARCHAR(255) NULL,
+            fax VARCHAR(30) NULL,
+            address TEXT NULL,
             created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
           );

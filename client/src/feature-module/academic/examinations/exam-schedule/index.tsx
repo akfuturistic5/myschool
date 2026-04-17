@@ -1,625 +1,408 @@
-import  { useRef, useState } from "react";
-import PredefinedDateRanges from "../../../../core/common/datePicker";
-import {
-  classSection,
-  classSylabus,
-  count,
-  durationOne,
-  examOne,
-  examtwo,
-  maxMark,
-  minMark,
-  mothertongue,
-  startTime,
-  startTimeOne,
-} from "../../../../core/common/selectoption/selectoption";
-import { Link } from "react-router-dom";
-import Table from "../../../../core/common/dataTable/index";
-import { examSchedule } from "../../../../core/data/json/exam_schedule";
-import type { TableData } from "../../../../core/data/interface";
-import CommonSelect from "../../../../core/common/commonSelect";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import Swal from "sweetalert2";
+import { apiService } from "../../../../core/services/apiService";
 import { all_routes } from "../../../router/all_routes";
-import TooltipOption from "../../../../core/common/tooltipOption";
+
+type Row = {
+  subject_id: number;
+  subject_name: string;
+  subject_code?: string;
+  subject_mode?: string;
+  max_marks: string;
+  passing_marks: string;
+  exam_date: string;
+  start_time: string;
+  end_time: string;
+};
+
+const toMinutes = (value?: string | null) => {
+  if (!value) return null;
+  const [h, m] = String(value).slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+};
+
+const getTimeCollisionError = (rows: Row[]) => {
+  for (let i = 0; i < rows.length; i += 1) {
+    const a = rows[i];
+    const aDate = a.exam_date ? String(a.exam_date).slice(0, 10) : "";
+    const aStart = a.start_time ? String(a.start_time).slice(0, 5) : "";
+    const aEnd = a.end_time ? String(a.end_time).slice(0, 5) : "";
+    if (!aDate || !aStart || !aEnd) continue;
+    const aStartMin = toMinutes(aStart);
+    const aEndMin = toMinutes(aEnd);
+    if (aStartMin == null || aEndMin == null || aStartMin >= aEndMin) continue;
+
+    for (let j = i + 1; j < rows.length; j += 1) {
+      const b = rows[j];
+      const bDate = b.exam_date ? String(b.exam_date).slice(0, 10) : "";
+      const bStart = b.start_time ? String(b.start_time).slice(0, 5) : "";
+      const bEnd = b.end_time ? String(b.end_time).slice(0, 5) : "";
+      if (!bDate || !bStart || !bEnd) continue;
+      if (aDate !== bDate) continue;
+      const bStartMin = toMinutes(bStart);
+      const bEndMin = toMinutes(bEnd);
+      if (bStartMin == null || bEndMin == null || bStartMin >= bEndMin) continue;
+
+      const overlaps = aStartMin < bEndMin && bStartMin < aEndMin;
+      if (overlaps) {
+        return "Same date par exam time overlap allowed nahi hai. Ek subject ke exam duration ke dauraan dusra subject schedule nahi ho sakta.";
+      }
+    }
+  }
+  return null;
+};
 
 const ExamSchedule = () => {
   const routes = all_routes;
-  const data = examSchedule;
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
+  const [search] = useSearchParams();
+  const examId = Number(search.get("examId") || "");
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [contextRows, setContextRows] = useState<any[]>([]);
+  const [classId, setClassId] = useState<string>("");
+  const [sectionId, setSectionId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!examId) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setMessage(null);
+      try {
+        const res = await apiService.getExamManageContext(examId);
+        const classes = (res as any)?.data?.classes || [];
+        const flat: any[] = [];
+        for (const c of classes) {
+          for (const s of c.sections || []) {
+            flat.push({
+              class_id: String(c.class_id),
+              class_name: c.class_name,
+              section_id: String(s.section_id),
+              section_name: s.section_name,
+            });
+          }
+        }
+        if (cancelled) return;
+        setContextRows(flat);
+        if (flat.length > 0) {
+          setClassId(flat[0].class_id);
+          setSectionId(flat[0].section_id);
+        }
+      } catch (e: any) {
+        if (!cancelled) setMessage(e?.message || "Failed to load exam context");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [examId]);
+
+  const classOptions = useMemo(() => {
+    const m = new Map<string, string>();
+    contextRows.forEach((r) => m.set(r.class_id, r.class_name));
+    return [...m.entries()].map(([id, name]) => ({ id, name }));
+  }, [contextRows]);
+
+  const sectionOptions = useMemo(
+    () => contextRows.filter((r) => r.class_id === classId),
+    [contextRows, classId]
+  );
+
+  useEffect(() => {
+    if (!examId || !classId || !sectionId) {
+      setRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await apiService.getExamSubjectsContext({
+          exam_id: String(examId),
+          class_id: classId,
+          section_id: sectionId,
+        });
+        if (cancelled) return;
+        const ctxRows = (res as any)?.data?.timetable_rows || [];
+        const ctxSubjects = (res as any)?.data?.subjects || [];
+        const subjectDetailById = new Map<number, { subject_code: string; subject_mode: string }>(
+          ctxSubjects.map((s: any) => {
+            const theoryHours = Number(s?.theory_hours || 0);
+            const practicalHours = Number(s?.practical_hours || 0);
+            const subjectMode = practicalHours > 0 ? "Practical" : "Theory";
+            return [
+              Number(s?.id),
+              {
+                subject_code: String(s?.subject_code || ""),
+                subject_mode: subjectMode,
+              },
+            ];
+          })
+        );
+
+        setRows(
+          ctxRows.map((r: any) => ({
+            ...(subjectDetailById.get(Number(r.subject_id)) || {}),
+            subject_id: Number(r.subject_id),
+            subject_name: String(r.subject_name || ""),
+            subject_code: r.subject_code
+              ? String(r.subject_code)
+              : subjectDetailById.get(Number(r.subject_id))?.subject_code || "",
+            subject_mode: r.subject_mode
+              ? String(r.subject_mode)
+              : subjectDetailById.get(Number(r.subject_id))?.subject_mode || "Theory",
+            max_marks: String(r.max_marks ?? 100),
+            passing_marks: String(r.passing_marks ?? 35),
+            exam_date: r.exam_date ? String(r.exam_date).slice(0, 10) : "",
+            start_time: r.start_time ? String(r.start_time).slice(0, 5) : "",
+            end_time: r.end_time ? String(r.end_time).slice(0, 5) : "",
+          }))
+        );
+        if (!ctxRows.length) setMessage("No subjects found for selected class and section.");
+        else setMessage(null);
+      } catch (e: any) {
+        if (!cancelled) {
+          setRows([]);
+          setMessage(e?.message || "Failed to load timetable context");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [examId, classId, sectionId]);
+
+  const updateRow = (i: number, patch: Partial<Row>) => {
+    const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+    const collisionError = getTimeCollisionError(next);
+    if (collisionError) {
+      Swal.fire({
+        icon: "warning",
+        title: "Time slot conflict",
+        text: collisionError,
+        confirmButtonText: "OK",
+      });
+      setMessage(collisionError);
+      return;
+    }
+    setRows(next);
+    if (message?.toLowerCase().includes("overlap") || message?.toLowerCase().includes("same date")) {
+      setMessage(null);
     }
   };
-  const [newContents, setNewContents] = useState<number[]>([0]);
-  const columns = [
-    {
-      title: "Subject",
-      dataIndex: "subject",
-      render: ( record: any) => (
-        <>
-          <Link to="#" className="link-primary">
-            {record.subject}
-          </Link>
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) =>
-        a.subject.length - b.subject.length,
-    },
-    {
-      title: "Exam Date",
-      dataIndex: "examDate",
-      sorter: (a: TableData, b: TableData) =>
-        a.examDate.length - b.examDate.length,
-    },
-    {
-      title: "Start Time",
-      dataIndex: "startTime",
-      sorter: (a: TableData, b: TableData) =>
-        a.startTime.length - b.startTime.length,
-    },
-    {
-      title: "End Time",
-      dataIndex: "endTime",
-      sorter: (a: TableData, b: TableData) =>
-        a.endTime.length - b.endTime.length,
-    },
-    {
-      title: "Duration",
-      dataIndex: "duration",
-      sorter: (a: TableData, b: TableData) =>
-        a.duration.length - b.duration.length,
-    },
-    {
-      title: "Room No",
-      dataIndex: "roomNo",
-      sorter: (a: TableData, b: TableData) => a.roomNo.length - b.roomNo.length,
-    },
-    {
-      title: "Max Mark",
-      dataIndex: "maxMarks",
-      sorter: (a: TableData, b: TableData) =>
-        a.maxMarks.length - b.maxMarks.length,
-    },
-    {
-      title: "Min Mark",
-      dataIndex: "minMarks",
-      sorter: (a: TableData, b: TableData) =>
-        a.minMarks.length - b.minMarks.length,
-    },
-    {
-      title: "Action",
-      dataIndex: "action",
-      render: () => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_exam_schedule"
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </>
-      ),
-    },
-  ];
-  const addNewContent = () => {
-    setNewContents([...newContents, newContents.length]);
+
+  const save = async () => {
+    if (!examId || !classId || !sectionId) return;
+    if (!rows.length) {
+      setMessage("No subjects available for timetable.");
+      return;
+    }
+    const payload = rows.map((r) => ({
+      subject_id: r.subject_id,
+      max_marks: Number(r.max_marks),
+      passing_marks: Number(r.passing_marks),
+      exam_date: r.exam_date || null,
+      start_time: r.start_time || null,
+      end_time: r.end_time || null,
+    }));
+
+    for (const row of payload) {
+      const date = row.exam_date ? String(row.exam_date).slice(0, 10) : "";
+      const start = row.start_time ? String(row.start_time).slice(0, 5) : "";
+      const end = row.end_time ? String(row.end_time).slice(0, 5) : "";
+      if (!date && !start && !end) continue;
+      if (!date || !start || !end) {
+        setMessage("Date, start time and end time must be filled together for each subject.");
+        return;
+      }
+      if (start >= end) {
+        setMessage("Start time must be earlier than end time.");
+        return;
+      }
+    }
+    const collisionError = getTimeCollisionError(
+      payload.map((r) => ({
+        subject_id: r.subject_id,
+        subject_name: "",
+        max_marks: String(r.max_marks),
+        passing_marks: String(r.passing_marks),
+        exam_date: r.exam_date || "",
+        start_time: r.start_time || "",
+        end_time: r.end_time || "",
+      }))
+    );
+    if (collisionError) {
+      Swal.fire({
+        icon: "warning",
+        title: "Time slot conflict",
+        text: collisionError,
+        confirmButtonText: "OK",
+      });
+      setMessage(collisionError);
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await apiService.saveExamSubjectSetup({
+        exam_id: examId,
+        class_id: Number(classId),
+        section_id: Number(sectionId),
+        rows: payload,
+      });
+      setMessage("Timetable saved successfully.");
+    } catch (e: any) {
+      setMessage(e?.message || "Failed to save timetable");
+    } finally {
+      setSaving(false);
+    }
   };
-  const removeContent = (index:any) => {
-    setNewContents(newContents.filter((_, i) => i !== index));
-  };
+
   return (
-    <div>
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
-          <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
-            <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Exam Schedule</h3>
-              <nav>
-                <ol className="breadcrumb mb-0">
-                  <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
-                  </li>
-                  <li className="breadcrumb-item">
-                    <Link to="#">Academic </Link>
-                  </li>
-                  <li className="breadcrumb-item active" aria-current="page">
-                    Exam Schedule
-                  </li>
-                </ol>
-              </nav>
-            </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_exam_schedule"
-                >
-                  <i className="ti ti-square-rounded-plus-filled me-2" />
-                  Add Exam Schedule
-                </Link>
-              </div>
-            </div>
+        <div className="page-header d-flex justify-content-between align-items-center">
+          <div>
+            <h3 className="page-title">Exam Timetable</h3>
+            <p className="text-muted mb-0">Subjects are auto-loaded from system mapping.</p>
           </div>
-          {/* /Page Header */}
-          {/* Guardians List */}
-          <div className="card">
-            <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Exam Schedule</h4>
-              <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
-                </div>
-                <div className="dropdown mb-3 me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                    data-bs-auto-close="outside"
-                  >
-                    <i className="ti ti-filter me-2" />
-                    Filter
-                  </Link>
-                  <div className="dropdown-menu drop-width"  ref={dropdownMenuRef}>
-                    <form >
-                      <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
-                      </div>
-                      <div className="p-3 border-bottom pb-0">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Class 1-A</label>
-                              <CommonSelect
-                                className="select"
-                                options={classSylabus}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Exam Date</label>
-                              <CommonSelect
-                                className="select"
-                                options={examOne}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3">
-                          Reset
-                        </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
-                        >
-                          Apply
-                        </Link>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
+          <Link to={routes.exam} className="btn btn-light">
+            Back to exams
                       </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div className="card-body p-0 py-3">
-              {/* Guardians List */}
-              <Table columns={columns} dataSource={data} Selection={true} />
+        </div>
 
-              {/* /Guardians List */}
-            </div>
-          </div>
-          {/* /Guardians List */}
-        </div>
-      </div>
-      <>
-        {/* Add Exam Schedule */}
-        <div className="modal fade" id="add_exam_schedule">
-          <div className="modal-dialog modal-dialog-centered  modal-xl">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add Exam Schedule</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
+        {message && <div className="alert alert-warning">{message}</div>}
+
+        <div className="card mb-3">
+          <div className="card-body">
+            <div className="row g-3">
+              <div className="col-md-4">
+                <label className="form-label">Class</label>
+                <select
+                  className="form-select"
+                  value={classId}
+                  onChange={(e) => {
+                    setClassId(e.target.value);
+                    setSectionId("");
+                  }}
                 >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="row">
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Class</label>
-                            <input type="text" className="form-control" />
-                          </div>
+                  <option value="">Select class</option>
+                  {classOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
                         </div>
                         <div className="col-md-4">
-                          <div className="mb-3">
                             <label className="form-label">Section</label>
-                            <CommonSelect
-                              className="select"
-                              options={classSection}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Exam Name</label>
-                            <CommonSelect
-                              className="select"
-                              options={examtwo}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Start Time</label>
-                            <CommonSelect
-                              className="select"
-                              options={startTime}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">End Time</label>
-                            <CommonSelect
-                              className="select"
-                              options={startTimeOne}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Duration(min)</label>
-                            <CommonSelect
-                              className="select"
-                              options={durationOne}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {newContents.map((_, index) => (
-                  <div className="exam-schedule-add">
-                    <div className="exam-schedule-row d-flex align-items-center flex-wrap column-gap-3">
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Exam Date</label>
-                          <CommonSelect className="select" options={examOne} />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Subject</label>
-                          <CommonSelect
-                            className="select"
-                            options={mothertongue}
-                          />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Room No</label>
-                          <CommonSelect className="select" options={count} />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Max Marks</label>
-                          <CommonSelect className="select" options={maxMark} />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="d-flex align-items-end">
-                          <div className="mb-3 flex-fill">
-                            <label className="form-label">Min Marks</label>
-                            <CommonSelect
-                              className="select"
-                              options={minMark}
-                            />
-                          </div>
-                          {newContents.length > 1 && (
-                          <div className="mb-3 ms-2">
-                            <Link to="#" className="delete-schedule-table"   onClick={() => removeContent(index)}>
-                              <i className="ti ti-trash" />
-                            </Link>
-                          </div>
-                           )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                   ))}
-                  <div>
-                    <Link to="#" onClick={addNewContent} className="btn btn-primary add-new-schedule">
-                      <i className="ti ti-square-rounded-plus-filled me-2" />
-                      Add New
-                    </Link>
-                  </div>
+                <select
+                  className="form-select"
+                  value={sectionId}
+                  onChange={(e) => setSectionId(e.target.value)}
+                >
+                  <option value="">Select section</option>
+                  {sectionOptions.map((s) => (
+                    <option key={s.section_id} value={s.section_id}>
+                      {s.section_name}
+                    </option>
+                  ))}
+                </select>
                 </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#"  className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Exam Schedule
-                  </Link>
-                </div>
-              </form>
             </div>
           </div>
         </div>
-        {/* Add Exam Schedule */}
-        {/* Edit Exam Schedule */}
-        <div className="modal fade" id="edit_exam_schedule">
-          <div className="modal-dialog modal-dialog-centered  modal-xl">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit Exam Schedule</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form>
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="row">
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Class</label>
+
+        <div className="card">
+          <div className="card-body">
+            {loading ? (
+              <p className="text-muted mb-0">Loading...</p>
+            ) : (
+              <div className="table-responsive">
+                <table className="table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Subject</th>
+                      <th>Subject code</th>
+                      <th>Type</th>
+                      <th>Max marks</th>
+                      <th>Pass marks</th>
+                      <th>Date</th>
+                      <th>Start</th>
+                      <th>End</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => (
+                      <tr key={`subject-row-${row.subject_id}`}>
+                        <td style={{ minWidth: 200 }}>
+                          <div className="fw-semibold">{row.subject_name}</div>
+                        </td>
+                        <td style={{ minWidth: 140 }}>{row.subject_code || "N/A"}</td>
+                        <td style={{ minWidth: 150 }}>{row.subject_mode || "Theory"}</td>
+                        <td>
                             <input
-                              type="text"
                               className="form-control"
-                              placeholder="Enter Class"
-                              defaultValue="I"
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Section</label>
-                            <CommonSelect
-                              className="select"
-                              options={classSection}
-                              defaultValue={classSection[1]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Exam Name</label>
-                            <CommonSelect
-                              className="select"
-                              options={examtwo}
-                              defaultValue={examtwo[1]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Start Time</label>
-                            <CommonSelect
-                              className="select"
-                              options={startTime}
-                              defaultValue={startTime[1]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">End Time</label>
-                            <CommonSelect
-                              className="select"
-                              options={startTimeOne}
-                              defaultValue={startTimeOne[1]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-4">
-                          <div className="mb-3">
-                            <label className="form-label">Duration(min)</label>
-                            <CommonSelect
-                              className="select"
-                              options={durationOne}
-                              defaultValue={startTime[1]}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="exam-schedule-add">
-                    <div className="exam-schedule-row d-flex align-items-center flex-wrap column-gap-3">
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Exam Date</label>
-                          <CommonSelect
-                            className="select"
-                            options={examOne}
-                            defaultValue={examOne[1]}
+                            value={row.max_marks}
+                            onChange={(e) => updateRow(i, { max_marks: e.target.value })}
                           />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Subject</label>
-                          <CommonSelect
-                            className="select"
-                            options={mothertongue}
-                            defaultValue={mothertongue[1]}
+                        </td>
+                        <td>
+                          <input
+                            className="form-control"
+                            value={row.passing_marks}
+                            onChange={(e) => updateRow(i, { passing_marks: e.target.value })}
                           />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Room No</label>
-                          <CommonSelect
-                            className="select"
-                            options={count}
-                            defaultValue={count[1]}
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={row.exam_date}
+                            onChange={(e) => updateRow(i, { exam_date: e.target.value })}
                           />
-                        </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="mb-3">
-                          <label className="form-label">Max Marks</label>
-                          <CommonSelect
-                            className="select"
-                            options={maxMark}
-                            defaultValue={maxMark[1]}
+                        </td>
+                        <td>
+                          <input
+                            type="time"
+                            className="form-control"
+                            value={row.start_time}
+                            onChange={(e) => updateRow(i, { start_time: e.target.value })}
                           />
+                        </td>
+                        <td>
+                          <input
+                            type="time"
+                            className="form-control"
+                            value={row.end_time}
+                            onChange={(e) => updateRow(i, { end_time: e.target.value })}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
                         </div>
-                      </div>
-                      <div className="shedule-info flex-fill">
-                        <div className="d-flex align-items-end">
-                          <div className="mb-3 flex-fill">
-                            <label className="form-label">Min Marks</label>
-                            <CommonSelect
-                              className="select"
-                              options={minMark}
-                              defaultValue={minMark[1]}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
-                  </Link>
-                </div>
-              </form>
+            )}
+
+            <div className="d-flex gap-2 mt-2">
+              <button type="button" className="btn btn-primary" onClick={save} disabled={saving || !rows.length}>
+                {saving ? "Saving..." : "Save timetable"}
+              </button>
+            </div>
             </div>
           </div>
         </div>
-        {/* Edit Exam Schedule */}
-        {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form >
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Delete Modal */}
-      </>
     </div>
   );
 };

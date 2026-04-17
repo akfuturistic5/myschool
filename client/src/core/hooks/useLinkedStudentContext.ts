@@ -25,9 +25,18 @@ export const useLinkedStudentContext = ({
 }: UseLinkedStudentContextOptions = {}) => {
   const { user: currentUser } = useCurrentUser();
   const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent();
-  const role = (currentUser?.role || "").toString().trim().toLowerCase();
-  const isStudentRole = role === "student";
-  const isParentRole = role === "parent";
+  const roleTokens = [
+    currentUser?.role,
+    (currentUser as any)?.role_name,
+    (currentUser as any)?.display_role,
+  ]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean);
+  const role = roleTokens[0] || "";
+  const isStudentRole = roleTokens.some((r) => r === "student" || r.includes("student"));
+  const isParentRole = roleTokens.some(
+    (r) => r === "parent" || r === "guardian" || r === "father" || r === "mother" || r.includes("parent") || r.includes("guardian")
+  );
 
   const {
     parents,
@@ -39,15 +48,26 @@ export const useLinkedStudentContext = ({
     return parseStudentId(parents[0]?.student_id);
   }, [isParentRole, parents]);
 
+  const queryStudentId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const search = new URLSearchParams(window.location.search || "");
+      return parseStudentId(search.get("studentId"));
+    } catch {
+      return null;
+    }
+  }, [routeStudentId, locationState]);
+
   const resolvedStudentId = useMemo(() => {
     return (
       parseStudentId(routeStudentId) ??
+      queryStudentId ??
       parseStudentId(locationState?.studentId) ??
       parseStudentId(locationState?.student?.id) ??
       (isStudentRole ? parseStudentId(currentStudent?.id) : null) ??
       fallbackParentStudentId
     );
-  }, [routeStudentId, locationState, isStudentRole, currentStudent, fallbackParentStudentId]);
+  }, [routeStudentId, queryStudentId, locationState, isStudentRole, currentStudent, fallbackParentStudentId]);
 
   const [student, setStudent] = useState<any>(() => {
     if (locationState?.student) return locationState.student;
@@ -75,10 +95,10 @@ export const useLinkedStudentContext = ({
     }
 
     if (isStudentRole && parseStudentId(currentStudent?.id) === resolvedStudentId) {
+      // Pre-fill quickly for UX, then continue and fetch full student details (class teacher, lookups, etc.)
+      // from /students/:id, which applies ownership checks server-side.
       setStudent(currentStudent);
       setLoadError(null);
-      setLoading(false);
-      return;
     }
 
     let cancelled = false;

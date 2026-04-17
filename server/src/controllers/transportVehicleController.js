@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 
 function getDriverDisplayName(driverRow) {
@@ -36,6 +37,7 @@ function mapVehicleRow(row, driverMap = {}) {
 
 const getAllVehicles = async (req, res) => {
   try {
+    const scopedDriverId = await getScopedDriverId(req);
     const {
       page = 1,
       limit = 10,
@@ -55,6 +57,11 @@ const getAllVehicles = async (req, res) => {
     if (search) {
       queryParams.push(`%${search}%`);
       whereClause += ` AND (v.vehicle_number ILIKE $${queryParams.length} OR v.vehicle_model ILIKE $${queryParams.length} OR d.driver_name ILIKE $${queryParams.length} OR r.route_name ILIKE $${queryParams.length})`;
+    }
+
+    if (scopedDriverId != null) {
+      queryParams.push(scopedDriverId);
+      whereClause += ` AND v.driver_id = $${queryParams.length}`;
     }
 
     if (status !== undefined && status !== '') {
@@ -134,6 +141,14 @@ const getAllVehicles = async (req, res) => {
 const getVehicleById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
+    const params = [id];
+    let scopedSql = '';
+    if (scopedDriverId != null) {
+      params.push(scopedDriverId);
+      scopedSql = ` AND v.driver_id = $2`;
+    }
+
     const result = await query(`
       SELECT v.*, d.driver_name, d.phone as driver_phone, r.route_name,
       (SELECT string_agg(pp_sub.point_name, ', ') 
@@ -143,15 +158,17 @@ const getVehicleById = async (req, res) => {
       FROM vehicles v
       LEFT JOIN drivers d ON v.driver_id = d.id
       LEFT JOIN routes r ON v.route_id = r.id
-      WHERE v.id = $1 AND v.deleted_at IS NULL
-    `, [id]);
+      WHERE v.id = $1 AND v.deleted_at IS NULL${scopedSql}
+    `, params);
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Vehicle not found');
     }
 
     const row = result.rows[0];
-    const driverMap = { [row.driver_id]: { driver_name: row.driver_name, phone: row.driver_phone } };
+    const driverMap = row.driver_id
+      ? { [row.driver_id]: { driver_name: row.driver_name, phone: row.driver_phone } }
+      : {};
     
     return success(res, 200, 'Vehicle fetched successfully', mapVehicleRow(row, driverMap));
   } catch (error) {

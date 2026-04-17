@@ -16,6 +16,9 @@ export const useLeaveTypes = () => {
           res.data.map((lt) => ({
             value: String(lt.id),
             label: lt.leave_type || lt.leave_type_name || 'Leave',
+            id: lt.id,
+            max_days_per_year: lt.max_days_per_year,
+            max_days: lt.max_days,
           }))
         );
       } else {

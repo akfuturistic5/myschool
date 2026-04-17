@@ -46,7 +46,7 @@ const BanIpAddress = () => {
             <div className="col-xxl-2 col-xl-3">
               <div className="pt-3 d-flex flex-column list-group mb-4">
                 <Link
-                  to={routes.schoolSettings}
+                  to={routes.storage}
                   className="d-block rounded p-2"
                 >
                   Storage

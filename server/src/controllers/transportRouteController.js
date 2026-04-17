@@ -1,5 +1,6 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 
 function mapRouteRow(row, stops = []) {
@@ -24,6 +25,7 @@ function mapRouteRow(row, stops = []) {
 
 const getAllRoutes = async (req, res) => {
   try {
+    const scopedDriverId = await getScopedDriverId(req);
     const { 
       page = 1, 
       limit = 10, 
@@ -71,6 +73,19 @@ const getAllRoutes = async (req, res) => {
     if (scopedAcademicYearId) {
       params.push(scopedAcademicYearId);
       sqlFilters += ` AND r.academic_year_id = $${params.length}`;
+    }
+
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return success(res, 200, 'Transport routes fetched successfully', [], {
+          total: 0,
+          page: parseInt(page),
+          limit: parseInt(limit),
+        });
+      }
+      params.push(routeIds);
+      sqlFilters += ` AND r.id = ANY($${params.length}::int[])`;
     }
 
     const countSql = `SELECT COUNT(*) ${baseSql} ${sqlFilters}`;
@@ -132,6 +147,13 @@ const getAllRoutes = async (req, res) => {
 const getRouteById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (!routeIds.map(Number).includes(Number(id))) {
+        return errorResponse(res, 403, 'Access denied');
+      }
+    }
     const routeResult = await query(`
       SELECT * FROM routes
       WHERE id = $1 AND deleted_at IS NULL
@@ -290,6 +312,9 @@ const deleteRoute = async (req, res) => {
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid route ID');
     }
+    return errorResponse(res, 500, 'Failed to update transport route');
+  }
+};
 
     const result = await query(
       'UPDATE routes SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',

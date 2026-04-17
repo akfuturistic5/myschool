@@ -45,6 +45,9 @@ export const useClassesWithSections = (academicYearId = null) => {
               classId: classItem.id,
               classCode: classItem.class_code,
               className: classItem.class_name,
+              maxStudents: classItem.max_students,
+              classFee: classItem.class_fee,
+              classDescription: classItem.description,
               sectionId: section.id,
               sectionName: section.section_name,
               noOfStudents: section.no_of_students || 0,
@@ -53,7 +56,9 @@ export const useClassesWithSections = (academicYearId = null) => {
               classStatus: classItem.is_active,
               teacherFirstName: section.teacher_first_name,
               teacherLastName: section.teacher_last_name,
-              roomNumber: section.room_number
+              roomNumber: section.room_number,
+              class_teacher_id: classItem.class_teacher_id ?? null,
+              section_teacher_id: section.section_teacher_id ?? null,
             });
           });
         } else {
@@ -61,6 +66,9 @@ export const useClassesWithSections = (academicYearId = null) => {
             classId: classItem.id,
             classCode: classItem.class_code,
             className: classItem.class_name,
+            maxStudents: classItem.max_students,
+            classFee: classItem.class_fee,
+            classDescription: classItem.description,
             sectionId: null,
             sectionName: 'N/A',
             noOfStudents: classItem.no_of_students || 0,
@@ -69,7 +77,9 @@ export const useClassesWithSections = (academicYearId = null) => {
             classStatus: classItem.is_active,
             teacherFirstName: classItem.teacher_first_name,
             teacherLastName: classItem.teacher_last_name,
-            roomNumber: null
+            roomNumber: null,
+            class_teacher_id: classItem.class_teacher_id ?? null,
+            section_teacher_id: null,
           });
         }
       });

@@ -1,3 +1,4 @@
+
 import {
   resolveCsrfTokenForRequest,
   setCachedCsrfToken,
@@ -84,12 +85,19 @@ class ApiService {
     const url = `${base}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
     // Create a unique key for this request (endpoint + method + body hash)
-    const method = options.method || 'GET';
-    const bodyKey = options.body ? JSON.stringify(options.body).substring(0, 50) : '';
+    const method = (options.method || 'GET').toUpperCase();
+    const bodyKey = options.body
+      ? (typeof options.body === 'string'
+          ? options.body
+          : JSON.stringify(options.body)).substring(0, 120)
+      : '';
     const requestKey = `${method}:${endpoint}:${bodyKey}`;
 
-    // If the same request is already pending, return the existing promise
-    if (pendingRequests.has(requestKey)) {
+    // Only dedupe safe reads. Never dedupe POST/PUT/PATCH/DELETE — reusing a pending
+    // mutation promise can mask failures or return the wrong response; refetch-after-create
+    // must not accidentally reuse a pre-mutation GET.
+    const dedupeReadsOnly = method === 'GET' || method === 'HEAD';
+    if (dedupeReadsOnly && pendingRequests.has(requestKey)) {
       if (isDev) console.log('Deduplicating request:', url, '- reusing pending request');
       return pendingRequests.get(requestKey);
     }
@@ -416,6 +424,33 @@ class ApiService {
     return this.makeRequest(`/students/${id}`);
   }
 
+  /**
+   * Duplicate check for admission number (form UX). excludeId = student id when editing.
+   */
+  async checkAdmissionNumberUnique(admissionNumber, excludeId = null) {
+    const params = new URLSearchParams();
+    params.set('admissionNumber', String(admissionNumber ?? '').trim());
+    if (excludeId != null && String(excludeId).trim() !== '') {
+      params.set('excludeId', String(excludeId));
+    }
+    return this.makeRequest(`/students/check-admission-number?${params.toString()}`);
+  }
+
+  /** Typeahead: parent_persons + legacy parents/guardians tables (mobile/email/name). */
+  async searchParentPersons(q, limit = 20, role = 'any') {
+    const params = new URLSearchParams();
+    params.set('q', String(q ?? '').trim());
+    params.set('limit', String(limit));
+    if (role && role !== 'any') {
+      params.set('role', String(role));
+    }
+    return this.makeRequest(`/parent-persons/search?${params.toString()}`);
+  }
+
+  async getParentPersonById(id) {
+    return this.makeRequest(`/parent-persons/${id}`);
+  }
+
   async downloadStudentBonafide(studentId) {
     const base = await getApiBaseUrl();
     const url = `${base}/students/${studentId}/bonafide`.replace(/([^:]\/)\/+/g, '$1');
@@ -456,6 +491,107 @@ class ApiService {
     return this.makeRequest(`/students/${studentId}/exam-results`);
   }
 
+  async listExams(query = {}) {
+    const search = new URLSearchParams();
+    if (query.academic_year_id != null && query.academic_year_id !== '') {
+      search.set('academic_year_id', String(query.academic_year_id));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/exams${qs ? `?${qs}` : ''}`);
+  }
+
+  async createExam(payload) {
+    return this.makeRequest('/exams', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getExamManageContext(examId) {
+    return this.makeRequest(`/exams/${examId}/manage-context`);
+  }
+
+  async listExamSubjectsQuery(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exams/subjects/list?${search.toString()}`);
+  }
+
+  async getExamSubjectOptions(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exams/subjects/options?${search.toString()}`);
+  }
+
+  async getExamSubjectsContext(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/context?${search.toString()}`);
+  }
+
+  async saveExamSubjects(payload) {
+    return this.makeRequest('/exams/subjects/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveExamSubjectSetup(payload) {
+    return this.makeRequest('/exam-subjects/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async viewExamSchedule(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/schedule?${search.toString()}`);
+  }
+
+  async viewExamResults(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/results?${search.toString()}`);
+  }
+
+  async listSelfExams(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/self-exams?${search.toString()}`);
+  }
+
+  async getExamMarksContext(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/exam-subjects/marks-context?${search.toString()}`);
+  }
+
+  async getExamGradeScale() {
+    return this.makeRequest('/exam-subjects/grade-scale');
+  }
+
+  async createExamGradeScale(payload) {
+    return this.makeRequest('/exam-subjects/grade-scale', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateExamGradeScale(id, payload) {
+    return this.makeRequest(`/exam-subjects/grade-scale/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteExamGradeScale(id) {
+    return this.makeRequest(`/exam-subjects/grade-scale/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async saveExamMarks(payload) {
+    return this.makeRequest('/exam-subjects/marks-save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getGradeReport(params = {}) {
     const search = new URLSearchParams();
     if (params.classId != null) search.set('class_id', String(params.classId));
@@ -476,6 +612,119 @@ class ApiService {
     return this.makeRequest(`/students/reports/attendance${qs ? `?${qs}` : ''}`);
   }
 
+  async getAttendanceMarkingRoster(entityType, params = {}) {
+    const search = new URLSearchParams();
+    if (params.date) search.set('date', String(params.date));
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    if (params.departmentId != null) search.set('department_id', String(params.departmentId));
+    if (params.designationId != null) search.set('designation_id', String(params.designationId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/attendance/marking/${entityType}${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHolidays(params = {}) {
+    const search = new URLSearchParams();
+    if (params.startDate) search.set('start_date', String(params.startDate));
+    if (params.endDate) search.set('end_date', String(params.endDate));
+    if (params.month != null) search.set('month', String(params.month));
+    if (params.year != null) search.set('year', String(params.year));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/holidays${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHolidayById(id) {
+    return this.makeRequest(`/holidays/${id}`);
+  }
+
+  async createHoliday(payload) {
+    return this.makeRequest('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateHoliday(id, payload) {
+    return this.makeRequest(`/holidays/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteHoliday(id) {
+    return this.makeRequest(`/holidays/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getEnquiries(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null) search.set('academic_year_id', String(params.academic_year_id));
+    if (params.status) search.set('status', String(params.status));
+    if (params.search) search.set('search', String(params.search));
+    if (params.enquiry_date) search.set('enquiry_date', String(params.enquiry_date));
+    if (params.from_date) search.set('from_date', String(params.from_date));
+    if (params.to_date) search.set('to_date', String(params.to_date));
+    if (params.month) search.set('month', String(params.month));
+    if (params.added_by) search.set('added_by', String(params.added_by));
+    const qs = search.toString();
+    return this.makeRequest(`/enquiries${qs ? `?${qs}` : ''}`);
+  }
+
+  async createEnquiry(payload) {
+    return this.makeRequest('/enquiries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveAttendance(payload) {
+    return this.makeRequest('/attendance', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateAttendance(payload) {
+    return this.makeRequest('/attendance', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getEntityAttendanceReport(entityType, params = {}) {
+    const search = new URLSearchParams();
+    if (params.month) search.set('month', String(params.month));
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    if (params.departmentId != null) search.set('department_id', String(params.departmentId));
+    if (params.designationId != null) search.set('designation_id', String(params.designationId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/attendance/reports/${entityType}${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEntityAttendanceDayWise(entityType, params = {}) {
+    const search = new URLSearchParams();
+    if (params.date) search.set('date', String(params.date));
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    if (params.departmentId != null) search.set('department_id', String(params.departmentId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/attendance/day-wise/${entityType}${qs ? `?${qs}` : ''}`);
+  }
+
+  async getMyAttendance(params = {}) {
+    const search = new URLSearchParams();
+    if (params.days != null) search.set('days', String(params.days));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/attendance/me${qs ? `?${qs}` : ''}`);
+  }
+
   async getCurrentStudent() {
     return this.makeRequest('/students/me');
   }
@@ -494,12 +743,42 @@ class ApiService {
   }
 
   // Religions
-  async getReligions() {
-    return this.makeRequest('/religions');
+  async getReligions(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/religions${qs ? `?${qs}` : ''}`);
   }
 
   async getReligionById(id) {
     return this.makeRequest(`/religions/${id}`);
+  }
+
+  async createReligion(payload) {
+    return this.makeRequest('/religions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateReligion(id, payload) {
+    return this.makeRequest(`/religions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleReligionStatus(id) {
+    return this.makeRequest(`/religions/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteReligion(id) {
+    return this.makeRequest(`/religions/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Casts
@@ -560,6 +839,31 @@ class ApiService {
     return this.makeRequest(`/parents/${id}`, {
       method: 'PUT',
       body: JSON.stringify(parentData)
+    });
+  }
+
+  /** Typeahead: min 2 chars on server; debounce in UI */
+  async searchStudentsForParent(q) {
+    const qs = new URLSearchParams();
+    qs.set('q', String(q ?? ''));
+    return this.makeRequest(`/students/search?${qs.toString()}`);
+  }
+
+  async uploadParentProfileImage(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.makeRequest('/parents/profile-image', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /** Creates parent user (role parent) + optional guardian (father) link */
+  async createParentWithChild(payload) {
+    return this.makeRequest('/parents/create-with-child', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
@@ -644,6 +948,37 @@ class ApiService {
     });
   }
 
+  /** @param {{ teacherId?: number|string, classId?: number|string }} [params] */
+  async getTeacherAssignments(params = {}) {
+    const q = new URLSearchParams();
+    if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
+    if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    const qs = q.toString();
+    return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
+  }
+
+  async getTeacherAssignmentClassMeta(classId) {
+    return this.makeRequest(`/teacher-assignments/class/${classId}/meta`);
+  }
+
+  async createTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/${id}`, { method: 'DELETE' });
+  }
+
   /**
    * Upload teacher PDFs (multipart). Do not set Content-Type — browser sets boundary.
    * @param {number|string} teacherId
@@ -721,6 +1056,26 @@ class ApiService {
     return this.makeRequest(`/staff/${id}`);
   }
 
+  async createStaff(data) {
+    return this.makeRequest('/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateStaff(id, data) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteStaff(id) {
+    return this.makeRequest(`/staff/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Departments
   async getDepartments() {
     return this.makeRequest('/departments');
@@ -734,6 +1089,19 @@ class ApiService {
     return this.makeRequest(`/departments/${id}`, {
       method: 'PUT',
       body: JSON.stringify(departmentData),
+    });
+  }
+
+  async createDepartment(departmentData) {
+    return this.makeRequest('/departments', {
+      method: 'POST',
+      body: JSON.stringify(departmentData),
+    });
+  }
+
+  async deleteDepartment(id) {
+    return this.makeRequest(`/departments/${id}`, {
+      method: 'DELETE',
     });
   }
 
@@ -766,6 +1134,29 @@ class ApiService {
     return this.makeRequest(`/users/${id}`);
   }
 
+  async getDeleteAccountRequests() {
+    return this.makeRequest('/users/delete-account-requests');
+  }
+
+  /**
+   * Real-time uniqueness for mobile / email (optional excludeId for edit).
+   * @param {{ mobile?: string, email?: string, excludeId?: number|null }} params
+   */
+  async checkUserUnique(params = {}) {
+    const sp = new URLSearchParams();
+    if (params.mobile != null && String(params.mobile).trim() !== '') {
+      sp.set('mobile', String(params.mobile).trim());
+    }
+    if (params.email != null && String(params.email).trim() !== '') {
+      sp.set('email', String(params.email).trim());
+    }
+    if (params.excludeId != null && String(params.excludeId).trim() !== '') {
+      sp.set('excludeId', String(params.excludeId));
+    }
+    const qs = sp.toString();
+    return this.makeRequest(`/users/check-unique${qs ? `?${qs}` : ''}`);
+  }
+
   // User Roles
   async getUserRoles() {
     return this.makeRequest('/user-roles');
@@ -773,6 +1164,26 @@ class ApiService {
 
   async getUserRoleById(id) {
     return this.makeRequest(`/user-roles/${id}`);
+  }
+
+  async createUserRole(payload) {
+    return this.makeRequest('/user-roles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateUserRole(id, payload) {
+    return this.makeRequest(`/user-roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteUserRole(id) {
+    return this.makeRequest(`/user-roles/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Dashboard stats (optional academicYearId for Headmaster/Teacher year filter)
@@ -1053,13 +1464,26 @@ class ApiService {
   async getLeaveApplications(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.page != null) searchParams.set('page', params.page);
+    if (params.page_size != null) searchParams.set('page_size', params.page_size);
     if (params.student_id != null) searchParams.set('student_id', params.student_id);
     if (params.staff_id != null) searchParams.set('staff_id', params.staff_id);
+    if (params.class_id != null) searchParams.set('class_id', params.class_id);
+    if (params.section_id != null) searchParams.set('section_id', params.section_id);
+    if (params.leave_type_id != null) searchParams.set('leave_type_id', params.leave_type_id);
+    if (params.applicant_type != null && params.applicant_type !== '') searchParams.set('applicant_type', params.applicant_type);
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
+    if (params.status != null && params.status !== '') searchParams.set('status', params.status);
+    if (params.sort_by != null && params.sort_by !== '') searchParams.set('sort_by', params.sort_by);
+    if (params.sort_order != null && params.sort_order !== '') searchParams.set('sort_order', params.sort_order);
     if (params.leave_from != null && params.leave_from !== '') searchParams.set('leave_from', params.leave_from);
     if (params.leave_to != null && params.leave_to !== '') searchParams.set('leave_to', params.leave_to);
     if (params.pending_only === true || params.pending_only === 1 || params.pending_only === '1') {
       searchParams.set('pending_only', '1');
+    }
+    // Bust client-side GET dedupe after mutations (see makeRequest pendingRequests).
+    if (params._refresh != null && params._refresh !== '') {
+      searchParams.set('_refresh', String(params._refresh));
     }
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications${qs ? `?${qs}` : ''}`);
@@ -1072,10 +1496,20 @@ class ApiService {
     });
   }
 
-  async updateLeaveApplicationStatus(id, status) {
+  async updateLeaveApplicationStatus(id, status, options = {}) {
     return this.makeRequest(`/leave-applications/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ status })
+      body: JSON.stringify({
+        status,
+        ...(options.rejection_reason ? { rejection_reason: options.rejection_reason } : {}),
+      })
+    });
+  }
+
+  async cancelLeaveApplication(id) {
+    return this.makeRequest(`/leave-applications/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
     });
   }
 
@@ -1293,6 +1727,11 @@ class ApiService {
     return this.makeRequest(`/transport/drivers/${id}`);
   }
 
+  // Driver Portal (self-scoped)
+  async getDriverPortalMe() {
+    return this.makeRequest('/driver-portal/me');
+  }
+
   // Subjects
   async getSubjects() {
     return this.makeRequest('/subjects');
@@ -1420,6 +1859,7 @@ class ApiService {
       });
     } finally {
       clearCachedCsrfToken();
+      clearTenantBearerToken();
     }
   }
 
@@ -2136,6 +2576,58 @@ class ApiService {
       body: formData,
       isMultipart: true
     });
+  }
+
+  /**
+   * Multi-tenant school storage (school id from session/JWT only).
+   * @param {File} file
+   * @param {'students'|'documents'|'uploads'|'temp'} folder
+   */
+  async uploadSchoolStorageFile(file, folder) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /**
+   * Student PDF documents (medical / transfer certificate). Tenant school from JWT only.
+   * @param {File} file
+   * @param {'medical'|'transfer_certificate'} docType
+   */
+  async uploadStudentDocumentPdf(file, docType) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('docType', docType);
+    formData.append('folder', 'documents');
+    return this.makeRequest('/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  /** @param {string} relativePath — e.g. school_12/students/abc.jpg */
+  async deleteSchoolStorageFile(relativePath) {
+    return this.makeRequest('/storage/file', {
+      method: 'DELETE',
+      body: JSON.stringify({ relativePath }),
+    });
+  }
+
+  /**
+   * Turn API path `/api/storage/files/...` into an absolute URL for `<img src>` (same host as API).
+   * @param {string} apiPath — `data.url` from uploadSchoolStorageFile
+   */
+  async getSchoolStorageFileAbsoluteUrl(apiPath) {
+    const base = await getApiBaseUrl();
+    const origin = new URL(base).origin;
+    const p = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
+    return `${origin}${p}`;
   }
 }
 

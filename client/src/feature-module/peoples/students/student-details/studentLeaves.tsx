@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -12,10 +12,13 @@ import { useGuardianWardLeaves } from "../../../../core/hooks/useGuardianWardLea
 import { useStudentAttendance } from "../../../../core/hooks/useStudentAttendance";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
+import { apiService } from "../../../../core/services/apiService";
 
 interface StudentDetailsLocationState {
   studentId?: number;
   student?: any;
+  returnTo?: string;
+  activeTab?: "leave" | "attendance";
 }
 
 // Custom styles for table
@@ -63,9 +66,17 @@ const StudentLeaves = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
+  const initialTab: "leave" | "attendance" = state?.activeTab === "attendance" ? "attendance" : "leave";
+  const [activeTab, setActiveTab] = useState<"leave" | "attendance">(initialTab);
   const { studentId, student, loading, role } = useLinkedStudentContext({
     locationState: state,
   });
+  const effectiveStudentId =
+    (typeof studentId === "number" && Number.isFinite(studentId) && studentId > 0
+      ? studentId
+      : Number(student?.id) > 0
+        ? Number(student.id)
+        : null);
   const { academicYears } = useAcademicYears();
   const currentAcademicYear =
     (academicYears || []).find((year: { is_current?: boolean }) => year?.is_current) ??
@@ -74,18 +85,26 @@ const StudentLeaves = () => {
 
   // studentOnly = student; parentChildren = parent; studentId+canUseAdminList = admin/teacher
   // canUseAdminList: avoid 403 when role loading - never call admin endpoint until role is confirmed
-  const canUseAdminList = role === "admin" || role === "teacher";
-  const { leaveApplications: leaveList, loading: leaveLoading, refetch: refetchLeaves } = useLeaveApplications({
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const canUseAdminList =
+    normalizedRole === "admin" ||
+    normalizedRole === "teacher" ||
+    normalizedRole === "headmaster" ||
+    normalizedRole === "administrative" ||
+    normalizedRole.includes("teacher") ||
+    normalizedRole.includes("headmaster") ||
+    normalizedRole.includes("administrative");
+  const { leaveApplications: leaveList, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     parentChildren: role === "parent",
     studentOnly: role === "student",
-    studentId: (role === "parent" || canUseAdminList) && studentId != null ? studentId : null,
+    studentId: (role === "parent" || canUseAdminList) && effectiveStudentId != null ? effectiveStudentId : null,
     canUseAdminList,
   });
 
   const { leaveApplications: guardianLeaves, loading: guardianLoading, refetch: refetchGuardianLeaves } = useGuardianWardLeaves({
     limit: 50,
-    studentId: studentId && role === "guardian" ? studentId : null,
+    studentId: effectiveStudentId && role === "guardian" ? effectiveStudentId : null,
   });
 
   const data = useMemo(() => {
@@ -95,8 +114,128 @@ const StudentLeaves = () => {
 
   const leaveDataLoading = role === "guardian" ? guardianLoading : leaveLoading;
   const refetchLeaveData = role === "guardian" ? refetchGuardianLeaves : refetchLeaves;
+  const [cancelingLeaveId, setCancelingLeaveId] = useState<number | null>(null);
+  const [todayHoliday, setTodayHoliday] = useState<{ title?: string; start_date?: string; end_date?: string } | null>(null);
+  const [historyHolidayDates, setHistoryHolidayDates] = useState<string[]>([]);
+  const [historyHolidayTitles, setHistoryHolidayTitles] = useState<Record<string, string>>({});
+  const [holidayRefreshTick, setHolidayRefreshTick] = useState(0);
 
-  const { data: attendanceData, loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useStudentAttendance(studentId ?? null);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") setHolidayRefreshTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  const { data: attendanceData, loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useStudentAttendance(effectiveStudentId ?? null);
+  const attendanceRecords = attendanceData?.records ?? [];
+  const attendanceSummary = attendanceData?.summary ?? { present: 0, absent: 0, halfDay: 0, late: 0 };
+
+  useEffect(() => {
+    let disposed = false;
+    const loadTodayHoliday = async () => {
+      try {
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const res = await apiService.getHolidays({
+          startDate: today,
+          endDate: today,
+          academicYearId: currentAcademicYear?.id,
+        });
+        if (disposed) return;
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        setTodayHoliday(rows.length > 0 ? rows[0] : null);
+      } catch {
+        if (!disposed) setTodayHoliday(null);
+      }
+    };
+    loadTodayHoliday();
+    return () => {
+      disposed = true;
+    };
+  }, [currentAcademicYear?.id]);
+
+  useEffect(() => {
+    let disposed = false;
+    const toYmd = (value: unknown) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const loadHistoryHolidays = async () => {
+      try {
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const ym = today.slice(0, 7);
+        const currentMonthStart = `${ym}-01`;
+        const [cy, cm] = ym.split("-").map(Number);
+        const currentMonthEnd = `${cy}-${String(cm).padStart(2, "0")}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
+        const recordDates = (Array.isArray(attendanceRecords) ? attendanceRecords : [])
+          .map((r: any) => toYmd(r?.attendanceDate))
+          .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+          .sort();
+        const recordMax = recordDates.length ? recordDates[recordDates.length - 1] : "";
+        const startDate = recordDates[0] && recordDates[0] < currentMonthStart ? recordDates[0] : currentMonthStart;
+        const endDate = [today, currentMonthEnd, recordMax].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).reduce((a, b) => (a >= b ? a : b), today);
+        const res = await apiService.getHolidays({
+          startDate,
+          endDate,
+          academicYearId: currentAcademicYear?.id,
+        });
+        if (disposed) return;
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const dates = new Set<string>();
+        const titleMap: Record<string, string> = {};
+        rows.forEach((h: any) => {
+          const hs = String(h?.start_date || "").slice(0, 10);
+          const he = String(h?.end_date || "").slice(0, 10);
+          const title = String(h?.title || "").trim() || "Holiday";
+          if (!hs || !he) return;
+          let cursor = new Date(`${hs}T00:00:00`);
+          const until = new Date(`${he}T00:00:00`);
+          while (cursor <= until) {
+            const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+            if (d >= startDate && d <= endDate) {
+              dates.add(d);
+              if (!titleMap[d]) titleMap[d] = title;
+            }
+            cursor.setDate(cursor.getDate() + 1);
+          }
+        });
+        setHistoryHolidayDates(Array.from(dates));
+        setHistoryHolidayTitles(titleMap);
+      } catch {
+        if (!disposed) {
+          setHistoryHolidayDates([]);
+          setHistoryHolidayTitles({});
+        }
+      }
+    };
+    loadHistoryHolidays();
+    return () => {
+      disposed = true;
+    };
+  }, [attendanceRecords, currentAcademicYear?.id, holidayRefreshTick]);
+
+  const handleCancelLeave = async (id?: number) => {
+    if (!id || cancelingLeaveId != null) return;
+    const ok = window.confirm("Cancel this pending leave request?");
+    if (!ok) return;
+    setCancelingLeaveId(id);
+    try {
+      const res = await apiService.cancelLeaveApplication(id);
+      if (res?.status === "SUCCESS") refetchLeaveData();
+      else alert(res?.message || "Failed to cancel leave.");
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel leave.");
+    } finally {
+      setCancelingLeaveId(null);
+    }
+  };
 
   const leaveCounts = useMemo(() => {
     const medical = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical"));
@@ -106,26 +245,8 @@ const StudentLeaves = () => {
     return { medical: medical.length, casual: casual.length, maternity: maternity.length, paternity: paternity.length };
   }, [data]);
 
-  const attendanceRecords = attendanceData?.records ?? [];
-  const attendanceSummary = attendanceData?.summary ?? { present: 0, absent: 0, halfDay: 0, late: 0 };
-  const hasAttendance = attendanceRecords.length > 0;
-
   const showLoading = loading;
-  if (showLoading) {
-    return (
-      <div className="page-wrapper">
-        <div className="content">
-          <div className="d-flex justify-content-center align-items-center p-5">
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Loading...</span>
-            </div>
-            <span className="ms-2">Loading student...</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
+
   const columns = [
     {
       title: "Leave Type",
@@ -154,22 +275,43 @@ const StudentLeaves = () => {
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Approved" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          )}
-        </>
-      ),
+      render: (text: string) => {
+        const status = String(text || "").toLowerCase();
+        const badgeClass =
+          status === "approved"
+            ? "badge-soft-success"
+            : status === "rejected"
+              ? "badge-soft-danger"
+              : status === "cancelled"
+                ? "badge-soft-secondary"
+                : "badge-soft-warning";
+        const label = status ? status.charAt(0).toUpperCase() + status.slice(1) : "Pending";
+        return (
+          <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
+            <i className="ti ti-circle-filled fs-5 me-1"></i>
+            {label}
+          </span>
+        );
+      },
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
+    },
+    {
+      title: "Action",
+      dataIndex: "id",
+      render: (_: unknown, record: { id?: number; status?: string }) => {
+        const isPending = String(record?.status || "").toLowerCase() === "pending";
+        if (!isPending || !record?.id) return "—";
+        return (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-danger"
+            onClick={() => handleCancelLeave(record.id)}
+            disabled={cancelingLeaveId != null}
+          >
+            {cancelingLeaveId === record.id ? "Cancelling..." : "Cancel"}
+          </button>
+        );
+      },
     },
   ];
   const attendanceTableColumns = [
@@ -210,12 +352,137 @@ const StudentLeaves = () => {
       dataIndex: "checkOutTime",
       render: (val: string) => (val ? String(val).slice(0, 5) : "—"),
     },
+    {
+      title: "Remark",
+      dataIndex: "remark",
+      render: (val: string) => (val && String(val).trim() ? val : "—"),
+      sorter: (a: TableData & { remark?: string }, b: TableData & { remark?: string }) =>
+        (a.remark || "").localeCompare(b.remark || ""),
+    },
   ];
 
-  const attendanceTableData = attendanceRecords.map((r: { id?: number; attendanceDate?: string; status?: string; checkInTime?: string; checkOutTime?: string }, idx: number) => ({
-    key: r.id ?? idx,
-    ...r,
-  }));
+  const attendanceTableData = useMemo(() => {
+    const toYmd = (value: unknown) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return raw.slice(0, 10);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const isSunday = (ymd: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return false;
+      const d = new Date(`${ymd}T00:00:00`);
+      return !Number.isNaN(d.getTime()) && d.getDay() === 0;
+    };
+    const isMarkedAttendanceStatus = (status: unknown) => {
+      const s = String(status || "").trim().toLowerCase();
+      return s === "present" || s === "late" || s === "absent" || s === "half_day" || s === "halfday";
+    };
+
+    const mapped = attendanceRecords.map((r: { id?: number; attendanceDate?: string; status?: string; checkInTime?: string; checkOutTime?: string; remark?: string }, idx: number) => ({
+      key: r.id ?? idx,
+      ...r,
+    }));
+
+    const byDate = new Map<string, any>();
+    mapped.forEach((row: any) => {
+      const dateKey = toYmd(row?.attendanceDate);
+      if (!dateKey) return;
+      byDate.set(dateKey, {
+        ...row,
+        attendanceDate: dateKey,
+      });
+    });
+
+    const dateKeys = Array.from(byDate.keys()).sort();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const ym = today.slice(0, 7);
+    const currentMonthStart = `${ym}-01`;
+    const [cy, cm] = ym.split("-").map(Number);
+    const currentMonthEnd = `${cy}-${String(cm).padStart(2, "0")}-${String(new Date(cy, cm, 0).getDate()).padStart(2, "0")}`;
+    const startDate = dateKeys[0] && dateKeys[0] < currentMonthStart ? dateKeys[0] : currentMonthStart;
+    const recordMax = dateKeys.length ? dateKeys[dateKeys.length - 1] : "";
+    const endDate = [today, currentMonthEnd, recordMax].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).reduce((a, b) => (a >= b ? a : b), today);
+    if (currentMonthStart) {
+      let cursor = new Date(`${currentMonthStart}T00:00:00`);
+      const untilMonth = new Date(`${currentMonthEnd}T00:00:00`);
+      while (cursor <= untilMonth) {
+        const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+        if (isSunday(d)) {
+          const existing = byDate.get(d);
+          if (!isMarkedAttendanceStatus(existing?.status)) {
+            byDate.set(d, {
+              key: existing?.key ?? `weekly-holiday-${d}`,
+              ...(existing || {}),
+              attendanceDate: d,
+              status: "holiday",
+              checkInTime: null,
+              checkOutTime: null,
+              remark: "Weekly Holiday",
+            });
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    const holidaySet = new Set((Array.isArray(historyHolidayDates) ? historyHolidayDates : []).map((d) => toYmd(d)));
+    const holidayTitleByDate = historyHolidayTitles || {};
+    holidaySet.forEach((d) => {
+      if (!d || d < startDate || d > endDate) return;
+      const existing = byDate.get(d);
+      const explicitTitle = holidayTitleByDate[d];
+      if (!isMarkedAttendanceStatus(existing?.status)) {
+        byDate.set(d, {
+          key: existing?.key ?? `holiday-${d}`,
+          ...(existing || {}),
+          attendanceDate: d,
+          status: "holiday",
+          checkInTime: null,
+          checkOutTime: null,
+          remark: explicitTitle ? `Holiday: ${explicitTitle}` : (isSunday(d) ? "Weekly Holiday" : "Holiday"),
+        });
+      }
+    });
+
+    if (todayHoliday) {
+      const existingToday = byDate.get(today);
+      if (!isMarkedAttendanceStatus(existingToday?.status)) {
+        byDate.set(today, {
+          key: existingToday?.key ?? `holiday-${today}`,
+          ...(existingToday || {}),
+          attendanceDate: today,
+          status: "holiday",
+          checkInTime: null,
+          checkOutTime: null,
+          remark: isSunday(today) ? "Weekly Holiday" : `Holiday${todayHoliday?.title ? `: ${todayHoliday.title}` : ""}`,
+        });
+      }
+    }
+
+    return Array.from(byDate.values()).sort((a: any, b: any) =>
+      String(b?.attendanceDate || "").localeCompare(String(a?.attendanceDate || ""))
+    );
+  }, [attendanceRecords, todayHoliday, historyHolidayDates, historyHolidayTitles]);
+  const hasAttendance = attendanceTableData.length > 0;
+
+  if (showLoading) {
+    return (
+      <div className="page-wrapper">
+        <div className="content">
+          <div className="d-flex justify-content-center align-items-center p-5">
+            <div className="spinner-border text-primary" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <span className="ms-2">Loading student...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{tableStyles}</style>
@@ -258,8 +525,9 @@ const StudentLeaves = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentLeaves}
+                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
                         className="nav-link active"
+                        state={student ? { studentId: student.id, student } : undefined}
                       >
                         <i className="ti ti-calendar-due me-2" />
                         Leave &amp; Attendance
@@ -294,9 +562,11 @@ const StudentLeaves = () => {
                         <li className="me-3 mb-3">
                           <Link
                             to="#"
-                            className="nav-link active rounded fs-12 fw-semibold"
-                            data-bs-toggle="tab"
-                            data-bs-target="#leave"
+                            className={`nav-link rounded fs-12 fw-semibold ${activeTab === "leave" ? "active" : ""}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setActiveTab("leave");
+                            }}
                           >
                             Leaves
                           </Link>
@@ -304,9 +574,11 @@ const StudentLeaves = () => {
                         <li className="mb-3">
                           <Link
                             to="#"
-                            className="nav-link rounded fs-12 fw-semibold"
-                            data-bs-toggle="tab"
-                            data-bs-target="#attendance"
+                            className={`nav-link rounded fs-12 fw-semibold ${activeTab === "attendance" ? "active" : ""}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setActiveTab("attendance");
+                            }}
                           >
                             Attendance
                           </Link>
@@ -317,7 +589,7 @@ const StudentLeaves = () => {
                   {/* /Leave Nav*/}
                   <div className="tab-content">
                     {/* Leave */}
-                    <div className="tab-pane fade show active" id="leave">
+                    <div className={`tab-pane fade ${activeTab === "leave" ? "show active" : ""}`} id="leave">
                       <div className="row gx-3">
                         <div className="col-lg-6 col-xxl-3 d-flex">
                           <div className="card flex-fill">
@@ -379,6 +651,11 @@ const StudentLeaves = () => {
                         </div>
                         {/* Leaves List */}
                         <div className="card-body p-0 py-3">
+                          {!!leaveError && (
+                            <div className="alert alert-warning mx-3 mt-3 mb-0" role="alert">
+                              {leaveError}
+                            </div>
+                          )}
                           {leaveDataLoading && (
                           <div className="p-4 text-center text-muted">Loading leave data...</div>
                         )}
@@ -395,7 +672,7 @@ const StudentLeaves = () => {
                     </div>
                     {/* /Leave */}
                     {/* Attendance */}
-                    <div className="tab-pane fade" id="attendance">
+                    <div className={`tab-pane fade ${activeTab === "attendance" ? "show active" : ""}`} id="attendance">
                       <div className="card">
                         <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-1">
                           <h4 className="mb-3">Attendance</h4>
@@ -427,6 +704,12 @@ const StudentLeaves = () => {
                             <div className="alert alert-warning mb-3 d-flex align-items-center" role="alert">
                               <i className="ti ti-alert-circle me-2 fs-18" />
                               <span>{attendanceError}</span>
+                            </div>
+                          )}
+                          {!attendanceLoading && todayHoliday && (
+                            <div className="alert alert-info mb-3 d-flex align-items-center" role="alert">
+                              <i className="ti ti-calendar-event me-2 fs-18" />
+                              <span>Today is holiday{todayHoliday.title ? `: ${todayHoliday.title}` : ""}.</span>
                             </div>
                           )}
                           {attendanceLoading && (

@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, useMemo } from "react";
+import { useTeachers } from "../../../core/hooks/useTeachers";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
+import { useClassRooms } from "../../../core/hooks/useClassRooms";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import {
@@ -17,12 +19,71 @@ import { Link } from "react-router-dom";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 
+/**
+ * After async submit + React state updates, Bootstrap 5 sometimes leaves `.modal-backdrop`
+ * and `modal-open` on `body`, so the page looks dimmed and does not accept clicks.
+ * Same mitigation as Classes edit modal (see classes/index.tsx).
+ */
+function cleanupBootstrapModalArtifacts() {
+  setTimeout(() => {
+    document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("padding-right");
+  }, 150);
+}
+
+function hideBootstrapModalByElement(modalEl: HTMLElement | null) {
+  const bs = (window as any).bootstrap;
+  if (modalEl && bs?.Modal?.getOrCreateInstance) {
+    bs.Modal.getOrCreateInstance(modalEl).hide();
+  }
+  cleanupBootstrapModalArtifacts();
+}
+
+/**
+ * Wait until the modal is fully hidden (backdrop removed by Bootstrap) before React refetches.
+ * Refetching while the modal is closing can leave a stuck `.modal-backdrop` / `modal-open` on `body`.
+ */
+function hideBootstrapModalAndWaitForClosed(modalEl: HTMLElement | null): Promise<void> {
+  return new Promise((resolve) => {
+    if (!modalEl) {
+      cleanupBootstrapModalArtifacts();
+      resolve();
+      return;
+    }
+    const bs = (window as any).bootstrap;
+    const inst = bs?.Modal?.getOrCreateInstance?.(modalEl);
+    if (!inst?.hide) {
+      cleanupBootstrapModalArtifacts();
+      resolve();
+      return;
+    }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanupBootstrapModalArtifacts();
+      resolve();
+    };
+    const t = window.setTimeout(finish, 600);
+    const onHidden = () => {
+      window.clearTimeout(t);
+      modalEl.removeEventListener("hidden.bs.modal", onHidden);
+      finish();
+    };
+    modalEl.addEventListener("hidden.bs.modal", onHidden, { once: true });
+    inst.hide();
+  });
+}
 
 const ClassSection = () => {
   const routes = all_routes;
   const { sections, loading, error, refetch } = useSections();
+  const { teachers = [] } = useTeachers();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classes = [] } = useClasses(academicYearId);
+  const { classRooms = [] } = useClassRooms();
   const [selectedSection, setSelectedSection] = useState<any>(null);
   const [editSectionName, setEditSectionName] = useState<string>('');
   const [editSectionStatus, setEditSectionStatus] = useState<boolean>(true);
@@ -30,7 +91,19 @@ const ClassSection = () => {
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
-  const [addForm, setAddForm] = useState({ section_name: '', class_id: '', is_active: true });
+  const [addForm, setAddForm] = useState({
+    section_name: '',
+    class_id: '',
+    is_active: true,
+    section_teacher_staff_id: 'Select',
+    max_students: '',
+    room_number: 'Select',
+    description: '',
+  });
+  const [editSectionTeacherStaffId, setEditSectionTeacherStaffId] = useState<string>('Select');
+  const [editMaxStudents, setEditMaxStudents] = useState<string>('');
+  const [editRoomNumber, setEditRoomNumber] = useState<string>('Select');
+  const [editDescription, setEditDescription] = useState<string>('');
   const [filterSection, setFilterSection] = useState("Select");
   const [filterStatus, setFilterStatus] = useState("Select");
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
@@ -46,22 +119,110 @@ const ClassSection = () => {
     () => [{ value: "Select", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))],
     [classes]
   );
+  const teacherSelectOptions = useMemo(
+    () => [
+      { value: "Select", label: "No teacher assigned" },
+      ...teachers.map((t: any) => ({
+        value: String(t.staff_id),
+        label: `${t.first_name || ""} ${t.last_name || ""}`.trim() || `Staff #${t.staff_id}`,
+      })),
+    ],
+    [teachers]
+  );
   const sectionOptions = useMemo(
     () => [{ value: "Select", label: "Select" }, ...Array.from(new Set((sections || []).map((s: any) => s.section_name))).map((s) => ({ value: s, label: s }))],
     [sections]
   );
+
+  /** Rooms from `class_rooms` that are available for assignment (Active only). */
+  const availableClassRooms = useMemo(
+    () =>
+      (classRooms || []).filter((r: any) => {
+        const s = String(r.status ?? "Active").trim().toLowerCase();
+        return s === "active";
+      }),
+    [classRooms]
+  );
+
+  const labelForRoom = (r: any) => {
+    const no = String(r.room_no ?? "").trim();
+    const bits = [r.building, r.floor].filter(Boolean);
+    if (!no) return "";
+    return bits.length ? `${no} (${bits.join(" · ")})` : no;
+  };
+
+  const roomOptionsForAdd = useMemo(() => {
+    const first = { value: "Select", label: "No room assigned" };
+    const rest = availableClassRooms
+      .map((r: any) => {
+        const value = String(r.room_no ?? "").trim();
+        return {
+          value,
+          label: labelForRoom(r) || value,
+        };
+      })
+      .filter((o) => o.value !== "");
+    return [first, ...rest];
+  }, [availableClassRooms]);
+
+  /** Edit: include legacy `sections.room_number` if it is not in the active list (e.g. old free text or inactive room). */
+  const roomOptionsForEdit = useMemo(() => {
+    const first = { value: "Select", label: "No room assigned" };
+    const rest = availableClassRooms.map((r: any) => ({
+      value: String(r.room_no ?? "").trim(),
+      label: labelForRoom(r) || String(r.room_no ?? "").trim(),
+    })).filter((o) => o.value !== "");
+    const all = [first, ...rest];
+    const v =
+      editRoomNumber && editRoomNumber !== "Select" ? editRoomNumber.trim() : "";
+    if (v && !all.some((o) => o.value === v)) {
+      return [...all, { value: v, label: `${v} (current)` }];
+    }
+    return all;
+  }, [availableClassRooms, editRoomNumber]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addForm.section_name.trim() || !addForm.class_id) return;
     setIsCreating(true);
     try {
-      await apiService.createSection({ section_name: addForm.section_name.trim(), class_id: Number(addForm.class_id), is_active: addForm.is_active });
+      let sectionTeacherId: number | null = null;
+      if (addForm.section_teacher_staff_id && addForm.section_teacher_staff_id !== "Select") {
+        const n = parseInt(String(addForm.section_teacher_staff_id), 10);
+        sectionTeacherId = Number.isNaN(n) ? null : n;
+      }
+      const payload: Record<string, unknown> = {
+        section_name: addForm.section_name.trim(),
+        class_id: Number(addForm.class_id),
+        is_active: addForm.is_active,
+        section_teacher_id: sectionTeacherId,
+      };
+      const ms = addForm.max_students.trim();
+      if (ms !== '') {
+        const n = parseInt(ms, 10);
+        if (!Number.isNaN(n)) payload.max_students = n;
+      }
+      if (addForm.room_number && addForm.room_number !== "Select") {
+        payload.room_number = addForm.room_number.trim();
+      }
+      const desc = addForm.description.trim();
+      if (desc !== '') payload.description = desc;
+      await apiService.createSection(payload);
       await refetch();
       setMessage('Section created successfully');
-      setAddForm({ section_name: '', class_id: '', is_active: true });
-      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('add_class_section'));
-      modal?.hide();
+      setAddForm({
+        section_name: '',
+        class_id: '',
+        is_active: true,
+        section_teacher_staff_id: 'Select',
+        max_students: '',
+        room_number: 'Select',
+        description: '',
+      });
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      hideBootstrapModalByElement(document.getElementById("add_class_section"));
     } finally { setIsCreating(false); }
   };
 
@@ -70,10 +231,12 @@ const ClassSection = () => {
     setIsDeleting(true);
     try {
       await apiService.deleteSection(selectedSection.id);
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      await hideBootstrapModalAndWaitForClosed(document.getElementById("delete-modal"));
       await refetch();
       setMessage('Section deleted successfully');
-      const modal = (window as any).bootstrap?.Modal?.getInstance(document.getElementById('delete-modal'));
-      modal?.hide();
     } finally { setIsDeleting(false); }
   };
 
@@ -81,6 +244,14 @@ const ClassSection = () => {
   const handleEditClick = (section: any) => {
     setSelectedSection(section);
     setEditSectionName(section?.section_name || '');
+    setEditSectionTeacherStaffId(
+      section?.section_teacher_id != null ? String(section.section_teacher_id) : 'Select'
+    );
+    setEditMaxStudents(section?.max_students != null ? String(section.max_students) : '');
+    const rawRoom =
+      section?.room_number != null ? String(section.room_number).trim() : "";
+    setEditRoomNumber(rawRoom === "" ? "Select" : rawRoom);
+    setEditDescription(section?.description != null ? String(section.description) : '');
     // Handle is_active - Backend should normalize to boolean, but be defensive
     let isActive = false;
     if (section?.is_active === true || section?.is_active === 'true' || section?.is_active === 1 || section?.is_active === 't' || section?.is_active === 'T') {
@@ -144,25 +315,34 @@ const ClassSection = () => {
     try {
       setIsUpdating(true);
 
-      const updateData = {
+      let sectionTeacherId: number | null = null;
+      if (editSectionTeacherStaffId && editSectionTeacherStaffId !== 'Select') {
+        const n = parseInt(String(editSectionTeacherStaffId), 10);
+        sectionTeacherId = Number.isNaN(n) ? null : n;
+      }
+      let maxStudentsVal: number | null = null;
+      if (editMaxStudents.trim() === '') {
+        maxStudentsVal = null;
+      } else {
+        const n = parseInt(editMaxStudents.trim(), 10);
+        maxStudentsVal = Number.isNaN(n) ? null : n;
+      }
+      const updateData: Record<string, unknown> = {
         section_name: editSectionName.trim(),
-        is_active: editSectionStatus
+        is_active: editSectionStatus,
+        section_teacher_id: sectionTeacherId,
+        max_students: maxStudentsVal,
+        room_number: editRoomNumber === "Select" ? null : editRoomNumber.trim(),
+        description: editDescription.trim() === '' ? null : editDescription.trim(),
       };
 
       const response = await apiService.updateSection(selectedSection.id, updateData);
 
       if (response && response.status === 'SUCCESS') {
-        // Close modal
-        const modalElement = document.getElementById('edit_class_section');
-        if (modalElement) {
-          const bootstrap = (window as any).bootstrap;
-          if (bootstrap && bootstrap.Modal) {
-            const modal = bootstrap.Modal.getInstance(modalElement);
-            if (modal) {
-              modal.hide();
-            }
-          }
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
         }
+        hideBootstrapModalByElement(document.getElementById("edit_class_section"));
 
         await refetch();
         setMessage('Section updated successfully');
@@ -171,6 +351,10 @@ const ClassSection = () => {
         setSelectedSection(null);
         setEditSectionName('');
         setEditSectionStatus(true);
+        setEditSectionTeacherStaffId('Select');
+        setEditMaxStudents('');
+        setEditRoomNumber('Select');
+        setEditDescription('');
       } else {
         const errorMsg = response?.message || 'Failed to update section';
         console.error('Update failed:', errorMsg);
@@ -200,6 +384,10 @@ const ClassSection = () => {
         setSelectedSection(null);
         setEditSectionName('');
         setEditSectionStatus(true);
+        setEditSectionTeacherStaffId('Select');
+        setEditMaxStudents('');
+        setEditRoomNumber('Select');
+        setEditDescription('');
       };
       
       editModalElement.addEventListener('hidden.bs.modal', handleModalHidden);
@@ -250,10 +438,22 @@ const ClassSection = () => {
     // Ensure status is always a string
     const status: string = isActive === true ? 'Active' : 'Inactive';
     
+    const teacherDisplay = [section.teacher_first_name, section.teacher_last_name].filter(Boolean).join(' ').trim();
+    const cap =
+      section.max_students != null && section.max_students !== ''
+        ? String(section.max_students)
+        : '—';
+    const roomDisp =
+      section.room_number != null && String(section.room_number).trim() !== ''
+        ? String(section.room_number).trim()
+        : '—';
     return {
       key: section.id?.toString() || (index + 1).toString(),
       id: section.id?.toString() || `SE${String(index + 1).padStart(6, '0')}`,
       sectionName: section.section_name || 'N/A',
+      sectionTeacher: teacherDisplay || '—',
+      maxStudents: cap,
+      roomNumber: roomDisp,
       status: status,
       sectionData: {
         ...section,
@@ -286,6 +486,24 @@ const ClassSection = () => {
         const nameB = b.sectionName?.toString() || '';
         return nameA.localeCompare(nameB);
       },
+    },
+    {
+      title: "Section teacher",
+      dataIndex: "sectionTeacher",
+      sorter: (a: TableData, b: TableData) =>
+        String(a.sectionTeacher || "").localeCompare(String(b.sectionTeacher || "")),
+    },
+    {
+      title: "Max students",
+      dataIndex: "maxStudents",
+      sorter: (a: TableData, b: TableData) =>
+        String(a.maxStudents || "").localeCompare(String(b.maxStudents || ""), undefined, { numeric: true }),
+    },
+    {
+      title: "Room",
+      dataIndex: "roomNumber",
+      sorter: (a: TableData, b: TableData) =>
+        String(a.roomNumber || "").localeCompare(String(b.roomNumber || "")),
     },
     {
       title: "Status",
@@ -564,11 +782,63 @@ const ClassSection = () => {
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Section</label>
-                        <input type="text" className="form-control" value={addForm.section_name} onChange={(e) => setAddForm((f) => ({ ...f, section_name: e.target.value }))} />
+                        <input
+                          type="text"
+                          className="form-control"
+                          maxLength={10}
+                          value={addForm.section_name}
+                          onChange={(e) => setAddForm((f) => ({ ...f, section_name: e.target.value }))}
+                        />
+                        <small className="text-muted">Up to 10 characters (database limit).</small>
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Class</label>
                         <CommonSelect className="select" options={classOptions} defaultValue={classOptions[0]} onChange={(v) => setAddForm((f) => ({ ...f, class_id: v || '' }))} />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Section teacher (optional)</label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherSelectOptions}
+                          defaultValue={teacherSelectOptions[0]}
+                          onChange={(v) => setAddForm((f) => ({ ...f, section_teacher_staff_id: v || 'Select' }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Max students (optional)</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={1}
+                          max={10000}
+                          placeholder="Default 30 if empty"
+                          value={addForm.max_students}
+                          onChange={(e) => setAddForm((f) => ({ ...f, max_students: e.target.value }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Room (optional)</label>
+                        <CommonSelect
+                          className="select"
+                          options={roomOptionsForAdd}
+                          value={addForm.room_number}
+                          onChange={(v) =>
+                            setAddForm((f) => ({ ...f, room_number: v || "Select" }))
+                          }
+                        />
+                        <small className="text-muted d-block mt-1">
+                          Active rooms from Class rooms; stored as room number on the section.
+                        </small>
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Description (optional)</label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          maxLength={5000}
+                          value={addForm.description}
+                          onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+                        />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -622,10 +892,55 @@ const ClassSection = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Section"
+                          maxLength={10}
                           value={editSectionName}
                           onChange={(e) => setEditSectionName(e.target.value)}
                           key={`section-input-${selectedSection?.id || 'new'}`}
                           required
+                        />
+                        <small className="text-muted">Up to 10 characters (database limit).</small>
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Section teacher</label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherSelectOptions}
+                          value={editSectionTeacherStaffId}
+                          onChange={(v) => setEditSectionTeacherStaffId(v || 'Select')}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Max students</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={1}
+                          max={10000}
+                          placeholder="Empty resets to default (30)"
+                          value={editMaxStudents}
+                          onChange={(e) => setEditMaxStudents(e.target.value)}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Room (optional)</label>
+                        <CommonSelect
+                          className="select"
+                          options={roomOptionsForEdit}
+                          value={editRoomNumber}
+                          onChange={(v) => setEditRoomNumber(v || "Select")}
+                        />
+                        <small className="text-muted d-block mt-1">
+                          Active rooms from Class rooms. A value saved earlier that is not in the list appears as &quot;current&quot;.
+                        </small>
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Description</label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          maxLength={5000}
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">

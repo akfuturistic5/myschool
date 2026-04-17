@@ -8,6 +8,7 @@ const { canAccessStudent } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
 const { getSchoolProfile } = require('../services/schoolProfileService');
 const { resolveExistingLogoPath, sanitizeFilename, sanitizeTenant } = require('../utils/schoolLogoStorage');
+const { STUDENT_CONTACT_LATERAL_SELECT, STUDENT_CONTACT_LATERAL_JOINS } = require('../utils/studentContactSync');
 
 function formatDate(value) {
   if (!value) return '-';
@@ -258,16 +259,12 @@ const downloadBonafide = async (req, res) => {
          c.class_name,
          sec.section_name,
          ay.year_name AS academic_year_name,
-         p.father_name,
-         p.mother_name,
-         g.first_name AS guardian_first_name,
-         g.last_name AS guardian_last_name
+         ${STUDENT_CONTACT_LATERAL_SELECT}
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
        LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
-       LEFT JOIN parents p ON s.parent_id = p.id
-       LEFT JOIN guardians g ON s.guardian_id = g.id
+       ${STUDENT_CONTACT_LATERAL_JOINS}
        WHERE s.id = $1 AND s.is_active = true
        LIMIT 1`,
       [studentId]
@@ -282,7 +279,8 @@ const downloadBonafide = async (req, res) => {
     const parentName = safeText(
       student.father_name ||
         student.mother_name ||
-        `${student.guardian_first_name || ''} ${student.guardian_last_name || ''}`.trim()
+        `${student.guardian_first_name || ''} ${student.guardian_last_name || ''}`.trim() ||
+        ''
     );
 
     const profile = await getSchoolProfile(req.user?.school_name || null);
@@ -388,14 +386,13 @@ const fetchStudentForBonafide = async (req, res) => {
          sec.section_name,
          ay.id AS academic_year_id,
          ay.year_name AS academic_year_name,
-         p.id AS parent_id,
-         p.father_name,
-         p.mother_name
+         s.id AS parent_id,
+         ${STUDENT_CONTACT_LATERAL_SELECT}
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
        LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
-       LEFT JOIN parents p ON s.parent_id = p.id
+       ${STUDENT_CONTACT_LATERAL_JOINS}
        WHERE s.is_active = true
          AND s.academic_year_id = $2
          AND LOWER(TRIM(COALESCE(s.gr_number, ''))) = LOWER(TRIM($1))

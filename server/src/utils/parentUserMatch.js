@@ -1,114 +1,264 @@
 /**
- * Parent-user matching utility.
- * Links users (Parent role) to parents table when parents has no user_id.
- * Uses: 1) direct parents.user_id / father_user_id / mother_user_id mapping
- *       2) username+@email.com (unique, disambiguates when multiple parents share same phone)
- *       3) email match (father_email/mother_email)
- *       4) phone match (father_phone/mother_phone)
+ * Parent-user matching: guardians.user_id → users (Parent / Guardian roles).
  */
 const { query } = require('../config/database');
 
+function fullName(row) {
+  return [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
+}
+
 /**
- * Get parent rows for the logged-in user (Parent role).
- * @param {number} userId - JWT user id
+ * Map a guardian link + user + student to a row shaped like legacy `parents` list items.
+ */
+function mapGuardianLinkToLegacyParentRow(row) {
+  const name = fullName(row) || row.first_name || '';
+  const gt = (row.guardian_type || '').toString().toLowerCase();
+  const base = {
+    id: row.g_id,
+    student_id: row.student_id,
+    user_id: row.user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    student_first_name: row.student_first_name,
+    student_last_name: row.student_last_name,
+    admission_number: row.admission_number,
+    roll_number: row.roll_number,
+    class_name: row.class_name,
+    section_name: row.section_name,
+    father_image_url: null,
+    mother_image_url: null,
+  };
+  const empty = {
+    father_name: null,
+    father_email: null,
+    father_phone: null,
+    father_occupation: null,
+    mother_name: null,
+    mother_email: null,
+    mother_phone: null,
+    mother_occupation: null,
+  };
+  if (gt === 'father') {
+    return {
+      ...base,
+      ...empty,
+      father_name: name,
+      father_email: row.email,
+      father_phone: row.phone,
+      father_occupation: row.occupation,
+    };
+  }
+  if (gt === 'mother') {
+    return {
+      ...base,
+      ...empty,
+      mother_name: name,
+      mother_email: row.email,
+      mother_phone: row.phone,
+      mother_occupation: row.occupation,
+    };
+  }
+  return {
+    ...base,
+    ...empty,
+    father_name: name || 'Guardian',
+    father_email: row.email,
+    father_phone: row.phone,
+  };
+}
+
+function mapParentsTableRow(row) {
+  return {
+    id: row.id,
+    student_id: row.student_id,
+    user_id: row.user_id,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    student_first_name: row.student_first_name,
+    student_last_name: row.student_last_name,
+    admission_number: row.admission_number,
+    roll_number: row.roll_number,
+    class_name: row.class_name,
+    section_name: row.section_name,
+    father_name: row.father_name || null,
+    father_email: row.father_email || null,
+    father_phone: row.father_phone || null,
+    father_occupation: row.father_occupation || null,
+    mother_name: row.mother_name || null,
+    mother_email: row.mother_email || null,
+    mother_phone: row.mother_phone || null,
+    mother_occupation: row.mother_occupation || null,
+    father_image_url: row.father_image_url || null,
+    mother_image_url: row.mother_image_url || null,
+  };
+}
+
+function mergeRowsByStudent(rows) {
+  const byStudent = new Map();
+  for (const row of rows) {
+    const sid = row?.student_id;
+    if (!sid) continue;
+    if (!byStudent.has(sid)) {
+      byStudent.set(sid, { ...row });
+      continue;
+    }
+    const prev = byStudent.get(sid);
+    const merged = { ...prev };
+    for (const [key, val] of Object.entries(row)) {
+      if (
+        val !== null &&
+        val !== undefined &&
+        !(typeof val === 'string' && val.trim() === '') &&
+        (merged[key] === null || merged[key] === undefined || (typeof merged[key] === 'string' && merged[key].trim() === ''))
+      ) {
+        merged[key] = val;
+      }
+    }
+    // Keep deterministic id for downstream keys.
+    merged.id = prev.id ?? row.id;
+    byStudent.set(sid, merged);
+  }
+  return Array.from(byStudent.values());
+}
+
+/**
+ * Get guardian-linked rows for the logged-in user (Parent or Guardian role).
  * @returns {Promise<{ parents: Array, studentIds: number[] }>}
  */
 async function getParentsForUser(userId) {
   const userResult = await query(
-    'SELECT username, email, phone FROM users WHERE id = $1 AND is_active = true',
+    'SELECT id FROM users WHERE id = $1 AND is_active = true',
     [userId]
   );
   if (userResult.rows.length === 0) {
     return { parents: [], studentIds: [] };
   }
-  const user = userResult.rows[0];
-  const username = (user.username || '').toString().trim();
-  const userEmail = (user.email || '').toString().trim();
-  const userPhone = (user.phone || '').toString().trim();
-  const usernameDerivedEmail = username ? `${username}@email.com` : '';
 
   const baseSelect = `
     SELECT
-      p.id, p.user_id, p.student_id, p.father_name, p.father_email, p.father_phone,
-      p.father_occupation, p.father_image_url, p.mother_name, p.mother_email,
-      p.mother_phone, p.mother_occupation, p.mother_image_url, p.created_at, p.updated_at,
-      s.first_name as student_first_name, s.last_name as student_last_name,
-      s.admission_number, s.roll_number, c.class_name, sec.section_name
-    FROM parents p
-    LEFT JOIN students s ON p.student_id = s.id
+      g.id AS g_id,
+      g.student_id,
+      g.user_id,
+      g.guardian_type,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.occupation,
+      g.created_at,
+      g.modified_at AS updated_at,
+      s.first_name AS student_first_name,
+      s.last_name AS student_last_name,
+      s.admission_number,
+      s.roll_number,
+      c.class_name,
+      sec.section_name
+    FROM guardians g
+    INNER JOIN users u ON u.id = g.user_id
+    INNER JOIN students s ON s.id = g.student_id
     LEFT JOIN classes c ON s.class_id = c.id
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE s.is_active = true
+      AND g.is_active = true
+      AND u.is_active = true
   `;
+  const toPayload = (rows, mapper = mapGuardianLinkToLegacyParentRow) => {
+    const parents = mergeRowsByStudent(rows.map(mapper));
+    const studentIds = [...new Set(parents.map((p) => p.student_id).filter(Boolean))];
+    return { parents, studentIds };
+  };
 
-  // 1. Prefer exact user link created during student/parent onboarding.
-  let directUserMatch;
-  try {
-    directUserMatch = await query(
-      `${baseSelect} AND (
-      p.user_id = $1
-      OR p.father_user_id = $1
-      OR p.mother_user_id = $1
-    )
+  let directUserMatch = await query(
+    `${baseSelect} AND g.user_id = $1
      ORDER BY s.first_name ASC, s.last_name ASC`,
-      [userId]
-    );
-  } catch {
-    directUserMatch = await query(
-      `${baseSelect} AND p.user_id = $1
-     ORDER BY s.first_name ASC, s.last_name ASC`,
-      [userId]
-    );
-  }
+    [userId]
+  );
   if (directUserMatch.rows.length > 0) {
-    const studentIds = directUserMatch.rows.map((row) => row.student_id).filter(Boolean);
-    return { parents: directUserMatch.rows, studentIds };
+    return toPayload(directUserMatch.rows);
   }
 
-  // 2. Prefer username+@email.com (unique, disambiguates shared-phone parents)
-  if (usernameDerivedEmail) {
-    const r = await query(
-      `${baseSelect} AND (
-        (LOWER(TRIM(p.father_email)) = LOWER($1))
-        OR (LOWER(TRIM(p.mother_email)) = LOWER($1))
-      )
-      ORDER BY s.first_name ASC, s.last_name ASC`,
-      [usernameDerivedEmail]
-    );
-    if (r.rows.length > 0) {
-      const studentIds = r.rows.map((row) => row.student_id).filter(Boolean);
-      return { parents: r.rows, studentIds };
+  // Legacy fallback: parents table with explicit user-id columns only.
+  // NOTE: We intentionally do NOT match by email/phone here to avoid cross-account exposure
+  // when multiple users share same contact details.
+  {
+    const params = [userId];
+    const selectSplitCols = `
+      SELECT
+        p.id,
+        p.student_id,
+        p.user_id,
+        p.father_name,
+        p.father_email,
+        p.father_phone,
+        p.father_occupation,
+        p.father_image_url,
+        p.mother_name,
+        p.mother_email,
+        p.mother_phone,
+        p.mother_occupation,
+        p.mother_image_url,
+        p.created_at,
+        p.updated_at,
+        s.first_name AS student_first_name,
+        s.last_name AS student_last_name,
+        s.admission_number,
+        s.roll_number,
+        c.class_name,
+        sec.section_name
+      FROM parents p
+      INNER JOIN students s ON s.id = p.student_id
+      LEFT JOIN classes c ON s.class_id = c.id
+      LEFT JOIN sections sec ON s.section_id = sec.id
+      WHERE s.is_active = true
+        AND (
+          p.user_id = $1
+          OR p.father_user_id = $1
+          OR p.mother_user_id = $1
+        )
+      ORDER BY s.first_name ASC, s.last_name ASC`;
+    const selectLegacyCols = `
+      SELECT
+        p.id,
+        p.student_id,
+        p.user_id,
+        p.father_name,
+        p.father_email,
+        p.father_phone,
+        p.father_occupation,
+        p.father_image_url,
+        p.mother_name,
+        p.mother_email,
+        p.mother_phone,
+        p.mother_occupation,
+        p.mother_image_url,
+        p.created_at,
+        p.updated_at,
+        s.first_name AS student_first_name,
+        s.last_name AS student_last_name,
+        s.admission_number,
+        s.roll_number,
+        c.class_name,
+        sec.section_name
+      FROM parents p
+      INNER JOIN students s ON s.id = p.student_id
+      LEFT JOIN classes c ON s.class_id = c.id
+      LEFT JOIN sections sec ON s.section_id = sec.id
+      WHERE s.is_active = true
+        AND p.user_id = $1
+      ORDER BY s.first_name ASC, s.last_name ASC`;
+
+    try {
+      const r = await query(selectSplitCols, params);
+      if (r.rows.length > 0) {
+        return toPayload(r.rows, mapParentsTableRow);
+      }
+    } catch (e) {
+      if (!/father_user_id|mother_user_id/.test(String(e.message || ''))) throw e;
+      const r = await query(selectLegacyCols, params);
+      if (r.rows.length > 0) {
+        return toPayload(r.rows, mapParentsTableRow);
+      }
     }
-  }
-
-  // 3. Fallback: email match
-  if (userEmail) {
-    const r = await query(
-      `${baseSelect} AND (
-        (LOWER(TRIM(p.father_email)) = LOWER($1) AND $1 != '')
-        OR (LOWER(TRIM(p.mother_email)) = LOWER($1) AND $1 != '')
-      )
-      ORDER BY s.first_name ASC, s.last_name ASC`,
-      [userEmail]
-    );
-    if (r.rows.length > 0) {
-      const studentIds = r.rows.map((row) => row.student_id).filter(Boolean);
-      return { parents: r.rows, studentIds };
-    }
-  }
-
-  // 4. Fallback: phone match (may return multiple if shared phone - data issue)
-  if (userPhone) {
-    const r = await query(
-      `${baseSelect} AND (
-        (TRIM(p.father_phone) = $1 AND $1 != '')
-        OR (TRIM(p.mother_phone) = $1 AND $1 != '')
-      )
-      ORDER BY s.first_name ASC, s.last_name ASC`,
-      [userPhone]
-    );
-    const studentIds = r.rows.map((row) => row.student_id).filter(Boolean);
-    return { parents: r.rows, studentIds };
   }
 
   return { parents: [], studentIds: [] };

@@ -11,6 +11,7 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import type { TableData } from "../../../core/data/interface";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
@@ -34,8 +35,16 @@ const statusTextMap: Record<string, string> = {
   half_day: "HD",
 };
 
+const formatStatusLabel = (status: string | null | undefined) => {
+  const s = String(status || "").trim().toLowerCase();
+  if (!s) return "Not Marked";
+  return s.replace("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+};
+
 const AttendanceReport = () => {
   const routes = all_routes;
+  const user = useSelector(selectUser);
+  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -295,6 +304,8 @@ const AttendanceReport = () => {
     [dayColumns]
   );
 
+  // Export rows/columns are defined further down (including day-wise columns).
+
   const handleApply = (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault();
     setAppliedClassId(selectedClassId);
@@ -429,26 +440,18 @@ const AttendanceReport = () => {
                   </Link>
                 </li>
                 <li>
-                  <Link to={routes.studentAttendanceType}>Students Attendance Type</Link>
-                </li>
-                <li>
                   <Link to={routes.dailyAttendance}>Daily Attendance</Link>
                 </li>
-                <li>
-                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
-                </li>
+                {!isTeacherRole && (
+                  <>
+                    <li>
+                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                    </li>
+                    <li>
+                      <Link to={routes.staffReport}>Staff Report</Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
           </div>

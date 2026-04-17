@@ -22,6 +22,15 @@ function isAdmin(ctx) {
   );
 }
 
+function isTeacherRole(ctx) {
+  const roleName = String(ctx?.roleName || '').trim().toLowerCase();
+  return (
+    ctx?.roleId === ROLES.TEACHER ||
+    roleName === 'teacher' ||
+    roleName.includes('teacher')
+  );
+}
+
 async function canAccessStudent(req, studentId) {
   const ctx = getAuthContext(req);
   const sid = parseId(studentId);
@@ -48,10 +57,10 @@ async function canAccessStudent(req, studentId) {
   }
 
   // Teacher: must be the teacher assigned to this class OR has schedule mapping for class.
-  if (ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher') {
+  if (isTeacherRole(ctx)) {
     // A single user can sometimes have multiple teacher rows; allow access if any active mapping matches.
     const tRes = await query(
-      `SELECT t.id, t.class_id
+      `SELECT t.id, t.class_id, t.staff_id
        FROM teachers t
        INNER JOIN staff st ON t.staff_id = st.id
        WHERE st.user_id = $1 AND st.is_active = true`,
@@ -59,10 +68,39 @@ async function canAccessStudent(req, studentId) {
     );
     if (tRes.rows.length === 0) return { ok: false, status: 403, message: 'Access denied' };
     const studentClassId = parseId(stud.class_id);
+    const studentSectionId = parseId(stud.section_id);
     const teacherIds = tRes.rows.map((row) => parseId(row.id)).filter(Boolean);
+    const staffIds = tRes.rows.map((row) => parseId(row.staff_id)).filter(Boolean);
     const teacherClassIds = tRes.rows.map((row) => parseId(row.class_id)).filter(Boolean);
+    const teacherStaffIds = tRes.rows.map((row) => parseId(row.staff_id)).filter(Boolean);
 
     if (studentClassId && teacherClassIds.includes(studentClassId)) return { ok: true };
+
+    // Section teacher mapping (sections.section_teacher_id -> teachers.staff_id)
+    if (studentSectionId && teacherStaffIds.length > 0) {
+      const sec = await query(
+        `SELECT 1
+         FROM sections sec
+         WHERE sec.id = $1
+           AND sec.section_teacher_id = ANY($2::int[])
+         LIMIT 1`,
+        [studentSectionId, teacherStaffIds]
+      ).catch(() => ({ rows: [] }));
+      if (sec.rows && sec.rows.length > 0) return { ok: true };
+    }
+
+    // Class teacher mapping (classes.class_teacher_id -> staff.id; legacy may store teacher.id)
+    if (studentClassId && teacherStaffIds.length > 0) {
+      const cls = await query(
+        `SELECT 1
+         FROM classes c
+         WHERE c.id = $1
+           AND (c.class_teacher_id = ANY($2::int[]) OR c.class_teacher_id = ANY($3::int[]))
+         LIMIT 1`,
+        [studentClassId, teacherStaffIds, teacherIds]
+      ).catch(() => ({ rows: [] }));
+      if (cls.rows && cls.rows.length > 0) return { ok: true };
+    }
 
     // Fallback: teacher has any class_schedule entry for the student's class (optionally section).
     const cs = await query(
@@ -72,7 +110,7 @@ async function canAccessStudent(req, studentId) {
          AND cs.class_id = $2
          AND ($3::int IS NULL OR cs.section_id = $3 OR cs.section_id IS NULL)
        LIMIT 1`,
-      [teacherIds, studentClassId, parseId(stud.section_id)]
+      [staffIds, studentClassId, parseId(stud.section_id)]
     ).catch(() => ({ rows: [] }));
     if (cs.rows && cs.rows.length > 0) return { ok: true };
 
@@ -114,6 +152,21 @@ async function resolveTeacherIdForUser(userId) {
     [uid]
   );
   return r.rows.length > 0 ? parseId(r.rows[0].id) : null;
+}
+
+/** Staff id for the teacher row linked to this user (class_schedules.teacher_id references staff.id). */
+async function resolveTeacherStaffIdForUser(userId) {
+  const uid = parseId(userId);
+  if (!uid) return null;
+  const r = await query(
+    `SELECT t.staff_id
+     FROM teachers t
+     INNER JOIN staff st ON t.staff_id = st.id
+     WHERE st.user_id = $1
+     LIMIT 1`,
+    [uid]
+  );
+  return r.rows.length > 0 ? parseId(r.rows[0].staff_id) : null;
 }
 
 async function resolveStudentScopeForUser(userId) {
@@ -170,26 +223,39 @@ async function canAccessClass(req, classId) {
 
   if (isAdmin(ctx)) return { ok: true };
 
-  if (ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher') {
+  if (isTeacherRole(ctx)) {
     const tRes = await query(
-      `SELECT t.id, t.class_id
+      `SELECT t.id, t.class_id, t.staff_id
        FROM teachers t
        INNER JOIN staff st ON t.staff_id = st.id
-       WHERE st.user_id = $1
-       LIMIT 1`,
+       WHERE st.user_id = $1`,
       [ctx.userId]
     );
     if (!tRes.rows.length) return { ok: false, status: 403, message: 'Access denied' };
-    const teacher = tRes.rows[0];
-    const teacherClassId = parseId(teacher.class_id);
-    if (teacherClassId && teacherClassId === cid) return { ok: true };
+    const teacherIds = tRes.rows.map((r) => parseId(r.id)).filter(Boolean);
+    const staffIds = tRes.rows.map((r) => parseId(r.staff_id)).filter(Boolean);
+    const teacherClassIds = tRes.rows.map((r) => parseId(r.class_id)).filter(Boolean);
+    if (teacherClassIds.includes(cid)) return { ok: true };
+
+    if (staffIds.length > 0) {
+      const cls = await query(
+        `SELECT 1
+         FROM classes c
+         WHERE c.id = $1
+           AND (c.class_teacher_id = ANY($2::int[]) OR c.class_teacher_id = ANY($3::int[]))
+         LIMIT 1`,
+        [cid, teacherIds, staffIds]
+      ).catch(() => ({ rows: [] }));
+      if (cls.rows && cls.rows.length > 0) return { ok: true };
+    }
 
     const cs = await query(
       `SELECT 1
        FROM class_schedules cs
-       WHERE cs.teacher_id = $1 AND cs.class_id = $2
+       WHERE cs.class_id = $2
+         AND (cs.teacher_id = ANY($1::int[]) OR cs.teacher_id = ANY($3::int[]))
        LIMIT 1`,
-      [teacher.id, cid]
+      [teacherIds, cid, staffIds]
     ).catch(() => ({ rows: [] }));
     if (cs.rows && cs.rows.length > 0) return { ok: true };
 
@@ -234,9 +300,11 @@ module.exports = {
   parseId,
   getAuthContext,
   isAdmin,
+  isTeacherRole,
   canAccessStudent,
   canAccessClass,
   resolveTeacherIdForUser,
+  resolveTeacherStaffIdForUser,
   resolveStudentScopeForUser,
   resolveWardStudentIdsForUser,
 };

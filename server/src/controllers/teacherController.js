@@ -2,7 +2,7 @@ const fs = require('fs');
 const { query, executeTransaction, runWithTenant } = require('../config/database');
 const { ADMIN_ROLE_IDS } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { canAccessClass } = require('../utils/accessControl');
+const { canAccessClass, parseId } = require('../utils/accessControl');
 const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 
@@ -369,9 +369,8 @@ const getTeachersByClass = async (req, res) => {
 const getTeacherRoutine = async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('Fetching routine for teacher ID:', id);
-    
-    // First verify teacher exists
+
+    // First verify teacher exists (class_schedules.teacher_id references staff.id)
     const teacherCheck = await query(`
       SELECT t.id, t.staff_id 
       FROM teachers t
@@ -379,21 +378,16 @@ const getTeacherRoutine = async (req, res) => {
     `, [id]);
     
     if (teacherCheck.rows.length === 0) {
-      console.log('Teacher not found with ID:', id);
       return errorResponse(res, 404, 'Teacher not found');
     }
 
-    console.log('Teacher found, fetching schedules...');
-
-    // First check what data exists for this teacher
-    const checkQuery = await query(`SELECT COUNT(*) as count FROM class_schedules WHERE teacher_id = $1`, [id]);
-    console.log(`Total schedules for teacher ${id}:`, checkQuery.rows[0].count);
-    
-    // Get a sample row to see column structure
-    const sampleQuery = await query(`SELECT * FROM class_schedules WHERE teacher_id = $1 LIMIT 1`, [id]);
-    if (sampleQuery.rows.length > 0) {
-      console.log('Sample schedule row columns:', Object.keys(sampleQuery.rows[0]));
-      console.log('Sample schedule row:', JSON.stringify(sampleQuery.rows[0], null, 2));
+    const staffId = parseId(teacherCheck.rows[0].staff_id);
+    if (!staffId) {
+      return success(res, 200, 'Teacher routine fetched successfully', {
+        routine: [],
+        breaks: [],
+        count: 0,
+      });
     }
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
@@ -401,7 +395,7 @@ const getTeacherRoutine = async (req, res) => {
     const yearClause = hasYearFilter
       ? ' AND (cs.academic_year_id = $2 OR c.academic_year_id = $2 OR cs.academic_year_id IS NULL OR c.academic_year_id IS NULL)'
       : '';
-    const scheduleParams = hasYearFilter ? [id, academicYearId] : [id];
+    const scheduleParams = hasYearFilter ? [staffId, academicYearId] : [staffId];
 
     // Get class schedules for this teacher
     // Handle both 'slots' and 'time_slots' table names
@@ -455,10 +449,6 @@ const getTeacherRoutine = async (req, res) => {
     let schedulesResult;
     try {
       schedulesResult = await query(schedulesQuery, scheduleParams);
-      console.log('Schedules found:', schedulesResult.rows.length);
-      if (schedulesResult.rows.length > 0) {
-        console.log('First schedule:', JSON.stringify(schedulesResult.rows[0], null, 2));
-      }
     } catch (e) {
       console.error('Error with slots table:', e.message);
       const isSlotsError = e.message.includes('slots') || e.message.includes('does not exist') ||
@@ -511,10 +501,8 @@ const getTeacherRoutine = async (req, res) => {
             ts.start_time ASC
         `;
         schedulesResult = await query(schedulesQuery, scheduleParams);
-        console.log('Schedules found with time_slots:', schedulesResult.rows.length);
       } else {
         // If error is not about slots table, try without slot join
-        console.log('Trying query without slot join...');
         schedulesQuery = `
           SELECT 
             cs.*,
@@ -528,7 +516,6 @@ const getTeacherRoutine = async (req, res) => {
           WHERE cs.teacher_id = $1${yearClause}
         `;
         schedulesResult = await query(schedulesQuery, scheduleParams);
-        console.log('Schedules found without slot join:', schedulesResult.rows.length);
       }
     }
 
@@ -621,16 +608,6 @@ const getTeacherRoutine = async (req, res) => {
       };
     });
 
-    console.log('Formatted routine count:', routine.length);
-    if (routine.length > 0) {
-      console.log('Sample routine item:', JSON.stringify(routine[0], null, 2));
-    } else {
-      console.log('No routine items found. Checking if teacher_id matches...');
-      // Check if there are any schedules at all
-      const allSchedules = await query(`SELECT teacher_id, COUNT(*) as count FROM class_schedules GROUP BY teacher_id LIMIT 10`);
-      console.log('Sample teacher_ids in class_schedules:', allSchedules.rows);
-    }
-
     const breaks = breaksResult.rows.map(row => ({
       slotName: row.slot_name,
       startTime: row.start_time,
@@ -702,13 +679,24 @@ const createTeacher = async (req, res) => {
       return errorResponse(res, 400, 'Password must be at least 6 characters', 'VALIDATION_ERROR');
     }
 
-    const classId = class_id != null && class_id !== '' ? parseInt(class_id, 10) : NaN;
-    const subjectId = subject_id != null && subject_id !== '' ? parseInt(subject_id, 10) : NaN;
-    if (!classId || Number.isNaN(classId) || classId < 1) {
-      return errorResponse(res, 400, 'Valid class is required', 'VALIDATION_ERROR');
+    const hasClassInput = class_id != null && String(class_id).trim() !== '';
+    const hasSubjectInput = subject_id != null && String(subject_id).trim() !== '';
+    if (hasClassInput !== hasSubjectInput) {
+      return errorResponse(res, 400, 'Provide both class and subject, or omit both', 'VALIDATION_ERROR');
     }
-    if (!subjectId || Number.isNaN(subjectId) || subjectId < 1) {
-      return errorResponse(res, 400, 'Valid subject is required', 'VALIDATION_ERROR');
+    let classId = null;
+    let subjectId = null;
+    if (hasClassInput) {
+      const ci = parseInt(class_id, 10);
+      const si = parseInt(subject_id, 10);
+      if (!ci || Number.isNaN(ci) || ci < 1) {
+        return errorResponse(res, 400, 'Valid class is required when subject is set', 'VALIDATION_ERROR');
+      }
+      if (!si || Number.isNaN(si) || si < 1) {
+        return errorResponse(res, 400, 'Valid subject is required when class is set', 'VALIDATION_ERROR');
+      }
+      classId = ci;
+      subjectId = si;
     }
 
     const desigParsed = parsePositiveIntOrNull(designation_id);
@@ -756,20 +744,22 @@ const createTeacher = async (req, res) => {
     // Single DB transaction: staff INSERT → user INSERT → teachers INSERT.
     // executeTransaction runs BEGIN / COMMIT or ROLLBACK on any failure — no partial teacher rows.
     const teacherRow = await executeTransaction(async (client) => {
-      const clsOk = await client.query('SELECT 1 FROM classes WHERE id = $1 LIMIT 1', [classId]);
-      if (!clsOk.rows.length) {
-        const err = new Error('Selected class does not exist or is no longer available.');
-        err.teacherInputError = { status: 400, code: 'INVALID_CLASS' };
-        throw err;
-      }
-      const subOk = await client.query(
-        `SELECT 1 FROM subjects WHERE id = $1 AND (class_id IS NULL OR class_id = $2) LIMIT 1`,
-        [subjectId, classId]
-      );
-      if (!subOk.rows.length) {
-        const err = new Error('Selected subject is not valid for the chosen class.');
-        err.teacherInputError = { status: 400, code: 'INVALID_SUBJECT' };
-        throw err;
+      if (classId != null && subjectId != null) {
+        const clsOk = await client.query('SELECT 1 FROM classes WHERE id = $1 LIMIT 1', [classId]);
+        if (!clsOk.rows.length) {
+          const err = new Error('Selected class does not exist or is no longer available.');
+          err.teacherInputError = { status: 400, code: 'INVALID_CLASS' };
+          throw err;
+        }
+        const subOk = await client.query(
+          `SELECT 1 FROM subjects WHERE id = $1 AND (class_id IS NULL OR class_id = $2) LIMIT 1`,
+          [subjectId, classId]
+        );
+        if (!subOk.rows.length) {
+          const err = new Error('Selected subject is not valid for the chosen class.');
+          err.teacherInputError = { status: 400, code: 'INVALID_SUBJECT' };
+          throw err;
+        }
       }
 
       const customCode = (clientEmployeeCode || '').toString().trim().slice(0, 20);
@@ -1127,20 +1117,27 @@ const getTeacherClassAttendance = async (req, res) => {
       }
     }
 
+    const teacherRow = await query('SELECT staff_id FROM teachers WHERE id = $1', [teacherId]);
+    if (!teacherRow.rows.length) {
+      return errorResponse(res, 404, 'Teacher not found');
+    }
+    const staffId = parseId(teacherRow.rows[0].staff_id);
+
     const days = parseInt(req.query.days, 10);
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     let dateFilter = '';
-    let params = [teacherId];
+    // $1 = staff id for class_schedules.teacher_id; $2 = teachers.id for homeroom class match
+    let params = [staffId, teacherId];
     if (days > 0 && days <= 365) {
       if (offset > 0) {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($2 + $3) * INTERVAL '1 day'
-                      AND a.attendance_date < CURRENT_DATE - $3 * INTERVAL '1 day'`;
-        params = [teacherId, days, offset];
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($3 + $4) * INTERVAL '1 day'
+                      AND a.attendance_date < CURRENT_DATE - $4 * INTERVAL '1 day'`;
+        params = [staffId, teacherId, days, offset];
       } else {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $2 * INTERVAL '1 day'`;
-        params = [teacherId, days];
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $3 * INTERVAL '1 day'`;
+        params = [staffId, teacherId, days];
       }
     }
     if (hasAcademicYearFilter) {
@@ -1149,7 +1146,7 @@ const getTeacherClassAttendance = async (req, res) => {
     const rowLimit = days === 0 ? 5000 : 500; // All Time: higher limit to fetch more records
     const academicYearFilter = hasAcademicYearFilter ? `AND s.academic_year_id = $${params.length}` : '';
 
-    // Use EXISTS to avoid duplicates; include BOTH class_schedules AND teachers.class_id
+    // Use EXISTS to avoid duplicates; include BOTH class_schedules (staff id) AND teachers.class_id
     const result = await query(
       `SELECT a.id, a.student_id, a.class_id, a.section_id, a.attendance_date, a.status,
               a.check_in_time, a.check_out_time, a.marked_by, a.remarks
@@ -1160,11 +1157,25 @@ const getTeacherClassAttendance = async (req, res) => {
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = $1
              AND cs.class_id = a.class_id
-             AND (cs.section_id = a.section_id OR (cs.section_id IS NULL AND a.section_id IS NULL))
+             AND (cs.section_id = a.section_id OR cs.section_id IS NULL)
          )
          OR EXISTS (
            SELECT 1 FROM teachers t
-           WHERE t.id = $1 AND t.class_id = a.class_id
+           WHERE t.id = $2 AND t.class_id = a.class_id
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM teachers t
+           INNER JOIN sections sec ON sec.section_teacher_id = t.staff_id
+           WHERE t.id = $1
+             AND sec.id = a.section_id
+         )
+         OR EXISTS (
+           SELECT 1
+           FROM teachers t
+           INNER JOIN classes c ON c.class_teacher_id = t.staff_id
+           WHERE t.id = $1
+             AND c.id = a.class_id
          )
        )
        ${academicYearFilter}

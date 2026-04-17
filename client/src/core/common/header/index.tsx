@@ -92,6 +92,33 @@ const Header = () => {
     }
   }, [showAcademicYearDropdown, academicYearsList.length, selectedAcademicYearId, currentAcademicYear?.id, dispatch]);
 
+  // If stored id is missing (deleted), inactive (not in active list), or empty list — reset selection
+  useEffect(() => {
+    if (!showAcademicYearDropdown) return;
+    if (loading) return;
+    if (academicYearsList.length === 0) {
+      if (selectedAcademicYearId != null) {
+        dispatch(setSelectedAcademicYear(null));
+      }
+      return;
+    }
+    const validIds = new Set(
+      academicYearsList.map((y: { id: number }) => y.id)
+    );
+    if (selectedAcademicYearId != null && !validIds.has(selectedAcademicYearId)) {
+      const fallback =
+        currentAcademicYear?.id ?? academicYearsList[0]?.id ?? null;
+      dispatch(setSelectedAcademicYear(fallback));
+    }
+  }, [
+    showAcademicYearDropdown,
+    loading,
+    academicYearsList,
+    selectedAcademicYearId,
+    currentAcademicYear?.id,
+    dispatch,
+  ]);
+
   const dashboardRoute = getDashboardForRole(user);
 
   const mobileSidebar = useSelector(

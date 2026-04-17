@@ -8,6 +8,41 @@ const normalizeBool = (v, fallback = true) => {
   return fallback;
 };
 
+/** Empty or whitespace-only string -> null (DB stores NULL for optional text fields). */
+const emptyToNull = (v) => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+};
+
+const normalizeClassCode = (v) => {
+  const n = emptyToNull(v);
+  if (n === null) return null;
+  return n.length > 10 ? n.slice(0, 10) : n;
+};
+
+const normalizeDescription = (v) => {
+  const n = emptyToNull(v);
+  if (n === null) return null;
+  return n.length > 5000 ? n.slice(0, 5000) : n;
+};
+
+const parseOptionalInt = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = parseInt(v, 10);
+  return Number.isNaN(n) ? null : n;
+};
+
+const parseOptionalFee = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (Number.isNaN(n)) return null;
+  return Math.round(n * 100) / 100;
+};
+
+const pickPayload = (payload, key, current) =>
+  Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : current;
+
 const getAllClasses = async (req, res) => {
   try {
     const result = await query(`
@@ -21,6 +56,7 @@ const getAllClasses = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -53,6 +89,7 @@ const getClassById = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -89,6 +126,7 @@ const getClassesByAcademicYear = async (req, res) => {
         c.class_fee,
         c.description,
         c.is_active,
+        c.has_sections,
         c.created_at,
         c.no_of_students,
         ay.year_name as academic_year_name,
@@ -120,23 +158,40 @@ const createClass = async (req, res) => {
       description,
       is_active,
       no_of_students,
+      has_sections,
     } = req.body;
+
+    const codeNorm = normalizeClassCode(class_code);
+    const descNorm = normalizeDescription(description);
+    const feeNorm = parseOptionalFee(class_fee);
+    let maxNorm;
+    if (max_students === undefined) maxNorm = 30;
+    else if (max_students === null) maxNorm = null;
+    else maxNorm = parseOptionalInt(max_students);
+    const noStudents =
+      no_of_students === undefined || no_of_students === null
+        ? 0
+        : parseOptionalInt(no_of_students) ?? 0;
+    const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+    const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
 
     const result = await query(
       `INSERT INTO classes (
-        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, has_sections, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       RETURNING *`,
       [
-        class_name.trim(),
-        class_code || null,
+        String(class_name).trim(),
+        codeNorm,
         academic_year_id,
         class_teacher_id || null,
-        max_students || null,
-        class_fee || null,
-        description || null,
+        maxNorm,
+        feeNorm,
+        descNorm,
         normalizeBool(is_active, true),
-        no_of_students != null ? parseInt(no_of_students, 10) : null,
+        noStudents != null ? noStudents : 0,
+        normalizeBool(has_sections, true),
+        createdByArg,
       ]
     );
     return success(res, 201, 'Class created successfully', result.rows[0]);
@@ -156,6 +211,47 @@ const updateClass = async (req, res) => {
     if (!current.rows.length) return errorResponse(res, 404, 'Class not found');
     const cur = current.rows[0];
 
+    const classTeacherId = pickPayload(payload, 'class_teacher_id', cur.class_teacher_id);
+    const className = pickPayload(payload, 'class_name', cur.class_name);
+    const academicYearId = pickPayload(payload, 'academic_year_id', cur.academic_year_id);
+
+    let classCode = cur.class_code;
+    if (Object.prototype.hasOwnProperty.call(payload, 'class_code')) {
+      classCode = normalizeClassCode(payload.class_code);
+    }
+
+    let description = cur.description;
+    if (Object.prototype.hasOwnProperty.call(payload, 'description')) {
+      description = normalizeDescription(payload.description);
+    }
+
+    let maxStudents = cur.max_students;
+    if (Object.prototype.hasOwnProperty.call(payload, 'max_students')) {
+      maxStudents =
+        payload.max_students === null ? null : parseOptionalInt(payload.max_students);
+    }
+
+    let classFee = cur.class_fee;
+    if (Object.prototype.hasOwnProperty.call(payload, 'class_fee')) {
+      classFee = payload.class_fee === null ? null : parseOptionalFee(payload.class_fee);
+    }
+
+    let noStudents = cur.no_of_students;
+    if (Object.prototype.hasOwnProperty.call(payload, 'no_of_students')) {
+      noStudents =
+        payload.no_of_students === null || payload.no_of_students === undefined
+          ? 0
+          : parseOptionalInt(payload.no_of_students) ?? 0;
+    }
+
+    const nameFinal = typeof className === 'string' ? className.trim() : className;
+    if (!nameFinal) return errorResponse(res, 400, 'class_name cannot be empty');
+
+    let hasSections = cur.has_sections;
+    if (Object.prototype.hasOwnProperty.call(payload, 'has_sections')) {
+      hasSections = normalizeBool(payload.has_sections, cur.has_sections);
+    }
+
     const result = await query(`
       UPDATE classes SET
         class_name = $1,
@@ -167,19 +263,23 @@ const updateClass = async (req, res) => {
         description = $7,
         no_of_students = $8,
         is_active = $9,
+        has_sections = $10,
         modified_at = NOW()
-      WHERE id = $10
+      WHERE id = $11
       RETURNING *
     `, [
-      payload.class_name ?? cur.class_name,
-      payload.class_code ?? cur.class_code,
-      payload.academic_year_id ?? cur.academic_year_id,
-      payload.class_teacher_id ?? cur.class_teacher_id,
-      payload.max_students ?? cur.max_students,
-      payload.class_fee ?? cur.class_fee,
-      payload.description ?? cur.description,
-      payload.no_of_students ?? cur.no_of_students,
-      normalizeBool(payload.is_active, cur.is_active),
+      nameFinal,
+      classCode,
+      academicYearId,
+      classTeacherId,
+      maxStudents,
+      classFee,
+      description,
+      noStudents,
+      Object.prototype.hasOwnProperty.call(payload, 'is_active')
+        ? normalizeBool(payload.is_active, cur.is_active)
+        : normalizeBool(cur.is_active, true),
+      hasSections,
       id
     ]);
     return success(res, 200, 'Class updated successfully', result.rows[0]);

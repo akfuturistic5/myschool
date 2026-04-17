@@ -1,780 +1,133 @@
-import  { useState } from "react";
-import {
-  bloodGroup,
-  Contract,
-  gender,
-  Hostel,
-  Marital,
-  PickupPoint,
-  roomno,
-  route,
-  Shift,
-  staffDepartment,
-  staffrole,
-  VehicleNumber,
-} from "../../../../core/common/selectoption/selectoption";
-import CommonSelect from "../../../../core/common/commonSelect";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
-import { DatePicker } from "antd";
-import dayjs from "dayjs";
-import TagInput from "../../../../core/common/Taginput";
-
+import { apiService } from "../../../../core/services/apiService";
+import StaffProfileForm from "../StaffProfileForm";
+import {
+  selectAuthChecked,
+  selectUser,
+} from "../../../../core/data/redux/authSlice";
+import { getDashboardForRole } from "../../../../core/utils/roleUtils";
+import { canManageStaffDirectory } from "../staffDirectoryPermissions";
+import {
+  resolveStaffEditPageId,
+  staffDirectoryFriendlyError,
+} from "../staffDirectoryErrors";
 
 const EditStaff = () => {
   const routes = all_routes;
+  const authChecked = useSelector(selectAuthChecked);
+  const user = useSelector(selectUser);
+  const navigate = useNavigate();
   const location = useLocation();
-  const staffRecord = location.state?.staff;
-  const o = staffRecord?.originalData ?? staffRecord;
-  const [owner, setOwner] = useState<string[]>([]);
-   const handleTagsChange = (newTags: string[]) => {
-    setOwner(newTags);
-  };
-  const defaultDept = o?.department_name ?? o?.department ?? o?.dept_name ?? o?.department;
-  const defaultDesig = o?.designation_name ?? o?.designation ?? o?.title ?? o?.designation;
-  const staffKey = staffRecord?.key ?? staffRecord?.id ?? "new";
+  const canManage = canManageStaffDirectory(user);
+
+  const staffIdResolved = resolveStaffEditPageId({
+    search: location.search,
+    locationState: location.state,
+  });
+
+  const [staff, setStaff] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(!!staffIdResolved);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!canManage) {
+      setLoading(false);
+      return;
+    }
+    if (staffIdResolved == null) {
+      navigate(routes.staff, { replace: true });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        setLoadError(null);
+        const res = (await apiService.getStaffById(staffIdResolved)) as {
+          status?: string;
+          data?: Record<string, unknown>;
+          message?: string;
+        };
+        if (cancelled) return;
+        if (res?.status === "SUCCESS" && res?.data) {
+          setStaff(res.data);
+        } else {
+          setLoadError(res?.message || "Could not load staff.");
+        }
+      } catch (e: unknown) {
+        if (!cancelled) setLoadError(staffDirectoryFriendlyError(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canManage, staffIdResolved, navigate, routes.staff]);
+
+  if (!authChecked) {
+    return (
+      <div className="d-flex align-items-center justify-content-center vh-100">
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <Navigate
+        to={getDashboardForRole(user?.role, user?.user_role_id)}
+        replace
+      />
+    );
+  }
+
   return (
     <div>
-      <>
-        {/* Page Wrapper */}
-        <div className="page-wrapper">
-          <div className="content content-two">
-            {/* Page Header */}
-            <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
-              <div className="my-auto mb-2">
-                <h3 className="mb-1">Edit Staff</h3>
-                <nav>
-                  <ol className="breadcrumb mb-0">
-                    <li className="breadcrumb-item">
-                      <Link to={routes.adminDashboard}>Dashboard</Link>
-                    </li>
-                    <li className="breadcrumb-item">HRM</li>
-                    <li className="breadcrumb-item active" aria-current="page">
-                      Edit Staff
-                    </li>
-                  </ol>
-                </nav>
-              </div>
+      <div className="page-wrapper">
+        <div className="content content-two">
+          <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
+            <div className="my-auto mb-2">
+              <h3 className="mb-1">Edit Staff</h3>
+              <nav>
+                <ol className="breadcrumb mb-0">
+                  <li className="breadcrumb-item">
+                    <Link to={routes.adminDashboard}>Dashboard</Link>
+                  </li>
+                  <li className="breadcrumb-item">HRM</li>
+                  <li className="breadcrumb-item active" aria-current="page">
+                    Edit Staff
+                  </li>
+                </ol>
+              </nav>
             </div>
-            {/* /Page Header */}
-            <div className="row">
-              <div className="col-md-12">
-                <form >
-                  {/* Personal Information */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-info-square-rounded fs-16" />
-                        </span>
-                        <h4 className="text-dark">Personal Information</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="add-section">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                                <i className="ti ti-photo-plus fs-16" />
-                              </div>
-                              <div className="profile-upload">
-                                <div className="profile-uploader d-flex align-items-center">
-                                  <div className="drag-upload-btn mb-3">
-                                    Upload
-                                    <input
-                                      type="file"
-                                      className="form-control image-sign"
-                                      multiple
-                                    />
-                                  </div>
-                                  <Link to="#" className="btn btn-primary mb-3">
-                                    Remove
-                                  </Link>
-                                </div>
-                                <p className="fs-12">
-                                  Upload image size 4MB, Format JPG, PNG, SVG
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="row row-cols-xxl-5 row-cols-md-6">
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">First Name</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.first_name ?? ""}
-                                key={`edit-first-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Last Name</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.last_name ?? ""}
-                                key={`edit-last-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Role</label>
-
-                              <CommonSelect
-                                className="select"
-                                options={staffrole}
-                                defaultValue={staffrole.find((r: any) => r.label === (o?.role ?? o?.role_name) || r.value === (o?.role ?? o?.role_name)) ?? staffrole[0]}
-                                key={`edit-role-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Department</label>
-                              <CommonSelect
-                                className="select"
-                                options={staffDepartment}
-                                defaultValue={staffDepartment.find((d: any) => d.label === defaultDept || d.value === defaultDept) ?? staffDepartment[0]}
-                                key={`edit-dept-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Designation</label>
-                              <CommonSelect
-                                className="select"
-                                options={staffrole}
-                                defaultValue={staffrole.find((r: any) => r.label === defaultDesig || r.value === defaultDesig) ?? staffrole[0]}
-                                key={`edit-designation-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Gender</label>
-                              <CommonSelect
-                                className="select"
-                                options={gender}
-                                defaultValue={gender.find((g: any) => g.label === (o?.gender ?? o?.gender_name) || g.value === (o?.gender ?? o?.gender_name)) ?? gender[0]}
-                                key={`edit-gender-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Primary Contact Number
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.phone ?? staffRecord?.phone ?? ""}
-                                key={`edit-phone-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Email Address
-                              </label>
-                              <input
-                                type="email"
-                                className="form-control"
-                                defaultValue={o?.email ?? staffRecord?.email ?? ""}
-                                key={`edit-email-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Blood Group</label>
-                              <CommonSelect
-                                className="select"
-                                options={bloodGroup}
-                                defaultValue={bloodGroup.find((b: any) => b.label === (o?.blood_group ?? o?.blood_group_name) || b.value === (o?.blood_group ?? o?.blood_group_name)) ?? bloodGroup[0]}
-                                key={`edit-blood-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Marital Status
-                              </label>
-                              <CommonSelect
-                                className="select"
-                                options={Marital}
-                                defaultValue={Marital.find((m: any) => m.label === (o?.marital_status ?? o?.marital_status_name) || m.value === (o?.marital_status ?? o?.marital_status_name)) ?? Marital[0]}
-                                key={`edit-marital-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Father’s Name
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.father_name ?? o?.fathers_name ?? ""}
-                                key={`edit-father-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Mother’s Name
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.mother_name ?? o?.mothers_name ?? ""}
-                                key={`edit-mother-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Date of Birth
-                              </label>
-                              <div className="input-icon position-relative">
-                                <span className="input-icon-addon">
-                                  <i className="ti ti-calendar" />
-                                </span>
-                                <DatePicker
-                                  className="form-control datetimepicker"
-                                  format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                  }}
-                                  placeholder="Select Date"
-                                  defaultValue={o?.date_of_birth ?? o?.dob ? dayjs(o.date_of_birth ?? o.dob) : undefined}
-                                  key={`edit-dob-${staffKey}`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Date of Joining
-                              </label>
-                              <div className="input-icon position-relative">
-                                <span className="input-icon-addon">
-                                  <i className="ti ti-calendar" />
-                                </span>
-                                <DatePicker
-                                  className="form-control datetimepicker"
-                                  format={{
-                                    format: "DD-MM-YYYY",
-                                    type: "mask",
-                                  }}
-                                  placeholder="Select Date"
-                                  defaultValue={o?.joining_date ?? o?.date_of_join ?? o?.date_of_joining ? dayjs(o.joining_date ?? o.date_of_join ?? o.date_of_joining) : undefined}
-                                  key={`edit-doj-${staffKey}`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="col-xxl col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Language Known
-                              </label>
-                             <TagInput
-                                                                                     initialTags ={owner}
-                                                                                      onTagsChange={handleTagsChange}
-                                                                                    />
-                            </div>
-                          </div>
-                          <div className="col-xxl-4 col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Qualification
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.qualification ?? ""}
-                                key={`edit-qual-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl-4 col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Work Experience
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.work_experience ?? o?.experience ?? ""}
-                                key={`edit-exp-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl-4  col-xl-3 col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Note</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.note ?? o?.notes ?? ""}
-                                key={`edit-note-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl-6 col-xl-3  col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Address</label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.address ?? o?.current_address ?? ""}
-                                key={`edit-address-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-xxl-6 col-xl-3  col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Permanent Address
-                              </label>
-                              <input
-                                type="text"
-                                className="form-control"
-                                defaultValue={o?.permanent_address ?? o?.permanent_address_line ?? ""}
-                                key={`edit-perm-address-${staffKey}`}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+          </div>
+          <div className="row">
+            <div className="col-md-12">
+              {loading && (
+                <div className="text-center p-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
                   </div>
-                  {/* /Personal Information */}
-                  {/* Payroll */}
-                  <div className="card ">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-user-shield fs-16" />
-                        </span>
-                        <h4 className="text-dark">Payroll</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">EPF No</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Basic Salary</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Contract Type</label>
-                            <CommonSelect
-                              className="select"
-                              options={Contract}
-                              defaultValue={Contract[0]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Work Shift</label>
-                            <CommonSelect
-                              className="select"
-                              options={Shift}
-                              defaultValue={Shift[0]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Work Location</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Payroll */}
-                  {/* Leaves */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-users fs-16" />
-                        </span>
-                        <h4 className="text-dark">Leaves</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Medical Leaves</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Casual Leaves</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Maternity Leaves
-                            </label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Sick Leaves</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Leaves */}
-                  {/* Bank Details */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-users fs-16" />
-                        </span>
-                        <h4 className="text-map">Bank Account Detail</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Account Name</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={o?.account_name ?? (o?.first_name ? `${o.first_name} ${o.last_name || ''}`.trim() : '')}
-                              key={`edit-account-name-${staffKey}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Account Number</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={o?.account_number ?? o?.bank_account_number ?? ''}
-                              key={`edit-account-num-${staffKey}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Bank Name</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={o?.bank_name ?? ''}
-                              key={`edit-bank-name-${staffKey}`}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">IFSC Code</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue="BOA83209832"
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Branch Name</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={o?.branch_name ?? o?.bank_branch ?? ''}
-                              key={`edit-branch-${staffKey}`}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Bank Details */}
-                  {/* Transport Information */}
-                  <div className="card">
-                    <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-bus-stop fs-16" />
-                        </span>
-                        <h4 className="text-dark">Transport Information</h4>
-                      </div>
-                      <div className="form-check form-switch">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          role="switch"
-                        />
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Route</label>
-
-                            <CommonSelect
-                              className="select"
-                              options={route}
-                              defaultValue={route[0]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle Number</label>
-                            <CommonSelect
-                              className="select"
-                              options={VehicleNumber}
-                              defaultValue={VehicleNumber[0]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Pickup Point</label>
-                            <CommonSelect
-                              className="select"
-                              options={PickupPoint}
-                              defaultValue={PickupPoint[0]}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Transport Information */}
-                  {/* Hostel Information */}
-                  <div className="card">
-                    <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-building-fortress fs-16" />
-                        </span>
-                        <h4 className="text-dark">Hostel Information</h4>
-                      </div>
-                      <div className="form-check form-switch">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          role="switch"
-                        />
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Hostel</label>
-                            <CommonSelect
-                              className="select"
-                              options={Hostel}
-                              defaultValue={Hostel[0]}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Room No</label>
-                            <CommonSelect
-                              className="select"
-                              options={roomno}
-                              defaultValue={roomno[0]}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Hostel Information */}
-                  {/* Social Media Links */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-building fs-16" />
-                        </span>
-                        <h4 className="text-dark">Social Media Links</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Facebook URL</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Twitter URL</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Linkediin URL</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Instagram URL</label>
-                            <input type="text" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Social Media Links */}
-                  {/* Documents */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-file fs-16" />
-                        </span>
-                        <h4 className="text-dark">Documents</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-6">
-                          <div className="mb-2">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Upload Resume
-                              </label>
-                              <p>
-                                Upload image size of 4MB, Accepted Format PDF
-                              </p>
-                            </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2 me-2">
-                                <i className="ti ti-file-upload me-1" />
-                                Change
-                                <input
-                                  type="file"
-                                  className="form-control image_sign"
-                                  multiple
-                                />
-                              </div>
-                              <p className="mb-2">Resume.pdf</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-6">
-                          <div className="mb-2">
-                            <div className="mb-3">
-                              <label className="form-label">
-                                Upload Joining Letter
-                              </label>
-                              <p>
-                                Upload image size of 4MB, Accepted Format PDF
-                              </p>
-                            </div>
-                            <div className="d-flex align-items-center flex-wrap">
-                              <div className="btn btn-primary drag-upload-btn mb-2">
-                                <i className="ti ti-file-upload me-1" />
-                                Upload Document
-                                <input
-                                  type="file"
-                                  className="form-control image_sign"
-                                  multiple
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Documents */}
-                  {/* Password */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-file fs-16" />
-                        </span>
-                        <h4 className="text-dark">Password</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">New Password</label>
-                            <input type="password" className="form-control" />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Confirm Password
-                            </label>
-                            <input type="password" className="form-control" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Password */}
-                  <div className="text-end">
-                    <button type="button" className="btn btn-light me-3">
-                      Cancel
-                    </button>
-                    <Link to={routes.staff} className="btn btn-primary">
-                      Save Changes
-                    </Link>
-                  </div>
-                </form>
-              </div>
+                </div>
+              )}
+              {loadError && (
+                <div className="alert alert-danger" role="alert">
+                  {loadError}
+                </div>
+              )}
+              {!loading && !loadError && staff && (
+                <StaffProfileForm mode="edit" initialStaff={staff} />
+              )}
             </div>
           </div>
         </div>
-        {/* /Page Wrapper */}
-      </>
+      </div>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 
 function mapPickupRow(row) {
@@ -15,6 +16,29 @@ function mapPickupRow(row) {
 
 const getAllPickupPoints = async (req, res) => {
   try {
+    const scopedDriverId = await getScopedDriverId(req);
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return success(res, 200, 'Pickup points fetched successfully', [], { total: 0, page: 1, limit: 0 });
+      }
+      const result = await query(
+        `SELECT DISTINCT pp.*
+         FROM pickup_points pp
+         JOIN route_stops rs ON rs.pickup_point_id = pp.id
+         WHERE pp.deleted_at IS NULL
+           AND rs.route_id = ANY($1::int[])
+         ORDER BY pp.point_name ASC`,
+        [routeIds]
+      );
+      const data = result.rows.map(mapPickupRow);
+      return success(res, 200, 'Pickup points fetched successfully', data, {
+        total: data.length,
+        page: 1,
+        limit: data.length,
+      });
+    }
+
     const { 
       page = 1, 
       limit = 10, 
@@ -87,6 +111,7 @@ const getAllPickupPoints = async (req, res) => {
 const getPickupPointById = async (req, res) => {
   try {
     const { id } = req.params;
+    const scopedDriverId = await getScopedDriverId(req);
     const result = await query(`
       SELECT *
       FROM pickup_points
@@ -95,6 +120,23 @@ const getPickupPointById = async (req, res) => {
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Pickup point not found');
+    }
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return errorResponse(res, 403, 'Access denied');
+      }
+      const scoped = await query(
+        `SELECT 1
+         FROM route_stops
+         WHERE pickup_point_id = $1
+           AND route_id = ANY($2::int[])
+         LIMIT 1`,
+        [id, routeIds]
+      );
+      if (scoped.rows.length === 0) {
+        return errorResponse(res, 403, 'Access denied');
+      }
     }
     return success(res, 200, 'Pickup point fetched successfully', mapPickupRow(result.rows[0]));
   } catch (error) {

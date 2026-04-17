@@ -272,6 +272,10 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       alert('Please select From Date and To Date.')
       return
     }
+    if (!applyReason.trim()) {
+      alert('Please enter a reason.')
+      return
+    }
     const fromStr = applyFromDate.format('YYYY-MM-DD')
     const toStr = applyToDate.format('YYYY-MM-DD')
     if (toStr < fromStr) {
@@ -285,7 +289,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         student_id: studentId,
         start_date: fromStr,
         end_date: toStr,
-        reason: applyReason.trim() || null,
+        reason: applyReason.trim(),
       })
       if (res?.status === 'SUCCESS') {
         onLeaveApplied?.()
@@ -666,7 +670,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                         <input
                           type="text"
                           className="form-control"
-                          placeholder="Enter reason (optional)"
+                          placeholder="Enter reason"
                           value={applyReason}
                           onChange={(e) => setApplyReason(e.target.value)}
                         />

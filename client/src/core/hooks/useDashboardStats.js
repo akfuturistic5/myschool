@@ -26,18 +26,11 @@ const defaultAttendanceToday = {
     totalMarked: 0,
     attendancePct: 0,
   },
-  teachers: {
-    present: 0,
-    absent: 0,
-    late: 0,
-    totalMarked: 0,
-    attendancePct: 0,
-    isProxy: true,
-  },
   staff: {
     present: 0,
     absent: 0,
     late: 0,
+    halfDay: 0,
     totalMarked: 0,
     attendancePct: 0,
     isProxy: true,
@@ -79,7 +72,6 @@ export const useDashboardStats = (options = {}) => {
           date: d.attendanceToday?.date ?? defaultAttendanceToday.date,
           scope: d.attendanceToday?.scope ?? defaultAttendanceToday.scope,
           students: { ...defaultAttendanceToday.students, ...d.attendanceToday?.students },
-          teachers: { ...defaultAttendanceToday.teachers, ...d.attendanceToday?.teachers },
           staff: { ...defaultAttendanceToday.staff, ...d.attendanceToday?.staff },
         });
       } else {

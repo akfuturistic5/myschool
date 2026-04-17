@@ -8,25 +8,57 @@ import { Reason } from "../../core/common/selectoption/selectoption";
 import { all_routes } from "../router/all_routes";
 import TooltipOption from "../../core/common/tooltipOption";
 import { useUsers } from "../../core/hooks/useUsers";
+import { exportToExcel, exportToPDF, printData } from "../../core/utils/exportUtils";
 
 const Manageusers = () => {
   const routes = all_routes;
   const { users, loading, error, refetch } = useUsers();
   const data = users;
+  const exportColumns = [
+    { title: "User ID", dataKey: "id" },
+    { title: "Role", dataKey: "role" },
+    { title: "Name", dataKey: "name" },
+    { title: "Class", dataKey: "class" },
+    { title: "Section", dataKey: "section" },
+    { title: "Date Joined", dataKey: "dateOfJoined" },
+    { title: "Status", dataKey: "status" },
+  ];
+  const exportRows = data.map((row: any) => ({
+    id: row?.id ?? "—",
+    role: row?.role ?? "—",
+    name: row?.name ?? "—",
+    class: row?.class ?? "—",
+    section: row?.section ?? "—",
+    dateOfJoined: row?.dateOfJoined ?? "—",
+    status: row?.status ?? "—",
+  }));
+  const exportFileBase = `users-list-${new Date().toISOString().split("T")[0]}`;
+
+  const handleExportPdf = () => {
+    exportToPDF(exportRows, "Users List", exportFileBase, exportColumns);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(exportRows, exportFileBase, "Users");
+  };
+
+  const handlePrint = () => {
+    printData("Users List", exportColumns, exportRows);
+  };
   const columns = [
     {
-      title: "ID",
+      title: "User ID",
       dataIndex: "id",
-      render: (text: any, record: any) => (
-        <>
-          <Link to="#" className="link-primary">
-            {text || record.id || 'N/A'}
-          </Link>
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
+      render: (text: string) => <span className="font-monospace text-body">{text}</span>,
+      sorter: (a: TableData, b: TableData) =>
+        Number(a.userId ?? 0) - Number(b.userId ?? 0),
     },
-
+    {
+      title: "Role",
+      dataIndex: "role",
+      sorter: (a: TableData, b: TableData) =>
+        String(a.role || '').localeCompare(String(b.role || '')),
+    },
     {
       title: "Name",
       dataIndex: "name",
@@ -69,43 +101,6 @@ const Manageusers = () => {
       ),
       sorter: (a: any, b: any) => a.status.length - b.status.length,
     },
-    {
-      title: "Action",
-      dataIndex: "action",
-      render: () => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
-                {/* <li>
-                  <Link className="dropdown-item rounded-1" to="#">
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li> */}
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </>
-      ),
-    },
   ];
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
@@ -138,7 +133,12 @@ const Manageusers = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={refetch}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
                 {/* <div className="mb-2">
                   <Link
                     to="#"

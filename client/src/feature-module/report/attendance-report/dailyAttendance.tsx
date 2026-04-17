@@ -10,6 +10,7 @@ import { DatePicker } from "antd";
 import dayjs, { Dayjs } from "dayjs";
 import { apiService } from "../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
@@ -20,6 +21,8 @@ const compareNumber = (left: unknown, right: unknown) =>
 
 const DailyAttendance = () => {
   const routes = all_routes;
+  const user = useSelector(selectUser);
+  const isTeacherRole = String(user?.role || "").trim().toLowerCase() === "teacher";
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [classOptions, setClassOptions] = useState<Array<{ value: string; label: string }>>([{ value: "all", label: "All Classes" }]);
@@ -51,6 +54,22 @@ const DailyAttendance = () => {
           : Array.isArray(fallbackClasses?.data)
             ? fallbackClasses.data
             : [];
+
+        setClassOptions([
+          { value: "all", label: "All Classes" },
+          ...classes.map((item: any) => ({
+            value: String(item.id),
+            label: item.class_name || `Class ${item.id}`,
+          })),
+        ]);
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || "Failed to load class options");
+          setClassOptions([{ value: "all", label: "All Classes" }]);
+        }
+      }
+    };
+
 
         setClassOptions([
           { value: "all", label: "All Classes" },
@@ -186,6 +205,40 @@ const DailyAttendance = () => {
       "Present %": row.percentageLabel,
       "Absent %": row.absentPercentageLabel,
     }));
+    }));
+  }, [appliedDate, classOptions, reportData.rows, selectedClassId]);
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "Class", dataKey: "class" },
+      { title: "Section", dataKey: "section" },
+      { title: "Total Present", dataKey: "present" },
+      { title: "Total Absent", dataKey: "absent" },
+      { title: "Present %", dataKey: "percentageLabel" },
+      { title: "Absent %", dataKey: "absentPercentageLabel" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => ({
+        ...row,
+        percentageLabel: `${Number(row.percentage ?? 0).toFixed(2)}%`,
+        absentPercentageLabel: `${Number(row.absentPercentage ?? 0).toFixed(2)}%`,
+      })),
+    [data]
+  );
+
+  const handleExportExcel = () => {
+    const rows = exportRows.map((row: any) => ({
+      Class: row.class,
+      Section: row.section,
+      "Total Present": row.present,
+      "Total Absent": row.absent,
+      "Present %": row.percentageLabel,
+      "Absent %": row.absentPercentageLabel,
+    }));
     exportToExcel(rows, `DailyAttendance_${appliedDate}`);
   };
 
@@ -273,28 +326,18 @@ const DailyAttendance = () => {
                   <Link to={routes.attendanceReport}>Attendance Report</Link>
                 </li>
                 <li>
-                  <Link to={routes.studentAttendanceType} >
-                    Students Attendance Type
-                  </Link>
-                </li>
-                <li>
                   <Link to={routes.dailyAttendance} className="active">Daily Attendance</Link>
                 </li>
-                <li>
-                  <Link to={routes.studentDayWise}>Student Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherDayWise}>Teacher Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.teacherReport}>Teacher Report</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffDayWise}>Staff Day Wise</Link>
-                </li>
-                <li>
-                  <Link to={routes.staffReport}>Staff Report</Link>
-                </li>
+                {!isTeacherRole && (
+                  <>
+                    <li>
+                      <Link to={routes.staffDayWise}>Staff Day Wise</Link>
+                    </li>
+                    <li>
+                      <Link to={routes.staffReport}>Staff Report</Link>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
             {/* /List Tab */}

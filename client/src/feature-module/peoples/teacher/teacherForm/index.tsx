@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, type ChangeEvent } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, type ChangeEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 // import { feeGroup, feesTypes, paymentType } from '../../../core/common/selectoption/selectoption'
 import { DatePicker } from "antd";
@@ -35,24 +35,20 @@ import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPic
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
+import {
+  validateField,
+  validateTeacherFormSync,
+  firstErrorFieldKey,
+  type TeacherFormField,
+  type TeacherFormValues,
+} from "./teacherFormValidation";
+import "./teacherForm.css";
 
 interface TeacherLocationState {
   teacherId?: number;
   teacher?: any;
   returnTo?: string;
 }
-
-const CLIENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const isValidClientEmail = (s: string) => {
-  const t = s.trim();
-  return t.length > 0 && t.length <= 100 && CLIENT_EMAIL_RE.test(t);
-};
-
-const isValidClientPhone = (s: string) => {
-  const d = s.replace(/\D/g, "");
-  return d.length >= 7 && d.length <= 15;
-};
 
 /** Extract server `message` from apiService HTTP error string when body is JSON */
 function parseTeacherApiErrorMessage(err: unknown, fallback: string): string {
@@ -95,6 +91,28 @@ function extractCreatedTeacherId(res: unknown): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+function FormErrorBanner({
+  title,
+  message,
+  onDismiss,
+}: {
+  title: string;
+  message: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="form-banner-error" role="alert">
+      <div>
+        <p className="form-banner-title">{title}</p>
+        <p className="form-banner-text">{message}</p>
+      </div>
+      <button type="button" className="btn-close-banner" onClick={onDismiss} aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  );
+}
+
 const TeacherForm = () => {
   const routes = all_routes;
   const location = useLocation();
@@ -123,7 +141,7 @@ const TeacherForm = () => {
   };
 
   const [dobDate, setDobDate] = useState<dayjs.Dayjs | null>(null);
-  const [joiningDate, setJoiningDate] = useState<dayjs.Dayjs | null>(null);
+  const [joiningDate, setJoiningDate] = useState<dayjs.Dayjs | null>(() => dayjs());
   const [leavingDate, setLeavingDate] = useState<dayjs.Dayjs | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('Active');
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -131,6 +149,151 @@ const TeacherForm = () => {
   /** Same files as state; refs avoid rare stale values on save click after long forms. */
   const resumeFileRef = useRef<File | null>(null);
   const joiningLetterFileRef = useRef<File | null>(null);
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [qualification, setQualification] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [asyncErrors, setAsyncErrors] = useState<Partial<Record<"phone" | "email", string>>>({});
+  const [checkingUnique, setCheckingUnique] = useState(false);
+  const [formBanner, setFormBanner] = useState<{ title: string; message: string } | null>(null);
+  const [resumeFileError, setResumeFileError] = useState<string | null>(null);
+  const [joiningLetterFileError, setJoiningLetterFileError] = useState<string | null>(null);
+
+  /** Class/subject are optional at hire; use Teacher assignments (or edit) later. */
+  const requireClassSubject = false;
+
+  const teacherFormValues = useMemo<TeacherFormValues>(
+    () => ({
+      first_name: firstName,
+      last_name: lastName,
+      phone,
+      email,
+      qualification,
+      joiningDate,
+      class_id: selectedClassId,
+      subject_id: selectedSubjectId,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
+    [
+      firstName,
+      lastName,
+      phone,
+      email,
+      qualification,
+      joiningDate,
+      selectedClassId,
+      selectedSubjectId,
+      newPassword,
+      confirmPassword,
+    ]
+  );
+
+  const syncErrors = useMemo(
+    () => validateTeacherFormSync(teacherFormValues, { requireClassSubject, isEdit }),
+    [teacherFormValues, requireClassSubject, isEdit]
+  );
+
+  const mergedErrors = useMemo(() => {
+    const m: Partial<Record<TeacherFormField, string>> = { ...syncErrors };
+    if (asyncErrors.phone) m.phone = asyncErrors.phone;
+    if (asyncErrors.email) m.email = asyncErrors.email;
+    if (resumeFileError) m.resume = resumeFileError;
+    if (joiningLetterFileError) m.joining_letter = joiningLetterFileError;
+    return m;
+  }, [syncErrors, asyncErrors, resumeFileError, joiningLetterFileError]);
+
+  const hasBlockingErrors = useMemo(() => Object.keys(mergedErrors).length > 0, [mergedErrors]);
+
+  const touchField = useCallback((name: string) => {
+    setTouched((prev) => ({ ...prev, [name]: true }));
+  }, []);
+
+  const showFieldError = useCallback(
+    (field: string) => (touched[field] || submitAttempted) && !!mergedErrors[field as TeacherFormField],
+    [touched, submitAttempted, mergedErrors]
+  );
+
+  const inputClass = useCallback(
+    (field: string, value: string) => {
+      const err = showFieldError(field);
+      const msg = mergedErrors[field as TeacherFormField];
+      const ok =
+        (touched[field] || submitAttempted) && !msg && String(value ?? "").trim().length > 0;
+      return ["form-control", err ? "input-error" : "", ok ? "input-valid" : ""].filter(Boolean).join(" ");
+    },
+    [showFieldError, mergedErrors, touched, submitAttempted]
+  );
+
+  const scrollToFirstError = useCallback(
+    (errMap?: Partial<Record<TeacherFormField, string>>) => {
+      const key = firstErrorFieldKey(errMap ?? mergedErrors);
+      if (!key) return;
+      window.requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-validation-field="${key}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    },
+    [mergedErrors]
+  );
+
+  const collectSubmitErrors = useCallback((): Partial<Record<TeacherFormField, string>> => {
+    const base = validateTeacherFormSync(teacherFormValues, {
+      requireClassSubject,
+      isEdit,
+    });
+    const m: Partial<Record<TeacherFormField, string>> = { ...base };
+    if (asyncErrors.phone) m.phone = asyncErrors.phone;
+    if (asyncErrors.email) m.email = asyncErrors.email;
+    if (resumeFileError) m.resume = resumeFileError;
+    if (joiningLetterFileError) m.joining_letter = joiningLetterFileError;
+    return m;
+  }, [
+    teacherFormValues,
+    requireClassSubject,
+    isEdit,
+    asyncErrors,
+    resumeFileError,
+    joiningLetterFileError,
+  ]);
+
+  // Debounced uniqueness (mobile / email) — optional enhancement
+  useEffect(() => {
+    const pErr = validateField("phone", phone);
+    const eErr = validateField("email", email);
+    if (pErr || eErr) {
+      setAsyncErrors({});
+      return;
+    }
+    const excludeId =
+      isEdit && teacherData?.user_id != null ? Number(teacherData.user_id) : undefined;
+    const t = window.setTimeout(() => {
+      setCheckingUnique(true);
+      apiService
+        .checkUserUnique({
+          mobile: phone.replace(/\D/g, ""),
+          email: email.trim(),
+          excludeId: Number.isFinite(excludeId as number) ? excludeId : undefined,
+        })
+        .then((res: { mobileExists?: boolean; emailExists?: boolean }) => {
+          setAsyncErrors({
+            phone: res?.mobileExists ? "Already registered" : undefined,
+            email: res?.emailExists ? "Already registered" : undefined,
+          });
+        })
+        .catch(() => {
+          /* ignore — network; user can still submit */
+        })
+        .finally(() => setCheckingUnique(false));
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [phone, email, isEdit, teacherData?.user_id]);
 
   // Lookup data from API (real data for dropdowns)
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -180,12 +343,25 @@ const TeacherForm = () => {
       setSelectedStatus("Active");
       setOwner(["English"]);
       setDobDate(null);
-      setJoiningDate(null);
+      setJoiningDate(dayjs());
       setLeavingDate(null);
       setResumeFile(null);
       setJoiningLetterFile(null);
       resumeFileRef.current = null;
       joiningLetterFileRef.current = null;
+      setFirstName("");
+      setLastName("");
+      setPhone("");
+      setEmail("");
+      setQualification("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTouched({});
+      setSubmitAttempted(false);
+      setAsyncErrors({});
+      setFormBanner(null);
+      setResumeFileError(null);
+      setJoiningLetterFileError(null);
     }
   }, [location.pathname]);
 
@@ -230,6 +406,14 @@ const TeacherForm = () => {
       );
       setSelectedContractType(teacherData.contract_type ?? null);
       setSelectedShift(teacherData.shift ?? null);
+      setFirstName(teacherData.first_name ?? "");
+      setLastName(teacherData.last_name ?? "");
+      setPhone(teacherData.phone ?? "");
+      setEmail(teacherData.email ?? "");
+      setQualification(teacherData.qualification ?? "");
+      setTouched({});
+      setSubmitAttempted(false);
+      setFormBanner(null);
     }
   }, [teacherData, isEdit]);
 
@@ -258,7 +442,10 @@ const TeacherForm = () => {
       window.open(u, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(u), 120_000);
     } catch (e) {
-      alert(parseTeacherApiErrorMessage(e, "Could not open document."));
+      setFormBanner({
+        title: "Could not open document",
+        message: parseTeacherApiErrorMessage(e, "Could not open document."),
+      });
     }
   };
 
@@ -266,13 +453,15 @@ const TeacherForm = () => {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
+    setResumeFileError(null);
+    setFormBanner(null);
     if (f.size > 4 * 1024 * 1024) {
-      alert("File must be 4MB or smaller.");
+      setResumeFileError("File must be 4MB or smaller.");
       return;
     }
     const lower = f.name.toLowerCase();
     if (!lower.endsWith(".pdf") && f.type !== "application/pdf") {
-      alert("Only PDF files are allowed.");
+      setResumeFileError("Only PDF files are allowed.");
       return;
     }
     setResumeFile(f);
@@ -283,13 +472,15 @@ const TeacherForm = () => {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
+    setJoiningLetterFileError(null);
+    setFormBanner(null);
     if (f.size > 4 * 1024 * 1024) {
-      alert("File must be 4MB or smaller.");
+      setJoiningLetterFileError("File must be 4MB or smaller.");
       return;
     }
     const lower = f.name.toLowerCase();
     if (!lower.endsWith(".pdf") && f.type !== "application/pdf") {
-      alert("Only PDF files are allowed.");
+      setJoiningLetterFileError("Only PDF files are allowed.");
       return;
     }
     setJoiningLetterFile(f);
@@ -332,6 +523,13 @@ const TeacherForm = () => {
             <div className="col-md-12">
               <form ref={formRef} key={isEdit && t ? `edit-${t.id}` : "add"}>
                 <>
+                  {formBanner && (
+                    <FormErrorBanner
+                      title={formBanner.title}
+                      message={formBanner.message}
+                      onDismiss={() => setFormBanner(null)}
+                    />
+                  )}
                   {/* Personal Information */}
                   <div className="card">
                     <div className="card-header bg-light">
@@ -376,89 +574,133 @@ const TeacherForm = () => {
                             />
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="first_name">
                           <div className="mb-3">
-                            <label className="form-label">First Name</label>
+                            <label className="form-label">
+                              First Name <span className="text-danger">*</span>
+                            </label>
                             <input
                               name="first_name"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.first_name ?? "") : undefined}
+                              className={inputClass("first_name", firstName)}
+                              value={firstName}
+                              onChange={(e) => {
+                                setFirstName(e.target.value);
+                                setFormBanner(null);
+                              }}
+                              onBlur={() => touchField("first_name")}
+                              autoComplete="given-name"
                             />
+                            {showFieldError("first_name") && mergedErrors.first_name && (
+                              <div className="field-hint-error">{mergedErrors.first_name}</div>
+                            )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="last_name">
                           <div className="mb-3">
-                            <label className="form-label">Last Name</label>
+                            <label className="form-label">
+                              Last Name <span className="text-danger">*</span>
+                            </label>
                             <input
                               name="last_name"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.last_name ?? "") : undefined}
+                              className={inputClass("last_name", lastName)}
+                              value={lastName}
+                              onChange={(e) => {
+                                setLastName(e.target.value);
+                                setFormBanner(null);
+                              }}
+                              onBlur={() => touchField("last_name")}
+                              autoComplete="family-name"
                             />
-                          </div>
-                        </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Class</label>
-                            {classesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2" />
-                                Loading classes...
-                              </div>
-                            ) : classesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2" />
-                                Error: {classesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={(classes || []).map((cls: any) => ({
-                                  value: String(cls.id),
-                                  label: cls.class_name ?? ''
-                                }))}
-                                value={selectedClassId}
-                                onChange={(value) => {
-                                  setSelectedClassId(value);
-                                  setSelectedSubjectId(null);
-                                }}
-                              />
+                            {showFieldError("last_name") && mergedErrors.last_name && (
+                              <div className="field-hint-error">{mergedErrors.last_name}</div>
                             )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Subject</label>
-                            {subjectsLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2" />
-                                Loading subjects...
+                        {isEdit && (
+                          <>
+                            <div className="col-xxl col-xl-3 col-md-6" data-validation-field="class_id">
+                              <div
+                                className={`mb-3 teacher-form-select-wrap ${
+                                  showFieldError("class_id") ? "is-invalid" : ""
+                                } ${touched.class_id && !mergedErrors.class_id && selectedClassId ? "is-valid" : ""}`}
+                              >
+                                <label className="form-label">Class</label>
+                                {classesLoading ? (
+                                  <div className="form-control">
+                                    <i className="ti ti-loader ti-spin me-2" />
+                                    Loading classes...
+                                  </div>
+                                ) : classesError ? (
+                                  <div className="form-control text-danger">
+                                    <i className="ti ti-alert-circle me-2" />
+                                    Error: {classesError}
+                                  </div>
+                                ) : (
+                                  <CommonSelect
+                                    className="select"
+                                    options={(classes || []).map((cls: any) => ({
+                                      value: String(cls.id),
+                                      label: cls.class_name ?? ''
+                                    }))}
+                                    value={selectedClassId}
+                                    onChange={(value) => {
+                                      setSelectedClassId(value);
+                                      setSelectedSubjectId(null);
+                                      setFormBanner(null);
+                                    }}
+                                    onBlur={() => touchField("class_id")}
+                                  />
+                                )}
+                                {showFieldError("class_id") && mergedErrors.class_id && (
+                                  <div className="field-hint-error">{mergedErrors.class_id}</div>
+                                )}
                               </div>
-                            ) : subjectsError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2" />
-                                Error: {subjectsError}
+                            </div>
+                            <div className="col-xxl col-xl-3 col-md-6" data-validation-field="subject_id">
+                              <div
+                                className={`mb-3 teacher-form-select-wrap ${
+                                  showFieldError("subject_id") ? "is-invalid" : ""
+                                } ${touched.subject_id && !mergedErrors.subject_id && selectedSubjectId ? "is-valid" : ""}`}
+                              >
+                                <label className="form-label">Subject</label>
+                                {subjectsLoading ? (
+                                  <div className="form-control">
+                                    <i className="ti ti-loader ti-spin me-2" />
+                                    Loading subjects...
+                                  </div>
+                                ) : subjectsError ? (
+                                  <div className="form-control text-danger">
+                                    <i className="ti ti-alert-circle me-2" />
+                                    Error: {subjectsError}
+                                  </div>
+                                ) : (
+                                  <CommonSelect
+                                    className="select"
+                                    options={(subjects || [])
+                                      .filter((sub: any) =>
+                                        selectedClassId ? String(sub.class_id) === selectedClassId : true
+                                      )
+                                      .map((sub: any) => ({
+                                        value: String(sub.id),
+                                        label: sub.subject_name ?? ''
+                                      }))}
+                                    value={selectedSubjectId}
+                                    onChange={(value) => {
+                                      setSelectedSubjectId(value);
+                                      setFormBanner(null);
+                                    }}
+                                    onBlur={() => touchField("subject_id")}
+                                  />
+                                )}
+                                {showFieldError("subject_id") && mergedErrors.subject_id && (
+                                  <div className="field-hint-error">{mergedErrors.subject_id}</div>
+                                )}
                               </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={(subjects || [])
-                                  .filter((sub: any) =>
-                                    selectedClassId ? String(sub.class_id) === selectedClassId : true
-                                  )
-                                  .map((sub: any) => ({
-                                    value: String(sub.id),
-                                    label: sub.subject_name ?? ''
-                                  }))}
-                                value={selectedSubjectId}
-                                onChange={(value) => {
-                                  setSelectedSubjectId(value);
-                                }}
-                              />
-                            )}
-                          </div>
-                        </div>
+                            </div>
+                          </>
+                        )}
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Gender</label>
@@ -479,28 +721,52 @@ const TeacherForm = () => {
                             />
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="phone">
                           <div className="mb-3">
                             <label className="form-label">
-                              Primary Contact Number
+                              Primary Contact Number <span className="text-danger">*</span>
                             </label>
                             <input
                               name="phone"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.phone ?? "") : undefined}
+                              inputMode="numeric"
+                              autoComplete="tel"
+                              className={inputClass("phone", phone)}
+                              value={phone}
+                              onChange={(e) => {
+                                setPhone(e.target.value);
+                                setFormBanner(null);
+                              }}
+                              onBlur={() => touchField("phone")}
                             />
+                            {checkingUnique && !mergedErrors.phone && validateField("phone", phone) === null && (
+                              <div className="small text-muted mt-1">Checking availability…</div>
+                            )}
+                            {showFieldError("phone") && mergedErrors.phone && (
+                              <div className="field-hint-error">{mergedErrors.phone}</div>
+                            )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="email">
                           <div className="mb-3">
-                            <label className="form-label">Email Address</label>
+                            <label className="form-label">
+                              Email Address <span className="text-danger">*</span>
+                            </label>
                             <input
                               name="email"
                               type="email"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.email ?? "") : undefined}
+                              className={inputClass("email", email)}
+                              value={email}
+                              onChange={(e) => {
+                                setEmail(e.target.value);
+                                setFormBanner(null);
+                              }}
+                              onBlur={() => touchField("email")}
+                              autoComplete="email"
                             />
+                            {showFieldError("email") && mergedErrors.email && (
+                              <div className="field-hint-error">{mergedErrors.email}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -531,23 +797,38 @@ const TeacherForm = () => {
                             )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="joiningDate">
                           <div className="mb-3">
                             <label className="form-label">
-                              Date of Joining
+                              Date of Joining <span className="text-danger">*</span>
                             </label>
                             <div className="input-icon position-relative">
                               <DatePicker
-                                className="form-control datetimepicker"
+                                className={`form-control datetimepicker ${
+                                  showFieldError("joiningDate") ? "input-error" : ""
+                                } ${
+                                  (touched.joiningDate || submitAttempted) &&
+                                  !mergedErrors.joiningDate &&
+                                  joiningDate
+                                    ? "input-valid"
+                                    : ""
+                                }`}
                                 format={{ format: "DD-MM-YYYY", type: "mask" }}
                                 value={joiningDate}
-                                onChange={(d) => setJoiningDate(d)}
+                                onChange={(d) => {
+                                  setJoiningDate(d);
+                                  setFormBanner(null);
+                                }}
+                                onBlur={() => touchField("joiningDate")}
                                 placeholder="Select date"
                               />
                               <span className="input-icon-addon">
                                 <i className="ti ti-calendar" />
                               </span>
                             </div>
+                            {showFieldError("joiningDate") && mergedErrors.joiningDate && (
+                              <div className="field-hint-error">{mergedErrors.joiningDate}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -619,15 +900,25 @@ const TeacherForm = () => {
                             />
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="qualification">
                           <div className="mb-3">
-                            <label className="form-label">Qualification</label>
+                            <label className="form-label">
+                              Qualification <span className="text-danger">*</span>
+                            </label>
                             <input
                               name="qualification"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.qualification ?? "") : undefined}
+                              className={inputClass("qualification", qualification)}
+                              value={qualification}
+                              onChange={(e) => {
+                                setQualification(e.target.value);
+                                setFormBanner(null);
+                              }}
+                              onBlur={() => touchField("qualification")}
                             />
+                            {showFieldError("qualification") && mergedErrors.qualification && (
+                              <div className="field-hint-error">{mergedErrors.qualification}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -1293,7 +1584,7 @@ const TeacherForm = () => {
                     </div>
                     <div className="card-body pb-1">
                       <div className="row">
-                        <div className="col-lg-6">
+                        <div className="col-lg-6" data-validation-field="resume">
                           <div className="mb-2">
                             <div className="mb-3">
                               <label className="form-label">Upload Resume</label>
@@ -1329,9 +1620,12 @@ const TeacherForm = () => {
                                   ? teacherStoredDocBasename(t.resume)
                                   : "No file selected"}
                             </p>
+                            {resumeFileError && (
+                              <div className="field-hint-error">{resumeFileError}</div>
+                            )}
                           </div>
                         </div>
-                        <div className="col-lg-6">
+                        <div className="col-lg-6" data-validation-field="joining_letter">
                           <div className="mb-2">
                             <div className="mb-3">
                               <label className="form-label">Upload Joining Letter</label>
@@ -1367,6 +1661,9 @@ const TeacherForm = () => {
                                   ? teacherStoredDocBasename(t.joining_letter)
                                   : "No file selected"}
                             </p>
+                            {joiningLetterFileError && (
+                              <div className="field-hint-error">{joiningLetterFileError}</div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1390,16 +1687,44 @@ const TeacherForm = () => {
                             Optional. If left blank, the teacher can log in using their phone number as the initial password. Otherwise set a password and confirm it below.
                           </p>
                           <div className="row">
-                            <div className="col-md-6">
+                            <div className="col-md-6" data-validation-field="new_password">
                               <div className="mb-3">
                                 <label className="form-label">Password</label>
-                                <input name="new_password" type="password" className="form-control" autoComplete="new-password" />
+                                <input
+                                  name="new_password"
+                                  type="password"
+                                  className={inputClass("new_password", newPassword)}
+                                  autoComplete="new-password"
+                                  value={newPassword}
+                                  onChange={(e) => {
+                                    setNewPassword(e.target.value);
+                                    setFormBanner(null);
+                                  }}
+                                  onBlur={() => touchField("new_password")}
+                                />
+                                {showFieldError("new_password") && mergedErrors.new_password && (
+                                  <div className="field-hint-error">{mergedErrors.new_password}</div>
+                                )}
                               </div>
                             </div>
-                            <div className="col-md-6">
+                            <div className="col-md-6" data-validation-field="confirm_password">
                               <div className="mb-3">
                                 <label className="form-label">Confirm password</label>
-                                <input name="confirm_password" type="password" className="form-control" autoComplete="new-password" />
+                                <input
+                                  name="confirm_password"
+                                  type="password"
+                                  className={inputClass("confirm_password", confirmPassword)}
+                                  autoComplete="new-password"
+                                  value={confirmPassword}
+                                  onChange={(e) => {
+                                    setConfirmPassword(e.target.value);
+                                    setFormBanner(null);
+                                  }}
+                                  onBlur={() => touchField("confirm_password")}
+                                />
+                                {showFieldError("confirm_password") && mergedErrors.confirm_password && (
+                                  <div className="field-hint-error">{mergedErrors.confirm_password}</div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1429,20 +1754,22 @@ const TeacherForm = () => {
                       className="btn btn-primary"
                       onClick={async (e) => {
                         e.preventDefault();
+                        setFormBanner(null);
                         if (!teacherId || !formRef.current) return;
+                        const submitErrs = collectSubmitErrors();
+                        if (Object.keys(submitErrs).length > 0) {
+                          setSubmitAttempted(true);
+                          Object.keys(submitErrs).forEach((k) => touchField(k));
+                          setFormBanner({
+                            title: "Failed to save teacher",
+                            message: "Please fix highlighted errors below.",
+                          });
+                          scrollToFirstError(submitErrs);
+                          return;
+                        }
                         const form = formRef.current;
                         const get = (name: string) => (form.querySelector(`[name="${name}"]`) as HTMLInputElement)?.value?.trim() || null;
                         const getNum = (name: string) => { const v = get(name); return v ? parseInt(v, 10) : undefined; };
-                        const emUpd = get("email");
-                        const phUpd = get("phone");
-                        if (emUpd && !isValidClientEmail(emUpd)) {
-                          alert("Please enter a valid email address.");
-                          return;
-                        }
-                        if (phUpd && !isValidClientPhone(phUpd)) {
-                          alert("Phone must contain 7–15 digits.");
-                          return;
-                        }
                         setIsUpdating(true);
                         try {
                           const bgRow = (bloodGroups || []).find(
@@ -1451,14 +1778,14 @@ const TeacherForm = () => {
                           const updateData: Record<string, any> = {
                             status: selectedStatus,
                             is_active: selectedStatus === 'Active',
-                            first_name: get('first_name') || teacherData?.first_name,
-                            last_name: get('last_name') || teacherData?.last_name,
-                            phone: get('phone') || teacherData?.phone,
-                            email: get('email') || teacherData?.email,
+                            first_name: firstName || teacherData?.first_name,
+                            last_name: lastName || teacherData?.last_name,
+                            phone: phone || teacherData?.phone,
+                            email: email || teacherData?.email,
                             address: get('address') || teacherData?.address,
                             father_name: get('father_name') || teacherData?.father_name,
                             mother_name: get('mother_name') || teacherData?.mother_name,
-                            qualification: get('qualification') || teacherData?.qualification,
+                            qualification: qualification || teacherData?.qualification,
                             experience_years: getNum('experience_years') ?? teacherData?.experience_years,
                             previous_school_name: get('previous_school_name') || teacherData?.previous_school_name,
                             previous_school_address: get('previous_school_address') || teacherData?.previous_school_address,
@@ -1502,6 +1829,7 @@ const TeacherForm = () => {
                           if (response && response.status === 'SUCCESS') {
                             const rFile = resumeFileRef.current;
                             const jFile = joiningLetterFileRef.current;
+                            let proceedToList = true;
                             if (rFile || jFile) {
                               try {
                                 const fd = new FormData();
@@ -1510,26 +1838,36 @@ const TeacherForm = () => {
                                 await apiService.uploadTeacherDocuments(teacherId, fd);
                               } catch (docErr) {
                                 console.error(docErr);
-                                alert(
-                                  parseTeacherApiErrorMessage(
+                                setFormBanner({
+                                  title: "Documents not uploaded",
+                                  message: parseTeacherApiErrorMessage(
                                     docErr,
-                                    'Teacher was saved but documents could not be uploaded. Try uploading PDFs again from Edit.'
-                                  )
-                                );
+                                    "Teacher was saved but documents could not be uploaded. Try uploading PDFs again from Edit."
+                                  ),
+                                });
+                                proceedToList = false;
                               }
                             }
-                            navigate(routes.teacherList, { state: { refresh: true } });
+                            if (proceedToList) {
+                              navigate(routes.teacherList, { state: { refresh: true } });
+                            }
                           } else {
-                            alert(response?.message || 'Failed to update teacher');
+                            setFormBanner({
+                              title: "Failed to save teacher",
+                              message: response?.message || "Failed to update teacher",
+                            });
                           }
                         } catch (error: any) {
                           console.error('Error updating teacher:', error);
-                          alert(parseTeacherApiErrorMessage(error, "Failed to update teacher. Please try again."));
+                          setFormBanner({
+                            title: "Failed to save teacher",
+                            message: parseTeacherApiErrorMessage(error, "Failed to update teacher. Please try again."),
+                          });
                         } finally {
                           setIsUpdating(false);
                         }
                       }}
-                      disabled={isUpdating}
+                      disabled={isUpdating || hasBlockingErrors || checkingUnique}
                     >
                       {isUpdating ? 'Updating...' : 'Save Changes'}
                     </button>
@@ -1537,10 +1875,22 @@ const TeacherForm = () => {
                     <button
                       type="button"
                       className="btn btn-primary"
-                      disabled={isCreating}
+                      disabled={isCreating || hasBlockingErrors || checkingUnique}
                       onClick={async (e) => {
                         e.preventDefault();
+                        setFormBanner(null);
                         if (!formRef.current) return;
+                        const submitErrs = collectSubmitErrors();
+                        if (Object.keys(submitErrs).length > 0) {
+                          setSubmitAttempted(true);
+                          Object.keys(submitErrs).forEach((k) => touchField(k));
+                          setFormBanner({
+                            title: "Failed to save teacher",
+                            message: "Please fix highlighted errors below.",
+                          });
+                          scrollToFirstError(submitErrs);
+                          return;
+                        }
                         const form = formRef.current;
                         const get = (name: string) =>
                           (form.querySelector(`[name="${name}"]`) as HTMLInputElement)?.value?.trim() || null;
@@ -1548,59 +1898,19 @@ const TeacherForm = () => {
                           const v = get(name);
                           return v ? parseInt(v, 10) : undefined;
                         };
-                        const fn = get("first_name");
-                        const ln = get("last_name");
-                        const em = get("email");
-                        const ph = get("phone");
-                        if (!fn || !ln) {
-                          alert("First name and last name are required.");
-                          return;
-                        }
-                        if (!em) {
-                          alert("Email is required.");
-                          return;
-                        }
-                        if (!ph) {
-                          alert("Phone is required.");
-                          return;
-                        }
-                        if (!isValidClientEmail(em)) {
-                          alert("Please enter a valid email address.");
-                          return;
-                        }
-                        if (!isValidClientPhone(ph)) {
-                          alert("Phone must contain 7–15 digits.");
-                          return;
-                        }
-                        if (!selectedClassId || !selectedSubjectId) {
-                          alert("Please select class and subject.");
-                          return;
-                        }
-                        const pw = get("new_password");
-                        const pwc = get("confirm_password");
-                        if (pw || pwc) {
-                          if (pw !== pwc) {
-                            alert("Password and confirm password do not match.");
-                            return;
-                          }
-                          if (pw.length < 6) {
-                            alert("Password must be at least 6 characters.");
-                            return;
-                          }
-                        }
+                        const phoneDigits = phone.replace(/\D/g, "");
+                        const pw = newPassword;
                         const bgRow = (bloodGroups || []).find(
                           (bg: any) => String(bg.id) === selectedBloodGroupId
                         );
                         setIsCreating(true);
                         try {
                           const payload: Record<string, any> = {
-                            first_name: fn,
-                            last_name: ln,
-                            email: em,
-                            phone: ph,
+                            first_name: firstName.trim(),
+                            last_name: lastName.trim(),
+                            email: email.trim(),
+                            phone: phoneDigits,
                             password: pw || undefined,
-                            class_id: parseInt(selectedClassId, 10),
-                            subject_id: parseInt(selectedSubjectId, 10),
                             status: selectedStatus,
                             is_active: selectedStatus === "Active",
                             gender: selectedGender || undefined,
@@ -1618,7 +1928,7 @@ const TeacherForm = () => {
                             father_name: get("father_name") || undefined,
                             mother_name: get("mother_name") || undefined,
                             address: get("address") || undefined,
-                            qualification: get("qualification") || undefined,
+                            qualification: qualification.trim() || undefined,
                             experience_years: getNum("experience_years"),
                             previous_school_name: get("previous_school_name") || undefined,
                             previous_school_address: get("previous_school_address") || undefined,
@@ -1653,11 +1963,15 @@ const TeacherForm = () => {
                             const newId = extractCreatedTeacherId(response);
                             const rFile = resumeFileRef.current;
                             const jFile = joiningLetterFileRef.current;
+                            let proceedToList = true;
                             if (rFile || jFile) {
                               if (newId == null) {
-                                alert(
-                                  "Teacher was created but the app could not read the new teacher ID, so PDFs were not uploaded. Open Edit for this teacher and upload the documents again."
-                                );
+                                setFormBanner({
+                                  title: "Teacher created",
+                                  message:
+                                    "The teacher was created but the app could not read the new teacher ID, so PDFs were not uploaded. Open Edit for this teacher and upload the documents again.",
+                                });
+                                proceedToList = false;
                               } else {
                                 try {
                                   const fd = new FormData();
@@ -1666,22 +1980,35 @@ const TeacherForm = () => {
                                   await apiService.uploadTeacherDocuments(newId, fd);
                                 } catch (docErr) {
                                   console.error(docErr);
-                                  alert(
-                                    parseTeacherApiErrorMessage(
+                                  setFormBanner({
+                                    title: "Documents not uploaded",
+                                    message: parseTeacherApiErrorMessage(
                                       docErr,
                                       "Teacher was created but documents could not be uploaded. Edit the teacher to add PDFs."
-                                    )
-                                  );
+                                    ),
+                                  });
+                                  proceedToList = false;
                                 }
                               }
                             }
-                            navigate(routes.teacherList, { state: { refresh: true } });
+                            if (proceedToList) {
+                              navigate(routes.teacherList, { state: { refresh: true } });
+                            }
                           } else {
-                            alert(response?.message || "Failed to create teacher");
+                            setFormBanner({
+                              title: "Failed to save teacher",
+                              message: response?.message || "Failed to create teacher",
+                            });
                           }
                         } catch (error: any) {
                           console.error("Error creating teacher:", error);
-                          alert(parseTeacherApiErrorMessage(error, "Failed to create teacher. Please try again."));
+                          setFormBanner({
+                            title: "Failed to save teacher",
+                            message: parseTeacherApiErrorMessage(
+                              error,
+                              "Failed to create teacher. Please try again."
+                            ),
+                          });
                         } finally {
                           setIsCreating(false);
                         }

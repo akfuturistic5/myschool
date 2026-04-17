@@ -15,7 +15,7 @@ type RoleInput =
       user_role_id?: number;
     };
 
-export type UserRole = 'Admin' | 'Administrative' | 'Teacher' | 'Student' | 'Parent' | 'Guardian';
+export type UserRole = 'Admin' | 'Administrative' | 'Teacher' | 'Student' | 'Parent' | 'Guardian' | 'Driver';
 
 const HEADMASTER_ROLE_NAMES = new Set(['admin', 'headmaster', 'administrator']);
 const ADMINISTRATIVE_ROLE_NAMES = new Set(['administrative']);
@@ -24,6 +24,7 @@ const ADMINISTRATIVE_ROLE_IDS = new Set([6]);
 
 const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
   '/administrative/',
+  '/academic-settings/',
   '/student/',
   '/teacher/',
   '/parent/',
@@ -39,6 +40,8 @@ const ADMINISTRATIVE_ALLOWED_PATH_PREFIXES = [
 
 const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
   all_routes.administrativeDashboard,
+  all_routes.schoolSettings,
+  all_routes.religion,
   all_routes.bonafideGenerator,
   all_routes.chat,
   all_routes.callHistory,
@@ -50,9 +53,9 @@ const ADMINISTRATIVE_ALLOWED_EXACT_PATHS = new Set([
   all_routes.profile,
 ]);
 
-const ADMINISTRATIVE_BLOCKED_EXACT_PATHS = new Set([all_routes.approveRequest]);
+const ADMINISTRATIVE_BLOCKED_EXACT_PATHS = new Set<string>();
 
-type RoleScope = 'headmaster' | 'administrative' | 'teacher' | 'student' | 'parent' | 'guardian' | 'unknown';
+type RoleScope = 'headmaster' | 'administrative' | 'teacher' | 'student' | 'parent' | 'guardian' | 'driver' | 'unknown';
 
 function getRoleParts(role: RoleInput, explicitRoleId?: number | null): { roleName: string; roleId: number | null } {
   if (role && typeof role === 'object') {
@@ -90,6 +93,8 @@ function getRoleScope(role: RoleInput, explicitRoleId?: number | null): RoleScop
       return 'parent';
     case 'guardian':
       return 'guardian';
+    case 'driver':
+      return 'driver';
     default:
       return 'unknown';
   }
@@ -117,6 +122,8 @@ export function getDisplayRoleLabel(role: RoleInput, explicitRoleId?: number | n
       return 'Parent';
     case 'guardian':
       return 'Guardian';
+    case 'driver':
+      return 'Driver';
     default: {
       const { roleName } = getRoleParts(role, explicitRoleId);
       return roleName ? roleName.charAt(0).toUpperCase() + roleName.slice(1) : 'User';
@@ -144,6 +151,8 @@ export function getDashboardForRole(role: RoleInput, explicitRoleId?: number | n
       return all_routes.parentDashboard;
     case 'guardian':
       return all_routes.guardianDashboard;
+    case 'driver':
+      return all_routes.driverDashboard;
     default:
       return all_routes.adminDashboard;
   }
@@ -168,6 +177,8 @@ export function getPageTitleForRole(role: string | undefined | null): string {
       return "Preskool's Child Parent";
     case 'guardian':
       return "Preskool's Child Guardian";
+    case 'driver':
+      return "Preskool Driver";
     default:
       if (String(role).trim().toLowerCase().includes('teacher')) return "Preskool Teacher";
       return 'Preskool';
@@ -202,7 +213,6 @@ const ADMIN_ONLY_PATH_PREFIXES = [
   '/website-settings/',
   '/system-settings/',
   '/financial-settings/',
-  '/academic-settings/',
   '/other-settings/',
   '/content/',
 ];
@@ -212,6 +222,18 @@ const ADMIN_ONLY_PATH_PREFIXES = [
  * Used for frontend route protection to match backend RBAC.
  */
 export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: number | null): boolean {
+  if (path === all_routes.approveRequest) {
+    const scope = getRoleScope(role, explicitRoleId);
+    return scope === 'teacher' || scope === 'headmaster' || scope === 'administrative';
+  }
+  if (path === all_routes.listLeaves) {
+    return (
+      isHeadmasterRole(role, explicitRoleId) ||
+      isAdministrativeRole(role, explicitRoleId) ||
+      getRoleScope(role, explicitRoleId) === 'teacher'
+    );
+  }
+
   const userDashboard = getDashboardForRole(role, explicitRoleId);
   const dashboardPaths = [
     all_routes.adminDashboard,
@@ -220,6 +242,7 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
     all_routes.studentDashboard,
     all_routes.parentDashboard,
     all_routes.guardianDashboard,
+    all_routes.driverDashboard,
   ];
   if (dashboardPaths.includes(path)) {
     return path === userDashboard;
@@ -243,6 +266,24 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
     if (ADMIN_ONLY_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return false;
     if (ADMINISTRATIVE_ALLOWED_EXACT_PATHS.has(path)) return true;
     return ADMINISTRATIVE_ALLOWED_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+  }
+
+  if (getRoleScope(role, explicitRoleId) === 'teacher') {
+    const teacherBlockedPaths = new Set<string>([
+      all_routes.staffDayWise,
+      all_routes.staffReport,
+      all_routes.staffAttendance,
+    ]);
+    if (teacherBlockedPaths.has(path)) return false;
+  }
+
+  if (getRoleScope(role, explicitRoleId) === 'driver') {
+    const allowed = new Set<string>([
+      all_routes.driverDashboard,
+      all_routes.profile,
+      all_routes.activity,
+    ]);
+    return allowed.has(path);
   }
 
   if (ADMIN_ONLY_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) {

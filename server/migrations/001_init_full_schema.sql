@@ -186,7 +186,6 @@ END;
 $$;
 
 
-
 --
 -- TOC entry 340 (class 1255 OID 214516)
 -- Name: update_notice_board_modified_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
@@ -285,7 +284,7 @@ ALTER SEQUENCE public.academic_years_id_seq OWNED BY public.academic_years.id;
 --
 -- TOC entry 219 (class 1259 OID 214527)
 -- Name: addresses; Type: TABLE; Schema: public; Owner: neondb_owner
---
+-- ====
 
 CREATE TABLE public.addresses (
     id integer NOT NULL,
@@ -313,8 +312,7 @@ CREATE SEQUENCE public.addresses_id_seq
     CACHE 1;
 
 
-
---
+-- ============
 -- TOC entry 4488 (class 0 OID 0)
 -- Dependencies: 220
 -- Name: addresses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner

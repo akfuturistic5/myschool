@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
@@ -36,6 +36,7 @@ const AcademicYearsList = () => {
   const [rows, setRows] = useState<AcademicYearRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +56,23 @@ const AcademicYearsList = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((y) => {
+      const hay = [
+        y.year_name,
+        `id ${y.id}`,
+        String(y.id),
+        y.start_date || "",
+        y.end_date || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, query]);
 
   return (
     <div className="page-wrapper">
@@ -81,6 +99,18 @@ const AcademicYearsList = () => {
             </p>
           </div>
           <div className="d-flex flex-wrap gap-2 my-xl-auto right-content align-items-center">
+            {rows.length > 0 && (
+              <div className="me-0 me-md-2">
+                <input
+                  type="search"
+                  className="form-control"
+                  placeholder="Search years (e.g. 2026-27, ID 45)…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Search academic years"
+                />
+              </div>
+            )}
             <Link to={routes.academicYearNew} className="btn btn-primary d-inline-flex align-items-center">
               <i className="ti ti-square-rounded-plus me-2" />
               Create new academic year
@@ -119,6 +149,13 @@ const AcademicYearsList = () => {
         {!loading && !error && rows.length > 0 && (
           <div className="card border-0 shadow-sm">
             <div className="card-body p-0">
+              {filteredRows.length === 0 && (
+                <div className="p-4 border-bottom">
+                  <div className="text-muted">
+                    No academic years match <strong>{query.trim()}</strong>.
+                  </div>
+                </div>
+              )}
               <div className="table-responsive">
                 <table className="table table-hover align-middle mb-0">
                   <thead className="table-light">
@@ -131,7 +168,7 @@ const AcademicYearsList = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((y) => (
+                    {filteredRows.map((y) => (
                       <tr key={y.id}>
                         <td className="ps-4">
                           <span className="fw-semibold">{y.year_name}</span>

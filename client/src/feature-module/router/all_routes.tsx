@@ -6,6 +6,7 @@ export const all_routes = {
   guardianDashboard: "/guardian-dashboard",
   studentDashboard: "/student-dashboard",
   teacherDashboard: "/teacher-dashboard",
+  driverDashboard: "/driver-dashboard",
 
   blankPage: "/blank-page",
   calendar: "/calendar",
@@ -214,6 +215,7 @@ export const all_routes = {
   teacherGrid: "/teacher/teacher-grid",
   teacherList: "/teacher/teacher-list",
   addTeacher: "/teacher/add-teacher",
+  teacherAssignments: "/teacher/teacher-assignments",
   editTeacher: "/teacher/edit-teacher",
   teacherLibrary: "/teacher/teacher-library",
   teacherSalary: "/teacher/teacher-salary",
@@ -264,7 +266,7 @@ export const all_routes = {
   examSchedule: "/academic/exam-schedule",
   grade: "/academic/grade",
   examResult: "/academic/exam-result",
-  examAttendance: "/academic/exam-attendance",
+  examAttendance: "/academic/exam-timetable",
   classTimetable: "/academic/class-time-table",
   academicYears: "/academic/academic-years",
   academicYearNew: "/academic/academic-years/new",
@@ -283,6 +285,7 @@ export const all_routes = {
 
   approveRequest: "/hrm/approve-request",
   studentAttendance: "/hrm/student-attendance",
+  studentAttendanceReport: "/hrm/student-attendance-report",
   teacherAttendance: "/hrm/teacher-attendance",
   staffAttendance: "/hrm/staff-attendance",
   addStaff: "/hrm/add-staff",
@@ -308,6 +311,7 @@ export const all_routes = {
   // announcements routes
   events: "/announcements/events",
   noticeBoard: "/announcements/notice-board",
+  enquiries: "/enquiries",
 
   //Report
   attendanceReport: "/report/attendance-report",
@@ -318,9 +322,7 @@ export const all_routes = {
   feesReport: "/report/fees-report",
   teacherReport: "/report/teacher-report",
   staffReport: "/report/staff-report",
-  studentAttendanceType: "/report/student-attendance-type",
   dailyAttendance: "/report/daily-attendance",
-  studentDayWise: "/report/student-day-wise",
   teacherDayWise: "/report/teacher-day-wise",
   staffDayWise: "/report/staff-day-wise",
   //page module

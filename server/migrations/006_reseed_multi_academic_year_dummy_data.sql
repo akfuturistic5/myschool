@@ -302,6 +302,47 @@ BEGIN
     WHERE s.id = m.section_id;
   END IF;
 
+  -- Keep teacher home class/subject in sync after reseed re-allocation.
+  -- This avoids leaving teachers.class_id / teachers.subject_id as NULL after cleanup.
+  WITH mapped_class AS (
+    SELECT
+      t.id AS teacher_id,
+      s.class_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY t.id
+        ORDER BY c.academic_year_id DESC, c.class_code ASC, s.id ASC
+      ) AS rn
+    FROM teachers t
+    JOIN sections s ON s.section_teacher_id = t.staff_id
+    JOIN classes c ON c.id = s.class_id
+    WHERE c.class_code LIKE 'DMY-AY%-C_'
+  ),
+  chosen_class AS (
+    SELECT teacher_id, class_id
+    FROM mapped_class
+    WHERE rn = 1
+  ),
+  chosen_subject AS (
+    SELECT
+      cc.teacher_id,
+      (
+        SELECT sub.id
+        FROM subjects sub
+        WHERE sub.class_id = cc.class_id
+        ORDER BY sub.id ASC
+        LIMIT 1
+      ) AS subject_id
+    FROM chosen_class cc
+  )
+  UPDATE teachers t
+  SET
+    class_id = cc.class_id,
+    subject_id = COALESCE(cs.subject_id, t.subject_id),
+    updated_at = NOW()
+  FROM chosen_class cc
+  LEFT JOIN chosen_subject cs ON cs.teacher_id = cc.teacher_id
+  WHERE t.id = cc.teacher_id;
+
   -- ---------------------------------------------------------------------------
   -- 7) Build student dataset: 5 students per section for each academic year
   -- ---------------------------------------------------------------------------
@@ -392,7 +433,7 @@ BEGIN
   SELECT
     t.username,
     t.email,
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('98' || LPAD((t.ay_id * 1000 + t.seq_no)::text, 8, '0')), gen_salt('bf', 10)),
     v_student_role_id,
     t.first_name,
     t.last_name,
@@ -508,7 +549,7 @@ BEGIN
   SELECT
     'father_' || lower(replace(s.admission_number, '-', '_')),
     lower(replace(s.admission_number, '-', '.')) || '.father@myschool.local',
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('97' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
     v_parent_role_id,
     'Imran',
     (s.last_name || ' Sr'),
@@ -531,7 +572,7 @@ BEGIN
   SELECT
     'mother_' || lower(replace(s.admission_number, '-', '_')),
     lower(replace(s.admission_number, '-', '.')) || '.mother@myschool.local',
-    '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+    crypt(('96' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
     v_parent_role_id,
     'Sana',
     (s.last_name || ' Sr'),
@@ -591,7 +632,7 @@ BEGIN
     SELECT
       'guardian_' || lower(replace(s.admission_number, '-', '_')),
       lower(replace(s.admission_number, '-', '.')) || '.guardian@myschool.local',
-      '$2a$10$4f8x7Qw5l8VvM1xJ8Nf2oOGS5YQ7s8XQ5QJfS2f4v9m5XvF2aR9VO',
+      crypt(('95' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
       v_guardian_role_id,
       'Rafiq',
       (s.last_name || ' Uncle'),
@@ -671,6 +712,46 @@ BEGIN
   ) x
   WHERE c.id = x.class_id
     AND c.class_code LIKE 'DMY-AY%-C_';
+
+  -- ---------------------------------------------------------------------------
+  -- 14) Seed attendance snapshots (student/teacher/staff)
+  -- ---------------------------------------------------------------------------
+  INSERT INTO attendance (student_id, class_id, section_id, attendance_date, status, remarks, academic_year_id)
+  SELECT
+    s.id,
+    s.class_id,
+    s.section_id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    s.academic_year_id
+  FROM students s
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  WHERE s.class_id IS NOT NULL
+  ON CONFLICT (student_id, attendance_date) DO NOTHING;
+
+  INSERT INTO teacher_attendance (teacher_id, attendance_date, status, remark, academic_year_id)
+  SELECT
+    t.id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    t.academic_year_id
+  FROM teachers t
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  ON CONFLICT (teacher_id, attendance_date) DO NOTHING;
+
+  INSERT INTO staff_attendance (staff_id, attendance_date, status, remark, academic_year_id)
+  SELECT
+    st.id,
+    CURRENT_DATE - offs.day_offset,
+    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
+    'Seeded attendance',
+    st.academic_year_id
+  FROM staff st
+  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
+  WHERE st.is_active = true
+  ON CONFLICT (staff_id, attendance_date) DO NOTHING;
 
 END $$;
 

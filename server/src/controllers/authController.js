@@ -105,64 +105,106 @@ const login = async (req, res) => {
     const enteredPassword = (password || '').toString().trim();
 
     await runWithTenant(targetDbName, async () => {
-      let userResult;
+      let userRows = [];
       try {
-        userResult = await query(
+        const userResult = await query(
           `SELECT u.id, u.username, u.first_name, u.last_name, u.role_id,
                   u.phone, u.password_hash,
                   ur.role_name,
-                  st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name
+                  st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
+                  CASE
+                    WHEN u.username = $1 THEN 1
+                    WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 2
+                    WHEN u.phone = $1 THEN 3
+                    ELSE 9
+                  END AS match_rank,
+                  CASE
+                    WHEN u.username = $1 THEN 'username'
+                    WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 'email'
+                    WHEN u.phone = $1 THEN 'phone'
+                    ELSE 'other'
+                  END AS match_kind
            FROM users u
            LEFT JOIN user_roles ur ON u.role_id = ur.id
            LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
            WHERE u.is_active = true
-             AND (u.username = $1 OR u.email = $1 OR u.phone = $1)
-           LIMIT 1`,
+             AND (u.username = $1 OR LOWER(COALESCE(u.email, '')) = LOWER($1) OR u.phone = $1)
+           ORDER BY match_rank ASC, u.id ASC`,
           [identifier]
         );
+        userRows = userResult.rows || [];
       } catch (e) {
         if (e.message && (e.message.includes('email') || e.message.includes('password_hash'))) {
-          userResult = await query(
+          const userResult = await query(
             `SELECT u.id, u.username, u.first_name, u.last_name, u.role_id,
                     u.phone, u.password_hash,
                     ur.role_name,
-                    st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name
+                    st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
+                    CASE
+                      WHEN u.username = $1 THEN 1
+                      WHEN u.phone = $1 THEN 2
+                      ELSE 9
+                    END AS match_rank,
+                    CASE
+                      WHEN u.username = $1 THEN 'username'
+                      WHEN u.phone = $1 THEN 'phone'
+                      ELSE 'other'
+                    END AS match_kind
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
              LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
              WHERE u.is_active = true AND (u.username = $1 OR u.phone = $1)
-             LIMIT 1`,
+             ORDER BY match_rank ASC, u.id ASC`,
             [identifier]
           );
+          userRows = userResult.rows || [];
         } else {
           throw e;
         }
       }
 
-      if (userResult.rows.length === 0) {
+      if (userRows.length === 0) {
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
 
-      const user = userResult.rows[0];
-      const storedPhone = (user.phone || '').toString().trim();
-      const passwordHash = user.password_hash;
-
-      if (!storedPhone && !passwordHash) {
-        return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
+      // Safety: identifier must resolve uniquely before password validation for phone/email paths.
+      const bestRank = Number(userRows[0]?.match_rank || 9);
+      const topRankUsers = userRows.filter((row) => Number(row.match_rank) === bestRank);
+      const bestKind = String(topRankUsers[0]?.match_kind || '');
+      if ((bestKind === 'phone' || bestKind === 'email') && topRankUsers.length > 1) {
+        return errorResponse(
+          res,
+          409,
+          'This phone/email is linked to multiple accounts. Please login using username.'
+        );
       }
+      const candidateUsers = topRankUsers.length > 0 ? topRankUsers : userRows;
 
-      let passwordValid = false;
-      if (passwordHash) {
+      const passwordMatchedUsers = [];
+      for (const candidate of candidateUsers) {
+        const passwordHash = candidate.password_hash;
+        if (!passwordHash) continue;
+        let ok = false;
         try {
-          passwordValid = await bcrypt.compare(enteredPassword, passwordHash);
+          ok = await bcrypt.compare(enteredPassword, passwordHash);
         } catch {
-          passwordValid = false;
+          ok = false;
         }
+        if (ok) passwordMatchedUsers.push(candidate);
       }
 
-      if (!passwordValid) {
+      if (passwordMatchedUsers.length === 0) {
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
+      if (passwordMatchedUsers.length > 1) {
+        // Prevent accidental cross-account login when identifier (mostly phone) is shared.
+        return errorResponse(
+          res,
+          409,
+          'Multiple accounts match these credentials. Please login using your unique username.'
+        );
+      }
+      const user = passwordMatchedUsers[0];
 
       const payload = {
         id: user.id,
