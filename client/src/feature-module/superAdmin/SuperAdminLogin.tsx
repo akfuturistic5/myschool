@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { superAdminApiService } from '../../core/services/superAdminApiService';
@@ -38,8 +38,8 @@ const SuperAdminLogin = () => {
       } else {
         setError(res.message || 'Super Admin login failed');
       }
-    } catch (err: any) {
-      setError(err?.message || 'Super Admin login failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Super Admin login failed');
     } finally {
       setLoading(false);
     }

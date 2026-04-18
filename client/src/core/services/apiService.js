@@ -323,8 +323,28 @@ class ApiService {
   async getClassSchedulesScoped(params = {}) {
     const search = new URLSearchParams();
     if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
     const qs = search.toString();
     return this.makeRequest(`/class-schedules${qs ? `?${qs}` : ''}`);
+  }
+
+  /** Scoped class+section timetable (includes slot metadata). */
+  async getTimetableForClass(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    if (params.classId != null) search.set('class_id', String(params.classId));
+    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
+    const qs = search.toString();
+    return this.makeRequest(`/timetable/class${qs ? `?${qs}` : ''}`);
+  }
+
+  async getTimetableForTeacher(teacherId, params = {}) {
+    const search = new URLSearchParams();
+    search.set('teacher_id', String(teacherId));
+    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
+    const qs = search.toString();
+    return this.makeRequest(`/timetable/teacher?${qs}`);
   }
 
   async getClassScheduleById(id) {

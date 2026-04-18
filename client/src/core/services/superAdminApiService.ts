@@ -39,7 +39,7 @@ async function getSuperAdminApiBaseUrl(): Promise<string> {
   }
 
   cachedSuperAdminBaseUrl = base;
-  return cachedSuperAdminBaseUrl;
+  return base;
 }
 
 class SuperAdminApiService {

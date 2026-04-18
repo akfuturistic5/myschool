@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useSubjects = (classId = null) => {
+export const useSubjects = (classId = null, options = {}) => {
+  const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,6 +11,10 @@ export const useSubjects = (classId = null) => {
     try {
       setLoading(true);
       setError(null);
+      if (!fetchAllWhenNoClass && (classId == null || classId === '')) {
+        setSubjects([]);
+        return;
+      }
       const response = classId ? await apiService.getSubjectsByClass(classId) : await apiService.getSubjects();
       
       if (response.status === 'SUCCESS') {
@@ -27,7 +32,7 @@ export const useSubjects = (classId = null) => {
 
   useEffect(() => {
     fetchSubjects();
-  }, [classId]);
+  }, [classId, fetchAllWhenNoClass]);
 
   return {
     subjects,

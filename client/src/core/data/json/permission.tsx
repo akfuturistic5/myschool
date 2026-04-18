@@ -10,15 +10,6 @@ export const permission = [
     },
     {
         
-        modules: "ClassRoutine",
-        created: "",
-        view: "",
-        edit: "",
-        delete: "",
-        allowAll: ""
-    },
-    {
-        
         modules: "Sections",
         created: "",
         view: "",

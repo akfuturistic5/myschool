@@ -19,6 +19,7 @@ export const useSchedules = () => {
           type: row.type ?? 'Class',
           startTime: row.startTime ?? 'N/A',
           endTime: row.endTime ?? 'N/A',
+          duration: row.duration != null && row.duration !== '' ? Number(row.duration) : null,
           status: row.status ?? 'Active',
           originalData: row
         }));

@@ -23,6 +23,10 @@ function allowedRoleNamesFromIds(roleIds) {
       names.add('headmaster');
       names.add('administrator');
     }
+    if (id === ROLES.PARENT) {
+      names.add('father');
+      names.add('mother');
+    }
   });
   return names;
 }
