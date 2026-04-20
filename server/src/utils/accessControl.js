@@ -15,6 +15,24 @@ function getAuthContext(req) {
   return { userId, roleId, roleName, staffId: parseId(u.staff_id) };
 }
 
+/** Parent login may use role_id=4 with role_name father/mother; ward resolution must still run. */
+function isParentPortalRole(ctx) {
+  if (!ctx) return false;
+  if (ctx.roleId === ROLES.PARENT) return true;
+  const n = String(ctx.roleName || '').toLowerCase();
+  return n === 'parent' || n === 'father' || n === 'mother';
+}
+
+function isGuardianPortalRole(ctx) {
+  if (!ctx) return false;
+  if (ctx.roleId === ROLES.GUARDIAN) return true;
+  return String(ctx.roleName || '').toLowerCase() === 'guardian';
+}
+
+function isParentOrGuardianPortalRole(ctx) {
+  return isParentPortalRole(ctx) || isGuardianPortalRole(ctx);
+}
+
 function isAdmin(ctx) {
   return (
     (ctx.roleId != null && ADMIN_ROLE_IDS.includes(ctx.roleId)) ||
@@ -118,7 +136,7 @@ async function canAccessStudent(req, studentId) {
   }
 
   // Parent: only children (resolved via parentUserMatch)
-  if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
+  if (isParentPortalRole(ctx)) {
     const { studentIds } = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
     if (Array.isArray(studentIds) && studentIds.includes(sid)) return { ok: true };
     return { ok: false, status: 403, message: 'Access denied' };
@@ -192,12 +210,12 @@ async function resolveWardStudentIdsForUser(req) {
   const ctx = getAuthContext(req);
   if (!ctx.userId) return [];
 
-  if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
+  if (isParentPortalRole(ctx)) {
     const { studentIds } = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
     return Array.isArray(studentIds) ? studentIds.map(parseId).filter(Boolean) : [];
   }
 
-  if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
+  if (isGuardianPortalRole(ctx)) {
     const g = await query(
       `SELECT g.student_id
        FROM guardians g
@@ -268,7 +286,7 @@ async function canAccessClass(req, classId) {
     return { ok: false, status: 403, message: 'Access denied' };
   }
 
-  if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
+  if (isParentPortalRole(ctx)) {
     const { studentIds } = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
     const ids = Array.isArray(studentIds) ? studentIds.map(parseId).filter(Boolean) : [];
     if (!ids.length) return { ok: false, status: 403, message: 'Access denied' };
@@ -281,7 +299,7 @@ async function canAccessClass(req, classId) {
     return r.rows.length ? { ok: true } : { ok: false, status: 403, message: 'Access denied' };
   }
 
-  if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
+  if (isGuardianPortalRole(ctx)) {
     const wardIds = await resolveWardStudentIdsForUser(req);
     if (!wardIds.length) return { ok: false, status: 403, message: 'Access denied' };
     const r = await query(
@@ -301,6 +319,9 @@ module.exports = {
   getAuthContext,
   isAdmin,
   isTeacherRole,
+  isParentPortalRole,
+  isGuardianPortalRole,
+  isParentOrGuardianPortalRole,
   canAccessStudent,
   canAccessClass,
   resolveTeacherIdForUser,

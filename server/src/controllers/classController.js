@@ -58,7 +58,8 @@ const getAllClasses = async (req, res) => {
         c.is_active,
         c.has_sections,
         c.created_at,
-        c.no_of_students,
+        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
+        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
         ay.year_name as academic_year_name,
         s.first_name as teacher_first_name,
         s.last_name as teacher_last_name
@@ -91,7 +92,8 @@ const getClassById = async (req, res) => {
         c.is_active,
         c.has_sections,
         c.created_at,
-        c.no_of_students,
+        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
+        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
         ay.year_name as academic_year_name,
         s.first_name as teacher_first_name,
         s.last_name as teacher_last_name
@@ -128,7 +130,8 @@ const getClassesByAcademicYear = async (req, res) => {
         c.is_active,
         c.has_sections,
         c.created_at,
-        c.no_of_students,
+        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
+        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
         ay.year_name as academic_year_name,
         s.first_name as teacher_first_name,
         s.last_name as teacher_last_name
@@ -157,7 +160,6 @@ const createClass = async (req, res) => {
       class_fee,
       description,
       is_active,
-      no_of_students,
       has_sections,
     } = req.body;
 
@@ -168,17 +170,13 @@ const createClass = async (req, res) => {
     if (max_students === undefined) maxNorm = 30;
     else if (max_students === null) maxNorm = null;
     else maxNorm = parseOptionalInt(max_students);
-    const noStudents =
-      no_of_students === undefined || no_of_students === null
-        ? 0
-        : parseOptionalInt(no_of_students) ?? 0;
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
     const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
 
     const result = await query(
       `INSERT INTO classes (
-        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, has_sections, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee, description, is_active, has_sections, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING *`,
       [
         String(class_name).trim(),
@@ -189,7 +187,6 @@ const createClass = async (req, res) => {
         feeNorm,
         descNorm,
         normalizeBool(is_active, true),
-        noStudents != null ? noStudents : 0,
         normalizeBool(has_sections, true),
         createdByArg,
       ]
@@ -236,14 +233,6 @@ const updateClass = async (req, res) => {
       classFee = payload.class_fee === null ? null : parseOptionalFee(payload.class_fee);
     }
 
-    let noStudents = cur.no_of_students;
-    if (Object.prototype.hasOwnProperty.call(payload, 'no_of_students')) {
-      noStudents =
-        payload.no_of_students === null || payload.no_of_students === undefined
-          ? 0
-          : parseOptionalInt(payload.no_of_students) ?? 0;
-    }
-
     const nameFinal = typeof className === 'string' ? className.trim() : className;
     if (!nameFinal) return errorResponse(res, 400, 'class_name cannot be empty');
 
@@ -261,11 +250,10 @@ const updateClass = async (req, res) => {
         max_students = $5,
         class_fee = $6,
         description = $7,
-        no_of_students = $8,
-        is_active = $9,
-        has_sections = $10,
+        is_active = $8,
+        has_sections = $9,
         modified_at = NOW()
-      WHERE id = $11
+      WHERE id = $10
       RETURNING *
     `, [
       nameFinal,
@@ -275,7 +263,6 @@ const updateClass = async (req, res) => {
       maxStudents,
       classFee,
       description,
-      noStudents,
       Object.prototype.hasOwnProperty.call(payload, 'is_active')
         ? normalizeBool(payload.is_active, cur.is_active)
         : normalizeBool(cur.is_active, true),

@@ -6,12 +6,14 @@ import { apiService } from '../services/apiService.js';
  * Returns all events for Events page, or upcoming + completed for dashboards.
  */
 export const useEvents = (options = {}) => {
-  const { limit = 50, forDashboard = false } = options;
+  const { limit = 50, forDashboard = false, params = {} } = options;
   const [events, setEvents] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [completedEvents, setCompletedEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const paramsKey = JSON.stringify(params || {});
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -26,7 +28,7 @@ export const useEvents = (options = {}) => {
         setCompletedEvents(completedRes?.data || []);
         setEvents([]);
       } else {
-        const res = await apiService.getEvents({ limit });
+        const res = await apiService.getEvents({ limit, ...(params || {}) });
         setEvents(res?.data || []);
         setUpcomingEvents([]);
         setCompletedEvents([]);
@@ -40,7 +42,7 @@ export const useEvents = (options = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [forDashboard, limit]);
+  }, [forDashboard, limit, paramsKey]);
 
   useEffect(() => {
     fetchEvents();

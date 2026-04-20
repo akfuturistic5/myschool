@@ -56,7 +56,7 @@ const AdministrativeLeave = () => {
     const monthEnd = new Date(year, month, 0);
     const today = new Date();
     const until = monthEnd < today ? monthEnd : today;
-    let cursor = new Date(startDate);
+    const cursor = new Date(startDate);
     while (cursor <= until) {
       const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
       if (cursor.getDay() === 0) {

@@ -142,7 +142,7 @@ const Staff = () => {
     const fromMs = joinFrom ? new Date(joinFrom).setHours(0, 0, 0, 0) : null;
     const toMs = joinTo ? new Date(joinTo).setHours(23, 59, 59, 999) : null;
 
-    let rows = staffList.filter((row: any) => {
+    const rows = staffList.filter((row: any) => {
       const orig = row.originalData as Record<string, unknown> | undefined;
       if (q) {
         const nm = String(row.name || "").toLowerCase();

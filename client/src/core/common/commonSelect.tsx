@@ -1,4 +1,4 @@
-import  { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Select from "react-select";
 
 export type Option = {
@@ -15,6 +15,11 @@ export interface SelectProps {
   className?: string;
   styles?: any;
   placeholder?: string;
+  /** Defaults to true — type to filter options by label. */
+  isSearchable?: boolean;
+  noOptionsMessage?: (props: { inputValue: string }) => string;
+  filterOption?: any;
+  isDisabled?: boolean;
 }
 
 const CommonSelect: React.FC<SelectProps> = ({
@@ -24,7 +29,12 @@ const CommonSelect: React.FC<SelectProps> = ({
   onChange,
   onBlur,
   className,
+  styles,
   placeholder,
+  isSearchable = true,
+  noOptionsMessage,
+  filterOption,
+  isDisabled = false,
 }) => {
   const safeOptions = Array.isArray(options)
     ? options.filter(
@@ -82,12 +92,16 @@ const CommonSelect: React.FC<SelectProps> = ({
     <Select
      classNamePrefix="react-select"
       className={className}
-      // styles={customStyles}
+      styles={styles}
       options={safeOptions}
       value={selectedOption}
       onChange={handleChange}
       onBlur={onBlur}
       placeholder={placeholder || "Select"}
+      isSearchable={isSearchable}
+      noOptionsMessage={noOptionsMessage}
+      filterOption={filterOption}
+      isDisabled={isDisabled}
     />
   );
 };

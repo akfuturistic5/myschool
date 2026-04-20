@@ -44,7 +44,6 @@ export const useClassesWithSections = (academicYearId = null) => {
       const combinedData = [];
       
       classes.forEach(classItem => {
-        const noOfSubjects = subjectCountByClass[classItem.id] || 0;
         const classSections = sections.filter(section => section.class_id === classItem.id);
         
         if (classSections.length > 0) {
@@ -59,7 +58,7 @@ export const useClassesWithSections = (academicYearId = null) => {
               sectionId: section.id,
               sectionName: section.section_name,
               noOfStudents: section.no_of_students || 0,
-              noOfSubjects,
+              noOfSubjects: classItem.no_of_subjects || 0,
               status: section.is_active ? 'Active' : 'Inactive',
               classStatus: classItem.is_active,
               teacherFirstName: section.teacher_first_name,
@@ -80,7 +79,7 @@ export const useClassesWithSections = (academicYearId = null) => {
             sectionId: null,
             sectionName: 'N/A',
             noOfStudents: classItem.no_of_students || 0,
-            noOfSubjects,
+            noOfSubjects: classItem.no_of_subjects || 0,
             status: classItem.is_active ? 'Active' : 'Inactive',
             classStatus: classItem.is_active,
             teacherFirstName: classItem.teacher_first_name,

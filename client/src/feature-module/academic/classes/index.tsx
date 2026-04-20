@@ -52,7 +52,6 @@ const Classes = () => {
     maxStudents: "",
     classFee: "",
     description: "",
-    noOfStudents: "",
     isActive: true,
     classTeacherStaffId: "Select",
   });
@@ -63,8 +62,6 @@ const Classes = () => {
   const [editForm, setEditForm] = useState({
     className: "",
     sectionName: "",
-    noOfStudents: "",
-    noOfSubjects: "",
     isActive: true,
     teacherStaffId: "Select",
     classCode: "",
@@ -89,8 +86,6 @@ const Classes = () => {
       setEditForm({
         className: editingRow.className,
         sectionName: editingRow.sectionName,
-        noOfStudents: String(editingRow.noOfStudents),
-        noOfSubjects: String(editingRow.noOfSubjects),
         isActive: editingRow.status === "Active",
         teacherStaffId:
           editingRow.sectionId != null
@@ -100,6 +95,10 @@ const Classes = () => {
             : editingRow.class_teacher_id != null
               ? String(editingRow.class_teacher_id)
               : "Select",
+        classCode: editingRow.class_code || "",
+        maxStudents: editingRow.max_students != null ? String(editingRow.max_students) : "",
+        classFee: editingRow.class_fee != null ? String(editingRow.class_fee) : "",
+        description: editingRow.class_description || "",
       });
     }
   }, [editingRow]);
@@ -144,11 +143,28 @@ const Classes = () => {
         staffId = Number.isNaN(n) ? null : n;
       }
       if (editingRow.sectionId) {
+        // Update Section
         await apiService.updateSection(editingRow.sectionId, {
           section_name: editForm.sectionName,
-          no_of_students: parseInt(editForm.noOfStudents, 10) || 0,
           is_active: editForm.isActive,
           section_teacher_id: staffId,
+        });
+        
+        // Also Update Class-level fields
+        const parseNum = (s: string) => {
+          const t = s.trim();
+          if (t === "") return null;
+          const n = Number(t);
+          return Number.isNaN(n) ? null : n;
+        };
+        await apiService.updateClass(editingRow.classId, {
+          class_name: editForm.className.trim(),
+          class_code: editForm.classCode.trim() || null,
+          max_students: parseNum(editForm.maxStudents),
+          class_fee: parseNum(editForm.classFee),
+          description: editForm.description.trim() || null,
+          is_active: editForm.isActive, // Note: this updates class status too
+          class_teacher_id: editingRow.class_teacher_id, // Keep class teacher same
         });
       } else {
         const parseNum = (s: string) => {
@@ -163,7 +179,6 @@ const Classes = () => {
           max_students: parseNum(editForm.maxStudents),
           class_fee: parseNum(editForm.classFee),
           description: editForm.description.trim() || null,
-          no_of_students: parseInt(editForm.noOfStudents, 10) || 0,
           is_active: editForm.isActive,
           class_teacher_id: staffId,
         });
@@ -209,7 +224,6 @@ const Classes = () => {
       const payload: Record<string, unknown> = {
         class_name: addForm.className.trim(),
         academic_year_id: academicYearIdNum,
-        no_of_students: addForm.noOfStudents ? parseInt(addForm.noOfStudents, 10) : 0,
         is_active: addForm.isActive,
         class_teacher_id: classTeacherStaffId,
       };
@@ -236,7 +250,6 @@ const Classes = () => {
         maxStudents: "",
         classFee: "",
         description: "",
-        noOfStudents: "",
         isActive: true,
         classTeacherStaffId: "Select",
       });
@@ -702,12 +715,6 @@ const Classes = () => {
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">No of students</label>
-                        <input type="number" className="form-control" min={0} value={addForm.noOfStudents} onChange={(e) => setAddForm((f) => ({ ...f, noOfStudents: e.target.value }))} />
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
                         <label className="form-label">Class teacher (optional)</label>
                         <CommonSelect
                           className="select"
@@ -779,7 +786,7 @@ const Classes = () => {
                           maxLength={50}
                         />
                       </div>
-                      <div className="mb-3">
+                     <div className="mb-3">
                         <label className="form-label">Section</label>
                         <input
                           type="text"
@@ -792,77 +799,56 @@ const Classes = () => {
                         />
                       </div>
                     </div>
-                    {editingRow?.sectionId == null ? (
-                      <>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Class code</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              maxLength={10}
-                              value={editForm.classCode}
-                              onChange={(e) => setEditForm((f) => ({ ...f, classCode: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Max students</label>
-                            <input
-                              type="number"
-                              className="form-control"
-                              min={1}
-                              max={10000}
-                              placeholder="Empty clears (optional)"
-                              value={editForm.maxStudents}
-                              onChange={(e) => setEditForm((f) => ({ ...f, maxStudents: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Class fee</label>
-                            <input
-                              type="number"
-                              className="form-control"
-                              min={0}
-                              step="0.01"
-                              value={editForm.classFee}
-                              onChange={(e) => setEditForm((f) => ({ ...f, classFee: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-12">
-                          <div className="mb-3">
-                            <label className="form-label">Description</label>
-                            <textarea
-                              className="form-control"
-                              rows={2}
-                              maxLength={5000}
-                              value={editForm.description}
-                              onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                      </>
-                    ) : null}
-                    <div className="col-md-12">
+                    {/* Class-level fields - Always visible */}
+                    <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">No of Students</label>
+                        <label className="form-label">Class code</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          maxLength={10}
+                          value={editForm.classCode}
+                          onChange={(e) => setEditForm((f) => ({ ...f, classCode: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Max students</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={1}
+                          max={10000}
+                          placeholder="Empty clears (optional)"
+                          value={editForm.maxStudents}
+                          onChange={(e) => setEditForm((f) => ({ ...f, maxStudents: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Class fee</label>
                         <input
                           type="number"
                           className="form-control"
                           min={0}
-                          value={editForm.noOfStudents}
-                          onChange={(e) => setEditForm((f) => ({ ...f, noOfStudents: e.target.value }))}
+                          step="0.01"
+                          value={editForm.classFee}
+                          onChange={(e) => setEditForm((f) => ({ ...f, classFee: e.target.value }))}
                         />
                       </div>
                     </div>
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">No of Subjects</label>
-                        <input type="text" className="form-control bg-light" readOnly value={editForm.noOfSubjects} />
+                        <label className="form-label">Description</label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          maxLength={5000}
+                          value={editForm.description}
+                          onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                        />
                       </div>
                     </div>
                     <div className="col-md-12">

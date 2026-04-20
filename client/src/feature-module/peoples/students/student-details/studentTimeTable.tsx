@@ -1,11 +1,13 @@
 import { Link, useLocation } from "react-router-dom";
 import { useMemo } from "react";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
 import StudentBreadcrumb from "./studentBreadcrumb";
 import { useClassSchedules } from "../../../../core/hooks/useClassSchedules";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -14,34 +16,43 @@ interface StudentDetailsLocationState {
 
 const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+function parsePositiveId(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
 const StudentTimeTable = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
-  const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules();
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { student, loading } = useLinkedStudentContext({
     locationState: state,
   });
 
-  const weeklySchedule = useMemo(() => {
-    const className = String(student?.class_name || student?.class || "").trim().toLowerCase();
-    const sectionName = String(student?.section_name || student?.section || "").trim().toLowerCase();
+  const classIdForSchedule = parsePositiveId(
+    student?.class_id ?? (student as { classId?: unknown })?.classId
+  );
+  const sectionIdForSchedule = parsePositiveId(
+    student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
+  );
 
-    if (!className || !sectionName || !Array.isArray(scheduleData)) {
+  const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
+    academicYearId: academicYearId ?? undefined,
+    classId: classIdForSchedule ?? undefined,
+    sectionId: sectionIdForSchedule ?? undefined,
+    skip: !classIdForSchedule,
+  });
+
+  const weeklySchedule = useMemo(() => {
+    if (!Array.isArray(scheduleData)) {
       return DAY_ORDER.map((day) => ({ day, classes: [] as any[] }));
     }
-
-    const filtered = scheduleData.filter((item: any) => {
-      const itemClass = String(item.class || "").trim().toLowerCase();
-      const itemSection = String(item.section || "").trim().toLowerCase();
-      return itemClass === className && itemSection === sectionName;
-    });
-
     return DAY_ORDER.map((day) => ({
       day,
-      classes: filtered.filter((item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()),
+      classes: scheduleData.filter((item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()),
     }));
-  }, [scheduleData, student]);
+  }, [scheduleData]);
 
   const totalClasses = useMemo(
     () => weeklySchedule.reduce((sum, entry) => sum + entry.classes.length, 0),

@@ -162,7 +162,7 @@ const TeacherLeave = () => {
           const he = String(h?.end_date || "").slice(0, 10);
           const title = String(h?.title || "").trim() || "Holiday";
           if (!hs || !he) return;
-          let cursor = new Date(`${hs}T00:00:00`);
+          const cursor = new Date(`${hs}T00:00:00`);
           const until = new Date(`${he}T00:00:00`);
           if (Number.isNaN(cursor.getTime()) || Number.isNaN(until.getTime()) || cursor > until) return;
           while (cursor <= until) {
@@ -176,7 +176,7 @@ const TeacherLeave = () => {
         });
 
         // Weekly holiday: every Sunday in the selected calendar month (including future dates in that month).
-        let sundayCursor = new Date(`${startDate}T00:00:00`);
+        const sundayCursor = new Date(`${startDate}T00:00:00`);
         const monthEnd = new Date(`${endDate}T00:00:00`);
         while (sundayCursor <= monthEnd) {
           if (sundayCursor.getDay() === 0) {

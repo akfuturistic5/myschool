@@ -208,6 +208,7 @@ const DailyAttendance = () => {
       "Present %": row.percentageLabel,
       "Absent %": row.absentPercentageLabel,
     }));
+    exportToExcel(rows, `DailyAttendance_${appliedDate}`);
   };
 
   const handleExportPDF = () => {

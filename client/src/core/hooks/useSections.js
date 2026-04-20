@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
-export const useSections = (classId = null) => {
+export const useSections = (classId = null, options = {}) => {
+  const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -11,6 +12,11 @@ export const useSections = (classId = null) => {
     try {
       setLoading(true);
       setError(null);
+
+      if (!fetchAllWhenNoClass && (classId == null || classId === '')) {
+        setSections([]);
+        return;
+      }
 
       let response;
       if (classId) {
@@ -33,7 +39,7 @@ export const useSections = (classId = null) => {
 
   useEffect(() => {
     fetchSections();
-  }, [classId]);
+  }, [classId, fetchAllWhenNoClass]);
 
   return {
     sections,

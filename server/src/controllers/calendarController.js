@@ -1,6 +1,20 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 
+function normalizeNullableText(value) {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function isInvalidDateOrder(startDate, endDate) {
+  if (!startDate || !endDate) return false;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+  return end.getTime() < start.getTime();
+}
+
 // Get all calendar events for current user
 const getAllEvents = async (req, res) => {
   try {
@@ -17,8 +31,9 @@ const getAllEvents = async (req, res) => {
     `;
     const params = [userId];
     
+    // Overlap with [start_date, end_date] window (inclusive bounds on event span)
     if (start_date && end_date) {
-      queryStr += ` AND start_date >= $2 AND (end_date IS NULL OR end_date <= $3)`;
+      queryStr += ` AND calendar_events.start_date <= $3 AND (calendar_events.end_date IS NULL OR calendar_events.end_date >= $2)`;
       params.push(start_date, end_date);
     }
     
@@ -65,12 +80,15 @@ const createEvent = async (req, res) => {
     if (!title || !start_date) {
       return errorResponse(res, 400, 'Title and start date are required');
     }
+    if (isInvalidDateOrder(start_date, end_date)) {
+      return errorResponse(res, 400, 'End date/time must be after start date/time');
+    }
     
     const result = await query(`
       INSERT INTO calendar_events (user_id, title, description, start_date, end_date, event_color, is_all_day, location)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
-    `, [userId, title, description || null, start_date, end_date || null, event_color, is_all_day, location || null]);
+    `, [userId, String(title).trim(), normalizeNullableText(description), start_date, end_date || null, event_color, is_all_day, normalizeNullableText(location)]);
     
     success(res, 201, 'Event created successfully', result.rows[0]);
   } catch (error) {
@@ -85,6 +103,9 @@ const updateEvent = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
     const { title, description, start_date, end_date, event_color, is_all_day, location } = req.body;
+    if (isInvalidDateOrder(start_date, end_date)) {
+      return errorResponse(res, 400, 'End date/time must be after start date/time');
+    }
     
     const updates = [];
     const values = [];
@@ -92,11 +113,11 @@ const updateEvent = async (req, res) => {
     
     if (title !== undefined) {
       updates.push(`title = $${paramCount++}`);
-      values.push(title);
+      values.push(String(title).trim());
     }
     if (description !== undefined) {
       updates.push(`description = $${paramCount++}`);
-      values.push(description);
+      values.push(normalizeNullableText(description));
     }
     if (start_date !== undefined) {
       updates.push(`start_date = $${paramCount++}`);
@@ -116,7 +137,7 @@ const updateEvent = async (req, res) => {
     }
     if (location !== undefined) {
       updates.push(`location = $${paramCount++}`);
-      values.push(location);
+      values.push(normalizeNullableText(location));
     }
     
     if (updates.length === 0) {
