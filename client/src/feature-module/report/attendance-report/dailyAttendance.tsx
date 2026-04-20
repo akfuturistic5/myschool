@@ -72,6 +72,22 @@ const DailyAttendance = () => {
       }
     };
 
+
+    //     setClassOptions([
+    //       { value: "all", label: "All Classes" },
+    //       ...classes.map((item: any) => ({
+    //         value: String(item.id),
+    //         label: item.class_name || `Class ${item.id}`,
+    //       })),
+    //     ]);
+    //   } catch (err: any) {
+    //     if (!cancelled) {
+    //       setError(err?.message || "Failed to load class options");
+    //       setClassOptions([{ value: "all", label: "All Classes" }]);
+    //     }
+    //   }
+    // };
+
     fetchFilterOptions();
     return () => {
       cancelled = true;

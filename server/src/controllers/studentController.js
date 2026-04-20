@@ -3593,7 +3593,7 @@ const getAttendanceReport = async (req, res) => {
     });
 
     const rows = rosterRes.rows.map((student) => {
-      const daily = attendanceByStudent.get(String(student.id)) || {};
+      const daily = { ...(attendanceByStudent.get(String(student.id)) || {}) };
       days.forEach((day) => {
         const existing = daily[day.date];
         const isHoliday = holidayDates.has(day.date);
