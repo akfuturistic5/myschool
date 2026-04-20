@@ -1,23 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import Table from "../../../core/common/dataTable/index";
 import { useSelector } from "react-redux";
 import type { TableData } from "../../../core/data/interface";
-import {
-  classes,
-  sections,
-} from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 import { useStudents } from "../../../core/hooks/useStudents";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
-import { apiService } from "../../../core/services/apiService";
+import { useLeaveTypes } from "../../../core/hooks/useLeaveTypes";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
+import type { Dayjs } from "dayjs";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -25,201 +23,323 @@ const compareText = (left: unknown, right: unknown) =>
 const compareNumber = (left: unknown, right: unknown) =>
   Number(left ?? 0) - Number(right ?? 0);
 
+const leaveBucketFromName = (name: unknown) => {
+  const value = String(name || "").trim().toLowerCase();
+  if (value.includes("medical")) return "medical";
+  if (value.includes("casual")) return "casual";
+  if (value.includes("maternity")) return "maternity";
+  if (value.includes("paternity")) return "paternity";
+  if (value.includes("special")) return "special";
+  return null;
+};
+
 const LeaveReport = () => {
   const routes = all_routes;
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
   const user = useSelector(selectUser);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const canUseAdminList = isHeadmasterRole(user);
   const isOwnLeavesOnly = isAdministrativeRole(user);
+  const [activeTab, setActiveTab] = useState<"teacher" | "student">("teacher");
   const { students, loading: studentsLoading, error: studentsError } = useStudents();
   const {
     leaveApplications,
     loading: applicationsLoading,
     error: applicationsError,
+    refetch: refetchApplications,
   } = useLeaveApplications({
-    limit: 500,
+    limit: 1000,
     canUseAdminList,
     studentOnly: isOwnLeavesOnly,
     academicYearId,
   });
-  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
-  const [leaveTypesLoading, setLeaveTypesLoading] = useState(true);
-  const [leaveTypesError, setLeaveTypesError] = useState<string | null>(null);
-  const [selectedClass, setSelectedClass] = useState<any>(classes[0]);
-  const [selectedSection, setSelectedSection] = useState<any>(sections[0]);
+  const {
+    leaveTypes,
+    loading: leaveTypesLoading,
+    error: leaveTypesError,
+  } = useLeaveTypes();
+  const [selectedDateRange, setSelectedDateRange] = useState<[Dayjs, Dayjs] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const [selectedTeacherRole, setSelectedTeacherRole] = useState<string>("All");
+  const [selectedTeacherStatus, setSelectedTeacherStatus] = useState<string>("All");
+  const [selectedTeacherLeaveType, setSelectedTeacherLeaveType] = useState<string>("All");
+  const [appliedTeacherRole, setAppliedTeacherRole] = useState<string>("All");
+  const [appliedTeacherStatus, setAppliedTeacherStatus] = useState<string>("All");
+  const [appliedTeacherLeaveType, setAppliedTeacherLeaveType] = useState<string>("All");
 
-    const fetchLeaveTypes = async () => {
-      try {
-        setLeaveTypesLoading(true);
-        setLeaveTypesError(null);
-        const res = await apiService.getLeaveTypes();
-        const rows = Array.isArray(res?.data) ? res.data : [];
-        if (!cancelled) {
-          setLeaveTypes(rows);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setLeaveTypes([]);
-          setLeaveTypesError(err?.message || "Failed to fetch leave types");
-        }
-      } finally {
-        if (!cancelled) {
-          setLeaveTypesLoading(false);
-        }
+  const [selectedStudentClass, setSelectedStudentClass] = useState<string>("All");
+  const [selectedStudentSection, setSelectedStudentSection] = useState<string>("All");
+  const [selectedStudentStatus, setSelectedStudentStatus] = useState<string>("All");
+  const [selectedStudentLeaveType, setSelectedStudentLeaveType] = useState<string>("All");
+  const [appliedStudentClass, setAppliedStudentClass] = useState<string>("All");
+  const [appliedStudentSection, setAppliedStudentSection] = useState<string>("All");
+  const [appliedStudentStatus, setAppliedStudentStatus] = useState<string>("All");
+  const [appliedStudentLeaveType, setAppliedStudentLeaveType] = useState<string>("All");
+
+  const teacherLeaveTypeMax = useMemo(() => {
+    const fallback = {
+      medical: 10,
+      casual: 12,
+      maternity: 90,
+      paternity: 15,
+      special: 5,
+    };
+    const next = { ...fallback };
+    (Array.isArray(leaveTypes) ? leaveTypes : []).forEach((lt: any) => {
+      const bucket = leaveBucketFromName(lt?.label || lt?.leave_type || lt?.leave_type_name);
+      if (!bucket) return;
+      const max = Number(lt?.max_days_per_year ?? lt?.max_days ?? 0);
+      if (Number.isFinite(max) && max > 0) {
+        (next as any)[bucket] = max;
       }
-    };
-
-    fetchLeaveTypes();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const leaveTypeConfig = useMemo(() => {
-    const defaults = {
-      medical: { title: "Medical Leave", max: 10 },
-      casual: { title: "Casual Leave", max: 12 },
-      maternity: { title: "Maternity Leave", max: 90 },
-      paternity: { title: "Paternity Leave", max: 15 },
-      special: { title: "Special Leave", max: 5 },
-    };
-
-    const byName = new Map<string, number>();
-    (Array.isArray(leaveTypes) ? leaveTypes : []).forEach((type: any) => {
-      const key = String(type.leave_type || "").trim().toLowerCase();
-      if (!key) return;
-      const max = Number(type.max_days_per_year ?? 0);
-      byName.set(key, Number.isFinite(max) && max > 0 ? max : 0);
     });
-
-    return {
-      medical: { ...defaults.medical, max: byName.get("medical leave") || defaults.medical.max },
-      casual: { ...defaults.casual, max: byName.get("casual leave") || defaults.casual.max },
-      maternity: { ...defaults.maternity, max: byName.get("maternity leave") || defaults.maternity.max },
-      paternity: { ...defaults.paternity, max: byName.get("paternity leave") || defaults.paternity.max },
-      special: { ...defaults.special, max: byName.get("special leave") || defaults.special.max },
-    };
+    return next;
   }, [leaveTypes]);
 
-  const data = useMemo(() => {
-    const applicationRows = Array.isArray(leaveApplications) ? leaveApplications : [];
-
-    const usageByStudent = new Map<
-      number,
+  const teacherLeaveRows = useMemo(() => {
+    const rows = Array.isArray(leaveApplications) ? leaveApplications : [];
+    const teacherRows = rows.filter(
+      (row: any) => row.staffId != null || String(row.applicantType || "").toLowerCase() === "staff"
+    );
+    const usageByStaff = new Map<
+      string,
       { medical: number; casual: number; maternity: number; paternity: number; special: number }
     >();
-
-    applicationRows.forEach((application: any) => {
-      const studentId = Number(application.studentId);
-      if (!Number.isFinite(studentId)) return;
-      const leaveType = String(application.leaveType || application.leave_type_name || "").toLowerCase();
-      const noOfDays = Number(application.noOfDays ?? application.no_of_days ?? 0);
-      const days = Number.isFinite(noOfDays) && noOfDays > 0 ? noOfDays : 0;
-      const usage = usageByStudent.get(studentId) || {
+    teacherRows.forEach((row: any) => {
+      const staffKey = String(row.staffId ?? row.name ?? "");
+      if (!staffKey) return;
+      const bucket = leaveBucketFromName(row.leaveType);
+      if (!bucket) return;
+      const days = Number(row.noOfDays || 0);
+      const usage = usageByStaff.get(staffKey) || {
         medical: 0,
         casual: 0,
         maternity: 0,
         paternity: 0,
         special: 0,
       };
+      usage[bucket] += Number.isFinite(days) && days > 0 ? days : 0;
+      usageByStaff.set(staffKey, usage);
+    });
+    return teacherRows
+      .map((row: any, index: number) => {
+        const dateRaw = row.startDate || "";
+        const staffKey = String(row.staffId ?? row.name ?? "");
+        const usage = usageByStaff.get(staffKey) || {
+          medical: 0,
+          casual: 0,
+          maternity: 0,
+          paternity: 0,
+          special: 0,
+        };
+        return {
+          key: row.key || `teacher-leave-report-${index}`,
+          staffId: row.staffId,
+          name: row.name || "—",
+          role: row.role || "Teacher",
+          leaveType: row.leaveType || "—",
+          leaveDate: row.leaveDate || "—",
+          noOfDays: Number(row.noOfDays || 0),
+          applyOn: row.applyOn || "—",
+          status: row.status || "pending",
+          description: row.description || "—",
+          avatar: row.photoUrl || "",
+          leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
+          medicalUsed: usage.medical,
+          medicalAvailable: Math.max(teacherLeaveTypeMax.medical - usage.medical, 0),
+          casualUsed: usage.casual,
+          casualAvailable: Math.max(teacherLeaveTypeMax.casual - usage.casual, 0),
+          maternityUsed: usage.maternity,
+          maternityAvailable: Math.max(teacherLeaveTypeMax.maternity - usage.maternity, 0),
+          paternityUsed: usage.paternity,
+          paternityAvailable: Math.max(teacherLeaveTypeMax.paternity - usage.paternity, 0),
+          specialUsed: usage.special,
+          specialAvailable: Math.max(teacherLeaveTypeMax.special - usage.special, 0),
+        };
+      });
+  }, [leaveApplications, teacherLeaveTypeMax]);
 
-      if (leaveType.includes("medical")) usage.medical += days;
-      if (leaveType.includes("casual")) usage.casual += days;
-      if (leaveType.includes("maternity")) usage.maternity += days;
-      if (leaveType.includes("paternity")) usage.paternity += days;
-      if (leaveType.includes("special")) usage.special += days;
+  const teacherRoleOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        teacherLeaveRows
+          .map((row: any) => String(row.role || "").trim())
+          .filter((value: string) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Roles" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [teacherLeaveRows]);
 
-      usageByStudent.set(studentId, usage);
+  const teacherStatusOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        teacherLeaveRows
+          .map((row: any) => String(row.status || "").trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Status" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [teacherLeaveRows]);
+
+  const teacherLeaveTypeOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        teacherLeaveRows
+          .map((row: any) => String(row.leaveType || "").trim())
+          .filter((value: string) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Leave Types" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [teacherLeaveRows]);
+
+  const filteredTeacherRows = useMemo(() => {
+    return teacherLeaveRows.filter((row: any) => {
+      const roleOk = appliedTeacherRole === "All" || row.role === appliedTeacherRole;
+      const statusOk = appliedTeacherStatus === "All" || String(row.status).toLowerCase() === appliedTeacherStatus;
+      const leaveTypeOk = appliedTeacherLeaveType === "All" || row.leaveType === appliedTeacherLeaveType;
+      const dateOk =
+        !selectedDateRange ||
+        (row.leaveStartRaw &&
+          row.leaveStartRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
+          row.leaveStartRaw <= selectedDateRange[1].format("YYYY-MM-DD"));
+      return roleOk && statusOk && leaveTypeOk && dateOk;
+    });
+  }, [appliedTeacherRole, appliedTeacherStatus, appliedTeacherLeaveType, selectedDateRange, teacherLeaveRows]);
+
+  const studentLeaveRows = useMemo(() => {
+    const rows = Array.isArray(leaveApplications) ? leaveApplications : [];
+    const studentMap = new Map<number, any>();
+    (Array.isArray(students) ? students : []).forEach((student: any) => {
+      const id = Number(student.id);
+      if (Number.isFinite(id)) studentMap.set(id, student);
     });
 
-    return (Array.isArray(students) ? students : []).map((student: any, index: number) => {
-      const usage = usageByStudent.get(Number(student.id)) || {
-        medical: 0,
-        casual: 0,
-        maternity: 0,
-        paternity: 0,
-        special: 0,
-      };
+    return rows
+      .filter((row: any) => row.studentId != null || String(row.applicantType || "").toLowerCase() === "student")
+      .map((row: any, index: number) => {
+        const student = studentMap.get(Number(row.studentId));
+        const className = student?.class_name || student?.class || "—";
+        const sectionName = student?.section_name || student?.section || "—";
+        const dateRaw = row.startDate || "";
+        return {
+          key: row.key || `student-leave-report-${index}`,
+          studentId: row.studentId,
+          admissionNo: student?.admission_number || "—",
+          rollNo: student?.roll_number || "—",
+          studentName: row.name || "—",
+          className,
+          sectionName,
+          leaveType: row.leaveType || "—",
+          noOfDays: Number(row.noOfDays || 0),
+          leaveDate: row.leaveDate || "—",
+          applyOn: row.applyOn || "—",
+          status: row.status || "pending",
+          description: row.description || "—",
+          avatar: row.photoUrl || student?.photo_url || "",
+          gender: student?.gender || "",
+          leaveStartRaw: dateRaw ? new Date(dateRaw).toISOString().slice(0, 10) : "",
+        };
+      });
+  }, [leaveApplications, students]);
 
-      return {
-        key: student.admission_number || student.id || `leave-report-${index}`,
-        studentId: student.id,
-        admissionNo: student.admission_number || "—",
-        studentName: `${student.first_name || ""} ${student.last_name || ""}`.trim() || "—",
-        rollNo: student.roll_number || "—",
-        avatar: student.photo_url || "",
-        gender: student.gender || "",
-        className: student.class_name || student.class || "",
-        sectionName: student.section_name || student.section || "",
-        medicalUsed: usage.medical,
-        medicalAvailable: Math.max(leaveTypeConfig.medical.max - usage.medical, 0),
-        casualUsed: usage.casual,
-        casualAvailable: Math.max(leaveTypeConfig.casual.max - usage.casual, 0),
-        maternityUsed: usage.maternity,
-        maternityAvailable: Math.max(leaveTypeConfig.maternity.max - usage.maternity, 0),
-        paternityUsed: usage.paternity,
-        paternityAvailable: Math.max(leaveTypeConfig.paternity.max - usage.paternity, 0),
-        specialUsed: usage.special,
-        specialAvailable: Math.max(leaveTypeConfig.special.max - usage.special, 0),
-      };
+  const studentClassOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        studentLeaveRows
+          .map((row: any) => String(row.className || "").trim())
+          .filter((value: string) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Classes" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [studentLeaveRows]);
+
+  const studentSectionOptions = useMemo(() => {
+    const pool =
+      appliedStudentClass === "All"
+        ? studentLeaveRows
+        : studentLeaveRows.filter((row: any) => row.className === appliedStudentClass);
+    const unique = Array.from(
+      new Set(
+        pool
+          .map((row: any) => String(row.sectionName || "").trim())
+          .filter((value: string) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Sections" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [appliedStudentClass, studentLeaveRows]);
+
+  const studentStatusOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        studentLeaveRows
+          .map((row: any) => String(row.status || "").trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Status" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [studentLeaveRows]);
+
+  const studentLeaveTypeOptions = useMemo(() => {
+    const unique = Array.from(
+      new Set(
+        studentLeaveRows
+          .map((row: any) => String(row.leaveType || "").trim())
+          .filter((value: string) => value && value !== "—")
+      )
+    ).sort((a, b) => a.localeCompare(b));
+    return [{ value: "All", label: "All Leave Types" }, ...unique.map((value) => ({ value, label: value }))];
+  }, [studentLeaveRows]);
+
+  const filteredStudentRows = useMemo(() => {
+    return studentLeaveRows.filter((row: any) => {
+      const classOk = appliedStudentClass === "All" || row.className === appliedStudentClass;
+      const sectionOk = appliedStudentSection === "All" || row.sectionName === appliedStudentSection;
+      const statusOk = appliedStudentStatus === "All" || String(row.status).toLowerCase() === appliedStudentStatus;
+      const leaveTypeOk = appliedStudentLeaveType === "All" || row.leaveType === appliedStudentLeaveType;
+      const dateOk =
+        !selectedDateRange ||
+        (row.leaveStartRaw &&
+          row.leaveStartRaw >= selectedDateRange[0].format("YYYY-MM-DD") &&
+          row.leaveStartRaw <= selectedDateRange[1].format("YYYY-MM-DD"));
+      return classOk && sectionOk && statusOk && leaveTypeOk && dateOk;
     });
-  }, [leaveApplications, leaveTypeConfig, students]);
-  const filteredData = useMemo(() => {
-    return data.filter((row: any) => {
-      const classVal = String(selectedClass?.value || "").toLowerCase();
-      const sectionVal = String(selectedSection?.value || "").toLowerCase();
-      const classOk = !classVal || classVal === "all" || String(row.className || "").toLowerCase().includes(classVal);
-      const sectionOk = !sectionVal || sectionVal === "all" || String(row.sectionName || "").toLowerCase().includes(sectionVal);
-      return classOk && sectionOk;
-    });
-  }, [data, selectedClass, selectedSection]);
-  const columns = [
+  }, [
+    appliedStudentClass,
+    appliedStudentSection,
+    appliedStudentStatus,
+    appliedStudentLeaveType,
+    selectedDateRange,
+    studentLeaveRows,
+  ]);
+
+  const teacherColumns = [
     {
-      title: "",
-      children: [
-        {
-          title: "Admission No",
-          dataIndex: "admissionNo",
-          key: "admissionNo",
-          sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
-          render: (text: any) => (
-            <Link to="#" className="link-primary">
-              {text}
-            </Link>
-          ),
-        },
-      ],
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      sorter: (a: TableData, b: TableData) => compareText(a?.name, b?.name),
+      render: (text: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <Link to={routes.teacherList} className="avatar avatar-md">
+            <ImageWithBasePath src={record.avatar} alt="avatar" className="img-fluid rounded-circle" />
+          </Link>
+          <div className="ms-2">
+            <p className="text-dark mb-0">
+              <Link to={routes.teacherList}>{text}</Link>
+            </p>
+            <span className="fs-12">{record.role}</span>
+          </div>
+        </div>
+      ),
     },
     {
-      title: "",
-      children: [
-        {
-          title: "Student Name",
-          dataIndex: "studentName",
-          key: "studentName",
-          render: (text: any, record: any) => (
-            <div className="d-flex align-items-center">
-              <Link to={routes.studentDetail} className="avatar avatar-md">
-                <ImageWithBasePath src={record.avatar} alt="avatar" className="img-fluid rounded-circle" gender={record.gender} />
-              </Link>
-              <div className="ms-2">
-                <p className="text-dark mb-0">
-                  <Link to={routes.studentDetail}>{text}</Link>
-                </p>
-                <span className="fs-12">Roll No : {record.rollNo}</span>
-              </div>
-            </div>
-          ),
-          sorter: (a: TableData, b: TableData) => compareText(a?.studentName, b?.studentName),
-        },
-      ],
+      title: "Role",
+      dataIndex: "role",
+      key: "role",
+      sorter: (a: TableData, b: TableData) => compareText(a?.role, b?.role),
     },
     {
-      title: `Medical Leave(${leaveTypeConfig.medical.max})`,
+      title: `Medical Leave (${teacherLeaveTypeMax.medical})`,
       children: [
         {
           title: "Used",
@@ -236,7 +356,7 @@ const LeaveReport = () => {
       ],
     },
     {
-      title: `Casual Leave(${leaveTypeConfig.casual.max})`,
+      title: `Casual Leave (${teacherLeaveTypeMax.casual})`,
       children: [
         {
           title: "Used",
@@ -253,7 +373,7 @@ const LeaveReport = () => {
       ],
     },
     {
-      title: `Maternity Leave(${leaveTypeConfig.maternity.max})`,
+      title: `Maternity Leave (${teacherLeaveTypeMax.maternity})`,
       children: [
         {
           title: "Used",
@@ -270,7 +390,7 @@ const LeaveReport = () => {
       ],
     },
     {
-      title: `Paternity Leave(${leaveTypeConfig.paternity.max})`,
+      title: `Paternity Leave (${teacherLeaveTypeMax.paternity})`,
       children: [
         {
           title: "Used",
@@ -287,7 +407,7 @@ const LeaveReport = () => {
       ],
     },
     {
-      title: `Special Leave(${leaveTypeConfig.special.max})`,
+      title: `Special Leave (${teacherLeaveTypeMax.special})`,
       children: [
         {
           title: "Used",
@@ -303,7 +423,294 @@ const LeaveReport = () => {
         },
       ],
     },
+    {
+      title: "Leave Type",
+      dataIndex: "leaveType",
+      key: "leaveType",
+      sorter: (a: TableData, b: TableData) => compareText(a?.leaveType, b?.leaveType),
+    },
+    {
+      title: "Leave Date",
+      dataIndex: "leaveDate",
+      key: "leaveDate",
+      sorter: (a: TableData, b: TableData) => compareText(a?.leaveDate, b?.leaveDate),
+    },
+    {
+      title: "Days",
+      dataIndex: "noOfDays",
+      key: "noOfDays",
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.noOfDays, b?.noOfDays),
+    },
+    {
+      title: "Applied On",
+      dataIndex: "applyOn",
+      key: "applyOn",
+      sorter: (a: TableData, b: TableData) => compareText((a as any)?.applyOn, (b as any)?.applyOn),
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
+      render: (status: string) => {
+        const value = String(status || "").toLowerCase();
+        const className =
+          value.includes("approv") ? "badge-soft-success" : value.includes("reject") ? "badge-soft-danger" : "badge-soft-warning";
+        return (
+          <span className={`badge d-inline-flex align-items-center ${className}`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {status}
+          </span>
+        );
+      },
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      sorter: (a: TableData, b: TableData) => compareText(a?.description, b?.description),
+      render: (text: string) => <span title={text || "—"}>{text || "—"}</span>,
+    },
   ];
+
+  const studentColumns = [
+    {
+      title: "Admission No",
+      dataIndex: "admissionNo",
+      key: "admissionNo",
+      sorter: (a: TableData, b: TableData) => compareText(a?.admissionNo, b?.admissionNo),
+      render: (text: any, record: any) => (
+        <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="link-primary">
+          {text}
+        </Link>
+      ),
+    },
+    {
+      title: "Student",
+      dataIndex: "studentName",
+      key: "studentName",
+      sorter: (a: TableData, b: TableData) => compareText(a?.studentName, b?.studentName),
+      render: (text: any, record: any) => (
+        <div className="d-flex align-items-center">
+          <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList} className="avatar avatar-md">
+            <ImageWithBasePath src={record.avatar} alt="avatar" className="img-fluid rounded-circle" gender={record.gender} />
+          </Link>
+          <div className="ms-2">
+            <p className="text-dark mb-0">
+              <Link to={record.studentId ? `${routes.studentDetail}/${record.studentId}` : routes.studentList}>{text}</Link>
+            </p>
+            <span className="fs-12">Roll No : {record.rollNo}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: "Class",
+      dataIndex: "className",
+      key: "className",
+      sorter: (a: TableData, b: TableData) => compareText((a as any)?.className, (b as any)?.className),
+    },
+    {
+      title: "Section",
+      dataIndex: "sectionName",
+      key: "sectionName",
+      sorter: (a: TableData, b: TableData) => compareText(a?.sectionName, b?.sectionName),
+    },
+    {
+      title: "Leave Type",
+      dataIndex: "leaveType",
+      key: "leaveType",
+      sorter: (a: TableData, b: TableData) => compareText(a?.leaveType, b?.leaveType),
+    },
+    {
+      title: "Leave Date",
+      dataIndex: "leaveDate",
+      key: "leaveDate",
+      sorter: (a: TableData, b: TableData) => compareText(a?.leaveDate, b?.leaveDate),
+    },
+    {
+      title: "Days",
+      dataIndex: "noOfDays",
+      key: "noOfDays",
+      sorter: (a: TableData, b: TableData) => compareNumber(a?.noOfDays, b?.noOfDays),
+    },
+    {
+      title: "Applied On",
+      dataIndex: "applyOn",
+      key: "applyOn",
+      sorter: (a: TableData, b: TableData) => compareText((a as any)?.applyOn, (b as any)?.applyOn),
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      key: "status",
+      sorter: (a: TableData, b: TableData) => compareText(a?.status, b?.status),
+      render: (status: string) => {
+        const value = String(status || "").toLowerCase();
+        const className =
+          value.includes("approv") ? "badge-soft-success" : value.includes("reject") ? "badge-soft-danger" : "badge-soft-warning";
+        return (
+          <span className={`badge d-inline-flex align-items-center ${className}`}>
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            {status}
+          </span>
+        );
+      },
+    },
+    {
+      title: "Description",
+      dataIndex: "description",
+      key: "description",
+      sorter: (a: TableData, b: TableData) => compareText(a?.description, b?.description),
+      render: (text: string) => (
+        <span title={text || "—"}>{text || "—"}</span>
+      ),
+    },
+  ];
+
+  const handleApplyFilters = (e: React.MouseEvent | React.FormEvent) => {
+    e.preventDefault();
+    if (activeTab === "teacher") {
+      setAppliedTeacherRole(selectedTeacherRole);
+      setAppliedTeacherStatus(selectedTeacherStatus);
+      setAppliedTeacherLeaveType(selectedTeacherLeaveType);
+    } else {
+      setAppliedStudentClass(selectedStudentClass);
+      setAppliedStudentSection(selectedStudentSection);
+      setAppliedStudentStatus(selectedStudentStatus);
+      setAppliedStudentLeaveType(selectedStudentLeaveType);
+    }
+    if (filterMenuRef.current) {
+      filterMenuRef.current.classList.remove("show");
+    }
+  };
+
+  const handleResetFilters = () => {
+    if (activeTab === "teacher") {
+      setSelectedTeacherRole("All");
+      setSelectedTeacherStatus("All");
+      setSelectedTeacherLeaveType("All");
+      setAppliedTeacherRole("All");
+      setAppliedTeacherStatus("All");
+      setAppliedTeacherLeaveType("All");
+      setSelectedDateRange(null);
+    } else {
+      setSelectedStudentClass("All");
+      setSelectedStudentSection("All");
+      setSelectedStudentStatus("All");
+      setSelectedStudentLeaveType("All");
+      setAppliedStudentClass("All");
+      setAppliedStudentSection("All");
+      setAppliedStudentStatus("All");
+      setAppliedStudentLeaveType("All");
+      setSelectedDateRange(null);
+    }
+  };
+
+  const teacherExportColumns = useMemo(
+    () => [
+      { title: "Name", dataKey: "name" },
+      { title: "Role", dataKey: "role" },
+      { title: "Medical Used", dataKey: "medicalUsed" },
+      { title: "Medical Available", dataKey: "medicalAvailable" },
+      { title: "Casual Used", dataKey: "casualUsed" },
+      { title: "Casual Available", dataKey: "casualAvailable" },
+      { title: "Maternity Used", dataKey: "maternityUsed" },
+      { title: "Maternity Available", dataKey: "maternityAvailable" },
+      { title: "Paternity Used", dataKey: "paternityUsed" },
+      { title: "Paternity Available", dataKey: "paternityAvailable" },
+      { title: "Special Used", dataKey: "specialUsed" },
+      { title: "Special Available", dataKey: "specialAvailable" },
+      { title: "Leave Type", dataKey: "leaveType" },
+      { title: "Leave Date", dataKey: "leaveDate" },
+      { title: "Days", dataKey: "noOfDays" },
+      { title: "Applied On", dataKey: "applyOn" },
+      { title: "Status", dataKey: "status" },
+      { title: "Description", dataKey: "description" },
+    ],
+    []
+  );
+
+  const studentExportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Student Name", dataKey: "studentName" },
+      { title: "Roll No", dataKey: "rollNo" },
+      { title: "Class", dataKey: "className" },
+      { title: "Section", dataKey: "sectionName" },
+      { title: "Leave Type", dataKey: "leaveType" },
+      { title: "Leave Date", dataKey: "leaveDate" },
+      { title: "Days", dataKey: "noOfDays" },
+      { title: "Applied On", dataKey: "applyOn" },
+      { title: "Status", dataKey: "status" },
+      { title: "Description", dataKey: "description" },
+    ],
+    []
+  );
+
+  const handleExportExcel = () => {
+    const dateStamp = new Date().toISOString().split("T")[0];
+    if (activeTab === "teacher") {
+      const rows = filteredTeacherRows.map((row: any) => ({
+        Name: row.name,
+        Role: row.role,
+        "Medical Used": row.medicalUsed,
+        "Medical Available": row.medicalAvailable,
+        "Casual Used": row.casualUsed,
+        "Casual Available": row.casualAvailable,
+        "Maternity Used": row.maternityUsed,
+        "Maternity Available": row.maternityAvailable,
+        "Paternity Used": row.paternityUsed,
+        "Paternity Available": row.paternityAvailable,
+        "Special Used": row.specialUsed,
+        "Special Available": row.specialAvailable,
+        "Leave Type": row.leaveType,
+        "Leave Date": row.leaveDate,
+        Days: row.noOfDays,
+        "Applied On": row.applyOn,
+        Status: row.status,
+        Description: row.description,
+      }));
+      exportToExcel(rows, `TeacherLeaveReport_${dateStamp}`);
+      return;
+    }
+
+    const rows = filteredStudentRows.map((row: any) => ({
+      "Admission No": row.admissionNo,
+      "Student Name": row.studentName,
+      "Roll No": row.rollNo,
+      Class: row.className,
+      Section: row.sectionName,
+      "Leave Type": row.leaveType,
+      "Leave Date": row.leaveDate,
+      Days: row.noOfDays,
+      "Applied On": row.applyOn,
+      Status: row.status,
+      Description: row.description,
+    }));
+    exportToExcel(rows, `StudentLeaveReport_${dateStamp}`);
+  };
+
+  const handleExportPDF = () => {
+    const dateStamp = new Date().toISOString().split("T")[0];
+    if (activeTab === "teacher") {
+      exportToPDF(filteredTeacherRows, "Teacher Leave Report", `TeacherLeaveReport_${dateStamp}`, teacherExportColumns);
+      return;
+    }
+    exportToPDF(filteredStudentRows, "Student Leave Report", `StudentLeaveReport_${dateStamp}`, studentExportColumns);
+  };
+
+  const handlePrint = () => {
+    if (activeTab === "teacher") {
+      printData("Teacher Leave Report", teacherExportColumns, filteredTeacherRows);
+      return;
+    }
+    printData("Student Leave Report", studentExportColumns, filteredStudentRows);
+  };
+
+  const handleRefresh = () => {
+    refetchApplications();
+  };
 
   return (
     <div>
@@ -330,17 +737,45 @@ const LeaveReport = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
+              />
             </div>
           </div>
           {/* /Page Header */}
           {/* Student List */}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Leave Report List</h4>
+              <div className="mb-3">
+                <ul className="nav nav-pills">
+                  <li className="nav-item me-2">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${activeTab === "student" ? "btn-primary" : "btn-outline-primary"}`}
+                      onClick={() => setActiveTab("student")}
+                    >
+                      Student Leave
+                    </button>
+                  </li>
+                  <li className="nav-item">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${activeTab === "teacher" ? "btn-primary" : "btn-outline-primary"}`}
+                      onClick={() => setActiveTab("teacher")}
+                    >
+                      Teacher Leave
+                    </button>
+                  </li>
+                </ul>
+              </div>
               <div className="d-flex align-items-center flex-wrap">
                 <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
+                  <PredefinedDateRanges
+                    onChange={(range: [Dayjs, Dayjs]) => setSelectedDateRange(range)}
+                  />
                 </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
@@ -352,86 +787,116 @@ const LeaveReport = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width">
+                  <div className="dropdown-menu drop-width" ref={filterMenuRef}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Class</label>
-                              <CommonSelect
-                                className="select"
-                                options={classes}
-                                value={selectedClass}
-                                onChange={(opt: any) => setSelectedClass(opt)}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-0">
-                              <label className="form-label">Section</label>
-                              <CommonSelect
-                                className="select"
-                                options={sections}
-                                value={selectedSection}
-                                onChange={(opt: any) => setSelectedSection(opt)}
-                              />
-                            </div>
-                          </div>
+                          {activeTab === "teacher" ? (
+                            <>
+                              <div className="col-md-12">
+                                <div className="mb-3">
+                                  <label className="form-label">Role</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={teacherRoleOptions}
+                                    value={selectedTeacherRole}
+                                    onChange={(value) => setSelectedTeacherRole(String(value))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-md-12">
+                                <div className="mb-3">
+                                  <label className="form-label">Status</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={teacherStatusOptions}
+                                    value={selectedTeacherStatus}
+                                    onChange={(value) => setSelectedTeacherStatus(String(value))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-md-12">
+                                <div className="mb-0">
+                                  <label className="form-label">Leave Type</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={teacherLeaveTypeOptions}
+                                    value={selectedTeacherLeaveType}
+                                    onChange={(value) => setSelectedTeacherLeaveType(String(value))}
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="col-md-12">
+                                <div className="mb-3">
+                                  <label className="form-label">Class</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={studentClassOptions}
+                                    value={selectedStudentClass}
+                                    onChange={(value) => setSelectedStudentClass(String(value))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-md-12">
+                                <div className="mb-3">
+                                  <label className="form-label">Section</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={studentSectionOptions}
+                                    value={selectedStudentSection}
+                                    onChange={(value) => setSelectedStudentSection(String(value))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-md-12">
+                                <div className="mb-3">
+                                  <label className="form-label">Status</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={studentStatusOptions}
+                                    value={selectedStudentStatus}
+                                    onChange={(value) => setSelectedStudentStatus(String(value))}
+                                  />
+                                </div>
+                              </div>
+                              <div className="col-md-12">
+                                <div className="mb-0">
+                                  <label className="form-label">Leave Type</label>
+                                  <CommonSelect
+                                    className="select"
+                                    options={studentLeaveTypeOptions}
+                                    value={selectedStudentLeaveType}
+                                    onChange={(value) => setSelectedStudentLeaveType(String(value))}
+                                  />
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
                         <Link
                           to="#"
                           className="btn btn-light me-3"
-                          onClick={() => {
-                            setSelectedClass(classes[0]);
-                            setSelectedSection(sections[0]);
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleResetFilters();
                           }}
                         >
                           Reset
                         </Link>
-                        <button type="submit" className="btn btn-primary">
+                        <button type="submit" className="btn btn-primary" onClick={handleApplyFilters}>
                           Apply
                         </button>
                       </div>
                     </form>
                   </div>
-                </div>
-                <div className="dropdown mb-3">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i className="ti ti-sort-ascending-2 me-2" />
-                    Sort by A-Z
-                  </Link>
-                  <ul className="dropdown-menu p-3">
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1 active">
-                        Ascending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Descending
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Viewed
-                      </Link>
-                    </li>
-                    <li>
-                      <Link to="#" className="dropdown-item rounded-1">
-                        Recently Added
-                      </Link>
-                    </li>
-                  </ul>
                 </div>
               </div>
             </div>
@@ -448,12 +913,10 @@ const LeaveReport = () => {
                   </div>
                   <p className="mt-2 mb-0">Loading leave report...</p>
                 </div>
+              ) : activeTab === "teacher" ? (
+                <Table dataSource={filteredTeacherRows} columns={teacherColumns} Selection={true} />
               ) : (
-                <>
-                  {/* Student List */}
-                  <Table dataSource={filteredData} columns={columns} />
-                  {/* /Student List */}
-                </>
+                <Table dataSource={filteredStudentRows} columns={studentColumns} Selection={true} />
               )}
             </div>
           </div>
