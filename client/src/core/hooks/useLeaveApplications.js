@@ -185,6 +185,7 @@ export const useLeaveApplications = (options = {}) => {
             leaveTypeId: row.leave_type_id ?? row.leaveTypeId ?? null,
             studentId: row.student_id ?? null,
             staffId: row.staff_id ?? null,
+            applicantType: row.applicant_type || (row.student_id ? 'student' : row.staff_id ? 'staff' : null),
             name,
             leaveType,
             role,
@@ -195,6 +196,12 @@ export const useLeaveApplications = (options = {}) => {
             noOfDays: String(noOfDays),
             applyOn,
             photoUrl,
+            description:
+              row.reason ||
+              row.description ||
+              row.leave_reason ||
+              row.leaveDescription ||
+              '',
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
             rejectionReason: row.rejection_reason ?? null,
