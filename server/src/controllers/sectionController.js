@@ -45,7 +45,8 @@ const getAllSections = async (req, res) => {
     const result = await query(`
       SELECT
         s.id, s.section_name, s.class_id, s.section_teacher_id, s.max_students, s.room_number,
-        s.description, s.is_active, s.created_at, s.created_by, s.modified_at, s.no_of_students,
+        s.description, s.is_active, s.created_at, s.created_by, s.modified_at,
+        (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
         c.class_name, c.class_code, st.first_name as teacher_first_name, st.last_name as teacher_last_name
       FROM sections s
       LEFT JOIN classes c ON s.class_id = c.id
@@ -75,7 +76,7 @@ const getSectionById = async (req, res) => {
         s.created_at,
         s.created_by,
         s.modified_at,
-        s.no_of_students,
+        (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -117,7 +118,7 @@ const getSectionsByClass = async (req, res) => {
         s.description,
         s.is_active,
         s.created_at,
-        s.no_of_students,
+        (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -140,7 +141,7 @@ const createSection = async (req, res) => {
   try {
     const {
       section_name, class_id, section_teacher_id, max_students, room_number,
-      description, is_active, no_of_students
+      description, is_active
     } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
@@ -153,16 +154,13 @@ const createSection = async (req, res) => {
       maxNorm = p != null ? p : 30;
     }
 
-    const noStudentsRaw = parseOptionalInt(no_of_students);
-    const noStudents = noStudentsRaw != null ? noStudentsRaw : 0;
-
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
     const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
 
     const result = await query(
       `INSERT INTO sections (
-        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, no_of_students, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
         nameNorm,
         class_id,
@@ -171,7 +169,6 @@ const createSection = async (req, res) => {
         roomNorm,
         descNorm,
         normalizeBool(is_active, true),
-        noStudents,
         createdByArg,
       ]
     );
@@ -218,12 +215,6 @@ const updateSection = async (req, res) => {
       ? normalizeDescription(payload.description)
       : cur.description;
 
-    let noOfStudents = cur.no_of_students;
-    if (Object.prototype.hasOwnProperty.call(payload, 'no_of_students')) {
-      const p = parseOptionalInt(payload.no_of_students);
-      noOfStudents = p != null ? p : 0;
-    }
-
     const isActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
       ? normalizeBool(payload.is_active, cur.is_active)
       : cur.is_active;
@@ -235,10 +226,9 @@ const updateSection = async (req, res) => {
         max_students = $3,
         room_number = $4,
         description = $5,
-        no_of_students = $6,
-        is_active = $7,
+        is_active = $6,
         modified_at = NOW()
-      WHERE id = $8
+      WHERE id = $7
       RETURNING *
     `, [
       sectionName,
@@ -246,7 +236,6 @@ const updateSection = async (req, res) => {
       maxStudents,
       roomNumber,
       description,
-      noOfStudents,
       isActive,
       id
     ]);
