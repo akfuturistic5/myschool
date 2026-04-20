@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+/** Backend day_of_week: 1=Monday … 7=Sunday */
+const ISO_DAY_FROM_INT = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+  7: 'Sunday',
+};
 
 function formatTime(t) {
   if (t == null || t === '') return null;
@@ -42,13 +52,17 @@ export const useTeacherRoutine = (teacherId, options = {}) => {
       const raw = response?.data ?? response ?? {};
       const list = Array.isArray(raw) ? raw : (raw.routine ?? raw.schedules ?? []);
       const mapped = (Array.isArray(list) ? list : []).map((row) => {
-        const day = row.dayOfWeek ?? row.day_of_week ?? row.day ?? DAY_NAMES[0];
+        const day = row.dayOfWeek ?? row.day_of_week ?? row.day ?? 'Monday';
+        const dayLabel =
+          typeof day === 'number'
+            ? ISO_DAY_FROM_INT[day] || DAY_NAMES[day] || String(day)
+            : String(day);
         return {
           id: row.id,
           class: row.className ?? row.class_name ?? row.class ?? 'N/A',
           section: row.sectionName ?? row.section_name ?? row.section ?? 'N/A',
           subject: row.subjectName ?? row.subject_name ?? row.subject ?? 'N/A',
-          day: typeof day === 'number' ? DAY_NAMES[day] : String(day),
+          day: dayLabel,
           startTime: formatTime(row.startTime ?? row.start_time) ?? 'N/A',
           endTime: formatTime(row.endTime ?? row.end_time) ?? 'N/A',
           classRoom: row.roomNumber ?? row.room_number ?? row.room ?? row.classRoom ?? null,

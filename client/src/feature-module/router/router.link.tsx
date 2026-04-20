@@ -46,11 +46,11 @@ import Ribbon from "antd/es/badge/Ribbon";
 import AcademicReason from "../academic/academic-reason";
 import ClassHomeWork from "../academic/class-home-work";
 import ClassRoom from "../academic/class-room";
-import ClassRoutine from "../academic/class-routine";
 import ClassSection from "../academic/class-section";
 import ClassSubject from "../academic/class-subject";
 import ClassSyllabus from "../academic/class-syllabus";
 import ClassTimetable from "../academic/class-timetable";
+import SectionRoutine from "../academic/section-routine";
 import Classes from "../academic/classes";
 import AcademicYearsList from "../academic/academic-years";
 import AcademicYearCreate from "../academic/academic-years/create";
@@ -856,9 +856,14 @@ export const publicRoutes = [
   },
   {
     path: routes.classRoutine,
-    element: <ClassRoutine />,
+    element: <Navigate to={routes.classTimetable} replace />,
     route: Route,
 
+  },
+  {
+    path: "/academic/schedule-classes",
+    element: <Navigate to={routes.sheduleClasses} replace />,
+    route: Route,
   },
   {
     path: routes.sheduleClasses,
@@ -985,6 +990,11 @@ export const publicRoutes = [
   {
     path: routes.classTimetable,
     element: <ClassTimetable />,
+    route: Route,
+  },
+  {
+    path: routes.sectionRoutine,
+    element: <SectionRoutine />,
     route: Route,
   },
   {

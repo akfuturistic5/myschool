@@ -258,22 +258,25 @@ const AdministrativeDashboard = () => {
 
           <div className="col-xl-6 d-flex">
             <div className="card flex-fill">
-              <div className="card-header">
-                <h5 className="card-title">Class Routine</h5>
+              <div className="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <h5 className="card-title mb-0">Timetable</h5>
+                <Link to={routes.classTimetable} className="btn btn-sm btn-outline-primary">
+                  Create timetable
+                </Link>
               </div>
               <div className="card-body">
                 {routineError && (
                   <div className="alert alert-danger py-2 d-flex justify-content-between align-items-center">
-                    <span className="small mb-0">Could not load class routine.</span>
+                    <span className="small mb-0">Could not load time table preview.</span>
                     <button type="button" className="btn btn-sm btn-danger" onClick={refetchRoutine}>
                       Retry
                     </button>
                   </div>
                 )}
                 {routineLoading ? (
-                  <p className="text-muted mb-0">Loading class routine...</p>
+                  <p className="text-muted mb-0">Loading timetable...</p>
                 ) : routineRows.length === 0 ? (
-                  <p className="text-muted mb-0">No class routine entries available.</p>
+                  <p className="text-muted mb-0">No entries yet. Use Timetable → Create timetable or Section routine.</p>
                 ) : (
                   <ul className="list-group list-group-flush">
                     {routineRows.map((row: any) => (

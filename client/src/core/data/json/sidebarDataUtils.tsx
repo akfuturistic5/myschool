@@ -107,14 +107,18 @@ function buildTeacherSidebar() {
       submenuHdr: "Academic",
       submenuItems: [
         {
+          label: "Timetable",
+          icon: "ti ti-table-options",
+          link: routes.teachersRoutine,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Classes",
           icon: "ti ti-school-bell",
           submenu: true,
           showSubRoute: false,
-          submenuItems: [
-            { label: "Schedule", link: routes.teachersRoutine },
-            { label: "My Leave & Attendance", link: routes.teacherLeaves },
-          ],
+          submenuItems: [{ label: "My Leave & Attendance", link: routes.teacherLeaves }],
         },
         {
           label: "Examinations",

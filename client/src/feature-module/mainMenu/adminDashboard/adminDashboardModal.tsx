@@ -12,11 +12,10 @@ import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicY
 type SelectOption = { value: string; label: string };
 
 interface AdminDashboardModalProps {
-  refetchRoutine?: () => void;
   refetchEvents?: () => void;
 }
 
-const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardModalProps) => {
+const AdminDashboardModal = ({ refetchEvents }: AdminDashboardModalProps) => {
     const user = useSelector(selectUser);
     const academicYearId = useSelector(selectSelectedAcademicYearId);
     const isTeacherRole = (user?.role ?? '').trim().toLowerCase() === 'teacher';
@@ -24,15 +23,6 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
     const [allTeacher, setAllTeacher] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
     const [allSection, setAllSection] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
     const [allClass, setAllClass] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
-    const [allClassRoom, setAllClassRoom] = useState<SelectOption[]>([{ value: "", label: "Loading..." }]);
-
-    // Add Class Routine form state
-    const [routineTeacher, setRoutineTeacher] = useState<SingleValue<SelectOption>>(null);
-    const [routineClass, setRoutineClass] = useState<SingleValue<SelectOption>>(null);
-    const [routineSection, setRoutineSection] = useState<SingleValue<SelectOption>>(null);
-    const [routineDay, setRoutineDay] = useState<SingleValue<SelectOption>>(null);
-    const [routineClassRoom, setRoutineClassRoom] = useState<SingleValue<SelectOption>>(null);
-    const [routineSubmitting, setRoutineSubmitting] = useState(false);
 
     // Add Event form state
     const [eventTitle, setEventTitle] = useState('');
@@ -65,11 +55,10 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
                     academicYearId != null
                         ? apiService.getClassesByAcademicYear(academicYearId)
                         : apiService.getClasses();
-                const [tRes, cRes, sRes, rRes] = await Promise.all([
+                const [tRes, cRes, sRes] = await Promise.all([
                     fetchTeachers(),
                     fetchClasses(),
                     apiService.getSections(),
-                    apiService.getClassRooms(),
                 ]);
                 if (tRes?.status === 'SUCCESS' && Array.isArray(tRes.data)) {
                     setAllTeacher([
@@ -98,20 +87,10 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
                         })),
                     ]);
                 }
-                if (rRes?.status === 'SUCCESS' && Array.isArray(rRes.data)) {
-                    setAllClassRoom(
-                        rRes.data.map((r: { id: number; room_no?: string }) => ({
-                            value: String(r.id),
-                            label: r.room_no || `Room ${r.id}`,
-                        }))
-                    );
-                    if (rRes.data.length === 0) setAllClassRoom([{ value: "", label: "No rooms" }]);
-                }
             } catch {
                 setAllTeacher([{ value: "", label: "Select Teacher" }]);
                 setAllClass([{ value: "", label: "Select Class" }]);
                 setAllSection([{ value: "", label: "Select Section" }]);
-                setAllClassRoom([{ value: "", label: "No rooms" }]);
             }
         })();
     }, [isTeacherRole, academicYearId]);
@@ -125,44 +104,6 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
         if (el) {
             const bsModal = (window as any).bootstrap?.Modal?.getInstance(el);
             if (bsModal) bsModal.hide();
-        }
-    };
-
-    const handleRoutineSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        const teacherId = routineTeacher?.value;
-        const classId = routineClass?.value;
-        const sectionId = routineSection?.value;
-        const dayOfWeek = routineDay?.value || 'Monday';
-        const classRoomId = routineClassRoom?.value;
-        if (!teacherId || !classId || !sectionId) {
-            alert('Please select Teacher, Class, and Section');
-            return;
-        }
-        setRoutineSubmitting(true);
-        try {
-            const res = await apiService.createClassSchedule({
-                teacher_id: Number(teacherId),
-                class_id: Number(classId),
-                section_id: Number(sectionId),
-                day_of_week: dayOfWeek,
-                class_room_id: classRoomId ? Number(classRoomId) : null,
-            });
-            if (res?.status === 'SUCCESS') {
-                refetchRoutine?.();
-                hideModal('add_class_routine');
-                setRoutineTeacher(null);
-                setRoutineClass(null);
-                setRoutineSection(null);
-                setRoutineDay(null);
-                setRoutineClassRoom(null);
-            } else {
-                alert(res?.message || 'Failed to add class routine');
-            }
-        } catch (err: any) {
-            alert(err?.message || 'Failed to add class routine');
-        } finally {
-            setRoutineSubmitting(false);
         }
     };
 
@@ -237,148 +178,12 @@ const AdminDashboardModal = ({ refetchRoutine, refetchEvents }: AdminDashboardMo
         { value: "Holidays", label: "Holidays" },
       ];
 
-    const allDay = [
-        { value: "Monday", label: "Monday" },
-        { value: "Tuesday", label: "Tuesday" },
-        { value: "Wednesday", label: "Wednesday" },
-        { value: "Thursday", label: "Thursday" },
-        { value: "Friday", label: "Friday" },
-        { value: "Saturday", label: "Saturday" },
-        { value: "Sunday", label: "Sunday" },
-      ];
       const getModalContainer = () => {
         const modalElement = document.getElementById('modal-datepicker');
         return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
       };
-      const getModalContainer2 = () => {
-        const modalElement = document.getElementById('modal_datepicker');
-        return modalElement ? modalElement : document.body; // Fallback to document.body if modalElement is null
-      };
   return (
     <>
-    {/* Add Class Routine */}
-    <div className="modal fade" id="add_class_routine">
-        <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content">
-            <div className="modal-wrapper">
-            <div className="modal-header">
-                <h4 className="modal-title">Add Class Routine</h4>
-                <button
-                type="button"
-                className="btn-close custom-btn-close"
-                data-bs-dismiss="modal"
-                aria-label="Close"
-                >
-                <i className="ti ti-x" />
-                </button>
-            </div>
-            <form onSubmit={handleRoutineSubmit}>
-                <div  id='modal_datepicker' className="modal-body">
-                <div className="row">
-                    <div className="col-md-12">
-                    <div className="mb-3">
-                        <label className="form-label">Teacher</label>
-                        <Select classNamePrefix="react-select"
-                        className="select"
-                        options={allTeacher}
-                        value={routineTeacher}
-                        onChange={setRoutineTeacher}
-                        placeholder="Select Teacher"
-                        />
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label">Class</label>
-                        <Select classNamePrefix="react-select"
-                        className="select"
-                        options={allClass}
-                        value={routineClass}
-                        onChange={setRoutineClass}
-                        placeholder="Select Class"
-                        />
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label">Section</label>
-                        <Select classNamePrefix="react-select"
-                        className="select"
-                        options={allSection}
-                        value={routineSection}
-                        onChange={setRoutineSection}
-                        placeholder="Select Section"
-                        />
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label">Day</label>
-                        <Select classNamePrefix="react-select"
-                        className="select"
-                        options={allDay}
-                        value={routineDay}
-                        onChange={setRoutineDay}
-                        placeholder="Select Day"
-                        />
-                    </div>
-                    <div className="row">
-                        <div className="col-md-6">
-                        <div className="mb-3">
-                            <label className="form-label">Start Time</label>
-                            <div className="date-pic">
-                            <TimePicker getPopupContainer={getModalContainer2}  use12Hours placeholder="Choose" format="h:mm A" className="form-control timepicker" />
-                            <span className="cal-icon">
-                                <i className="ti ti-clock" />
-                            </span>
-                            </div>
-                        </div>
-                        </div>
-                        <div className="col-md-6">
-                        <div className="mb-3">
-                            <label className="form-label">End Time</label>
-                            <div className="date-pic">
-                            <TimePicker getPopupContainer={getModalContainer2}  use12Hours placeholder="Choose" format="h:mm A" className="form-control timepicker" />
-                            <span className="cal-icon">
-                                <i className="ti ti-clock" />
-                            </span>
-                            </div>
-                        </div>
-                        </div>
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label">Class Room</label>
-                        <Select classNamePrefix="react-select"
-                        className="select"
-                        options={allClassRoom}
-                        value={routineClassRoom}
-                        onChange={setRoutineClassRoom}
-                        placeholder="Select Room"
-                        />
-                    </div>
-                    <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                        <h5>Status</h5>
-                        <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="status-toggle modal-status">
-                        <input type="checkbox" id="user1" className="check" />
-                        <label htmlFor="user1" className="checktoggle">
-                            {" "}
-                        </label>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                </div>
-                <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
-                    Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={routineSubmitting}>
-                    {routineSubmitting ? 'Adding...' : 'Add Class Routine'}
-                </button>
-                </div>
-            </form>
-            </div>
-        </div>
-        </div>
-    </div>
-    {/* /Add Class Routine */}
     {/* Add Event */}
     <div className="modal fade" id="add_event">
         <div className="modal-dialog modal-dialog-centered">

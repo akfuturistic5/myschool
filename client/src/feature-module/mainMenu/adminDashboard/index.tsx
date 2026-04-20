@@ -159,7 +159,7 @@ const AdminDashboard = () => {
   });
   const { user: currentUser, loading: userLoading } = useCurrentUser();
   const { upcomingEvents, loading: eventsLoading, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 12 });
-  const { routine: classRoutine, loading: routineLoading, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
+  const { routine: classRoutine, loading: routineLoading } = useDashboardClassRoutine({ limit: 5, academicYearId });
   const { performers: bestPerformers } = useDashboardBestPerformers({ limit: 3, academicYearId });
   const { students: starStudents } = useDashboardStarStudents({ limit: 3, academicYearId });
   const { summary: performanceSummary } = useDashboardPerformanceSummary({
@@ -1207,26 +1207,24 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 {/* /Quick Links */}
-                {/* Class Routine */}
+                {/* Timetable preview (grid: Create timetable) */}
                 <div className="card flex-fill">
                   <div className="card-header d-flex align-items-center justify-content-between">
-                    <h4 className="card-title">Class Routine</h4>
+                    <h4 className="card-title">Timetable</h4>
                     <Link
-                      to="#"
+                      to={all_routes.classTimetable}
                       className="link-primary fw-medium"
-                      data-bs-toggle="modal"
-                      data-bs-target="#add_class_routine"
                     >
-                      <i className="ti ti-square-plus me-1" />
-                      Add New
+                      <i className="ti ti-table me-1" />
+                      Create / edit grid
                     </Link>
                   </div>
                   <div className="card-body">
                     {routineLoading && (
-                      <p className="mb-0 text-muted small">Loading class routine...</p>
+                      <p className="mb-0 text-muted small">Loading timetable entries...</p>
                     )}
                     {!routineLoading && classRoutine.length === 0 && (
-                      <p className="mb-0 text-muted small">No class routine found.</p>
+                      <p className="mb-0 text-muted small">No entries yet. Add periods under Timetable → Time slots, then build the grid under Create timetable.</p>
                     )}
                     {!routineLoading && classRoutine.length > 0 && classRoutine.map((r, idx) => (
                       <div key={r.id || idx} className={`d-flex align-items-center rounded border p-3 ${idx < classRoutine.length - 1 ? 'mb-3' : 'mb-0'}`}>
@@ -1258,7 +1256,7 @@ const AdminDashboard = () => {
                     ))}
                   </div>
                 </div>
-                {/* /Class Routine */}
+                {/* /Timetable preview */}
                 {/* Class Wise Performance */}
                 <div className="card flex-fill">
                   <div className="card-header d-flex align-items-center justify-content-between">
@@ -1976,7 +1974,7 @@ const AdminDashboard = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <AdminDashboardModal refetchRoutine={refetchRoutine} refetchEvents={refetchEvents} />
+      <AdminDashboardModal refetchEvents={refetchEvents} />
     </>
   );
 };

@@ -2,7 +2,7 @@ const fs = require('fs');
 const { query, executeTransaction, runWithTenant } = require('../config/database');
 const { ADMIN_ROLE_IDS } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { canAccessClass, parseId } = require('../utils/accessControl');
+const { canAccessClass, parseId, getAuthContext, isAdmin, resolveTeacherIdForUser } = require('../utils/accessControl');
 const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 
@@ -371,11 +371,15 @@ const getTeacherRoutine = async (req, res) => {
     const { id } = req.params;
 
     // First verify teacher exists (class_schedules.teacher_id references staff.id)
-    const teacherCheck = await query(`
-      SELECT t.id, t.staff_id 
+    const teacherCheck = await query(
+      `
+      SELECT t.id, t.staff_id
       FROM teachers t
-      WHERE t.id = $1 AND t.status = 'Active'
-    `, [id]);
+      WHERE t.id = $1
+        AND (t.status IS NULL OR LOWER(TRIM(t.status)) = 'active')
+    `,
+      [id]
+    );
     
     if (teacherCheck.rows.length === 0) {
       return errorResponse(res, 404, 'Teacher not found');
@@ -388,6 +392,15 @@ const getTeacherRoutine = async (req, res) => {
         breaks: [],
         count: 0,
       });
+    }
+
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) {
+      const myTeacherId = await resolveTeacherIdForUser(ctx.userId);
+      const requestedTeacherId = parseId(id);
+      if (!myTeacherId || !requestedTeacherId || myTeacherId !== requestedTeacherId) {
+        return errorResponse(res, 403, 'You can only view your own routine');
+      }
     }
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
@@ -560,8 +573,10 @@ const getTeacherRoutine = async (req, res) => {
     // Helper function to convert day to text
     const getDayName = (day) => {
       if (!day && day !== 0) return 'Monday';
+      const iso = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       if (typeof day === 'number') {
+        if (day >= 1 && day <= 7) return iso[day];
         return dayNames[day] || 'Monday';
       }
       if (typeof day === 'string') {
@@ -615,9 +630,20 @@ const getTeacherRoutine = async (req, res) => {
       duration: row.duration
     }));
 
+    let slots = [];
+    try {
+      const sr = await query(
+        'SELECT id, slot_name, start_time, end_time, duration, is_break, is_active FROM time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC'
+      );
+      slots = sr.rows || [];
+    } catch (e) {
+      slots = [];
+    }
+
     return success(res, 200, 'Teacher routine fetched successfully', {
       routine,
       breaks,
+      slots,
       count: routine.length,
     });
   } catch (error) {

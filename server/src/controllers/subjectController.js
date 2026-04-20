@@ -87,10 +87,17 @@ const getSubjectsByClass = async (req, res) => {
         s.passing_marks,
         s.description,
         s.is_active,
-        s.created_at
+        s.created_at,
+        CASE
+          WHEN COALESCE(s.theory_hours, 0) > 0 AND COALESCE(s.practical_hours, 0) > 0 THEN 'Theory & Practical'
+          WHEN COALESCE(s.practical_hours, 0) > 0 THEN 'Practical'
+          WHEN COALESCE(s.theory_hours, 0) > 0 THEN 'Theory'
+          ELSE NULL
+        END AS subject_mode
       FROM subjects s
       WHERE s.class_id = $1
-      ORDER BY s.subject_name ASC
+        AND (s.is_active IS DISTINCT FROM false)
+      ORDER BY s.subject_name ASC, s.id ASC
     `, [classId]);
     
     return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
