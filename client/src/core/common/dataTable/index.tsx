@@ -93,17 +93,30 @@ const Datatable: React.FC<DatatableProps> = ({
           </div>
         </div>
       ) : null}
-      <Table
-        className="table datanew dataTable no-footer"
-        rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
-        columns={safeColumns}
-        rowHoverable={false}
-        loading={loading}
-        dataSource={filteredDataSource ?? safeData}
-        pagination={paginationConfig}
-        onChange={onTableChange}
-        rowSelection={isSelectionEnabled ? rowSelection : undefined}
-      />
+      {!Selection ? (
+        <Table
+          className="table datanew dataTable no-footer"
+          rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
+          columns={safeColumns}
+          rowHoverable={false}
+          loading={loading}
+          dataSource={filteredDataSource ?? safeData}
+          pagination={paginationConfig}
+          onChange={onTableChange}
+        />
+      ) : (
+        <Table
+          className="table datanew dataTable no-footer"
+          rowKey={(record) => record?.key ?? record?.id ?? Math.random().toString()}
+          rowSelection={rowSelection}
+          columns={safeColumns}
+          rowHoverable={false}
+          loading={loading}
+          dataSource={filteredDataSource ?? safeData}
+          pagination={paginationConfig}
+          onChange={onTableChange}
+        />
+      )}
     </>
   );
 };

@@ -12,6 +12,12 @@ import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import { formatRosterHolidayStatus } from "./rosterHolidayLabels";
 import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
+import {
+  formatAttendanceDayHumanLabel,
+  formatAttendanceDayShort,
+  getCompoundHolidayAttendancePart,
+  isHolidayAttendanceCompound,
+} from "../../../core/utils/attendanceReportStatus";
 
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
@@ -21,21 +27,14 @@ const statusClassMap: Record<string, string> = {
   holiday: "bg-info",
   weekly_holiday: "bg-info",
 };
-const statusShortLabel = (status: string | null | undefined) => {
-  const s = String(status || "").trim().toLowerCase();
-  if (s === "present") return "P";
-  if (s === "late") return "L";
-  if (s === "absent") return "A";
-  if (s === "holiday" || s === "weekly_holiday") return "H";
-  if (s === "half_day" || s === "halfday") return "F";
-  return "";
-};
-const formatStatusLabel = (status: string | null | undefined) => {
-  const s = String(status || "").trim().toLowerCase();
-  if (!s) return "Not Marked";
-  if (s === "weekly_holiday") return "Weekly holiday";
-  if (s === "holiday") return "Holiday";
-  return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+const statusTextMap: Record<string, string> = {
+  present: "P",
+  late: "L",
+  absent: "A",
+  holiday: "H",
+  weekly_holiday: "H",
+  half_day: "F",
+  halfday: "F",
 };
 
 const getTodayLocalYMD = () => {
@@ -218,7 +217,7 @@ const StudentAttendanceReport = () => {
       {
         title: "Status",
         dataIndex: "status",
-        render: (s: string) => formatRosterHolidayStatus(s) || formatStatusLabel(s),
+        render: (s: string) => formatRosterHolidayStatus(s) || formatAttendanceDayHumanLabel(s),
       },
       { title: "Check In", dataIndex: "checkInTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
       { title: "Check Out", dataIndex: "checkOutTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
@@ -254,27 +253,60 @@ const StudentAttendanceReport = () => {
         key: day.date,
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
-          const cls = status ? statusClassMap[status] || "bg-light" : "";
-          const short = statusShortLabel(status);
+          const pillStyle = {
+            width: 20,
+            height: 16,
+            display: "inline-flex" as const,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+            borderRadius: 6,
+            fontSize: 9,
+            fontWeight: 700 as const,
+            color: "#fff",
+          };
+          if (!status) {
+            return (
+              <span
+                className="attendance-range"
+                style={{ opacity: 0.15, width: 22, height: 18, display: "inline-flex" }}
+                title={`${day.date}: Not Marked`}
+              />
+            );
+          }
+          if (isHolidayAttendanceCompound(status)) {
+            const rest = getCompoundHolidayAttendancePart(status);
+            const subText = statusTextMap[rest] || "?";
+            const subCls = statusClassMap[rest] || "bg-light";
+            return (
+              <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }} title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}>
+                <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
+                  H
+                </span>
+                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                  {subText}
+                </span>
+              </span>
+            );
+          }
+          const cls = statusClassMap[status] || "bg-light";
+          const sLo = String(status).toLowerCase();
+          const short =
+            sLo === "half_day" || sLo === "halfday" ? "F" : formatAttendanceDayShort(status);
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={
-                !status
-                  ? { opacity: 0.15, width: 22, height: 18, display: "inline-flex" }
-                  : {
-                      width: 22,
-                      height: 18,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#fff",
-                    }
-              }
-              title={status ? `${day.date}: ${formatStatusLabel(status)}` : `${day.date}: Not Marked`}
+              style={{
+                width: 22,
+                height: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#fff",
+              }}
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
             >
               {short}
             </span>
@@ -341,7 +373,7 @@ const StudentAttendanceReport = () => {
         HalfDay: row.summary?.halfDay ?? 0,
       };
       dayKeys.forEach((day) => {
-        base[day] = formatStatusLabel(row.daily?.[day]);
+        base[day] = formatAttendanceDayHumanLabel(row.daily?.[day]);
       });
       return base;
     });
@@ -351,7 +383,7 @@ const StudentAttendanceReport = () => {
     () =>
       dayTableData.map((row: any) => ({
         Student: row.name || "",
-        Status: formatRosterHolidayStatus(row.status) || formatStatusLabel(row.status),
+        Status: formatRosterHolidayStatus(row.status) || formatAttendanceDayHumanLabel(row.status),
         CheckIn: row.checkInTime ? String(row.checkInTime).slice(0, 5) : "",
         CheckOut: row.checkOutTime ? String(row.checkOutTime).slice(0, 5) : "",
         Remark: row.remark || "",

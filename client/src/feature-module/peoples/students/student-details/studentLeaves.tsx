@@ -195,7 +195,7 @@ const StudentLeaves = () => {
           const he = String(h?.end_date || "").slice(0, 10);
           const title = String(h?.title || "").trim() || "Holiday";
           if (!hs || !he) return;
-          let cursor = new Date(`${hs}T00:00:00`);
+          const cursor = new Date(`${hs}T00:00:00`);
           const until = new Date(`${he}T00:00:00`);
           while (cursor <= until) {
             const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
@@ -406,7 +406,7 @@ const StudentLeaves = () => {
     const recordMax = dateKeys.length ? dateKeys[dateKeys.length - 1] : "";
     const endDate = [today, currentMonthEnd, recordMax].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).reduce((a, b) => (a >= b ? a : b), today);
     if (currentMonthStart) {
-      let cursor = new Date(`${currentMonthStart}T00:00:00`);
+      const cursor = new Date(`${currentMonthStart}T00:00:00`);
       const untilMonth = new Date(`${currentMonthEnd}T00:00:00`);
       while (cursor <= untilMonth) {
         const d = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;

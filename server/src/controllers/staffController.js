@@ -218,6 +218,29 @@ const STAFF_SELECT_WITH_DRIVERS = `
       LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
 `;
 
+/** Same as WITH_DRIVERS but older DBs may have staff_id without license_expiry column. */
+const STAFF_SELECT_WITH_DRIVERS_NO_LICENSE_EXPIRY = `
+      SELECT
+        s.*,
+        s.user_id,
+        bg.blood_group AS blood_group_label,
+        d.department_name AS department_name,
+        d.department_name AS department,
+        des.designation_name AS designation_name,
+        des.designation_name AS designation,
+        dr.license_number AS driver_license_number,
+        NULL::date AS driver_license_expiry,
+        u.role_id AS user_role_id,
+        ur_u.role_name AS user_role_name
+      FROM staff s
+      LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
+      LEFT JOIN departments d ON s.department_id = d.id
+      LEFT JOIN designations des ON s.designation_id = des.id
+      LEFT JOIN drivers dr ON dr.staff_id = s.id
+      LEFT JOIN users u ON u.id = s.user_id
+      LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
+`;
+
 let cachedStaffSelectSql = null;
 
 /** Pick query shape once per process: drivers.staff_id is required for the driver JOIN. */
@@ -227,11 +250,20 @@ async function getStaffSelectSql() {
   }
   try {
     const r = await query(
-      `SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'drivers' AND column_name = 'staff_id'
-       LIMIT 1`
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'drivers'
+         AND column_name IN ('staff_id', 'license_expiry')`
     );
-    cachedStaffSelectSql = r.rows.length > 0 ? STAFF_SELECT_WITH_DRIVERS : STAFF_SELECT_BASE;
+    const driverCols = new Set((r.rows || []).map((row) => row.column_name));
+    const hasStaffId = driverCols.has('staff_id');
+    const hasLicenseExpiry = driverCols.has('license_expiry');
+    if (hasStaffId && hasLicenseExpiry) {
+      cachedStaffSelectSql = STAFF_SELECT_WITH_DRIVERS;
+    } else if (hasStaffId) {
+      cachedStaffSelectSql = STAFF_SELECT_WITH_DRIVERS_NO_LICENSE_EXPIRY;
+    } else {
+      cachedStaffSelectSql = STAFF_SELECT_BASE;
+    }
   } catch {
     cachedStaffSelectSql = STAFF_SELECT_BASE;
   }

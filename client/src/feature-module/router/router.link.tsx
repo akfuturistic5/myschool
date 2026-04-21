@@ -152,6 +152,8 @@ import TeacherForm from "../peoples/teacher/teacherForm";
 import TeacherAssignments from "../peoples/teacher/teacher-assignments";
 import AttendanceReport from "../report/attendance-report/attendanceReport";
 import DailyAttendance from "../report/attendance-report/dailyAttendance";
+import StudentAttendanceType from "../report/attendance-report/studentAttendanceType";
+import StudentDayWise from "../report/attendance-report/studentDayWise";
 import StaffDayWise from "../report/attendance-report/staffDayWiseLive";
 import StaffReport from "../report/attendance-report/staffReportLive";
 import ClassReport from "../report/class-report/classReport";
@@ -159,6 +161,7 @@ import FeesReport from "../report/fees-report/feesReport";
 import GradeReport from "../report/grade-report/gradeReport";
 import LeaveReport from "../report/leave-report/leaveReport";
 import StudentReport from "../report/student-report/studentReport";
+import TeacherReport from "../report/teacher-report/teacherReport";
 import Religion from "../settings/academicSettings/religion";
 import SchoolSettings from "../settings/academicSettings/schoolSettings";
 import CustomFields from "../settings/appSettings/customFields";
@@ -1457,8 +1460,18 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.studentAttendanceType,
+    element: <StudentAttendanceType />,
+    route: Route,
+  },
+  {
+    path: routes.studentDayWise,
+    element: <StudentDayWise />,
+    route: Route,
+  },
+  {
     path: routes.teacherDayWise,
-    element: <Navigate to={routes.staffDayWise} replace />,
+    element: <StaffDayWise />,
     route: Route,
   },
   {
@@ -1468,7 +1481,7 @@ export const publicRoutes = [
   },
   {
     path: routes.teacherReport,
-    element: <Navigate to={routes.staffReport} replace />,
+    element: <TeacherReport />,
     route: Route,
   },
   {

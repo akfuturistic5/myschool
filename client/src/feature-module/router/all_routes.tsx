@@ -324,6 +324,8 @@ export const all_routes = {
   teacherReport: "/report/teacher-report",
   staffReport: "/report/staff-report",
   dailyAttendance: "/report/daily-attendance",
+  studentAttendanceType: "/report/student-attendance-type",
+  studentDayWise: "/report/student-day-wise",
   teacherDayWise: "/report/teacher-day-wise",
   staffDayWise: "/report/staff-day-wise",
   //page module

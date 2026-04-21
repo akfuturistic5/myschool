@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
+/** Normalize list endpoints: `{ data: T[] }`, bare `T[]`, or null. */
+const asArray = (response) => {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response.data)) return response.data;
+  return [];
+};
+
 export const useClassesWithSections = (academicYearId = null) => {
   const [classesWithSections, setClassesWithSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,9 +30,9 @@ export const useClassesWithSections = (academicYearId = null) => {
         apiService.getSubjects()
       ]);
       
-      const classes = classesResponse.data || [];
-      const sections = sectionsResponse.data || [];
-      const subjects = subjectsResponse.data || [];
+      const classes = asArray(classesResponse);
+      const sections = asArray(sectionsResponse);
+      const subjects = asArray(subjectsResponse);
       
       // Build subject count per class (subjects have class_id)
       const subjectCountByClass = {};
@@ -36,7 +44,6 @@ export const useClassesWithSections = (academicYearId = null) => {
       const combinedData = [];
       
       classes.forEach(classItem => {
-        const noOfSubjects = subjectCountByClass[classItem.id] || 0;
         const classSections = sections.filter(section => section.class_id === classItem.id);
         
         if (classSections.length > 0) {
@@ -51,7 +58,7 @@ export const useClassesWithSections = (academicYearId = null) => {
               sectionId: section.id,
               sectionName: section.section_name,
               noOfStudents: section.no_of_students || 0,
-              noOfSubjects,
+              noOfSubjects: classItem.no_of_subjects || 0,
               status: section.is_active ? 'Active' : 'Inactive',
               classStatus: classItem.is_active,
               teacherFirstName: section.teacher_first_name,
@@ -72,7 +79,7 @@ export const useClassesWithSections = (academicYearId = null) => {
             sectionId: null,
             sectionName: 'N/A',
             noOfStudents: classItem.no_of_students || 0,
-            noOfSubjects,
+            noOfSubjects: classItem.no_of_subjects || 0,
             status: classItem.is_active ? 'Active' : 'Inactive',
             classStatus: classItem.is_active,
             teacherFirstName: classItem.teacher_first_name,

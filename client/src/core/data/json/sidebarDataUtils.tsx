@@ -31,13 +31,6 @@ const ADMINISTRATIVE_VISIBLE_SECTIONS = new Set([
   "Help",
 ]);
 
-const REPORT_LINKS_TO_REMOVE = new Set([
-  routes.attendanceReport,
-  routes.studentReport,
-  routes.leaveReport,
-  routes.gradeReport,
-]);
-
 function buildTeacherSidebar() {
   return [
     {
@@ -426,17 +419,17 @@ function buildParentSidebar() {
   ];
 }
 
-function buildAdministrativeSidebar() {
+function buildAdministrativeSidebar(): typeof SidebarData {
   return SidebarData
     .filter((section) => ADMINISTRATIVE_VISIBLE_SECTIONS.has(section.label))
-    .map((section) => {
-      const nextSection = {
+    .map((section: any) => {
+      const nextSection: any = {
         ...section,
         submenuItems: [...(section.submenuItems || [])],
       };
 
       if (section.label === "MAIN") {
-        nextSection.submenuItems = nextSection.submenuItems.map((item) => {
+        nextSection.submenuItems = nextSection.submenuItems.map((item: any) => {
           if (item.label !== "Dashboard") return item;
           return {
             ...item,
@@ -444,7 +437,7 @@ function buildAdministrativeSidebar() {
             link: routes.administrativeDashboard,
           };
         });
-        const hasMyLeaves = nextSection.submenuItems.some((item) => item.label === "My Leave & Attendance");
+        const hasMyLeaves = nextSection.submenuItems.some((item: any) => item.label === "My Leave & Attendance");
         if (!hasMyLeaves) {
           nextSection.submenuItems.push({
             label: "My Leave & Attendance",
@@ -457,9 +450,9 @@ function buildAdministrativeSidebar() {
       }
 
       if (section.label === "HRM") {
-        nextSection.submenuItems = nextSection.submenuItems.map((item) => {
+        nextSection.submenuItems = nextSection.submenuItems.map((item: any) => {
           if (item.label !== "Leaves" || !item.submenuItems) return item;
-          const hasApproveRequest = item.submenuItems.some((sub) => sub.label === "Approve Request");
+          const hasApproveRequest = item.submenuItems.some((sub: any) => sub.label === "Approve Request");
           if (hasApproveRequest) return item;
           return {
             ...item,
@@ -472,18 +465,12 @@ function buildAdministrativeSidebar() {
       }
 
       if (section.label === "Pages") {
-        nextSection.submenuItems = nextSection.submenuItems.filter((item) => item.label === "Profile");
-      }
-
-      if (section.label === "Reports") {
-        nextSection.submenuItems = nextSection.submenuItems.filter(
-          (item) => !REPORT_LINKS_TO_REMOVE.has(item.link)
-        );
+        nextSection.submenuItems = nextSection.submenuItems.filter((item: any) => item.label === "Profile");
       }
 
       if (section.label === "Academic") {
         const hasExaminations = (nextSection.submenuItems || []).some(
-          (item) => item.label === "Examinations"
+          (item: any) => item.label === "Examinations"
         );
         if (!hasExaminations) {
           nextSection.submenuItems = [
@@ -504,7 +491,7 @@ function buildAdministrativeSidebar() {
       }
 
       if (section.label === "Academic") {
-        const hasEnquiries = (nextSection.submenuItems || []).some((item) => item.label === "Enquiries");
+        const hasEnquiries = (nextSection.submenuItems || []).some((item: any) => item.label === "Enquiries");
         if (!hasEnquiries) {
           nextSection.submenuItems = [
             ...(nextSection.submenuItems || []),
@@ -520,7 +507,7 @@ function buildAdministrativeSidebar() {
       }
 
       return nextSection;
-    });
+    }) as typeof SidebarData;
 }
 
 /**
@@ -537,15 +524,7 @@ export function getSidebarDataForRole(role: string | undefined | null): typeof S
   const administrativeLike = isAdministrativeRole(role) || roleLower.includes("administrative");
 
   if (headmasterLike) {
-    return SidebarData.map((section) => {
-      if (section.label !== "Reports") return section;
-      return {
-        ...section,
-        submenuItems: (section.submenuItems || []).filter(
-          (item) => !REPORT_LINKS_TO_REMOVE.has(item.link)
-        ),
-      };
-    });
+    return SidebarData;
   }
 
   if (administrativeLike) {
