@@ -141,6 +141,30 @@ const authenticate = (req, res, next) => {
         return runWithTenant(session.db_name, () => next());
       }
 
+      // Cookie token fallback (sid missing): still prefer cookie over Bearer to avoid
+      // accidental cross-account context from stale sessionStorage tokens.
+      if (cookieToken) {
+        try {
+          const { decoded, dbName } = await resolveBearerTenantContext(cookieToken);
+          req.user = decoded;
+          req.tenant = {
+            school_id: decoded.school_id,
+            institute_number: decoded.institute_number,
+            db_name: dbName,
+          };
+          req.authViaCookieToken = true;
+          return runWithTenant(dbName, () => next());
+        } catch (err) {
+          if (err?.name === 'TokenExpiredError') {
+            return errorResponse(res, 401, 'Token expired. Please login again.');
+          }
+          if (err?.name === 'JsonWebTokenError') {
+            return errorResponse(res, 401, 'Invalid token.');
+          }
+          return errorResponse(res, 401, 'Authentication failed');
+        }
+      }
+
       if (allowBearer) {
         try {
           const { decoded, dbName } = await resolveBearerTenantContext(bearerRaw);

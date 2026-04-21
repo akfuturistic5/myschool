@@ -68,7 +68,7 @@ const StudentLeaves = () => {
   const state = location.state as StudentDetailsLocationState | null;
   const initialTab: "leave" | "attendance" = state?.activeTab === "attendance" ? "attendance" : "leave";
   const [activeTab, setActiveTab] = useState<"leave" | "attendance">(initialTab);
-  const { studentId, student, loading, role } = useLinkedStudentContext({
+  const { studentId, student, loading, role, isStudentRole, isParentLeaveViewer, isGuardianViewer } = useLinkedStudentContext({
     locationState: state,
   });
   const effectiveStudentId =
@@ -96,24 +96,24 @@ const StudentLeaves = () => {
     normalizedRole.includes("administrative");
   const { leaveApplications: leaveList, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
-    parentChildren: role === "parent",
-    studentOnly: role === "student",
-    studentId: (role === "parent" || canUseAdminList) && effectiveStudentId != null ? effectiveStudentId : null,
+    parentChildren: isParentLeaveViewer,
+    studentOnly: isStudentRole,
+    studentId: (isParentLeaveViewer || canUseAdminList) && effectiveStudentId != null ? effectiveStudentId : null,
     canUseAdminList,
   });
 
   const { leaveApplications: guardianLeaves, loading: guardianLoading, refetch: refetchGuardianLeaves } = useGuardianWardLeaves({
     limit: 50,
-    studentId: effectiveStudentId && role === "guardian" ? effectiveStudentId : null,
+    studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
 
   const data = useMemo(() => {
-    if (role === "guardian") return guardianLeaves;
+    if (isGuardianViewer) return guardianLeaves;
     return leaveList;
-  }, [role, leaveList, guardianLeaves]);
+  }, [isGuardianViewer, leaveList, guardianLeaves]);
 
-  const leaveDataLoading = role === "guardian" ? guardianLoading : leaveLoading;
-  const refetchLeaveData = role === "guardian" ? refetchGuardianLeaves : refetchLeaves;
+  const leaveDataLoading = isGuardianViewer ? guardianLoading : leaveLoading;
+  const refetchLeaveData = isGuardianViewer ? refetchGuardianLeaves : refetchLeaves;
   const [cancelingLeaveId, setCancelingLeaveId] = useState<number | null>(null);
   const [todayHoliday, setTodayHoliday] = useState<{ title?: string; start_date?: string; end_date?: string } | null>(null);
   const [historyHolidayDates, setHistoryHolidayDates] = useState<string[]>([]);

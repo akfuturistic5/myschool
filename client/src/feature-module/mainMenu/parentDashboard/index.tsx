@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useParents } from "../../../core/hooks/useParents";
@@ -8,6 +9,9 @@ import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useStudentExamResults } from "../../../core/hooks/useStudentExamResults";
 import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
 import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
+import { useAcademicYears } from "../../../core/hooks/useAcademicYears";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { PARENT_PORTAL_SELECTED_STUDENT_STORAGE_KEY } from "../../../core/hooks/useLinkedStudentContext";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
 import { EventsCard } from "../shared/EventsCard";
@@ -52,12 +56,30 @@ const isDateInRange = (dateVal: string | Date | null | undefined, rangeKey: Stat
 
 const ParentDashboard = () => {
   const routes = all_routes;
+  const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
+  const { academicYears } = useAcademicYears();
+  const currentAcademicYear =
+    (academicYears || []).find((y: { is_current?: boolean }) => y?.is_current) ?? (academicYears || [])[0] ?? null;
+  const resolvedAcademicYearId =
+    (headerAcademicYearId != null && Number(headerAcademicYearId) > 0 ? Number(headerAcademicYearId) : null) ??
+    (currentAcademicYear && Number((currentAcademicYear as { id?: number }).id) > 0
+      ? Number((currentAcademicYear as { id: number }).id)
+      : null);
+
   const { parents, loading: parentLoading, error: parentError } = useParents({ forCurrentUser: true });
   const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
 
   const children = useMemo(() => parents || [], [parents]);
   const firstParent = children[0];
-  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
+  const [activeStudentId, setActiveStudentId] = useState<string | null>(() => {
+    try {
+      if (typeof window === "undefined") return null;
+      const raw = sessionStorage.getItem(PARENT_PORTAL_SELECTED_STUDENT_STORAGE_KEY);
+      return raw && /^\d+$/.test(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  });
   const activeStudent = activeStudentId
     ? children.find((c: { student_id?: number }) => String(c.student_id) === activeStudentId)
     : firstParent;
@@ -70,10 +92,12 @@ const ParentDashboard = () => {
     limit: 50,
     studentId: selectedChild?.student_id ?? null,
   });
-  const { data: feeData } = useStudentFees(selectedChild?.student_id ?? null);
+  const { data: feeData } = useStudentFees(selectedChild?.student_id ?? null, resolvedAcademicYearId);
   const { data: examResultsData } = useStudentExamResults(selectedChild?.student_id ?? null);
   const { data: attendanceData } = useStudentAttendance(selectedChild?.student_id ?? null);
-  const { data: allSchedules } = useClassSchedules();
+  const { data: allSchedules } = useClassSchedules({
+    academicYearId: resolvedAcademicYearId ?? undefined,
+  });
   const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 6 });
 
   // Filtered leaves by date range
@@ -141,10 +165,21 @@ const ParentDashboard = () => {
   }, [myLeaves]);
 
   useEffect(() => {
-    if (children.length > 0 && !activeStudentId) {
+    if (!children.length) return;
+    const valid = activeStudentId && children.some((c: { student_id?: number }) => String(c.student_id) === activeStudentId);
+    if (!valid) {
       setActiveStudentId(String(children[0].student_id));
     }
   }, [children, activeStudentId]);
+
+  useEffect(() => {
+    if (!selectedChild?.student_id) return;
+    try {
+      sessionStorage.setItem(PARENT_PORTAL_SELECTED_STUDENT_STORAGE_KEY, String(selectedChild.student_id));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [selectedChild?.student_id]);
   return (
     <>
       {/* Page Wrapper */}
