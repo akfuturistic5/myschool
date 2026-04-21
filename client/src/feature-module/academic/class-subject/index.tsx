@@ -18,7 +18,10 @@ const ClassSubject = () => {
   const [classFilterId, setClassFilterId] = useState<string>("");
   const [codeFilter, setCodeFilter] = useState<string>("");
   const { classes = [] } = useClasses(academicYearId);
-  const { subjects, loading, error, refetch } = useSubjects(classFilterId ? Number(classFilterId) : null);
+  const { subjects, loading, error, refetch } = useSubjects(
+    classFilterId ? Number(classFilterId) : null,
+    { academicYearId }
+  );
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);

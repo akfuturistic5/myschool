@@ -35,6 +35,8 @@ export const useLeaveApplications = (options = {}) => {
     canUseAdminList = false,
     classId = null,
     sectionId = null,
+    departmentId = null,
+    designationId = null,
     academicYearId = null,
     leaveFrom = null,
     leaveTo = null,
@@ -78,6 +80,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -101,6 +105,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -118,6 +124,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -225,7 +233,7 @@ export const useLeaveApplications = (options = {}) => {
 
   useEffect(() => {
     fetchList(false);
-  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, classId, sectionId, academicYearId, leaveFrom, leaveTo, pendingOnly, status, leaveTypeId, applicantType, sortBy, sortOrder, page, pageSize]);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, classId, sectionId, departmentId, designationId, academicYearId, leaveFrom, leaveTo, pendingOnly, status, leaveTypeId, applicantType, sortBy, sortOrder, page, pageSize]);
 
   return {
     leaveApplications: list,

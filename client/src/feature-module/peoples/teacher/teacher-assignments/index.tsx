@@ -35,7 +35,7 @@ const TeacherAssignments = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classes, loading: classesLoading } = useClasses(academicYearId);
-  const { subjects, loading: subjectsLoading } = useSubjects();
+  const { subjects, loading: subjectsLoading } = useSubjects(null, { academicYearId });
 
   const [teacherId, setTeacherId] = useState<string | null>(null);
   const [classId, setClassId] = useState<string | null>(null);
@@ -58,7 +58,9 @@ const TeacherAssignments = () => {
     setListLoading(true);
     setListError(null);
     try {
-      const res = await apiService.getTeacherAssignments();
+      const res = await apiService.getTeacherAssignments(
+        academicYearId ? { academicYearId } : {}
+      );
       const raw = res?.data ?? [];
       setRows(Array.isArray(raw) ? raw : []);
     } catch (e) {
@@ -67,7 +69,7 @@ const TeacherAssignments = () => {
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [academicYearId]);
 
   useEffect(() => {
     loadList();

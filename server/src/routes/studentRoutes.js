@@ -11,8 +11,10 @@ const {
   updateStudent,
   promoteStudents,
   leaveStudents,
+  rejoinStudent,
   getStudentPromotions,
   getLeavingStudents,
+  getStudentRejoins,
   getStudentAttendance,
   getStudentLoginDetails,
   getStudentExamResults,
@@ -23,7 +25,13 @@ const {
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
-const { createStudentSchema, updateStudentSchema, promoteStudentsSchema, leaveStudentsSchema } = require('../validations/studentValidation');
+const {
+  createStudentSchema,
+  updateStudentSchema,
+  promoteStudentsSchema,
+  leaveStudentsSchema,
+  rejoinStudentSchema,
+} = require('../validations/studentValidation');
 
 const router = express.Router();
 
@@ -49,9 +57,17 @@ router.post(
   leaveStudents
 );
 
+router.post(
+  '/rejoin',
+  requireRole(PEOPLE_MANAGER_ROLES),
+  validate(rejoinStudentSchema),
+  rejoinStudent
+);
+
 // Student promotion history
 router.get('/promotions', requireRole(STUDENT_LIST_ALL_ROLES), getStudentPromotions);
 router.get('/leaving', requireRole(STUDENT_LIST_ALL_ROLES), getLeavingStudents);
+router.get('/rejoins', requireRole(STUDENT_LIST_ALL_ROLES), getStudentRejoins);
 
 // Get current logged-in student (must be before /:id)
 router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);

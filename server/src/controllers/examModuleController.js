@@ -646,12 +646,12 @@ async function getManageContext(req, res) {
 
     const classRows = await query(
       schema.hasExamClassesTable
-        ? `SELECT c.id AS class_id, c.class_name
+        ? `SELECT c.id AS class_id, c.class_name, c.class_code
            FROM exam_classes ec
            INNER JOIN classes c ON c.id = ec.class_id
            WHERE ec.exam_id = $1
            ORDER BY c.class_name`
-        : `SELECT c.id AS class_id, c.class_name
+        : `SELECT c.id AS class_id, c.class_name, c.class_code
            FROM exams e
            INNER JOIN classes c ON c.id = e.class_id
            WHERE e.id = $1`,
@@ -661,6 +661,7 @@ async function getManageContext(req, res) {
     let classMap = classRows.rows.map((r) => ({
       class_id: parseId(r.class_id),
       class_name: r.class_name,
+      class_code: r.class_code || null,
       sections: [],
     }));
 
@@ -1764,9 +1765,44 @@ async function createExam(req, res) {
   }
 }
 
+async function deleteExam(req, res) {
+  try {
+    const examId = parseId(req.params.id);
+    if (!examId) return error(res, 400, 'Invalid exam id');
+
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) return error(res, 403, 'Only admin can delete exams');
+
+    await executeTransaction(async (client) => {
+      const exists = await client.query(
+        `SELECT id FROM exams WHERE id = $1 LIMIT 1`,
+        [examId]
+      );
+      if (!exists.rows.length) {
+        const errObj = new Error('Exam not found');
+        errObj.statusCode = 404;
+        throw errObj;
+      }
+
+      // Defensive explicit deletes so legacy schemas also remain clean.
+      await client.query(`DELETE FROM exam_results WHERE exam_id = $1`, [examId]);
+      await client.query(`DELETE FROM exam_subjects WHERE exam_id = $1`, [examId]);
+      await client.query(`DELETE FROM exam_classes WHERE exam_id = $1`, [examId]);
+      await client.query(`DELETE FROM exams WHERE id = $1`, [examId]);
+    });
+
+    return success(res, 200, 'Exam deleted successfully');
+  } catch (e) {
+    if (e?.statusCode) return error(res, e.statusCode, e.message || 'Failed to delete exam');
+    console.error('deleteExam', e);
+    return error(res, 500, 'Failed to delete exam');
+  }
+}
+
 module.exports = {
   listExams,
   createExam,
+  deleteExam,
   getGradeScale,
   createGradeScale,
   updateGradeScale,

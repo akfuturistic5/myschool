@@ -79,9 +79,9 @@ function hideBootstrapModalAndWaitForClosed(modalEl: HTMLElement | null): Promis
 
 const ClassSection = () => {
   const routes = all_routes;
-  const { sections, loading, error, refetch } = useSections();
-  const { teachers = [] } = useTeachers();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { sections, loading, error, refetch } = useSections(null, { academicYearId });
+  const { teachers = [] } = useTeachers();
   const { classes = [] } = useClasses(academicYearId);
   const { classRooms = [] } = useClassRooms();
   const [selectedSection, setSelectedSection] = useState<any>(null);

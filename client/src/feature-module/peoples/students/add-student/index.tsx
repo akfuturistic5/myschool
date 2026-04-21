@@ -292,7 +292,14 @@ const AddStudent = () => {
   const { classes, loading: classesLoading, error: classesError } = useClasses(academicYearId);
 
   // Fetch sections from API
-  const { sections, loading: sectionsLoading, error: sectionsError } = useSections();
+  const selectedClassId =
+    formData.class_id && String(formData.class_id).trim() !== ""
+      ? Number(formData.class_id)
+      : null;
+  const { sections, loading: sectionsLoading, error: sectionsError } = useSections(
+    selectedClassId,
+    { academicYearId, fetchAllWhenNoClass: false }
+  );
 
   // Fetch blood groups from API
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();

@@ -3,6 +3,7 @@ import { useSelector } from "react-redux";
 import { Link, useLocation } from "react-router-dom";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import Swal from "sweetalert2";
 import { all_routes } from "../../../router/all_routes";
 import { apiService } from "../../../../core/services/apiService";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
@@ -116,6 +117,7 @@ const ExamResult = () => {
             flat.push({
               class_id: String(c.class_id),
               class_name: c.class_name,
+              class_code: c.class_code || "",
               section_id: String(s.section_id),
               section_name: s.section_name,
             });
@@ -280,9 +282,17 @@ const ExamResult = () => {
   };
 
   const classOptions = useMemo(() => {
-    const m = new Map<string, string>();
-    contextRows.forEach((r) => m.set(r.class_id, r.class_name));
-    return [...m.entries()].map(([id, name]) => ({ id, name }));
+    const m = new Map<string, { class_name: string; class_code: string }>();
+    contextRows.forEach((r) =>
+      m.set(r.class_id, {
+        class_name: r.class_name,
+        class_code: r.class_code || "",
+      })
+    );
+    return [...m.entries()].map(([id, meta]) => ({
+      id,
+      name: meta.class_code ? `${meta.class_name} (${meta.class_code})` : meta.class_name,
+    }));
   }, [contextRows]);
   const sectionOptions = useMemo(
     () => contextRows.filter((r) => r.class_id === classId),
@@ -777,6 +787,12 @@ const ExamResult = () => {
         class_id: Number(classId),
         section_id: Number(sectionId),
         rows: payloadRows,
+      });
+      await Swal.fire({
+        icon: "success",
+        title: "Marks saved successfully",
+        text: "Student marks have been updated.",
+        confirmButtonText: "OK",
       });
       setMessage("Marks saved successfully.");
       await loadResults(normalizeExamId(selectedExamId));

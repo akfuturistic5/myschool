@@ -869,6 +869,8 @@ const getLeaveApplications = async (req, res) => {
     const staffId = req.query.staff_id ? parseInt(req.query.staff_id, 10) : null;
     const classId = req.query.class_id ? parseInt(req.query.class_id, 10) : null;
     const sectionId = req.query.section_id ? parseInt(req.query.section_id, 10) : null;
+    const departmentId = req.query.department_id ? parseInt(req.query.department_id, 10) : null;
+    const designationId = req.query.designation_id ? parseInt(req.query.designation_id, 10) : null;
     const leaveTypeId = req.query.leave_type_id ? parseInt(req.query.leave_type_id, 10) : null;
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
@@ -909,6 +911,16 @@ const getLeaveApplications = async (req, res) => {
     if (sectionId && !Number.isNaN(sectionId)) {
       conditions.push(`st.section_id = $${i++}`);
       params.push(sectionId);
+    }
+    if (departmentId && !Number.isNaN(departmentId)) {
+      conditions.push(`la.staff_id IS NOT NULL`);
+      conditions.push(`s.department_id = $${i++}`);
+      params.push(departmentId);
+    }
+    if (designationId && !Number.isNaN(designationId)) {
+      conditions.push(`la.staff_id IS NOT NULL`);
+      conditions.push(`s.designation_id = $${i++}`);
+      params.push(designationId);
     }
 
     if (leaveFrom) {
