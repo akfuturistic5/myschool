@@ -4,7 +4,7 @@ import { transportAssignData } from '../data/json/transport_assign';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-export const useTransportAssignments = (params = {}) => {
+export const useTransportAssignments = (initialParams = {}) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -13,6 +13,14 @@ export const useTransportAssignments = (params = {}) => {
     page: 1,
     limit: 10,
     totalPages: 0
+  });
+
+  const [params, setParams] = useState({
+    page: 1,
+    limit: 10,
+    search: '',
+    status: 'all',
+    ...initialParams
   });
 
   const fetchAssignments = useCallback(async (overrides = {}) => {
@@ -64,6 +72,8 @@ export const useTransportAssignments = (params = {}) => {
     loading,
     error,
     metadata,
+    params,
+    setParams,
     refetch: fetchAssignments,
     fallbackData: transportAssignData,
   };

@@ -67,7 +67,10 @@ const getAllSections = async (req, res) => {
         s.id, s.section_name, s.class_id, s.section_teacher_id, s.max_students, s.room_number,
         s.description, s.is_active, s.created_at, s.created_by, s.modified_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
+<<<<<<< HEAD
         s.academic_year_id,
+=======
+>>>>>>> origin/development
         c.class_name, c.class_code, st.first_name as teacher_first_name, st.last_name as teacher_last_name
       FROM sections s
       LEFT JOIN classes c ON s.class_id = c.id
@@ -99,7 +102,10 @@ const getSectionById = async (req, res) => {
         s.created_by,
         s.modified_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
+<<<<<<< HEAD
         s.academic_year_id,
+=======
+>>>>>>> origin/development
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -142,7 +148,10 @@ const getSectionsByClass = async (req, res) => {
         s.is_active,
         s.created_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
+<<<<<<< HEAD
         s.academic_year_id,
+=======
+>>>>>>> origin/development
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -165,7 +174,11 @@ const createSection = async (req, res) => {
   try {
     const {
       section_name, class_id, section_teacher_id, max_students, room_number,
+<<<<<<< HEAD
       description, is_active, academic_year_id
+=======
+      description, is_active
+>>>>>>> origin/development
     } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
@@ -187,8 +200,13 @@ const createSection = async (req, res) => {
 
     const result = await query(
       `INSERT INTO sections (
+<<<<<<< HEAD
         section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by, academic_year_id
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+=======
+        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+>>>>>>> origin/development
       [
         nameNorm,
         class_id,
@@ -266,7 +284,11 @@ const updateSection = async (req, res) => {
         is_active = $6,
         academic_year_id = $7,
         modified_at = NOW()
+<<<<<<< HEAD
       WHERE id = $8
+=======
+      WHERE id = $7
+>>>>>>> origin/development
       RETURNING *
     `, [
       sectionName,

@@ -3,7 +3,7 @@ import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-export const useTransportDrivers = (params = {}) => {
+export const useTransportDrivers = (initialParams = {}) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -12,6 +12,14 @@ export const useTransportDrivers = (params = {}) => {
     page: 1,
     limit: 10,
     totalPages: 0
+  });
+
+  const [params, setParams] = useState({
+    page: 1,
+    limit: 10,
+    search: '',
+    status: 'all',
+    ...initialParams
   });
 
   const fetchDrivers = useCallback(async (overrides = {}) => {
@@ -64,6 +72,8 @@ export const useTransportDrivers = (params = {}) => {
     loading,
     error,
     metadata,
+    params,
+    setParams,
     refetch: fetchDrivers,
   };
 };

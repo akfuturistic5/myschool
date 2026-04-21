@@ -195,7 +195,7 @@ const createStudent = async (req, res) => {
       current_address, permanent_address, address,
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
-      sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+      siblings, // New dynamic array
       is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
@@ -372,7 +372,6 @@ const createStudent = async (req, res) => {
             mother_tongue_id, is_active,
             address, current_address, permanent_address,
             previous_school, previous_school_address,
-            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
             is_transport_required, route_id, pickup_point_id, vehicle_number,
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
@@ -380,7 +379,7 @@ const createStudent = async (req, res) => {
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -393,7 +392,6 @@ const createStudent = async (req, res) => {
           current_address || addrVal || null,
           permanent_address || null,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -420,7 +418,6 @@ const createStudent = async (req, res) => {
             blood_group_id, house_id, ${religionColumn}, cast_id, phone, email,
             mother_tongue_id, is_active,
             address, previous_school, previous_school_address,
-            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
             is_transport_required, route_id, pickup_point_id, vehicle_number,
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
@@ -428,7 +425,7 @@ const createStudent = async (req, res) => {
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -439,7 +436,6 @@ const createStudent = async (req, res) => {
           status === 'Active' ? true : false,
           addrVal,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -517,6 +513,26 @@ const createStudent = async (req, res) => {
             mother_image_url,
             sync.motherUserId,
           ]);
+        }
+      }
+
+      // Handle Siblings
+      if (Array.isArray(siblings) && siblings.length > 0) {
+        for (const sib of siblings) {
+          if (!sib.name && !sib.admission_number) continue;
+          await client.query(
+            `INSERT INTO student_siblings (
+              student_id, is_in_same_school, name, class_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              studentRow.id,
+              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
+              sib.name || null,
+              sib.class_name || null,
+              sib.roll_number || null,
+              sib.admission_number || null,
+            ]
+          );
         }
       }
 
@@ -600,7 +616,7 @@ const updateStudent = async (req, res) => {
       current_address, permanent_address, address,
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
-      sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+      siblings, // New dynamic array
       is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
@@ -884,32 +900,28 @@ const updateStudent = async (req, res) => {
             permanent_address = $21,
             previous_school = $22,
             previous_school_address = $23,
-            sibiling_1 = $24,
-            sibiling_2 = $25,
-            sibiling_1_class = $26,
-            sibiling_2_class = $27,
-            is_transport_required = $28,
-            route_id = $29,
-            pickup_point_id = $30,
-            vehicle_number = $31,
-            is_hostel_required = $32,
-            hostel_id = $33,
-            hostel_room_id = $34,
-            bank_name = $35,
-            branch = $36,
-            ifsc = $37,
-            known_allergies = $38,
-            medications = $39,
-            medical_condition = $40,
-            other_information = $41,
-            unique_student_ids = $42,
-            pen_number = $43,
-            aadhar_no = $44,
-            gr_number = $45,
-            medical_document_path = $46,
-            transfer_certificate_path = $47,
+            is_transport_required = $24,
+            route_id = $25,
+            pickup_point_id = $26,
+            vehicle_number = $27,
+            is_hostel_required = $28,
+            hostel_id = $29,
+            hostel_room_id = $30,
+            bank_name = $31,
+            branch = $32,
+            ifsc = $33,
+            known_allergies = $34,
+            medications = $35,
+            medical_condition = $36,
+            other_information = $37,
+            unique_student_ids = $38,
+            pen_number = $39,
+            aadhar_no = $40,
+            gr_number = $41,
+            medical_document_path = $42,
+            transfer_certificate_path = $43,
             modified_at = NOW()
-          WHERE id = $48
+          WHERE id = $44
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -922,7 +934,6 @@ const updateStudent = async (req, res) => {
           current_address || addrVal || null,
           permanent_address || null,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -965,43 +976,38 @@ const updateStudent = async (req, res) => {
                 address = $19,
                 previous_school = $20,
                 previous_school_address = $21,
-                sibiling_1 = $22,
-                sibiling_2 = $23,
-                sibiling_1_class = $24,
-                sibiling_2_class = $25,
-                is_transport_required = $26,
-                route_id = $27,
-                pickup_point_id = $28,
-                vehicle_number = $29,
-                is_hostel_required = $30,
-                hostel_id = $31,
-                hostel_room_id = $32,
-                bank_name = $33,
-                branch = $34,
-                ifsc = $35,
-                known_allergies = $36,
-                medications = $37,
-                medical_condition = $38,
-                other_information = $39,
-                unique_student_ids = $40,
-                pen_number = $41,
-                aadhar_no = $42,
-                gr_number = $43,
-                medical_document_path = $44,
-                transfer_certificate_path = $45,
+                is_transport_required = $22,
+                route_id = $23,
+                pickup_point_id = $24,
+                vehicle_number = $25,
+                is_hostel_required = $26,
+                hostel_id = $27,
+                hostel_room_id = $28,
+                bank_name = $29,
+                branch = $30,
+                ifsc = $31,
+                known_allergies = $32,
+                medications = $33,
+                medical_condition = $34,
+                other_information = $35,
+                unique_student_ids = $36,
+                pen_number = $37,
+                aadhar_no = $38,
+                gr_number = $39,
+                medical_document_path = $40,
+                transfer_certificate_path = $41,
                 modified_at = NOW()
-              WHERE id = $46
+              WHERE id = $42
               RETURNING *
             `, [
               academic_year_id || null, admission_number, admission_date || null, roll_number || null,
               first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+              (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
               date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
               cast_id || null, phone || null, email || null, mother_tongue_id || null,
               status === 'Active' ? true : false,
               addrVal,
               previous_school || null, previous_school_address || null,
-              sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
               is_transport_required === true || is_transport_required === 'true',
               route_id || null, pickup_point_id || null, vehicle_number || null,
               is_hostel_required === true || is_hostel_required === 'true',
@@ -1033,7 +1039,7 @@ const updateStudent = async (req, res) => {
               date_of_birth = $10,
               blood_group_id = $11,
               house_id = $12,
-              reigion_id = $13,
+              religion_id = $13,
               cast_id = $14,
               phone = $15,
               email = $16,
@@ -1044,37 +1050,33 @@ const updateStudent = async (req, res) => {
               permanent_address = $21,
               previous_school = $22,
               previous_school_address = $23,
-              sibiling_1 = $24,
-              sibiling_2 = $25,
-              sibiling_1_class = $26,
-              sibiling_2_class = $27,
-              is_transport_required = $28,
-              route_id = $29,
-              pickup_point_id = $30,
-              vehicle_number = $31,
-              is_hostel_required = $32,
-              hostel_id = $33,
-              hostel_room_id = $34,
-              bank_name = $35,
-              branch = $36,
-              ifsc = $37,
-              known_allergies = $38,
-              medications = $39,
-              medical_condition = $40,
-              other_information = $41,
-              unique_student_ids = $42,
-              pen_number = $43,
-              aadhar_no = $44,
-              gr_number = $45,
-              medical_document_path = $46,
-              transfer_certificate_path = $47,
+              is_transport_required = $24,
+              route_id = $25,
+              pickup_point_id = $26,
+              vehicle_number = $27,
+              is_hostel_required = $28,
+              hostel_id = $29,
+              hostel_room_id = $30,
+              bank_name = $31,
+              branch = $32,
+              ifsc = $33,
+              known_allergies = $34,
+              medications = $35,
+              medical_condition = $36,
+              other_information = $37,
+              unique_student_ids = $38,
+              pen_number = $39,
+              aadhar_no = $40,
+              gr_number = $41,
+              medical_document_path = $42,
+              transfer_certificate_path = $43,
               modified_at = NOW()
-            WHERE id = $48
+            WHERE id = $44
             RETURNING *
           `, [
             academic_year_id || null, admission_number, admission_date || null, roll_number || null,
             first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+            (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
             date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
             cast_id || null, phone || null, email || null, mother_tongue_id || null,
             status === 'Active' ? true : false,
@@ -1082,7 +1084,6 @@ const updateStudent = async (req, res) => {
             current_address || addrVal || null,
             permanent_address || null,
             previous_school || null, previous_school_address || null,
-            sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
             is_transport_required === true || is_transport_required === 'true',
             route_id || null, pickup_point_id || null, vehicle_number || null,
             is_hostel_required === true || is_hostel_required === 'true',
@@ -2646,7 +2647,6 @@ const getStudentById = async (req, res) => {
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
       s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id,
       s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
-      s.sibiling_1, s.sibiling_2, s.sibiling_1_class, s.sibiling_2_class,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
@@ -2910,6 +2910,19 @@ const getStudentById = async (req, res) => {
         }
       } catch (e) { }
     }
+    // Fetch Siblings
+    try {
+      const sibsRes = await query(
+        `SELECT is_in_same_school, name, class_name, roll_number, admission_number 
+         FROM student_siblings WHERE student_id = $1 ORDER BY id ASC`,
+        [sid]
+      );
+      studentData.siblings = sibsRes.rows;
+    } catch (e) {
+      console.warn('getStudentById: could not fetch siblings:', e.message);
+      studentData.siblings = [];
+    }
+
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.status(200).json({
       status: 'SUCCESS',

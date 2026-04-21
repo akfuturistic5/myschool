@@ -55,7 +55,7 @@ const getAllAssignments = async (req, res) => {
       )`;
     }
 
-    if (status !== undefined && status !== '') {
+    if (status !== undefined && status !== '' && status !== 'all') {
       const isActive = status === 'active' || status === 'true' || status === true;
       params.push(isActive);
       whereClause += ` AND ta.is_active = $${params.length}`;
@@ -164,6 +164,12 @@ const createAssignment = async (req, res) => {
       [Number(vehicle_id), Number(route_id), Number(driver_id), isActiveValue, scopedAcademicYearId]
     );
 
+    // Sync with vehicles table to maintain filtering source of truth
+    await query(
+      `UPDATE vehicles SET route_id = $1, driver_id = $2 WHERE id = $3`,
+      [Number(route_id), Number(driver_id), Number(vehicle_id)]
+    );
+
     return success(res, 201, 'Assignment created successfully', mapAssignmentRow(insert.rows[0]));
   } catch (err) {
     console.error('Error creating assignment:', err);
@@ -223,7 +229,16 @@ const updateAssignment = async (req, res) => {
       return errorResponse(res, 404, 'Assignment not found');
     }
 
-    return success(res, 200, 'Assignment updated successfully', mapAssignmentRow(updated.rows[0]));
+    const row = updated.rows[0];
+    // Sync with vehicles table if active
+    if (row.is_active && !row.deleted_at) {
+      await query(
+        `UPDATE vehicles SET route_id = $1, driver_id = $2 WHERE id = $3`,
+        [row.route_id, row.driver_id, row.vehicle_id]
+      );
+    }
+
+    return success(res, 200, 'Assignment updated successfully', mapAssignmentRow(row));
   } catch (err) {
     console.error('Error updating assignment:', err);
     return errorResponse(res, 500, 'Failed to update assignment');
@@ -256,6 +271,16 @@ const deleteAssignment = async (req, res) => {
 
     if (deleted.rows.length === 0) {
       return errorResponse(res, 404, 'Assignment not found');
+    }
+
+    // Clear from vehicles table if this was the active assignment
+    // (Note: This is a simple sync, might need more complex logic if multiple assignments exist)
+    const assignmentRes = await query('SELECT vehicle_id FROM transport_assignments WHERE id = $1', [assignmentId]);
+    if (assignmentRes.rows.length > 0) {
+      await query(
+        `UPDATE vehicles SET route_id = NULL, driver_id = NULL WHERE id = $1`,
+        [assignmentRes.rows[0].vehicle_id]
+      );
     }
 
     return success(res, 200, 'Assignment removed successfully');

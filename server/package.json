@@ -20,6 +20,12 @@
     "db:migrate:fees": "node scripts/run-fees-migration.js",
     "db:migrate:transport": "node scripts/run-transport-migration.js",
     "db:migrate:hostel": "node scripts/run-hostel-migration.js",
+<<<<<<< HEAD
+=======
+    "db:migrate:unify": "node scripts/migrate-unify-parents-guardians.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
+>>>>>>> origin/development
     "test": "node --test \"test/**/*.test.js\"",
     "test:attendance": "node --test test/attendanceValidation.test.js"
   },

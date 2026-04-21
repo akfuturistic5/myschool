@@ -159,11 +159,14 @@ const AddStudent = () => {
     guardian_address: string;
     guardian_person_id: number | null;
     guardian_matched_from_legacy: boolean;
-    // Siblings (API uses sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class)
-    sibiling_1: string;
-    sibiling_2: string;
-    sibiling_1_class: string;
-    sibiling_2_class: string;
+    // Siblings
+    siblings: {
+      is_in_same_school: boolean;
+      name: string;
+      class_name: string;
+      roll_number: string;
+      admission_number: string;
+    }[];
     // Transport
     is_transport_required: boolean;
     route_id: string | null;
@@ -237,10 +240,9 @@ const AddStudent = () => {
     guardian_address: '',
     guardian_person_id: null,
     guardian_matched_from_legacy: false,
-    sibiling_1: '',
-    sibiling_2: '',
-    sibiling_1_class: '',
-    sibiling_2_class: '',
+    siblings: [
+      { is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }
+    ],
     is_transport_required: false,
     route_id: null,
     pickup_point_id: null,
@@ -319,9 +321,9 @@ const AddStudent = () => {
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels();
   const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms();
-  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
-  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
+  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
+  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
   const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
     value: String((h.originalData as { id?: number })?.id ?? ""),
     label: (h.hostelName as string) || "N/A",
@@ -435,10 +437,15 @@ const AddStudent = () => {
         guardian_person_id:
           raw.guardian_person_id != null ? Number(raw.guardian_person_id) : null,
         guardian_matched_from_legacy: false,
-        sibiling_1: raw.sibiling_1 || '',
-        sibiling_2: raw.sibiling_2 || '',
-        sibiling_1_class: raw.sibiling_1_class || '',
-        sibiling_2_class: raw.sibiling_2_class || '',
+        siblings: Array.isArray(raw.siblings) && raw.siblings.length > 0 
+          ? raw.siblings.map((s: any) => ({
+              is_in_same_school: !!s.is_in_same_school,
+              name: s.name || '',
+              class_name: s.class_name || '',
+              roll_number: s.roll_number || '',
+              admission_number: s.admission_number || '',
+            }))
+          : [{ is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }],
         is_transport_required: !!raw.is_transport_required,
         route_id: raw.route_id != null ? raw.route_id.toString() : null,
         pickup_point_id: raw.pickup_point_id != null ? raw.pickup_point_id.toString() : null,
@@ -514,6 +521,13 @@ const AddStudent = () => {
       formDataPopulatedRef.current = false;
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
+  
+  // Refetch vehicles when route changes
+  useEffect(() => {
+    if (setVehicleParams) {
+      setVehicleParams({ route_id: formData.route_id || 'all' });
+    }
+  }, [formData.route_id, setVehicleParams]);
 
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
@@ -538,28 +552,30 @@ const AddStudent = () => {
     setOwner2(newTags);
   };
   const [defaultDate, setDefaultDate] = useState<dayjs.Dayjs | null>(null);
-  const [newContents, setNewContents] = useState<number[]>([0]);
-  // Siblings: per-row Yes/No (UI-only, controls which fields are visible)
-  const [siblingInSameSchool, setSiblingInSameSchool] = useState<boolean[]>([true]);
-  const [siblingRollNos, setSiblingRollNos] = useState<string[]>(['']);
-  const [siblingAdmissionNos, setSiblingAdmissionNos] = useState<string[]>(['']);
   const location = useLocation();
 
   const addNewContent = () => {
-    setNewContents(prev => {
-      const nextIndex = prev.length;
-      setSiblingInSameSchool(prevFlags => [...prevFlags, true]);
-      setSiblingRollNos(prevRolls => [...prevRolls, '']);
-      setSiblingAdmissionNos(prevAdmissions => [...prevAdmissions, '']);
-      return [...prev, nextIndex];
-    });
+    setFormData(prev => ({
+      ...prev,
+      siblings: [
+        ...prev.siblings,
+        { is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }
+      ]
+    }));
   };
 
   const removeContent = (index: number) => {
-    setNewContents(prev => prev.filter((_, i) => i !== index));
-    setSiblingInSameSchool(prev => prev.filter((_, i) => i !== index));
-    setSiblingRollNos(prev => prev.filter((_, i) => i !== index));
-    setSiblingAdmissionNos(prev => prev.filter((_, i) => i !== index));
+    setFormData(prev => ({
+      ...prev,
+      siblings: prev.siblings.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateSibling = (index: number, patch: any) => {
+    setFormData(prev => ({
+      ...prev,
+      siblings: prev.siblings.map((s, i) => i === index ? { ...s, ...patch } : s)
+    }));
   };
 
   // Handle form field changes
@@ -723,10 +739,13 @@ const AddStudent = () => {
         permanent_address: formData.permanent_address || null,
         previous_school: formData.previous_school || null,
         previous_school_address: formData.previous_school_address || null,
-        sibiling_1: formData.sibiling_1 || null,
-        sibiling_2: formData.sibiling_2 || null,
-        sibiling_1_class: formData.sibiling_1_class || null,
-        sibiling_2_class: formData.sibiling_2_class || null,
+        siblings: formData.siblings.map(s => ({
+          is_in_same_school: s.is_in_same_school,
+          name: s.name || null,
+          class_name: s.class_name || null,
+          roll_number: s.roll_number || null,
+          admission_number: s.admission_number || null,
+        })),
         is_transport_required: formData.is_transport_required || false,
         route_id: formData.route_id ? (typeof formData.route_id === 'string' ? parseInt(formData.route_id) : formData.route_id) : null,
         pickup_point_id: formData.pickup_point_id ? (typeof formData.pickup_point_id === 'string' ? parseInt(formData.pickup_point_id) : formData.pickup_point_id) : null,
@@ -1934,9 +1953,9 @@ const AddStudent = () => {
                               <label className="form-label">Sibling Info</label>
                             </div>
                           </div>
-                          {newContents.map((_, index) => {
+                          {formData.siblings.map((sib, index) => {
                             const useRealData = true;
-                            const isSameSchool = siblingInSameSchool[index] ?? true;
+                            const isSameSchool = sib.is_in_same_school;
                             return (
                               <div key={index} className="col-lg-12">
                                 <div className="row">
@@ -1952,13 +1971,7 @@ const AddStudent = () => {
                                           name={`sibling-${index}`}
                                           id={`sibling-${index}-yes`}
                                           checked={isSameSchool}
-                                          onChange={() => {
-                                            setSiblingInSameSchool(prev => {
-                                              const next = [...prev];
-                                              next[index] = true;
-                                              return next;
-                                            });
-                                          }}
+                                          onChange={() => updateSibling(index, { is_in_same_school: true })}
                                         />
                                         <label
                                           className="form-check-label"
@@ -1974,13 +1987,7 @@ const AddStudent = () => {
                                           name={`sibling-${index}`}
                                           id={`sibling-${index}-no`}
                                           checked={!isSameSchool}
-                                          onChange={() => {
-                                            setSiblingInSameSchool(prev => {
-                                              const next = [...prev];
-                                              next[index] = false;
-                                              return next;
-                                            });
-                                          }}
+                                          onChange={() => updateSibling(index, { is_in_same_school: false })}
                                         />
                                         <label
                                           className="form-check-label"
@@ -1998,8 +2005,8 @@ const AddStudent = () => {
                                         <input
                                           type="text"
                                           className="form-control"
-                                          value={index === 0 ? (formData.sibiling_1 || '') : (formData.sibiling_2 || '')}
-                                          onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1' : 'sibiling_2', e.target.value)}
+                                          value={sib.name || ''}
+                                          onChange={(e) => updateSibling(index, { name: e.target.value })}
                                         />
                                       ) : (
                                         <input
@@ -2020,12 +2027,8 @@ const AddStudent = () => {
                                             type="text"
                                             className="form-control"
                                             placeholder="Roll No"
-                                            value={(siblingRollNos[index] ?? '')}
-                                            onChange={(e) => {
-                                              const next = [...siblingRollNos];
-                                              next[index] = e.target.value;
-                                              setSiblingRollNos(next);
-                                            }}
+                                            value={sib.roll_number || ''}
+                                            onChange={(e) => updateSibling(index, { roll_number: e.target.value })}
                                           />
                                         </div>
                                       </div>
@@ -2038,12 +2041,8 @@ const AddStudent = () => {
                                             type="text"
                                             className="form-control"
                                             placeholder="Admission No"
-                                            value={(siblingAdmissionNos[index] ?? '')}
-                                            onChange={(e) => {
-                                              const next = [...siblingAdmissionNos];
-                                              next[index] = e.target.value;
-                                              setSiblingAdmissionNos(next);
-                                            }}
+                                            value={sib.admission_number || ''}
+                                            onChange={(e) => updateSibling(index, { admission_number: e.target.value })}
                                           />
                                         </div>
                                       </div>
@@ -2060,8 +2059,8 @@ const AddStudent = () => {
                                             <input
                                               type="text"
                                               className="form-control"
-                                              value={index === 0 ? (formData.sibiling_1_class || '') : (formData.sibiling_2_class || '')}
-                                              onChange={(e) => handleInputChange(index === 0 ? 'sibiling_1_class' : 'sibiling_2_class', e.target.value)}
+                                              value={sib.class_name || ''}
+                                              onChange={(e) => updateSibling(index, { class_name: e.target.value })}
                                             />
                                           ) : (
                                             <CommonSelect
@@ -2071,7 +2070,7 @@ const AddStudent = () => {
                                             />
                                           )}
                                         </div>
-                                        {newContents.length > 1 && (
+                                        {formData.siblings.length > 1 && (
                                           <div>
                                             <label className="form-label">
                                               &nbsp;
