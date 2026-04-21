@@ -24,6 +24,27 @@ function addDaysIso(dateOnly: string, days: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+function extractApiError(err: unknown): { message: string; code?: string; details?: unknown } {
+  const fallback = { message: err instanceof Error ? err.message : "Request failed" };
+  if (!(err instanceof Error)) return fallback;
+
+  const raw = String(err.message || "");
+  const marker = "message: ";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return fallback;
+  const jsonPart = raw.slice(idx + marker.length).trim();
+  try {
+    const parsed = JSON.parse(jsonPart);
+    return {
+      message: parsed?.message || fallback.message,
+      code: parsed?.code,
+      details: parsed?.data,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 const AcademicYearCreate = () => {
   const routes = all_routes;
   const navigate = useNavigate();
@@ -37,6 +58,40 @@ const AcademicYearCreate = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasAnyYears, setHasAnyYears] = useState(false);
   const [previousEndDate, setPreviousEndDate] = useState<string | null>(null);
+  const [previousYearId, setPreviousYearId] = useState<number | null>(null);
+  const [copyFromPrevious, setCopyFromPrevious] = useState(true);
+  const [copyOptions, setCopyOptions] = useState({
+    classes: true,
+    sections: true,
+    subjects: false,
+    teacherAssignments: false,
+    timetable: false,
+    departments: false,
+    designations: false,
+    transport: false,
+  });
+
+  const withDependencies = (next: typeof copyOptions) => {
+    const result = { ...next };
+    // Do not auto-enable hidden modules. Keep exactly user-selected modules.
+    // Only clear dependent modules when parent modules are disabled.
+    if (!result.classes) {
+      result.sections = false;
+      result.subjects = false;
+      result.teacherAssignments = false;
+      result.timetable = false;
+    }
+    if (!result.subjects) {
+      result.teacherAssignments = false;
+    }
+    if (!result.sections || !result.subjects) {
+      result.timetable = false;
+    }
+    if (!result.departments) {
+      result.designations = false;
+    }
+    return result;
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -46,7 +101,7 @@ const AcademicYearCreate = () => {
         const data = Array.isArray(res?.data) ? res.data : [];
         const any = data.length > 0;
         // "Previous/last" year = latest by start_date (tie-breaker id).
-        let latest = null;
+        let latest = null as null | { sd: string; id: number; ed: string | null };
         for (const row of data) {
           const sd = toDateOnly(row?.start_date) || "";
           const id = Number(row?.id) || 0;
@@ -61,12 +116,16 @@ const AcademicYearCreate = () => {
         if (mounted) {
           setHasAnyYears(any);
           setPreviousEndDate(latest?.ed ?? null);
+          setPreviousYearId(latest?.id ?? null);
+          setCopyFromPrevious(any);
         }
       } catch {
         // Non-blocking: if this fails, user can still select any date; backend will enforce rules.
         if (mounted) {
           setHasAnyYears(false);
           setPreviousEndDate(null);
+          setPreviousYearId(null);
+          setCopyFromPrevious(false);
         }
       }
     })();
@@ -103,25 +162,88 @@ const AcademicYearCreate = () => {
     }
     setSubmitting(true);
     try {
+      const effectiveCopyOptions = withDependencies(copyOptions);
+      const shouldClone = copyFromPrevious && !!previousYearId && Object.values(effectiveCopyOptions).some(Boolean);
+      if (copyFromPrevious && effectiveCopyOptions.sections && !effectiveCopyOptions.classes) {
+        setError("Sections cloning requires Classes.");
+        return;
+      }
+      if (copyFromPrevious && effectiveCopyOptions.subjects && !effectiveCopyOptions.classes) {
+        setError("Subjects cloning requires Classes.");
+        return;
+      }
+      if (copyFromPrevious && effectiveCopyOptions.teacherAssignments && !effectiveCopyOptions.classes) {
+        setError("Teacher Assignments cloning requires Classes.");
+        return;
+      }
+      if (copyFromPrevious && effectiveCopyOptions.teacherAssignments && !effectiveCopyOptions.subjects) {
+        setError("Teacher Assignments cloning requires Subjects.");
+        return;
+      }
+      if (
+        copyFromPrevious &&
+        effectiveCopyOptions.timetable &&
+        (!effectiveCopyOptions.classes || !effectiveCopyOptions.sections || !effectiveCopyOptions.subjects)
+      ) {
+        setError("Timetable cloning requires Classes, Sections, and Subjects.");
+        return;
+      }
+      if (copyFromPrevious && effectiveCopyOptions.designations && !effectiveCopyOptions.departments) {
+        setError("Designations cloning requires Departments.");
+        return;
+      }
+      if (copyFromPrevious && !previousYearId) {
+        setError("No previous academic year found to copy from.");
+        return;
+      }
       const res = await apiService.createAcademicYear({
         year_name: name,
         start_date: startDate,
         is_current: isCurrent,
         is_active: isActive,
+        ...(shouldClone
+          ? {
+              copy_from_year_id: previousYearId,
+              copy_options: effectiveCopyOptions,
+            }
+          : {}),
       });
       const newId = res?.data?.id;
+      if (res?.clone?.summary) {
+        const s = res.clone.summary;
+        const detailLines = [
+          `Classes: ${s.classes_cloned ?? 0}`,
+          `Sections: ${s.sections_cloned ?? 0}`,
+          `Subjects: ${s.subjects_cloned ?? 0}`,
+          `Teacher Assignments: ${s.assignments_cloned ?? 0}`,
+          `Timetable: ${s.timetable_entries_cloned ?? 0}`,
+        ];
+        await Swal.fire({
+          icon: "success",
+          title: "Academic year created and cloned",
+          html: `<div style="text-align:left">${detailLines.map((x) => `<div>${x}</div>`).join("")}</div>`,
+          confirmButtonText: "OK",
+        });
+      } else {
+        await Swal.fire({
+          icon: "success",
+          title: "Academic year created",
+          text: "Academic year was created successfully.",
+          confirmButtonText: "OK",
+        });
+      }
       if (newId != null) {
         navigate(`/academic/academic-years/${newId}`, { replace: true });
         return;
       }
       navigate(routes.academicYears, { replace: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to create academic year";
+      const parsedErr = extractApiError(err);
+      const msg = parsedErr.message || "Failed to create academic year";
       const lower = String(msg).toLowerCase();
       const duplicateName =
-        lower.includes("already exists") ||
-        lower.includes("duplicate key") ||
-        lower.includes("academic year with this name");
+        parsedErr.code === "ACADEMIC_YEAR_NAME_EXISTS" ||
+        lower.includes("academic year with this name already exists");
       if (duplicateName) {
         await Swal.fire({
           icon: "warning",
@@ -131,6 +253,12 @@ const AcademicYearCreate = () => {
         });
         return;
       }
+      await Swal.fire({
+        icon: "error",
+        title: "Academic year cloning failed",
+        text: parsedErr.code ? `${msg} (${parsedErr.code})` : msg,
+        confirmButtonText: "OK",
+      });
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -247,6 +375,158 @@ const AcademicYearCreate = () => {
                     <label className="form-check-label" htmlFor="ay-active">
                       Active (visible in dropdowns and day-to-day use)
                     </label>
+                  </div>
+                  <div className="mb-4 border rounded p-3 bg-light-subtle">
+                    <div className="form-check mb-2">
+                      <input
+                        id="ay-copy-prev"
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={copyFromPrevious}
+                        onChange={(e) => setCopyFromPrevious(e.target.checked)}
+                        disabled={!previousYearId}
+                      />
+                      <label className="form-check-label fw-semibold" htmlFor="ay-copy-prev">
+                        Copy data from previous academic year
+                      </label>
+                    </div>
+                    <div className="small text-muted mb-2">
+                      {previousYearId
+                        ? `Source year id: ${previousYearId}.`
+                        : "No previous academic year available, so cloning is disabled."}
+                    </div>
+                    {copyFromPrevious && previousYearId && (
+                      <div className="row g-2">
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-classes"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.classes}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, classes: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-classes">Classes</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-sections"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.sections}
+                              disabled={!copyOptions.classes}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, sections: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-sections">Sections</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-subjects"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.subjects}
+                              disabled={!copyOptions.classes}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, subjects: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-subjects">Subjects</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-assignments"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.teacherAssignments}
+                              disabled={!copyOptions.classes || !copyOptions.subjects}
+                              onChange={(e) =>
+                                setCopyOptions((prev) =>
+                                  withDependencies({ ...prev, teacherAssignments: e.target.checked })
+                                )
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-assignments">Teacher Assignments</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-timetable"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.timetable}
+                              disabled={!copyOptions.classes || !copyOptions.sections || !copyOptions.subjects}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, timetable: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-timetable">Timetable</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-departments"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.departments}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, departments: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-departments">Departments</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-designations"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.designations}
+                              disabled={!copyOptions.departments}
+                              onChange={(e) =>
+                                setCopyOptions((prev) =>
+                                  withDependencies({ ...prev, designations: e.target.checked })
+                                )
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-designations">Designations</label>
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="form-check">
+                            <input
+                              id="copy-transport"
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={copyOptions.transport}
+                              onChange={(e) =>
+                                setCopyOptions((prev) => withDependencies({ ...prev, transport: e.target.checked }))
+                              }
+                            />
+                            <label className="form-check-label" htmlFor="copy-transport">Transport</label>
+                          </div>
+                        </div>
+                        <div className="col-12">
+                          <div className="form-text">
+                            Dependencies: Sections and Subjects require Classes. Teacher Assignments require Classes +
+                            Subjects. Timetable requires Classes + Sections + Subjects. Designations require
+                            Departments.
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="d-flex flex-wrap gap-2 justify-content-end">
                     <Link to={routes.academicYears} className="btn btn-light">

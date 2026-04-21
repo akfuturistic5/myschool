@@ -57,6 +57,10 @@ export const useParents = (options = {}) => {
           father_occupation: parent.father_occupation,
           mother_occupation: parent.mother_occupation,
           student_id: parent.student_id,
+          /** From /parents/me — used when full GET /students/:id is slow or omits placement; same tenant RBAC. */
+          class_id: parent.class_id != null ? Number(parent.class_id) : null,
+          section_id: parent.section_id != null ? Number(parent.section_id) : null,
+          academic_year_id: parent.academic_year_id != null ? Number(parent.academic_year_id) : null,
           father_user_id: parent.father_user_id != null ? Number(parent.father_user_id) : null,
         };
         }).filter(Boolean);

@@ -161,11 +161,6 @@ const AcademicYearDetail = () => {
     }
   };
 
-  const hasBlockingData = useMemo(() => {
-    const values = Object.values(stats || {});
-    return values.some((v) => Number(v || 0) > 0);
-  }, [stats]);
-
   const handleDelete = async () => {
     if (!Number.isFinite(id) || !year) return;
     setDeleteError(null);
@@ -204,9 +199,35 @@ const AcademicYearDetail = () => {
           await apiService.deleteAcademicYear(id, pwd);
           return true;
         } catch (e: unknown) {
-          const err = e as Error & { status?: number };
-          if (err?.status === 403) {
+          const err = e as Error & { status?: number; code?: string; data?: Record<string, unknown> };
+          if (err?.status === 403 && err?.code === "PASSWORD_INCORRECT") {
             Swal.showValidationMessage("Sorry, that password is incorrect.");
+            return false;
+          }
+          if (err?.status === 403) {
+            Swal.showValidationMessage("You do not have permission to delete this academic year.");
+            return false;
+          }
+          if (err?.status === 409 && err?.code === "ACADEMIC_YEAR_DELETE_CURRENT_BLOCKED") {
+            Swal.showValidationMessage("Cannot delete current academic year. Mark another year as current first.");
+            return false;
+          }
+          if (err?.status === 409 && err?.code === "ACADEMIC_YEAR_DELETE_FALLBACK_REQUIRED") {
+            Swal.showValidationMessage("Create another academic year first, then delete this one.");
+            return false;
+          }
+          if (err?.status === 409 && err?.code === "ACADEMIC_YEAR_DELETE_CONSTRAINT_BLOCKED") {
+            const table = String(err?.data?.table || "").trim();
+            const constraint = String(err?.data?.constraint || "").trim();
+            Swal.showValidationMessage(
+              table || constraint
+                ? `Delete blocked by constraint: ${table || "table"} ${constraint ? `(${constraint})` : ""}`
+                : "Delete is blocked by database constraints."
+            );
+            return false;
+          }
+          if (err?.status === 409 && err?.code === "ACADEMIC_YEAR_DELETE_REASSIGN_CONFLICT") {
+            Swal.showValidationMessage("Delete failed due to duplicate records during reassignment.");
             return false;
           }
           Swal.showValidationMessage(err?.message || "Could not delete academic year. Please try again.");
@@ -474,20 +495,18 @@ const AcademicYearDetail = () => {
                 <div>
                   <h5 className="mb-0 text-danger">Danger zone</h5>
                   <p className="text-muted small mb-0 mt-1">
-                    Delete is allowed only when this year is not current and has no linked school records.
+                    Delete is blocked only for the current academic year.
                   </p>
                 </div>
                 <button
                   type="button"
                   className="btn btn-danger"
                   onClick={handleDelete}
-                  disabled={deleting || editCurrent || hasBlockingData}
+                  disabled={deleting || editCurrent}
                   title={
                     editCurrent
                       ? "Cannot delete current academic year"
-                      : hasBlockingData
-                        ? "Cannot delete: year is already used in records"
-                        : "Delete academic year"
+                      : "Delete academic year"
                   }
                 >
                   {deleting ? (
@@ -511,7 +530,6 @@ const AcademicYearDetail = () => {
                 )}
                 <ul className="mb-0 small text-muted">
                   <li><strong>Recommended:</strong> set the year to <strong>Inactive</strong> instead of deleting.</li>
-                  <li><strong>Blocked automatically</strong> if classes/students/attendance/etc exist for the year.</li>
                   <li><strong>Not allowed</strong> for the current year—mark another year as current first.</li>
                 </ul>
               </div>

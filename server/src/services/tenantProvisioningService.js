@@ -1,8 +1,11 @@
 const { Pool } = require('pg');
+const { from: copyFrom } = require('pg-copy-streams');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const { pipeline, finished } = require('stream/promises');
+const { Readable } = require('stream');
 require('dotenv').config();
 
 /** Application root (the `server` folder that contains `sql/`). */
@@ -113,12 +116,20 @@ function getAdminPool() {
     return adminPool;
   }
 
+  // Use a DB the app user can already access (same as master registry). Connecting only to
+  // `postgres` breaks common local setups where the app role has CONNECT on school/master DBs but not on postgres.
+  const localAdminDb =
+    (process.env.PROVISIONING_ADMIN_DATABASE_NAME || '').toString().trim() ||
+    (process.env.MASTER_DB_NAME || 'master_db').toString().trim() ||
+    (process.env.DB_NAME || '').toString().trim() ||
+    'postgres';
+
   adminPool = new Pool({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
-    database: 'postgres',
+    database: localAdminDb,
     max: 5,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
@@ -250,7 +261,9 @@ async function ensureTenantDefaultRoles(pool) {
 // Lazy-loaded SQL template for tenant provisioning. Kept in memory after first read.
 let cachedTemplateSql = null;
 const DISALLOWED_SQL_PATTERNS = [
-  /\bCOPY\b[\s\S]*\bPROGRAM\b/i,
+  // Block server-side shell via COPY only when PROGRAM is the PostgreSQL clause (not e.g. "Program" in COPY data).
+  /\bCOPY\b[\s\S]*?\bFROM\s+PROGRAM\b/i,
+  /\bCOPY\b[\s\S]*?\bTO\s+PROGRAM\b/i,
   /\bALTER\s+SYSTEM\b/i,
   /\bCREATE\s+ROLE\b/i,
   /\bALTER\s+ROLE\b/i,
@@ -429,6 +442,82 @@ function getSplitTemplateStatements(sqlText) {
 }
 
 /**
+ * pg_dump uses "COPY ... FROM stdin;" plus text rows and "\\." — that is valid in psql but
+ * not when sent through node-pg's query(): the semicolon ends the command and data rows are
+ * parsed as SQL ("syntax error at or near ..."). Split header vs data and stream via COPY protocol.
+ */
+function parseCopyStdinBlock(stmt) {
+  const normalized = String(stmt || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trimEnd();
+  const lines = normalized.split('\n');
+  let dotIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (/^[ \t]*\\\.\s*$/.test(lines[i])) {
+      dotIdx = i;
+      break;
+    }
+  }
+  if (dotIdx < 0) {
+    throw new Error(
+      'Malformed COPY ... FROM stdin block: missing pg_dump terminator line (\\.).'
+    );
+  }
+  const beforeDot = lines.slice(0, dotIdx).join('\n');
+  const headerMatch = beforeDot.match(/^([\s\S]*?\bFROM\s+stdin\s*;)/i);
+  if (!headerMatch) {
+    throw new Error('Malformed COPY ... FROM stdin block: missing "FROM stdin;".');
+  }
+  const preamble = headerMatch[1];
+  let header = extractCopyCommandSql(preamble);
+  if (header.endsWith(';')) {
+    header = header.slice(0, -1).trimEnd();
+  }
+  let data = beforeDot.slice(headerMatch[0].length);
+  if (data.startsWith('\n')) data = data.slice(1);
+  return { header, data };
+}
+
+/**
+ * pg-copy-streams sends the SQL as the COPY statement only. Leading pg_dump "--" comments
+ * must not be bundled with COPY or the server can mis-handle the copy stream (e.g. missing columns).
+ */
+function extractCopyCommandSql(preamble) {
+  const lines = String(preamble || '').split('\n');
+  const buf = [];
+  let seenCopy = false;
+  for (const line of lines) {
+    if (/^\s*COPY\b/i.test(line)) seenCopy = true;
+    if (seenCopy) {
+      buf.push(line);
+      if (/FROM\s+stdin\s*;\s*$/i.test(line)) break;
+    }
+  }
+  if (!buf.length) {
+    throw new Error('COPY ... FROM stdin; line not found in pg_dump block');
+  }
+  return buf.join('\n').trim();
+}
+
+async function executeCopyStdinStatement(pool, stmt) {
+  const { header, data } = parseCopyStdinBlock(stmt);
+  const client = await pool.connect();
+  try {
+    const stream = client.query(copyFrom(header));
+    if (data && data.length > 0) {
+      const readable = Readable.from([Buffer.from(data, 'utf8')]);
+      await pipeline(readable, stream);
+    } else {
+      stream.end();
+      await finished(stream);
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Run template SQL with fewer round-trips to the DB (critical on Neon / remote Postgres).
  * Batches small statements into one query (PostgreSQL simple-query multi-statement).
  * Large COPY / data blocks are always sent alone. Semantics and transaction unchanged.
@@ -469,7 +558,7 @@ async function executeTemplateStatements(pool, sqlText) {
 
     if (isCopyStdin) {
       await flushBatch();
-      await pool.query(stmt);
+      await executeCopyStdinStatement(pool, stmt);
       continue;
     }
 

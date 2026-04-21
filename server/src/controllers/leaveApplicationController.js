@@ -718,8 +718,10 @@ const getGuardianWardLeaves = async (req, res) => {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
     const guardianResult = await query(
-      `SELECT student_id FROM guardians
-       WHERE user_id = $1`,
+      `SELECT g.student_id
+       FROM guardians g
+       INNER JOIN students s ON s.id = g.student_id AND s.is_active = true
+       WHERE g.user_id = $1 AND g.is_active = true`,
       [userId]
     );
     const studentIds = guardianResult.rows.map(r => r.student_id).filter(Boolean);

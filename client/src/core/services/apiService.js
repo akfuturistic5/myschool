@@ -174,7 +174,25 @@ class ApiService {
         }
         const errorText = await response.text();
         if (isDev) console.error('Response error text:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        let parsed = null;
+        try {
+          parsed = errorText ? JSON.parse(errorText) : null;
+        } catch {
+          parsed = null;
+        }
+        const apiMessage =
+          parsed && typeof parsed.message === 'string' && parsed.message.trim()
+            ? parsed.message.trim()
+            : errorText;
+        const err = new Error(`HTTP error! status: ${response.status}, message: ${apiMessage}`);
+        err.status = response.status;
+        if (parsed && typeof parsed.code === 'string') {
+          err.code = parsed.code;
+        }
+        if (parsed && parsed.data !== undefined) {
+          err.data = parsed.data;
+        }
+        throw err;
       }
 
       const text = await response.text();
@@ -262,8 +280,13 @@ class ApiService {
   }
 
   // Sections
-  async getSections() {
-    return this.makeRequest('/sections');
+  async getSections(params = {}) {
+    const query = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      query.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = query.toString();
+    return this.makeRequest(`/sections${qs ? `?${qs}` : ''}`);
   }
 
   async getSectionById(id) {
