@@ -59,6 +59,7 @@ const AcademicYearCreate = () => {
   const [hasAnyYears, setHasAnyYears] = useState(false);
   const [previousEndDate, setPreviousEndDate] = useState<string | null>(null);
   const [previousYearId, setPreviousYearId] = useState<number | null>(null);
+  const [previousYearName, setPreviousYearName] = useState<string | null>(null);
   const [copyFromPrevious, setCopyFromPrevious] = useState(true);
   const [copyOptions, setCopyOptions] = useState({
     classes: true,
@@ -66,9 +67,6 @@ const AcademicYearCreate = () => {
     subjects: false,
     teacherAssignments: false,
     timetable: false,
-    departments: false,
-    designations: false,
-    transport: false,
   });
 
   const withDependencies = (next: typeof copyOptions) => {
@@ -87,9 +85,6 @@ const AcademicYearCreate = () => {
     if (!result.sections || !result.subjects) {
       result.timetable = false;
     }
-    if (!result.departments) {
-      result.designations = false;
-    }
     return result;
   };
 
@@ -101,22 +96,24 @@ const AcademicYearCreate = () => {
         const data = Array.isArray(res?.data) ? res.data : [];
         const any = data.length > 0;
         // "Previous/last" year = latest by start_date (tie-breaker id).
-        let latest = null as null | { sd: string; id: number; ed: string | null };
+        let latest = null as null | { sd: string; id: number; ed: string | null; name: string | null };
         for (const row of data) {
           const sd = toDateOnly(row?.start_date) || "";
           const id = Number(row?.id) || 0;
+          const name = String(row?.year_name || row?.name || "").trim() || null;
           if (!latest) {
-            latest = { sd, id, ed: toDateOnly(row?.end_date) };
+            latest = { sd, id, ed: toDateOnly(row?.end_date), name };
             continue;
           }
           if (sd.localeCompare(latest.sd) > 0 || (sd === latest.sd && id > latest.id)) {
-            latest = { sd, id, ed: toDateOnly(row?.end_date) };
+            latest = { sd, id, ed: toDateOnly(row?.end_date), name };
           }
         }
         if (mounted) {
           setHasAnyYears(any);
           setPreviousEndDate(latest?.ed ?? null);
           setPreviousYearId(latest?.id ?? null);
+          setPreviousYearName(latest?.name ?? null);
           setCopyFromPrevious(any);
         }
       } catch {
@@ -125,6 +122,7 @@ const AcademicYearCreate = () => {
           setHasAnyYears(false);
           setPreviousEndDate(null);
           setPreviousYearId(null);
+          setPreviousYearName(null);
           setCopyFromPrevious(false);
         }
       }
@@ -186,10 +184,6 @@ const AcademicYearCreate = () => {
         (!effectiveCopyOptions.classes || !effectiveCopyOptions.sections || !effectiveCopyOptions.subjects)
       ) {
         setError("Timetable cloning requires Classes, Sections, and Subjects.");
-        return;
-      }
-      if (copyFromPrevious && effectiveCopyOptions.designations && !effectiveCopyOptions.departments) {
-        setError("Designations cloning requires Departments.");
         return;
       }
       if (copyFromPrevious && !previousYearId) {
@@ -392,7 +386,7 @@ const AcademicYearCreate = () => {
                     </div>
                     <div className="small text-muted mb-2">
                       {previousYearId
-                        ? `Source year id: ${previousYearId}.`
+                        ? `Source year: ${previousYearName || "Previous academic year"}.`
                         : "No previous academic year available, so cloning is disabled."}
                     </div>
                     {copyFromPrevious && previousYearId && (
@@ -473,56 +467,11 @@ const AcademicYearCreate = () => {
                             <label className="form-check-label" htmlFor="copy-timetable">Timetable</label>
                           </div>
                         </div>
-                        <div className="col-md-6">
-                          <div className="form-check">
-                            <input
-                              id="copy-departments"
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={copyOptions.departments}
-                              onChange={(e) =>
-                                setCopyOptions((prev) => withDependencies({ ...prev, departments: e.target.checked }))
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="copy-departments">Departments</label>
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="form-check">
-                            <input
-                              id="copy-designations"
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={copyOptions.designations}
-                              disabled={!copyOptions.departments}
-                              onChange={(e) =>
-                                setCopyOptions((prev) =>
-                                  withDependencies({ ...prev, designations: e.target.checked })
-                                )
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="copy-designations">Designations</label>
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="form-check">
-                            <input
-                              id="copy-transport"
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={copyOptions.transport}
-                              onChange={(e) =>
-                                setCopyOptions((prev) => withDependencies({ ...prev, transport: e.target.checked }))
-                              }
-                            />
-                            <label className="form-check-label" htmlFor="copy-transport">Transport</label>
-                          </div>
-                        </div>
                         <div className="col-12">
                           <div className="form-text">
                             Dependencies: Sections and Subjects require Classes. Teacher Assignments require Classes +
-                            Subjects. Timetable requires Classes + Sections + Subjects. Designations require
-                            Departments.
+                            Subjects. Timetable requires Classes + Sections + Subjects. Departments, Designations, and
+                            Transport are treated as master data and are available automatically.
                           </div>
                         </div>
                       </div>

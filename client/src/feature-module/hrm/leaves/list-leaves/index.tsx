@@ -1,4 +1,5 @@
 import { useRef, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
@@ -12,7 +13,10 @@ import { useLeaveApplications } from "../../../../core/hooks/useLeaveApplication
 import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSections } from "../../../../core/hooks/useSections";
+import { useDepartments } from "../../../../core/hooks/useDepartments";
+import { useDesignations } from "../../../../core/hooks/useDesignations";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
 const LEAVE_STATUS_OPTIONS = [
   { value: "pending", label: "Pending" },
@@ -29,44 +33,86 @@ const ListLeaves = () => {
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
   const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
   const isOwnLeavesOnly = false;
-  const [filterStatus, setFilterStatus] = useState<any>(null);
-  const [filterLeaveType, setFilterLeaveType] = useState<any>(null);
-  const [filterClass, setFilterClass] = useState<any>(null);
-  const [filterSection, setFilterSection] = useState<any>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterLeaveTypeId, setFilterLeaveTypeId] = useState<string | null>(null);
+  const [filterDepartmentId, setFilterDepartmentId] = useState<string | null>(null);
+  const [filterDesignationId, setFilterDesignationId] = useState<string | null>(null);
+  const [filterClassId, setFilterClassId] = useState<string | null>(null);
+  const [filterSectionId, setFilterSectionId] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { leaveTypes } = useLeaveTypes();
-  const selectedClassId = Number(filterClass?.value);
-  const selectedSectionId = Number(filterSection?.value);
-  const { classes } = useClasses();
-  const { sections } = useSections(Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null);
+  const { departments } = useDepartments();
+  const { designations } = useDesignations();
+  const selectedClassId = Number(filterClassId);
+  const selectedSectionId = Number(filterSectionId);
+  const selectedLeaveTypeId = Number(filterLeaveTypeId);
+  const selectedDepartmentId = Number(filterDepartmentId);
+  const selectedDesignationId = Number(filterDesignationId);
+  const { classes } = useClasses(academicYearId ?? null);
+  const { sections } = useSections(
+    Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
+    { fetchAllWhenNoClass: false, academicYearId: academicYearId ?? null }
+  );
   const classOptions = useMemo(
     () =>
       (Array.isArray(classes) ? classes : []).map((c: any) => ({
-        value: c.id,
-        label: c.class_name || `Class ${c.id}`,
+        value: String(c.id),
+        label: c.class_code ? `${c.class_name || `Class ${c.id}`} (${c.class_code})` : (c.class_name || `Class ${c.id}`),
       })),
     [classes]
   );
   const sectionOptions = useMemo(
     () =>
       (Array.isArray(sections) ? sections : []).map((s: any) => ({
-        value: s.id,
+        value: String(s.id),
         label: s.section_name || `Section ${s.id}`,
       })),
     [sections]
   );
-  const leaveTypeFilterId = Number(filterLeaveType?.value);
-  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
+  const leaveTypeOptions = useMemo(() => {
+    const source = leaveTypes.length > 0 ? leaveTypes : leaveType;
+    return (Array.isArray(source) ? source : []).map((item: any) => ({
+      value: String(item.value ?? item.id ?? ""),
+      label: String(item.label ?? item.leave_type ?? item.name ?? "Leave Type"),
+    }));
+  }, [leaveTypes]);
+  const departmentOptions = useMemo(
+    () =>
+      (Array.isArray(departments) ? departments : []).map((item: any) => ({
+        value: String(item.originalData?.id ?? item.id ?? ""),
+        label: String(item.department ?? item.originalData?.department_name ?? item.originalData?.name ?? "Department"),
+      })),
+    [departments]
+  );
+  const designationOptions = useMemo(
+    () =>
+      (Array.isArray(designations) ? designations : []).map((item: any) => ({
+        value: String(item.originalData?.id ?? item.id ?? ""),
+        label: String(item.designation ?? item.originalData?.designation_name ?? item.originalData?.name ?? "Designation"),
+      })),
+    [designations]
+  );
+  const { leaveApplications, loading: leaveLoading, error: leaveError } = useLeaveApplications({
     limit: 50,
     canUseAdminList,
     studentOnly: isOwnLeavesOnly,
-    status: filterStatus?.value ? String(filterStatus.value).toLowerCase() : null,
-    leaveTypeId: Number.isFinite(leaveTypeFilterId) && leaveTypeFilterId > 0 ? leaveTypeFilterId : null,
+    status: filterStatus ? String(filterStatus).toLowerCase() : null,
+    leaveTypeId: Number.isFinite(selectedLeaveTypeId) && selectedLeaveTypeId > 0 ? selectedLeaveTypeId : null,
+    departmentId: Number.isFinite(selectedDepartmentId) && selectedDepartmentId > 0 ? selectedDepartmentId : null,
+    designationId: Number.isFinite(selectedDesignationId) && selectedDesignationId > 0 ? selectedDesignationId : null,
     classId: Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
     sectionId: Number.isFinite(selectedSectionId) && selectedSectionId > 0 ? selectedSectionId : null,
+    academicYearId: academicYearId ?? null,
     sortBy: "start_date",
     sortOrder,
   });
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const handleApplyClick = () => {
+    if (dropdownMenuRef.current) {
+      dropdownMenuRef.current.classList.remove("show");
+    }
+  };
 
   const data = useMemo(() => {
     if (!Array.isArray(leaveApplications)) return [];
@@ -82,13 +128,6 @@ const ListLeaves = () => {
       status: row.status ?? "Pending",
     }));
   }, [leaveApplications]);
-
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const handleApplyClick = () => {
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
-    }
-  };
 
   const columns = [
     {
@@ -178,7 +217,7 @@ const ListLeaves = () => {
                 <h4 className="mb-3">Leave List</h4>
                 <div className="d-flex align-items-center flex-wrap">
                   <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
+                    <PredefinedDateRanges />
                   </div>
                   <div className="dropdown mb-3 me-2">
                     <Link
@@ -191,7 +230,7 @@ const ListLeaves = () => {
                       Filter
                     </Link>
                     <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
-                      <form >
+                      <form>
                         <div className="d-flex align-items-center border-bottom p-3">
                           <h4>Filter</h4>
                         </div>
@@ -200,12 +239,11 @@ const ListLeaves = () => {
                             <div className="col-md-12">
                               <div className="mb-3">
                                 <label className="form-label">Leave Type</label>
-                               
                                 <CommonSelect
                                   className="select"
-                                  options={leaveTypes.length > 0 ? leaveTypes : leaveType}
-                                  value={filterLeaveType}
-                                  onChange={(opt: any) => setFilterLeaveType(opt)}
+                                  options={leaveTypeOptions}
+                                  value={filterLeaveTypeId}
+                                  onChange={(value) => setFilterLeaveTypeId(value)}
                                 />
                               </div>
                             </div>
@@ -216,20 +254,42 @@ const ListLeaves = () => {
                                   className="select"
                                   options={LEAVE_STATUS_OPTIONS}
                                   value={filterStatus}
-                                  onChange={(opt: any) => setFilterStatus(opt)}
+                                  onChange={(value) => setFilterStatus(value)}
                                 />
                               </div>
                             </div>
                             <div className="col-md-12">
                               <div className="mb-3 mt-3">
+                                <label className="form-label">Department</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={departmentOptions}
+                                  value={filterDepartmentId}
+                                  onChange={(value) => setFilterDepartmentId(value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-3">
+                                <label className="form-label">Designation</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={designationOptions}
+                                  value={filterDesignationId}
+                                  onChange={(value) => setFilterDesignationId(value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-3">
                                 <label className="form-label">Class</label>
                                 <CommonSelect
                                   className="select"
                                   options={classOptions}
-                                  value={filterClass}
-                                  onChange={(opt: any) => {
-                                    setFilterClass(opt);
-                                    setFilterSection(null);
+                                  value={filterClassId}
+                                  onChange={(value) => {
+                                    setFilterClassId(value);
+                                    setFilterSectionId(null);
                                   }}
                                 />
                               </div>
@@ -240,8 +300,10 @@ const ListLeaves = () => {
                                 <CommonSelect
                                   className="select"
                                   options={sectionOptions}
-                                  value={filterSection}
-                                  onChange={(opt: any) => setFilterSection(opt)}
+                                  value={filterSectionId}
+                                  isDisabled={!filterClassId}
+                                  placeholder={filterClassId ? "Select section" : "Select class first"}
+                                  onChange={(value) => setFilterSectionId(value)}
                                 />
                               </div>
                             </div>
@@ -252,19 +314,17 @@ const ListLeaves = () => {
                             to="#"
                             className="btn btn-light me-3"
                             onClick={() => {
-                              setFilterLeaveType(null);
+                              setFilterLeaveTypeId(null);
                               setFilterStatus(null);
-                              setFilterClass(null);
-                              setFilterSection(null);
+                              setFilterDepartmentId(null);
+                              setFilterDesignationId(null);
+                              setFilterClassId(null);
+                              setFilterSectionId(null);
                             }}
                           >
                             Reset
                           </Link>
-                          <Link
-                            to="#"
-                            className="btn btn-primary"
-                            onClick={handleApplyClick}
-                          >
+                          <Link to="#" className="btn btn-primary" onClick={handleApplyClick}>
                             Apply
                           </Link>
                         </div>

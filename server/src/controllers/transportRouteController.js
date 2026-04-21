@@ -2,6 +2,7 @@ const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapRouteRow(row, stops = []) {
   return {
@@ -25,6 +26,9 @@ function mapRouteRow(row, stops = []) {
 
 const getAllRoutes = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('routes', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const { 
       page = 1, 
@@ -36,7 +40,7 @@ const getAllRoutes = async (req, res) => {
       sortField = 'route_name', 
       sortOrder = 'ASC' 
     } = req.query;
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['route_name', 'distance_km', 'created_at', 'id'];
@@ -48,7 +52,7 @@ const getAllRoutes = async (req, res) => {
 
     let baseSql = `
       FROM routes r
-      WHERE r.deleted_at IS NULL
+      WHERE ${hasDeletedAt ? 'r.deleted_at IS NULL' : '(r.is_active IS NOT FALSE OR r.is_active IS NULL)'}
     `;
     
     const params = [];
@@ -68,9 +72,11 @@ const getAllRoutes = async (req, res) => {
     // If filtering by pickup_point_id, we need a subquery or join
     if (pickup_point_id !== 'all') {
       params.push(parseInt(pickup_point_id));
-      sqlFilters += ` AND EXISTS (SELECT 1 FROM route_stops rs WHERE rs.route_id = r.id AND rs.pickup_point_id = $${params.length})`;
+      sqlFilters += hasRouteStops
+        ? ` AND EXISTS (SELECT 1 FROM route_stops rs WHERE rs.route_id = r.id AND rs.pickup_point_id = $${params.length})`
+        : ` AND EXISTS (SELECT 1 FROM pickup_points pp WHERE pp.route_id = r.id AND pp.id = $${params.length})`;
     }
-    if (scopedAcademicYearId) {
+    if (hasAcademicYearId && scopedAcademicYearId) {
       params.push(scopedAcademicYearId);
       sqlFilters += ` AND r.academic_year_id = $${params.length}`;
     }
@@ -115,13 +121,27 @@ const getAllRoutes = async (req, res) => {
 
     // Fetch stops for all routes in the current page
     const routeIds = routes.map(r => r.id);
-    const stopsResult = await query(`
-      SELECT rs.*, pp.point_name
-      FROM route_stops rs
-      JOIN pickup_points pp ON rs.pickup_point_id = pp.id
-      WHERE rs.route_id = ANY($1)
-      ORDER BY rs.route_id, rs.order_index
-    `, [routeIds]);
+    const stopsResult = hasRouteStops
+      ? await query(`
+          SELECT rs.*, pp.point_name
+          FROM route_stops rs
+          JOIN pickup_points pp ON rs.pickup_point_id = pp.id
+          WHERE rs.route_id = ANY($1)
+          ORDER BY rs.route_id, rs.order_index
+        `, [routeIds])
+      : await query(`
+          SELECT
+            pp.id,
+            pp.route_id,
+            pp.id AS pickup_point_id,
+            pp.point_name,
+            pp.pickup_time,
+            pp.drop_time,
+            COALESCE(pp.sequence_order, 0) AS order_index
+          FROM pickup_points pp
+          WHERE pp.route_id = ANY($1)
+          ORDER BY pp.route_id, COALESCE(pp.sequence_order, 0), pp.id
+        `, [routeIds]);
 
     const stopsByRoute = {};
     stopsResult.rows.forEach(stop => {
@@ -147,6 +167,8 @@ const getAllRoutes = async (req, res) => {
 const getRouteById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('routes', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     if (scopedDriverId != null) {
       const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
@@ -156,20 +178,34 @@ const getRouteById = async (req, res) => {
     }
     const routeResult = await query(`
       SELECT * FROM routes
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
     `, [id]);
 
     if (routeResult.rows.length === 0) {
       return errorResponse(res, 404, 'Route not found');
     }
 
-    const stopsResult = await query(`
-      SELECT rs.*, pp.point_name
-      FROM route_stops rs
-      JOIN pickup_points pp ON rs.pickup_point_id = pp.id
-      WHERE rs.route_id = $1
-      ORDER BY rs.order_index
-    `, [id]);
+    const stopsResult = hasRouteStops
+      ? await query(`
+          SELECT rs.*, pp.point_name
+          FROM route_stops rs
+          JOIN pickup_points pp ON rs.pickup_point_id = pp.id
+          WHERE rs.route_id = $1
+          ORDER BY rs.order_index
+        `, [id])
+      : await query(`
+          SELECT
+            pp.id,
+            pp.route_id,
+            pp.id AS pickup_point_id,
+            pp.point_name,
+            pp.pickup_time,
+            pp.drop_time,
+            COALESCE(pp.sequence_order, 0) AS order_index
+          FROM pickup_points pp
+          WHERE pp.route_id = $1
+          ORDER BY COALESCE(pp.sequence_order, 0), pp.id
+        `, [id]);
 
     return success(res, 200, 'Transport route fetched successfully', mapRouteRow(routeResult.rows[0], stopsResult.rows));
   } catch (error) {
@@ -180,6 +216,10 @@ const getRouteById = async (req, res) => {
 
 const createRoute = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
+    const hasDistanceKm = await hasColumn('routes', 'distance_km');
+    const hasTotalDistance = await hasColumn('routes', 'total_distance');
+    const hasRouteStops = await hasTable('route_stops');
     const { 
       route_name, 
       distance_km, 
@@ -192,25 +232,58 @@ const createRoute = async (req, res) => {
       return errorResponse(res, 400, 'Route name is required');
     }
 
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
+    const scopedAcademicYearId = hasAcademicYearId
+      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+      : null;
     const result = await executeTransaction(async (client) => {
       // 1. Insert Route
-      const routeRes = await client.query(
-        `INSERT INTO routes (route_name, distance_km, is_active, academic_year_id) 
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [route_name, distance_km || 0, is_active !== false, scopedAcademicYearId]
-      );
+      const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
+      const routeRes = distanceColumn
+        ? (hasAcademicYearId
+            ? await client.query(
+                `INSERT INTO routes (route_name, ${distanceColumn}, is_active, academic_year_id) 
+                 VALUES ($1, $2, $3, $4) RETURNING *`,
+                [route_name, distance_km || 0, is_active !== false, scopedAcademicYearId]
+              )
+            : await client.query(
+                `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
+                 VALUES ($1, $2, $3) RETURNING *`,
+                [route_name, distance_km || 0, is_active !== false]
+              ))
+        : (hasAcademicYearId
+            ? await client.query(
+                `INSERT INTO routes (route_name, is_active, academic_year_id) 
+                 VALUES ($1, $2, $3) RETURNING *`,
+                [route_name, is_active !== false, scopedAcademicYearId]
+              )
+            : await client.query(
+                `INSERT INTO routes (route_name, is_active) 
+                 VALUES ($1, $2) RETURNING *`,
+                [route_name, is_active !== false]
+              ));
       const newRoute = routeRes.rows[0];
 
       // 2. Insert Stops
       if (stops && stops.length > 0) {
         for (let i = 0; i < stops.length; i++) {
           const stop = stops[i];
-          await client.query(
-            `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [newRoute.id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
-          );
+          if (hasRouteStops) {
+            await client.query(
+              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [newRoute.id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
+            );
+          } else {
+            await client.query(
+              `UPDATE pickup_points
+               SET route_id = $1,
+                   pickup_time = COALESCE($2, pickup_time),
+                   drop_time = COALESCE($3, drop_time),
+                   sequence_order = $4
+               WHERE id = $5`,
+              [newRoute.id, stop.pickup_time || null, stop.drop_time || null, i, stop.pickup_point_id]
+            );
+          }
         }
       }
 
@@ -227,6 +300,11 @@ const createRoute = async (req, res) => {
 
 const updateRoute = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
+    const hasDistanceKm = await hasColumn('routes', 'distance_km');
+    const hasTotalDistance = await hasColumn('routes', 'total_distance');
+    const hasDeletedAt = await hasColumn('routes', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const { id } = req.params;
     const numericId = parseInt(id);
 
@@ -253,14 +331,17 @@ const updateRoute = async (req, res) => {
         values.push(route_name);
       }
       if (distance_km !== undefined) {
-        updates.push(`distance_km = $${i++}`);
-        values.push(distance_km || 0);
+        const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
+        if (distanceColumn) {
+          updates.push(`${distanceColumn} = $${i++}`);
+          values.push(distance_km || 0);
+        }
       }
       if (is_active !== undefined) {
         updates.push(`is_active = $${i++}`);
         values.push(is_active !== false);
       }
-      if (academic_year_id !== undefined) {
+      if (hasAcademicYearId && academic_year_id !== undefined) {
         updates.push(`academic_year_id = $${i++}`);
         values.push(toPositiveInt(academic_year_id));
       }
@@ -270,7 +351,7 @@ const updateRoute = async (req, res) => {
         const routeRes = await client.query(`
           UPDATE routes
           SET ${updates.join(', ')}
-          WHERE id = $${i} AND deleted_at IS NULL
+          WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
           RETURNING *
         `, values);
 
@@ -280,16 +361,32 @@ const updateRoute = async (req, res) => {
       }
 
       // 2. Sync Stops: Delete all and re-insert (Simple sync strategy)
-      await client.query('DELETE FROM route_stops WHERE route_id = $1', [numericId]);
+      if (hasRouteStops) {
+        await client.query('DELETE FROM route_stops WHERE route_id = $1', [numericId]);
+      } else {
+        await client.query('UPDATE pickup_points SET route_id = NULL WHERE route_id = $1', [numericId]);
+      }
       
       if (stops && stops.length > 0) {
         for (let i = 0; i < stops.length; i++) {
           const stop = stops[i];
-          await client.query(
-            `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
-          );
+          if (hasRouteStops) {
+            await client.query(
+              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
+            );
+          } else {
+            await client.query(
+              `UPDATE pickup_points
+               SET route_id = $1,
+                   pickup_time = COALESCE($2, pickup_time),
+                   drop_time = COALESCE($3, drop_time),
+                   sequence_order = $4
+               WHERE id = $5`,
+              [id, stop.pickup_time || null, stop.drop_time || null, i, stop.pickup_point_id]
+            );
+          }
         }
       }
     });
@@ -307,16 +404,22 @@ const updateRoute = async (req, res) => {
 const deleteRoute = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const numericId = parseInt(id);
 
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid route ID');
     }
 
-    const result = await query(
-      'UPDATE routes SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-      [numericId]
-    );
+    const result = hasDeletedAt
+      ? await query(
+          'UPDATE routes SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+          [numericId]
+        )
+      : await query(
+          'UPDATE routes SET is_active = false WHERE id = $1 RETURNING id',
+          [numericId]
+        );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Route not found or already deleted');

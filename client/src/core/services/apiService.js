@@ -458,9 +458,21 @@ class ApiService {
     });
   }
 
+  async rejoinStudent(payload) {
+    return this.makeRequest('/students/rejoin', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getLeavingStudents(limit = 200) {
     const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
     return this.makeRequest(`/students/leaving?limit=${safeLimit}`);
+  }
+
+  async getStudentRejoins(limit = 200) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    return this.makeRequest(`/students/rejoins?limit=${safeLimit}`);
   }
 
   async getStudentById(id) {
@@ -547,6 +559,12 @@ class ApiService {
     return this.makeRequest('/exams', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteExam(examId) {
+    return this.makeRequest(`/exams/${examId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -991,11 +1009,12 @@ class ApiService {
     });
   }
 
-  /** @param {{ teacherId?: number|string, classId?: number|string }} [params] */
+  /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
   async getTeacherAssignments(params = {}) {
     const q = new URLSearchParams();
     if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
     if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
     const qs = q.toString();
     return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
   }
@@ -1517,6 +1536,8 @@ class ApiService {
     if (params.staff_id != null) searchParams.set('staff_id', params.staff_id);
     if (params.class_id != null) searchParams.set('class_id', params.class_id);
     if (params.section_id != null) searchParams.set('section_id', params.section_id);
+    if (params.department_id != null) searchParams.set('department_id', params.department_id);
+    if (params.designation_id != null) searchParams.set('designation_id', params.designation_id);
     if (params.leave_type_id != null) searchParams.set('leave_type_id', params.leave_type_id);
     if (params.applicant_type != null && params.applicant_type !== '') searchParams.set('applicant_type', params.applicant_type);
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
@@ -1780,8 +1801,13 @@ class ApiService {
   }
 
   // Subjects
-  async getSubjects() {
-    return this.makeRequest('/subjects');
+  async getSubjects(params = {}) {
+    const query = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      query.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = query.toString();
+    return this.makeRequest(`/subjects${qs ? `?${qs}` : ''}`);
   }
 
   async getSubjectById(id) {

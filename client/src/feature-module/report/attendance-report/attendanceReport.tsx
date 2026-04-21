@@ -70,7 +70,10 @@ const AttendanceReport = () => {
     const fetchFilterOptions = async () => {
       try {
         const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
-        const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
+        const [classesResult, sectionsResult] = await Promise.allSettled([
+          classesPromise,
+          apiService.getSections(academicYearId ? { academic_year_id: academicYearId } : {}),
+        ]);
 
         if (cancelled) return;
 
@@ -90,7 +93,9 @@ const AttendanceReport = () => {
           sectionsResult.status === "fulfilled" && Array.isArray(sectionsResult.value?.data) ? sectionsResult.value.data : [];
         const nextClassOptions = [{ value: "all", label: "All Classes" }, ...classes.map((item: any) => ({
           value: String(item.id),
-          label: item.class_name || `Class ${item.id}`,
+          label: item.class_code
+            ? `${item.class_name || `Class ${item.id}`} (${item.class_code})`
+            : (item.class_name || `Class ${item.id}`),
         }))];
 
         const nextSectionsByClassId: Record<string, Array<{ value: string; label: string }>> = {};
@@ -124,14 +129,7 @@ const AttendanceReport = () => {
 
   const sectionOptions = useMemo(() => {
     if (selectedClassId === "all") {
-      const allRows = Object.values(sectionsByClassId).flat();
-      const seen = new Set<string>();
-      const uniqueRows = allRows.filter((item) => {
-        if (seen.has(item.value)) return false;
-        seen.add(item.value);
-        return true;
-      });
-      return [{ value: "", label: "All Sections" }, ...uniqueRows];
+      return [{ value: "", label: "Select class first" }];
     }
     const classKey = String(selectedClassId || "");
     const rows = Array.isArray(sectionsByClassId[classKey]) ? sectionsByClassId[classKey] : [];
@@ -561,7 +559,13 @@ const AttendanceReport = () => {
                                 className="select"
                                 options={classOptions}
                                 value={selectedClassId}
-                                onChange={(value) => setSelectedClassId(String(value || "all"))}
+                                onChange={(value) => {
+                                  const nextClassId = String(value || "all");
+                                  setSelectedClassId(nextClassId);
+                                  if (nextClassId === "all") {
+                                    setSelectedSectionId("");
+                                  }
+                                }}
                               />
                             </div>
                           </div>
@@ -572,6 +576,7 @@ const AttendanceReport = () => {
                                 className="select"
                                 options={sectionOptions}
                                 value={selectedSectionId ?? ""}
+                                disabled={selectedClassId === "all"}
                                 onChange={(value) => setSelectedSectionId(value ?? "")}
                               />
                             </div>

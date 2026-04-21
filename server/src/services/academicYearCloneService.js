@@ -40,6 +40,11 @@ function normalizeCopyOptions(input) {
     }
   }
 
+  // Global/master modules: always auto-available, never user-selected for cloning.
+  base.departments = false;
+  base.designations = false;
+  base.transport = false;
+
   return base;
 }
 
@@ -284,7 +289,7 @@ async function cloneClasses(client, sourceYearId, targetYearId, createdByStaffId
   const classMap = new Map();
   let insertedCount = 0;
   const sourceRows = await client.query(
-    `SELECT id, class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, no_of_students, has_sections
+    `SELECT id, class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, has_sections
      FROM classes
      WHERE academic_year_id = $1
      ORDER BY id ASC`,
@@ -292,22 +297,6 @@ async function cloneClasses(client, sourceYearId, targetYearId, createdByStaffId
   );
 
   for (const row of sourceRows.rows) {
-    const existing = await client.query(
-      `SELECT id
-       FROM classes
-       WHERE academic_year_id = $1
-         AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))
-       LIMIT 1`,
-      [targetYearId, row.class_name]
-    );
-    if (existing.rows.length) {
-      throw makeCloneError(
-        409,
-        'ACADEMIC_YEAR_CLONE_CLASS_ALREADY_EXISTS',
-        `Cannot clone class "${row.class_name}" because target academic year already has this class.`
-      );
-    }
-
     let classTeacherId = toPositiveInt(row.class_teacher_id);
     if (classTeacherId) {
       const t = await client.query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [classTeacherId]);
@@ -339,8 +328,8 @@ async function cloneClasses(client, sourceYearId, targetYearId, createdByStaffId
     const ins = await client.query(
       `INSERT INTO classes (
         class_name, class_code, academic_year_id, class_teacher_id, max_students, class_fee,
-        description, is_active, no_of_students, has_sections, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        description, is_active, has_sections, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       RETURNING id`,
       [
         row.class_name,
@@ -351,7 +340,6 @@ async function cloneClasses(client, sourceYearId, targetYearId, createdByStaffId
         row.class_fee ?? null,
         row.description || null,
         normalizeBool(row.is_active, true),
-        row.no_of_students ?? 0,
         normalizeBool(row.has_sections, true),
         createdByStaffId || null,
       ]
@@ -368,7 +356,7 @@ async function cloneSections(client, sourceYearId, targetYearId, classMap, creat
   let insertedCount = 0;
   const rowsRes = await client.query(
     `SELECT s.id, s.section_name, s.class_id, s.section_teacher_id, s.max_students, s.room_number,
-            s.description, s.is_active, s.no_of_students, s.academic_year_id
+            s.description, s.is_active, s.academic_year_id
      FROM sections s
      LEFT JOIN classes c ON c.id = s.class_id
      WHERE COALESCE(s.academic_year_id, c.academic_year_id) = $1
@@ -420,8 +408,8 @@ async function cloneSections(client, sourceYearId, targetYearId, classMap, creat
     const ins = await client.query(
       `INSERT INTO sections (
         section_name, class_id, section_teacher_id, max_students, room_number, description,
-        is_active, no_of_students, created_by, academic_year_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        is_active, created_by, academic_year_id
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING id`,
       [
         row.section_name,
@@ -431,7 +419,6 @@ async function cloneSections(client, sourceYearId, targetYearId, classMap, creat
         row.room_number || null,
         row.description || null,
         normalizeBool(row.is_active, true),
-        row.no_of_students ?? 0,
         createdByStaffId || null,
         targetYearId,
       ]

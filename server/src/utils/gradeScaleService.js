@@ -47,7 +47,13 @@ function getGradeFromScale(percentage, scaleRows = DEFAULT_GRADE_SCALE) {
   const matched = (scaleRows || []).find(
     (row) => p >= Number(row.min_percentage) && p <= Number(row.max_percentage)
   );
-  return matched ? matched.grade : null;
+  if (matched) return matched.grade;
+
+  // Safety fallback: if custom ranges have decimal gaps, never return null grade.
+  const defaultMatched = DEFAULT_GRADE_SCALE.find(
+    (row) => p >= Number(row.min_percentage) && p <= Number(row.max_percentage)
+  );
+  return defaultMatched ? defaultMatched.grade : null;
 }
 
 module.exports = {

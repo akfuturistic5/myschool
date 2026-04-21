@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapAssignmentRow(row) {
   return {
@@ -23,6 +24,11 @@ function mapAssignmentRow(row) {
 
 const getAllAssignments = async (req, res) => {
   try {
+    const hasTaDeletedAt = await hasColumn('transport_assignments', 'deleted_at');
+    const hasVehicleDeletedAt = await hasColumn('vehicles', 'deleted_at');
+    const hasRouteDeletedAt = await hasColumn('routes', 'deleted_at');
+    const hasDriverDeletedAt = await hasColumn('drivers', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const {
       page = 1,
       limit = 10,
@@ -36,7 +42,7 @@ const getAllAssignments = async (req, res) => {
 
     const offset = (Number(page) - 1) * Number(limit);
     const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
-    let whereClause = 'WHERE ta.deleted_at IS NULL';
+    let whereClause = `WHERE ${hasTaDeletedAt ? 'ta.deleted_at IS NULL' : '1=1'}`;
     const params = [];
 
     if (search) {
@@ -77,9 +83,9 @@ const getAllAssignments = async (req, res) => {
     const countResult = await query(
       `SELECT COUNT(*)
        FROM transport_assignments ta
-       JOIN vehicles v ON ta.vehicle_id = v.id AND v.deleted_at IS NULL
-       JOIN routes r ON ta.route_id = r.id AND r.deleted_at IS NULL
-       JOIN drivers d ON ta.driver_id = d.id AND d.deleted_at IS NULL
+       JOIN vehicles v ON ta.vehicle_id = v.id ${hasVehicleDeletedAt ? 'AND v.deleted_at IS NULL' : ''}
+       JOIN routes r ON ta.route_id = r.id ${hasRouteDeletedAt ? 'AND r.deleted_at IS NULL' : ''}
+       JOIN drivers d ON ta.driver_id = d.id ${hasDriverDeletedAt ? 'AND d.deleted_at IS NULL' : ''}
        ${whereClause}`,
       params
     );
@@ -91,16 +97,19 @@ const getAllAssignments = async (req, res) => {
               r.route_name,
               d.driver_name,
               d.phone AS driver_phone,
-              (
-                SELECT string_agg(pp_sub.point_name, ', ' ORDER BY rs_sub.order_index ASC)
-                FROM route_stops rs_sub
-                JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
-                WHERE rs_sub.route_id = r.id
-              ) AS point_name
+              (${hasRouteStops
+                ? `SELECT string_agg(pp_sub.point_name, ', ' ORDER BY rs_sub.order_index ASC)
+                   FROM route_stops rs_sub
+                   JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
+                   WHERE rs_sub.route_id = r.id`
+                : `SELECT string_agg(pp_sub.point_name, ', ')
+                   FROM pickup_points pp_sub
+                   WHERE pp_sub.route_id = r.id`
+              }) AS point_name
        FROM transport_assignments ta
-       JOIN vehicles v ON ta.vehicle_id = v.id AND v.deleted_at IS NULL
-       JOIN routes r ON ta.route_id = r.id AND r.deleted_at IS NULL
-       JOIN drivers d ON ta.driver_id = d.id AND d.deleted_at IS NULL
+       JOIN vehicles v ON ta.vehicle_id = v.id ${hasVehicleDeletedAt ? 'AND v.deleted_at IS NULL' : ''}
+       JOIN routes r ON ta.route_id = r.id ${hasRouteDeletedAt ? 'AND r.deleted_at IS NULL' : ''}
+       JOIN drivers d ON ta.driver_id = d.id ${hasDriverDeletedAt ? 'AND d.deleted_at IS NULL' : ''}
        ${whereClause}
        ORDER BY ${orderBy} ${direction}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -238,18 +247,27 @@ const updateAssignment = async (req, res) => {
 
 const deleteAssignment = async (req, res) => {
   try {
+    const hasTaDeletedAt = await hasColumn('transport_assignments', 'deleted_at');
     const assignmentId = Number(req.params.id);
     if (Number.isNaN(assignmentId)) {
       return errorResponse(res, 400, 'Invalid assignment ID');
     }
 
-    const deleted = await query(
-      `UPDATE transport_assignments
-       SET deleted_at = NOW(), is_active = false
-       WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id`,
-      [assignmentId]
-    );
+    const deleted = hasTaDeletedAt
+      ? await query(
+          `UPDATE transport_assignments
+           SET deleted_at = NOW(), is_active = false
+           WHERE id = $1 AND deleted_at IS NULL
+           RETURNING id`,
+          [assignmentId]
+        )
+      : await query(
+          `UPDATE transport_assignments
+           SET is_active = false
+           WHERE id = $1
+           RETURNING id`,
+          [assignmentId]
+        );
 
     if (deleted.rows.length === 0) {
       return errorResponse(res, 404, 'Assignment not found');
