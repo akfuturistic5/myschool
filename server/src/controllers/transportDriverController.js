@@ -136,7 +136,7 @@ const getAllDrivers = async (req, res) => {
       whereClause += ` AND academic_year_id = $${queryParams.length}`;
     }
 
-    if (status !== undefined && status !== '') {
+    if (status !== undefined && status !== '' && status !== 'all') {
       const isActive = status === 'active' || status === 'true' || status === true;
       queryParams.push(isActive);
       whereClause += ` AND is_active = $${queryParams.length}`;

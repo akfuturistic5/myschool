@@ -358,6 +358,7 @@ const getAllParents = async (req, res) => {
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
         WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)
           AND (
             EXISTS (
               SELECT 1 FROM class_schedules cs
@@ -411,13 +412,15 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true${yearWhere}`,
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
         countParams
       );
       result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
-        WHERE s.is_active = true${yearWhere}
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
@@ -427,7 +430,8 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true${yearWhere}`,
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
         countParams
       );
       result = await query(
@@ -451,7 +455,8 @@ const getAllParents = async (req, res) => {
             ORDER BY g.id ASC LIMIT 1) AS father_user_id
         FROM students s
         ${STUDENT_CONTACT_LATERAL_JOINS}
-        WHERE s.is_active = true${yearWhere}
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams

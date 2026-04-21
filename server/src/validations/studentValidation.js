@@ -49,10 +49,13 @@ const createStudentSchema = Joi.object({
   previous_school: Joi.string().trim().optional().allow(null, ''),
   previous_school_address: Joi.string().trim().optional().allow(null, ''),
   // Siblings
-  sibiling_1: Joi.string().trim().optional().allow(null, ''),
-  sibiling_2: Joi.string().trim().optional().allow(null, ''),
-  sibiling_1_class: Joi.string().trim().optional().allow(null, ''),
-  sibiling_2_class: Joi.string().trim().optional().allow(null, ''),
+  siblings: Joi.array().items(Joi.object({
+    is_in_same_school: Joi.boolean().optional(),
+    name: Joi.string().trim().allow(null, ''),
+    class_name: Joi.string().trim().allow(null, ''),
+    roll_number: Joi.string().trim().allow(null, ''),
+    admission_number: Joi.string().trim().allow(null, '')
+  })).optional().allow(null),
   // Transport
   is_transport_required: Joi.boolean().optional(),
   route_id: Joi.number().integer().optional().allow(null),
