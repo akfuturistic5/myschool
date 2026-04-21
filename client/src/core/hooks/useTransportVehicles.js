@@ -1,9 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-export const useTransportVehicles = (params = {}) => {
+/**
+ * Stable default so `useTransportVehicles()` does not pass a new `{}` every render
+ * (which would change useCallback deps and re-fetch in a loop).
+ */
+const EMPTY_PARAMS = Object.freeze({});
+
+export const useTransportVehicles = (params = EMPTY_PARAMS) => {
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
+  const paramsKey = JSON.stringify(params === EMPTY_PARAMS ? {} : params);
+
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -18,8 +28,8 @@ export const useTransportVehicles = (params = {}) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const combinedParams = { ...params, ...overrides };
+
+      const combinedParams = { ...paramsRef.current, ...overrides };
       const response = await apiService.getTransportVehicles(combinedParams);
       
       if (response && response.status === "SUCCESS") {
@@ -56,7 +66,7 @@ export const useTransportVehicles = (params = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [paramsKey]);
 
   useEffect(() => {
     fetchVehicles();
