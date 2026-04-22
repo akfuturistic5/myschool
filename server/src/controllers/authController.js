@@ -136,7 +136,7 @@ const login = async (req, res) => {
            FROM users u
            LEFT JOIN user_roles ur ON u.role_id = ur.id
            LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-           WHERE u.is_active = true
+           WHERE u.is_active = true AND u.deleted_at IS NULL
              AND (u.username = $1 OR LOWER(COALESCE(u.email, '')) = LOWER($1) OR u.phone = $1)
            ORDER BY match_rank ASC, u.id ASC`,
           [identifier]
@@ -162,7 +162,7 @@ const login = async (req, res) => {
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
              LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-             WHERE u.is_active = true AND (u.username = $1 OR u.phone = $1)
+             WHERE u.is_active = true AND u.deleted_at IS NULL AND (u.username = $1 OR u.phone = $1)
              ORDER BY match_rank ASC, u.id ASC`,
             [identifier]
           );
@@ -364,7 +364,7 @@ const login = async (req, res) => {
       LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
       LEFT JOIN user_roles ur ON u.role_id = ur.id
-      WHERE u.id = $1 AND u.is_active = true`,
+      WHERE u.id = $1 AND u.is_active = true AND u.deleted_at IS NULL`,
       [tokenUser.id]
     );
     if (result.rows.length === 0) {

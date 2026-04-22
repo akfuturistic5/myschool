@@ -22,6 +22,7 @@ const {
   getAttendanceReport,
   checkAdmissionNumberUnique,
   searchStudents,
+  deleteStudent,
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
@@ -104,5 +105,6 @@ router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
 // Create/Update student - Admin only
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);
 router.put('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(updateStudentSchema), updateStudent);
+router.delete('/:id', requireRole(PEOPLE_MANAGER_ROLES), deleteStudent);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
@@ -49,6 +49,7 @@ const StudentList = () => {
   const { student: currentStudent, loading: currentStudentLoading, error: currentStudentError } = useCurrentStudent();
 
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -269,6 +270,7 @@ const StudentList = () => {
                     to="#"
                     data-bs-toggle="modal"
                     data-bs-target="#delete-modal"
+                    onClick={() => setSelectedStudent(record.student)}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -494,7 +496,12 @@ const StudentList = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <StudentModals />
+      <StudentModals
+        student={selectedStudent}
+        feeData={null}
+        onFeeCollected={() => {}}
+        onStudentDeleted={() => window.location.reload()}
+      />
     </>
   );
 };

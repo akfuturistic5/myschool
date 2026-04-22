@@ -2103,6 +2103,7 @@ const getStudentPromotions = async (req, res) => {
       LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
       LEFT JOIN staff st ON st.id = sp.promoted_by
       ${whereClause}
+      AND s.deleted_at IS NULL
       ORDER BY sp.promotion_date DESC, sp.id DESC
       LIMIT ${limitParam}`,
       params
@@ -2242,7 +2243,7 @@ const getStudentRejoins = async (req, res) => {
        LEFT JOIN academic_years tay ON tay.id = sr.to_academic_year_id
        LEFT JOIN users u ON u.id = sr.rejoined_by
        LEFT JOIN staff st ON st.user_id = u.id
-       WHERE COALESCE(sr.is_active, true) = true
+       WHERE COALESCE(sr.is_active, true) = true AND sr.deleted_at IS NULL
        ORDER BY sr.rejoin_date DESC, sr.id DESC
        LIMIT $1`,
       [limit]
@@ -2309,11 +2310,11 @@ const getAllStudents = async (req, res) => {
            ORDER BY sp.student_id, COALESCE(sp.promotion_date, sp.created_at) DESC, sp.id DESC
          )
          SELECT (
-           (SELECT COUNT(*) FROM students WHERE academic_year_id = $1)
+           (SELECT COUNT(*) FROM students WHERE academic_year_id = $1 AND deleted_at IS NULL)
            +
            (SELECT COUNT(*) FROM historical_promotions)
          )::int AS total`
-      : 'SELECT COUNT(*)::int as total FROM students';
+      : 'SELECT COUNT(*)::int as total FROM students WHERE deleted_at IS NULL';
     const countParams = hasAcademicYearFilter ? [academicYearId] : [];
     const countResult = await query(countQuery, countParams);
     const total = countResult.rows[0].total;
@@ -2392,7 +2393,7 @@ const getAllStudents = async (req, res) => {
           ORDER BY id DESC 
           LIMIT 1
         ) addr ON true
-        WHERE s.academic_year_id = $1
+        WHERE s.academic_year_id = $1 AND s.deleted_at IS NULL
 
         UNION ALL
 
@@ -2506,6 +2507,7 @@ const getAllStudents = async (req, res) => {
         ORDER BY id DESC 
         LIMIT 1
       ) addr ON true
+      WHERE s.deleted_at IS NULL
       ORDER BY s.first_name ASC, s.last_name ASC LIMIT $1 OFFSET $2
     `, selectParams);
 
@@ -2573,7 +2575,7 @@ const getTeacherStudents = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       WHERE s.is_active = true AND (
+       WHERE s.is_active = true AND s.deleted_at IS NULL AND (
          EXISTS (
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = ANY($1::int[])
@@ -2669,7 +2671,7 @@ const getStudentById = async (req, res) => {
         ORDER BY id DESC 
         LIMIT 1
       ) addr ON true`;
-    const whereClause = ` WHERE s.id = $1`;
+    const whereClause = ` WHERE s.id = $1 AND s.deleted_at IS NULL`;
 
     let result;
     try {
@@ -2944,8 +2946,8 @@ const getStudentLoginDetails = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true
-       WHERE s.id = $1 AND s.is_active = true
+       LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true AND u.deleted_at IS NULL
+       WHERE s.id = $1 AND s.is_active = true AND s.deleted_at IS NULL
        LIMIT 1`,
       [id]
     );
@@ -4298,6 +4300,62 @@ const searchStudents = async (req, res) => {
   }
 };
 
+/**
+ * Delete a student record (Soft Delete).
+ * Sets deleted_at = NOW() and is_active = false for both student and linked user.
+ */
+const deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sid = parseId(id);
+    if (!sid) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      // 1. Mark student as deleted
+      const stuUpdate = await client.query(
+        `UPDATE students 
+         SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+         WHERE id = $1 AND deleted_at IS NULL 
+         RETURNING id, user_id`,
+        [sid]
+      );
+
+      if (stuUpdate.rows.length === 0) {
+        const err = new Error('Student not found or already deleted');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const { user_id } = stuUpdate.rows[0];
+
+      // 2. Mark linked user as deleted (if exists)
+      if (user_id) {
+        await client.query(
+          `UPDATE users 
+           SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [user_id]
+        );
+      }
+
+      return sid;
+    });
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student record deleted successfully (soft delete)',
+      data: { id: result }
+    });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Failed to delete student';
+    res.status(statusCode).json({ status: 'ERROR', message });
+  }
+};
+
 module.exports = {
   createStudent,
   updateStudent,
@@ -4319,4 +4377,5 @@ module.exports = {
   getAttendanceReport,
   checkAdmissionNumberUnique,
   searchStudents,
+  deleteStudent,
 };

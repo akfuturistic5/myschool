@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { all_routes } from '../../../router/all_routes'
@@ -17,6 +17,7 @@ const StudentGrid = () => {
   const routes = all_routes
   const navigate = useNavigate()
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null)
+  const [selectedStudent, setSelectedStudent] = useState<any>(null)
   const user = useSelector(selectUser)
   const role = (user?.role || '').toLowerCase()
   const isStudentRole = role === 'student'
@@ -337,6 +338,7 @@ const StudentGrid = () => {
                             to="#"
                             data-bs-toggle="modal"
                             data-bs-target="#delete-modal"
+                            onClick={() => setSelectedStudent(student.student)}
                           >
                             <i className="ti ti-trash-x me-2" />
                             Delete
@@ -433,7 +435,12 @@ const StudentGrid = () => {
     </div>
   </div>
   {/* /Page Wrapper */}
-  <StudentModals />
+  <StudentModals
+    student={selectedStudent}
+    feeData={null}
+    onFeeCollected={() => {}}
+    onStudentDeleted={() => window.location.reload()}
+  />
 </>
 
   )
