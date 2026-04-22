@@ -1187,7 +1187,6 @@ async function viewExamResults(req, res) {
         AND er.subject_id = sp.subject_id
        WHERE st.class_id = $2
          AND st.section_id = $3
-         AND COALESCE(st.is_active, true) = true
        GROUP BY st.id, st.first_name, st.last_name
        ORDER BY st.first_name ASC, st.last_name ASC`,
       [examId, classId, sectionId]

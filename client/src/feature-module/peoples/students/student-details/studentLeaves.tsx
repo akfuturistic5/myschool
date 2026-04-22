@@ -88,9 +88,11 @@ const StudentLeaves = () => {
   const normalizedRole = String(role || "").trim().toLowerCase();
   const canUseAdminList =
     normalizedRole === "admin" ||
+    normalizedRole === "administrator" ||
     normalizedRole === "teacher" ||
     normalizedRole === "headmaster" ||
     normalizedRole === "administrative" ||
+    normalizedRole.includes("admin") ||
     normalizedRole.includes("teacher") ||
     normalizedRole.includes("headmaster") ||
     normalizedRole.includes("administrative");
@@ -535,7 +537,7 @@ const StudentLeaves = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentFees}
+                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -545,7 +547,7 @@ const StudentLeaves = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentResult}
+                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >

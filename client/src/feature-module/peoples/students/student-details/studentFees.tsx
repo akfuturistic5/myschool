@@ -20,6 +20,12 @@ const StudentFees = () => {
   const { studentId, student, loading } = useLinkedStudentContext({
     locationState: state,
   });
+  const effectiveStudentId =
+    (typeof studentId === "number" && Number.isFinite(studentId) && studentId > 0
+      ? studentId
+      : Number(student?.id) > 0
+        ? Number(student.id)
+        : null);
 
   const { academicYears } = useAcademicYears();
   const academicYearsArray = Array.isArray(academicYears) ? academicYears : [];
@@ -82,7 +88,7 @@ const StudentFees = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentTimeTable}
+                        to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -92,7 +98,7 @@ const StudentFees = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentLeaves}
+                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
                         className="nav-link "
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -101,14 +107,17 @@ const StudentFees = () => {
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.studentFees} className="nav-link active">
+                      <Link
+                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
+                        className="nav-link active"
+                      >
                         <i className="ti ti-report-money me-2" />
                         Fees
                       </Link>
                     </li>
                     <li>
                       <Link
-                        to={routes.studentResult}
+                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >

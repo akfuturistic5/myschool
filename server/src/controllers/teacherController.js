@@ -1366,7 +1366,7 @@ const getTeacherDocument = async (req, res) => {
 
     return await runWithTenant(dbName, async () => {
       const result = await query(
-        `SELECT t.${column} AS doc_path, s.user_id, s.staff_id
+        `SELECT t.${column} AS doc_path, s.user_id, t.staff_id
          FROM teachers t
          INNER JOIN staff s ON t.staff_id = s.id
          WHERE t.id = $1`,

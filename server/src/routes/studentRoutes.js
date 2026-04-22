@@ -18,6 +18,7 @@ const {
   getStudentAttendance,
   getStudentLoginDetails,
   getStudentExamResults,
+  getStudentsLatestExamSummary,
   getGradeReport,
   getAttendanceReport,
   checkAdmissionNumberUnique,
@@ -84,6 +85,7 @@ router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsBy
 // Report endpoints - Admin/Administrative/Teacher
 router.get('/reports/grade', requireRole(STUDENT_LIST_ALL_ROLES), getGradeReport);
 router.get('/reports/attendance', requireRole(STUDENT_LIST_ALL_ROLES), getAttendanceReport);
+router.post('/exam-results/summary', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsLatestExamSummary);
 
 // Get login details (usernames) for a student
 // Auth is handled by protectApi globally; controller enforces ownership (admin / student / parent / guardian)

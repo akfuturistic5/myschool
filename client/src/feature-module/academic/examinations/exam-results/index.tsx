@@ -43,6 +43,8 @@ const ExamResult = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [studentDetailsById, setStudentDetailsById] = useState<Record<number, any>>({});
+  const [studentDetailLoadingById, setStudentDetailLoadingById] = useState<Record<number, boolean>>({});
+  const [studentDetailAttemptedById, setStudentDetailAttemptedById] = useState<Record<number, boolean>>({});
   const [studentDetailsError, setStudentDetailsError] = useState<string | null>(null);
   const [actionLoadingKey, setActionLoadingKey] = useState<string | null>(null);
   const [autoLoadFromQuery, setAutoLoadFromQuery] = useState(false);
@@ -270,15 +272,32 @@ const ExamResult = () => {
   };
 
   const getDetailedRowsForBulk = async () => {
-    const entries = await Promise.all(
-      rows.map(async (r: any) => {
-        const sid = Number(r.student_id);
-        if (!Number.isFinite(sid) || sid <= 0) return null;
-        const detail = await getStudentDetailForSelectedExam(sid);
-        return detail ? { row: r, detail } : null;
-      })
-    );
-    return entries.filter(Boolean) as Array<{ row: any; detail: any }>;
+    const result: Array<{ row: any; detail: any }> = [];
+    setDetailsLoading(true);
+    setStudentDetailsError(null);
+    try {
+      const maxParallel = 3;
+      for (let i = 0; i < rows.length; i += maxParallel) {
+        const chunk = rows.slice(i, i + maxParallel);
+        const chunkEntries = await Promise.all(
+          chunk.map(async (r: any) => {
+            const sid = Number(r.student_id);
+            if (!Number.isFinite(sid) || sid <= 0) return null;
+            const detail = await getStudentDetailForSelectedExam(sid);
+            return detail ? { row: r, detail } : null;
+          })
+        );
+        chunkEntries.forEach((entry) => {
+          if (entry) result.push(entry);
+        });
+      }
+    } catch (e: any) {
+      setStudentDetailsError(e?.message || "Failed to load full student-wise details");
+      return [];
+    } finally {
+      setDetailsLoading(false);
+    }
+    return result;
   };
 
   const classOptions = useMemo(() => {
@@ -298,43 +317,6 @@ const ExamResult = () => {
     () => contextRows.filter((r) => r.class_id === classId),
     [contextRows, classId]
   );
-
-  const loadAllStudentDetailedResults = async (summaryRows: any[], examIdToUse: string) => {
-    const examIdNum = Number(normalizeExamId(examIdToUse));
-    if (!Number.isFinite(examIdNum) || examIdNum <= 0 || !summaryRows.length) {
-      setStudentDetailsById({});
-      return;
-    }
-    setDetailsLoading(true);
-    setStudentDetailsError(null);
-    try {
-      const detailEntries = await Promise.all(
-        summaryRows.map(async (r: any) => {
-          const studentId = Number(r.student_id);
-          if (!Number.isFinite(studentId) || studentId <= 0) return null;
-          const res = await apiService.getStudentExamResults(studentId);
-          const exams = (res as any)?.data?.exams || [];
-          const examDetail =
-            exams.find((ex: any) => Number(ex.examId) === examIdNum) ||
-            exams.find((ex: any) => Number(ex.exam_id) === examIdNum) ||
-            null;
-          return examDetail ? [studentId, examDetail] : null;
-        })
-      );
-      const mapped: Record<number, any> = {};
-      detailEntries.forEach((entry) => {
-        if (!entry) return;
-        const [studentId, detail] = entry as [number, any];
-        mapped[studentId] = detail;
-      });
-      setStudentDetailsById(mapped);
-    } catch (e: any) {
-      setStudentDetailsById({});
-      setStudentDetailsError(e?.message || "Failed to load full student-wise details");
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
 
   const loadResults = async (examIdOverride?: string) => {
     const fallbackExamId = exams.length ? normalizeExamId(exams[0]?.id) : "";
@@ -380,7 +362,10 @@ const ExamResult = () => {
     }
     setLoading(true);
     setMessage(null);
+    setDetailsLoading(false);
     setStudentDetailsById({});
+    setStudentDetailLoadingById({});
+    setStudentDetailAttemptedById({});
     setStudentDetailsError(null);
     try {
       const res = await apiService.viewExamResults({
@@ -391,9 +376,6 @@ const ExamResult = () => {
       const data = (res as any)?.data || [];
       setRows(data);
       if (!data.length) setMessage("No result found for selected filters.");
-      if (!selfOnly && data.length) {
-        await loadAllStudentDetailedResults(data, examIdToUse);
-      }
     } catch (e: any) {
       setRows([]);
       setMessage(e?.message || "Failed to load exam results");
@@ -405,17 +387,29 @@ const ExamResult = () => {
   const getStudentDetailForSelectedExam = async (studentId: number) => {
     const existing = studentDetailsById[studentId];
     if (existing) return existing;
+    if (studentDetailLoadingById[studentId]) return null;
     const examIdNum = Number(normalizeExamId(selectedExamId));
-    const res = await apiService.getStudentExamResults(studentId);
-    const exams = (res as any)?.data?.exams || [];
-    const examDetail =
-      exams.find((ex: any) => Number(ex.examId) === examIdNum) ||
-      exams.find((ex: any) => Number(ex.exam_id) === examIdNum) ||
-      null;
-    if (examDetail) {
-      setStudentDetailsById((prev) => ({ ...prev, [studentId]: examDetail }));
+    if (!Number.isFinite(examIdNum) || examIdNum <= 0) return null;
+    setStudentDetailAttemptedById((prev) => ({ ...prev, [studentId]: true }));
+    setStudentDetailLoadingById((prev) => ({ ...prev, [studentId]: true }));
+    try {
+      const res = await apiService.getStudentExamResults(studentId);
+      const exams = (res as any)?.data?.exams || [];
+      const examDetail =
+        exams.find((ex: any) => Number(ex.examId) === examIdNum) ||
+        exams.find((ex: any) => Number(ex.exam_id) === examIdNum) ||
+        null;
+      if (examDetail) {
+        setStudentDetailsById((prev) => ({ ...prev, [studentId]: examDetail }));
+      }
+      return examDetail;
+    } finally {
+      setStudentDetailLoadingById((prev) => {
+        const next = { ...prev };
+        delete next[studentId];
+        return next;
+      });
     }
-    return examDetail;
   };
 
   const formatDate = (value: any) => {
@@ -424,6 +418,14 @@ const ExamResult = () => {
     if (Number.isNaN(d.getTime())) return "N/A";
     return d.toLocaleDateString("en-GB");
   };
+
+  useEffect(() => {
+    if (selfOnly || rows.length === 0) return;
+    const firstStudentId = Number(rows[0]?.student_id);
+    if (!Number.isFinite(firstStudentId) || firstStudentId <= 0) return;
+    if (studentDetailsById[firstStudentId] || studentDetailLoadingById[firstStudentId]) return;
+    getStudentDetailForSelectedExam(firstStudentId).catch(() => {});
+  }, [selfOnly, rows, selectedExamId]);
 
   const handleExportStudentPdf = async (row: any) => {
     const studentId = Number(row?.student_id);
@@ -1173,6 +1175,11 @@ const ExamResult = () => {
                             data-bs-target={`#${collapseId}`}
                             aria-expanded={idx === 0}
                             aria-controls={collapseId}
+                            onClick={() => {
+                              if (!studentDetailsById[studentId]) {
+                                getStudentDetailForSelectedExam(studentId).catch(() => {});
+                              }
+                            }}
                           >
                             <span className="me-3">{r.student_name || "-"}</span>
                             <span className="text-muted small me-3">Obtained: {r.total_obtained ?? "-"}</span>
@@ -1208,7 +1215,11 @@ const ExamResult = () => {
                             </div>
                             {!detail && (
                               <div className="alert alert-warning mb-0">
-                                Selected exam detail is not available for this student.
+                                {studentDetailLoadingById[studentId]
+                                  ? "Loading selected exam detail..."
+                                  : studentDetailAttemptedById[studentId]
+                                    ? "Selected exam detail is not available for this student."
+                                    : "Click to load selected exam detail."}
                               </div>
                             )}
 

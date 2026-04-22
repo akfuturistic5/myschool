@@ -60,7 +60,7 @@ async function canAccessStudent(req, studentId) {
   const studRes = await query(
     `SELECT id, user_id, class_id, section_id
      FROM students
-     WHERE id = $1 AND is_active = true
+     WHERE id = $1
      LIMIT 1`,
     [sid]
   );

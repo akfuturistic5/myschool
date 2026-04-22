@@ -1252,6 +1252,20 @@ const normalizeOverallResult = (val) => {
 const computeLastClassResult = async (client, studentId, classId, academicYearId) => {
   try {
     if (!studentId) return 'Not Available';
+    const { examResultsCols } = await loadExamSchemaCapabilities();
+    const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    const obtainedCandidates = ['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score']
+      .filter((c) => erCols.has(c));
+    const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min']
+      .filter((c) => erCols.has(c));
+    const hasIsAbsent = erCols.has('is_absent');
+    const obtainedExpr = obtainedCandidates.length > 0
+      ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const minExpr = minCandidates.length > 0
+      ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const absentExpr = hasIsAbsent ? 'er.is_absent = true' : 'false';
     const params = [studentId];
     const scoped = [];
     if (classId != null) {
@@ -1279,8 +1293,8 @@ const computeLastClassResult = async (client, studentId, classId, academicYearId
     const summary = await client.query(
       `SELECT
          COUNT(*)::int AS subjects_count,
-         COALESCE(SUM(CASE WHEN er.is_absent = true THEN 0 ELSE COALESCE(er.marks_obtained, er.obtained_marks, er.marks, er.marks_scored, er.score, 0) END), 0)::numeric AS total_obtained,
-         COALESCE(SUM(COALESCE(er.min_marks, er.pass_marks, er.min_mark, er.min, 0)), 0)::numeric AS total_min
+         COALESCE(SUM(CASE WHEN ${absentExpr} THEN 0 ELSE ${obtainedExpr} END), 0)::numeric AS total_obtained,
+         COALESCE(SUM(${minExpr}), 0)::numeric AS total_min
        FROM exam_results er
        WHERE er.student_id = $1 AND er.exam_id = $2`,
       [studentId, latestExamId]
@@ -1440,6 +1454,8 @@ const promoteStudents = async (req, res) => {
     if (uniqueIds.length === 0) {
       return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
     }
+
+    const hasStudentStatusColumn = await hasColumn('students', 'status');
 
     const result = await executeTransaction(async (client) => {
       let promoted = 0;
@@ -1734,12 +1750,27 @@ const leaveStudents = async (req, res) => {
           ]
         );
 
-        await client.query(
-          `UPDATE students
-           SET is_active = false, modified_at = NOW()
-           WHERE id = $1`,
-          [sid]
-        );
+        if (hasStudentStatusColumn) {
+          await client.query(
+            `UPDATE students
+             SET is_active = false,
+                 status = CASE
+                   WHEN status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) = 'active'
+                     THEN 'Inactive'
+                   ELSE status
+                 END,
+                 modified_at = NOW()
+             WHERE id = $1`,
+            [sid]
+          );
+        } else {
+          await client.query(
+            `UPDATE students
+             SET is_active = false, modified_at = NOW()
+             WHERE id = $1`,
+            [sid]
+          );
+        }
 
         await deactivateLinkedAccountsForLeftStudent(client, s);
         left += 1;
@@ -2165,6 +2196,7 @@ const getLeavingStudents = async (req, res) => {
          ls.reason,
          ls.remarks,
          ls.left_by,
+         COALESCE(ls.is_active, true) AS is_active,
          ls.created_at,
          ls.modified_at,
          jc.class_name AS joining_class_name,
@@ -2183,7 +2215,6 @@ const getLeavingStudents = async (req, res) => {
        LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
        LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
        LEFT JOIN staff st ON st.id = ls.left_by
-       WHERE COALESCE(ls.is_active, true) = true
        ORDER BY ls.leaving_date DESC, ls.id DESC
        LIMIT $1`,
       [limit]
@@ -2973,8 +3004,8 @@ const getStudentLoginDetails = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true
-       WHERE s.id = $1 AND s.is_active = true
+       LEFT JOIN users u ON s.user_id = u.id
+       WHERE s.id = $1
        LIMIT 1`,
       [id]
     );
@@ -2995,8 +3026,8 @@ const getStudentLoginDetails = async (req, res) => {
       const parRes = await query(
         `SELECT DISTINCT u.id, u.username, u.email, u.phone
          FROM guardians g
-         INNER JOIN users u ON u.id = g.user_id AND u.is_active = true
-         WHERE g.student_id = $1 AND g.is_active = true
+         INNER JOIN users u ON u.id = g.user_id
+         WHERE g.student_id = $1
            AND u.role_id = $2`,
         [id, ROLES.PARENT]
       );
@@ -3022,7 +3053,7 @@ const getStudentLoginDetails = async (req, res) => {
       const gRes = await query(
         `SELECT u.username, u.email, u.phone
          FROM guardians g
-         JOIN users u ON u.id = g.user_id AND u.is_active = true
+         JOIN users u ON u.id = g.user_id
          WHERE g.student_id = $1 AND g.user_id IS NOT NULL
          LIMIT 1`,
         [id]
@@ -3433,13 +3464,45 @@ const getStudentAttendance = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
+    const resolveLinkedStudentIds = async (requestedStudentId) => {
+      const sid = parseId(requestedStudentId);
+      if (!sid) return [];
+      const baseRes = await query(
+        `SELECT id, user_id, admission_number, roll_number
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (!baseRes.rows.length) return [sid];
+      const base = baseRes.rows[0];
+      const baseUserId = parseId(base.user_id);
+      const baseAdmissionNo = String(base.admission_number || '').trim();
+      const baseRollNo = String(base.roll_number || '').trim();
+      const linked = await query(
+        `SELECT id
+         FROM students
+         WHERE ($1::int IS NOT NULL AND user_id = $1)
+            OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
+            OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
+            OR id = $4`,
+        [baseUserId, baseAdmissionNo, baseRollNo, sid]
+      );
+      const ids = (linked.rows || [])
+        .map((r) => parseId(r.id))
+        .filter(Boolean);
+      if (!ids.length) return [sid];
+      return [...new Set(ids)];
+    };
+
+    const scopedStudentIds = await resolveLinkedStudentIds(studentId);
     const result = await query(
       `SELECT id, student_id, class_id, section_id, attendance_date, status, 
               check_in_time, check_out_time, marked_by, remarks
        FROM attendance
-       WHERE student_id = $1
+       WHERE student_id = ANY($1::int[])
        ORDER BY attendance_date DESC`,
-      [studentId]
+      [scopedStudentIds]
     );
 
     const normalizeStatus = (s) => {
@@ -3502,6 +3565,63 @@ const getStudentAttendance = async (req, res) => {
   }
 };
 
+const EXAM_SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
+let examSchemaCache = {
+  value: null,
+  expiresAt: 0,
+  pending: null,
+};
+
+const loadExamSchemaCapabilities = async () => {
+  const now = Date.now();
+  if (examSchemaCache.value && examSchemaCache.expiresAt > now) {
+    return examSchemaCache.value;
+  }
+  if (examSchemaCache.pending) {
+    return examSchemaCache.pending;
+  }
+
+  examSchemaCache.pending = (async () => {
+    const schemaCols = await query(
+      `SELECT table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
+    );
+    const examSubjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+    const examResultsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_results')
+        .map((r) => String(r.column_name))
+    );
+    const subjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'subjects' && ['practical_hours'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+
+    return {
+      hasEsComponent: examSubjectsCols.has('exam_component'),
+      hasErComponent: examResultsCols.has('exam_component'),
+      hasPracticalHours: subjectsCols.has('practical_hours'),
+      examResultsCols: Array.from(examResultsCols),
+    };
+  })();
+
+  try {
+    const value = await examSchemaCache.pending;
+    examSchemaCache.value = value;
+    examSchemaCache.expiresAt = Date.now() + EXAM_SCHEMA_CACHE_TTL_MS;
+    return value;
+  } finally {
+    examSchemaCache.pending = null;
+  }
+};
+
 // Get exam results for a student (from exams & exam_results tables)
 // This endpoint is read-only and designed to be schema-tolerant:
 // - Uses modified_at (not updated_at) when available
@@ -3511,6 +3631,28 @@ const getStudentExamResults = async (req, res) => {
     const resolveLatestLinkedStudentId = async (studentId) => {
       const sid = parseId(studentId);
       if (!sid) return null;
+      // Keep requested historical row when it already has exam history.
+      const hasExamHistory = await query(
+        `SELECT 1
+         FROM exam_results
+         WHERE student_id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (hasExamHistory.rows?.length) return sid;
+
+      // If requested row is already inactive (left student), preserve exact historical row.
+      // Remapping to another active row can hide this student's own old exam records.
+      const requested = await query(
+        `SELECT id, COALESCE(is_active, true) AS is_active
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (!requested.rows?.length) return sid;
+      if (requested.rows[0].is_active === false) return sid;
+
       const latest = await query(
         `WITH base AS (
            SELECT id, user_id, admission_number, roll_number
@@ -3548,33 +3690,19 @@ const getStudentExamResults = async (req, res) => {
     // Normalize to latest active row of the same user so exam pages stay consistent.
     const studentId = await resolveLatestLinkedStudentId(requestedStudentId);
 
-    const schemaCols = await query(
-      `SELECT table_name, column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
-    );
-    const examSubjectsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
-    const examResultsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'exam_results' && ['exam_component'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
-    const subjectsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'subjects' && ['practical_hours'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
+    const { hasEsComponent, hasErComponent, hasPracticalHours, examResultsCols } = await loadExamSchemaCapabilities();
+    const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    const coalesceExpr = (candidates, fallbackSql) => {
+      const cols = candidates.filter((c) => erCols.has(c)).map((c) => `er.${c}`);
+      if (cols.length === 0) return fallbackSql;
+      return `COALESCE(${cols.join(', ')}, ${fallbackSql})`;
+    };
+    const marksExpr = coalesceExpr(['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score'], 'NULL');
+    const absentExpr = erCols.has('is_absent') ? 'COALESCE(er.is_absent, false)' : 'false';
+    const maxMarksExpr = coalesceExpr(['max_marks', 'total_marks'], '100');
+    const passMarksExpr = coalesceExpr(['min_marks', 'pass_marks', 'min_mark', 'min'], '35');
 
-    const hasEsComponent = examSubjectsCols.has('exam_component');
-    const hasErComponent = examResultsCols.has('exam_component');
-    const hasPracticalHours = subjectsCols.has('practical_hours');
-
-    const rows = await query(
+    let rows = await query(
       `SELECT
          es.exam_id,
          e.exam_name,
@@ -3587,8 +3715,8 @@ const getStudentExamResults = async (req, res) => {
          COALESCE(es.passing_marks, 35) AS passing_marks,
          ${hasEsComponent ? 'es.exam_component' : "NULL::text AS exam_component"},
          ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-         er.marks_obtained,
-         COALESCE(er.is_absent, false) AS is_absent
+         ${marksExpr} AS marks_obtained,
+         ${absentExpr} AS is_absent
        FROM students st
        INNER JOIN exam_subjects es
          ON es.class_id = st.class_id
@@ -3604,6 +3732,41 @@ const getStudentExamResults = async (req, res) => {
        ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
       [studentId]
     );
+
+    // Leaving/inactive students can lose class/section mapping; in that case,
+    // fallback to direct exam_results history so latest result still opens in popup.
+    if (!rows.rows || rows.rows.length === 0) {
+      rows = await query(
+        `SELECT
+           er.exam_id,
+           e.exam_name,
+           e.exam_type,
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+           er.subject_id,
+           s.subject_name,
+           s.subject_code,
+           COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+           COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+           ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+           ${marksExpr} AS marks_obtained,
+           ${absentExpr} AS is_absent
+         FROM exam_results er
+         LEFT JOIN exams e ON e.id = er.exam_id
+         LEFT JOIN subjects s ON s.id = er.subject_id
+         LEFT JOIN exam_subjects es
+           ON es.exam_id = er.exam_id
+          AND es.subject_id = er.subject_id
+          ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}
+         WHERE er.student_id = $1
+           AND er.exam_id IS NOT NULL
+         ORDER BY
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST,
+           er.exam_id DESC,
+           s.subject_name ASC`,
+        [studentId]
+      );
+    }
 
     if (!rows.rows || rows.rows.length === 0) {
       return res.status(200).json({
@@ -3712,6 +3875,112 @@ const getStudentExamResults = async (req, res) => {
   }
 };
 
+// Batch summary: latest exam overall result per student id.
+const getStudentsLatestExamSummary = async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.student_ids) ? req.body.student_ids : [];
+    const studentIds = [...new Set(ids.map((v) => parseId(v)).filter(Boolean))];
+    if (studentIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'student_ids is required' });
+    }
+
+    const erColsRes = await query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'exam_results'`
+    );
+    const erCols = new Set((erColsRes.rows || []).map((r) => String(r.column_name)));
+    const obtainedCandidates = [
+      'marks_obtained',
+      'obtained_marks',
+      'marks',
+      'marks_scored',
+      'score',
+    ].filter((c) => erCols.has(c));
+    const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min'].filter((c) => erCols.has(c));
+    const hasIsAbsent = erCols.has('is_absent');
+
+    const obtainedExpr = obtainedCandidates.length > 0
+      ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const minExpr = minCandidates.length > 0
+      ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const absentExpr = hasIsAbsent ? 'COALESCE(er.is_absent, false)' : 'false';
+    const pendingExpr = obtainedCandidates.length > 0
+      ? obtainedCandidates.map((c) => `er.${c} IS NULL`).join(' AND ')
+      : 'false';
+
+    const result = await query(
+      `WITH scoped AS (
+         SELECT
+           er.student_id,
+           er.exam_id,
+           COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+           COALESCE(e.exam_name, 'Exam') AS exam_name,
+           COALESCE(e.exam_type, '') AS exam_type
+         FROM exam_results er
+         LEFT JOIN exams e ON e.id = er.exam_id
+         WHERE er.student_id = ANY($1::int[])
+           AND er.exam_id IS NOT NULL
+       ),
+       latest_exam AS (
+         SELECT DISTINCT ON (s.student_id)
+           s.student_id, s.exam_id, s.exam_date, s.exam_name, s.exam_type
+         FROM scoped s
+         ORDER BY s.student_id, s.exam_date DESC NULLS LAST, s.exam_id DESC
+       ),
+       summary AS (
+         SELECT
+           le.student_id,
+           le.exam_id,
+           le.exam_name,
+           le.exam_type,
+           le.exam_date,
+           COUNT(*)::int AS subject_count,
+           BOOL_OR(
+             ${absentExpr} = true OR
+             ${obtainedExpr} < ${minExpr}
+           ) AS has_fail,
+           BOOL_OR(
+             ${absentExpr} = false AND
+             (${pendingExpr})
+           ) AS has_pending
+         FROM latest_exam le
+         INNER JOIN exam_results er ON er.student_id = le.student_id AND er.exam_id = le.exam_id
+         GROUP BY le.student_id, le.exam_id, le.exam_name, le.exam_type, le.exam_date
+       )
+       SELECT
+         s.student_id,
+         s.exam_id,
+         s.exam_name,
+         s.exam_type,
+         s.exam_date,
+         CASE
+           WHEN s.has_pending THEN 'Pending'
+           WHEN s.has_fail THEN 'Fail'
+           ELSE 'Pass'
+         END AS overall_result
+       FROM summary s`,
+      [studentIds]
+    );
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Latest exam summary fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching latest exam summaries:', error);
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch latest exam summaries',
+    });
+  }
+};
+
 const normalizeAttendanceStatus = (s) => {
   const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
   if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
@@ -3763,7 +4032,7 @@ const getGradeReport = async (req, res) => {
       }
     }
 
-    const scopedStudentsWhere = ['s.class_id = $1', 's.is_active = true'];
+    const scopedStudentsWhere = ['s.class_id = $1'];
     const scopedStudentsParams = [classId];
 
     if (sectionId) {
@@ -4035,7 +4304,7 @@ const getAttendanceReport = async (req, res) => {
       monthEndDate.getUTCMonth() + 1
     ).padStart(2, '0')}-01`;
 
-    const rosterWhere = ['s.is_active = true'];
+    const rosterWhere = ['1=1'];
     const rosterParams = [];
 
     if (classId) {
@@ -4344,6 +4613,7 @@ module.exports = {
   getStudentsByClass,
   getStudentAttendance,
   getStudentExamResults,
+  getStudentsLatestExamSummary,
   getGradeReport,
   getAttendanceReport,
   checkAdmissionNumberUnique,
