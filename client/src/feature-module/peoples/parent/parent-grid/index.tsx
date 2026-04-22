@@ -240,10 +240,10 @@ const ParentGrid = () => {
                   <div className="card-header d-flex align-items-center justify-content-between">
                     <Link
                       to="#"
-                      className="link-primary"
+                      className="link-primary fw-semibold"
                       onClick={() => handleViewParent(parent)}
                     >
-                      {parent.id}
+                      {parent.student_admission_number ? `Admission# ${parent.student_admission_number}` : `Parent #${parent.id}`}
                     </Link>
                     <div className="d-flex align-items-center">
                       <div className="dropdown">
@@ -299,34 +299,56 @@ const ParentGrid = () => {
                   </div>
                   <div className="card-body">
                     <div className="bg-light-300 rounded-2 p-3 mb-3">
-                      <div className="d-flex align-items-center">
+                      {/* Father's Details */}
+                      <div className="d-flex align-items-center mb-2">
                         <Link
                           to="#"
                           onClick={() => handleViewParent(parent)}
-                          className="avatar avatar-lg flex-shrink-0"
+                          className="avatar avatar-md flex-shrink-0"
                         >
                           <ImageWithBasePath
                             src={parent.ParentImage}
                             className="img-fluid rounded-circle"
-                            alt="img"
+                            alt="father"
                           />
                         </Link>
                         <div className="ms-2">
-                         <h6 className="text-dark text-truncate mb-0">
-                            <Link to="#" onClick={() => handleViewParent(parent)}>{parent.name}</Link>
+                          <span className="badge badge-soft-primary fs-10 mb-1">Father</span>
+                          <h6 className="text-dark text-truncate mb-0">
+                            <Link to="#" onClick={() => handleViewParent(parent)}>{parent.name || 'N/A'}</Link>
                           </h6>
-                          <p>{parent.Addedon}</p>
+                          <p className="mb-0 fs-12">{parent.Addedon}</p>
                         </div>
                       </div>
+                      {/* Mother's Details */}
+                      {parent.mother_name && (
+                        <div className="d-flex align-items-center mt-2 pt-2 border-top">
+                          <span className="avatar avatar-md flex-shrink-0">
+                            <ImageWithBasePath
+                              src="assets/img/parents/parent-02.jpg"
+                              className="img-fluid rounded-circle"
+                              alt="mother"
+                            />
+                          </span>
+                          <div className="ms-2">
+                            <span className="badge badge-soft-success fs-10 mb-1">Mother</span>
+                            <h6 className="text-dark text-truncate mb-0">{parent.mother_name}</h6>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="d-flex align-items-center justify-content-between gx-2">
-                      <div>
-                        <p className="mb-0">Email</p>
-                        <p className="text-dark">{parent.email}</p>
+                    <div className="row gx-2">
+                      <div className="col-6">
+                        <p className="mb-0 fs-12 text-muted">Father's Email</p>
+                        <p className="text-dark text-truncate mb-2 fs-12">{parent.email || 'N/A'}</p>
+                        <p className="mb-0 fs-12 text-muted">Father's Phone</p>
+                        <p className="text-dark mb-0 fs-12">{parent.phone || 'N/A'}</p>
                       </div>
-                      <div>
-                        <p className="mb-0">Phone</p>
-                        <p className="text-dark">{parent.phone}</p>
+                      <div className="col-6">
+                        <p className="mb-0 fs-12 text-muted">Mother's Email</p>
+                        <p className="text-dark text-truncate mb-2 fs-12">{parent.mother_email || 'N/A'}</p>
+                        <p className="mb-0 fs-12 text-muted">Mother's Phone</p>
+                        <p className="text-dark mb-0 fs-12">{parent.mother_phone || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -390,32 +412,49 @@ const ParentGrid = () => {
         <div className="modal-body mb-0">
           {selectedParent && (
             <div className="parent-wrap">
-              <div className="row align-items-center">
-                <div className="col-lg-6">
-                  <div className="d-flex align-items-center mb-3">
-                    <span className="avatar avatar-xl me-2">
-                      <ImageWithBasePath
-                        src={selectedParent.ParentImage}
-                        alt="img"
-                      />
-                    </span>
-                    <div className="parent-name">
-                      <h5 className="mb-1">{selectedParent.name}</h5>
-                      <p>{selectedParent.Addedon}</p>
+              <div className="row g-3 mb-3">
+                {/* Father's Details */}
+                <div className="col-md-6">
+                  <div className="border rounded p-3 h-100">
+                    <div className="d-flex align-items-center mb-2">
+                      <span className="avatar avatar-lg me-2">
+                        <ImageWithBasePath src={selectedParent.ParentImage} alt="father" />
+                      </span>
+                      <div>
+                        <span className="badge badge-soft-primary mb-1">Father</span>
+                        <h6 className="mb-0">{selectedParent.name || 'N/A'}</h6>
+                        <p className="mb-0 fs-12 text-muted">{selectedParent.Addedon}</p>
+                      </div>
                     </div>
+                    <ul className="list-unstyled mb-0">
+                      <li className="mb-1"><span className="text-muted fs-12">Email: </span><span className="fs-12">{selectedParent.email || 'N/A'}</span></li>
+                      <li className="mb-1"><span className="text-muted fs-12">Phone: </span><span className="fs-12">{selectedParent.phone || 'N/A'}</span></li>
+                      {selectedParent.father_occupation && (
+                        <li><span className="text-muted fs-12">Occupation: </span><span className="fs-12">{selectedParent.father_occupation}</span></li>
+                      )}
+                    </ul>
                   </div>
                 </div>
-                <div className="col-lg-6">
-                  <ul className="d-flex align-items-center">
-                    <li className="mb-3 me-5">
-                      <p className="mb-1">Email</p>
-                      <h6 className="fw-normal">{selectedParent.email}</h6>
-                    </li>
-                    <li className="mb-3">
-                      <p className="mb-1">Phone</p>
-                      <h6 className="fw-normal">{selectedParent.phone}</h6>
-                    </li>
-                  </ul>
+                {/* Mother's Details */}
+                <div className="col-md-6">
+                  <div className="border rounded p-3 h-100">
+                    <div className="d-flex align-items-center mb-2">
+                      <span className="avatar avatar-lg me-2">
+                        <ImageWithBasePath src="assets/img/parents/parent-02.jpg" alt="mother" />
+                      </span>
+                      <div>
+                        <span className="badge badge-soft-success mb-1">Mother</span>
+                        <h6 className="mb-0">{selectedParent.mother_name || 'N/A'}</h6>
+                      </div>
+                    </div>
+                    <ul className="list-unstyled mb-0">
+                      <li className="mb-1"><span className="text-muted fs-12">Email: </span><span className="fs-12">{selectedParent.mother_email || 'N/A'}</span></li>
+                      <li className="mb-1"><span className="text-muted fs-12">Phone: </span><span className="fs-12">{selectedParent.mother_phone || 'N/A'}</span></li>
+                      {selectedParent.mother_occupation && (
+                        <li><span className="text-muted fs-12">Occupation: </span><span className="fs-12">{selectedParent.mother_occupation}</span></li>
+                      )}
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>

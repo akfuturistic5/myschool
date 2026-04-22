@@ -311,6 +311,7 @@ const getAllGuardians = async (req, res) => {
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
       WHERE s.is_active = true${yearWhere}
+        AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
       ORDER BY s.first_name ASC, s.last_name ASC`,
       params
     );

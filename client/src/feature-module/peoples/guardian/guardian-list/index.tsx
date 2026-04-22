@@ -91,6 +91,14 @@ const GuardianList = () => {
       sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
     },
     {
+      title: "Guardian Type",
+      dataIndex: "guardian_type",
+      render: (text: string) => (
+        <span className="badge badge-soft-info">{text || "Guardian"}</span>
+      ),
+      sorter: (a: TableData, b: TableData) => (a.guardian_type || "").length - (b.guardian_type || "").length,
+    },
+    {
       title: "Child",
       dataIndex: "Child",
       render: (text: string, record: any) => (
