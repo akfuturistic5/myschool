@@ -170,3 +170,4 @@ export const leave_report_data = [
     specialAvailable: 10,
   },
 ];
+

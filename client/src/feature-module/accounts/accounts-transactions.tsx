@@ -467,3 +467,4 @@ const AccountsTransactions = () => {
 };
 
 export default AccountsTransactions;
+

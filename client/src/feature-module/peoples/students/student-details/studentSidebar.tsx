@@ -41,6 +41,12 @@ interface StudentSidebarProps {
     route_name?: string | null;
     pickup_point_name?: string | null;
     vehicle_number?: string | null;
+    siblings?: Array<{
+      name?: string;
+      class_name?: string;
+      section_name?: string;
+      admission_number?: string;
+    }>;
   } | null;
 }
 
@@ -77,10 +83,15 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const religion = student?.religion_name ?? "N/A";
   const caste = student?.cast_name ?? "N/A";
   const motherTongue = student?.mother_tongue_name ?? "N/A";
-  const sibling1 = student?.sibiling_1;
-  const sibling2 = student?.sibiling_2;
-  const sibling1Class = student?.sibiling_1_class;
-  const sibling2Class = student?.sibiling_2_class;
+  
+  // Sibling logic: Prefer the new dynamic array, fallback to legacy fields
+  const siblings = student?.siblings || [];
+  const legacySiblings = [];
+  if (student?.sibiling_1) legacySiblings.push({ name: student.sibiling_1, class_name: student.sibiling_1_class || 'N/A' });
+  if (student?.sibiling_2) legacySiblings.push({ name: student.sibiling_2, class_name: student.sibiling_2_class || 'N/A' });
+  
+  const displaySiblings = siblings.length > 0 ? siblings : legacySiblings;
+
   const hostelName = student?.hostel_name && String(student.hostel_name).trim() ? String(student.hostel_name).trim() : null;
   const hostelFloor = student?.floor && String(student.floor).trim() ? String(student.floor).trim() : null;
   const hostelRoomNumber = student?.hostel_room_number && String(student.hostel_room_number).trim() ? String(student.hostel_room_number).trim() : null;
@@ -178,46 +189,32 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
           </div>
         </div>
         {/* /Primary Contact Info */}
-        {/* Sibiling Information */}
+        {/* Sibling Information */}
         <div className="card border-white">
           <div className="card-body">
-            <h5 className="mb-3">Sibiling Information</h5>
-            {sibling1 ? (
-              <div className="d-flex align-items-center bg-light-300 rounded p-3 mb-3">
-                <span className="avatar avatar-lg">
-                  <ImageWithBasePath
-                    src="assets/img/students/student-06.jpg"
-                    className="img-fluid rounded"
-                    alt="img"
-                  />
-                </span>
-                <div className="ms-2">
-                  <h5 className="fs-14">{sibling1}</h5>
-                  <p>{sibling1Class ?? 'N/A'}</p>
+            <h5 className="mb-3">Sibling Information</h5>
+            {displaySiblings.length > 0 ? (
+              displaySiblings.map((sib, index) => (
+                <div key={index} className="d-flex align-items-center bg-light-300 rounded p-3 mb-3">
+                  <span className="avatar avatar-lg">
+                    <ImageWithBasePath
+                      src={index % 2 === 0 ? "assets/img/students/student-06.jpg" : "assets/img/students/student-07.jpg"}
+                      className="img-fluid rounded"
+                      alt="img"
+                    />
+                  </span>
+                  <div className="ms-2">
+                    <h5 className="fs-14">{sib.name}</h5>
+                    <p>{sib.class_name ?? 'N/A'}{sib.section_name ? `, ${sib.section_name}` : ''}</p>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            {sibling2 ? (
-              <div className="d-flex align-items-center bg-light-300 rounded p-3">
-                <span className="avatar avatar-lg">
-                  <ImageWithBasePath
-                    src="assets/img/students/student-07.jpg"
-                    className="img-fluid rounded"
-                    alt="img"
-                  />
-                </span>
-                <div className="ms-2">
-                  <h5 className="fs-14">{sibling2}</h5>
-                  <p>{sibling2Class ?? 'N/A'}</p>
-                </div>
-              </div>
-            ) : null}
-            {!sibling1 && !sibling2 && (
+              ))
+            ) : (
               <p className="text-muted mb-0">No sibling information available</p>
             )}
           </div>
         </div>
-        {/* /Sibiling Information */}
+        {/* /Sibling Information */}
         {/* Transport Information */}
         <div className="card border-white mb-0">
           <div className="card-body pb-1">
@@ -298,3 +295,4 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
 };
 
 export default StudentSidebar;
+

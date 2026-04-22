@@ -234,7 +234,7 @@ const FileContent = () => {
           >
             <i className="ti ti-dots-vertical fs-14"></i>
           </Link>
-          <ul className="dropdown-menu dropdown-menu-right p-3">
+          <ul className="dropdown-menu dropdown-menu-end p-2">
             <li>
               <Link className="dropdown-item rounded-1" to="#">
                 <i className="ti ti-trash me-2"></i>
@@ -972,3 +972,4 @@ const FileContent = () => {
 };
 
 export default FileContent;
+

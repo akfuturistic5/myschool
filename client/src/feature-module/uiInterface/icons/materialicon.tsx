@@ -835,3 +835,4 @@ const MaterialIcons = () => {
   );
 };
 export default MaterialIcons;
+

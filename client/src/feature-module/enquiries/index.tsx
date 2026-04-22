@@ -291,7 +291,7 @@ const Enquiries = () => {
                 <button
                   type="button"
                   className="btn btn-outline-light bg-white dropdown-toggle"
-                  data-bs-toggle="dropdown"
+                  data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                   disabled={!exportRows.length}
                 >
                   <i className="ti ti-file-export me-2" />
@@ -448,3 +448,8 @@ const Enquiries = () => {
 };
 
 export default Enquiries;
+
+
+
+
+

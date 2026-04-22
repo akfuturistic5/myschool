@@ -90,3 +90,4 @@ export const scheduleClass = [
 		key:10
 	  }
 ];
+

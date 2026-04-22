@@ -70,3 +70,4 @@ export const states_data = [
     status: 'Active'
   }
 ];
+

@@ -413,18 +413,39 @@ async function getExamSubjectsSchemaFlags() {
 }
 
 async function getExamResultsSchemaFlags() {
-  const colCheck = await query(
-    `SELECT column_name
-     FROM information_schema.columns
-     WHERE table_schema = 'public'
-       AND table_name = 'exam_results'
-       AND column_name IN ('created_by', 'modified_at', 'exam_component')`
-  );
+  const [colCheck, uniqueCheck] = await Promise.all([
+    query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'exam_results'
+         AND column_name IN ('created_by', 'modified_at', 'exam_component')`
+    ),
+    query(
+      `SELECT pg_get_constraintdef(c.oid) AS def
+       FROM pg_constraint c
+       INNER JOIN pg_class t ON t.oid = c.conrelid
+       INNER JOIN pg_namespace n ON n.oid = t.relnamespace
+       WHERE c.contype = 'u'
+         AND n.nspname = 'public'
+         AND t.relname = 'exam_results'`
+    ),
+  ]);
   const cols = new Set((colCheck.rows || []).map((r) => String(r.column_name)));
+  const uniqueDefs = (uniqueCheck.rows || [])
+    .map((r) => String(r.def || '').replace(/\s+/g, ' ').toLowerCase());
+  const hasUniqueExamStudentSubject = uniqueDefs.some(
+    (def) => def.includes('(exam_id, student_id, subject_id)')
+  );
+  const hasUniqueExamStudentSubjectComponent = uniqueDefs.some(
+    (def) => def.includes('(exam_id, student_id, subject_id, exam_component)')
+  );
   return {
     hasCreatedByColumn: cols.has('created_by'),
     hasModifiedAtColumn: cols.has('modified_at'),
     hasExamComponentColumn: cols.has('exam_component'),
+    hasUniqueExamStudentSubject,
+    hasUniqueExamStudentSubjectComponent,
   };
 }
 
@@ -1634,6 +1655,8 @@ async function saveExamMarks(req, res) {
     const ctx = getAuthContext(req);
     const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id);
     if (!ok) return error(res, 403, 'You are not allowed to manage marks for this class section');
+    await assertExamClassLinked(value.exam_id, value.class_id);
+    await assertExamNotFinalized(value.exam_id);
 
     const subjects = await query(
       `SELECT subject_id, max_marks, passing_marks
@@ -1655,6 +1678,18 @@ async function saveExamMarks(req, res) {
     );
     const allowedStudentIds = new Set(students.rows.map((s) => parseId(s.id)));
     const examResultsSchema = await getExamResultsSchemaFlags();
+    const conflictTarget = examResultsSchema.hasExamComponentColumn && examResultsSchema.hasUniqueExamStudentSubjectComponent
+      ? '(exam_id, student_id, subject_id, exam_component)'
+      : examResultsSchema.hasUniqueExamStudentSubject
+        ? '(exam_id, student_id, subject_id)'
+        : null;
+    if (!conflictTarget) {
+      return error(
+        res,
+        500,
+        'exam_results unique key for marks upsert is missing. Apply exam module migrations before saving marks.'
+      );
+    }
 
     for (const row of value.rows) {
       const subject = subjectMap.get(parseId(row.subject_id));
@@ -1702,7 +1737,7 @@ async function saveExamMarks(req, res) {
           `INSERT INTO exam_results
            (${insertColumns.join(', ')})
            VALUES (${placeholders})
-           ON CONFLICT (exam_id, student_id, subject_id)
+           ON CONFLICT ${conflictTarget}
            DO UPDATE SET
              ${updateSet.join(', ')}`,
           insertValues
@@ -1772,6 +1807,7 @@ async function deleteExam(req, res) {
     const ctx = getAuthContext(req);
     if (!isAdmin(ctx)) return error(res, 403, 'Only admin can delete exams');
 
+    const schema = await getExamSchemaFlags();
     await executeTransaction(async (client) => {
       const exists = await client.query(
         `SELECT id FROM exams WHERE id = $1 LIMIT 1`,
@@ -1786,7 +1822,9 @@ async function deleteExam(req, res) {
       // Defensive explicit deletes so legacy schemas also remain clean.
       await client.query(`DELETE FROM exam_results WHERE exam_id = $1`, [examId]);
       await client.query(`DELETE FROM exam_subjects WHERE exam_id = $1`, [examId]);
-      await client.query(`DELETE FROM exam_classes WHERE exam_id = $1`, [examId]);
+      if (schema.hasExamClassesTable) {
+        await client.query(`DELETE FROM exam_classes WHERE exam_id = $1`, [examId]);
+      }
       await client.query(`DELETE FROM exams WHERE id = $1`, [examId]);
     });
 

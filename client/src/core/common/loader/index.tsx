@@ -49,3 +49,4 @@ const Preloader = () => {
 };
 
 export default Loader;
+

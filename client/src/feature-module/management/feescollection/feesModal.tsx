@@ -619,3 +619,4 @@ const FeesModal = ({ onSuccess, editGroupData, editTypeData, editMasterData, del
 };
 
 export default FeesModal;
+

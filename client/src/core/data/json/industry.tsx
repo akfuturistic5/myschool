@@ -42,3 +42,4 @@ export const industryData = [
     status: "Inactive",
   },
 ];
+

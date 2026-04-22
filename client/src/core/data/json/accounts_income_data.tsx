@@ -110,3 +110,4 @@ export const accounts_income_data = [
     paymentMethod: "Cash",
   },
 ];
+

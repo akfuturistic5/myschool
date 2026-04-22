@@ -64,3 +64,4 @@ const ImageWithBasePath = (props: Image) => {
 };
 
 export default ImageWithBasePath;
+

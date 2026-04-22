@@ -104,7 +104,7 @@ const GuardianGrid = () => {
                 <Link
                   to="#"
                   className="btn btn-outline-light bg-white dropdown-toggle"
-                  data-bs-toggle="dropdown"
+                  data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                   data-bs-auto-close="outside"
                 >
                   <i className="ti ti-filter me-2" />
@@ -172,7 +172,7 @@ const GuardianGrid = () => {
                 <Link
                   to="#"
                   className="btn btn-outline-light bg-white dropdown-toggle"
-                  data-bs-toggle="dropdown"
+                  data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                 >
                   <i className="ti ti-sort-ascending-2 me-2" />
                   Sort by A-Z{" "}
@@ -236,22 +236,22 @@ const GuardianGrid = () => {
                   <div className="card-header d-flex align-items-center justify-content-between">
                     <Link
                       to="#"
-                      className="link-primary"
+                      className="link-primary fw-semibold"
                       onClick={() => handleViewGuardian(guardian)}
                     >
-                      {guardian.id}
+                      {guardian.student_admission_number ? `Admission# ${guardian.student_admission_number}` : `Guardian #${guardian.id}`}
                     </Link>
                     <div className="d-flex align-items-center">
                       <div className="dropdown">
                         <Link
                           to="#"
                           className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                          data-bs-toggle="dropdown"
+                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                           aria-expanded="false"
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -304,11 +304,14 @@ const GuardianGrid = () => {
                           />
                         </Link>
                         <div className="ms-2">
-                         <h6 className="text-dark text-truncate mb-0">
-                            <Link to="#" onClick={() => handleViewGuardian(guardian)}>{guardian.name}</Link>
-                          </h6>
-                          <p>{guardian.Addedon}</p>
-                        </div>
+                          {guardian.guardian_type && (
+                            <span className="badge badge-soft-info fs-10 mb-1">{guardian.guardian_type}</span>
+                          )}
+                          <h6 className="text-dark text-truncate mb-0">
+                             <Link to="#" onClick={() => handleViewGuardian(guardian)}>{guardian.name}</Link>
+                           </h6>
+                           <p className="mb-0 fs-12">{guardian.Addedon}</p>
+                         </div>
                       </div>
                     </div>
                     <div className="d-flex align-items-center justify-content-between gx-2">
@@ -380,7 +383,7 @@ const GuardianGrid = () => {
         </div>
         <div className="modal-body mb-0">
           {selectedGuardian && (
-            <div className="parent-wrap">
+            <div className="guardian-wrap">
               <div className="row align-items-center">
                 <div className="col-lg-6">
                   <div className="d-flex align-items-center mb-3">
@@ -390,8 +393,9 @@ const GuardianGrid = () => {
                         alt="img"
                       />
                     </span>
-                    <div className="parent-name">
+                    <div className="guardian-name">
                       <h5 className="mb-1">{selectedGuardian.name}</h5>
+                      <span className="badge badge-soft-info mb-2">{selectedGuardian.guardian_type || 'Guardian'}</span>
                       <p>{selectedGuardian.Addedon}</p>
                     </div>
                   </div>
@@ -482,3 +486,8 @@ const GuardianGrid = () => {
 };
 
 export default GuardianGrid;
+
+
+
+
+

@@ -405,7 +405,7 @@ const ParentDashboard = () => {
                     <button
                       type="button"
                       className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       aria-expanded="false"
                     >
                       <i className="ti ti-calendar me-2" />
@@ -522,7 +522,7 @@ const ParentDashboard = () => {
                       <button
                         type="button"
                         className="btn btn-light dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                         aria-expanded="false"
                       >
                         <i className="ti ti-calendar me-2" />
@@ -798,3 +798,8 @@ const ParentDashboard = () => {
 };
 
 export default ParentDashboard;
+
+
+
+
+

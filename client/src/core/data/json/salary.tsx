@@ -80,3 +80,4 @@ export const salarydata = [
     Net_Salary: "$20,000",
   },
 ];
+

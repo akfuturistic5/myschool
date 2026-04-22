@@ -506,3 +506,4 @@ const AcademicYearCreate = () => {
 };
 
 export default AcademicYearCreate;
+

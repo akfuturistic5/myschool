@@ -434,6 +434,12 @@ class ApiService {
     });
   }
 
+  async deleteStudent(id) {
+    return this.makeRequest(`/students/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async promoteStudents(payload) {
     return this.makeRequest('/students/promote', {
       method: 'POST',

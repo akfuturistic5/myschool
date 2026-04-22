@@ -564,3 +564,4 @@ const AcademicYearDetail = () => {
 };
 
 export default AcademicYearDetail;
+

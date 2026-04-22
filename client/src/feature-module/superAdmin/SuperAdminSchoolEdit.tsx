@@ -257,3 +257,4 @@ const SuperAdminSchoolEdit = () => {
 
 export default SuperAdminSchoolEdit;
 
+

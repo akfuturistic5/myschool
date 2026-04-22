@@ -40,6 +40,7 @@ const parseOptionalInt = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
+
 async function resolveSectionAcademicYear(classId, requestedYearId) {
   const cls = await query('SELECT id, academic_year_id FROM classes WHERE id = $1 LIMIT 1', [classId]);
   if (!cls.rows.length) {

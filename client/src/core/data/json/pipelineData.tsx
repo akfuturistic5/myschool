@@ -96,3 +96,4 @@ export const pipelineData = [
     key: "8"
   },
 ];
+

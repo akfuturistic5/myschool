@@ -224,3 +224,4 @@ const StudentFees = () => {
 };
 
 export default StudentFees;
+

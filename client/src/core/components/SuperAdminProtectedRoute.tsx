@@ -29,3 +29,4 @@ const SuperAdminProtectedRoute = () => {
 
 export default SuperAdminProtectedRoute;
 
+

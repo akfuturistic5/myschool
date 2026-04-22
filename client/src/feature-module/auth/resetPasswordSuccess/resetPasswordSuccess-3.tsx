@@ -41,3 +41,4 @@ const ResetPasswordSuccess3 = () => {
 };
 
 export default ResetPasswordSuccess3;
+

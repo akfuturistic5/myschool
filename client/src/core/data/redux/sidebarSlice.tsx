@@ -34,3 +34,4 @@ export const { setMobileSidebar, setMiniSidebar, setExpandMenu, toggleMiniSideba
   sidebarSlice.actions;
 
 export default sidebarSlice.reducer;
+
