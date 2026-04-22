@@ -4275,7 +4275,8 @@ const searchStudents = async (req, res) => {
       `SELECT s.id,
         NULLIF(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))), '') AS name,
         s.admission_number AS "admissionNumber",
-        COALESCE(c.class_name, '') AS "className"
+        COALESCE(c.class_name, '') AS "className",
+        EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true) AS "hasGuardians"
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        WHERE s.is_active = true
@@ -4292,6 +4293,7 @@ const searchStudents = async (req, res) => {
       name: r.name || `${r.admissionNumber || ''}`.trim() || `Student #${r.id}`,
       admissionNumber: r.admissionNumber || '',
       className: r.className || '',
+      hasGuardians: Boolean(r.hasGuardians),
     }));
     res.status(200).json({ status: 'SUCCESS', data: rows });
   } catch (error) {

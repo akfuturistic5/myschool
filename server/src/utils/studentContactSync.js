@@ -190,6 +190,8 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
     );
   }
 
+  // Nullify current link first to avoid FK constraint on delete
+  await client.query(`UPDATE students SET guardian_id = NULL WHERE id = $1`, [studentId]);
   await client.query(`DELETE FROM guardians WHERE student_id = $1`, [studentId]);
 
   const rows = [];
@@ -290,10 +292,12 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
       father_u.email AS father_email,
       father_u.phone AS father_phone,
       father_u.occupation AS father_occupation,
+      father_u.avatar AS father_image_url,
       NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), '') AS mother_name,
       mother_u.email AS mother_email,
       mother_u.phone AS mother_phone,
       mother_u.occupation AS mother_occupation,
+      mother_u.avatar AS mother_image_url,
       gu_u.first_name AS guardian_first_name,
       gu_u.last_name AS guardian_last_name,
       gu_u.phone AS guardian_phone,
@@ -304,14 +308,14 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
 
 const STUDENT_CONTACT_LATERAL_JOINS = `
       LEFT JOIN LATERAL (
-        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation
+        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
         WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'father'
         ORDER BY g.id ASC LIMIT 1
       ) father_u ON true
       LEFT JOIN LATERAL (
-        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation
+        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
         WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'mother'

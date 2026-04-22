@@ -28,8 +28,6 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       s.id,
       s.id AS student_id,
       ${STUDENT_CONTACT_LATERAL_SELECT},
-      NULL::text AS father_image_url,
-      NULL::text AS mother_image_url,
       s.created_at,
       s.modified_at AS updated_at,
       s.first_name AS student_first_name,
@@ -289,8 +287,6 @@ const parentListSelectSql = `
         s.id,
         s.id AS student_id,
         ${STUDENT_CONTACT_LATERAL_SELECT},
-        NULL::text AS father_image_url,
-        NULL::text AS mother_image_url,
         s.created_at,
         s.modified_at AS updated_at,
         s.first_name AS student_first_name,
@@ -439,8 +435,6 @@ const getAllParents = async (req, res) => {
           s.id,
           s.id AS student_id,
           ${STUDENT_CONTACT_LATERAL_SELECT},
-          NULL::text AS father_image_url,
-          NULL::text AS mother_image_url,
           s.created_at,
           s.modified_at AS updated_at,
           s.first_name AS student_first_name,
@@ -616,7 +610,11 @@ const createParentWithChild = async (req, res) => {
     if (!schoolId) {
       return errorResponse(res, 401, 'School context required');
     }
-    const { name, phone, email, student_id, profile_image_path } = req.body;
+    const {
+      name, phone, email, student_id, profile_image_path,
+      mother_name, mother_phone, mother_email, mother_occupation,
+      mother_image_url
+    } = req.body;
     const warnings = [];
 
     const payload = await executeTransaction(async (client) => {
@@ -634,35 +632,81 @@ const createParentWithChild = async (req, res) => {
         throw err;
       }
 
-      const { userId, reused } = await createOrReuseParentUser(
-        client,
-        {
-          fullName: name,
-          phone,
-          email,
-          avatarRelativePath: avatarPath,
-        },
-        warnings
-      );
+        // If primary father details are missing, use mother's details for user account
+        const finalName = name || mother_name;
+        const finalPhone = phone || mother_phone;
+        const finalEmail = email || mother_email;
 
-      let guardian = null;
-      let studentName = null;
-      if (student_id != null) {
-        const sid = parseInt(student_id, 10);
-        if (!Number.isFinite(sid) || sid <= 0) {
-          const err = new Error('Invalid student_id');
-          err.statusCode = 400;
-          throw err;
-        }
-        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
-        if (chk.rows.length === 0) {
-          const err = new Error('Student not found');
-          err.statusCode = 400;
-          throw err;
-        }
-        guardian = await assignFatherGuardian(client, { userId, studentId: sid });
+        const { userId, reused } = await createOrReuseParentUser(
+          client,
+          {
+            fullName: finalName,
+            phone: finalPhone,
+            email: finalEmail,
+            avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+          },
+          warnings
+        );
+
+        let studentName = null;
+        if (student_id != null) {
+          const sid = parseInt(student_id, 10);
+          if (!Number.isFinite(sid) || sid <= 0) {
+            const err = new Error('Invalid student_id');
+            err.statusCode = 400;
+            throw err;
+          }
+          const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
+          if (chk.rows.length === 0) {
+            const err = new Error('Student not found');
+            err.statusCode = 400;
+            throw err;
+          }
+
+          const hasFather = name || phone;
+          const hasMother = mother_name || mother_phone;
+
+          // Use syncStudentGuardians to handle both Father and Mother
+          await syncStudentGuardians(
+            client,
+            sid,
+            {
+              effFatherName: name || null,
+              effFatherEmail: email || null,
+              effFatherPhone: phone || null,
+              effFatherOcc: null,
+              effMotherName: mother_name || null,
+              effMotherEmail: mother_email || null,
+              effMotherPhone: mother_phone || null,
+              effMotherOcc: mother_occupation || null,
+              effGFirst: null,
+              effGLast: null,
+              effGPhone: null,
+              effGEmail: null,
+              effGOcc: null,
+              effGAddr: null,
+              effGRel: null,
+              fatherUserId: hasFather ? userId : null,
+              motherUserId: !hasFather && hasMother ? userId : null,
+              guardianUserId: null,
+            },
+            warnings
+          );
+
         const r = chk.rows[0];
         studentName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;
+
+        // Apply mother's avatar if provided
+        const motherLinked = await loadStudentLinkedUserIds(client.query.bind(client), sid);
+        if (mother_image_url && motherLinked.mother_person_id) {
+          const mAvatarPath = normalizeTenantProfilePath(schoolId, mother_image_url);
+          if (mAvatarPath) {
+            await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+              mAvatarPath,
+              motherLinked.mother_person_id,
+            ]);
+          }
+        }
       }
 
       return {
