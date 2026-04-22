@@ -16,7 +16,8 @@ const uploadSchoolFile = async (req, res) => {
       return errorResponse(res, 401, 'School context required');
     }
     const folder = String(req.body?.folder || '').trim();
-    if (!ALLOWED_FOLDERS.includes(folder)) {
+    const topFolder = folder.split('/')[0];
+    if (!ALLOWED_FOLDERS.includes(topFolder)) {
       return errorResponse(res, 400, `Invalid folder. Allowed: ${ALLOWED_FOLDERS.join(', ')}`);
     }
     if (!req.file || !req.file.buffer) {
@@ -71,17 +72,25 @@ const getSchoolFile = async (req, res) => {
       return errorResponse(res, 403, 'Access denied');
     }
 
-    const folder = String(req.params.folder || '').trim();
-    if (!ALLOWED_FOLDERS.includes(folder)) {
+    const fullPath = String(req.params[0] || '').trim().replace(/\\/g, '/');
+    if (!fullPath) {
+      return errorResponse(res, 400, 'Invalid path');
+    }
+
+    const pathSegs = fullPath.split('/');
+    const filename = pathSegs.pop();
+    const folder = pathSegs.join('/');
+
+    if (!filename) {
+      return errorResponse(res, 400, 'Filename required');
+    }
+
+    const topFolder = pathSegs[0] || '';
+    if (!ALLOWED_FOLDERS.includes(topFolder)) {
       return errorResponse(res, 400, 'Invalid folder');
     }
 
-    const filename = path.basename(decodeURIComponent(String(req.params.filename || '')));
-    if (!filename || filename !== String(req.params.filename).replace(/\\/g, '/').split('/').pop()) {
-      return errorResponse(res, 400, 'Invalid filename');
-    }
-
-    const relativeKey = `school_${urlSchoolId}/${folder}/${filename}`;
+    const relativeKey = `school_${urlSchoolId}/${fullPath}`;
     const provider = getStorageProvider();
 
     const buf = await provider.read(relativeKey);

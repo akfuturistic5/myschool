@@ -47,7 +47,7 @@ export const useParents = (options = {}) => {
           section_name: parent.section_name || null,
           phone: parent.father_phone || '',
           email: parent.father_email || '',
-          ParentImage: "assets/img/parents/parent-01.jpg",
+          ParentImage: parent.father_image_url || "assets/img/parents/parent-01.jpg",
           ChildImage: "assets/img/students/student-01.jpg",
           student_admission_number: parent.admission_number,
           student_roll_number: parent.roll_number,
@@ -56,6 +56,8 @@ export const useParents = (options = {}) => {
           mother_phone: parent.mother_phone,
           father_occupation: parent.father_occupation,
           mother_occupation: parent.mother_occupation,
+          father_image_url: parent.father_image_url,
+          mother_image_url: parent.mother_image_url,
           student_id: parent.student_id,
           /** From /parents/me — used when full GET /students/:id is slow or omits placement; same tenant RBAC. */
           class_id: parent.class_id != null ? Number(parent.class_id) : null,

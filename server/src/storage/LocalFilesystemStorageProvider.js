@@ -10,7 +10,11 @@ const { getStorageRoot, ALLOWED_FOLDERS, ALLOWED_EXTENSIONS } = require('./schoo
 function normalizeRelativeKey(schoolId, folder, filename) {
   const sid = Number(schoolId);
   if (!Number.isFinite(sid) || sid <= 0) throw new Error('Invalid school id');
-  if (!ALLOWED_FOLDERS.includes(folder)) throw new Error('Invalid folder');
+  
+  // Validate that the top-level folder is allowed
+  const topFolder = (folder || '').split('/')[0];
+  if (!ALLOWED_FOLDERS.includes(topFolder)) throw new Error('Invalid folder');
+  
   const base = path.basename(String(filename || ''));
   if (!base || base !== String(filename).replace(/\\/g, '/').split('/').pop()) {
     throw new Error('Invalid filename');
@@ -20,9 +24,19 @@ function normalizeRelativeKey(schoolId, folder, filename) {
 
 function parseRelativeKey(relativeKey) {
   const s = String(relativeKey || '').replace(/\\/g, '/').trim();
-  const m = /^school_(\d+)\/(students|documents|uploads|temp)\/([^/]+)$/.exec(s);
+  // Match school_{id}/folder/.../filename
+  // Group 1: id, Group 2: folder path (including subdirs), Group 3: filename
+  const m = /^school_(\d+)\/([^/]+(?:\/[^/]+)*)\/([^/]+)$/.exec(s);
   if (!m) return null;
-  return { schoolId: parseInt(m[1], 10), folder: m[2], filename: m[3] };
+  
+  const schoolId = parseInt(m[1], 10);
+  const fullFolderPath = m[2];
+  const filename = m[3];
+  
+  const topFolder = fullFolderPath.split('/')[0];
+  if (!ALLOWED_FOLDERS.includes(topFolder)) return null;
+
+  return { schoolId, folder: fullFolderPath, filename };
 }
 
 class LocalFilesystemStorageProvider {
@@ -51,7 +65,8 @@ class LocalFilesystemStorageProvider {
   }
 
   async ensureSchoolFolder(schoolId, folder) {
-    if (!ALLOWED_FOLDERS.includes(folder)) throw new Error('Invalid folder');
+    const topFolder = folder.split('/')[0];
+    if (!ALLOWED_FOLDERS.includes(topFolder)) throw new Error('Invalid folder');
     const dir = path.join(this.schoolRootPath(schoolId), folder);
     await fs.mkdir(dir, { recursive: true });
     return dir;

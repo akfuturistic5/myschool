@@ -2730,7 +2730,13 @@ class ApiService {
   async uploadSchoolStorageFile(file, folder) {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('folder', folder);
+
+    let targetFolder = folder;
+    if (folder === 'students') targetFolder = 'users/student';
+    else if (folder === 'parents') targetFolder = 'users/parent';
+    else if (folder === 'guardians') targetFolder = 'users/guardian';
+
+    formData.append('folder', targetFolder);
     return this.makeRequest('/storage/upload', {
       method: 'POST',
       body: formData,
@@ -2768,9 +2774,15 @@ class ApiService {
    * @param {string} apiPath — `data.url` from uploadSchoolStorageFile
    */
   async getSchoolStorageFileAbsoluteUrl(apiPath) {
+    if (!apiPath) return "";
     const base = await getApiBaseUrl();
     const origin = new URL(base).origin;
-    const p = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
+    let p = apiPath;
+    if (p.startsWith("school_")) {
+      p = `/api/storage/files/${p}`;
+    } else if (!p.startsWith("/")) {
+      p = `/${p}`;
+    }
     return `${origin}${p}`;
   }
 }

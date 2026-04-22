@@ -124,6 +124,10 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
       setEditMobileError(null);
       setEditEmailError(null);
       setEditUniqueNotice(null);
+      setProfileFileName("");
+      setProfileUploadStatus("idle");
+      setMotherProfileFileName("");
+      setMotherProfileUploadStatus("idle");
     };
 
     const addEl = document.getElementById("add_parent");
@@ -587,7 +591,7 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
                         <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
                           {profilePreview ? (
-                            <img src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                            <ImageWithBasePath src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
                           ) : (
                             <i className="ti ti-photo-plus fs-16" />
                           )}
@@ -692,7 +696,7 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
                         <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
                           {motherProfilePreview ? (
-                            <img src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                            <ImageWithBasePath src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
                           ) : (
                             <i className="ti ti-photo-plus fs-16" />
                           )}
@@ -851,7 +855,7 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
                         <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
                           {profilePreview ? (
-                            <img src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                            <ImageWithBasePath src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
                           ) : (
                             <i className="ti ti-photo-plus fs-16" />
                           )}
@@ -958,7 +962,7 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
                         <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
                           {motherProfilePreview ? (
-                            <img src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                            <ImageWithBasePath src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
                           ) : (
                             <i className="ti ti-photo-plus fs-16" />
                           )}

@@ -11,6 +11,7 @@ const {
   normalizeTenantProfilePath,
   createOrReuseParentUser,
   assignFatherGuardian,
+  parseFullName,
 } = require('../services/parentFlowService');
 const {
   syncStudentGuardians,
@@ -213,15 +214,38 @@ const updateParent = async (req, res) => {
         warnings
       );
 
-      if (father_image_url && fatherUserId) {
-        await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-          father_image_url,
+      // Update Father's user record if exists
+      if (fatherUserId) {
+        const { first_name: fFirst, last_name: fLast } = parseFullName(father_name || "");
+        await client.query(
+          `UPDATE users SET 
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+           WHERE id = $6`,
+          [fFirst || null, fLast || null, father_email || null, father_phone || null, father_occupation || null, fatherUserId]
+        );
+      }
+ 
+      // Update Mother's user record if exists
+      if (motherUserId) {
+        const { first_name: mFirst, last_name: mLast } = parseFullName(mother_name || "");
+        await client.query(
+          `UPDATE users SET 
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+           WHERE id = $6`,
+          [mFirst || null, mLast || null, mother_email || null, mother_phone || null, mother_occupation || null, motherUserId]
+        );
+      }
+
+      // Handle avatar updates (allow clearing)
+      if (fatherUserId && father_image_url !== undefined) {
+        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          father_image_url || "",
           fatherUserId,
         ]);
       }
-      if (mother_image_url && motherUserId) {
-        await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-          mother_image_url,
+      if (motherUserId && mother_image_url !== undefined) {
+        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          mother_image_url || "",
           motherUserId,
         ]);
       }
@@ -567,12 +591,12 @@ const uploadParentProfileImage = async (req, res) => {
         mimetype: req.file.mimetype,
       },
       schoolId,
-      'uploads'
+      'users/parent'
     );
     const seg = relativePath.split('/');
     const schoolKey = seg[0];
     const fileName = seg[seg.length - 1];
-    const url = `/api/storage/files/${schoolKey}/uploads/${encodeURIComponent(fileName)}`;
+    const url = `/api/storage/files/${schoolKey}/users/parent/${encodeURIComponent(fileName)}`;
     return success(res, 200, 'Uploaded', {
       relativePath,
       url,
