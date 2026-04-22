@@ -4276,7 +4276,34 @@ const searchStudents = async (req, res) => {
         NULLIF(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))), '') AS name,
         s.admission_number AS "admissionNumber",
         COALESCE(c.class_name, '') AS "className",
-        EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true) AS "hasGuardians"
+        -- Check for parents (Father/Mother)
+        EXISTS (
+          SELECT 1 FROM guardians g 
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+        ) AS "hasParents",
+        (
+          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
+          FROM guardians g
+          JOIN users u ON u.id = g.user_id
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+          ORDER BY g.id ASC LIMIT 1
+        ) AS "parentName",
+        -- Check for generic guardian
+        EXISTS (
+          SELECT 1 FROM guardians g 
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+        ) AS "hasGuardian",
+        (
+          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
+          FROM guardians g
+          JOIN users u ON u.id = g.user_id
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+          ORDER BY g.id ASC LIMIT 1
+        ) AS "guardianName"
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        WHERE s.is_active = true
@@ -4293,7 +4320,10 @@ const searchStudents = async (req, res) => {
       name: r.name || `${r.admissionNumber || ''}`.trim() || `Student #${r.id}`,
       admissionNumber: r.admissionNumber || '',
       className: r.className || '',
-      hasGuardians: Boolean(r.hasGuardians),
+      hasParents: Boolean(r.hasParents),
+      parentName: r.parentName || '',
+      hasGuardian: Boolean(r.hasGuardian),
+      guardianName: r.guardianName || '',
     }));
     res.status(200).json({ status: 'SUCCESS', data: rows });
   } catch (error) {

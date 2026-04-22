@@ -935,6 +935,10 @@ class ApiService {
   }
 
   // Guardians
+  async getGuardianByStudentId(studentId) {
+    return this.makeRequest(`/guardians/student/${studentId}`);
+  }
+
   async getGuardians(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
@@ -948,10 +952,6 @@ class ApiService {
 
   async getGuardianById(id) {
     return this.makeRequest(`/guardians/${id}`);
-  }
-
-  async getGuardianByStudentId(studentId) {
-    return this.makeRequest(`/guardians/student/${studentId}`);
   }
 
   async createGuardian(guardianData) {
@@ -2784,6 +2784,19 @@ class ApiService {
       p = `/${p}`;
     }
     return `${origin}${p}`;
+  }
+
+  /**
+   * GET /api/users/check-unique?mobile=&email=&excludeId=
+   * Independent checks for active users; excludeId skips that user (edit mode).
+   */
+  async checkUserUnique(params = {}) {
+    const search = new URLSearchParams();
+    if (params.mobile != null) search.set('mobile', String(params.mobile).trim());
+    if (params.email != null) search.set('email', String(params.email).trim());
+    if (params.excludeId != null) search.set('excludeId', String(params.excludeId));
+    const qs = search.toString();
+    return this.makeRequest(`/users/check-unique?${qs}`);
   }
 }
 

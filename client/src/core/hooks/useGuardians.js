@@ -23,16 +23,18 @@ export const useGuardians = (options = {}) => {
     Addedon: guardian.created_at ? `Added on ${new Date(guardian.created_at).toLocaleDateString('en-GB')}` : 'Added on 25 Mar 2024',
     Child: `${guardian.student_first_name || ''} ${guardian.student_last_name || ''}`.trim() || 'N/A',
     class: `${guardian.class_name || ''}, ${guardian.section_name || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, '') || 'N/A',
-    phone: guardian.phone || 'N/A',
-    email: guardian.email || 'N/A',
-    GuardianImage: "assets/img/guardians/guardian-01.jpg",
+    phone: guardian.phone || '',
+    email: guardian.email || '',
+    avatar: guardian.avatar,
+    GuardianImage: guardian.avatar || "assets/img/guardians/guardian-01.jpg",
     ChildImage: "assets/img/students/student-01.jpg",
     student_admission_number: guardian.admission_number,
     student_roll_number: guardian.roll_number,
     guardian_type: guardian.guardian_type,
     relation: guardian.relation,
     occupation: guardian.occupation,
-    student_id: guardian.student_id
+    student_id: guardian.student_id,
+    user_id: guardian.user_id
   });
 
   const fetchGuardians = async () => {

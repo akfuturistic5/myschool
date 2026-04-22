@@ -5,6 +5,7 @@ const { guardiansIsSlimSchema } = require('../utils/studentContactSync');
 const guardianSelectBase = `
         g.id,
         g.student_id,
+        g.user_id,
         g.guardian_type,
         u.first_name,
         u.last_name,
@@ -12,6 +13,7 @@ const guardianSelectBase = `
         u.occupation,
         u.phone,
         u.email,
+        u.avatar,
         s.first_name as student_first_name,
         s.last_name as student_last_name,
         s.admission_number,
@@ -30,7 +32,7 @@ const createGuardian = async (req, res) => {
   try {
     const {
       student_id, guardian_type, first_name, last_name, relation, occupation,
-      phone, email, is_primary_contact, is_emergency_contact,
+      phone, email, is_primary_contact, is_emergency_contact, avatar,
     } = req.body;
 
     if (!first_name || !last_name || !phone) {
@@ -99,11 +101,15 @@ const createGuardian = async (req, res) => {
         throw err;
       }
 
-      if (occupation) {
-        await client.query(`UPDATE users SET occupation = $1, modified_at = NOW() WHERE id = $2`, [
-          occupation,
-          guardianUserId,
-        ]);
+      if (occupation || avatar !== undefined) {
+        await client.query(
+          `UPDATE users SET 
+            occupation = COALESCE($1, occupation),
+            avatar = COALESCE($2, avatar),
+            modified_at = NOW() 
+           WHERE id = $3`,
+          [occupation || null, avatar || null, guardianUserId]
+        );
       }
 
       const result = await client.query(
@@ -158,7 +164,7 @@ const createGuardian = async (req, res) => {
     }
     res.status(500).json({
       status: 'ERROR',
-      message: 'Failed to create guardian',
+      message: error.message || 'Failed to create guardian',
     });
   }
 };
@@ -168,7 +174,7 @@ const updateGuardian = async (req, res) => {
     const { id } = req.params;
     const {
       student_id, guardian_type, first_name, last_name, relation, occupation,
-      phone, email, is_primary_contact, is_emergency_contact,
+      phone, email, is_primary_contact, is_emergency_contact, avatar,
     } = req.body;
 
     if (!first_name || !last_name || !phone) {
@@ -232,9 +238,19 @@ const updateGuardian = async (req, res) => {
           phone = $3,
           email = $4,
           occupation = $5,
+          avatar = CASE WHEN $6 = true THEN $7 ELSE avatar END,
           modified_at = NOW()
-        WHERE id = $6`,
-        [first_name, last_name || '', phone, email || null, occupation || null, existing.user_id]
+        WHERE id = $8`,
+        [
+          first_name,
+          last_name || '',
+          phone,
+          email || null,
+          occupation || null,
+          avatar !== undefined,
+          avatar || null,
+          existing.user_id
+        ]
       );
 
       const updated = await client.query(
@@ -295,7 +311,7 @@ const updateGuardian = async (req, res) => {
     }
     res.status(500).json({
       status: 'ERROR',
-      message: 'Failed to update guardian',
+      message: error.message || 'Failed to update guardian',
     });
   }
 };

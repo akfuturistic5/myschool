@@ -243,10 +243,11 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
         const arr = Array.isArray(raw) ? raw : (raw as { data?: unknown })?.data;
         const list = Array.isArray(arr) ? arr : [];
         setChildOptions(
-          list.map((s: { id: number; name?: string; admissionNumber?: string; className?: string; hasGuardians?: boolean }) => ({
+          list.map((s: { id: number; name?: string; admissionNumber?: string; className?: string; hasParents?: boolean; parentName?: string }) => ({
             value: s.id,
             label: `${s.name || "Student"} · ${s.admissionNumber || "—"} · ${s.className || "—"}`,
-            hasGuardians: s.hasGuardians,
+            hasParents: s.hasParents,
+            parentName: s.parentName,
           }))
         );
       } catch {
@@ -791,8 +792,8 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                         onChange={(v) => {
                           setAddStudentId(v ?? null);
                           const opt = childOptions.find(o => o.value === v);
-                          if (opt?.hasGuardians) {
-                            setExistingGuardiansNotice("Note: This student already has parents linked. Saving will replace them.");
+                          if (opt?.hasParents) {
+                            setExistingGuardiansNotice(`Note: This student already has parents linked (${opt.parentName || 'Existing'}). Saving will replace them.`);
                           } else {
                             setExistingGuardiansNotice(null);
                           }
