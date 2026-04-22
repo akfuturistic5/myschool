@@ -164,3 +164,4 @@ const OtpSettings = () => {
 };
 
 export default OtpSettings;
+

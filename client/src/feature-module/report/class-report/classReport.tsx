@@ -644,3 +644,4 @@ const ClassReport = () => {
 };
 
 export default ClassReport;
+

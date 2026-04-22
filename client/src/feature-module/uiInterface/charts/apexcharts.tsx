@@ -545,3 +545,4 @@ const Apexchart = () => {
 };
 
 export default Apexchart;
+

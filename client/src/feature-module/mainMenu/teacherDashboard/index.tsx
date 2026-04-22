@@ -468,7 +468,7 @@ const TeacherDashboard = () => {
                         <Link
                           to="#"
                           className="dropdown-toggle p-2"
-                          data-bs-toggle="dropdown"
+                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                           aria-expanded="false"
                           onClick={(e) => e.preventDefault()}
                         >
@@ -826,7 +826,7 @@ const TeacherDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar me-2" />
                         {selectedClass}
@@ -850,7 +850,7 @@ const TeacherDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar me-2" />
                         {selectedSection}
@@ -874,7 +874,7 @@ const TeacherDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar me-2" />
                         {marksTimeRange}
@@ -922,7 +922,7 @@ const TeacherDashboard = () => {
                     <Link
                       to="#"
                       className="bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                     >
                       <i className="ti ti-calendar me-2" />
                       {leaveTimeRange}
@@ -995,3 +995,8 @@ const TeacherDashboard = () => {
 };
 
 export default TeacherDashboard;
+
+
+
+
+

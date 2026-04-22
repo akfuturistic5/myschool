@@ -83,7 +83,7 @@ const CallHistory = () => {
             <i className="fa fa-ellipsis-v"></i>
           </Link>
           <div
-            className="dropdown-menu dropdown-menu-right"
+            className="dropdown-menu dropdown-menu-end"
             data-bs-toggle="modal"
             data-bs-target="#user-profile-new"
             style={{
@@ -203,3 +203,4 @@ const CallHistory = () => {
 };
 
 export default CallHistory;
+

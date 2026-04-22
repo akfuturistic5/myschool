@@ -121,3 +121,4 @@ const ResetPasswordSuccess = () => {
 };
 
 export default ResetPasswordSuccess;
+

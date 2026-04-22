@@ -303,6 +303,13 @@ const AddStudent = () => {
     { academicYearId, fetchAllWhenNoClass: false }
   );
 
+  // Fetch ALL sections for siblings dropdown (filtered by selected class in each row)
+  const { sections: allSectionsRaw, loading: allSectionsLoading } = useSections(
+    null,
+    { academicYearId, fetchAllWhenNoClass: true }
+  );
+  const allSectionsList = (allSectionsRaw || []) as any[];
+
   // Fetch blood groups from API
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
 
@@ -442,10 +449,11 @@ const AddStudent = () => {
               is_in_same_school: !!s.is_in_same_school,
               name: s.name || '',
               class_name: s.class_name || '',
+              section_name: s.section_name || '',
               roll_number: s.roll_number || '',
               admission_number: s.admission_number || '',
             }))
-          : [{ is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }],
+          : [{ is_in_same_school: true, name: '', class_name: '', section_name: '', roll_number: '', admission_number: '' }],
         is_transport_required: !!raw.is_transport_required,
         route_id: raw.route_id != null ? raw.route_id.toString() : null,
         pickup_point_id: raw.pickup_point_id != null ? raw.pickup_point_id.toString() : null,
@@ -743,6 +751,7 @@ const AddStudent = () => {
           is_in_same_school: s.is_in_same_school,
           name: s.name || null,
           class_name: s.class_name || null,
+          section_name: s.section_name || null,
           roll_number: s.roll_number || null,
           admission_number: s.admission_number || null,
         })),
@@ -1935,14 +1944,14 @@ const AddStudent = () => {
                     </div>
                   </div>
                   {/* /Parents & Guardian Information */}
-                  {/* Sibilings */}
+                  {/* Siblings */}
                   <div className="card">
                     <div className="card-header bg-light">
                       <div className="d-flex align-items-center">
                         <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
                           <i className="ti ti-users fs-16" />
                         </span>
-                        <h4 className="text-dark">Sibilings</h4>
+                        <h4 className="text-dark">Siblings</h4>
                       </div>
                     </div>
                     <div className="card-body">
@@ -2050,43 +2059,91 @@ const AddStudent = () => {
                                   )}
                                   <div className="col-lg-3 col-md-6">
                                     <div className="mb-3">
-                                      <div className="d-flex align-items-center">
-                                        <div className="w-100">
-                                          <label className="form-label">
-                                            Class
-                                          </label>
-                                          {useRealData ? (
-                                            <input
-                                              type="text"
-                                              className="form-control"
-                                              value={sib.class_name || ''}
-                                              onChange={(e) => updateSibling(index, { class_name: e.target.value })}
-                                            />
-                                          ) : (
+                                      <label className="form-label">
+                                        Class
+                                      </label>
+                                      {isSameSchool ? (
+                                        <CommonSelect
+                                          className="select"
+                                          options={classesList.map(cls => ({
+                                            value: (cls as ClassItem).class_name ?? (cls as any).className ?? '',
+                                            label: (cls as ClassItem).class_name ?? (cls as any).className ?? '',
+                                            original: cls
+                                          }))}
+                                          value={sib.class_name || ''}
+                                          onChange={(value) => {
+                                            updateSibling(index, { class_name: value, section_name: '' });
+                                          }}
+                                        />
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          className="form-control"
+                                          placeholder="Class"
+                                          value={sib.class_name || ''}
+                                          onChange={(e) => updateSibling(index, { class_name: e.target.value })}
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                  {isSameSchool ? (
+                                    <div className="col-lg-3 col-md-6">
+                                      <div className="mb-3">
+                                        <div className="d-flex align-items-center">
+                                          <div className="w-100">
+                                            <label className="form-label">
+                                              Section
+                                            </label>
                                             <CommonSelect
                                               className="select"
-                                              options={allClass}
-                                              defaultValue={undefined}
+                                              options={(() => {
+                                                const selectedCls = classesList.find(c => 
+                                                  ((c as ClassItem).class_name ?? (c as any).className) === sib.class_name
+                                                );
+                                                const clsId = selectedCls?.id;
+                                                return allSectionsList
+                                                  .filter(sec => !clsId || Number(sec.class_id) === Number(clsId))
+                                                  .map(sec => ({
+                                                    value: sec.section_name ?? sec.sectionName ?? '',
+                                                    label: sec.section_name ?? sec.sectionName ?? ''
+                                                  }));
+                                              })()}
+                                              value={sib.section_name || ''}
+                                              onChange={(value) => updateSibling(index, { section_name: value })}
                                             />
+                                          </div>
+                                          {formData.siblings.length > 1 && (
+                                            <div className="ms-3 mt-4">
+                                              <Link
+                                                to="#"
+                                                className="trash-icon"
+                                                onClick={() => removeContent(index)}
+                                              >
+                                                <i className="ti ti-trash-x" />
+                                              </Link>
+                                            </div>
                                           )}
                                         </div>
-                                        {formData.siblings.length > 1 && (
-                                          <div>
-                                            <label className="form-label">
-                                              &nbsp;
-                                            </label>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    formData.siblings.length > 1 && (
+                                      <div className="col-lg-1 col-md-1">
+                                        <div className="mb-3">
+                                          <label className="form-label">&nbsp;</label>
+                                          <div className="mt-2">
                                             <Link
                                               to="#"
-                                              className="trash-icon ms-3"
+                                              className="trash-icon"
                                               onClick={() => removeContent(index)}
                                             >
                                               <i className="ti ti-trash-x" />
                                             </Link>
                                           </div>
-                                        )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  </div>
+                                    )
+                                  )}
                                 </div>
                               </div>
                             );
@@ -2705,3 +2762,8 @@ const AddStudent = () => {
 };
 
 export default AddStudent;
+
+
+
+
+

@@ -76,23 +76,7 @@ async function allocateUniqueStudentIds(client, preferred, admission_number, exc
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `USI-${adm.replace(/\s+/g, '_')}` : `USI-${Date.now()}`;
-  base = base.slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_UNIQUE_STUDENT_ID_LEN - suf.length)) + suf).slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE unique_student_ids = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE unique_student_ids = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `USI-${Date.now()}`.slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
+  return null;
 }
 
 const MAX_PEN_NUMBER_LEN = 20;
@@ -117,23 +101,7 @@ async function allocatePenNumber(client, preferred, admission_number, excludeStu
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `PEN-${adm.replace(/\s+/g, '_')}` : `PEN-${Date.now()}`;
-  base = base.slice(0, MAX_PEN_NUMBER_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_PEN_NUMBER_LEN - suf.length)) + suf).slice(0, MAX_PEN_NUMBER_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE pen_number = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE pen_number = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `PEN-${Date.now()}`.slice(0, MAX_PEN_NUMBER_LEN);
+  return null;
 }
 
 const MAX_AADHAR_NO_LEN = 12;
@@ -158,23 +126,7 @@ async function allocateAadharNo(client, preferred, admission_number, excludeStud
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `AAD-${adm.replace(/\s+/g, '_')}` : `AAD-${Date.now()}`;
-  base = base.slice(0, MAX_AADHAR_NO_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_AADHAR_NO_LEN - suf.length)) + suf).slice(0, MAX_AADHAR_NO_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE aadhar_no = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE aadhar_no = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `A${String(Date.now()).slice(-11)}`.slice(0, MAX_AADHAR_NO_LEN);
+  return null;
 }
 
 // Create new student
@@ -522,13 +474,14 @@ const createStudent = async (req, res) => {
           if (!sib.name && !sib.admission_number) continue;
           await client.query(
             `INSERT INTO student_siblings (
-              student_id, is_in_same_school, name, class_name, roll_number, admission_number
-            ) VALUES ($1, $2, $3, $4, $5, $6)`,
+              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               studentRow.id,
               sib.is_in_same_school === true || sib.is_in_same_school === 'true',
               sib.name || null,
               sib.class_name || null,
+              sib.section_name || null,
               sib.roll_number || null,
               sib.admission_number || null,
             ]
@@ -782,15 +735,19 @@ const updateStudent = async (req, res) => {
         throw err;
       }
 
-      let resolvedUniqueFromBody = unique_student_ids != null ? String(unique_student_ids).trim() : '';
-      if (!resolvedUniqueFromBody) {
+      let resolvedUniqueFromBody = null;
+      if (unique_student_ids === undefined) {
+        // Keep existing if not in request body
         const curUs = await client.query(
           'SELECT unique_student_ids FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curUs.rows.length > 0 && curUs.rows[0].unique_student_ids != null) {
-          resolvedUniqueFromBody = String(curUs.rows[0].unique_student_ids).trim();
+        if (curUs.rows.length > 0) {
+          resolvedUniqueFromBody = curUs.rows[0].unique_student_ids;
         }
+      } else {
+        // Explicitly provided: null, empty string, or value
+        resolvedUniqueFromBody = (unique_student_ids != null ? String(unique_student_ids).trim() : '') || null;
       }
       const uniqueStudentIdsNormUpdate = await allocateUniqueStudentIds(
         client,
@@ -799,15 +756,17 @@ const updateStudent = async (req, res) => {
         id
       );
 
-      let resolvedPenFromBody = pen_number != null ? String(pen_number).trim() : '';
-      if (!resolvedPenFromBody) {
+      let resolvedPenFromBody = null;
+      if (pen_number === undefined) {
         const curPen = await client.query(
           'SELECT pen_number FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curPen.rows.length > 0 && curPen.rows[0].pen_number != null) {
-          resolvedPenFromBody = String(curPen.rows[0].pen_number).trim();
+        if (curPen.rows.length > 0) {
+          resolvedPenFromBody = curPen.rows[0].pen_number;
         }
+      } else {
+        resolvedPenFromBody = (pen_number != null ? String(pen_number).trim() : '') || null;
       }
       const penNumberNormUpdate = await allocatePenNumber(
         client,
@@ -816,15 +775,17 @@ const updateStudent = async (req, res) => {
         id
       );
 
-      let resolvedAadharFromBody = aadhaar_no != null ? String(aadhaar_no).trim() : '';
-      if (!resolvedAadharFromBody) {
+      let resolvedAadharFromBody = null;
+      if (aadhaar_no === undefined) {
         const curAad = await client.query(
           'SELECT aadhar_no FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curAad.rows.length > 0 && curAad.rows[0].aadhar_no != null) {
-          resolvedAadharFromBody = String(curAad.rows[0].aadhar_no).trim();
+        if (curAad.rows.length > 0) {
+          resolvedAadharFromBody = curAad.rows[0].aadhar_no;
         }
+      } else {
+        resolvedAadharFromBody = (aadhaar_no != null ? String(aadhaar_no).trim() : '') || null;
       }
       const aadharNormUpdate = await allocateAadharNo(
         client,
@@ -1212,6 +1173,28 @@ const updateStudent = async (req, res) => {
             ) VALUES ($1, $2, $3, $4, $5, NOW())
           `,
             [currentAddrVal, permanentAddrVal, studentRow.user_id, ROLES.STUDENT, studentRow.id]
+          );
+        }
+      }
+
+      // Handle Siblings Update: Clear existing and re-insert
+      await client.query('DELETE FROM student_siblings WHERE student_id = $1', [id]);
+      if (Array.isArray(siblings) && siblings.length > 0) {
+        for (const sib of siblings) {
+          if (!sib.name && !sib.admission_number) continue;
+          await client.query(
+            `INSERT INTO student_siblings (
+              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              id,
+              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
+              sib.name || null,
+              sib.class_name || null,
+              sib.section_name || null,
+              sib.roll_number || null,
+              sib.admission_number || null,
+            ]
           );
         }
       }
@@ -2645,7 +2628,8 @@ const getStudentById = async (req, res) => {
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id,
+      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id, s.vehicle_number,
+      tr.route_name as route_name, tpp.point_name as pickup_point_name,
       s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
@@ -2661,21 +2645,7 @@ const getStudentById = async (req, res) => {
       bg.blood_group as blood_group_name,
       cast_t.cast_name,
       mt.language_name as mother_tongue_name,
-      NULL::varchar AS father_name,
-      NULL::varchar AS father_email,
-      NULL::varchar AS father_phone,
-      NULL::varchar AS father_occupation,
-      NULL::varchar AS mother_name,
-      NULL::varchar AS mother_email,
-      NULL::varchar AS mother_phone,
-      NULL::varchar AS mother_occupation,
-      NULL::varchar AS guardian_first_name,
-      NULL::varchar AS guardian_last_name,
-      NULL::varchar AS guardian_phone,
-      NULL::varchar AS guardian_email,
-      NULL::varchar AS guardian_occupation,
-      NULL::varchar AS guardian_relation,
-      NULL::text AS guardian_address,
+      ${STUDENT_CONTACT_LATERAL_SELECT},
       COALESCE(s.current_address, addr.current_address, s.address) as current_address,
       COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
     const fromAndJoins = `
@@ -2689,6 +2659,9 @@ const getStudentById = async (req, res) => {
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
+      LEFT JOIN routes tr ON s.route_id = tr.id
+      LEFT JOIN pickup_points tpp ON s.pickup_point_id = tpp.id
+      ${STUDENT_CONTACT_LATERAL_JOINS}
       LEFT JOIN LATERAL (
         SELECT current_address, permanent_address 
         FROM addresses 
@@ -2752,12 +2725,10 @@ const getStudentById = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
     try {
-      const merged = await loadStudentContactLegacyFields(query, sid);
-      if (merged) Object.assign(studentData, merged);
       const ids = await loadStudentLinkedUserIds(query, sid);
       Object.assign(studentData, ids);
     } catch (e) {
-      console.warn('getStudentById: guardian contact merge', e.message);
+      console.warn('getStudentById: user IDs merge', e.message);
     }
     try {
       const extra = await query(
@@ -2913,7 +2884,7 @@ const getStudentById = async (req, res) => {
     // Fetch Siblings
     try {
       const sibsRes = await query(
-        `SELECT is_in_same_school, name, class_name, roll_number, admission_number 
+        `SELECT is_in_same_school, name, class_name, section_name, roll_number, admission_number 
          FROM student_siblings WHERE student_id = $1 ORDER BY id ASC`,
         [sid]
       );

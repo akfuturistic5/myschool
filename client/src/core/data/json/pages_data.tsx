@@ -36,3 +36,4 @@ export const pages_data = [
     status: true,
   },
 ];
+

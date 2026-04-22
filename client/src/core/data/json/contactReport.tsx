@@ -140,3 +140,4 @@ export const contactReportsData = [
     company_image: "assets/img/icons/company-icon-10.svg",
   },
 ];
+

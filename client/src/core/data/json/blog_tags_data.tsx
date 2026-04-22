@@ -60,3 +60,4 @@ export const blog_tags_data = [
     status: "Active",
   },
 ];
+

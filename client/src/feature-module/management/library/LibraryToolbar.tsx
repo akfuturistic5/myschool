@@ -37,7 +37,7 @@ const LibraryToolbar = ({ onRefresh, onExportExcel, onExportPdf, extra }: Librar
           <i className="ti ti-file-export me-2" />
           Export
         </button>
-        <ul className="dropdown-menu dropdown-menu-end p-3">
+        <ul className="dropdown-menu dropdown-menu-end p-2">
           <li>
             <button type="button" className="dropdown-item rounded-1" onClick={onExportPdf}>
               <i className="ti ti-file-type-pdf me-1" />
@@ -57,3 +57,4 @@ const LibraryToolbar = ({ onRefresh, onExportExcel, onExportPdf, extra }: Librar
 };
 
 export default LibraryToolbar;
+

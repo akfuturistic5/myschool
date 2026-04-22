@@ -860,3 +860,4 @@ const StudentLeaves = () => {
 };
 
 export default StudentLeaves;
+

@@ -351,7 +351,7 @@ const Header = () => {
                       "No academic year"
                     )}
                   </button>
-                  <div className="dropdown-menu dropdown-menu-right">
+                  <div className="dropdown-menu dropdown-menu-end">
                     {loading ? (
                       <div className="dropdown-item d-flex align-items-center">
                         <i className="ti ti-loader ti-spin me-2"></i>
@@ -719,3 +719,4 @@ const Header = () => {
 };
 
 export default Header;
+

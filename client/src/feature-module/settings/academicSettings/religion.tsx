@@ -407,3 +407,4 @@ const Religion = () => {
 };
 
 export default Religion;
+

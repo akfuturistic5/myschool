@@ -47,3 +47,4 @@ const AdministrativeBreadcrumb = ({
 };
 
 export default AdministrativeBreadcrumb;
+

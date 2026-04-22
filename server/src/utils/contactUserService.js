@@ -68,7 +68,8 @@ async function ensureParentContactUser(client, { full_name, email, phone, occupa
   const { isUserEmailTaken } = require('./createPersonUser');
   const e = String(email ?? '').trim();
   const p = String(phone ?? '').trim();
-  if (!e && !p) return null;
+  const fn = String(full_name ?? '').trim();
+  if (!e && !p && !fn) return null;
 
   const existing = await findUserIdByPhoneOrEmail(client, ROLES.PARENT, p, e);
   if (existing) {
@@ -116,7 +117,8 @@ async function ensureGuardianContactUser(
   const { isUserEmailTaken } = require('./createPersonUser');
   const e = String(email ?? '').trim();
   const p = String(phone ?? '').trim();
-  if (!e && !p) return null;
+  const fn = String(first_name ?? '').trim();
+  if (!e && !p && !fn) return null;
 
   const existing = await findUserIdByPhoneOrEmail(client, ROLES.GUARDIAN, p, e);
   if (existing) {

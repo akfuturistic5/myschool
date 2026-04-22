@@ -840,3 +840,4 @@ const PaymentGateways = () => {
 };
 
 export default PaymentGateways;
+

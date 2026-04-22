@@ -70,3 +70,4 @@ export const faq_data = [
     category: "General",
   },
 ];
+

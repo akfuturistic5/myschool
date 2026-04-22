@@ -28,3 +28,4 @@ const SuperAdminLayout = () => {
 };
 
 export default SuperAdminLayout;
+

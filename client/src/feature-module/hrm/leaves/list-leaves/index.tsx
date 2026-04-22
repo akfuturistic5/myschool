@@ -223,7 +223,7 @@ const ListLeaves = () => {
                     <Link
                       to="#"
                       className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       data-bs-auto-close="outside"
                     >
                       <i className="ti ti-filter me-2" />
@@ -335,7 +335,7 @@ const ListLeaves = () => {
                     <Link
                       to="#"
                       className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                     >
                       <i className="ti ti-sort-ascending-2 me-2" />
                       Sort by A-Z
@@ -561,3 +561,8 @@ const ListLeaves = () => {
 };
 
 export default ListLeaves;
+
+
+
+
+

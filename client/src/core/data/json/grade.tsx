@@ -72,3 +72,4 @@ export const gradetable = [
         key:8
     }
 ]
+

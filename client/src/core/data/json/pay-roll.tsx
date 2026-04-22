@@ -100,3 +100,4 @@ export const payroll = [
         details: "View Details"
     }
 ]
+

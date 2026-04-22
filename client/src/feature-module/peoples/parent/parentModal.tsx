@@ -733,3 +733,4 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
 };
 
 export default ParentModal;
+

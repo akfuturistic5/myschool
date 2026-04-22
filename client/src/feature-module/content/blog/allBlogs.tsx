@@ -227,7 +227,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -326,7 +326,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -423,7 +423,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -522,7 +522,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -621,7 +621,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -718,7 +718,7 @@ const AllBlogs = () => {
                         >
                           <i className="ti ti-dots-vertical fs-14" />
                         </Link>
-                        <ul className="dropdown-menu dropdown-menu-right p-3">
+                        <ul className="dropdown-menu dropdown-menu-end p-2">
                           <li>
                             <Link
                               className="dropdown-item rounded-1"
@@ -978,3 +978,4 @@ const AllBlogs = () => {
 };
 
 export default AllBlogs;
+

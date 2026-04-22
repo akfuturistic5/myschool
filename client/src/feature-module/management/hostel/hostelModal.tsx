@@ -733,3 +733,4 @@ const HostelModal = ({
 };
 
 export default HostelModal;
+

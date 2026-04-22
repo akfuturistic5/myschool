@@ -373,3 +373,4 @@ const ChartJs = () => {
   );
 };
 export default ChartJs;
+
