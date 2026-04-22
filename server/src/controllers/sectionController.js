@@ -174,11 +174,7 @@ const createSection = async (req, res) => {
   try {
     const {
       section_name, class_id, section_teacher_id, max_students, room_number,
-<<<<<<< HEAD
-      description, is_active, academic_year_id
-=======
       description, is_active
->>>>>>> origin/development
     } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
@@ -200,13 +196,8 @@ const createSection = async (req, res) => {
 
     const result = await query(
       `INSERT INTO sections (
-<<<<<<< HEAD
-        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by, academic_year_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-=======
         section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
->>>>>>> origin/development
       [
         nameNorm,
         class_id,
