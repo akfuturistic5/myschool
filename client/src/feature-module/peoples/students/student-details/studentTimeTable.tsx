@@ -29,6 +29,7 @@ const StudentTimeTable = () => {
   const { student, loading } = useLinkedStudentContext({
     locationState: state,
   });
+  const effectiveStudentId = parsePositiveId(student?.id);
 
   const classIdForSchedule = parsePositiveId(
     student?.class_id ?? (student as { classId?: unknown })?.classId
@@ -109,7 +110,7 @@ const StudentTimeTable = () => {
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
                       <Link
-                        to={routes.studentDetail}
+                        to={effectiveStudentId ? `${routes.studentDetail}?studentId=${effectiveStudentId}` : routes.studentDetail}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -119,7 +120,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentTimeTable}
+                        to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable}
                         className="nav-link active"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -129,7 +130,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentLeaves}
+                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -139,7 +140,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentFees}
+                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -149,7 +150,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentResult}
+                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >

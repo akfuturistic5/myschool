@@ -855,6 +855,38 @@ function parseLeaveDateQuery(q, keys) {
   return null;
 }
 
+async function resolveLinkedStudentIds(studentId) {
+  const sid = Number(studentId);
+  if (!Number.isFinite(sid) || sid <= 0) return [];
+  const baseRes = await query(
+    `SELECT id, user_id, admission_number, roll_number
+     FROM students
+     WHERE id = $1
+     LIMIT 1`,
+    [sid]
+  );
+  if (!baseRes.rows.length) return [sid];
+  const base = baseRes.rows[0];
+  const baseUserId = Number(base.user_id);
+  const normalizedUserId = Number.isFinite(baseUserId) && baseUserId > 0 ? baseUserId : null;
+  const baseAdmissionNo = String(base.admission_number || '').trim();
+  const baseRollNo = String(base.roll_number || '').trim();
+  const linkedRes = await query(
+    `SELECT id
+     FROM students
+     WHERE ($1::int IS NOT NULL AND user_id = $1)
+        OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
+        OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
+        OR id = $4`,
+    [normalizedUserId, baseAdmissionNo, baseRollNo, sid]
+  );
+  const linkedIds = (linkedRes.rows || [])
+    .map((r) => Number(r.id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  if (!linkedIds.length) return [sid];
+  return [...new Set(linkedIds)];
+}
+
 // Get leave applications for dashboard (e.g. pending or recent).
 // Optional filters: ?student_id=X, ?staff_id=X (for admin viewing specific student/teacher).
 // Optional: ?academic_year_id=X - filter student leaves by academic year.
@@ -894,8 +926,10 @@ const getLeaveApplications = async (req, res) => {
     let i = 1;
 
     if (studentId && !Number.isNaN(studentId)) {
-      conditions.push(`la.student_id = $${i++}`);
-      params.push(studentId);
+      const scopedStudentIds = await resolveLinkedStudentIds(studentId);
+      const safeScopedIds = scopedStudentIds.length > 0 ? scopedStudentIds : [studentId];
+      conditions.push(`la.student_id = ANY($${i++}::int[])`);
+      params.push(safeScopedIds);
     } else if (staffId && !Number.isNaN(staffId)) {
       conditions.push(`la.staff_id = $${i++}`);
       params.push(staffId);

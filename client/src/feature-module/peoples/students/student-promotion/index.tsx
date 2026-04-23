@@ -40,6 +40,7 @@ const StudentPromotion = () => {
   const routes = all_routes;
   const promoteModalRef = useRef<HTMLDivElement>(null);
   const rejoinModalRef = useRef<HTMLDivElement>(null);
+  const examResultModalRef = useRef<HTMLDivElement>(null);
 
   const fromAcademicYearId = useSelector(selectSelectedAcademicYearId);
   const useClassesTyped = useClasses as (
@@ -131,6 +132,12 @@ const StudentPromotion = () => {
   const [rejoinSectionId, setRejoinSectionId] = useState<string>("");
   const [rejoinRemarks, setRejoinRemarks] = useState<string>("");
   const [rejoinSubmitting, setRejoinSubmitting] = useState<boolean>(false);
+  const [examSummaryByStudent, setExamSummaryByStudent] = useState<Record<number, any>>({});
+  const [examSummaryLoading, setExamSummaryLoading] = useState<boolean>(false);
+  const [examDetailLoading, setExamDetailLoading] = useState<boolean>(false);
+  const [examDetailError, setExamDetailError] = useState<string | null>(null);
+  const [examDetailStudent, setExamDetailStudent] = useState<any | null>(null);
+  const [examDetailExam, setExamDetailExam] = useState<any | null>(null);
 
   const user = useSelector(selectUser);
   const canPromote = Boolean(
@@ -359,10 +366,15 @@ const StudentPromotion = () => {
           [student.first_name, student.last_name].filter(Boolean).join(" ") || "N/A",
         class: student.class_name ?? "N/A",
         section: student.section_name ?? "N/A",
-        result: "N/A",
+        result: (examSummaryByStudent[Number(student.id)]?.overall_result as string) || "N/A",
+        latestExamName:
+          examSummaryByStudent[Number(student.id)]?.exam_name ??
+          examSummaryByStudent[Number(student.id)]?.exam_type ??
+          "N/A",
+        latestExamId: examSummaryByStudent[Number(student.id)]?.exam_id ?? null,
         imgSrc: student.photo_url || "assets/img/students/student-01.jpg",
       })),
-    [filteredStudents]
+    [filteredStudents, examSummaryByStudent]
   );
 
   const fromClassName =
@@ -476,6 +488,32 @@ const StudentPromotion = () => {
     }
   }, []);
 
+  const loadLatestExamSummary = useCallback(async (studentIds: number[]) => {
+    const ids = [...new Set((studentIds || []).map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0))];
+    if (ids.length === 0) {
+      setExamSummaryByStudent({});
+      return;
+    }
+    try {
+      setExamSummaryLoading(true);
+      const res = await apiService.getStudentsLatestExamSummary(ids);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load exam summaries");
+      }
+      const map: Record<number, any> = {};
+      (Array.isArray(res?.data) ? res.data : []).forEach((row: any) => {
+        const sid = Number(row?.student_id);
+        if (!Number.isFinite(sid) || sid <= 0) return;
+        map[sid] = row;
+      });
+      setExamSummaryByStudent(map);
+    } catch {
+      setExamSummaryByStudent({});
+    } finally {
+      setExamSummaryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setSelectedRowKeys((prev) => prev.filter((k) => data.some((row) => row.key === k)));
   }, [data]);
@@ -491,6 +529,61 @@ const StudentPromotion = () => {
   useEffect(() => {
     void loadRejoinHistory();
   }, [loadRejoinHistory]);
+
+  useEffect(() => {
+    void loadLatestExamSummary(filteredStudents.map((s: any) => Number(s.id)));
+  }, [filteredStudents, loadLatestExamSummary]);
+
+  const handleOpenExamResultModal = useCallback(async (record: any) => {
+    const studentId = Number(record?.studentId);
+    if (!Number.isFinite(studentId) || studentId <= 0) return;
+
+    setExamDetailLoading(true);
+    setExamDetailError(null);
+    setExamDetailStudent(record);
+    setExamDetailExam(null);
+
+    const el =
+      (document.getElementById("student_exam_result_modal") as HTMLElement | null) ??
+      examResultModalRef.current;
+    if (el) {
+      try {
+        const Modal = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
+        if (Modal?.getOrCreateInstance) Modal.getOrCreateInstance(el).show();
+      } catch {
+        // noop
+      }
+    }
+
+    try {
+      const res = await apiService.getStudentExamResults(studentId);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load exam details");
+      }
+      const exams = Array.isArray(res?.data?.exams) ? res.data.exams : [];
+      setExamDetailExam(exams[0] || null);
+      if (!exams.length) {
+        setExamDetailError("No exam result available for this student.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load exam details";
+      setExamDetailError(msg);
+    } finally {
+      setExamDetailLoading(false);
+    }
+  }, []);
+
+  const handleOpenLeavingExamResultModal = useCallback((row: any) => {
+    const normalizedRecord = {
+      studentId: row?.studentId ?? null,
+      name: row?.studentName ?? "N/A",
+      AdmissionNo: row?.admissionNo ?? "N/A",
+      RollNo: "N/A",
+      class: row?.last?.split("/")?.[0]?.trim() || "N/A",
+      section: row?.last?.split("/")?.[1]?.trim() || "N/A",
+    };
+    void handleOpenExamResultModal(normalizedRecord);
+  }, [handleOpenExamResultModal]);
 
   const columns = useMemo(
     () => [
@@ -567,6 +660,16 @@ const StudentPromotion = () => {
                 <i className="ti ti-circle-filled fs-5 me-1"></i>
                 {text}
               </span>
+            ) : text === "Pending" ? (
+              <span className="badge badge-soft-warning d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : text === "N/A" ? (
+              <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
             ) : (
               <span className="badge badge-soft-danger d-inline-flex align-items-center">
                 <i className="ti ti-circle-filled fs-5 me-1"></i>
@@ -578,8 +681,21 @@ const StudentPromotion = () => {
         sorter: (a: TableData, b: TableData) =>
           String(a.result).length - String(b.result).length,
       },
+      {
+        title: "Result Details",
+        dataIndex: "resultDetails",
+        render: (_: unknown, record: any) => (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => void handleOpenExamResultModal(record)}
+          >
+            View
+          </button>
+        ),
+      },
     ],
-    [routes.studentDetail]
+    [routes.studentDetail, handleOpenExamResultModal]
   );
 
   /** Same pattern as profile password modal — use getOrCreateInstance; ref alone can miss the node timing. */
@@ -862,9 +978,14 @@ const StudentPromotion = () => {
           `${row.last_class_name ?? "—"} / ${row.last_section_name ?? "—"} / ${row.last_academic_year_name ?? "—"}`,
         leavingDate: formatDate(row.leaving_date),
         leavingDateRaw: row.leaving_date ?? null,
+        leavingRecordActive: !(row.is_active === false || row.is_active === "f" || row.is_active === 0),
         lastAcademicYearId: row.last_academic_year_id ?? null,
         lastAcademicYearName: row.last_academic_year_name ?? "—",
         lastResult: row.last_class_result ?? "Not Available",
+        leavingStatus:
+          row.is_active === false || row.is_active === "f" || row.is_active === 0
+            ? "Rejoined"
+            : "Left",
         reason: row.reason ?? "—",
         remarks: row.remarks ?? "—",
       })),
@@ -921,21 +1042,48 @@ const StudentPromotion = () => {
       { title: "Last Class/Section/Year", dataIndex: "last" },
       { title: "Leaving Date", dataIndex: "leavingDate" },
       {
-        title: "Last Class Result",
+        title: "Result",
         dataIndex: "lastResult",
+        render: (text: string, row: any) => (
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {text === "Pass" ? (
+              <span className="badge badge-soft-success d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : text === "Fail" ? (
+              <span className="badge badge-soft-danger d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : (
+              <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary"
+              onClick={() => handleOpenLeavingExamResultModal(row)}
+              disabled={!row?.studentId}
+            >
+              View
+            </button>
+          </div>
+        ),
+      },
+      {
+        title: "Leaving Status",
+        dataIndex: "leavingStatus",
         render: (text: string) =>
-          text === "Pass" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : text === "Fail" ? (
+          text === "Left" ? (
             <span className="badge badge-soft-danger d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
               {text}
             </span>
           ) : (
-            <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
               {text}
             </span>
@@ -951,14 +1099,14 @@ const StudentPromotion = () => {
             type="button"
             className="btn btn-sm btn-outline-primary"
             onClick={() => openRejoinModal(row)}
-            disabled={!canPromote || !row?.studentId}
+            disabled={!canPromote || !row?.studentId || !row?.leavingRecordActive}
           >
-            Rejoin
+            {row?.leavingRecordActive ? "Rejoin" : "Rejoined"}
           </button>
         ),
       },
     ],
-    [canPromote, openRejoinModal]
+    [canPromote, openRejoinModal, handleOpenLeavingExamResultModal]
   );
 
   const rejoinData = useMemo(
@@ -1373,6 +1521,9 @@ const StudentPromotion = () => {
                     <h4 className="mb-3">
                       {actionMode === "promote" ? "Students List" : "Select Students to Mark Leaving"}
                     </h4>
+                    {examSummaryLoading && (
+                      <span className="badge bg-light text-dark mb-3 me-2">Updating exam results...</span>
+                    )}
                     <div className="d-flex align-items-center flex-wrap">
                       <div className="input-icon-start mb-3 me-2 position-relative">
                         <PredefinedDateRanges />
@@ -1951,6 +2102,104 @@ const StudentPromotion = () => {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        className="modal fade"
+        id="student_exam_result_modal"
+        ref={examResultModalRef}
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        <div className="modal-dialog modal-lg modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Latest Exam Result</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <div className="mb-3">
+                <div className="fw-semibold">
+                  {examDetailStudent?.name || "Student"} ({examDetailStudent?.AdmissionNo || "N/A"})
+                </div>
+                <div className="text-muted small">
+                  Roll No: {examDetailStudent?.RollNo || "N/A"} | Class: {examDetailStudent?.class || "N/A"} | Section:{" "}
+                  {examDetailStudent?.section || "N/A"}
+                </div>
+              </div>
+
+              {examDetailLoading && (
+                <div className="text-center p-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading exam result...</p>
+                </div>
+              )}
+
+              {!examDetailLoading && examDetailError && (
+                <div className="alert alert-warning mb-0">{examDetailError}</div>
+              )}
+
+              {!examDetailLoading && !examDetailError && examDetailExam && (
+                <>
+                  <div className="row g-2 mb-3">
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Exam</div>
+                        <div className="fw-semibold">{examDetailExam.examLabel || examDetailExam.examName || "N/A"}</div>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Date</div>
+                        <div className="fw-semibold">{formatDate(examDetailExam.examDate)}</div>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Overall Result</div>
+                        <div className="fw-semibold">
+                          {examDetailExam.summary?.overallResult || "N/A"}
+                          {examDetailExam.summary?.grade ? ` (${examDetailExam.summary.grade})` : ""}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="table table-sm table-bordered align-middle mb-2">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Subject</th>
+                          <th>Mode</th>
+                          <th>Max</th>
+                          <th>Min</th>
+                          <th>Obtained</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(Array.isArray(examDetailExam.subjects) ? examDetailExam.subjects : []).map((s: any, idx: number) => (
+                          <tr key={`${s.subjectId ?? idx}`}>
+                            <td>{s.subjectName || "Subject"}</td>
+                            <td>{s.subjectMode || "Theory"}</td>
+                            <td>{s.maxMarks ?? 0}</td>
+                            <td>{s.minMarks ?? 0}</td>
+                            <td>{s.isAbsent ? "Absent" : (s.marksObtained ?? "N/A")}</td>
+                            <td>{s.result || "N/A"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="small text-muted">
+                    Total: {examDetailExam.summary?.totalObtained ?? 0}/{examDetailExam.summary?.totalMax ?? 0} | Percentage:{" "}
+                    {examDetailExam.summary?.percentage != null ? `${examDetailExam.summary.percentage}%` : "N/A"}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -72,17 +72,138 @@ function mapGuardianRowsToLegacyFields(rows) {
  * @param {function} query - db query(text, params)
  */
 async function loadStudentContactLegacyFields(query, studentId) {
-  const r = await query(
-    `SELECT g.guardian_type, g.relation,
-            u.first_name, u.last_name, u.email, u.phone, u.occupation, u.current_address
-     FROM guardians g
-     INNER JOIN users u ON u.id = g.user_id
-     WHERE g.student_id = $1 AND g.is_active = true
-     ORDER BY g.id ASC`,
-    [studentId]
-  );
-  if (!r.rows.length) return null;
-  return mapGuardianRowsToLegacyFields(r.rows);
+  const readFromUnifiedGuardians = async () => {
+    try {
+      return await query(
+        `SELECT g.guardian_type, g.relation,
+                u.first_name, u.last_name, u.email, u.phone, u.occupation, u.current_address
+         FROM guardians g
+         INNER JOIN users u ON u.id = g.user_id
+         WHERE g.student_id = $1 AND g.is_active = true
+         ORDER BY g.id ASC`,
+        [studentId]
+      );
+    } catch (_) {
+      // Backward-compatible fallback for older users schema.
+      return await query(
+        `SELECT g.guardian_type, g.relation,
+                u.first_name, u.last_name, u.email, u.phone,
+                NULL::text AS occupation,
+                COALESCE(u.current_address, u.permanent_address) AS current_address
+         FROM guardians g
+         INNER JOIN users u ON u.id = g.user_id
+         WHERE g.student_id = $1 AND g.is_active = true
+         ORDER BY g.id ASC`,
+        [studentId]
+      );
+    }
+  };
+
+  let merged = {
+    father_name: '',
+    father_email: '',
+    father_phone: '',
+    father_occupation: '',
+    mother_name: '',
+    mother_email: '',
+    mother_phone: '',
+    mother_occupation: '',
+    guardian_first_name: '',
+    guardian_last_name: '',
+    guardian_relation: '',
+    guardian_phone: '',
+    guardian_email: '',
+    guardian_occupation: '',
+    guardian_address: '',
+  };
+
+  const unifiedRows = await readFromUnifiedGuardians();
+  if (Array.isArray(unifiedRows?.rows) && unifiedRows.rows.length > 0) {
+    merged = { ...merged, ...mapGuardianRowsToLegacyFields(unifiedRows.rows) };
+  }
+
+  // Legacy fallback: pull father/mother from old parents table when present.
+  try {
+    const pr = await query(
+      `SELECT
+          father_name, father_email, father_phone, father_occupation,
+          mother_name, mother_email, mother_phone, mother_occupation
+       FROM parents
+       WHERE student_id = $1
+       ORDER BY id DESC
+       LIMIT 1`,
+      [studentId]
+    );
+    if (pr.rows.length > 0) {
+      const p = pr.rows[0];
+      merged.father_name = merged.father_name || p.father_name || '';
+      merged.father_email = merged.father_email || p.father_email || '';
+      merged.father_phone = merged.father_phone || p.father_phone || '';
+      merged.father_occupation = merged.father_occupation || p.father_occupation || '';
+      merged.mother_name = merged.mother_name || p.mother_name || '';
+      merged.mother_email = merged.mother_email || p.mother_email || '';
+      merged.mother_phone = merged.mother_phone || p.mother_phone || '';
+      merged.mother_occupation = merged.mother_occupation || p.mother_occupation || '';
+    }
+  } catch (_) {
+    // parents table may not exist in fully unified deployments.
+  }
+
+  // Legacy fallback: old guardians schema where contact fields were stored directly in guardians.
+  try {
+    const gr = await query(
+      `SELECT
+          guardian_type,
+          relation,
+          first_name,
+          last_name,
+          email,
+          phone,
+          occupation,
+          address AS current_address
+       FROM guardians
+       WHERE student_id = $1 AND is_active = true
+       ORDER BY id ASC`,
+      [studentId]
+    );
+    if (gr.rows.length > 0) {
+      const legacyMapped = mapGuardianRowsToLegacyFields(gr.rows);
+      merged = {
+        ...legacyMapped,
+        ...merged,
+        father_name: merged.father_name || legacyMapped.father_name || '',
+        father_email: merged.father_email || legacyMapped.father_email || '',
+        father_phone: merged.father_phone || legacyMapped.father_phone || '',
+        father_occupation: merged.father_occupation || legacyMapped.father_occupation || '',
+        mother_name: merged.mother_name || legacyMapped.mother_name || '',
+        mother_email: merged.mother_email || legacyMapped.mother_email || '',
+        mother_phone: merged.mother_phone || legacyMapped.mother_phone || '',
+        mother_occupation: merged.mother_occupation || legacyMapped.mother_occupation || '',
+        guardian_first_name: merged.guardian_first_name || legacyMapped.guardian_first_name || '',
+        guardian_last_name: merged.guardian_last_name || legacyMapped.guardian_last_name || '',
+        guardian_relation: merged.guardian_relation || legacyMapped.guardian_relation || '',
+        guardian_phone: merged.guardian_phone || legacyMapped.guardian_phone || '',
+        guardian_email: merged.guardian_email || legacyMapped.guardian_email || '',
+        guardian_occupation: merged.guardian_occupation || legacyMapped.guardian_occupation || '',
+        guardian_address: merged.guardian_address || legacyMapped.guardian_address || '',
+      };
+    }
+  } catch (_) {
+    // Legacy columns are absent in slim schema; ignore.
+  }
+
+  const hasAny =
+    merged.father_name ||
+    merged.father_email ||
+    merged.father_phone ||
+    merged.mother_name ||
+    merged.mother_email ||
+    merged.mother_phone ||
+    merged.guardian_first_name ||
+    merged.guardian_last_name ||
+    merged.guardian_phone ||
+    merged.guardian_email;
+  return hasAny ? merged : null;
 }
 
 /**

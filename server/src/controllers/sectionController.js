@@ -166,7 +166,7 @@ const createSection = async (req, res) => {
   try {
     const {
       section_name, class_id, section_teacher_id, max_students, room_number,
-      description, is_active, academic_year_id
+      description, is_active, academic_year_id,
     } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
