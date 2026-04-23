@@ -529,7 +529,7 @@ const TransportModal = ({
     if (selectedVehicle) {
       const v = selectedVehicle.originalData || selectedVehicle;
       setVehicleNo(v.vehicle_number || "");
-      setVehicleModel(v.vehicle_model || "");
+      setVehicleModel(v.vehicle_model || v.model || "");
       setChassisNo(v.chassis_number || "");
       setRegistrationNo(v.registration_number || "");
       setSeatCapacity(v.seat_capacity || v.seating_capacity || "");

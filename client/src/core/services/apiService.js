@@ -1739,6 +1739,73 @@ class ApiService {
     });
   }
 
+  async getTransportFees(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params.pickup_point_id && params.pickup_point_id !== 'all') searchParams.set('pickup_point_id', params.pickup_point_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/fees${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportFee(feeData) {
+    return this.makeRequest('/transport/fees', {
+      method: 'POST',
+      body: JSON.stringify(feeData)
+    });
+  }
+
+  async updateTransportFee(id, feeData) {
+    return this.makeRequest(`/transport/fees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(feeData)
+    });
+  }
+
+  async deleteTransportFee(id) {
+    return this.makeRequest(`/transport/fees/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async getTransportAllocations(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.page) searchParams.set('page', params.page);
+    if (params.limit) searchParams.set('limit', params.limit);
+    if (params.search) searchParams.set('search', params.search);
+    if (params.status && params.status !== 'all') searchParams.set('status', params.status);
+    if (params.user_type && params.user_type !== 'all') searchParams.set('user_type', params.user_type);
+    if (params.vehicle_id && params.vehicle_id !== 'all') searchParams.set('vehicle_id', params.vehicle_id);
+    if (params.sortField) searchParams.set('sortField', params.sortField);
+    if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/allocations${qs ? `?${qs}` : ''}`);
+  }
+
+  async createTransportAllocation(payload) {
+    return this.makeRequest('/transport/allocations', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async updateTransportAllocation(id, payload) {
+    return this.makeRequest(`/transport/allocations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async deleteTransportAllocation(id) {
+    return this.makeRequest(`/transport/allocations/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async getTransportPickupPointById(id) {
     return this.makeRequest(`/transport/pickup-points/${id}`);
   }

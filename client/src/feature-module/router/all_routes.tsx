@@ -248,6 +248,8 @@ export const all_routes = {
   transportVehicleDrivers:"/management/transport-vehicle-drivers",
   transportPickupPoints:"/management/transport-pickup-points",
   transportRoutes:"/management/transport-routes",
+  transportFees:"/management/transport-fees",
+  transportAllocation:"/management/transport-allocation",
 
 
 

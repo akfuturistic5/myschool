@@ -73,6 +73,7 @@ const TransportVehicle = () => {
       ID: item.id,
       "Vehicle No": item.vehicleNo,
       Model: item.vehicleModel,
+      "Seat Capacity": item.seatCapacity,
       "Made of Year": item.madeofYear,
       "Registration No": item.registrationNo,
       "Chassis No": item.chassisNo,
@@ -87,6 +88,7 @@ const TransportVehicle = () => {
       { title: "ID", dataKey: "id" },
       { title: "Vehicle No", dataKey: "vehicleNo" },
       { title: "Model", dataKey: "vehicleModel" },
+      { title: "Seat Capacity", dataKey: "seatCapacity" },
       { title: "Made of Year", dataKey: "madeofYear" },
       { title: "Registration No", dataKey: "registrationNo" },
       { title: "Chassis No", dataKey: "chassisNo" },
@@ -101,6 +103,7 @@ const TransportVehicle = () => {
       { title: "ID", dataKey: "id" },
       { title: "Vehicle No", dataKey: "vehicleNo" },
       { title: "Model", dataKey: "vehicleModel" },
+      { title: "Seat Capacity", dataKey: "seatCapacity" },
       { title: "Made of Year", dataKey: "madeofYear" },
       { title: "Registration No", dataKey: "registrationNo" },
       { title: "Chassis No", dataKey: "chassisNo" },
@@ -129,6 +132,11 @@ const TransportVehicle = () => {
     {
       title: "Vehicle Model",
       dataIndex: "vehicleModel",
+      sorter: true,
+    },
+    {
+      title: "Seat Capacity",
+      dataIndex: "seatCapacity",
       sorter: true,
     },
     {
