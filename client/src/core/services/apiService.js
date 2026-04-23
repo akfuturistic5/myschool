@@ -5,7 +5,7 @@ import {
   clearCachedCsrfToken,
 } from '../utils/csrfClientStore.js';
 
-const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const isDev = import.meta.env.DEV;
 const isProd = import.meta.env.PROD;
 
@@ -550,6 +550,13 @@ class ApiService {
 
   async getStudentExamResults(studentId) {
     return this.makeRequest(`/students/${studentId}/exam-results`);
+  }
+
+  async getStudentsLatestExamSummary(studentIds) {
+    return this.makeRequest('/students/exam-results/summary', {
+      method: 'POST',
+      body: JSON.stringify({ student_ids: Array.isArray(studentIds) ? studentIds : [] }),
+    });
   }
 
   async listExams(query = {}) {

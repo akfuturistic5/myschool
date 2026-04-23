@@ -4,7 +4,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 // Server configuration - production: DATABASE_URL + strong JWT_SECRET_SUPER_ADMIN + user secret (JWT_SECRET_USER or JWT_SECRET); CORS_ORIGIN for cross-origin SPAs
 const serverConfig = {
-  port: parseInt(process.env.PORT || '5000'),
+  port: parseInt(process.env.PORT || '5001'),
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtUserSecret: process.env.JWT_SECRET_USER || process.env.JWT_SECRET || '',
   jwtSuperAdminSecret: process.env.JWT_SECRET_SUPER_ADMIN || '',

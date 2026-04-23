@@ -38,6 +38,12 @@ const StudentResult = () => {
     : undefined;
 
   const { data: examResultsData, loading: examLoading, error: examError } = useStudentExamResults(studentId ?? null);
+  const effectiveStudentId =
+    (typeof studentId === "number" && Number.isFinite(studentId) && studentId > 0
+      ? studentId
+      : Number(student?.id) > 0
+        ? Number(student.id)
+        : null);
   const [exportingPdfExamId, setExportingPdfExamId] = useState<number | null>(null);
   const [exportingExcelExamId, setExportingExcelExamId] = useState<number | null>(null);
 
@@ -387,7 +393,7 @@ const StudentResult = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentTimeTable}
+                        to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable}
                         className="nav-link"
                         state={forwardedState}
                       >
@@ -397,7 +403,7 @@ const StudentResult = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentLeaves}
+                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
                         className="nav-link"
                         state={forwardedState}
                       >
@@ -407,7 +413,7 @@ const StudentResult = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentFees}
+                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
                         className="nav-link"
                         state={forwardedState}
                       >
@@ -417,7 +423,7 @@ const StudentResult = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentResult}
+                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
                         className="nav-link active"
                         state={forwardedState}
                       >

@@ -10,7 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 // Import configurations
 const serverConfig = require('./src/config/server');
-const { testConnection } = require('./src/config/database');
+const { testConnection, closePool } = require('./src/config/database');
 const { error: errorResponse } = require('./src/utils/responseHelper');
 
 // Import routes
@@ -84,6 +84,8 @@ const { requireActiveAccount } = require('./src/middleware/requireActiveAccount'
 
 // Create Express app
 const app = express();
+let httpServer = null;
+let shuttingDown = false;
 // Avoid 304 + empty body on API GETs (breaks fetch().ok and JSON parse for /auth/me, etc.)
 app.set('etag', false);
 
@@ -430,51 +432,69 @@ const startServer = async () => {
       process.exit(1);
     }
 
-    const PORT = Number(process.env.PORT) || 5000;
+    const PORT = Number(process.env.PORT) || 5001;
     // Render/Docker/Kubernetes: must listen on all interfaces. Binding only to localhost
     // leaves no reachable port for the platform health check → "No open ports detected" / deploy timeout.
     const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
-    app.listen(PORT, BIND_HOST, () => {
-      console.log('🚀 Server is running!');
-      console.log(`📍 Listening on ${BIND_HOST}:${PORT} (use PORT from environment on PaaS)`);
-      console.log(`🌍 Environment: ${serverConfig.nodeEnv}`);
-      // Use localhost in logs so it matches VITE_API_URL / browser Network tab (127.0.0.1 is the same host).
-      console.log(`📌 API base: http://localhost:${PORT}/api  (same as http://127.0.0.1:${PORT}/api)`);
-      console.log('📋 Example GET routes:');
-      const base = `http://localhost:${PORT}`;
-      console.log(`   GET  ${base}/`);
-      console.log(`   GET  ${base}/api/health`);
-      console.log(`   POST ${base}/api/auth/login`);
-      console.log(`   GET  ${base}/api/health/database`);
-      console.log(`   GET  ${base}/api/academic-years`);
-      console.log(`   GET  ${base}/api/academic-years/:id`);
-      console.log(`   GET  ${base}/api/classes`);
-      console.log(`   GET  ${base}/api/classes/:id`);
-      console.log(`   GET  ${base}/api/sections`);
-      console.log(`   GET  ${base}/api/sections/:id`);
-      console.log(`   GET  ${base}/api/subjects`);
-      console.log(`   GET  ${base}/api/subjects/:id`);
-      console.log(`   GET  ${base}/api/subjects/class/:classId`);
-      console.log(`   GET  ${base}/api/teachers`);
-      console.log(`   GET  ${base}/api/teachers/:id`);
-      console.log(`   GET  ${base}/api/teachers/class/:classId`);
-      console.log(`   GET  ${base}/api/students`);
-      console.log(`   GET  ${base}/api/students/:id`);
-      console.log(`   GET  ${base}/api/students/class/:classId`);
-      console.log(`   GET  ${base}/api/blood-groups`);
-      console.log(`   GET  ${base}/api/blood-groups/:id`);
-      console.log(`   GET  ${base}/api/religions`);
-      console.log(`   GET  ${base}/api/religions/:id`);
-      console.log(`   GET  ${base}/api/casts`);
-      console.log(`   GET  ${base}/api/casts/:id`);
-      console.log(`   GET  ${base}/api/mother-tongues`);
-      console.log(`   GET  ${base}/api/mother-tongues/:id`);
-      console.log(`   GET  ${base}/api/houses`);
-      console.log(`   GET  ${base}/api/houses/:id`);
-      console.log(`   GET  ${base}/api/addresses`);
-      console.log(`   GET  ${base}/api/addresses/:id`);
-      console.log(`   GET  ${base}/api/addresses/user/:userId`);
-    });
+
+    const startListening = (retriesLeft = 5) => {
+      const server = app.listen(PORT, BIND_HOST);
+      httpServer = server;
+
+      server.on('listening', () => {
+        console.log('🚀 Server is running!');
+        console.log(`📍 Listening on ${BIND_HOST}:${PORT} (use PORT from environment on PaaS)`);
+        console.log(`🌍 Environment: ${serverConfig.nodeEnv}`);
+        // Use localhost in logs so it matches VITE_API_URL / browser Network tab (127.0.0.1 is the same host).
+        console.log(`📌 API base: http://localhost:${PORT}/api  (same as http://127.0.0.1:${PORT}/api)`);
+        console.log('📋 Example GET routes:');
+        const base = `http://localhost:${PORT}`;
+        console.log(`   GET  ${base}/`);
+        console.log(`   GET  ${base}/api/health`);
+        console.log(`   POST ${base}/api/auth/login`);
+        console.log(`   GET  ${base}/api/health/database`);
+        console.log(`   GET  ${base}/api/academic-years`);
+        console.log(`   GET  ${base}/api/academic-years/:id`);
+        console.log(`   GET  ${base}/api/classes`);
+        console.log(`   GET  ${base}/api/classes/:id`);
+        console.log(`   GET  ${base}/api/sections`);
+        console.log(`   GET  ${base}/api/sections/:id`);
+        console.log(`   GET  ${base}/api/subjects`);
+        console.log(`   GET  ${base}/api/subjects/:id`);
+        console.log(`   GET  ${base}/api/subjects/class/:classId`);
+        console.log(`   GET  ${base}/api/teachers`);
+        console.log(`   GET  ${base}/api/teachers/:id`);
+        console.log(`   GET  ${base}/api/teachers/class/:classId`);
+        console.log(`   GET  ${base}/api/students`);
+        console.log(`   GET  ${base}/api/students/:id`);
+        console.log(`   GET  ${base}/api/students/class/:classId`);
+        console.log(`   GET  ${base}/api/blood-groups`);
+        console.log(`   GET  ${base}/api/blood-groups/:id`);
+        console.log(`   GET  ${base}/api/religions`);
+        console.log(`   GET  ${base}/api/religions/:id`);
+        console.log(`   GET  ${base}/api/casts`);
+        console.log(`   GET  ${base}/api/casts/:id`);
+        console.log(`   GET  ${base}/api/mother-tongues`);
+        console.log(`   GET  ${base}/api/mother-tongues/:id`);
+        console.log(`   GET  ${base}/api/houses`);
+        console.log(`   GET  ${base}/api/houses/:id`);
+        console.log(`   GET  ${base}/api/addresses`);
+        console.log(`   GET  ${base}/api/addresses/:id`);
+        console.log(`   GET  ${base}/api/addresses/user/:userId`);
+      });
+
+      server.on('error', (err) => {
+        if (err?.code === 'EADDRINUSE' && retriesLeft > 0) {
+          console.warn(`⚠️ Port ${PORT} is busy, retrying bind (${retriesLeft} left)...`);
+          setTimeout(() => startListening(retriesLeft - 1), 1000);
+          return;
+        }
+        console.error('❌ Failed to bind HTTP server:', err);
+        process.exit(1);
+      });
+    };
+
+    startListening();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
@@ -482,15 +502,33 @@ const startServer = async () => {
 };
 
 // Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  process.exit(0);
-});
+const gracefulShutdown = (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received. Shutting down gracefully...`);
+  const finalize = async () => {
+    try {
+      await closePool();
+    } catch (e) {
+      console.warn('Error while closing database pools:', e?.message || e);
+    } finally {
+      process.exit(0);
+    }
+  };
+  if (httpServer) {
+    httpServer.close(() => {
+      finalize();
+    });
+    setTimeout(() => {
+      finalize();
+    }, 5000).unref();
+    return;
+  }
+  finalize();
+};
 
-process.on('SIGINT', () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled promise rejection:', reason instanceof Error ? reason.message : reason);

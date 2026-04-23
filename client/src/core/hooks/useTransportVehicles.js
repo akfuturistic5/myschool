@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
@@ -26,8 +26,8 @@ export const useTransportVehicles = (initialParams = {}) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const combinedParams = { ...params, ...overrides };
+
+      const combinedParams = { ...paramsRef.current, ...overrides };
       const response = await apiService.getTransportVehicles(combinedParams);
       
       if (response && response.status === "SUCCESS") {
@@ -64,7 +64,7 @@ export const useTransportVehicles = (initialParams = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [params]);
+  }, [paramsKey]);
 
   useEffect(() => {
     fetchVehicles();
