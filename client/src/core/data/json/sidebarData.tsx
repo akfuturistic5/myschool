@@ -313,7 +313,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "Pickup Points", link: routes.transportPickupPoints },
           { label: "Routes", link: routes.transportRoutes },
-          { label: "Staffs", link: routes.transportVehicleDrivers },
+          { label: "Drivers", link: routes.transportVehicleDrivers },
           { label: "Vehicle", link: routes.transportVehicle },
           { label: "Assign Vehicle", link: routes.transportAssignVehicle },
           { label: "Transport Fees", link: routes.transportFees },
@@ -1085,3 +1085,4 @@ export const SidebarData = [
     ],
   },
 ];
+

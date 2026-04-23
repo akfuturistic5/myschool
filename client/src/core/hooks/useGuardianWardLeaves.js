@@ -33,7 +33,10 @@ export const useGuardianWardLeaves = (options = {}) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const user = useSelector(selectUser);
-  const isGuardian = (user?.role || '').toLowerCase() === 'guardian';
+  /** JWT + /auth/me set user_role_id; role string may be "Father"/"Mother" while role_id is still Guardian (5). */
+  const roleId = Number(user?.user_role_id);
+  const isGuardian =
+    roleId === 5 || String(user?.role || '').trim().toLowerCase() === 'guardian';
 
   const fetchList = async () => {
     if (!isGuardian) {

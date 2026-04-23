@@ -25,10 +25,11 @@ const StudentTimeTable = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
   const { student, loading } = useLinkedStudentContext({
     locationState: state,
   });
+  const effectiveStudentId = parsePositiveId(student?.id);
 
   const classIdForSchedule = parsePositiveId(
     student?.class_id ?? (student as { classId?: unknown })?.classId
@@ -37,8 +38,14 @@ const StudentTimeTable = () => {
     student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
   );
 
+  /** Parents often land here before picking a year in the header; fall back to the child's enrolled year. */
+  const studentAcademicYearId = parsePositiveId(
+    student?.academic_year_id ?? (student as { academicYearId?: unknown })?.academicYearId
+  );
+  const academicYearForSchedules = headerAcademicYearId ?? studentAcademicYearId ?? undefined;
+
   const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
-    academicYearId: academicYearId ?? undefined,
+    academicYearId: academicYearForSchedules,
     classId: classIdForSchedule ?? undefined,
     sectionId: sectionIdForSchedule ?? undefined,
     skip: !classIdForSchedule,
@@ -103,7 +110,7 @@ const StudentTimeTable = () => {
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
                       <Link
-                        to={routes.studentDetail}
+                        to={effectiveStudentId ? `${routes.studentDetail}?studentId=${effectiveStudentId}` : routes.studentDetail}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -113,7 +120,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentTimeTable}
+                        to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable}
                         className="nav-link active"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -123,7 +130,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentLeaves}
+                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -133,7 +140,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentFees}
+                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -143,7 +150,7 @@ const StudentTimeTable = () => {
                     </li>
                     <li>
                       <Link
-                        to={routes.studentResult}
+                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
                         className="nav-link"
                         state={student ? { studentId: student.id, student } : undefined}
                       >
@@ -169,6 +176,13 @@ const StudentTimeTable = () => {
                           <span>{scheduleError}</span>
                         </div>
                       )}
+
+                      {!headerAcademicYearId && studentAcademicYearId && !scheduleError ? (
+                        <div className="alert alert-light border small mb-3" role="status">
+                          Timetable is loaded using this student&apos;s academic year. Choose a year in the header to
+                          switch when viewing as staff.
+                        </div>
+                      ) : null}
 
                       {scheduleLoading && (
                         <div className="d-flex justify-content-center align-items-center p-4">
@@ -242,3 +256,4 @@ const StudentTimeTable = () => {
 };
 
 export default StudentTimeTable;
+

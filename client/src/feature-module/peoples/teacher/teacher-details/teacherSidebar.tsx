@@ -193,3 +193,4 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
 };
 
 export default TeacherSidebar;
+

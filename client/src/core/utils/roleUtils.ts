@@ -84,6 +84,20 @@ function getRoleScope(role: RoleInput, explicitRoleId?: number | null): RoleScop
     return 'headmaster';
   }
 
+  // When user_roles.role_name is missing or out of sync, role_id still matches server ROLES (see server/src/config/roles.js).
+  if (roleId === 2 || roleName === 'teacher' || roleName.includes('teacher')) {
+    return 'teacher';
+  }
+  if (roleId === 3 || roleName === 'student') {
+    return 'student';
+  }
+  if (roleId === 5 || roleName === 'guardian') {
+    return 'guardian';
+  }
+  if (roleId === 4 || roleName === 'parent' || roleName === 'father' || roleName === 'mother' || roleName.includes('parent')) {
+    return 'parent';
+  }
+
   switch (roleName) {
     case 'teacher':
       return 'teacher';

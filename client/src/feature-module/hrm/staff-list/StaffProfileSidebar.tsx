@@ -110,3 +110,4 @@ export function StaffProfileSidebar({ staff }: { staff: StaffRecord }) {
     </>
   );
 }
+

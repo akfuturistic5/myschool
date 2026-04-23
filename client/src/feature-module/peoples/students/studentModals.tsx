@@ -26,9 +26,11 @@ interface StudentModalsProps {
   feeData?: any[] | null
   /** Callback after fee collected successfully */
   onFeeCollected?: () => void
+  /** Callback after student deleted successfully */
+  onStudentDeleted?: () => void
 }
 
-const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected }: StudentModalsProps) => {
+const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected, onStudentDeleted }: StudentModalsProps) => {
     const routes = all_routes
     const academicYearId = useSelector(selectSelectedAcademicYearId);
     
@@ -61,6 +63,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [paymentRefNo, setPaymentRefNo] = useState('')
   const [remarks, setRemarks] = useState('')
   const [feeSubmitting, setFeeSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
     const [assignedFees, setAssignedFees] = useState<any[]>([]);
     const [loadingFees, setLoadingFees] = useState(false);
@@ -184,6 +187,35 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       }
     }
   }, [student, feeStructureOptions, effectiveFeeData])
+
+  const hideDeleteModal = () => {
+    const el = document.getElementById('delete-modal')
+    if (el) {
+      const bsModal = (window as any).bootstrap?.Modal?.getInstance(el)
+      if (bsModal) bsModal.hide()
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!student?.id) return
+    setIsDeleting(true)
+    try {
+      await apiService.deleteStudent(student.id)
+      hideDeleteModal()
+      Swal.fire({
+        title: 'Deleted!',
+        text: `${[student.first_name, student.last_name].filter(Boolean).join(' ') || 'Student'} has been deleted.`,
+        icon: 'success',
+        confirmButtonText: 'OK',
+      }).then(() => {
+        onStudentDeleted?.()
+      })
+    } catch (err: any) {
+      Swal.fire('Error', err?.message || 'Failed to delete student', 'error')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
 
   const hideAddFeesModal = () => {
     const el = document.getElementById('add_fees_collect')
@@ -512,9 +544,14 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                   >
                     Cancel
                   </Link>
-                  <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                    Yes, Delete
-                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDelete}
+                    disabled={isDeleting || !student?.id}
+                  >
+                    {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                  </button>
                 </div>
               </div>
             </form>

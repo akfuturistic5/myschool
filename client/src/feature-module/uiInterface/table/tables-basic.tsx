@@ -1849,3 +1849,4 @@ const TablesBasic = () => {
 };
 
 export default TablesBasic;
+

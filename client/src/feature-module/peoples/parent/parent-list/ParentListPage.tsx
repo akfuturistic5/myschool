@@ -28,3 +28,4 @@ const ParentListPage = () => (
 );
 
 export default ParentListPage;
+

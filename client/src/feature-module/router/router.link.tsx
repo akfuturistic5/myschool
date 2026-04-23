@@ -1656,3 +1656,4 @@ export const authRoutes = [
     element: <ResetPasswordSuccess3 />,
   },
 ];
+

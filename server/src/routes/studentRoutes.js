@@ -11,19 +11,29 @@ const {
   updateStudent,
   promoteStudents,
   leaveStudents,
+  rejoinStudent,
   getStudentPromotions,
   getLeavingStudents,
+  getStudentRejoins,
   getStudentAttendance,
   getStudentLoginDetails,
   getStudentExamResults,
+  getStudentsLatestExamSummary,
   getGradeReport,
   getAttendanceReport,
   checkAdmissionNumberUnique,
   searchStudents,
+  deleteStudent,
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
-const { createStudentSchema, updateStudentSchema, promoteStudentsSchema, leaveStudentsSchema } = require('../validations/studentValidation');
+const {
+  createStudentSchema,
+  updateStudentSchema,
+  promoteStudentsSchema,
+  leaveStudentsSchema,
+  rejoinStudentSchema,
+} = require('../validations/studentValidation');
 
 const router = express.Router();
 
@@ -49,9 +59,17 @@ router.post(
   leaveStudents
 );
 
+router.post(
+  '/rejoin',
+  requireRole(PEOPLE_MANAGER_ROLES),
+  validate(rejoinStudentSchema),
+  rejoinStudent
+);
+
 // Student promotion history
 router.get('/promotions', requireRole(STUDENT_LIST_ALL_ROLES), getStudentPromotions);
 router.get('/leaving', requireRole(STUDENT_LIST_ALL_ROLES), getLeavingStudents);
+router.get('/rejoins', requireRole(STUDENT_LIST_ALL_ROLES), getStudentRejoins);
 
 // Get current logged-in student (must be before /:id)
 router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
@@ -68,6 +86,7 @@ router.get('/class/:classId', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsBy
 // Report endpoints - Admin/Administrative/Teacher
 router.get('/reports/grade', requireRole(STUDENT_LIST_ALL_ROLES), getGradeReport);
 router.get('/reports/attendance', requireRole(STUDENT_LIST_ALL_ROLES), getAttendanceReport);
+router.post('/exam-results/summary', requireRole(STUDENT_LIST_ALL_ROLES), getStudentsLatestExamSummary);
 
 // Get login details (usernames) for a student
 // Auth is handled by protectApi globally; controller enforces ownership (admin / student / parent / guardian)
@@ -88,5 +107,6 @@ router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
 // Create/Update student - Admin only
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);
 router.put('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(updateStudentSchema), updateStudent);
+router.delete('/:id', requireRole(PEOPLE_MANAGER_ROLES), deleteStudent);
 
 module.exports = router;

@@ -216,3 +216,4 @@ const Register2 = () => {
 };
 
 export default Register2;
+

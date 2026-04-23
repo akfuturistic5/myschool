@@ -70,3 +70,4 @@ export const hostelroomType = [
       "Optimal comfort meets collaborative studying, perfect for academic synergy among residents.",
   },
 ];
+

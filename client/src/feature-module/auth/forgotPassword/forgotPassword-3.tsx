@@ -75,3 +75,4 @@ const ForgotPassword3 = () => {
 };
 
 export default ForgotPassword3;
+

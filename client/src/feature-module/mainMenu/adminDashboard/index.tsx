@@ -855,7 +855,7 @@ const AdminDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar-due me-1" />
                         {attendanceFilterLabel}
@@ -1265,7 +1265,7 @@ const AdminDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-school-bell  me-2" />
                         {perfClassLabel}
@@ -1370,7 +1370,7 @@ const AdminDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar  me-2" />
                         {feePeriodLabel}
@@ -1439,7 +1439,7 @@ const AdminDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-calendar-due me-1" />
                         {leaveRangeLabel}
@@ -1789,7 +1789,7 @@ const AdminDashboard = () => {
                       <Link
                         to="#"
                         className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown"
+                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       >
                         <i className="ti ti-school-bell  me-2" />
                         {topSubjectsClassLabel}
@@ -1980,3 +1980,8 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+
+
+
+
+

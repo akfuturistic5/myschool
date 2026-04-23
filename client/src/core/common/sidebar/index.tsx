@@ -37,6 +37,7 @@ const Sidebar = () => {
   const [subOpen, setSubopen] = useState<any>("");
   const [subsidebar, setSubsidebar] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const filteredSidebarData = useMemo(() => {
     if (!searchQuery.trim()) return SidebarData;
@@ -193,7 +194,20 @@ const Sidebar = () => {
                     className="form-control border-0 ps-0 bg-transparent"
                     placeholder="Search menu..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    name="sidebar-menu-search"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    data-form-type="other"
+                    data-lpignore="true"
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setIsSearchFocused(false)}
+                    onChange={(e) => {
+                      // Ignore autofill/programmatic writes when input is not actively focused by user.
+                      if (!isSearchFocused) return;
+                      setSearchQuery(e.target.value);
+                    }}
                     style={{ fontSize: '13px', color: '#5b6670', boxShadow: 'none' }}
                   />
                   {searchQuery && (
@@ -366,3 +380,4 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
+

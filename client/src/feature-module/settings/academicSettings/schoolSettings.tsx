@@ -379,3 +379,4 @@ const SchoolSettings = () => {
 };
 
 export default SchoolSettings;
+

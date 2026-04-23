@@ -32,6 +32,7 @@ const Exam = () => {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingExamId, setDeletingExamId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({
     exam_name: "",
@@ -73,6 +74,23 @@ const Exam = () => {
     [rows]
   );
 
+  const classOptions = useMemo(() => {
+    const rows = Array.isArray(classes) ? classes : [];
+    return rows
+      .filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId))
+      .map((c: any) => {
+        const className = String(c?.class_name ?? "").trim();
+        const classCode = String(c?.class_code ?? "").trim();
+        return {
+          id: Number(c?.id),
+          className,
+          label: classCode ? `${className} (${classCode})` : className,
+        };
+      })
+      .filter((c) => Number.isFinite(c.id) && c.id > 0 && c.className)
+      .sort((a, b) => a.className.localeCompare(b.className) || a.id - b.id);
+  }, [classes, academicYearId]);
+
   const columns = [
     { title: "ID", dataIndex: "id" },
     { title: "Exam Name", dataIndex: "examName" },
@@ -83,15 +101,46 @@ const Exam = () => {
       title: "Action",
       dataIndex: "action",
       render: (_: any, record: any) => (
-        <Link
-          to={`${routes.examSchedule}?examId=${record.id}`}
-          className="btn btn-sm btn-outline-primary"
-        >
-          {isAdminLike ? "Manage" : "Timetable"}
-        </Link>
+        <div className="d-flex gap-2">
+          <Link
+            to={`${routes.examSchedule}?examId=${record.id}`}
+            className="btn btn-sm btn-outline-primary"
+          >
+            {isAdminLike ? "Manage" : "Timetable"}
+          </Link>
+          {isAdminLike && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              disabled={deletingExamId === Number(record.id)}
+              onClick={() => handleDeleteExam(Number(record.id), String(record.examName || "this exam"))}
+            >
+              {deletingExamId === Number(record.id) ? "Deleting..." : "Delete"}
+            </button>
+          )}
+        </div>
       ),
     },
   ];
+
+  const handleDeleteExam = async (examId: number, examName: string) => {
+    if (!Number.isFinite(examId) || examId <= 0) return;
+    const confirmed = window.confirm(
+      `Delete exam "${examName}"?\n\nThis will permanently remove timetable and marks linked to this exam.`
+    );
+    if (!confirmed) return;
+    setDeletingExamId(examId);
+    setMessage(null);
+    try {
+      await apiService.deleteExam(examId);
+      setMessage("Exam deleted successfully.");
+      await loadExams();
+    } catch (err: any) {
+      setMessage(err?.message || "Failed to delete exam");
+    } finally {
+      setDeletingExamId(null);
+    }
+  };
 
   const toggleClass = (classId: number) => {
     setForm((prev) => {
@@ -183,7 +232,7 @@ const Exam = () => {
                   <div className="col-md-5">
                     <label className="form-label">Classes</label>
                     <div className="border rounded p-2" style={{ maxHeight: 140, overflowY: "auto" }}>
-                      {(classes || []).map((c: any) => (
+                      {classOptions.map((c) => (
                         <div key={c.id} className="form-check">
                           <input
                             className="form-check-input"
@@ -193,7 +242,7 @@ const Exam = () => {
                             onChange={() => toggleClass(Number(c.id))}
                           />
                           <label className="form-check-label" htmlFor={`cls_${c.id}`}>
-                            {c.class_name}
+                            {c.label}
                           </label>
                         </div>
                       ))}
@@ -242,3 +291,8 @@ const Exam = () => {
 };
 
 export default Exam;
+
+
+
+
+

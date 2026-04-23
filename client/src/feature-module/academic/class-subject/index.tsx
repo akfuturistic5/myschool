@@ -18,7 +18,10 @@ const ClassSubject = () => {
   const [classFilterId, setClassFilterId] = useState<string>("");
   const [codeFilter, setCodeFilter] = useState<string>("");
   const { classes = [] } = useClasses(academicYearId);
-  const { subjects, loading, error, refetch } = useSubjects(classFilterId ? Number(classFilterId) : null);
+  const { subjects, loading, error, refetch } = useSubjects(
+    classFilterId ? Number(classFilterId) : null,
+    { academicYearId }
+  );
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -110,12 +113,12 @@ const ClassSubject = () => {
               <Link
                 to="#"
                 className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
+                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                 aria-expanded="false"
               >
                 <i className="ti ti-dots-vertical fs-14" />
               </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
+              <ul className="dropdown-menu dropdown-menu-end p-2">
                 <li>
                   <Link
                     className="dropdown-item rounded-1"
@@ -195,7 +198,7 @@ const ClassSubject = () => {
                     <Link
                       to="#"
                       className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       data-bs-auto-close="outside"
                     >
                       <i className="ti ti-filter me-2" />
@@ -259,7 +262,7 @@ const ClassSubject = () => {
                     <Link
                       to="#"
                       className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                     >
                       <i className="ti ti-sort-ascending-2 me-2" />
                       Sort by A-Z
@@ -578,3 +581,8 @@ const ClassSubject = () => {
 };
 
 export default ClassSubject;
+
+
+
+
+

@@ -3,6 +3,7 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const bcrypt = require('bcryptjs');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn } = require('../utils/schemaInspector');
 
 const TRANSPORT_ROLES = ['driver', 'conductor'];
 
@@ -90,16 +91,19 @@ function mapDriverRow(row) {
     is_active: row.is_active !== false && row.is_active !== 'f',
     photo_url: row.photo_url || null,
     created_at: row.created_at,
-    updated_at: row.updated_at
+    updated_at: row.updated_at ?? row.modified_at ?? null
   };
 }
 
 const getAllDrivers = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const scopedDriverId = await getScopedDriverId(req);
+    const activeFilter = hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)';
     if (scopedDriverId != null) {
       const result = await query(
-        'SELECT * FROM drivers WHERE id = $1 AND deleted_at IS NULL',
+        `SELECT * FROM drivers WHERE id = $1 AND ${activeFilter}`,
         [scopedDriverId]
       );
       const data = result.rows.map(mapDriverRow);
@@ -118,8 +122,8 @@ const getAllDrivers = async (req, res) => {
     } = req.query;
 
     const offset = (page - 1) * limit;
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
-    let whereClause = 'WHERE deleted_at IS NULL';
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
+    let whereClause = `WHERE ${activeFilter}`;
     const queryParams = [];
 
     if (search) {
@@ -131,12 +135,12 @@ const getAllDrivers = async (req, res) => {
       queryParams.push(normalizeTransportRole(role));
       whereClause += ` AND role = $${queryParams.length}`;
     }
-    if (scopedAcademicYearId) {
+    if (hasAcademicYearId && scopedAcademicYearId) {
       queryParams.push(scopedAcademicYearId);
       whereClause += ` AND academic_year_id = $${queryParams.length}`;
     }
 
-    if (status !== undefined && status !== '') {
+    if (status !== undefined && status !== '' && status !== 'all') {
       const isActive = status === 'active' || status === 'true' || status === true;
       queryParams.push(isActive);
       whereClause += ` AND is_active = $${queryParams.length}`;
@@ -180,11 +184,13 @@ const getAllDrivers = async (req, res) => {
 const getDriverById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
+    const activeFilter = hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)';
     const scopedDriverId = await getScopedDriverId(req);
     if (scopedDriverId != null && String(id) !== String(scopedDriverId)) {
       return errorResponse(res, 403, 'Access denied');
     }
-    const result = await query('SELECT * FROM drivers WHERE id = $1 AND deleted_at IS NULL', [id]);
+    const result = await query(`SELECT * FROM drivers WHERE id = $1 AND ${activeFilter}`, [id]);
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Driver not found');
     }
@@ -197,6 +203,8 @@ const getDriverById = async (req, res) => {
 
 const createDriver = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const { name, phone, license_number, address, role, is_active, academic_year_id } = req.body;
 
     if (!name) {
@@ -208,7 +216,10 @@ const createDriver = async (req, res) => {
     }
 
     // Check if phone number already exists
-    const existingPhone = await query('SELECT id FROM drivers WHERE phone = $1 AND deleted_at IS NULL', [phone]);
+    const existingPhone = await query(
+      `SELECT id FROM drivers WHERE phone = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)'}`,
+      [phone]
+    );
     if (existingPhone.rows.length > 0) {
       return errorResponse(res, 400, 'Phone number already in use by another driver');
     }
@@ -220,13 +231,23 @@ const createDriver = async (req, res) => {
 
     const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
     const userId = await getOrCreateTransportUser({ name, phone, role: normalizedRole });
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
+    const scopedAcademicYearId = hasAcademicYearId
+      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+      : null;
 
-    const result = await query(`
-      INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active, academic_year_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-    `, [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue, scopedAcademicYearId]);
+    const result = hasAcademicYearId
+      ? await query(
+          `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active, academic_year_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue, scopedAcademicYearId]
+        )
+      : await query(
+          `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue]
+        );
 
     return success(res, 201, 'Driver created successfully', mapDriverRow(result.rows[0]));
   } catch (error) {
@@ -237,6 +258,8 @@ const createDriver = async (req, res) => {
 
 const updateDriver = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const { id } = req.params;
     const numericId = parseInt(id);
 
@@ -261,7 +284,10 @@ const updateDriver = async (req, res) => {
 
     // Check for duplicate phone number if provided
     if (phone) {
-      const existingPhone = await query('SELECT id FROM drivers WHERE phone = $1 AND id != $2 AND deleted_at IS NULL', [phone, numericId]);
+      const existingPhone = await query(
+        `SELECT id FROM drivers WHERE phone = $1 AND id != $2 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)'}`,
+        [phone, numericId]
+      );
       if (existingPhone.rows.length > 0) {
         return errorResponse(res, 400, 'Phone number already in use by another driver');
       }
@@ -287,7 +313,7 @@ const updateDriver = async (req, res) => {
       updates.push(`role = $${i++}`);
       values.push(normalizedRole);
     }
-    if (academic_year_id !== undefined) {
+    if (hasAcademicYearId && academic_year_id !== undefined) {
       updates.push(`academic_year_id = $${i++}`);
       values.push(toPositiveInt(academic_year_id));
     }
@@ -309,7 +335,7 @@ const updateDriver = async (req, res) => {
     const result = await query(`
       UPDATE drivers
       SET ${updates.join(', ')}
-      WHERE id = $${i} AND deleted_at IS NULL
+      WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
       RETURNING *
     `, values);
 
@@ -350,16 +376,22 @@ const updateDriver = async (req, res) => {
 const deleteDriver = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const numericId = parseInt(id);
     
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid driver ID');
     }
 
-    const result = await query(
-      'UPDATE drivers SET deleted_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-      [numericId]
-    );
+    const result = hasDeletedAt
+      ? await query(
+          'UPDATE drivers SET deleted_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+          [numericId]
+        )
+      : await query(
+          'UPDATE drivers SET is_active = false WHERE id = $1 RETURNING id',
+          [numericId]
+        );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Driver not found');

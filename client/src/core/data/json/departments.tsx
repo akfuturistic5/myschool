@@ -60,3 +60,4 @@ export const departments = [
         status: "Active",
     }
 ]
+

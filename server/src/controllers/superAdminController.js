@@ -250,7 +250,11 @@ const createSchool = async (req, res) => {
     await createTenantDatabase(dbName, name);
   } catch (err) {
     console.error('Super Admin createSchool: tenant DB creation failed:', err);
-    return errorResponse(res, 500, 'Failed to create tenant database');
+    const message =
+      process.env.NODE_ENV !== 'production' && err && err.message
+        ? `Failed to create tenant database: ${err.message}`
+        : 'Failed to create tenant database';
+    return errorResponse(res, 500, message);
   }
 
   let schoolRow;

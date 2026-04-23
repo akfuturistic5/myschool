@@ -244,9 +244,8 @@ function parseFullName(fullName) {
 async function createParentIndividualUser(client, { full_name, email, phone, parent_row_id, side }) {
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
-  if (!emailTrim && !phoneTrim) return null;
-
   const { first_name, last_name } = parseFullName(full_name);
+  if (!emailTrim && !phoneTrim && !first_name) return null;
   let base = usernameBaseFromFirstLast(first_name, last_name);
   if (!base) base = `par.${side}.${parent_row_id}`;
 
@@ -313,9 +312,8 @@ async function createParentUser(client, { father_name, father_email, father_phon
 async function createGuardianUser(client, { first_name, last_name, phone, email }) {
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
-  if (!emailTrim && !phoneTrim) return null;
-
   const fn = (first_name || 'Guardian').toString().trim();
+  if (!emailTrim && !phoneTrim && !first_name) return null;
   const ln = (last_name || '').toString().trim();
   let base = usernameBaseFromFirstLast(fn, ln);
   if (!base) base = 'guardian';

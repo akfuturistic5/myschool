@@ -289,3 +289,4 @@ const SuperAdminSchools = () => {
 
 export default SuperAdminSchools;
 
+

@@ -373,7 +373,7 @@ const StudentDasboard = () => {
                         <button
                           type="button"
                           className="btn btn-light dropdown-toggle"
-                          data-bs-toggle="dropdown"
+                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                           aria-expanded="false"
                         >
                           <i className="ti ti-calendar-due me-2" />
@@ -594,7 +594,7 @@ const StudentDasboard = () => {
                     <button
                       type="button"
                       className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       aria-expanded="false"
                     >
                       <i className="ti ti-calendar me-2" />
@@ -647,7 +647,7 @@ const StudentDasboard = () => {
                     <button
                       type="button"
                       className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       aria-expanded="false"
                     >
                       <i className="ti ti-book-2 me-2" />
@@ -763,7 +763,7 @@ const StudentDasboard = () => {
                     <button
                       type="button"
                       className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       aria-expanded="false"
                     >
                       <i className="ti ti-calendar me-2" />
@@ -1007,7 +1007,7 @@ const StudentDasboard = () => {
                     <button
                       type="button"
                       className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown"
+                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                       aria-expanded="false"
                     >
                       <i className="ti ti-calendar me-2" />
@@ -1099,3 +1099,8 @@ const StudentDasboard = () => {
 };
 
 export default StudentDasboard;
+
+
+
+
+

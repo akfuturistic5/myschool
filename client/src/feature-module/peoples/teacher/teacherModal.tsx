@@ -277,3 +277,4 @@ const TeacherModal = ({ staffId, onLeaveApplied }: TeacherModalProps) => {
 };
 
 export default TeacherModal;
+

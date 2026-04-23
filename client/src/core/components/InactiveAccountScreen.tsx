@@ -58,3 +58,4 @@ const InactiveAccountScreen = () => {
 };
 
 export default InactiveAccountScreen;
+

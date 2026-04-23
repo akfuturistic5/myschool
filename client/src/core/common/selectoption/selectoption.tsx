@@ -1244,3 +1244,4 @@ export const studentsnumber = [
   { value: "35", label: "35" },
   { value: "40", label: "40" },
 ]
+

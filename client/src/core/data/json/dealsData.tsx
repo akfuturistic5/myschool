@@ -140,3 +140,4 @@ export const dealsData = [
     key: "10"
   },
 ];
+

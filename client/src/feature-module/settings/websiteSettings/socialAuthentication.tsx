@@ -232,3 +232,4 @@ const Socialauthentication = () => {
 };
 
 export default Socialauthentication;
+

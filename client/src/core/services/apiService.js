@@ -5,7 +5,7 @@ import {
   clearCachedCsrfToken,
 } from '../utils/csrfClientStore.js';
 
-const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const isDev = import.meta.env.DEV;
 const isProd = import.meta.env.PROD;
 
@@ -174,7 +174,25 @@ class ApiService {
         }
         const errorText = await response.text();
         if (isDev) console.error('Response error text:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        let parsed = null;
+        try {
+          parsed = errorText ? JSON.parse(errorText) : null;
+        } catch {
+          parsed = null;
+        }
+        const apiMessage =
+          parsed && typeof parsed.message === 'string' && parsed.message.trim()
+            ? parsed.message.trim()
+            : errorText;
+        const err = new Error(`HTTP error! status: ${response.status}, message: ${apiMessage}`);
+        err.status = response.status;
+        if (parsed && typeof parsed.code === 'string') {
+          err.code = parsed.code;
+        }
+        if (parsed && parsed.data !== undefined) {
+          err.data = parsed.data;
+        }
+        throw err;
       }
 
       const text = await response.text();
@@ -262,8 +280,13 @@ class ApiService {
   }
 
   // Sections
-  async getSections() {
-    return this.makeRequest('/sections');
+  async getSections(params = {}) {
+    const query = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      query.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = query.toString();
+    return this.makeRequest(`/sections${qs ? `?${qs}` : ''}`);
   }
 
   async getSectionById(id) {
@@ -411,6 +434,12 @@ class ApiService {
     });
   }
 
+  async deleteStudent(id) {
+    return this.makeRequest(`/students/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   async promoteStudents(payload) {
     return this.makeRequest('/students/promote', {
       method: 'POST',
@@ -435,9 +464,21 @@ class ApiService {
     });
   }
 
+  async rejoinStudent(payload) {
+    return this.makeRequest('/students/rejoin', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async getLeavingStudents(limit = 200) {
     const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
     return this.makeRequest(`/students/leaving?limit=${safeLimit}`);
+  }
+
+  async getStudentRejoins(limit = 200) {
+    const safeLimit = Number.isFinite(Number(limit)) ? Number(limit) : 200;
+    return this.makeRequest(`/students/rejoins?limit=${safeLimit}`);
   }
 
   async getStudentById(id) {
@@ -511,6 +552,13 @@ class ApiService {
     return this.makeRequest(`/students/${studentId}/exam-results`);
   }
 
+  async getStudentsLatestExamSummary(studentIds) {
+    return this.makeRequest('/students/exam-results/summary', {
+      method: 'POST',
+      body: JSON.stringify({ student_ids: Array.isArray(studentIds) ? studentIds : [] }),
+    });
+  }
+
   async listExams(query = {}) {
     const search = new URLSearchParams();
     if (query.academic_year_id != null && query.academic_year_id !== '') {
@@ -524,6 +572,12 @@ class ApiService {
     return this.makeRequest('/exams', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteExam(examId) {
+    return this.makeRequest(`/exams/${examId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -888,6 +942,10 @@ class ApiService {
   }
 
   // Guardians
+  async getGuardianByStudentId(studentId) {
+    return this.makeRequest(`/guardians/student/${studentId}`);
+  }
+
   async getGuardians(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
@@ -901,10 +959,6 @@ class ApiService {
 
   async getGuardianById(id) {
     return this.makeRequest(`/guardians/${id}`);
-  }
-
-  async getGuardianByStudentId(studentId) {
-    return this.makeRequest(`/guardians/student/${studentId}`);
   }
 
   async createGuardian(guardianData) {
@@ -968,11 +1022,12 @@ class ApiService {
     });
   }
 
-  /** @param {{ teacherId?: number|string, classId?: number|string }} [params] */
+  /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
   async getTeacherAssignments(params = {}) {
     const q = new URLSearchParams();
     if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
     if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
     const qs = q.toString();
     return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
   }
@@ -1494,6 +1549,8 @@ class ApiService {
     if (params.staff_id != null) searchParams.set('staff_id', params.staff_id);
     if (params.class_id != null) searchParams.set('class_id', params.class_id);
     if (params.section_id != null) searchParams.set('section_id', params.section_id);
+    if (params.department_id != null) searchParams.set('department_id', params.department_id);
+    if (params.designation_id != null) searchParams.set('designation_id', params.designation_id);
     if (params.leave_type_id != null) searchParams.set('leave_type_id', params.leave_type_id);
     if (params.applicant_type != null && params.applicant_type !== '') searchParams.set('applicant_type', params.applicant_type);
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
@@ -1824,8 +1881,13 @@ class ApiService {
   }
 
   // Subjects
-  async getSubjects() {
-    return this.makeRequest('/subjects');
+  async getSubjects(params = {}) {
+    const query = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      query.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = query.toString();
+    return this.makeRequest(`/subjects${qs ? `?${qs}` : ''}`);
   }
 
   async getSubjectById(id) {
@@ -2742,7 +2804,13 @@ class ApiService {
   async uploadSchoolStorageFile(file, folder) {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('folder', folder);
+
+    let targetFolder = folder;
+    if (folder === 'students') targetFolder = 'users/student';
+    else if (folder === 'parents') targetFolder = 'users/parent';
+    else if (folder === 'guardians') targetFolder = 'users/guardian';
+
+    formData.append('folder', targetFolder);
     return this.makeRequest('/storage/upload', {
       method: 'POST',
       body: formData,
@@ -2780,10 +2848,29 @@ class ApiService {
    * @param {string} apiPath — `data.url` from uploadSchoolStorageFile
    */
   async getSchoolStorageFileAbsoluteUrl(apiPath) {
+    if (!apiPath) return "";
     const base = await getApiBaseUrl();
     const origin = new URL(base).origin;
-    const p = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
+    let p = apiPath;
+    if (p.startsWith("school_")) {
+      p = `/api/storage/files/${p}`;
+    } else if (!p.startsWith("/")) {
+      p = `/${p}`;
+    }
     return `${origin}${p}`;
+  }
+
+  /**
+   * GET /api/users/check-unique?mobile=&email=&excludeId=
+   * Independent checks for active users; excludeId skips that user (edit mode).
+   */
+  async checkUserUnique(params = {}) {
+    const search = new URLSearchParams();
+    if (params.mobile != null) search.set('mobile', String(params.mobile).trim());
+    if (params.email != null) search.set('email', String(params.email).trim());
+    if (params.excludeId != null) search.set('excludeId', String(params.excludeId));
+    const qs = search.toString();
+    return this.makeRequest(`/users/check-unique?${qs}`);
   }
 }
 

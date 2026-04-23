@@ -445,3 +445,4 @@ const StudentAttendanceType = () => {
 };
 
 export default StudentAttendanceType;
+

@@ -4,6 +4,7 @@ import { apiService } from '../services/apiService.js';
 
 export const useSections = (classId = null, options = {}) => {
   const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
+  const academicYearId = options.academicYearId ?? null;
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -22,7 +23,9 @@ export const useSections = (classId = null, options = {}) => {
       if (classId) {
         response = await apiService.getSectionsByClass(classId);
       } else {
-        response = await apiService.getSections();
+        response = await apiService.getSections(
+          academicYearId ? { academic_year_id: academicYearId } : {}
+        );
       }
 
       // Handle both { data: [...] } and direct array (for different API shapes)
@@ -39,7 +42,7 @@ export const useSections = (classId = null, options = {}) => {
 
   useEffect(() => {
     fetchSections();
-  }, [classId, fetchAllWhenNoClass]);
+  }, [classId, fetchAllWhenNoClass, academicYearId]);
 
   return {
     sections,

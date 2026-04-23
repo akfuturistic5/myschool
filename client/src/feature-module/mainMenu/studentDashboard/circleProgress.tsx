@@ -48,3 +48,4 @@ const CircleProgress: React.FC<CircleProgressProps> = ({ value }) => {
 };
 
 export default CircleProgress;
+
