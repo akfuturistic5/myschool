@@ -20,6 +20,7 @@ const {
 } = require('../utils/studentContactSync');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScaleService');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -75,23 +76,7 @@ async function allocateUniqueStudentIds(client, preferred, admission_number, exc
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `USI-${adm.replace(/\s+/g, '_')}` : `USI-${Date.now()}`;
-  base = base.slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_UNIQUE_STUDENT_ID_LEN - suf.length)) + suf).slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE unique_student_ids = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE unique_student_ids = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `USI-${Date.now()}`.slice(0, MAX_UNIQUE_STUDENT_ID_LEN);
+  return null;
 }
 
 const MAX_PEN_NUMBER_LEN = 20;
@@ -116,23 +101,7 @@ async function allocatePenNumber(client, preferred, admission_number, excludeStu
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `PEN-${adm.replace(/\s+/g, '_')}` : `PEN-${Date.now()}`;
-  base = base.slice(0, MAX_PEN_NUMBER_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_PEN_NUMBER_LEN - suf.length)) + suf).slice(0, MAX_PEN_NUMBER_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE pen_number = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE pen_number = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `PEN-${Date.now()}`.slice(0, MAX_PEN_NUMBER_LEN);
+  return null;
 }
 
 const MAX_AADHAR_NO_LEN = 12;
@@ -157,23 +126,7 @@ async function allocateAadharNo(client, preferred, admission_number, excludeStud
     return candidate;
   }
 
-  const adm = String(admission_number || '').trim();
-  let base = adm ? `AAD-${adm.replace(/\s+/g, '_')}` : `AAD-${Date.now()}`;
-  base = base.slice(0, MAX_AADHAR_NO_LEN);
-
-  for (let n = 0; n < 500; n++) {
-    const suf = n === 0 ? '' : `-${n}`;
-    const candidate = n === 0
-      ? base
-      : (base.slice(0, Math.max(0, MAX_AADHAR_NO_LEN - suf.length)) + suf).slice(0, MAX_AADHAR_NO_LEN);
-    const sql = excludeStudentId
-      ? 'SELECT 1 FROM students WHERE aadhar_no = $1 AND id <> $2 LIMIT 1'
-      : 'SELECT 1 FROM students WHERE aadhar_no = $1 LIMIT 1';
-    const params = excludeStudentId ? [candidate, excludeStudentId] : [candidate];
-    const clash = await client.query(sql, params);
-    if (clash.rows.length === 0) return candidate;
-  }
-  return `A${String(Date.now()).slice(-11)}`.slice(0, MAX_AADHAR_NO_LEN);
+  return null;
 }
 
 // Create new student
@@ -194,7 +147,7 @@ const createStudent = async (req, res) => {
       current_address, permanent_address, address,
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
-      sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+      siblings, // New dynamic array
       is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
@@ -371,7 +324,6 @@ const createStudent = async (req, res) => {
             mother_tongue_id, is_active,
             address, current_address, permanent_address,
             previous_school, previous_school_address,
-            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
             is_transport_required, route_id, pickup_point_id, vehicle_number,
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
@@ -379,7 +331,7 @@ const createStudent = async (req, res) => {
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -392,7 +344,6 @@ const createStudent = async (req, res) => {
           current_address || addrVal || null,
           permanent_address || null,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -419,7 +370,6 @@ const createStudent = async (req, res) => {
             blood_group_id, house_id, ${religionColumn}, cast_id, phone, email,
             mother_tongue_id, is_active,
             address, previous_school, previous_school_address,
-            sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
             is_transport_required, route_id, pickup_point_id, vehicle_number,
             is_hostel_required, hostel_id, hostel_room_id,
             bank_name, branch, ifsc,
@@ -427,7 +377,7 @@ const createStudent = async (req, res) => {
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -438,7 +388,6 @@ const createStudent = async (req, res) => {
           status === 'Active' ? true : false,
           addrVal,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -516,6 +465,27 @@ const createStudent = async (req, res) => {
             mother_image_url,
             sync.motherUserId,
           ]);
+        }
+      }
+
+      // Handle Siblings
+      if (Array.isArray(siblings) && siblings.length > 0) {
+        for (const sib of siblings) {
+          if (!sib.name && !sib.admission_number) continue;
+          await client.query(
+            `INSERT INTO student_siblings (
+              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              studentRow.id,
+              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
+              sib.name || null,
+              sib.class_name || null,
+              sib.section_name || null,
+              sib.roll_number || null,
+              sib.admission_number || null,
+            ]
+          );
         }
       }
 
@@ -599,7 +569,7 @@ const updateStudent = async (req, res) => {
       current_address, permanent_address, address,
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
-      sibiling_1, sibiling_2, sibiling_1_class, sibiling_2_class,
+      siblings, // New dynamic array
       is_transport_required, route_id, pickup_point_id, vehicle_number,
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
@@ -765,15 +735,19 @@ const updateStudent = async (req, res) => {
         throw err;
       }
 
-      let resolvedUniqueFromBody = unique_student_ids != null ? String(unique_student_ids).trim() : '';
-      if (!resolvedUniqueFromBody) {
+      let resolvedUniqueFromBody = null;
+      if (unique_student_ids === undefined) {
+        // Keep existing if not in request body
         const curUs = await client.query(
           'SELECT unique_student_ids FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curUs.rows.length > 0 && curUs.rows[0].unique_student_ids != null) {
-          resolvedUniqueFromBody = String(curUs.rows[0].unique_student_ids).trim();
+        if (curUs.rows.length > 0) {
+          resolvedUniqueFromBody = curUs.rows[0].unique_student_ids;
         }
+      } else {
+        // Explicitly provided: null, empty string, or value
+        resolvedUniqueFromBody = (unique_student_ids != null ? String(unique_student_ids).trim() : '') || null;
       }
       const uniqueStudentIdsNormUpdate = await allocateUniqueStudentIds(
         client,
@@ -782,15 +756,17 @@ const updateStudent = async (req, res) => {
         id
       );
 
-      let resolvedPenFromBody = pen_number != null ? String(pen_number).trim() : '';
-      if (!resolvedPenFromBody) {
+      let resolvedPenFromBody = null;
+      if (pen_number === undefined) {
         const curPen = await client.query(
           'SELECT pen_number FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curPen.rows.length > 0 && curPen.rows[0].pen_number != null) {
-          resolvedPenFromBody = String(curPen.rows[0].pen_number).trim();
+        if (curPen.rows.length > 0) {
+          resolvedPenFromBody = curPen.rows[0].pen_number;
         }
+      } else {
+        resolvedPenFromBody = (pen_number != null ? String(pen_number).trim() : '') || null;
       }
       const penNumberNormUpdate = await allocatePenNumber(
         client,
@@ -799,15 +775,17 @@ const updateStudent = async (req, res) => {
         id
       );
 
-      let resolvedAadharFromBody = aadhaar_no != null ? String(aadhaar_no).trim() : '';
-      if (!resolvedAadharFromBody) {
+      let resolvedAadharFromBody = null;
+      if (aadhaar_no === undefined) {
         const curAad = await client.query(
           'SELECT aadhar_no FROM students WHERE id = $1 LIMIT 1',
           [id]
         );
-        if (curAad.rows.length > 0 && curAad.rows[0].aadhar_no != null) {
-          resolvedAadharFromBody = String(curAad.rows[0].aadhar_no).trim();
+        if (curAad.rows.length > 0) {
+          resolvedAadharFromBody = curAad.rows[0].aadhar_no;
         }
+      } else {
+        resolvedAadharFromBody = (aadhaar_no != null ? String(aadhaar_no).trim() : '') || null;
       }
       const aadharNormUpdate = await allocateAadharNo(
         client,
@@ -883,32 +861,28 @@ const updateStudent = async (req, res) => {
             permanent_address = $21,
             previous_school = $22,
             previous_school_address = $23,
-            sibiling_1 = $24,
-            sibiling_2 = $25,
-            sibiling_1_class = $26,
-            sibiling_2_class = $27,
-            is_transport_required = $28,
-            route_id = $29,
-            pickup_point_id = $30,
-            vehicle_number = $31,
-            is_hostel_required = $32,
-            hostel_id = $33,
-            hostel_room_id = $34,
-            bank_name = $35,
-            branch = $36,
-            ifsc = $37,
-            known_allergies = $38,
-            medications = $39,
-            medical_condition = $40,
-            other_information = $41,
-            unique_student_ids = $42,
-            pen_number = $43,
-            aadhar_no = $44,
-            gr_number = $45,
-            medical_document_path = $46,
-            transfer_certificate_path = $47,
+            is_transport_required = $24,
+            route_id = $25,
+            pickup_point_id = $26,
+            vehicle_number = $27,
+            is_hostel_required = $28,
+            hostel_id = $29,
+            hostel_room_id = $30,
+            bank_name = $31,
+            branch = $32,
+            ifsc = $33,
+            known_allergies = $34,
+            medications = $35,
+            medical_condition = $36,
+            other_information = $37,
+            unique_student_ids = $38,
+            pen_number = $39,
+            aadhar_no = $40,
+            gr_number = $41,
+            medical_document_path = $42,
+            transfer_certificate_path = $43,
             modified_at = NOW()
-          WHERE id = $48
+          WHERE id = $44
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -921,7 +895,6 @@ const updateStudent = async (req, res) => {
           current_address || addrVal || null,
           permanent_address || null,
           previous_school || null, previous_school_address || null,
-          sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
@@ -964,43 +937,38 @@ const updateStudent = async (req, res) => {
                 address = $19,
                 previous_school = $20,
                 previous_school_address = $21,
-                sibiling_1 = $22,
-                sibiling_2 = $23,
-                sibiling_1_class = $24,
-                sibiling_2_class = $25,
-                is_transport_required = $26,
-                route_id = $27,
-                pickup_point_id = $28,
-                vehicle_number = $29,
-                is_hostel_required = $30,
-                hostel_id = $31,
-                hostel_room_id = $32,
-                bank_name = $33,
-                branch = $34,
-                ifsc = $35,
-                known_allergies = $36,
-                medications = $37,
-                medical_condition = $38,
-                other_information = $39,
-                unique_student_ids = $40,
-                pen_number = $41,
-                aadhar_no = $42,
-                gr_number = $43,
-                medical_document_path = $44,
-                transfer_certificate_path = $45,
+                is_transport_required = $22,
+                route_id = $23,
+                pickup_point_id = $24,
+                vehicle_number = $25,
+                is_hostel_required = $26,
+                hostel_id = $27,
+                hostel_room_id = $28,
+                bank_name = $29,
+                branch = $30,
+                ifsc = $31,
+                known_allergies = $32,
+                medications = $33,
+                medical_condition = $34,
+                other_information = $35,
+                unique_student_ids = $36,
+                pen_number = $37,
+                aadhar_no = $38,
+                gr_number = $39,
+                medical_document_path = $40,
+                transfer_certificate_path = $41,
                 modified_at = NOW()
-              WHERE id = $46
+              WHERE id = $42
               RETURNING *
             `, [
               academic_year_id || null, admission_number, admission_date || null, roll_number || null,
               first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+              (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
               date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
               cast_id || null, phone || null, email || null, mother_tongue_id || null,
               status === 'Active' ? true : false,
               addrVal,
               previous_school || null, previous_school_address || null,
-              sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
               is_transport_required === true || is_transport_required === 'true',
               route_id || null, pickup_point_id || null, vehicle_number || null,
               is_hostel_required === true || is_hostel_required === 'true',
@@ -1032,7 +1000,7 @@ const updateStudent = async (req, res) => {
               date_of_birth = $10,
               blood_group_id = $11,
               house_id = $12,
-              reigion_id = $13,
+              religion_id = $13,
               cast_id = $14,
               phone = $15,
               email = $16,
@@ -1043,37 +1011,33 @@ const updateStudent = async (req, res) => {
               permanent_address = $21,
               previous_school = $22,
               previous_school_address = $23,
-              sibiling_1 = $24,
-              sibiling_2 = $25,
-              sibiling_1_class = $26,
-              sibiling_2_class = $27,
-              is_transport_required = $28,
-              route_id = $29,
-              pickup_point_id = $30,
-              vehicle_number = $31,
-              is_hostel_required = $32,
-              hostel_id = $33,
-              hostel_room_id = $34,
-              bank_name = $35,
-              branch = $36,
-              ifsc = $37,
-              known_allergies = $38,
-              medications = $39,
-              medical_condition = $40,
-              other_information = $41,
-              unique_student_ids = $42,
-              pen_number = $43,
-              aadhar_no = $44,
-              gr_number = $45,
-              medical_document_path = $46,
-              transfer_certificate_path = $47,
+              is_transport_required = $24,
+              route_id = $25,
+              pickup_point_id = $26,
+              vehicle_number = $27,
+              is_hostel_required = $28,
+              hostel_id = $29,
+              hostel_room_id = $30,
+              bank_name = $31,
+              branch = $32,
+              ifsc = $33,
+              known_allergies = $34,
+              medications = $35,
+              medical_condition = $36,
+              other_information = $37,
+              unique_student_ids = $38,
+              pen_number = $39,
+              aadhar_no = $40,
+              gr_number = $41,
+              medical_document_path = $42,
+              transfer_certificate_path = $43,
               modified_at = NOW()
-            WHERE id = $48
+            WHERE id = $44
             RETURNING *
           `, [
             academic_year_id || null, admission_number, admission_date || null, roll_number || null,
             first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+            (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
             date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
             cast_id || null, phone || null, email || null, mother_tongue_id || null,
             status === 'Active' ? true : false,
@@ -1081,7 +1045,6 @@ const updateStudent = async (req, res) => {
             current_address || addrVal || null,
             permanent_address || null,
             previous_school || null, previous_school_address || null,
-            sibiling_1 || null, sibiling_2 || null, sibiling_1_class || null, sibiling_2_class || null,
             is_transport_required === true || is_transport_required === 'true',
             route_id || null, pickup_point_id || null, vehicle_number || null,
             is_hostel_required === true || is_hostel_required === 'true',
@@ -1214,6 +1177,28 @@ const updateStudent = async (req, res) => {
         }
       }
 
+      // Handle Siblings Update: Clear existing and re-insert
+      await client.query('DELETE FROM student_siblings WHERE student_id = $1', [id]);
+      if (Array.isArray(siblings) && siblings.length > 0) {
+        for (const sib of siblings) {
+          if (!sib.name && !sib.admission_number) continue;
+          await client.query(
+            `INSERT INTO student_siblings (
+              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              id,
+              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
+              sib.name || null,
+              sib.class_name || null,
+              sib.section_name || null,
+              sib.roll_number || null,
+              sib.admission_number || null,
+            ]
+          );
+        }
+      }
+
       return { studentRow, warnings: updateWarnings };
     });
 
@@ -1250,6 +1235,20 @@ const normalizeOverallResult = (val) => {
 const computeLastClassResult = async (client, studentId, classId, academicYearId) => {
   try {
     if (!studentId) return 'Not Available';
+    const { examResultsCols } = await loadExamSchemaCapabilities();
+    const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    const obtainedCandidates = ['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score']
+      .filter((c) => erCols.has(c));
+    const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min']
+      .filter((c) => erCols.has(c));
+    const hasIsAbsent = erCols.has('is_absent');
+    const obtainedExpr = obtainedCandidates.length > 0
+      ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const minExpr = minCandidates.length > 0
+      ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const absentExpr = hasIsAbsent ? 'er.is_absent = true' : 'false';
     const params = [studentId];
     const scoped = [];
     if (classId != null) {
@@ -1277,8 +1276,8 @@ const computeLastClassResult = async (client, studentId, classId, academicYearId
     const summary = await client.query(
       `SELECT
          COUNT(*)::int AS subjects_count,
-         COALESCE(SUM(CASE WHEN er.is_absent = true THEN 0 ELSE COALESCE(er.marks_obtained, er.obtained_marks, er.marks, er.marks_scored, er.score, 0) END), 0)::numeric AS total_obtained,
-         COALESCE(SUM(COALESCE(er.min_marks, er.pass_marks, er.min_mark, er.min, 0)), 0)::numeric AS total_min
+         COALESCE(SUM(CASE WHEN ${absentExpr} THEN 0 ELSE ${obtainedExpr} END), 0)::numeric AS total_obtained,
+         COALESCE(SUM(${minExpr}), 0)::numeric AS total_min
        FROM exam_results er
        WHERE er.student_id = $1 AND er.exam_id = $2`,
       [studentId, latestExamId]
@@ -1318,6 +1317,28 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
     );
     if (stillUsed.rows.length === 0) {
       await client.query(`UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1`, [uid]);
+    }
+  }
+};
+
+const reactivateLinkedAccountsForRejoinedStudent = async (client, studentRow) => {
+  if (!studentRow) return;
+
+  if (studentRow.user_id != null) {
+    await client.query(
+      'UPDATE users SET is_active = true, modified_at = NOW() WHERE id = $1',
+      [studentRow.user_id]
+    );
+  }
+
+  const links = await client.query(
+    `SELECT id, user_id FROM guardians WHERE student_id = $1`,
+    [studentRow.id]
+  );
+  for (const link of links.rows) {
+    await client.query(`UPDATE guardians SET is_active = true, modified_at = NOW() WHERE id = $1`, [link.id]);
+    if (link.user_id != null) {
+      await client.query(`UPDATE users SET is_active = true, modified_at = NOW() WHERE id = $1`, [link.user_id]);
     }
   }
 };
@@ -1417,6 +1438,8 @@ const promoteStudents = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'No valid student IDs' });
     }
 
+    const hasStudentStatusColumn = await hasColumn('students', 'status');
+
     const result = await executeTransaction(async (client) => {
       let promoted = 0;
       const impactedClassIds = new Set();
@@ -1499,7 +1522,10 @@ const promoteStudents = async (req, res) => {
         promoted += 1;
       }
 
-      if (impactedClassIds.size > 0) {
+      const canUpdateClassStudentCount = await hasColumn('classes', 'no_of_students');
+      const canUpdateSectionStudentCount = await hasColumn('sections', 'no_of_students');
+
+      if (canUpdateClassStudentCount && impactedClassIds.size > 0) {
         await client.query(
           `UPDATE classes c
            SET no_of_students = COALESCE(s.cnt, 0),
@@ -1527,7 +1553,7 @@ const promoteStudents = async (req, res) => {
         );
       }
 
-      if (impactedSectionIds.size > 0) {
+      if (canUpdateSectionStudentCount && impactedSectionIds.size > 0) {
         await client.query(
           `UPDATE sections sct
            SET no_of_students = COALESCE(s.cnt, 0),
@@ -1707,12 +1733,27 @@ const leaveStudents = async (req, res) => {
           ]
         );
 
-        await client.query(
-          `UPDATE students
-           SET is_active = false, modified_at = NOW()
-           WHERE id = $1`,
-          [sid]
-        );
+        if (hasStudentStatusColumn) {
+          await client.query(
+            `UPDATE students
+             SET is_active = false,
+                 status = CASE
+                   WHEN status IS NULL OR TRIM(status) = '' OR LOWER(TRIM(status)) = 'active'
+                     THEN 'Inactive'
+                   ELSE status
+                 END,
+                 modified_at = NOW()
+             WHERE id = $1`,
+            [sid]
+          );
+        } else {
+          await client.query(
+            `UPDATE students
+             SET is_active = false, modified_at = NOW()
+             WHERE id = $1`,
+            [sid]
+          );
+        }
 
         await deactivateLinkedAccountsForLeftStudent(client, s);
         left += 1;
@@ -1736,6 +1777,310 @@ const leaveStudents = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to leave students',
+    });
+  }
+};
+
+/**
+ * Rejoin a previously left student without creating duplicate student/user records.
+ * Reactivates student + linked accounts and closes the active leaving record.
+ */
+const rejoinStudent = async (req, res) => {
+  try {
+    const parseYearKey = (name) => {
+      const m = String(name || '').match(/\b(19|20)\d{2}\b/);
+      return m ? parseInt(m[0], 10) : null;
+    };
+    const {
+      student_id: studentIdRaw,
+      to_class_id: toClassIdRaw,
+      to_section_id: toSectionIdRaw,
+      to_academic_year_id: toAcademicYearIdRaw,
+      rejoin_date: rejoinDateRaw,
+      reason: rejoinReasonRaw,
+      remarks: rejoinRemarksRaw,
+    } = req.body;
+
+    const studentId = Number(studentIdRaw);
+    const toClassId = Number(toClassIdRaw);
+    const toSectionId = Number(toSectionIdRaw);
+    const toAcademicYearId = Number(toAcademicYearIdRaw);
+    const rejoinDate = rejoinDateRaw || new Date().toISOString().slice(0, 10);
+    const rejoinReason = String(rejoinReasonRaw || '').trim() || null;
+    const rejoinRemarks = String(rejoinRemarksRaw || '').trim() || null;
+    const userId = req.user?.id || null;
+    const rejoinedByUserId = userId;
+
+    const classCheck = await query(
+      `SELECT id FROM classes
+       WHERE id = $1 AND academic_year_id = $2 AND COALESCE(is_active, true) = true`,
+      [toClassId, toAcademicYearId]
+    );
+    if (classCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target class is invalid for the selected academic year',
+      });
+    }
+
+    const sectionCheck = await query(
+      'SELECT id, class_id FROM sections WHERE id = $1 AND COALESCE(is_active, true) = true',
+      [toSectionId]
+    );
+    if (sectionCheck.rows.length === 0) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section not found',
+      });
+    }
+    if (
+      sectionCheck.rows[0].class_id != null &&
+      Number(sectionCheck.rows[0].class_id) !== Number(toClassId)
+    ) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Target section does not belong to the target class',
+      });
+    }
+
+    await executeTransaction(async (client) => {
+      const studentRes = await client.query(
+        `SELECT id, user_id, class_id, section_id, academic_year_id, is_active
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [studentId]
+      );
+      if (studentRes.rows.length === 0) {
+        const err = new Error('Student not found');
+        err.statusCode = 400;
+        throw err;
+      }
+      const student = studentRes.rows[0];
+      if (student.is_active === true || student.is_active === 't' || student.is_active === 1) {
+        const err = new Error('Student is already active');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const leavingRes = await client.query(
+        `SELECT
+           id,
+           admission_number,
+           student_first_name,
+           student_last_name,
+           last_class_id,
+           last_section_id,
+           last_academic_year_id,
+           leaving_date
+         FROM leaving_students
+         WHERE student_id = $1 AND COALESCE(is_active, true) = true
+         ORDER BY id DESC
+         LIMIT 1`,
+        [studentId]
+      );
+      if (leavingRes.rows.length === 0) {
+        const err = new Error('No active leaving record found for this student');
+        err.statusCode = 400;
+        throw err;
+      }
+      const activeLeaving = leavingRes.rows[0];
+      const hasStudentRejoinsTable = await hasTable('student_rejoins');
+      if (!hasStudentRejoinsTable) {
+        const err = new Error(
+          'student_rejoins table is missing. Please run migration 046_create_student_rejoins.sql'
+        );
+        err.statusCode = 500;
+        throw err;
+      }
+
+      if (activeLeaving.last_academic_year_id != null) {
+        const fromYearId = Number(activeLeaving.last_academic_year_id);
+        const yearsRes = await client.query(
+          `SELECT id, year_name
+           FROM academic_years
+           WHERE id = ANY($1::int[])`,
+          [[fromYearId, Number(toAcademicYearId)]]
+        );
+        const fromRow = yearsRes.rows.find((r) => Number(r.id) === fromYearId);
+        const toRow = yearsRes.rows.find((r) => Number(r.id) === Number(toAcademicYearId));
+        const fromKey = parseYearKey(fromRow?.year_name);
+        const toKey = parseYearKey(toRow?.year_name);
+
+        const isForward = (fromKey != null && toKey != null)
+          ? toKey > fromKey
+          : Number(toAcademicYearId) > fromYearId;
+
+        if (!isForward) {
+          const err = new Error(
+            'Rejoin academic year must be greater than the student leaving academic year'
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
+      await client.query(
+        `UPDATE students
+         SET is_active = true,
+             academic_year_id = $1,
+             class_id = $2,
+             section_id = $3,
+             modified_at = NOW()
+         WHERE id = $4`,
+        [toAcademicYearId, toClassId, toSectionId, studentId]
+      );
+
+      await client.query(
+        `INSERT INTO student_rejoins (
+           student_id,
+           leaving_student_id,
+           admission_number,
+           student_first_name,
+           student_last_name,
+           from_class_id,
+           from_section_id,
+           from_academic_year_id,
+           leaving_date,
+           to_class_id,
+           to_section_id,
+           to_academic_year_id,
+           rejoin_date,
+           reason,
+           remarks,
+           rejoined_by,
+           created_by
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8, $9,
+           $10, $11, $12, $13, $14, $15, $16, $17
+         )`,
+        [
+          studentId,
+          activeLeaving.id,
+          activeLeaving.admission_number ?? null,
+          activeLeaving.student_first_name ?? null,
+          activeLeaving.student_last_name ?? null,
+          activeLeaving.last_class_id ?? student.class_id ?? null,
+          activeLeaving.last_section_id ?? student.section_id ?? null,
+          activeLeaving.last_academic_year_id ?? student.academic_year_id ?? null,
+          activeLeaving.leaving_date ?? null,
+          toClassId,
+          toSectionId,
+          toAcademicYearId,
+          rejoinDate,
+          rejoinReason,
+          rejoinRemarks,
+          rejoinedByUserId,
+          userId,
+        ]
+      );
+
+      await reactivateLinkedAccountsForRejoinedStudent(client, student);
+
+      const stampedRemark = rejoinRemarks
+        ? `Rejoined: ${rejoinRemarks}`
+        : 'Rejoined';
+      await client.query(
+        `UPDATE leaving_students
+         SET is_active = false,
+             remarks = CASE
+               WHEN remarks IS NULL OR TRIM(remarks) = '' THEN $1
+               ELSE remarks || E'\n' || $1
+             END,
+             modified_at = NOW()
+         WHERE id = $2`,
+        [stampedRemark, activeLeaving.id]
+      );
+
+      const impactedClassIds = new Set();
+      const impactedSectionIds = new Set();
+      if (student.class_id != null) impactedClassIds.add(Number(student.class_id));
+      if (toClassId != null) impactedClassIds.add(Number(toClassId));
+      if (student.section_id != null) impactedSectionIds.add(Number(student.section_id));
+      if (toSectionId != null) impactedSectionIds.add(Number(toSectionId));
+
+      const canUpdateClassStudentCount = await hasColumn('classes', 'no_of_students');
+      const canUpdateSectionStudentCount = await hasColumn('sections', 'no_of_students');
+
+      if (canUpdateClassStudentCount && impactedClassIds.size > 0) {
+        await client.query(
+          `UPDATE classes c
+           SET no_of_students = COALESCE(s.cnt, 0),
+               modified_at = NOW()
+           FROM (
+             SELECT class_id, COUNT(*)::int AS cnt
+             FROM students
+             WHERE is_active = true AND class_id = ANY($1::int[])
+             GROUP BY class_id
+           ) s
+           WHERE c.id = s.class_id`,
+          [[...impactedClassIds]]
+        );
+        await client.query(
+          `UPDATE classes
+           SET no_of_students = 0,
+               modified_at = NOW()
+           WHERE id = ANY($1::int[])
+             AND id NOT IN (
+               SELECT class_id
+               FROM students
+               WHERE is_active = true AND class_id = ANY($1::int[])
+             )`,
+          [[...impactedClassIds]]
+        );
+      }
+
+      if (canUpdateSectionStudentCount && impactedSectionIds.size > 0) {
+        await client.query(
+          `UPDATE sections sct
+           SET no_of_students = COALESCE(s.cnt, 0),
+               modified_at = NOW()
+           FROM (
+             SELECT section_id, COUNT(*)::int AS cnt
+             FROM students
+             WHERE is_active = true AND section_id = ANY($1::int[])
+             GROUP BY section_id
+           ) s
+           WHERE sct.id = s.section_id`,
+          [[...impactedSectionIds]]
+        );
+        await client.query(
+          `UPDATE sections
+           SET no_of_students = 0,
+               modified_at = NOW()
+           WHERE id = ANY($1::int[])
+             AND id NOT IN (
+               SELECT section_id
+               FROM students
+               WHERE is_active = true AND section_id = ANY($1::int[])
+             )`,
+          [[...impactedSectionIds]]
+        );
+      }
+    });
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student rejoined successfully',
+      data: { student_id: studentId },
+    });
+  } catch (error) {
+    console.error('Error rejoining student:', error);
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: error.message || 'Invalid rejoin request',
+      });
+    }
+    if (error.statusCode === 500) {
+      return res.status(500).json({
+        status: 'ERROR',
+        message: error.message || 'Failed to rejoin student',
+      });
+    }
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to rejoin student',
     });
   }
 };
@@ -1789,6 +2134,7 @@ const getStudentPromotions = async (req, res) => {
       LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
       LEFT JOIN staff st ON st.id = sp.promoted_by
       ${whereClause}
+      AND s.deleted_at IS NULL
       ORDER BY sp.promotion_date DESC, sp.id DESC
       LIMIT ${limitParam}`,
       params
@@ -1834,6 +2180,7 @@ const getLeavingStudents = async (req, res) => {
          ls.reason,
          ls.remarks,
          ls.left_by,
+         COALESCE(ls.is_active, true) AS is_active,
          ls.created_at,
          ls.modified_at,
          jc.class_name AS joining_class_name,
@@ -1852,7 +2199,6 @@ const getLeavingStudents = async (req, res) => {
        LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
        LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
        LEFT JOIN staff st ON st.id = ls.left_by
-       WHERE COALESCE(ls.is_active, true) = true
        ORDER BY ls.leaving_date DESC, ls.id DESC
        LIMIT $1`,
       [limit]
@@ -1869,6 +2215,82 @@ const getLeavingStudents = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to fetch leaving students',
+    });
+  }
+};
+
+// Get rejoined students history with from/to snapshots and actor names.
+const getStudentRejoins = async (req, res) => {
+  try {
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
+
+    const exists = await hasTable('student_rejoins');
+    if (!exists) {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Student rejoins table not available yet',
+        data: [],
+        count: 0,
+      });
+    }
+
+    const result = await query(
+      `SELECT
+         sr.id,
+         sr.student_id,
+         sr.leaving_student_id,
+         sr.admission_number,
+         sr.student_first_name,
+         sr.student_last_name,
+         sr.from_class_id,
+         sr.from_section_id,
+         sr.from_academic_year_id,
+         sr.leaving_date,
+         sr.to_class_id,
+         sr.to_section_id,
+         sr.to_academic_year_id,
+         sr.rejoin_date,
+         sr.reason,
+         sr.remarks,
+         sr.rejoined_by,
+         sr.created_at,
+         sr.modified_at,
+         fc.class_name AS from_class_name,
+         fs.section_name AS from_section_name,
+         fay.year_name AS from_academic_year_name,
+         tc.class_name AS to_class_name,
+         ts.section_name AS to_section_name,
+         tay.year_name AS to_academic_year_name,
+         u.username AS rejoined_by_username,
+         st.first_name AS rejoined_by_first_name,
+         st.last_name AS rejoined_by_last_name
+       FROM student_rejoins sr
+       LEFT JOIN classes fc ON fc.id = sr.from_class_id
+       LEFT JOIN sections fs ON fs.id = sr.from_section_id
+       LEFT JOIN academic_years fay ON fay.id = sr.from_academic_year_id
+       LEFT JOIN classes tc ON tc.id = sr.to_class_id
+       LEFT JOIN sections ts ON ts.id = sr.to_section_id
+       LEFT JOIN academic_years tay ON tay.id = sr.to_academic_year_id
+       LEFT JOIN users u ON u.id = sr.rejoined_by
+       LEFT JOIN staff st ON st.user_id = u.id
+       WHERE COALESCE(sr.is_active, true) = true AND sr.deleted_at IS NULL
+       ORDER BY sr.rejoin_date DESC, sr.id DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student rejoins fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching student rejoins:', error);
+    res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch student rejoins',
     });
   }
 };
@@ -1899,23 +2321,173 @@ const getAllStudents = async (req, res) => {
       offset = p.offset;
     }
 
-    const countWhere = hasAcademicYearFilter ? ' WHERE academic_year_id = $1' : '';
+    const countQuery = hasAcademicYearFilter
+      ? `WITH historical_promotions AS (
+           SELECT DISTINCT ON (sp.student_id)
+             sp.student_id
+           FROM student_promotions sp
+           INNER JOIN students s ON s.id = sp.student_id
+           WHERE sp.from_academic_year_id = $1
+             AND COALESCE(sp.status, 'promoted') = 'promoted'
+             AND COALESCE(s.is_active, true) = true
+             AND COALESCE(s.academic_year_id, 0) <> $1
+             AND COALESCE(sp.to_academic_year_id, 0) = COALESCE(s.academic_year_id, 0)
+             AND COALESCE(sp.to_academic_year_id, 0) <> COALESCE(sp.from_academic_year_id, 0)
+             AND (
+               COALESCE(sp.from_class_id, 0) <> COALESCE(sp.to_class_id, 0)
+               OR COALESCE(sp.from_section_id, 0) <> COALESCE(sp.to_section_id, 0)
+               OR COALESCE(sp.from_academic_year_id, 0) <> COALESCE(sp.to_academic_year_id, 0)
+             )
+           ORDER BY sp.student_id, COALESCE(sp.promotion_date, sp.created_at) DESC, sp.id DESC
+         )
+         SELECT (
+           (SELECT COUNT(*) FROM students WHERE academic_year_id = $1 AND deleted_at IS NULL)
+           +
+           (SELECT COUNT(*) FROM historical_promotions)
+         )::int AS total`
+      : 'SELECT COUNT(*)::int as total FROM students WHERE deleted_at IS NULL';
     const countParams = hasAcademicYearFilter ? [academicYearId] : [];
-    const countResult = await query(
-      `SELECT COUNT(*)::int as total FROM students${countWhere}`,
-      countParams
-    );
+    const countResult = await query(countQuery, countParams);
     const total = countResult.rows[0].total;
 
-    const whereClause = hasAcademicYearFilter ? ' WHERE s.academic_year_id = $1' : '';
-    const orderLimitOffset = hasAcademicYearFilter
-      ? ' ORDER BY s.first_name ASC, s.last_name ASC LIMIT $2 OFFSET $3'
-      : ' ORDER BY s.first_name ASC, s.last_name ASC LIMIT $1 OFFSET $2';
     const selectParams = hasAcademicYearFilter
       ? [academicYearId, limit, offset]
       : [limit, offset];
 
-    const result = await query(`
+    const result = await query(hasAcademicYearFilter
+      ? `
+      WITH historical_promotions AS (
+        SELECT DISTINCT ON (sp.student_id)
+          sp.student_id,
+          sp.from_class_id,
+          sp.from_section_id
+        FROM student_promotions sp
+        INNER JOIN students s ON s.id = sp.student_id
+        WHERE sp.from_academic_year_id = $1
+          AND COALESCE(sp.status, 'promoted') = 'promoted'
+          AND COALESCE(s.is_active, true) = true
+          AND COALESCE(s.academic_year_id, 0) <> $1
+          AND COALESCE(sp.to_academic_year_id, 0) = COALESCE(s.academic_year_id, 0)
+          AND COALESCE(sp.to_academic_year_id, 0) <> COALESCE(sp.from_academic_year_id, 0)
+          AND (
+            COALESCE(sp.from_class_id, 0) <> COALESCE(sp.to_class_id, 0)
+            OR COALESCE(sp.from_section_id, 0) <> COALESCE(sp.to_section_id, 0)
+            OR COALESCE(sp.from_academic_year_id, 0) <> COALESCE(sp.to_academic_year_id, 0)
+          )
+        ORDER BY sp.student_id, COALESCE(sp.promotion_date, sp.created_at) DESC, sp.id DESC
+      ),
+      combined_students AS (
+        SELECT
+          s.id,
+          s.admission_number,
+          s.roll_number,
+          s.gr_number,
+          s.first_name,
+          s.last_name,
+          s.gender,
+          s.date_of_birth,
+          s.place_of_birth,
+          s.blood_group_id,
+          s.religion_id,
+          s.cast_id,
+          s.mother_tongue_id,
+          s.nationality,
+          s.phone,
+          s.email,
+          s.address,
+          s.user_id,
+          s.academic_year_id,
+          s.class_id,
+          s.section_id,
+          s.house_id,
+          s.admission_date,
+          s.previous_school,
+          s.photo_url,
+          s.is_transport_required,
+          s.route_id,
+          s.pickup_point_id,
+          s.is_hostel_required,
+          s.hostel_room_id,
+          s.guardian_id,
+          COALESCE(s.is_active, true) AS is_active,
+          s.created_at,
+          ${STUDENT_CONTACT_LATERAL_SELECT},
+          COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+          COALESCE(s.permanent_address, addr.permanent_address) as permanent_address,
+          1 AS source_order
+        FROM students s
+        ${STUDENT_CONTACT_LATERAL_JOINS}
+        LEFT JOIN LATERAL (
+          SELECT current_address, permanent_address 
+          FROM addresses 
+          WHERE user_id = s.user_id 
+          ORDER BY id DESC 
+          LIMIT 1
+        ) addr ON true
+        WHERE s.academic_year_id = $1 AND s.deleted_at IS NULL
+
+        UNION ALL
+
+        SELECT
+          s.id,
+          s.admission_number,
+          s.roll_number,
+          s.gr_number,
+          s.first_name,
+          s.last_name,
+          s.gender,
+          s.date_of_birth,
+          s.place_of_birth,
+          s.blood_group_id,
+          s.religion_id,
+          s.cast_id,
+          s.mother_tongue_id,
+          s.nationality,
+          s.phone,
+          s.email,
+          s.address,
+          s.user_id,
+          $1 AS academic_year_id,
+          hp.from_class_id AS class_id,
+          hp.from_section_id AS section_id,
+          s.house_id,
+          s.admission_date,
+          s.previous_school,
+          s.photo_url,
+          s.is_transport_required,
+          s.route_id,
+          s.pickup_point_id,
+          s.is_hostel_required,
+          s.hostel_room_id,
+          s.guardian_id,
+          false AS is_active,
+          s.created_at,
+          ${STUDENT_CONTACT_LATERAL_SELECT},
+          COALESCE(s.current_address, addr.current_address, s.address) as current_address,
+          COALESCE(s.permanent_address, addr.permanent_address) as permanent_address,
+          2 AS source_order
+        FROM historical_promotions hp
+        INNER JOIN students s ON s.id = hp.student_id
+        ${STUDENT_CONTACT_LATERAL_JOINS}
+        LEFT JOIN LATERAL (
+          SELECT current_address, permanent_address 
+          FROM addresses 
+          WHERE user_id = s.user_id 
+          ORDER BY id DESC 
+          LIMIT 1
+        ) addr ON true
+      )
+      SELECT
+        cs.*,
+        c.class_name,
+        sec.section_name
+      FROM combined_students cs
+      LEFT JOIN classes c ON cs.class_id = c.id
+      LEFT JOIN sections sec ON cs.section_id = sec.id
+      ORDER BY cs.first_name ASC, cs.last_name ASC, cs.source_order ASC
+      LIMIT $2 OFFSET $3
+    `
+      : `
       SELECT
         s.id,
         s.admission_number,
@@ -1966,15 +2538,19 @@ const getAllStudents = async (req, res) => {
         ORDER BY id DESC 
         LIMIT 1
       ) addr ON true
-      ${whereClause}
-      ${orderLimitOffset}
+      WHERE s.deleted_at IS NULL
+      ORDER BY s.first_name ASC, s.last_name ASC LIMIT $1 OFFSET $2
     `, selectParams);
+
+    const responseRows = hasAcademicYearFilter
+      ? result.rows.map(({ source_order, ...row }) => row)
+      : result.rows;
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Students fetched successfully',
-      data: result.rows,
-      count: result.rows.length,
+      data: responseRows,
+      count: responseRows.length,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
     });
   } catch (error) {
@@ -2030,7 +2606,7 @@ const getTeacherStudents = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       WHERE s.is_active = true AND (
+       WHERE s.is_active = true AND s.deleted_at IS NULL AND (
          EXISTS (
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = ANY($1::int[])
@@ -2085,9 +2661,9 @@ const getStudentById = async (req, res) => {
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id,
+      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id, s.vehicle_number,
+      tr.route_name as route_name, tpp.point_name as pickup_point_name,
       s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
-      s.sibiling_1, s.sibiling_2, s.sibiling_1_class, s.sibiling_2_class,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
@@ -2102,21 +2678,7 @@ const getStudentById = async (req, res) => {
       bg.blood_group as blood_group_name,
       cast_t.cast_name,
       mt.language_name as mother_tongue_name,
-      NULL::varchar AS father_name,
-      NULL::varchar AS father_email,
-      NULL::varchar AS father_phone,
-      NULL::varchar AS father_occupation,
-      NULL::varchar AS mother_name,
-      NULL::varchar AS mother_email,
-      NULL::varchar AS mother_phone,
-      NULL::varchar AS mother_occupation,
-      NULL::varchar AS guardian_first_name,
-      NULL::varchar AS guardian_last_name,
-      NULL::varchar AS guardian_phone,
-      NULL::varchar AS guardian_email,
-      NULL::varchar AS guardian_occupation,
-      NULL::varchar AS guardian_relation,
-      NULL::text AS guardian_address,
+      ${STUDENT_CONTACT_LATERAL_SELECT},
       COALESCE(s.current_address, addr.current_address, s.address) as current_address,
       COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
     const fromAndJoins = `
@@ -2130,6 +2692,9 @@ const getStudentById = async (req, res) => {
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
+      LEFT JOIN routes tr ON s.route_id = tr.id
+      LEFT JOIN pickup_points tpp ON s.pickup_point_id = tpp.id
+      ${STUDENT_CONTACT_LATERAL_JOINS}
       LEFT JOIN LATERAL (
         SELECT current_address, permanent_address 
         FROM addresses 
@@ -2137,7 +2702,7 @@ const getStudentById = async (req, res) => {
         ORDER BY id DESC 
         LIMIT 1
       ) addr ON true`;
-    const whereClause = ` WHERE s.id = $1`;
+    const whereClause = ` WHERE s.id = $1 AND s.deleted_at IS NULL`;
 
     let result;
     try {
@@ -2193,12 +2758,10 @@ const getStudentById = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
     try {
-      const merged = await loadStudentContactLegacyFields(query, sid);
-      if (merged) Object.assign(studentData, merged);
       const ids = await loadStudentLinkedUserIds(query, sid);
       Object.assign(studentData, ids);
     } catch (e) {
-      console.warn('getStudentById: guardian contact merge', e.message);
+      console.warn('getStudentById: user IDs merge', e.message);
     }
     try {
       const extra = await query(
@@ -2351,6 +2914,19 @@ const getStudentById = async (req, res) => {
         }
       } catch (e) { }
     }
+    // Fetch Siblings
+    try {
+      const sibsRes = await query(
+        `SELECT is_in_same_school, name, class_name, section_name, roll_number, admission_number 
+         FROM student_siblings WHERE student_id = $1 ORDER BY id ASC`,
+        [sid]
+      );
+      studentData.siblings = sibsRes.rows;
+    } catch (e) {
+      console.warn('getStudentById: could not fetch siblings:', e.message);
+      studentData.siblings = [];
+    }
+
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.status(200).json({
       status: 'SUCCESS',
@@ -2401,8 +2977,8 @@ const getStudentLoginDetails = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true
-       WHERE s.id = $1 AND s.is_active = true
+       LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true AND u.deleted_at IS NULL
+       WHERE s.id = $1 AND s.is_active = true AND s.deleted_at IS NULL
        LIMIT 1`,
       [id]
     );
@@ -2423,8 +2999,8 @@ const getStudentLoginDetails = async (req, res) => {
       const parRes = await query(
         `SELECT DISTINCT u.id, u.username, u.email, u.phone
          FROM guardians g
-         INNER JOIN users u ON u.id = g.user_id AND u.is_active = true
-         WHERE g.student_id = $1 AND g.is_active = true
+         INNER JOIN users u ON u.id = g.user_id
+         WHERE g.student_id = $1
            AND u.role_id = $2`,
         [id, ROLES.PARENT]
       );
@@ -2450,7 +3026,7 @@ const getStudentLoginDetails = async (req, res) => {
       const gRes = await query(
         `SELECT u.username, u.email, u.phone
          FROM guardians g
-         JOIN users u ON u.id = g.user_id AND u.is_active = true
+         JOIN users u ON u.id = g.user_id
          WHERE g.student_id = $1 AND g.user_id IS NOT NULL
          LIMIT 1`,
         [id]
@@ -2861,13 +3437,45 @@ const getStudentAttendance = async (req, res) => {
       return res.status(access.status || 403).json({ status: 'ERROR', message: access.message || 'Access denied' });
     }
 
+    const resolveLinkedStudentIds = async (requestedStudentId) => {
+      const sid = parseId(requestedStudentId);
+      if (!sid) return [];
+      const baseRes = await query(
+        `SELECT id, user_id, admission_number, roll_number
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (!baseRes.rows.length) return [sid];
+      const base = baseRes.rows[0];
+      const baseUserId = parseId(base.user_id);
+      const baseAdmissionNo = String(base.admission_number || '').trim();
+      const baseRollNo = String(base.roll_number || '').trim();
+      const linked = await query(
+        `SELECT id
+         FROM students
+         WHERE ($1::int IS NOT NULL AND user_id = $1)
+            OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
+            OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
+            OR id = $4`,
+        [baseUserId, baseAdmissionNo, baseRollNo, sid]
+      );
+      const ids = (linked.rows || [])
+        .map((r) => parseId(r.id))
+        .filter(Boolean);
+      if (!ids.length) return [sid];
+      return [...new Set(ids)];
+    };
+
+    const scopedStudentIds = await resolveLinkedStudentIds(studentId);
     const result = await query(
       `SELECT id, student_id, class_id, section_id, attendance_date, status, 
               check_in_time, check_out_time, marked_by, remarks
        FROM attendance
-       WHERE student_id = $1
+       WHERE student_id = ANY($1::int[])
        ORDER BY attendance_date DESC`,
-      [studentId]
+      [scopedStudentIds]
     );
 
     const normalizeStatus = (s) => {
@@ -2930,6 +3538,63 @@ const getStudentAttendance = async (req, res) => {
   }
 };
 
+const EXAM_SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
+let examSchemaCache = {
+  value: null,
+  expiresAt: 0,
+  pending: null,
+};
+
+const loadExamSchemaCapabilities = async () => {
+  const now = Date.now();
+  if (examSchemaCache.value && examSchemaCache.expiresAt > now) {
+    return examSchemaCache.value;
+  }
+  if (examSchemaCache.pending) {
+    return examSchemaCache.pending;
+  }
+
+  examSchemaCache.pending = (async () => {
+    const schemaCols = await query(
+      `SELECT table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
+    );
+    const examSubjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+    const examResultsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'exam_results')
+        .map((r) => String(r.column_name))
+    );
+    const subjectsCols = new Set(
+      (schemaCols.rows || [])
+        .filter((r) => r.table_name === 'subjects' && ['practical_hours'].includes(r.column_name))
+        .map((r) => String(r.column_name))
+    );
+
+    return {
+      hasEsComponent: examSubjectsCols.has('exam_component'),
+      hasErComponent: examResultsCols.has('exam_component'),
+      hasPracticalHours: subjectsCols.has('practical_hours'),
+      examResultsCols: Array.from(examResultsCols),
+    };
+  })();
+
+  try {
+    const value = await examSchemaCache.pending;
+    examSchemaCache.value = value;
+    examSchemaCache.expiresAt = Date.now() + EXAM_SCHEMA_CACHE_TTL_MS;
+    return value;
+  } finally {
+    examSchemaCache.pending = null;
+  }
+};
+
 // Get exam results for a student (from exams & exam_results tables)
 // This endpoint is read-only and designed to be schema-tolerant:
 // - Uses modified_at (not updated_at) when available
@@ -2939,6 +3604,28 @@ const getStudentExamResults = async (req, res) => {
     const resolveLatestLinkedStudentId = async (studentId) => {
       const sid = parseId(studentId);
       if (!sid) return null;
+      // Keep requested historical row when it already has exam history.
+      const hasExamHistory = await query(
+        `SELECT 1
+         FROM exam_results
+         WHERE student_id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (hasExamHistory.rows?.length) return sid;
+
+      // If requested row is already inactive (left student), preserve exact historical row.
+      // Remapping to another active row can hide this student's own old exam records.
+      const requested = await query(
+        `SELECT id, COALESCE(is_active, true) AS is_active
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (!requested.rows?.length) return sid;
+      if (requested.rows[0].is_active === false) return sid;
+
       const latest = await query(
         `WITH base AS (
            SELECT id, user_id, admission_number, roll_number
@@ -2976,33 +3663,19 @@ const getStudentExamResults = async (req, res) => {
     // Normalize to latest active row of the same user so exam pages stay consistent.
     const studentId = await resolveLatestLinkedStudentId(requestedStudentId);
 
-    const schemaCols = await query(
-      `SELECT table_name, column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
-    );
-    const examSubjectsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
-    const examResultsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'exam_results' && ['exam_component'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
-    const subjectsCols = new Set(
-      (schemaCols.rows || [])
-        .filter((r) => r.table_name === 'subjects' && ['practical_hours'].includes(r.column_name))
-        .map((r) => String(r.column_name))
-    );
+    const { hasEsComponent, hasErComponent, hasPracticalHours, examResultsCols } = await loadExamSchemaCapabilities();
+    const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    const coalesceExpr = (candidates, fallbackSql) => {
+      const cols = candidates.filter((c) => erCols.has(c)).map((c) => `er.${c}`);
+      if (cols.length === 0) return fallbackSql;
+      return `COALESCE(${cols.join(', ')}, ${fallbackSql})`;
+    };
+    const marksExpr = coalesceExpr(['marks_obtained', 'obtained_marks', 'marks', 'marks_scored', 'score'], 'NULL');
+    const absentExpr = erCols.has('is_absent') ? 'COALESCE(er.is_absent, false)' : 'false';
+    const maxMarksExpr = coalesceExpr(['max_marks', 'total_marks'], '100');
+    const passMarksExpr = coalesceExpr(['min_marks', 'pass_marks', 'min_mark', 'min'], '35');
 
-    const hasEsComponent = examSubjectsCols.has('exam_component');
-    const hasErComponent = examResultsCols.has('exam_component');
-    const hasPracticalHours = subjectsCols.has('practical_hours');
-
-    const rows = await query(
+    let rows = await query(
       `SELECT
          es.exam_id,
          e.exam_name,
@@ -3015,8 +3688,8 @@ const getStudentExamResults = async (req, res) => {
          COALESCE(es.passing_marks, 35) AS passing_marks,
          ${hasEsComponent ? 'es.exam_component' : "NULL::text AS exam_component"},
          ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-         er.marks_obtained,
-         COALESCE(er.is_absent, false) AS is_absent
+         ${marksExpr} AS marks_obtained,
+         ${absentExpr} AS is_absent
        FROM students st
        INNER JOIN exam_subjects es
          ON es.class_id = st.class_id
@@ -3032,6 +3705,41 @@ const getStudentExamResults = async (req, res) => {
        ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
       [studentId]
     );
+
+    // Leaving/inactive students can lose class/section mapping; in that case,
+    // fallback to direct exam_results history so latest result still opens in popup.
+    if (!rows.rows || rows.rows.length === 0) {
+      rows = await query(
+        `SELECT
+           er.exam_id,
+           e.exam_name,
+           e.exam_type,
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+           er.subject_id,
+           s.subject_name,
+           s.subject_code,
+           COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+           COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+           ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+           ${marksExpr} AS marks_obtained,
+           ${absentExpr} AS is_absent
+         FROM exam_results er
+         LEFT JOIN exams e ON e.id = er.exam_id
+         LEFT JOIN subjects s ON s.id = er.subject_id
+         LEFT JOIN exam_subjects es
+           ON es.exam_id = er.exam_id
+          AND es.subject_id = er.subject_id
+          ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}
+         WHERE er.student_id = $1
+           AND er.exam_id IS NOT NULL
+         ORDER BY
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST,
+           er.exam_id DESC,
+           s.subject_name ASC`,
+        [studentId]
+      );
+    }
 
     if (!rows.rows || rows.rows.length === 0) {
       return res.status(200).json({
@@ -3140,6 +3848,112 @@ const getStudentExamResults = async (req, res) => {
   }
 };
 
+// Batch summary: latest exam overall result per student id.
+const getStudentsLatestExamSummary = async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.student_ids) ? req.body.student_ids : [];
+    const studentIds = [...new Set(ids.map((v) => parseId(v)).filter(Boolean))];
+    if (studentIds.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'student_ids is required' });
+    }
+
+    const erColsRes = await query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'exam_results'`
+    );
+    const erCols = new Set((erColsRes.rows || []).map((r) => String(r.column_name)));
+    const obtainedCandidates = [
+      'marks_obtained',
+      'obtained_marks',
+      'marks',
+      'marks_scored',
+      'score',
+    ].filter((c) => erCols.has(c));
+    const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min'].filter((c) => erCols.has(c));
+    const hasIsAbsent = erCols.has('is_absent');
+
+    const obtainedExpr = obtainedCandidates.length > 0
+      ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const minExpr = minCandidates.length > 0
+      ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+      : '0';
+    const absentExpr = hasIsAbsent ? 'COALESCE(er.is_absent, false)' : 'false';
+    const pendingExpr = obtainedCandidates.length > 0
+      ? obtainedCandidates.map((c) => `er.${c} IS NULL`).join(' AND ')
+      : 'false';
+
+    const result = await query(
+      `WITH scoped AS (
+         SELECT
+           er.student_id,
+           er.exam_id,
+           COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+           COALESCE(e.exam_name, 'Exam') AS exam_name,
+           COALESCE(e.exam_type, '') AS exam_type
+         FROM exam_results er
+         LEFT JOIN exams e ON e.id = er.exam_id
+         WHERE er.student_id = ANY($1::int[])
+           AND er.exam_id IS NOT NULL
+       ),
+       latest_exam AS (
+         SELECT DISTINCT ON (s.student_id)
+           s.student_id, s.exam_id, s.exam_date, s.exam_name, s.exam_type
+         FROM scoped s
+         ORDER BY s.student_id, s.exam_date DESC NULLS LAST, s.exam_id DESC
+       ),
+       summary AS (
+         SELECT
+           le.student_id,
+           le.exam_id,
+           le.exam_name,
+           le.exam_type,
+           le.exam_date,
+           COUNT(*)::int AS subject_count,
+           BOOL_OR(
+             ${absentExpr} = true OR
+             ${obtainedExpr} < ${minExpr}
+           ) AS has_fail,
+           BOOL_OR(
+             ${absentExpr} = false AND
+             (${pendingExpr})
+           ) AS has_pending
+         FROM latest_exam le
+         INNER JOIN exam_results er ON er.student_id = le.student_id AND er.exam_id = le.exam_id
+         GROUP BY le.student_id, le.exam_id, le.exam_name, le.exam_type, le.exam_date
+       )
+       SELECT
+         s.student_id,
+         s.exam_id,
+         s.exam_name,
+         s.exam_type,
+         s.exam_date,
+         CASE
+           WHEN s.has_pending THEN 'Pending'
+           WHEN s.has_fail THEN 'Fail'
+           ELSE 'Pass'
+         END AS overall_result
+       FROM summary s`,
+      [studentIds]
+    );
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Latest exam summary fetched successfully',
+      data: result.rows,
+      count: result.rows.length,
+    });
+  } catch (error) {
+    console.error('Error fetching latest exam summaries:', error);
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch latest exam summaries',
+    });
+  }
+};
+
 const normalizeAttendanceStatus = (s) => {
   const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
   if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
@@ -3191,7 +4005,7 @@ const getGradeReport = async (req, res) => {
       }
     }
 
-    const scopedStudentsWhere = ['s.class_id = $1', 's.is_active = true'];
+    const scopedStudentsWhere = ['s.class_id = $1'];
     const scopedStudentsParams = [classId];
 
     if (sectionId) {
@@ -3463,7 +4277,7 @@ const getAttendanceReport = async (req, res) => {
       monthEndDate.getUTCMonth() + 1
     ).padStart(2, '0')}-01`;
 
-    const rosterWhere = ['s.is_active = true'];
+    const rosterWhere = ['1=1'];
     const rosterParams = [];
 
     if (classId) {
@@ -3730,7 +4544,35 @@ const searchStudents = async (req, res) => {
       `SELECT s.id,
         NULLIF(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))), '') AS name,
         s.admission_number AS "admissionNumber",
-        COALESCE(c.class_name, '') AS "className"
+        COALESCE(c.class_name, '') AS "className",
+        -- Check for parents (Father/Mother)
+        EXISTS (
+          SELECT 1 FROM guardians g 
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+        ) AS "hasParents",
+        (
+          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
+          FROM guardians g
+          JOIN users u ON u.id = g.user_id
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+          ORDER BY g.id ASC LIMIT 1
+        ) AS "parentName",
+        -- Check for generic guardian
+        EXISTS (
+          SELECT 1 FROM guardians g 
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+        ) AS "hasGuardian",
+        (
+          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
+          FROM guardians g
+          JOIN users u ON u.id = g.user_id
+          WHERE g.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+          ORDER BY g.id ASC LIMIT 1
+        ) AS "guardianName"
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        WHERE s.is_active = true
@@ -3747,6 +4589,10 @@ const searchStudents = async (req, res) => {
       name: r.name || `${r.admissionNumber || ''}`.trim() || `Student #${r.id}`,
       admissionNumber: r.admissionNumber || '',
       className: r.className || '',
+      hasParents: Boolean(r.hasParents),
+      parentName: r.parentName || '',
+      hasGuardian: Boolean(r.hasGuardian),
+      guardianName: r.guardianName || '',
     }));
     res.status(200).json({ status: 'SUCCESS', data: rows });
   } catch (error) {
@@ -3755,13 +4601,71 @@ const searchStudents = async (req, res) => {
   }
 };
 
+/**
+ * Delete a student record (Soft Delete).
+ * Sets deleted_at = NOW() and is_active = false for both student and linked user.
+ */
+const deleteStudent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sid = parseId(id);
+    if (!sid) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
+    }
+
+    const result = await executeTransaction(async (client) => {
+      // 1. Mark student as deleted
+      const stuUpdate = await client.query(
+        `UPDATE students 
+         SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+         WHERE id = $1 AND deleted_at IS NULL 
+         RETURNING id, user_id`,
+        [sid]
+      );
+
+      if (stuUpdate.rows.length === 0) {
+        const err = new Error('Student not found or already deleted');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const { user_id } = stuUpdate.rows[0];
+
+      // 2. Mark linked user as deleted (if exists)
+      if (user_id) {
+        await client.query(
+          `UPDATE users 
+           SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [user_id]
+        );
+      }
+
+      return sid;
+    });
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Student record deleted successfully (soft delete)',
+      data: { id: result }
+    });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Failed to delete student';
+    res.status(statusCode).json({ status: 'ERROR', message });
+  }
+};
+
 module.exports = {
   createStudent,
   updateStudent,
   promoteStudents,
   leaveStudents,
+  rejoinStudent,
   getStudentPromotions,
   getLeavingStudents,
+  getStudentRejoins,
   getAllStudents,
   getTeacherStudents,
   getStudentById,
@@ -3770,8 +4674,10 @@ module.exports = {
   getStudentsByClass,
   getStudentAttendance,
   getStudentExamResults,
+  getStudentsLatestExamSummary,
   getGradeReport,
   getAttendanceReport,
   checkAdmissionNumberUnique,
   searchStudents,
+  deleteStudent,
 };

@@ -201,9 +201,6 @@ const Religion = () => {
           <div className="row">
             <div className="col-xxl-2 col-xl-3">
               <div className="pt-3 d-flex flex-column list-group mb-4">
-                <Link to={route.schoolSettings} className="d-block rounded p-2">
-                  School Settings
-                </Link>
                 <Link
                   to={route.religion}
                   className="d-block rounded active p-2"
@@ -410,3 +407,4 @@ const Religion = () => {
 };
 
 export default Religion;
+

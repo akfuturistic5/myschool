@@ -140,3 +140,4 @@ export const classstudentreport= [
          parentimg:"assets/img/parents/parent-01.jpg"
     }
 ];
+

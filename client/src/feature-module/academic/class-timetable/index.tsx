@@ -245,7 +245,10 @@ const ClassTimetable = () => {
   const [filterSectionId, setFilterSectionId] = useState("");
 
   const { classes = [] } = useClasses(academicYearId ?? undefined);
-  const { sections = [] } = useSections(filterClassId || null);
+  const { sections = [] } = useSections(filterClassId || null, {
+    fetchAllWhenNoClass: false,
+    academicYearId: academicYearId ?? null,
+  });
   const { subjects = [] } = useSubjects(filterClassId ? Number(filterClassId) : null, { fetchAllWhenNoClass: false });
   const { teachers = [] } = useTeachers();
 
@@ -264,12 +267,26 @@ const ClassTimetable = () => {
     skip: !selectionReady,
   });
 
-  const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => [
-    { value: "", label: "Select" },
-    ...arr.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) })),
-  ];
+  const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => {
+    const seen = new Set<string>();
+    const deduped = arr.filter((x: any) => {
+      const label = String(x?.[labelKey] ?? x?.[valueKey] ?? "").trim().toLowerCase();
+      if (!label) return false;
+      if (seen.has(label)) return false;
+      seen.add(label);
+      return true;
+    });
+    return [
+      { value: "", label: "Select" },
+      ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) })),
+    ];
+  };
 
-  const classOptions = options(classes, "id", "class_name");
+  const yearScopedClasses = useMemo(
+    () => classes.filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId)),
+    [classes, academicYearId]
+  );
+  const classOptions = options(yearScopedClasses, "id", "class_name");
   const sectionOptions = options(sections, "id", "section_name");
   const subjectOptions: Opt[] = useMemo(() => {
     const rows = Array.isArray(subjects) ? subjects : [];
@@ -537,3 +554,8 @@ const ClassTimetable = () => {
 };
 
 export default ClassTimetable;
+
+
+
+
+

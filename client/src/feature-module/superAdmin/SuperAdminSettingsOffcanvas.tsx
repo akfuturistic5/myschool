@@ -334,3 +334,4 @@ const SuperAdminSettingsOffcanvas = ({ open, onClose }: Props) => {
 };
 
 export default SuperAdminSettingsOffcanvas;
+

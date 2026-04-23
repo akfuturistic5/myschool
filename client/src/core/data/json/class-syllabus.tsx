@@ -90,3 +90,4 @@ export const classSyllabus = [
 		key:9,
 	}
 ];
+

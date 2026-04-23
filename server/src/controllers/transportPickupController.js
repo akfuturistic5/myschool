@@ -2,6 +2,7 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapPickupRow(row) {
   return {
@@ -16,21 +17,33 @@ function mapPickupRow(row) {
 
 const getAllPickupPoints = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     if (scopedDriverId != null) {
       const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
       if (routeIds.length === 0) {
         return success(res, 200, 'Pickup points fetched successfully', [], { total: 0, page: 1, limit: 0 });
       }
-      const result = await query(
-        `SELECT DISTINCT pp.*
-         FROM pickup_points pp
-         JOIN route_stops rs ON rs.pickup_point_id = pp.id
-         WHERE pp.deleted_at IS NULL
-           AND rs.route_id = ANY($1::int[])
-         ORDER BY pp.point_name ASC`,
-        [routeIds]
-      );
+      const result = hasRouteStops
+        ? await query(
+            `SELECT DISTINCT pp.*
+             FROM pickup_points pp
+             JOIN route_stops rs ON rs.pickup_point_id = pp.id
+             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
+               AND rs.route_id = ANY($1::int[])
+             ORDER BY pp.point_name ASC`,
+            [routeIds]
+          )
+        : await query(
+            `SELECT DISTINCT pp.*
+             FROM pickup_points pp
+             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
+               AND pp.route_id = ANY($1::int[])
+             ORDER BY pp.point_name ASC`,
+            [routeIds]
+          );
       const data = result.rows.map(mapPickupRow);
       return success(res, 200, 'Pickup points fetched successfully', data, {
         total: data.length,
@@ -48,7 +61,7 @@ const getAllPickupPoints = async (req, res) => {
       sortField = 'point_name', 
       sortOrder = 'ASC' 
     } = req.query;
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['point_name', 'id', 'created_at', 'is_active'];
@@ -58,7 +71,7 @@ const getAllPickupPoints = async (req, res) => {
 
     let baseSql = `
       FROM pickup_points
-      WHERE deleted_at IS NULL
+      WHERE ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
     `;
     
     const params = [];
@@ -73,7 +86,7 @@ const getAllPickupPoints = async (req, res) => {
       params.push(status === 'active');
       sqlFilters += ` AND is_active = $${params.length}`;
     }
-    if (scopedAcademicYearId) {
+    if (hasAcademicYearId && scopedAcademicYearId) {
       params.push(scopedAcademicYearId);
       sqlFilters += ` AND academic_year_id = $${params.length}`;
     }
@@ -111,11 +124,13 @@ const getAllPickupPoints = async (req, res) => {
 const getPickupPointById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const result = await query(`
       SELECT *
       FROM pickup_points
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
     `, [id]);
 
     if (result.rows.length === 0) {
@@ -126,14 +141,23 @@ const getPickupPointById = async (req, res) => {
       if (routeIds.length === 0) {
         return errorResponse(res, 403, 'Access denied');
       }
-      const scoped = await query(
-        `SELECT 1
-         FROM route_stops
-         WHERE pickup_point_id = $1
-           AND route_id = ANY($2::int[])
-         LIMIT 1`,
-        [id, routeIds]
-      );
+      const scoped = hasRouteStops
+        ? await query(
+            `SELECT 1
+             FROM route_stops
+             WHERE pickup_point_id = $1
+               AND route_id = ANY($2::int[])
+             LIMIT 1`,
+            [id, routeIds]
+          )
+        : await query(
+            `SELECT 1
+             FROM pickup_points
+             WHERE id = $1
+               AND route_id = ANY($2::int[])
+             LIMIT 1`,
+            [id, routeIds]
+          );
       if (scoped.rows.length === 0) {
         return errorResponse(res, 403, 'Access denied');
       }
@@ -147,6 +171,8 @@ const getPickupPointById = async (req, res) => {
 
 const createPickupPoint = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { 
       point_name, 
       academic_year_id,
@@ -157,21 +183,35 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'Pickup point name is required');
     }
 
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
+    const scopedAcademicYearId = hasAcademicYearId
+      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+      : null;
 
     // Check for duplicate name
-    const existing = await query(
-      'SELECT id FROM pickup_points WHERE point_name = $1 AND deleted_at IS NULL AND academic_year_id = $2',
-      [point_name, scopedAcademicYearId]
-    );
+    const existing = hasAcademicYearId
+      ? await query(
+          `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'} AND academic_year_id = $2`,
+          [point_name, scopedAcademicYearId]
+        )
+      : await query(
+          `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
+          [point_name]
+        );
     if (existing.rows.length > 0) {
       return errorResponse(res, 400, 'A pickup point with this name already exists');
     }
 
-    const result = await query(`
-      INSERT INTO pickup_points (point_name, is_active, academic_year_id) VALUES ($1, $2, $3) 
-      RETURNING *
-    `, [point_name, is_active !== false, scopedAcademicYearId]);
+    const result = hasAcademicYearId
+      ? await query(
+          `INSERT INTO pickup_points (point_name, is_active, academic_year_id) VALUES ($1, $2, $3) 
+           RETURNING *`,
+          [point_name, is_active !== false, scopedAcademicYearId]
+        )
+      : await query(
+          `INSERT INTO pickup_points (point_name, is_active) VALUES ($1, $2)
+           RETURNING *`,
+          [point_name, is_active !== false]
+        );
 
     return success(res, 201, 'Pickup point created successfully', mapPickupRow(result.rows[0]));
   } catch (error) {
@@ -182,6 +222,8 @@ const createPickupPoint = async (req, res) => {
 
 const updatePickupPoint = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
+    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { id } = req.params;
     const numericId = parseInt(id);
 
@@ -201,7 +243,7 @@ const updatePickupPoint = async (req, res) => {
         return errorResponse(res, 400, 'Pickup point name cannot be empty');
       }
       const existing = await query(
-        'SELECT id FROM pickup_points WHERE point_name = $1 AND id != $2 AND deleted_at IS NULL',
+        `SELECT id FROM pickup_points WHERE point_name = $1 AND id != $2 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
         [point_name, numericId]
       );
       if (existing.rows.length > 0) {
@@ -221,7 +263,7 @@ const updatePickupPoint = async (req, res) => {
       updates.push(`is_active = $${i++}`);
       values.push(is_active !== false);
     }
-    if (academic_year_id !== undefined) {
+    if (hasAcademicYearId && academic_year_id !== undefined) {
       updates.push(`academic_year_id = $${i++}`);
       values.push(toPositiveInt(academic_year_id));
     }
@@ -234,7 +276,7 @@ const updatePickupPoint = async (req, res) => {
     const result = await query(`
       UPDATE pickup_points
       SET ${updates.join(', ')}
-      WHERE id = $${i} AND deleted_at IS NULL
+      WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
       RETURNING *
     `, values);
 
@@ -252,16 +294,22 @@ const updatePickupPoint = async (req, res) => {
 const deletePickupPoint = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const numericId = parseInt(id);
 
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid pickup point ID');
     }
 
-    const result = await query(
-      'UPDATE pickup_points SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-      [numericId]
-    );
+    const result = hasDeletedAt
+      ? await query(
+          'UPDATE pickup_points SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+          [numericId]
+        )
+      : await query(
+          'UPDATE pickup_points SET is_active = false WHERE id = $1 RETURNING id',
+          [numericId]
+        );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Pickup point not found or already deleted');

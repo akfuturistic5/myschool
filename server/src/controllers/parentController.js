@@ -11,6 +11,7 @@ const {
   normalizeTenantProfilePath,
   createOrReuseParentUser,
   assignFatherGuardian,
+  parseFullName,
 } = require('../services/parentFlowService');
 const {
   syncStudentGuardians,
@@ -28,8 +29,6 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       s.id,
       s.id AS student_id,
       ${STUDENT_CONTACT_LATERAL_SELECT},
-      NULL::text AS father_image_url,
-      NULL::text AS mother_image_url,
       s.created_at,
       s.modified_at AS updated_at,
       s.first_name AS student_first_name,
@@ -215,15 +214,38 @@ const updateParent = async (req, res) => {
         warnings
       );
 
-      if (father_image_url && fatherUserId) {
-        await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-          father_image_url,
+      // Update Father's user record if exists
+      if (fatherUserId) {
+        const { first_name: fFirst, last_name: fLast } = parseFullName(father_name || "");
+        await client.query(
+          `UPDATE users SET 
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+           WHERE id = $6`,
+          [fFirst || null, fLast || null, father_email || null, father_phone || null, father_occupation || null, fatherUserId]
+        );
+      }
+ 
+      // Update Mother's user record if exists
+      if (motherUserId) {
+        const { first_name: mFirst, last_name: mLast } = parseFullName(mother_name || "");
+        await client.query(
+          `UPDATE users SET 
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+           WHERE id = $6`,
+          [mFirst || null, mLast || null, mother_email || null, mother_phone || null, mother_occupation || null, motherUserId]
+        );
+      }
+
+      // Handle avatar updates (allow clearing)
+      if (fatherUserId && father_image_url !== undefined) {
+        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          father_image_url || "",
           fatherUserId,
         ]);
       }
-      if (mother_image_url && motherUserId) {
-        await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-          mother_image_url,
+      if (motherUserId && mother_image_url !== undefined) {
+        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          mother_image_url || "",
           motherUserId,
         ]);
       }
@@ -289,8 +311,6 @@ const parentListSelectSql = `
         s.id,
         s.id AS student_id,
         ${STUDENT_CONTACT_LATERAL_SELECT},
-        NULL::text AS father_image_url,
-        NULL::text AS mother_image_url,
         s.created_at,
         s.modified_at AS updated_at,
         s.first_name AS student_first_name,
@@ -358,6 +378,7 @@ const getAllParents = async (req, res) => {
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
         WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)
           AND (
             EXISTS (
               SELECT 1 FROM class_schedules cs
@@ -411,13 +432,15 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true${yearWhere}`,
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
         countParams
       );
       result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
-        WHERE s.is_active = true${yearWhere}
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
@@ -427,7 +450,8 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true${yearWhere}`,
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
         countParams
       );
       result = await query(
@@ -435,8 +459,6 @@ const getAllParents = async (req, res) => {
           s.id,
           s.id AS student_id,
           ${STUDENT_CONTACT_LATERAL_SELECT},
-          NULL::text AS father_image_url,
-          NULL::text AS mother_image_url,
           s.created_at,
           s.modified_at AS updated_at,
           s.first_name AS student_first_name,
@@ -451,7 +473,8 @@ const getAllParents = async (req, res) => {
             ORDER BY g.id ASC LIMIT 1) AS father_user_id
         FROM students s
         ${STUDENT_CONTACT_LATERAL_JOINS}
-        WHERE s.is_active = true${yearWhere}
+        WHERE s.is_active = true
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
@@ -568,12 +591,12 @@ const uploadParentProfileImage = async (req, res) => {
         mimetype: req.file.mimetype,
       },
       schoolId,
-      'uploads'
+      'users/parent'
     );
     const seg = relativePath.split('/');
     const schoolKey = seg[0];
     const fileName = seg[seg.length - 1];
-    const url = `/api/storage/files/${schoolKey}/uploads/${encodeURIComponent(fileName)}`;
+    const url = `/api/storage/files/${schoolKey}/users/parent/${encodeURIComponent(fileName)}`;
     return success(res, 200, 'Uploaded', {
       relativePath,
       url,
@@ -611,7 +634,11 @@ const createParentWithChild = async (req, res) => {
     if (!schoolId) {
       return errorResponse(res, 401, 'School context required');
     }
-    const { name, phone, email, student_id, profile_image_path } = req.body;
+    const {
+      name, phone, email, student_id, profile_image_path,
+      mother_name, mother_phone, mother_email, mother_occupation,
+      mother_image_url
+    } = req.body;
     const warnings = [];
 
     const payload = await executeTransaction(async (client) => {
@@ -629,35 +656,81 @@ const createParentWithChild = async (req, res) => {
         throw err;
       }
 
-      const { userId, reused } = await createOrReuseParentUser(
-        client,
-        {
-          fullName: name,
-          phone,
-          email,
-          avatarRelativePath: avatarPath,
-        },
-        warnings
-      );
+        // If primary father details are missing, use mother's details for user account
+        const finalName = name || mother_name;
+        const finalPhone = phone || mother_phone;
+        const finalEmail = email || mother_email;
 
-      let guardian = null;
-      let studentName = null;
-      if (student_id != null) {
-        const sid = parseInt(student_id, 10);
-        if (!Number.isFinite(sid) || sid <= 0) {
-          const err = new Error('Invalid student_id');
-          err.statusCode = 400;
-          throw err;
-        }
-        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
-        if (chk.rows.length === 0) {
-          const err = new Error('Student not found');
-          err.statusCode = 400;
-          throw err;
-        }
-        guardian = await assignFatherGuardian(client, { userId, studentId: sid });
+        const { userId, reused } = await createOrReuseParentUser(
+          client,
+          {
+            fullName: finalName,
+            phone: finalPhone,
+            email: finalEmail,
+            avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+          },
+          warnings
+        );
+
+        let studentName = null;
+        if (student_id != null) {
+          const sid = parseInt(student_id, 10);
+          if (!Number.isFinite(sid) || sid <= 0) {
+            const err = new Error('Invalid student_id');
+            err.statusCode = 400;
+            throw err;
+          }
+          const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
+          if (chk.rows.length === 0) {
+            const err = new Error('Student not found');
+            err.statusCode = 400;
+            throw err;
+          }
+
+          const hasFather = name || phone;
+          const hasMother = mother_name || mother_phone;
+
+          // Use syncStudentGuardians to handle both Father and Mother
+          await syncStudentGuardians(
+            client,
+            sid,
+            {
+              effFatherName: name || null,
+              effFatherEmail: email || null,
+              effFatherPhone: phone || null,
+              effFatherOcc: null,
+              effMotherName: mother_name || null,
+              effMotherEmail: mother_email || null,
+              effMotherPhone: mother_phone || null,
+              effMotherOcc: mother_occupation || null,
+              effGFirst: null,
+              effGLast: null,
+              effGPhone: null,
+              effGEmail: null,
+              effGOcc: null,
+              effGAddr: null,
+              effGRel: null,
+              fatherUserId: hasFather ? userId : null,
+              motherUserId: !hasFather && hasMother ? userId : null,
+              guardianUserId: null,
+            },
+            warnings
+          );
+
         const r = chk.rows[0];
         studentName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;
+
+        // Apply mother's avatar if provided
+        const motherLinked = await loadStudentLinkedUserIds(client.query.bind(client), sid);
+        if (mother_image_url && motherLinked.mother_person_id) {
+          const mAvatarPath = normalizeTenantProfilePath(schoolId, mother_image_url);
+          if (mAvatarPath) {
+            await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+              mAvatarPath,
+              motherLinked.mother_person_id,
+            ]);
+          }
+        }
       }
 
       return {

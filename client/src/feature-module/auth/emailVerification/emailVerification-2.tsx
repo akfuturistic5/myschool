@@ -82,3 +82,4 @@ const EmailVerification2 = () => {
 };
 
 export default EmailVerification2;
+

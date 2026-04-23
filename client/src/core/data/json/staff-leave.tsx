@@ -42,3 +42,4 @@ export const staffleave = [
     status: "Pending",
   },
 ];
+

@@ -570,3 +570,4 @@ const Membershipplan = () => {
 };
 
 export default Membershipplan;
+

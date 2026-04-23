@@ -96,3 +96,4 @@ const ForgotPassword2 = () => {
 };
 
 export default ForgotPassword2;
+

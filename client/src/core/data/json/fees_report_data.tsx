@@ -135,3 +135,4 @@ export const fees_report_data = [
     balance: 0,
   },
 ];
+

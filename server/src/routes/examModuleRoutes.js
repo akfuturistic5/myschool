@@ -5,6 +5,7 @@ const { ROLES } = require('../config/roles');
 const {
   listExams,
   createExam,
+  deleteExam,
   getManageContext,
   listExamSubjects,
   listExamSubjectOptions,
@@ -15,6 +16,7 @@ const router = express.Router();
 
 router.get('/', requireRole(EXAM_LIST_ROLES), listExams);
 router.post('/', requireRole(EXAM_ADMIN_ROLES), createExam);
+router.delete('/:id', requireRole(EXAM_ADMIN_ROLES), deleteExam);
 router.get('/subjects/list', requireRole(EXAM_LIST_ROLES), listExamSubjects);
 router.get('/subjects/options', requireRole(EXAM_LIST_ROLES), listExamSubjectOptions);
 router.post('/subjects/save', requireRole([ROLES.TEACHER]), saveExamSubjects);

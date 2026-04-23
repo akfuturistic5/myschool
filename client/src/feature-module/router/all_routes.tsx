@@ -338,3 +338,4 @@ export const all_routes = {
   superAdminDashboard: "/super-admin/dashboard",
   superAdminSchools: "/super-admin/schools",
 };
+

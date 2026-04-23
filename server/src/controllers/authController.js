@@ -6,6 +6,15 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const crypto = require('crypto');
 const { secureCookieBase } = require('../utils/cookiePolicy');
 const { getSchoolProfile } = require('../services/schoolProfileService');
+const { ROLE_NAMES } = require('../config/roles');
+
+function displayRoleFromRoleRow(user) {
+  const rn = (user?.role_name || '').toString().trim();
+  if (rn) return rn;
+  const rid = parseInt(String(user?.role_id ?? ''), 10);
+  if (Number.isFinite(rid) && ROLE_NAMES[rid]) return ROLE_NAMES[rid];
+  return 'User';
+}
 
 const AUTH_COOKIE_NAME = 'auth_token';
 const SESSION_COOKIE_NAME = 'sid';
@@ -127,7 +136,7 @@ const login = async (req, res) => {
            FROM users u
            LEFT JOIN user_roles ur ON u.role_id = ur.id
            LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-           WHERE u.is_active = true
+           WHERE u.is_active = true AND u.deleted_at IS NULL
              AND (u.username = $1 OR LOWER(COALESCE(u.email, '')) = LOWER($1) OR u.phone = $1)
            ORDER BY match_rank ASC, u.id ASC`,
           [identifier]
@@ -153,7 +162,7 @@ const login = async (req, res) => {
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
              LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-             WHERE u.is_active = true AND (u.username = $1 OR u.phone = $1)
+             WHERE u.is_active = true AND u.deleted_at IS NULL AND (u.username = $1 OR u.phone = $1)
              ORDER BY match_rank ASC, u.id ASC`,
             [identifier]
           );
@@ -355,7 +364,7 @@ const login = async (req, res) => {
       LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
       LEFT JOIN user_roles ur ON u.role_id = ur.id
-      WHERE u.id = $1 AND u.is_active = true`,
+      WHERE u.id = $1 AND u.is_active = true AND u.deleted_at IS NULL`,
       [tokenUser.id]
     );
     if (result.rows.length === 0) {
@@ -376,13 +385,13 @@ const login = async (req, res) => {
     let displayRole = '';
     if (user.student_first_name || user.student_last_name) {
       displayName = `${user.student_first_name || ''} ${user.student_last_name || ''}`.trim();
-      displayRole = user.role_name || 'Student';
+      displayRole = displayRoleFromRoleRow(user) || 'Student';
     } else if (user.staff_first_name || user.staff_last_name) {
       displayName = `${user.staff_first_name || ''} ${user.staff_last_name || ''}`.trim();
-      displayRole = user.designation_name || user.role_name || 'Teacher';
+      displayRole = user.designation_name || displayRoleFromRoleRow(user) || 'Teacher';
     } else {
       displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'User';
-      displayRole = user.role_name || 'User';
+      displayRole = displayRoleFromRoleRow(user);
     }
     let schoolLogo = tokenUser.school_logo != null ? tokenUser.school_logo : null;
     if (tokenUser.school_id != null) {
@@ -687,13 +696,13 @@ const updateMe = async (req, res) => {
     let displayRole = '';
     if (user.student_first_name || user.student_last_name) {
       displayName = `${user.student_first_name || ''} ${user.student_last_name || ''}`.trim();
-      displayRole = user.role_name || 'Student';
+      displayRole = displayRoleFromRoleRow(user) || 'Student';
     } else if (user.staff_first_name || user.staff_last_name) {
       displayName = `${user.staff_first_name || ''} ${user.staff_last_name || ''}`.trim();
-      displayRole = user.designation_name || user.role_name || 'Teacher';
+      displayRole = user.designation_name || displayRoleFromRoleRow(user) || 'Teacher';
     } else {
       displayName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'User';
-      displayRole = user.role_name || 'User';
+      displayRole = displayRoleFromRoleRow(user);
     }
 
     const userData = {

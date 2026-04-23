@@ -3,17 +3,7 @@ import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
 
-/**
- * Stable default so `useTransportVehicles()` does not pass a new `{}` every render
- * (which would change useCallback deps and re-fetch in a loop).
- */
-const EMPTY_PARAMS = Object.freeze({});
-
-export const useTransportVehicles = (params = EMPTY_PARAMS) => {
-  const paramsRef = useRef(params);
-  paramsRef.current = params;
-  const paramsKey = JSON.stringify(params === EMPTY_PARAMS ? {} : params);
-
+export const useTransportVehicles = (initialParams = {}) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -22,6 +12,14 @@ export const useTransportVehicles = (params = EMPTY_PARAMS) => {
     page: 1,
     limit: 10,
     totalPages: 0
+  });
+
+  const [params, setParams] = useState({
+    page: 1,
+    limit: 10,
+    search: '',
+    status: 'all',
+    ...initialParams
   });
 
   const fetchVehicles = useCallback(async (overrides = {}) => {
@@ -77,6 +75,8 @@ export const useTransportVehicles = (params = EMPTY_PARAMS) => {
     loading,
     error,
     metadata,
+    params,
+    setParams,
     refetch: fetchVehicles,
   };
 };

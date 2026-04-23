@@ -68,7 +68,10 @@ const StudentAttendanceReport = () => {
   const [error, setError] = useState<string | null>(null);
 
   const { classes } = useClasses(academicYearId);
-  const { sections } = useSections(isTeacher ? null : classId);
+  const { sections } = useSections(isTeacher ? null : classId, {
+    fetchAllWhenNoClass: false,
+    academicYearId,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +100,11 @@ const StudentAttendanceReport = () => {
     (teacherScopeRows || []).forEach((row: any) => {
       const cid = Number(row?.class_id);
       if (!Number.isFinite(cid) || map.has(cid)) return;
-      map.set(cid, { id: cid, class_name: row?.class_name || `Class ${cid}` });
+      map.set(cid, {
+        id: cid,
+        class_name: row?.class_name || `Class ${cid}`,
+        class_code: row?.class_code || "",
+      });
     });
     return Array.from(map.values());
   }, [isTeacher, classes, teacherScopeRows]);
@@ -114,6 +121,8 @@ const StudentAttendanceReport = () => {
       });
     return Array.from(map.values());
   }, [isTeacher, sections, teacherScopeRows, classId]);
+
+  const shouldEnableSectionSelect = isTeacher ? classId != null : classId != null;
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -467,15 +476,39 @@ const StudentAttendanceReport = () => {
               </div>
               <div className="col-md-3">
                 <label className="form-label">Class</label>
-                <select className="form-select" value={classId ?? ""} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}>
+                <select
+                  className="form-select"
+                  value={classId ?? ""}
+                  onChange={(e) => {
+                    const nextClassId = e.target.value ? Number(e.target.value) : null;
+                    setClassId(nextClassId);
+                    if (nextClassId == null) {
+                      setSectionId(null);
+                    }
+                  }}
+                >
                   {!isTeacher && <option value="">All Classes</option>}
-                  {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.class_name || c.name || `Class ${c.id}`}</option>)}
+                  {classOptions.map((c: any) => {
+                    const className = c.class_name || c.name || `Class ${c.id}`;
+                    const classCode = String(c.class_code || "").trim();
+                    const label = classCode ? `${className} (${classCode})` : className;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="col-md-3">
                 <label className="form-label">Section</label>
-                <select className="form-select" value={sectionId ?? ""} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">All Sections</option>
+                <select
+                  className="form-select"
+                  value={sectionId ?? ""}
+                  disabled={!shouldEnableSectionSelect}
+                  onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">{shouldEnableSectionSelect ? "All Sections" : "Select class first"}</option>
                   {sectionOptions.map((s: any) => <option key={s.id} value={s.id}>{s.section_name || s.name || `Section ${s.id}`}</option>)}
                 </select>
               </div>
@@ -508,3 +541,4 @@ const StudentAttendanceReport = () => {
 };
 
 export default StudentAttendanceReport;
+

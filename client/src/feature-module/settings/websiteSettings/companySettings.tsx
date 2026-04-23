@@ -414,3 +414,4 @@ const CompanySettings = () => {
 };
 
 export default CompanySettings;
+

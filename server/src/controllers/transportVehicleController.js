@@ -2,6 +2,7 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function getDriverDisplayName(driverRow) {
   if (!driverRow) return null;
@@ -37,6 +38,9 @@ function mapVehicleRow(row, driverMap = {}) {
 
 const getAllVehicles = async (req, res) => {
   try {
+    const hasDeletedAt = await hasColumn('vehicles', 'deleted_at');
+    const hasAcademicYearId = await hasColumn('vehicles', 'academic_year_id');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const {
       page = 1,
@@ -50,8 +54,8 @@ const getAllVehicles = async (req, res) => {
     } = req.query;
 
     const offset = (page - 1) * limit;
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
-    let whereClause = 'WHERE v.deleted_at IS NULL';
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
+    let whereClause = `WHERE ${hasDeletedAt ? 'v.deleted_at IS NULL' : '(v.is_active IS NOT FALSE OR v.is_active IS NULL)'}`;
     const queryParams = [];
 
     if (search) {
@@ -64,7 +68,7 @@ const getAllVehicles = async (req, res) => {
       whereClause += ` AND v.driver_id = $${queryParams.length}`;
     }
 
-    if (status !== undefined && status !== '') {
+    if (status !== undefined && status !== '' && status !== 'all') {
       const isActive = status === 'active' || status === 'true' || status === true;
       queryParams.push(isActive);
       whereClause += ` AND v.is_active = $${queryParams.length}`;
@@ -103,10 +107,15 @@ const getAllVehicles = async (req, res) => {
     // Data query
     const dataResult = await query(
       `SELECT v.*, d.driver_name, d.phone as driver_phone, r.route_name,
-       (SELECT string_agg(pp_sub.point_name, ', ') 
-        FROM route_stops rs_sub 
-        JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id 
-        WHERE rs_sub.route_id = r.id) as point_name
+       (${hasRouteStops
+          ? `SELECT string_agg(pp_sub.point_name, ', ')
+             FROM route_stops rs_sub
+             JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
+             WHERE rs_sub.route_id = r.id`
+          : `SELECT string_agg(pp_sub.point_name, ', ')
+             FROM pickup_points pp_sub
+             WHERE pp_sub.route_id = r.id`
+        }) as point_name
        FROM vehicles v
        LEFT JOIN drivers d ON v.driver_id = d.id
        LEFT JOIN routes r ON v.route_id = r.id
@@ -141,6 +150,8 @@ const getAllVehicles = async (req, res) => {
 const getVehicleById = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('vehicles', 'deleted_at');
+    const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const params = [id];
     let scopedSql = '';
@@ -151,14 +162,19 @@ const getVehicleById = async (req, res) => {
 
     const result = await query(`
       SELECT v.*, d.driver_name, d.phone as driver_phone, r.route_name,
-      (SELECT string_agg(pp_sub.point_name, ', ') 
-       FROM route_stops rs_sub 
-       JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id 
-       WHERE rs_sub.route_id = r.id) as point_name
+      (${hasRouteStops
+        ? `SELECT string_agg(pp_sub.point_name, ', ')
+           FROM route_stops rs_sub
+           JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
+           WHERE rs_sub.route_id = r.id`
+        : `SELECT string_agg(pp_sub.point_name, ', ')
+           FROM pickup_points pp_sub
+           WHERE pp_sub.route_id = r.id`
+      }) as point_name
       FROM vehicles v
       LEFT JOIN drivers d ON v.driver_id = d.id
       LEFT JOIN routes r ON v.route_id = r.id
-      WHERE v.id = $1 AND v.deleted_at IS NULL${scopedSql}
+      WHERE v.id = $1 AND ${hasDeletedAt ? 'v.deleted_at IS NULL' : '1=1'}${scopedSql}
     `, params);
 
     if (result.rows.length === 0) {
@@ -235,6 +251,7 @@ const createVehicle = async (req, res) => {
 const updateVehicle = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('vehicles', 'deleted_at');
     const numericId = parseInt(id);
 
     if (isNaN(numericId)) {
@@ -313,7 +330,7 @@ const updateVehicle = async (req, res) => {
     const result = await query(`
       UPDATE vehicles
       SET ${updates.join(', ')}
-      WHERE id = $${i} AND deleted_at IS NULL
+      WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
       RETURNING *
     `, values);
 
@@ -331,16 +348,22 @@ const updateVehicle = async (req, res) => {
 const deleteVehicle = async (req, res) => {
   try {
     const { id } = req.params;
+    const hasDeletedAt = await hasColumn('vehicles', 'deleted_at');
     const numericId = parseInt(id);
     
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid vehicle ID');
     }
 
-    const result = await query(
-      'UPDATE vehicles SET deleted_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-      [numericId]
-    );
+    const result = hasDeletedAt
+      ? await query(
+          'UPDATE vehicles SET deleted_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+          [numericId]
+        )
+      : await query(
+          'UPDATE vehicles SET is_active = false WHERE id = $1 RETURNING id',
+          [numericId]
+        );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Vehicle not found or already deleted');

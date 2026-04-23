@@ -84,3 +84,4 @@ const BonafideCertificateLayout = ({
 };
 
 export default BonafideCertificateLayout;
+

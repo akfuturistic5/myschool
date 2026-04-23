@@ -21,7 +21,7 @@ function uploadWithErrorHandling(req, res, next) {
 }
 
 router.post('/upload', requireRole(ALL_AUTHENTICATED_ROLES), uploadWithErrorHandling, uploadSchoolFile);
-router.get('/files/:schoolKey/:folder/:filename', requireRole(ALL_AUTHENTICATED_ROLES), getSchoolFile);
+router.get('/files/:schoolKey/*', requireRole(ALL_AUTHENTICATED_ROLES), getSchoolFile);
 router.delete('/file', requireRole(ALL_AUTHENTICATED_ROLES), deleteSchoolFile);
 
 module.exports = router;

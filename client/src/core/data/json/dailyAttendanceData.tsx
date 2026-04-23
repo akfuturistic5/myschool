@@ -99,3 +99,4 @@ export const dailyAttendanceData = [
     absentPercentange: "2%",
   },
 ];
+

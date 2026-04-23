@@ -35,6 +35,8 @@ export const useLeaveApplications = (options = {}) => {
     canUseAdminList = false,
     classId = null,
     sectionId = null,
+    departmentId = null,
+    designationId = null,
     academicYearId = null,
     leaveFrom = null,
     leaveTo = null,
@@ -78,6 +80,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -101,6 +105,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -118,6 +124,8 @@ export const useLeaveApplications = (options = {}) => {
           applicant_type: applicantType ?? undefined,
           class_id: classId ?? undefined,
           section_id: sectionId ?? undefined,
+          department_id: departmentId ?? undefined,
+          designation_id: designationId ?? undefined,
           status: status ?? undefined,
           sort_by: sortBy ?? undefined,
           sort_order: sortOrder ?? undefined,
@@ -140,10 +148,8 @@ export const useLeaveApplications = (options = {}) => {
         if (parentChildren && studentId != null) {
           rows = rows.filter((r) => Number(r.student_id) === Number(studentId));
         }
-        // Safety: when viewing a specific student's leaves, filter to only that student_id
-        if (!parentChildren && !studentOnly && studentId != null) {
-          rows = rows.filter((r) => r.student_id != null && Number(r.student_id) === Number(studentId));
-        }
+        // For leaving/rejoined flows, backend can intentionally return linked student rows
+        // (same identity across historical student IDs). Do not re-narrow here.
         // Safety: when viewing a specific staff's leaves, filter to only that staff_id
         if (!parentChildren && !studentOnly && staffId != null) {
           rows = rows.filter((r) => r.staff_id != null && Number(r.staff_id) === Number(staffId));
@@ -225,7 +231,7 @@ export const useLeaveApplications = (options = {}) => {
 
   useEffect(() => {
     fetchList(false);
-  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, classId, sectionId, academicYearId, leaveFrom, leaveTo, pendingOnly, status, leaveTypeId, applicantType, sortBy, sortOrder, page, pageSize]);
+  }, [limit, studentOnly, parentChildren, studentId, staffId, canUseAdminList, classId, sectionId, departmentId, designationId, academicYearId, leaveFrom, leaveTo, pendingOnly, status, leaveTypeId, applicantType, sortBy, sortOrder, page, pageSize]);
 
   return {
     leaveApplications: list,

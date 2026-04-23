@@ -292,3 +292,4 @@ const RangeSlides = () => {
 };
 
 export default RangeSlides;
+

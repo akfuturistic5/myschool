@@ -80,3 +80,4 @@ export const cities_data = [
     status: "Active",
   },
 ];
+

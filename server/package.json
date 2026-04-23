@@ -20,9 +20,7 @@
     "db:migrate:fees": "node scripts/run-fees-migration.js",
     "db:migrate:transport": "node scripts/run-transport-migration.js",
     "db:migrate:hostel": "node scripts/run-hostel-migration.js",
-    "db:migrate:guardian-hardening": "node scripts/run-guardian-hardening-migration.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "test": "node --test",
+    "db:migrate:unify": "node scripts/migrate-unify-parents-guardians.js",
     "test": "node --test \"test/**/*.test.js\"",
     "test:attendance": "node --test test/attendanceValidation.test.js"
   },
@@ -50,6 +48,7 @@
     "multer": "^2.1.1",
     "pdfkit": "^0.18.0",
     "pg": "^8.11.3",
+    "pg-copy-streams": "^7.0.0",
     "sanitize-html": "^2.13.0",
     "sharp": "^0.33.5"
   },

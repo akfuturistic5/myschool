@@ -215,3 +215,4 @@ const BonafideGenerator = () => {
 };
 
 export default BonafideGenerator;
+

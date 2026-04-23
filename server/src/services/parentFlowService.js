@@ -13,7 +13,7 @@ const { createParentIndividualUser, parseFullName } = require('../utils/createPe
 function normalizeTenantProfilePath(schoolId, raw) {
   if (raw == null || String(raw).trim() === '') return null;
   const s = String(raw).trim().replace(/\\/g, '/');
-  const m = /^school_(\d+)\/uploads\/[a-z0-9._-]+\.(jpe?g|png|svg)$/i.exec(s);
+  const m = /^school_(\d+)\/uploads\/[^/]+\.(jpe?g|png|svg)$/i.exec(s);
   if (!m) return null;
   if (Number(m[1]) !== Number(schoolId)) return null;
   return s;
@@ -116,4 +116,5 @@ module.exports = {
   normalizeTenantProfilePath,
   createOrReuseParentUser,
   assignFatherGuardian,
+  parseFullName,
 };

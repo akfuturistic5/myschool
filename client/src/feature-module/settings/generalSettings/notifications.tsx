@@ -204,3 +204,4 @@ const Notificationssettings = () => {
 };
 
 export default Notificationssettings;
+

@@ -107,3 +107,4 @@ export const EventsCard = ({ upcomingEvents, completedEvents, loading, limit = 5
     </div>
   );
 };
+

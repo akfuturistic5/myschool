@@ -8,9 +8,12 @@ import { checkUserUnique } from "../../../core/utils/checkUserUnique";
 
 export interface ParentToEditShape {
   id?: string;
-  name?: string;
-  phone?: string;
-  email?: string;
+  mother_name?: string;
+  mother_phone?: string;
+  mother_email?: string;
+  mother_occupation?: string;
+  father_image_url?: string;
+  mother_image_url?: string;
   Child?: string;
   student_id?: number;
   /** Father parent `users.id` for uniqueness exclude on edit */
@@ -32,8 +35,13 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
   const [addFatherName, setAddFatherName] = useState("");
   const [addPhone, setAddPhone] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  const [addMotherName, setAddMotherName] = useState("");
+  const [addMotherPhone, setAddMotherPhone] = useState("");
+  const [addMotherEmail, setAddMotherEmail] = useState("");
+  const [addMotherOccupation, setAddMotherOccupation] = useState("");
   const [addStudentId, setAddStudentId] = useState<number | null>(null);
-  const [childOptions, setChildOptions] = useState<ChildOption[]>([]);
+  const [existingGuardiansNotice, setExistingGuardiansNotice] = useState<string | null>(null);
+  const [childOptions, setChildOptions] = useState<{ value: number; label: string; hasGuardians?: boolean }[]>([]);
   const [childSearchLoading, setChildSearchLoading] = useState(false);
 
   const [profileRelPath, setProfileRelPath] = useState<string | null>(null);
@@ -42,9 +50,19 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
   const [profileUploadStatus, setProfileUploadStatus] = useState<"idle" | "uploading" | "ok" | "err">("idle");
   const profileInputRef = useRef<HTMLInputElement>(null);
 
+  const [motherProfileRelPath, setMotherProfileRelPath] = useState<string | null>(null);
+  const [motherProfilePreview, setMotherProfilePreview] = useState<string | null>(null);
+  const [motherProfileFileName, setMotherProfileFileName] = useState("");
+  const [motherProfileUploadStatus, setMotherProfileUploadStatus] = useState<"idle" | "uploading" | "ok" | "err">("idle");
+  const motherProfileInputRef = useRef<HTMLInputElement>(null);
+
   const [editFatherName, setEditFatherName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editMotherName, setEditMotherName] = useState("");
+  const [editMotherPhone, setEditMotherPhone] = useState("");
+  const [editMotherEmail, setEditMotherEmail] = useState("");
+  const [editMotherOccupation, setEditMotherOccupation] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,14 +86,61 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
 
   useEffect(() => {
     if (parentToEdit) {
+      setError(null);
       setEditFatherName(parentToEdit.name ?? "");
       setEditPhone(parentToEdit.phone ?? "");
       setEditEmail(parentToEdit.email ?? "");
+      setEditMotherName(parentToEdit.mother_name ?? "");
+      setEditMotherPhone(parentToEdit.mother_phone ?? "");
+      setEditMotherEmail(parentToEdit.mother_email ?? "");
+      setEditMotherOccupation(parentToEdit.mother_occupation ?? "");
+      
+      // Populate previews if they exist
+      if (parentToEdit.father_image_url) {
+        setProfileRelPath(parentToEdit.father_image_url);
+        void apiService.getSchoolStorageFileAbsoluteUrl(parentToEdit.father_image_url).then(setProfilePreview);
+      } else {
+        setProfileRelPath(null);
+        setProfilePreview(null);
+      }
+      if (parentToEdit.mother_image_url) {
+        setMotherProfileRelPath(parentToEdit.mother_image_url);
+        void apiService.getSchoolStorageFileAbsoluteUrl(parentToEdit.mother_image_url).then(setMotherProfilePreview);
+      } else {
+        setMotherProfileRelPath(null);
+        setMotherProfilePreview(null);
+      }
+
       setEditMobileError(null);
       setEditEmailError(null);
       setEditUniqueNotice(null);
     }
   }, [parentToEdit]);
+
+  useEffect(() => {
+    const onShowAdd = () => resetAddForm();
+    const onShowEdit = () => {
+      setError(null);
+      setEditMobileError(null);
+      setEditEmailError(null);
+      setEditUniqueNotice(null);
+      setProfileFileName("");
+      setProfileUploadStatus("idle");
+      setMotherProfileFileName("");
+      setMotherProfileUploadStatus("idle");
+    };
+
+    const addEl = document.getElementById("add_parent");
+    const editEl = document.getElementById("edit_parent");
+
+    addEl?.addEventListener("show.bs.modal", onShowAdd);
+    editEl?.addEventListener("show.bs.modal", onShowEdit);
+
+    return () => {
+      addEl?.removeEventListener("show.bs.modal", onShowAdd);
+      editEl?.removeEventListener("show.bs.modal", onShowEdit);
+    };
+  }, []);
 
   const runAddMobileUniqueness = useCallback(async (phoneVal?: string) => {
     const m = (phoneVal ?? addPhone).trim();
@@ -178,9 +243,11 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
         const arr = Array.isArray(raw) ? raw : (raw as { data?: unknown })?.data;
         const list = Array.isArray(arr) ? arr : [];
         setChildOptions(
-          list.map((s: { id: number; name?: string; admissionNumber?: string; className?: string }) => ({
+          list.map((s: { id: number; name?: string; admissionNumber?: string; className?: string; hasParents?: boolean; parentName?: string }) => ({
             value: s.id,
             label: `${s.name || "Student"} · ${s.admissionNumber || "—"} · ${s.className || "—"}`,
+            hasParents: s.hasParents,
+            parentName: s.parentName,
           }))
         );
       } catch {
@@ -206,15 +273,25 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
     setAddFatherName("");
     setAddPhone("");
     setAddEmail("");
+    setAddMotherName("");
+    setAddMotherPhone("");
+    setAddMotherEmail("");
+    setAddMotherOccupation("");
     setAddStudentId(null);
+    setExistingGuardiansNotice(null);
     setChildOptions([]);
     setProfileRelPath(null);
     setProfilePreview(null);
     setProfileFileName("");
     setProfileUploadStatus("idle");
+    setMotherProfileRelPath(null);
+    setMotherProfilePreview(null);
+    setMotherProfileFileName("");
+    setMotherProfileUploadStatus("idle");
     setAddMobileError(null);
     setAddEmailError(null);
     setUniqueCheckNotice(null);
+    setError(null);
     if (addMobileUniqTimerRef.current) clearTimeout(addMobileUniqTimerRef.current);
     if (addEmailUniqTimerRef.current) clearTimeout(addEmailUniqTimerRef.current);
   };
@@ -257,11 +334,56 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
     }
   };
 
+  const handleMotherProfileFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const okMime = ["image/jpeg", "image/png", "image/svg+xml"].includes(file.type);
+    if (!okMime || !/\.(jpe?g|png|svg)$/i.test(file.name)) {
+      setMotherProfileUploadStatus("err");
+      void Swal.fire({ icon: "error", title: "Only JPG, PNG, SVG allowed" });
+      return;
+    }
+    if (file.size > PROFILE_MAX) {
+      setMotherProfileUploadStatus("err");
+      void Swal.fire({ icon: "error", title: "Max file size is 4MB" });
+      return;
+    }
+    setMotherProfileUploadStatus("uploading");
+    try {
+      const res = await apiService.uploadParentProfileImage(file);
+      const d = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
+      const rel = (d as { relativePath?: string })?.relativePath;
+      const url = (d as { url?: string })?.url;
+      if (!rel) throw new Error("No path returned");
+      setMotherProfileRelPath(rel);
+      setMotherProfileFileName(file.name);
+      if (url) {
+        const abs = await apiService.getSchoolStorageFileAbsoluteUrl(url);
+        setMotherProfilePreview(abs);
+      } else {
+        setMotherProfilePreview(URL.createObjectURL(file));
+      }
+      setMotherProfileUploadStatus("ok");
+    } catch (err: unknown) {
+      setMotherProfileUploadStatus("err");
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      void Swal.fire({ icon: "error", title: "Upload failed", text: msg });
+    }
+  };
+
   const clearProfile = () => {
     setProfileRelPath(null);
     setProfilePreview(null);
     setProfileFileName("");
     setProfileUploadStatus("idle");
+  };
+
+  const clearMotherProfile = () => {
+    setMotherProfileRelPath(null);
+    setMotherProfilePreview(null);
+    setMotherProfileFileName("");
+    setMotherProfileUploadStatus("idle");
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -311,12 +433,38 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
         setAddEmailChecking(false);
       }
 
+      if (!addStudentId) {
+        setError("Please select a child to link these parents to.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (!addFatherName.trim() && !addMotherName.trim()) {
+        setError("At least one parent's name (Father or Mother) is required.");
+        setSubmitting(false);
+        return;
+      }
+      if (!addPhone.trim() && !addMotherPhone.trim()) {
+        setError("At least one parent's mobile number is required.");
+        setSubmitting(false);
+        return;
+      }
+
+      const effectiveName = addFatherName.trim() || addMotherName.trim();
+      const effectivePhone = addPhone.trim() || addMotherPhone.trim();
+      const effectiveEmail = addEmail.trim() || addMotherEmail.trim() || null;
+
       const res = await apiService.createParentWithChild({
-        name: addFatherName.trim(),
-        phone: addPhone.trim(),
-        email: addEmail.trim() || null,
+        name: effectiveName,
+        phone: effectivePhone,
+        email: effectiveEmail,
         student_id: addStudentId ?? null,
-        profile_image_path: profileRelPath,
+        profile_image_path: profileRelPath || motherProfileRelPath,
+        mother_name: addMotherName.trim() || null,
+        mother_phone: addMotherPhone.trim() || null,
+        mother_email: addMotherEmail.trim() || null,
+        mother_occupation: addMotherOccupation.trim() || null,
+        mother_image_url: motherProfileRelPath,
       });
       const payload = (res as { data?: { studentName?: string; reused?: boolean } })?.data ?? res;
       const studentName = (payload as { studentName?: string })?.studentName;
@@ -349,16 +497,6 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
     setError(null);
     setSubmitting(true);
     try {
-      if (!editFatherName.trim()) {
-        setError("Name is required");
-        setSubmitting(false);
-        return;
-      }
-      if (!editPhone.trim()) {
-        setError("Phone is required");
-        setSubmitting(false);
-        return;
-      }
       if (editMobileError || editEmailError) {
         setSubmitting(false);
         return;
@@ -395,10 +533,22 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
         setEditEmailChecking(false);
       }
 
+      if (!editFatherName.trim() && !editMotherName.trim()) {
+        setError("At least one parent's name (Father or Mother) is required.");
+        setSubmitting(false);
+        return;
+      }
+
       await apiService.updateParent(parentToEdit.id, {
-        father_name: editFatherName.trim(),
-        father_phone: editPhone.trim(),
+        father_name: editFatherName.trim() || null,
+        father_phone: editPhone.trim() || null,
         father_email: editEmail.trim() || null,
+        mother_name: editMotherName.trim() || null,
+        mother_phone: editMotherPhone.trim() || null,
+        mother_email: editMotherEmail.trim() || null,
+        mother_occupation: editMotherOccupation.trim() || null,
+        father_image_url: profileRelPath,
+        mother_image_url: motherProfileRelPath,
       });
       await Swal.fire({ icon: "success", title: "Parent updated successfully" });
       refetch?.();
@@ -418,7 +568,7 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
   const addSubmitDisabled =
     submitting || addMobileChecking || addEmailChecking || !!addMobileError || !!addEmailError;
   const editSubmitDisabled =
-    submitting || editMobileChecking || editEmailChecking || !!editMobileError || !!editEmailError;
+    submitting || editMobileChecking || editEmailChecking || !!editMobileError || !!editEmailError || profileUploadStatus === "uploading" || motherProfileUploadStatus === "uploading";
 
   return (
     <>
@@ -433,68 +583,59 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
               </button>
             </div>
             <form onSubmit={handleAddSubmit}>
-              {error && (
-                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
-                  {error}
-                </div>
-              )}
-              {uniqueCheckNotice && (
-                <div className="alert alert-warning mx-3 mt-2 mb-0" role="alert">
-                  {uniqueCheckNotice}
-                </div>
-              )}
               <div id="modal-tag2" className="modal-body">
                 <div className="row">
                   <div className="col-md-12">
-                    <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
-                      <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
-                        {profilePreview ? (
-                          <img src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
-                        ) : (
-                          <i className="ti ti-photo-plus fs-16" />
-                        )}
-                      </div>
-                      <div className="profile-upload">
-                        <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
-                          <input ref={profileInputRef} type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg" className="d-none" onChange={handleProfileFile} />
-                          <button type="button" className="btn btn-sm btn-primary" onClick={() => profileInputRef.current?.click()}>
-                            <i className="ti ti-upload me-1" />
-                            Upload photo
-                          </button>
-                          {profileRelPath && (
-                            <button type="button" className="btn btn-sm btn-light" onClick={clearProfile}>
-                              Remove
-                            </button>
+                    <div className="mb-3 mt-2">
+                      <label className="form-label text-primary fw-bold border-bottom pb-1 w-100 mb-3">Father's Details</label>
+                      
+                      <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
+                        <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                          {profilePreview ? (
+                            <ImageWithBasePath src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                          ) : (
+                            <i className="ti ti-photo-plus fs-16" />
                           )}
                         </div>
-                        {profileFileName && <p className="small text-muted mb-1">Uploaded: {profileFileName}</p>}
-                        <p className="small mb-1">
-                          {profileUploadStatus === "uploading" && <span className="text-primary">Uploading…</span>}
-                          {profileUploadStatus === "ok" && (
-                            <span className="text-success">
-                              <i className="ti ti-check me-1" />
-                              Uploaded
-                            </span>
-                          )}
-                          {profileUploadStatus === "err" && (
-                            <span className="text-danger">
-                              <i className="ti ti-x me-1" />
-                              Failed
-                            </span>
-                          )}
-                        </p>
-                        <p className="text-muted small mb-0">Max 4MB. JPG, PNG, or SVG.</p>
+                        <div className="profile-upload">
+                          <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <input ref={profileInputRef} type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg" className="d-none" onChange={handleProfileFile} />
+                            <button type="button" className="btn btn-sm btn-primary" onClick={() => profileInputRef.current?.click()}>
+                              <i className="ti ti-upload me-1" />
+                              Father photo
+                            </button>
+                            {profileRelPath && (
+                              <button type="button" className="btn btn-sm btn-light" onClick={clearProfile}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          {profileFileName && <p className="small text-muted mb-1">Uploaded: {profileFileName}</p>}
+                          <p className="small mb-1">
+                            {profileUploadStatus === "uploading" && <span className="text-primary">Uploading…</span>}
+                            {profileUploadStatus === "ok" && (
+                              <span className="text-success">
+                                <i className="ti ti-check me-1" />
+                                Uploaded
+                              </span>
+                            )}
+                            {profileUploadStatus === "err" && (
+                              <span className="text-danger">
+                                <i className="ti ti-x me-1" />
+                                Failed
+                              </span>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">Name</label>
+
+                      <label className="form-label">Father's Name</label>
                       <input
                         type="text"
                         className="form-control"
                         value={addFatherName}
                         onChange={(e) => setAddFatherName(e.target.value)}
-                        required
-                        placeholder="Full name"
+                        placeholder="Father's full name"
                       />
                     </div>
                     <div className="mb-3">
@@ -518,7 +659,6 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                           if (addMobileUniqTimerRef.current) clearTimeout(addMobileUniqTimerRef.current);
                           void runAddMobileUniqueness(e.target.value);
                         }}
-                        required
                         placeholder="Required — used for login / uniqueness"
                         autoComplete="tel"
                       />
@@ -550,8 +690,93 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       />
                       {addEmailError && <div className="invalid-feedback d-block">{addEmailError}</div>}
                     </div>
+
+                    <div className="mb-3 mt-4">
+                      <label className="form-label text-success fw-bold border-bottom pb-1 w-100 mb-3">Mother's Details</label>
+                      
+                      <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
+                        <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                          {motherProfilePreview ? (
+                            <ImageWithBasePath src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                          ) : (
+                            <i className="ti ti-photo-plus fs-16" />
+                          )}
+                        </div>
+                        <div className="profile-upload">
+                          <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <input ref={motherProfileInputRef} type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg" className="d-none" onChange={handleMotherProfileFile} />
+                            <button type="button" className="btn btn-sm btn-success" onClick={() => motherProfileInputRef.current?.click()}>
+                              <i className="ti ti-upload me-1" />
+                              Mother photo
+                            </button>
+                            {motherProfileRelPath && (
+                              <button type="button" className="btn btn-sm btn-light" onClick={clearMotherProfile}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          {motherProfileFileName && <p className="small text-muted mb-1">Uploaded: {motherProfileFileName}</p>}
+                          <p className="small mb-1">
+                            {motherProfileUploadStatus === "uploading" && <span className="text-primary">Uploading…</span>}
+                            {motherProfileUploadStatus === "ok" && (
+                              <span className="text-success">
+                                <i className="ti ti-check me-1" />
+                                Uploaded
+                              </span>
+                            )}
+                            {motherProfileUploadStatus === "err" && (
+                              <span className="text-danger">
+                                <i className="ti ti-x me-1" />
+                                Failed
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="form-label">Mother's Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addMotherName}
+                        onChange={(e) => setAddMotherName(e.target.value)}
+                        placeholder="Mother's full name"
+                      />
+                    </div>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Mother's Mobile</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={addMotherPhone}
+                          onChange={(e) => setAddMotherPhone(e.target.value)}
+                          placeholder="Mother's phone"
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Mother's Email</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          value={addMotherEmail}
+                          onChange={(e) => setAddMotherEmail(e.target.value)}
+                          placeholder="Mother's email"
+                        />
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Mother's Occupation</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addMotherOccupation}
+                        onChange={(e) => setAddMotherOccupation(e.target.value)}
+                        placeholder="Mother's occupation"
+                      />
+                    </div>
                     <div className="mb-0">
-                      <label className="form-label">Select child</label>
+                      <label className="form-label">Select child <span className="text-danger">*</span></label>
                       <Select
                         showSearch
                         allowClear
@@ -564,13 +789,39 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                         getPopupContainer={getModalContainer2}
                         options={childOptions}
                         value={addStudentId ?? undefined}
-                        onChange={(v) => setAddStudentId(v ?? null)}
+                        onChange={(v) => {
+                          setAddStudentId(v ?? null);
+                          const opt = childOptions.find(o => o.value === v);
+                          if (opt?.hasParents) {
+                            setExistingGuardiansNotice(`Note: This student already has parents linked (${opt.parentName || 'Existing'}). Saving will replace them.`);
+                          } else {
+                            setExistingGuardiansNotice(null);
+                          }
+                        }}
                         optionLabelProp="label"
                       />
-                      <p className="text-muted small mt-1 mb-0">Optional — links this parent as father guardian to the student.</p>
+                      <p className="text-muted small mt-1 mb-0">Required — links these parents as guardians to the student.</p>
                     </div>
                   </div>
                 </div>
+
+                {existingGuardiansNotice && (
+                  <div className="alert alert-info mt-3 mb-0" role="alert">
+                    <i className="ti ti-info-circle me-1" />
+                    {existingGuardiansNotice}
+                  </div>
+                )}
+
+                {error && (
+                  <div className="alert alert-danger mt-3 mb-0" role="alert">
+                    {error}
+                  </div>
+                )}
+                {uniqueCheckNotice && (
+                  <div className="alert alert-warning mt-3 mb-0" role="alert">
+                    {uniqueCheckNotice}
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
@@ -596,33 +847,57 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
               </button>
             </div>
             <form key={parentToEdit?.id ?? "edit-form"} onSubmit={handleEditSubmit}>
-              {error && (
-                <div className="alert alert-danger mx-3 mt-2 mb-0" role="alert">
-                  {error}
-                </div>
-              )}
-              {editUniqueNotice && (
-                <div className="alert alert-warning mx-3 mt-2 mb-0" role="alert">
-                  {editUniqueNotice}
-                </div>
-              )}
               <div id="modal-tag" className="modal-body ">
                 <div className="row">
                   <div className="col-md-12">
-                    <div className="d-flex align-items-center upload-pic flex-wrap row-gap-3 mb-3">
-                      <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                        <ImageWithBasePath src="assets/img/parents/parent-13.jpg" className="img-fluid rounded" alt="" />
-                      </div>
-                      <div className="profile-upload">
-                        <p className="text-muted small mb-0">Photo update from parent grid edit can be added later.</p>
-                      </div>
-                    </div>
                     <div className="mb-3">
-                      <label className="form-label">Name (Father)</label>
+                      <label className="form-label text-primary fw-bold border-bottom pb-1 w-100 mb-3">Father's Details</label>
+                      
+                      <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
+                        <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                          {profilePreview ? (
+                            <ImageWithBasePath src={profilePreview} alt="Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                          ) : (
+                            <i className="ti ti-photo-plus fs-16" />
+                          )}
+                        </div>
+                        <div className="profile-upload">
+                          <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <input ref={profileInputRef} type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg" className="d-none" onChange={handleProfileFile} />
+                            <button type="button" className="btn btn-sm btn-primary" onClick={() => profileInputRef.current?.click()}>
+                              <i className="ti ti-upload me-1" />
+                              Father photo
+                            </button>
+                            {profileRelPath && (
+                              <button type="button" className="btn btn-sm btn-light" onClick={clearProfile}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          {profileFileName && <p className="small text-muted mb-1">Uploaded: {profileFileName}</p>}
+                          <p className="small mb-1">
+                            {profileUploadStatus === "uploading" && <span className="text-primary">Uploading…</span>}
+                            {profileUploadStatus === "ok" && (
+                              <span className="text-success">
+                                <i className="ti ti-check me-1" />
+                                Uploaded
+                              </span>
+                            )}
+                            {profileUploadStatus === "err" && (
+                              <span className="text-danger">
+                                <i className="ti ti-x me-1" />
+                                Failed
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="form-label">Father's Name</label>
                       <input
                         type="text"
                         className="form-control"
-                        placeholder="Enter Name"
+                        placeholder="Enter Father's Name"
                         value={editFatherName}
                         onChange={(e) => setEditFatherName(e.target.value)}
                         required
@@ -681,6 +956,91 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                       />
                       {editEmailError && <div className="invalid-feedback d-block">{editEmailError}</div>}
                     </div>
+
+                    <div className="mb-3 mt-4">
+                      <label className="form-label text-success fw-bold border-bottom pb-1 w-100 mb-3">Mother's Details</label>
+                      
+                      <div className="d-flex align-items-start upload-pic flex-wrap row-gap-3 mb-3">
+                        <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                          {motherProfilePreview ? (
+                            <ImageWithBasePath src={motherProfilePreview} alt="Mother Profile" className="img-fluid rounded w-100 h-100 object-fit-cover" />
+                          ) : (
+                            <i className="ti ti-photo-plus fs-16" />
+                          )}
+                        </div>
+                        <div className="profile-upload">
+                          <div className="profile-uploader d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <input ref={motherProfileInputRef} type="file" accept="image/jpeg,image/png,image/svg+xml,.jpg,.jpeg,.png,.svg" className="d-none" onChange={handleMotherProfileFile} />
+                            <button type="button" className="btn btn-sm btn-success" onClick={() => motherProfileInputRef.current?.click()}>
+                              <i className="ti ti-upload me-1" />
+                              Mother photo
+                            </button>
+                            {motherProfileRelPath && (
+                              <button type="button" className="btn btn-sm btn-light" onClick={clearMotherProfile}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                          {motherProfileFileName && <p className="small text-muted mb-1">Uploaded: {motherProfileFileName}</p>}
+                          <p className="small mb-1">
+                            {motherProfileUploadStatus === "uploading" && <span className="text-primary">Uploading…</span>}
+                            {motherProfileUploadStatus === "ok" && (
+                              <span className="text-success">
+                                <i className="ti ti-check me-1" />
+                                Uploaded
+                              </span>
+                            )}
+                            {motherProfileUploadStatus === "err" && (
+                              <span className="text-danger">
+                                <i className="ti ti-x me-1" />
+                                Failed
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="form-label">Mother's Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Enter Mother's Name"
+                        value={editMotherName}
+                        onChange={(e) => setEditMotherName(e.target.value)}
+                      />
+                    </div>
+                    <div className="row">
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Mother's Mobile</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Mother's Phone"
+                          value={editMotherPhone}
+                          onChange={(e) => setEditMotherPhone(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-6 mb-3">
+                        <label className="form-label">Mother's Email</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          placeholder="Mother's Email"
+                          value={editMotherEmail}
+                          onChange={(e) => setEditMotherEmail(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Mother's Occupation</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Mother's Occupation"
+                        value={editMotherOccupation}
+                        onChange={(e) => setEditMotherOccupation(e.target.value)}
+                      />
+                    </div>
                     <div className="mb-0">
                       <label className="form-label">Child (student)</label>
                       <input type="text" className="form-control" readOnly value={parentToEdit?.Child || ""} />
@@ -688,6 +1048,17 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
                     </div>
                   </div>
                 </div>
+
+                {error && (
+                  <div className="alert alert-danger mt-3 mb-0" role="alert">
+                    {error}
+                  </div>
+                )}
+                {editUniqueNotice && (
+                  <div className="alert alert-warning mt-3 mb-0" role="alert">
+                    {editUniqueNotice}
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
@@ -733,3 +1104,4 @@ const ParentModal = ({ parentToEdit = null, refetch }: ParentModalProps) => {
 };
 
 export default ParentModal;
+

@@ -57,7 +57,7 @@ const TooltipOption = ({
           <i className="ti ti-file-export me-2" />
           Export
         </Link>
-        <ul className="dropdown-menu  dropdown-menu-end p-3">
+        <ul className="dropdown-menu  dropdown-menu-end p-2">
           <li>
             <Link
               to="#"
@@ -91,3 +91,4 @@ const TooltipOption = ({
 };
 
 export default TooltipOption;
+

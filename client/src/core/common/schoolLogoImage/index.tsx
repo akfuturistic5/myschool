@@ -129,3 +129,4 @@ export default function SchoolLogoImage({ src, className, alt, style }: Props) {
     />
   );
 }
+

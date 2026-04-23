@@ -60,3 +60,4 @@ const EmailVerification3 = () => {
 };
 
 export default EmailVerification3;
+

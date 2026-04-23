@@ -49,10 +49,13 @@ const createStudentSchema = Joi.object({
   previous_school: Joi.string().trim().optional().allow(null, ''),
   previous_school_address: Joi.string().trim().optional().allow(null, ''),
   // Siblings
-  sibiling_1: Joi.string().trim().optional().allow(null, ''),
-  sibiling_2: Joi.string().trim().optional().allow(null, ''),
-  sibiling_1_class: Joi.string().trim().optional().allow(null, ''),
-  sibiling_2_class: Joi.string().trim().optional().allow(null, ''),
+  siblings: Joi.array().items(Joi.object({
+    is_in_same_school: Joi.boolean().optional(),
+    name: Joi.string().trim().allow(null, ''),
+    class_name: Joi.string().trim().allow(null, ''),
+    roll_number: Joi.string().trim().allow(null, ''),
+    admission_number: Joi.string().trim().allow(null, '')
+  })).optional().allow(null),
   // Transport
   is_transport_required: Joi.boolean().optional(),
   route_id: Joi.number().integer().optional().allow(null),
@@ -105,4 +108,20 @@ const leaveStudentsSchema = Joi.object({
   from_academic_year_id: Joi.number().integer().positive().optional().allow(null),
 });
 
-module.exports = { createStudentSchema, updateStudentSchema, promoteStudentsSchema, leaveStudentsSchema };
+const rejoinStudentSchema = Joi.object({
+  student_id: Joi.number().integer().positive().required(),
+  to_class_id: Joi.number().integer().positive().required(),
+  to_section_id: Joi.number().integer().positive().required(),
+  to_academic_year_id: Joi.number().integer().positive().required(),
+  rejoin_date: Joi.date().iso().optional().allow(null),
+  reason: Joi.string().trim().optional().allow(null, ''),
+  remarks: Joi.string().trim().optional().allow(null, ''),
+});
+
+module.exports = {
+  createStudentSchema,
+  updateStudentSchema,
+  promoteStudentsSchema,
+  leaveStudentsSchema,
+  rejoinStudentSchema,
+};

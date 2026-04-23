@@ -43,6 +43,7 @@ const Classes = () => {
   const [editingRow, setEditingRow] = useState<EditRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "danger" | "info">("info");
   const [selectedDeleteRow, setSelectedDeleteRow] = useState<EditRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -111,6 +112,14 @@ const Classes = () => {
       document.body.style.removeProperty("overflow");
       document.body.style.removeProperty("padding-right");
     }, 150);
+  };
+
+  const showNotification = (msg: string, type: "success" | "danger" | "info" = "info") => {
+    setMessage(msg);
+    setMessageType(type);
+    setTimeout(() => {
+      setMessage("");
+    }, 5000);
   };
 
   const handleEditClick = (record: EditRow) => {
@@ -184,11 +193,11 @@ const Classes = () => {
         });
       }
       await refetch();
-      setMessage("Updated successfully");
+      showNotification("Updated successfully", "success");
       closeEditModalAndCleanup();
     } catch (err) {
       console.error("Failed to save:", err);
-      setMessage("Failed to save changes");
+      showNotification("Failed to save changes", "danger");
     } finally {
       setSaving(false);
     }
@@ -199,7 +208,7 @@ const Classes = () => {
     if (!addForm.className.trim() || academicYearId == null) return;
     const academicYearIdNum = Number(academicYearId);
     if (!Number.isInteger(academicYearIdNum) || academicYearIdNum < 1) {
-      setMessage("Please select a valid academic year in the header.");
+      showNotification("Please select a valid academic year in the header.", "danger");
       return;
     }
     setAdding(true);
@@ -244,6 +253,18 @@ const Classes = () => {
       if (createRes?.status !== "SUCCESS") {
         throw new Error(createRes?.message || "Class was not created");
       }
+      await refetch();
+      
+      // Close modal first
+      const addEl = document.getElementById("add_class");
+      if (addEl) {
+        const bs = (window as any).bootstrap?.Modal;
+        const modal = bs?.getInstance(addEl) ?? bs?.getOrCreateInstance(addEl);
+        modal?.hide();
+      }
+      cleanupModalBackdrops();
+
+      // Clear form and show success
       setAddForm({
         className: "",
         classCode: "",
@@ -253,18 +274,10 @@ const Classes = () => {
         isActive: true,
         classTeacherStaffId: "Select",
       });
-      await refetch();
-      setMessage("Class created successfully");
-      const addEl = document.getElementById("add_class");
-      if (addEl) {
-        const bs = (window as any).bootstrap?.Modal;
-        const modal = bs?.getInstance(addEl) ?? bs?.getOrCreateInstance(addEl);
-        modal?.hide();
-      }
-      cleanupModalBackdrops();
+      showNotification("Class created successfully", "success");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create class";
-      setMessage(msg);
+      showNotification(msg, "danger");
     } finally {
       setAdding(false);
     }
@@ -277,7 +290,7 @@ const Classes = () => {
       if (selectedDeleteRow.sectionId) await apiService.deleteSection(selectedDeleteRow.sectionId);
       else await apiService.deleteClass(selectedDeleteRow.classId);
       await refetch();
-      setMessage("Deleted successfully");
+      showNotification("Deleted successfully", "success");
       setSelectedDeleteRow(null);
       const delEl = document.getElementById("delete-modal");
       if (delEl) {
@@ -287,7 +300,7 @@ const Classes = () => {
       }
       cleanupModalBackdrops();
     } catch {
-      setMessage("Failed to delete record");
+      showNotification("Failed to delete record", "danger");
       const delEl = document.getElementById("delete-modal");
       if (delEl) {
         const bs = (window as any).bootstrap?.Modal;
@@ -422,12 +435,12 @@ const Classes = () => {
               <Link
                 to="#"
                 className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown"
+                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                 aria-expanded="false"
               >
                 <i className="ti ti-dots-vertical fs-14" />
               </Link>
-              <ul className="dropdown-menu dropdown-menu-right p-3">
+              <ul className="dropdown-menu dropdown-menu-end p-2">
                 <li>
                   <Link
                     className="dropdown-item rounded-1"
@@ -539,7 +552,12 @@ const Classes = () => {
           </div>
           {/* /Page Header */}
           {/* Classes List */}
-          {message ? <div className="alert alert-info">{message}</div> : null}
+          {message ? (
+            <div className={`alert alert-${messageType} alert-dismissible fade show`} role="alert">
+              {message}
+              <button type="button" className="btn-close" onClick={() => setMessage("")} aria-label="Close"></button>
+            </div>
+          ) : null}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Classes List</h4>
@@ -551,7 +569,7 @@ const Classes = () => {
                   <Link
                     to="#"
                     className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
+                    data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                     data-bs-auto-close="outside"
                   >
                     <i className="ti ti-filter me-2" />
@@ -618,7 +636,7 @@ const Classes = () => {
                   <Link
                     to="#"
                     className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown"
+                    data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                   >
                     <i className="ti ti-sort-ascending-2 me-2" />
                     Sort by A-Z
@@ -999,3 +1017,8 @@ const Classes = () => {
 };
 
 export default Classes;
+
+
+
+
+

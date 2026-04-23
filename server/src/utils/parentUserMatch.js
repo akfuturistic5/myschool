@@ -23,6 +23,9 @@ function mapGuardianLinkToLegacyParentRow(row) {
     student_last_name: row.student_last_name,
     admission_number: row.admission_number,
     roll_number: row.roll_number,
+    class_id: row.class_id != null ? Number(row.class_id) : null,
+    section_id: row.section_id != null ? Number(row.section_id) : null,
+    academic_year_id: row.academic_year_id != null ? Number(row.academic_year_id) : null,
     class_name: row.class_name,
     section_name: row.section_name,
     father_image_url: null,
@@ -78,6 +81,9 @@ function mapParentsTableRow(row) {
     student_last_name: row.student_last_name,
     admission_number: row.admission_number,
     roll_number: row.roll_number,
+    class_id: row.class_id != null ? Number(row.class_id) : null,
+    section_id: row.section_id != null ? Number(row.section_id) : null,
+    academic_year_id: row.academic_year_id != null ? Number(row.academic_year_id) : null,
     class_name: row.class_name,
     section_name: row.section_name,
     father_name: row.father_name || null,
@@ -151,6 +157,9 @@ async function getParentsForUser(userId) {
       s.last_name AS student_last_name,
       s.admission_number,
       s.roll_number,
+      s.class_id,
+      s.section_id,
+      s.academic_year_id,
       c.class_name,
       sec.section_name
     FROM guardians g
@@ -203,6 +212,9 @@ async function getParentsForUser(userId) {
         s.last_name AS student_last_name,
         s.admission_number,
         s.roll_number,
+        s.class_id,
+        s.section_id,
+        s.academic_year_id,
         c.class_name,
         sec.section_name
       FROM parents p
@@ -237,6 +249,9 @@ async function getParentsForUser(userId) {
         s.last_name AS student_last_name,
         s.admission_number,
         s.roll_number,
+        s.class_id,
+        s.section_id,
+        s.academic_year_id,
         c.class_name,
         sec.section_name
       FROM parents p

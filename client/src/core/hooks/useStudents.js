@@ -27,6 +27,14 @@ export const useStudents = () => {
       setLoading(false);
       return;
     }
+    // Never fall back to cross-year student listing for roles that work with academic-year scope.
+    // If no year is selected yet, keep the list empty instead of fetching all students.
+    if (academicYearId == null) {
+      setStudents([]);
+      setLoading(false);
+      setError('Academic year is required to load students');
+      return;
+    }
     try {
       setLoading(true);
       setError(null);

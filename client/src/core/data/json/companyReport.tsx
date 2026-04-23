@@ -130,3 +130,4 @@ export const companyReportsData = [
     companyLogo: "assets/img/icons/company-icon-10.svg",
   },
 ];
+

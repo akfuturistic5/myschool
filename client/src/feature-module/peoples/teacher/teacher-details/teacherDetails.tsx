@@ -113,11 +113,47 @@ const TeacherDetails = () => {
       ? `${teacher.experience_years} Years`
       : 'N/A';
 
+  const teacherStoredDocBasename = (storedPath?: string | null) => {
+    if (!storedPath) return null;
+    const seg = String(storedPath).split('/').pop() || '';
+    return seg || null;
+  };
+
+  const downloadTeacherPdf = async (docType: 'resume' | 'joining_letter') => {
+    if (!teacher?.id) return;
+    try {
+      const blob = await apiService.fetchTeacherDocumentBlob(teacher.id, docType);
+      const objectUrl = URL.createObjectURL(blob);
+      const filename =
+        docType === 'resume'
+          ? teacherStoredDocBasename(teacher.resume) || 'resume.pdf'
+          : teacherStoredDocBasename(teacher.joining_letter) || 'joining-letter.pdf';
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      a.rel = 'noopener noreferrer';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    } catch (err: unknown) {
+      const message = (err as Error)?.message || 'Unable to download document.';
+      setLoadError(message);
+    }
+  };
+
   return (
     <>
   {/* Page Wrapper */}
   <div className="page-wrapper">
     <div className="content">
+      {loadError && (
+        <div className="alert alert-danger mb-3" role="alert">
+          <i className="ti ti-alert-circle me-2" />
+          {loadError}
+        </div>
+      )}
       <div className="row">
         {/* Page Header */}
         <TeacherBreadcrumb teacherId={teacher.id} teacher={teacher} />
@@ -254,9 +290,15 @@ const TeacherDetails = () => {
                         </p>
                       </div>
                     </div>
-                    <Link to="#" className="btn btn-dark btn-icon btn-sm">
+                    <button
+                      type="button"
+                      className="btn btn-dark btn-icon btn-sm"
+                      disabled={!teacher.resume}
+                      onClick={() => downloadTeacherPdf('resume')}
+                      title={teacher.resume ? 'Download resume' : 'Resume not uploaded'}
+                    >
                       <i className="ti ti-download" />
-                    </Link>
+                    </button>
                   </div>
                   <div className="bg-light-300 border rounded d-flex align-items-center justify-content-between p-2">
                     <div className="d-flex align-items-center overflow-hidden">
@@ -269,9 +311,15 @@ const TeacherDetails = () => {
                         </p>
                       </div>
                     </div>
-                    <Link to="#" className="btn btn-dark btn-icon btn-sm">
+                    <button
+                      type="button"
+                      className="btn btn-dark btn-icon btn-sm"
+                      disabled={!teacher.joining_letter}
+                      onClick={() => downloadTeacherPdf('joining_letter')}
+                      title={teacher.joining_letter ? 'Download joining letter' : 'Joining letter not uploaded'}
+                    >
                       <i className="ti ti-download" />
-                    </Link>
+                    </button>
                   </div>
                 </div>
               </div>

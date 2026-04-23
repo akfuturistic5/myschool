@@ -16,9 +16,10 @@ import { useSections } from "../../../../core/hooks/useSections";
 import { useStudents } from "../../../../core/hooks/useStudents";
 import { apiService } from "../../../../core/services/apiService.js";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { exportToExcel, exportToPDF } from "../../../../core/utils/exportUtils";
 
 type AcademicYearItem = { id: number | string; year_name?: string };
-type ClassItem = { id: number | string; class_name?: string };
+type ClassItem = { id: number | string; class_name?: string; class_code?: string | null };
 type SectionItem = { id: number | string; section_name?: string };
 type StudentItem = {
   id: number;
@@ -38,6 +39,8 @@ const StudentPromotion = () => {
   const [isPromotion, setIsPromotion] = useState<boolean>(true);
   const routes = all_routes;
   const promoteModalRef = useRef<HTMLDivElement>(null);
+  const rejoinModalRef = useRef<HTMLDivElement>(null);
+  const examResultModalRef = useRef<HTMLDivElement>(null);
 
   const fromAcademicYearId = useSelector(selectSelectedAcademicYearId);
   const useClassesTyped = useClasses as (
@@ -114,11 +117,27 @@ const StudentPromotion = () => {
   const [leavingHistory, setLeavingHistory] = useState<any[]>([]);
   const [leavingLoading, setLeavingLoading] = useState(false);
   const [leavingError, setLeavingError] = useState<string | null>(null);
+  const [rejoinHistory, setRejoinHistory] = useState<any[]>([]);
+  const [rejoinLoading, setRejoinLoading] = useState(false);
+  const [rejoinError, setRejoinError] = useState<string | null>(null);
+  const [historyTab, setHistoryTab] = useState<"leaving" | "rejoin">("leaving");
   const [leavingSearchTerm, setLeavingSearchTerm] = useState<string>("");
   const [leavingYearFilter, setLeavingYearFilter] = useState<string>("all");
   const [leavingResultFilter, setLeavingResultFilter] = useState<string>("all");
   const [leavingFromDate, setLeavingFromDate] = useState<string>("");
   const [leavingToDate, setLeavingToDate] = useState<string>("");
+  const [rejoinStudentRow, setRejoinStudentRow] = useState<any | null>(null);
+  const [rejoinAcademicYearId, setRejoinAcademicYearId] = useState<string>("");
+  const [rejoinClassId, setRejoinClassId] = useState<string>("");
+  const [rejoinSectionId, setRejoinSectionId] = useState<string>("");
+  const [rejoinRemarks, setRejoinRemarks] = useState<string>("");
+  const [rejoinSubmitting, setRejoinSubmitting] = useState<boolean>(false);
+  const [examSummaryByStudent, setExamSummaryByStudent] = useState<Record<number, any>>({});
+  const [examSummaryLoading, setExamSummaryLoading] = useState<boolean>(false);
+  const [examDetailLoading, setExamDetailLoading] = useState<boolean>(false);
+  const [examDetailError, setExamDetailError] = useState<string | null>(null);
+  const [examDetailStudent, setExamDetailStudent] = useState<any | null>(null);
+  const [examDetailExam, setExamDetailExam] = useState<any | null>(null);
 
   const user = useSelector(selectUser);
   const canPromote = Boolean(
@@ -207,6 +226,86 @@ const StudentPromotion = () => {
     return y?.year_name ?? `Year #${toAcademicYearId}`;
   }, [academicYears, toAcademicYearId]);
 
+  const rejoinEligibleAcademicYears = useMemo(() => {
+    const years = academicYears ?? [];
+    if (!rejoinStudentRow) return years;
+
+    const fromYearName = String(rejoinStudentRow.lastAcademicYearName || "").trim();
+    const fromYearKey = getAcademicYearSortKey(fromYearName);
+    const fromYearIdNum = Number(rejoinStudentRow.lastAcademicYearId);
+    const hasFromYearId = Number.isFinite(fromYearIdNum) && fromYearIdNum > 0;
+
+    return years.filter((year) => {
+      const currentId = Number(year.id);
+      const currentKey = getAcademicYearSortKey(year.year_name);
+
+      if (fromYearKey != null && currentKey != null) {
+        return currentKey > fromYearKey;
+      }
+      if (hasFromYearId && Number.isFinite(currentId)) {
+        return currentId > fromYearIdNum;
+      }
+      if (fromYearKey != null && currentKey == null) {
+        return false;
+      }
+      return true;
+    });
+  }, [academicYears, rejoinStudentRow, getAcademicYearSortKey]);
+
+  const rejoinAcademicYearOptions = useMemo(
+    () =>
+      rejoinEligibleAcademicYears.map((year) => ({
+        value: String(year.id),
+        label: year.year_name ?? `Year #${year.id}`,
+      })),
+    [rejoinEligibleAcademicYears]
+  );
+  const rejoinYearNum = rejoinAcademicYearId ? parseInt(rejoinAcademicYearId, 10) : null;
+  const { classes: rejoinClasses, loading: rejoinClassesLoading, error: rejoinClassesError } =
+    useClassesTyped(rejoinYearNum);
+  const rejoinClassOptions = useMemo(
+    () =>
+      rejoinClasses.map((cls) => ({
+        value: cls.id.toString(),
+        label: cls.class_name
+          ? cls.class_code
+            ? `${cls.class_name} (${cls.class_code})`
+            : cls.class_name
+          : cls.class_code ?? "Unnamed Class",
+      })),
+    [rejoinClasses]
+  );
+  const rejoinClassNum = rejoinClassId ? parseInt(rejoinClassId, 10) : null;
+  const {
+    sections: rejoinSections,
+    loading: rejoinSectionsLoading,
+    error: rejoinSectionsError,
+  } = useSectionsTyped(rejoinClassNum);
+  const rejoinSectionOptions = useMemo(
+    () =>
+      rejoinSections.map((section) => ({
+        value: section.id.toString(),
+        label: section.section_name ?? "Unnamed Section",
+      })),
+    [rejoinSections]
+  );
+
+  useEffect(() => {
+    if (!rejoinClasses.length || !rejoinAcademicYearId) return;
+    setRejoinClassId((prev) => {
+      if (prev && rejoinClasses.some((c) => String(c.id) === prev)) return prev;
+      return String(rejoinClasses[0].id);
+    });
+  }, [rejoinClasses, rejoinAcademicYearId]);
+
+  useEffect(() => {
+    if (!rejoinSections.length || !rejoinClassId) return;
+    setRejoinSectionId((prev) => {
+      if (prev && rejoinSections.some((sec) => String(sec.id) === prev)) return prev;
+      return String(rejoinSections[0].id);
+    });
+  }, [rejoinSections, rejoinClassId]);
+
   const normLabel = (v: string | null | undefined) =>
     String(v ?? "")
       .trim()
@@ -267,10 +366,15 @@ const StudentPromotion = () => {
           [student.first_name, student.last_name].filter(Boolean).join(" ") || "N/A",
         class: student.class_name ?? "N/A",
         section: student.section_name ?? "N/A",
-        result: "N/A",
+        result: (examSummaryByStudent[Number(student.id)]?.overall_result as string) || "N/A",
+        latestExamName:
+          examSummaryByStudent[Number(student.id)]?.exam_name ??
+          examSummaryByStudent[Number(student.id)]?.exam_type ??
+          "N/A",
+        latestExamId: examSummaryByStudent[Number(student.id)]?.exam_id ?? null,
         imgSrc: student.photo_url || "assets/img/students/student-01.jpg",
       })),
-    [filteredStudents]
+    [filteredStudents, examSummaryByStudent]
   );
 
   const fromClassName =
@@ -285,7 +389,9 @@ const StudentPromotion = () => {
     () =>
       classesFrom.map((cls) => ({
         value: cls.id.toString(),
-        label: cls.class_name ?? "Unnamed Class",
+        label: cls.class_code
+          ? `${cls.class_name ?? "Unnamed Class"} (${cls.class_code})`
+          : cls.class_name ?? "Unnamed Class",
       })),
     [classesFrom]
   );
@@ -293,7 +399,9 @@ const StudentPromotion = () => {
     () =>
       classesTo.map((cls) => ({
         value: cls.id.toString(),
-        label: cls.class_name ?? "Unnamed Class",
+        label: cls.class_code
+          ? `${cls.class_name ?? "Unnamed Class"} (${cls.class_code})`
+          : cls.class_name ?? "Unnamed Class",
       })),
     [classesTo]
   );
@@ -362,6 +470,50 @@ const StudentPromotion = () => {
     }
   }, []);
 
+  const loadRejoinHistory = useCallback(async () => {
+    try {
+      setRejoinLoading(true);
+      setRejoinError(null);
+      const res = await apiService.getStudentRejoins(500);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load rejoin students");
+      }
+      setRejoinHistory(Array.isArray(res?.data) ? res.data : []);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load rejoin students";
+      setRejoinError(msg);
+      setRejoinHistory([]);
+    } finally {
+      setRejoinLoading(false);
+    }
+  }, []);
+
+  const loadLatestExamSummary = useCallback(async (studentIds: number[]) => {
+    const ids = [...new Set((studentIds || []).map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0))];
+    if (ids.length === 0) {
+      setExamSummaryByStudent({});
+      return;
+    }
+    try {
+      setExamSummaryLoading(true);
+      const res = await apiService.getStudentsLatestExamSummary(ids);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load exam summaries");
+      }
+      const map: Record<number, any> = {};
+      (Array.isArray(res?.data) ? res.data : []).forEach((row: any) => {
+        const sid = Number(row?.student_id);
+        if (!Number.isFinite(sid) || sid <= 0) return;
+        map[sid] = row;
+      });
+      setExamSummaryByStudent(map);
+    } catch {
+      setExamSummaryByStudent({});
+    } finally {
+      setExamSummaryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setSelectedRowKeys((prev) => prev.filter((k) => data.some((row) => row.key === k)));
   }, [data]);
@@ -373,6 +525,65 @@ const StudentPromotion = () => {
   useEffect(() => {
     void loadLeavingHistory();
   }, [loadLeavingHistory]);
+
+  useEffect(() => {
+    void loadRejoinHistory();
+  }, [loadRejoinHistory]);
+
+  useEffect(() => {
+    void loadLatestExamSummary(filteredStudents.map((s: any) => Number(s.id)));
+  }, [filteredStudents, loadLatestExamSummary]);
+
+  const handleOpenExamResultModal = useCallback(async (record: any) => {
+    const studentId = Number(record?.studentId);
+    if (!Number.isFinite(studentId) || studentId <= 0) return;
+
+    setExamDetailLoading(true);
+    setExamDetailError(null);
+    setExamDetailStudent(record);
+    setExamDetailExam(null);
+
+    const el =
+      (document.getElementById("student_exam_result_modal") as HTMLElement | null) ??
+      examResultModalRef.current;
+    if (el) {
+      try {
+        const Modal = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
+        if (Modal?.getOrCreateInstance) Modal.getOrCreateInstance(el).show();
+      } catch {
+        // noop
+      }
+    }
+
+    try {
+      const res = await apiService.getStudentExamResults(studentId);
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to load exam details");
+      }
+      const exams = Array.isArray(res?.data?.exams) ? res.data.exams : [];
+      setExamDetailExam(exams[0] || null);
+      if (!exams.length) {
+        setExamDetailError("No exam result available for this student.");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to load exam details";
+      setExamDetailError(msg);
+    } finally {
+      setExamDetailLoading(false);
+    }
+  }, []);
+
+  const handleOpenLeavingExamResultModal = useCallback((row: any) => {
+    const normalizedRecord = {
+      studentId: row?.studentId ?? null,
+      name: row?.studentName ?? "N/A",
+      AdmissionNo: row?.admissionNo ?? "N/A",
+      RollNo: "N/A",
+      class: row?.last?.split("/")?.[0]?.trim() || "N/A",
+      section: row?.last?.split("/")?.[1]?.trim() || "N/A",
+    };
+    void handleOpenExamResultModal(normalizedRecord);
+  }, [handleOpenExamResultModal]);
 
   const columns = useMemo(
     () => [
@@ -449,6 +660,16 @@ const StudentPromotion = () => {
                 <i className="ti ti-circle-filled fs-5 me-1"></i>
                 {text}
               </span>
+            ) : text === "Pending" ? (
+              <span className="badge badge-soft-warning d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : text === "N/A" ? (
+              <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
             ) : (
               <span className="badge badge-soft-danger d-inline-flex align-items-center">
                 <i className="ti ti-circle-filled fs-5 me-1"></i>
@@ -460,8 +681,21 @@ const StudentPromotion = () => {
         sorter: (a: TableData, b: TableData) =>
           String(a.result).length - String(b.result).length,
       },
+      {
+        title: "Result Details",
+        dataIndex: "resultDetails",
+        render: (_: unknown, record: any) => (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => void handleOpenExamResultModal(record)}
+          >
+            View
+          </button>
+        ),
+      },
     ],
-    [routes.studentDetail]
+    [routes.studentDetail, handleOpenExamResultModal]
   );
 
   /** Same pattern as profile password modal — use getOrCreateInstance; ref alone can miss the node timing. */
@@ -491,6 +725,99 @@ const StudentPromotion = () => {
         node.parentElement?.removeChild(node);
       });
     }, 400);
+  };
+
+  const hideRejoinModal = () => {
+    const el =
+      (document.getElementById("student_rejoin") as HTMLElement | null) ??
+      rejoinModalRef.current;
+    if (!el) return;
+    try {
+      const Modal = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
+      if (Modal?.getOrCreateInstance) {
+        Modal.getOrCreateInstance(el).hide();
+      }
+    } catch {
+      // fall through to DOM cleanup
+    }
+    window.setTimeout(() => {
+      if (!el.classList.contains("show")) return;
+      el.classList.remove("show");
+      el.style.display = "none";
+      el.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+      document.querySelectorAll(".modal-backdrop").forEach((node) => {
+        node.parentElement?.removeChild(node);
+      });
+    }, 400);
+  };
+
+  const openRejoinModal = useCallback((row: any) => {
+    setRejoinStudentRow(row);
+    setRejoinError(null);
+    setRejoinSubmitting(false);
+    setRejoinRemarks("");
+    setRejoinAcademicYearId("");
+    setRejoinClassId("");
+    setRejoinSectionId("");
+
+    const el =
+      (document.getElementById("student_rejoin") as HTMLElement | null) ??
+      rejoinModalRef.current;
+    if (!el) return;
+    try {
+      const Modal = (window as unknown as { bootstrap?: { Modal: any } }).bootstrap?.Modal;
+      if (Modal?.getOrCreateInstance) {
+        Modal.getOrCreateInstance(el).show();
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const handleConfirmRejoin = async () => {
+    setRejoinError(null);
+    if (!canPromote) {
+      setRejoinError("You do not have permission to rejoin students.");
+      return;
+    }
+    if (!rejoinStudentRow?.studentId) {
+      setRejoinError("Invalid leaving record. Student ID missing.");
+      return;
+    }
+    const ay = parseInt(rejoinAcademicYearId, 10);
+    const cls = parseInt(rejoinClassId, 10);
+    const sec = parseInt(rejoinSectionId, 10);
+    if (Number.isNaN(ay) || Number.isNaN(cls) || Number.isNaN(sec)) {
+      setRejoinError("Choose valid academic year, class, and section.");
+      return;
+    }
+
+    setRejoinSubmitting(true);
+    try {
+      const res = await apiService.rejoinStudent({
+        student_id: rejoinStudentRow.studentId,
+        to_academic_year_id: ay,
+        to_class_id: cls,
+        to_section_id: sec,
+        remarks: rejoinRemarks || undefined,
+      });
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to rejoin student");
+      }
+      hideRejoinModal();
+      setPromoteSuccess("Student rejoined successfully.");
+      await refetchStudents();
+      await loadLeavingHistory();
+      await loadRejoinHistory();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to rejoin student";
+      setRejoinError(msg);
+    } finally {
+      setRejoinSubmitting(false);
+    }
   };
 
   const handleConfirmAction = async () => {
@@ -611,6 +938,24 @@ const StudentPromotion = () => {
     []
   );
 
+  const historyExportColumns = useMemo(
+    () => [
+      { title: "Date", dataKey: "promotionDate" },
+      { title: "Admission No", dataKey: "admissionNumber" },
+      { title: "Roll No", dataKey: "rollNumber" },
+      { title: "Student", dataKey: "studentName" },
+      { title: "From Session", dataKey: "fromAcademicYear" },
+      { title: "To Session", dataKey: "toAcademicYear" },
+      { title: "From Class", dataKey: "fromClass" },
+      { title: "To Class", dataKey: "toClass" },
+      { title: "From Section", dataKey: "fromSection" },
+      { title: "To Section", dataKey: "toSection" },
+      { title: "Status", dataKey: "status" },
+      { title: "Promoted By", dataKey: "promotedBy" },
+    ],
+    []
+  );
+
   const formatDate = (v: string | null | undefined) => {
     if (!v) return "—";
     const d = new Date(v);
@@ -622,6 +967,7 @@ const StudentPromotion = () => {
     () =>
       leavingHistory.map((row: any, idx: number) => ({
         key: String(row.id ?? idx),
+        studentId: row.student_id ?? null,
         admissionNo: row.admission_number ?? "—",
         studentName:
           [row.student_first_name, row.student_last_name].filter(Boolean).join(" ") || "N/A",
@@ -632,8 +978,14 @@ const StudentPromotion = () => {
           `${row.last_class_name ?? "—"} / ${row.last_section_name ?? "—"} / ${row.last_academic_year_name ?? "—"}`,
         leavingDate: formatDate(row.leaving_date),
         leavingDateRaw: row.leaving_date ?? null,
+        leavingRecordActive: !(row.is_active === false || row.is_active === "f" || row.is_active === 0),
+        lastAcademicYearId: row.last_academic_year_id ?? null,
         lastAcademicYearName: row.last_academic_year_name ?? "—",
         lastResult: row.last_class_result ?? "Not Available",
+        leavingStatus:
+          row.is_active === false || row.is_active === "f" || row.is_active === 0
+            ? "Rejoined"
+            : "Left",
         reason: row.reason ?? "—",
         remarks: row.remarks ?? "—",
       })),
@@ -690,21 +1042,48 @@ const StudentPromotion = () => {
       { title: "Last Class/Section/Year", dataIndex: "last" },
       { title: "Leaving Date", dataIndex: "leavingDate" },
       {
-        title: "Last Class Result",
+        title: "Result",
         dataIndex: "lastResult",
+        render: (text: string, row: any) => (
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {text === "Pass" ? (
+              <span className="badge badge-soft-success d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : text === "Fail" ? (
+              <span className="badge badge-soft-danger d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            ) : (
+              <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+                <i className="ti ti-circle-filled fs-5 me-1"></i>
+                {text}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary"
+              onClick={() => handleOpenLeavingExamResultModal(row)}
+              disabled={!row?.studentId}
+            >
+              View
+            </button>
+          </div>
+        ),
+      },
+      {
+        title: "Leaving Status",
+        dataIndex: "leavingStatus",
         render: (text: string) =>
-          text === "Pass" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : text === "Fail" ? (
+          text === "Left" ? (
             <span className="badge badge-soft-danger d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
               {text}
             </span>
           ) : (
-            <span className="badge badge-soft-secondary d-inline-flex align-items-center">
+            <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
               {text}
             </span>
@@ -712,76 +1091,132 @@ const StudentPromotion = () => {
       },
       { title: "Reason", dataIndex: "reason" },
       { title: "Remarks", dataIndex: "remarks" },
+      {
+        title: "Action",
+        dataIndex: "action",
+        render: (_: unknown, row: any) => (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => openRejoinModal(row)}
+            disabled={!canPromote || !row?.studentId || !row?.leavingRecordActive}
+          >
+            {row?.leavingRecordActive ? "Rejoin" : "Rejoined"}
+          </button>
+        ),
+      },
+    ],
+    [canPromote, openRejoinModal, handleOpenLeavingExamResultModal]
+  );
+
+  const rejoinData = useMemo(
+    () =>
+      rejoinHistory.map((row: any, idx: number) => ({
+        key: String(row.id ?? idx),
+        admissionNo: row.admission_number ?? "—",
+        studentName:
+          [row.student_first_name, row.student_last_name].filter(Boolean).join(" ") || "N/A",
+        fromDetails:
+          `${row.from_class_name ?? "—"} / ${row.from_section_name ?? "—"} / ${row.from_academic_year_name ?? "—"}`,
+        toDetails:
+          `${row.to_class_name ?? "—"} / ${row.to_section_name ?? "—"} / ${row.to_academic_year_name ?? "—"}`,
+        leavingDate: formatDate(row.leaving_date),
+        rejoinDate: formatDate(row.rejoin_date),
+        reason: row.reason ?? "—",
+        remarks: row.remarks ?? "—",
+        rejoinedBy:
+          [row.rejoined_by_first_name, row.rejoined_by_last_name].filter(Boolean).join(" ") ||
+          row.rejoined_by_username ||
+          (row.rejoined_by != null ? `User #${row.rejoined_by}` : "—"),
+      })),
+    [rejoinHistory]
+  );
+
+  const rejoinColumns = useMemo(
+    () => [
+      { title: "Admission No", dataIndex: "admissionNo" },
+      { title: "Student", dataIndex: "studentName" },
+      { title: "From (Class/Section/Year)", dataIndex: "fromDetails" },
+      { title: "Leaving Date", dataIndex: "leavingDate" },
+      { title: "To (Class/Section/Year)", dataIndex: "toDetails" },
+      { title: "Rejoin Date", dataIndex: "rejoinDate" },
+      { title: "Reason", dataIndex: "reason" },
+      { title: "Remarks", dataIndex: "remarks" },
+      { title: "Rejoined By", dataIndex: "rejoinedBy" },
     ],
     []
   );
 
-  const exportHeaders = [
-    "Admission No",
-    "Student Name",
-    "Joining Details",
-    "Joining Date",
-    "Last Class/Section/Year",
-    "Leaving Date",
-    "Last Class Result",
-    "Reason",
-    "Remarks",
-  ];
-  const exportRows = filteredLeavingData.map((row: any) => [
-    row.admissionNo ?? "",
-    row.studentName ?? "",
-    row.joining ?? "",
-    row.joiningDate ?? "",
-    row.last ?? "",
-    row.leavingDate ?? "",
-    row.lastResult ?? "",
-    row.reason ?? "",
-    row.remarks ?? "",
-  ]);
-  const sanitizeCell = (value: unknown) => String(value ?? "").replace(/"/g, '""');
-  const downloadTextFile = (content: string, fileName: string, mimeType: string) => {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const todayStamp = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const leavingExportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Student Name", dataKey: "studentName" },
+      { title: "Joining Details", dataKey: "joining" },
+      { title: "Joining Date", dataKey: "joiningDate" },
+      { title: "Last Class/Section/Year", dataKey: "last" },
+      { title: "Leaving Date", dataKey: "leavingDate" },
+      { title: "Last Class Result", dataKey: "lastResult" },
+      { title: "Reason", dataKey: "reason" },
+      { title: "Remarks", dataKey: "remarks" },
+    ],
+    []
+  );
+  const rejoinExportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admissionNo" },
+      { title: "Student Name", dataKey: "studentName" },
+      { title: "From (Class/Section/Year)", dataKey: "fromDetails" },
+      { title: "Leaving Date", dataKey: "leavingDate" },
+      { title: "To (Class/Section/Year)", dataKey: "toDetails" },
+      { title: "Rejoin Date", dataKey: "rejoinDate" },
+      { title: "Reason", dataKey: "reason" },
+      { title: "Remarks", dataKey: "remarks" },
+      { title: "Rejoined By", dataKey: "rejoinedBy" },
+    ],
+    []
+  );
+
+  const handleExportPromotionExcel = () => {
+    if (!historyRows.length) return;
+    exportToExcel(historyRows, `promotion-history-${todayStamp}`, "PromotionHistory");
   };
-  const handleExportLeavingCsv = () => {
-    const lines = [
-      exportHeaders.map((h) => `"${sanitizeCell(h)}"`).join(","),
-      ...exportRows.map((cells) => cells.map((c) => `"${sanitizeCell(c)}"`).join(",")),
-    ];
-    const csv = `\uFEFF${lines.join("\n")}`;
-    const today = new Date().toISOString().slice(0, 10);
-    downloadTextFile(csv, `leaving-students-${today}.csv`, "text/csv;charset=utf-8;");
+  const handleExportPromotionPdf = () => {
+    if (!historyRows.length) return;
+    exportToPDF(
+      historyRows,
+      "Promotion History",
+      `promotion-history-${todayStamp}`,
+      historyExportColumns
+    );
   };
-  const htmlEscape = (value: unknown) =>
-    String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+
   const handleExportLeavingExcel = () => {
-    const headerRow = exportHeaders.map((h) => `<th>${htmlEscape(h)}</th>`).join("");
-    const bodyRows = exportRows
-      .map((cells) => `<tr>${cells.map((c) => `<td>${htmlEscape(c)}</td>`).join("")}</tr>`)
-      .join("");
-    const tableHtml = `
-      <html>
-      <head><meta charset="utf-8" /></head>
-      <body>
-        <table border="1">
-          <thead><tr>${headerRow}</tr></thead>
-          <tbody>${bodyRows}</tbody>
-        </table>
-      </body>
-      </html>`;
-    const today = new Date().toISOString().slice(0, 10);
-    downloadTextFile(tableHtml, `leaving-students-${today}.xls`, "application/vnd.ms-excel;charset=utf-8;");
+    if (!filteredLeavingData.length) return;
+    exportToExcel(filteredLeavingData, `leaving-students-${todayStamp}`, "LeavingStudents");
+  };
+  const handleExportLeavingPdf = () => {
+    if (!filteredLeavingData.length) return;
+    exportToPDF(
+      filteredLeavingData,
+      "Leaving Students",
+      `leaving-students-${todayStamp}`,
+      leavingExportColumns
+    );
+  };
+
+  const handleExportRejoinExcel = () => {
+    if (!rejoinData.length) return;
+    exportToExcel(rejoinData, `rejoin-students-${todayStamp}`, "RejoinStudents");
+  };
+  const handleExportRejoinPdf = () => {
+    if (!rejoinData.length) return;
+    exportToPDF(
+      rejoinData,
+      "Rejoin Students",
+      `rejoin-students-${todayStamp}`,
+      rejoinExportColumns
+    );
   };
 
   return (
@@ -919,6 +1354,8 @@ const StudentPromotion = () => {
                                     className="select"
                                     options={sectionOptionsFrom}
                                     value={fromSectionId || undefined}
+                                    isDisabled={!fromClassId}
+                                    placeholder={fromClassId ? "Select section" : "Select class first"}
                                     onChange={(v) => setFromSectionId(v || "")}
                                   />
                                 )}
@@ -1018,6 +1455,8 @@ const StudentPromotion = () => {
                                     className="select"
                                     options={sectionOptionsTo}
                                     value={toSectionId || undefined}
+                                    isDisabled={!toClassId}
+                                    placeholder={toClassId ? "Select section" : "Select class first"}
                                     onChange={(v) => setToSectionId(v || "")}
                                   />
                                 )}
@@ -1075,93 +1514,16 @@ const StudentPromotion = () => {
                   </form>
                 </div>
               </div>
-              <div
-                className={`promote-card-main ${isPromotion && "promote-card-main-show"}`}
-              >
-                <div className="card">
-                  <div className="card-header border-0 pb-0">
-                    <div className="bg-light-gray p-3 rounded">
-                      <h4>{actionMode === "promote" ? "Map Class Sections" : "Leaving Summary"}</h4>
-                      <p>
-                        {actionMode === "promote"
-                          ? "Summary of source and target (adjust selections above if needed)"
-                          : "Summary of selected source class/section for school leaving"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="card-body pb-2">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <div className="card w-100">
-                        <div className="card-body">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              From Class<span className="text-danger">*</span>
-                            </label>
-                            <div className="form-control-plaintext p-0">{fromClassName}</div>
-                          </div>
-                          <div className="mb-0">
-                            <label className="form-label d-block mb-2">
-                              From Section
-                              <span className="text-danger"> *</span>
-                            </label>
-                            <div className="form-control-plaintext p-0">{fromSectionName}</div>
-                          </div>
-                        </div>
-                      </div>
-                      {actionMode === "promote" ? (
-                        <>
-                      <Link
-                        to="#"
-                        className="badge bg-primary badge-xl exchange-link text-white d-flex align-items-center justify-content-center mx-md-4 mx-auto my-md-0 my-4 flex-shrink-0"
-                      >
-                        <span>
-                          <i className="ti ti-arrows-exchange fs-16" />
-                        </span>
-                      </Link>
-                      <div className="card w-100">
-                        <div className="card-body">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Promote to Session <span className="text-danger"> *</span>
-                            </label>
-                            <div className="form-control-plaintext p-0">{targetYearLabel}</div>
-                          </div>
-                          <div>
-                            <label className="form-label mb-2">
-                              Target class & section
-                              <span className="text-danger"> *</span>
-                            </label>
-                            <div className="form-control-plaintext p-0">
-                              {toClassName} — {toSectionName}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                        </>
-                      ) : (
-                        <div className="card w-100 ms-md-4">
-                          <div className="card-body">
-                            <div className="mb-3">
-                              <label className="form-label">Action</label>
-                              <div className="form-control-plaintext p-0 text-danger fw-semibold">
-                                School Leaving
-                              </div>
-                            </div>
-                            <div>
-                              <label className="form-label mb-2">Leaving Date</label>
-                              <div className="form-control-plaintext p-0">
-                                {formatDate(leavingDate)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+              <div className={`promote-card-main ${isPromotion && "promote-card-main-show"}`}>
+                <>
                 <div className="card">
                   <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                    <h4 className="mb-3">Students List</h4>
+                    <h4 className="mb-3">
+                      {actionMode === "promote" ? "Students List" : "Select Students to Mark Leaving"}
+                    </h4>
+                    {examSummaryLoading && (
+                      <span className="badge bg-light text-dark mb-3 me-2">Updating exam results...</span>
+                    )}
                     <div className="d-flex align-items-center flex-wrap">
                       <div className="input-icon-start mb-3 me-2 position-relative">
                         <PredefinedDateRanges />
@@ -1181,7 +1543,7 @@ const StudentPromotion = () => {
                         <Link
                           to="#"
                           className="btn btn-outline-light bg-white dropdown-toggle"
-                          data-bs-toggle="dropdown"
+                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
                         >
                           <i className="ti ti-sort-ascending-2 me-2" />
                           Sort by A-Z{" "}
@@ -1285,15 +1647,34 @@ const StudentPromotion = () => {
                     {actionMode === "promote" ? "Promote Students" : "Mark as Leaving"}
                   </button>
                 </div>
+                </>
                 {actionMode === "promote" && (
                 <div className="card mt-4">
-                  <div className="card-header border-0 pb-0">
+                  <div className="card-header border-0 pb-0 d-flex align-items-center justify-content-between flex-wrap">
                     <div className="bg-light-gray p-3 rounded">
                       <h4>Promotion History</h4>
                       <p>
                         Shows already promoted students with from/to session, class, section, date,
                         and promoter details.
                       </p>
+                    </div>
+                    <div className="d-flex align-items-center gap-2 mb-3">
+                      <button
+                        type="button"
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={handleExportPromotionPdf}
+                        disabled={historyRows.length === 0}
+                      >
+                        Export PDF
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline-success btn-sm"
+                        onClick={handleExportPromotionExcel}
+                        disabled={historyRows.length === 0}
+                      >
+                        Export Excel
+                      </button>
                     </div>
                   </div>
                   <div className="card-body p-0 py-3">
@@ -1328,30 +1709,69 @@ const StudentPromotion = () => {
                     <div className="d-flex align-items-center gap-2 mb-3">
                       <button
                         type="button"
-                        className="btn btn-outline-success btn-sm"
-                        onClick={handleExportLeavingCsv}
-                        disabled={filteredLeavingData.length === 0}
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={
+                          historyTab === "leaving" ? handleExportLeavingPdf : handleExportRejoinPdf
+                        }
+                        disabled={
+                          historyTab === "leaving"
+                            ? filteredLeavingData.length === 0
+                            : rejoinData.length === 0
+                        }
                       >
-                        Export CSV
+                        Export PDF
                       </button>
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm"
-                        onClick={handleExportLeavingExcel}
-                        disabled={filteredLeavingData.length === 0}
+                        onClick={
+                          historyTab === "leaving" ? handleExportLeavingExcel : handleExportRejoinExcel
+                        }
+                        disabled={
+                          historyTab === "leaving"
+                            ? filteredLeavingData.length === 0
+                            : rejoinData.length === 0
+                        }
                       >
                         Export Excel
                       </button>
                       <button
                         type="button"
                         className="btn btn-outline-primary btn-sm"
-                        onClick={() => void loadLeavingHistory()}
+                        onClick={() =>
+                          historyTab === "leaving"
+                            ? void loadLeavingHistory()
+                            : void loadRejoinHistory()
+                        }
                       >
                         Refresh
                       </button>
                     </div>
                   </div>
                   <div className="card-body p-0 py-3">
+                    <div className="px-3 pb-2 d-flex justify-content-center justify-content-md-start">
+                      <div className="btn-group" role="group" aria-label="History list switch">
+                        <button
+                          type="button"
+                          className={`btn ${
+                            historyTab === "leaving" ? "btn-primary" : "btn-outline-primary"
+                          }`}
+                          onClick={() => setHistoryTab("leaving")}
+                        >
+                          Leaving List
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ${
+                            historyTab === "rejoin" ? "btn-primary" : "btn-outline-primary"
+                          }`}
+                          onClick={() => setHistoryTab("rejoin")}
+                        >
+                          Rejoin List
+                        </button>
+                      </div>
+                    </div>
+                    {historyTab === "leaving" && (
                     <div className="px-3 pb-2">
                       <div className="row g-2">
                         <div className="col-md-4">
@@ -1412,21 +1832,38 @@ const StudentPromotion = () => {
                         </div>
                       </div>
                     </div>
-                    {leavingLoading && (
+                    )}
+                    {historyTab === "leaving" && leavingLoading && (
                       <div className="text-center p-4 text-muted">Loading leaving students...</div>
                     )}
-                    {leavingError && (
+                    {historyTab === "leaving" && leavingError && (
                       <div className="alert alert-danger mx-3" role="alert">
                         {leavingError}
                       </div>
                     )}
-                    {!leavingLoading && !leavingError && filteredLeavingData.length === 0 && (
+                    {historyTab === "leaving" && !leavingLoading && !leavingError && filteredLeavingData.length === 0 && (
                       <div className="alert alert-info mx-3" role="alert">
                         No leaving students found for selected filters.
                       </div>
                     )}
-                    {!leavingLoading && !leavingError && filteredLeavingData.length > 0 && (
+                    {historyTab === "leaving" && !leavingLoading && !leavingError && filteredLeavingData.length > 0 && (
                       <Table dataSource={filteredLeavingData} columns={leavingColumns} Selection={false} />
+                    )}
+                    {historyTab === "rejoin" && rejoinLoading && (
+                      <div className="text-center p-4 text-muted">Loading rejoin students...</div>
+                    )}
+                    {historyTab === "rejoin" && rejoinError && (
+                      <div className="alert alert-danger mx-3" role="alert">
+                        {rejoinError}
+                      </div>
+                    )}
+                    {historyTab === "rejoin" && !rejoinLoading && !rejoinError && rejoinData.length === 0 && (
+                      <div className="alert alert-info mx-3" role="alert">
+                        No rejoin students found yet.
+                      </div>
+                    )}
+                    {historyTab === "rejoin" && !rejoinLoading && !rejoinError && rejoinData.length > 0 && (
+                      <Table dataSource={rejoinData} columns={rejoinColumns} Selection={false} />
                     )}
                   </div>
                 </div>
@@ -1531,8 +1968,249 @@ const StudentPromotion = () => {
           </div>
         </div>
       </div>
+      <div
+        className="modal fade"
+        id="student_rejoin"
+        ref={rejoinModalRef}
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-body">
+              <h4 className="mb-2">Confirm Rejoin</h4>
+              <p className="mb-3">
+                Rejoin{" "}
+                <strong>{rejoinStudentRow?.studentName || "selected student"}</strong> (
+                {rejoinStudentRow?.admissionNo || "N/A"}) to a new session/class/section.
+              </p>
+
+              <div className="mb-2">
+                <label className="form-label">Academic Year</label>
+                <CommonSelect
+                  className="select"
+                  options={rejoinAcademicYearOptions}
+                  value={rejoinAcademicYearId || undefined}
+                  placeholder="Select academic year"
+                  onChange={(v) => {
+                    setRejoinAcademicYearId(v || "");
+                    setRejoinClassId("");
+                    setRejoinSectionId("");
+                  }}
+                />
+              </div>
+              {rejoinAcademicYearOptions.length === 0 && (
+                <div className="alert alert-warning py-2">
+                  No valid academic year is available after this student's leaving year.
+                </div>
+              )}
+
+              <div className="mb-2">
+                <label className="form-label">Class</label>
+                {rejoinClassesLoading ? (
+                  <div className="form-control">
+                    <i className="ti ti-loader ti-spin me-2"></i>
+                    Loading classes...
+                  </div>
+                ) : rejoinClassesError ? (
+                  <div className="form-control text-danger">
+                    <i className="ti ti-alert-circle me-2"></i>
+                    Error: {rejoinClassesError}
+                  </div>
+                ) : (
+                  <CommonSelect
+                    className="select"
+                    options={rejoinClassOptions}
+                    value={rejoinClassId || undefined}
+                    isDisabled={!rejoinAcademicYearId}
+                    placeholder={rejoinAcademicYearId ? "Select class" : "Select year first"}
+                    onChange={(v) => {
+                      setRejoinClassId(v || "");
+                      setRejoinSectionId("");
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="mb-2">
+                <label className="form-label">Section</label>
+                {rejoinSectionsLoading ? (
+                  <div className="form-control">
+                    <i className="ti ti-loader ti-spin me-2"></i>
+                    Loading sections...
+                  </div>
+                ) : rejoinSectionsError ? (
+                  <div className="form-control text-danger">
+                    <i className="ti ti-alert-circle me-2"></i>
+                    Error: {rejoinSectionsError}
+                  </div>
+                ) : (
+                  <CommonSelect
+                    className="select"
+                    options={rejoinSectionOptions}
+                    value={rejoinSectionId || undefined}
+                    isDisabled={!rejoinClassId}
+                    placeholder={rejoinClassId ? "Select section" : "Select class first"}
+                    onChange={(v) => setRejoinSectionId(v || "")}
+                  />
+                )}
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Remarks</label>
+                <textarea
+                  className="form-control"
+                  rows={2}
+                  value={rejoinRemarks}
+                  onChange={(e) => setRejoinRemarks(e.target.value)}
+                  placeholder="Optional remarks"
+                />
+              </div>
+
+              {rejoinError && (
+                <div className="alert alert-danger text-start small" role="alert">
+                  {rejoinError}
+                </div>
+              )}
+
+              <div className="d-flex justify-content-end">
+                <button
+                  type="button"
+                  className="btn btn-light me-2"
+                  data-bs-dismiss="modal"
+                  disabled={rejoinSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void handleConfirmRejoin()}
+                  disabled={rejoinSubmitting}
+                >
+                  {rejoinSubmitting ? (
+                    <>
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      />
+                      Rejoining...
+                    </>
+                  ) : (
+                    "Confirm Rejoin"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        className="modal fade"
+        id="student_exam_result_modal"
+        ref={examResultModalRef}
+        tabIndex={-1}
+        aria-hidden="true"
+      >
+        <div className="modal-dialog modal-lg modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Latest Exam Result</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <div className="mb-3">
+                <div className="fw-semibold">
+                  {examDetailStudent?.name || "Student"} ({examDetailStudent?.AdmissionNo || "N/A"})
+                </div>
+                <div className="text-muted small">
+                  Roll No: {examDetailStudent?.RollNo || "N/A"} | Class: {examDetailStudent?.class || "N/A"} | Section:{" "}
+                  {examDetailStudent?.section || "N/A"}
+                </div>
+              </div>
+
+              {examDetailLoading && (
+                <div className="text-center p-4">
+                  <div className="spinner-border text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <p className="mt-2 mb-0">Loading exam result...</p>
+                </div>
+              )}
+
+              {!examDetailLoading && examDetailError && (
+                <div className="alert alert-warning mb-0">{examDetailError}</div>
+              )}
+
+              {!examDetailLoading && !examDetailError && examDetailExam && (
+                <>
+                  <div className="row g-2 mb-3">
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Exam</div>
+                        <div className="fw-semibold">{examDetailExam.examLabel || examDetailExam.examName || "N/A"}</div>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Date</div>
+                        <div className="fw-semibold">{formatDate(examDetailExam.examDate)}</div>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="border rounded p-2">
+                        <div className="small text-muted">Overall Result</div>
+                        <div className="fw-semibold">
+                          {examDetailExam.summary?.overallResult || "N/A"}
+                          {examDetailExam.summary?.grade ? ` (${examDetailExam.summary.grade})` : ""}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="table table-sm table-bordered align-middle mb-2">
+                      <thead className="table-light">
+                        <tr>
+                          <th>Subject</th>
+                          <th>Mode</th>
+                          <th>Max</th>
+                          <th>Min</th>
+                          <th>Obtained</th>
+                          <th>Result</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(Array.isArray(examDetailExam.subjects) ? examDetailExam.subjects : []).map((s: any, idx: number) => (
+                          <tr key={`${s.subjectId ?? idx}`}>
+                            <td>{s.subjectName || "Subject"}</td>
+                            <td>{s.subjectMode || "Theory"}</td>
+                            <td>{s.maxMarks ?? 0}</td>
+                            <td>{s.minMarks ?? 0}</td>
+                            <td>{s.isAbsent ? "Absent" : (s.marksObtained ?? "N/A")}</td>
+                            <td>{s.result || "N/A"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="small text-muted">
+                    Total: {examDetailExam.summary?.totalObtained ?? 0}/{examDetailExam.summary?.totalMax ?? 0} | Percentage:{" "}
+                    {examDetailExam.summary?.percentage != null ? `${examDetailExam.summary.percentage}%` : "N/A"}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </>
   );
 };
 
 export default StudentPromotion;
+
+
+
+
+

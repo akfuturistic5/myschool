@@ -10,6 +10,11 @@ const parseId = (v) => {
   return Number.isFinite(n) && n > 0 ? n : NaN;
 };
 
+async function getClassAcademicYearId(classId) {
+  const r = await query('SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1', [classId]);
+  return r.rows[0]?.academic_year_id ?? null;
+}
+
 const rowToApi = (row) => ({
   id: row.id,
   teacherId: row.teacher_id,
@@ -24,6 +29,7 @@ const listTeacherAssignments = async (req, res) => {
   try {
     const teacherId = req.query.teacherId != null ? parseId(req.query.teacherId) : null;
     const classId = req.query.classId != null ? parseId(req.query.classId) : null;
+    const academicYearId = req.query.academicYearId != null ? parseId(req.query.academicYearId) : null;
     const params = [];
     let where = 'WHERE 1=1';
     if (teacherId) {
@@ -33,6 +39,13 @@ const listTeacherAssignments = async (req, res) => {
     if (classId) {
       params.push(classId);
       where += ` AND ta.class_id = $${params.length}`;
+    }
+    if (academicYearId) {
+      params.push(academicYearId);
+      where += ` AND (
+        c.academic_year_id = $${params.length}
+        OR (ta.academic_year_id = $${params.length})
+      )`;
     }
     const result = await query(
       `SELECT
@@ -114,10 +127,10 @@ const createTeacherAssignment = async (req, res) => {
     }
 
     const ins = await query(
-      `INSERT INTO teacher_assignments (teacher_id, class_id, section_id, subject_id, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO teacher_assignments (teacher_id, class_id, section_id, subject_id, academic_year_id, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        RETURNING *`,
-      [teacherId, classId, resolved.sectionId, subjectId]
+      [teacherId, classId, resolved.sectionId, subjectId, await getClassAcademicYearId(classId)]
     );
     return success(res, 201, 'Teacher assignment created', rowToApi(ins.rows[0]));
   } catch (error) {
@@ -174,10 +187,11 @@ const updateTeacherAssignment = async (req, res) => {
         class_id = $2,
         section_id = $3,
         subject_id = $4,
+        academic_year_id = $5,
         updated_at = NOW()
-       WHERE id = $5
+       WHERE id = $6
        RETURNING *`,
-      [teacherId, classId, resolved.sectionId, subjectId, id]
+      [teacherId, classId, resolved.sectionId, subjectId, await getClassAcademicYearId(classId), id]
     );
     return success(res, 200, 'Teacher assignment updated', rowToApi(upd.rows[0]));
   } catch (error) {

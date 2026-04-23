@@ -1,5 +1,10 @@
 const { query, executeTransaction } = require('../config/database');
 const bcrypt = require('bcryptjs');
+const {
+  normalizeCopyOptions,
+  anyCopySelected,
+  cloneAcademicYearData,
+} = require('../services/academicYearCloneService');
 
 function parseYearId(param) {
   const n = parseInt(param, 10);
@@ -162,60 +167,43 @@ const getAcademicYearSummary = async (req, res) => {
   }
 };
 
-async function getAcademicYearUsageCounts(id) {
-  const statsRes = await query(
-    `
-    SELECT
-      (SELECT COUNT(*)::int FROM classes c WHERE c.academic_year_id = $1) AS classes_count,
-      (SELECT COUNT(*)::int FROM sections s
-        INNER JOIN classes c ON s.class_id = c.id
-        WHERE c.academic_year_id = $1) AS sections_count,
-      (SELECT COUNT(*)::int FROM students st WHERE st.academic_year_id = $1) AS students_count,
-      (SELECT COUNT(*)::int FROM class_schedules cs WHERE cs.academic_year_id = $1) AS class_schedules_count,
-      (SELECT COUNT(*)::int FROM fee_structures fs WHERE fs.academic_year_id = $1) AS fee_structures_count,
-      (SELECT COUNT(*)::int FROM exams e WHERE e.academic_year_id = $1) AS exams_count,
-      (SELECT COUNT(*)::int FROM holidays h WHERE h.academic_year_id = $1) AS holidays_count,
-      (SELECT COUNT(*)::int FROM class_syllabus csy WHERE csy.academic_year_id = $1) AS class_syllabus_count,
-      (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.to_academic_year_id = $1) AS promotions_into_count,
-      (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.from_academic_year_id = $1) AS promotions_from_count,
-      (SELECT COUNT(*)::int FROM attendance a WHERE a.academic_year_id = $1) AS attendance_records_count,
-      (SELECT COUNT(*)::int FROM teacher_routines tr WHERE tr.academic_year_id = $1) AS teacher_routines_count
-    `,
-    [id]
-  );
-  return statsRes.rows[0] || {};
-}
-
-function hasBlockingReferences(usage) {
-  const keys = [
-    'classes_count',
-    'sections_count',
-    'students_count',
-    'class_schedules_count',
-    'fee_structures_count',
-    'exams_count',
-    'holidays_count',
-    'promotions_into_count',
-    'promotions_from_count',
-    'attendance_records_count',
-    'teacher_routines_count',
-  ];
-  return keys.some((k) => Number(usage?.[k] || 0) > 0);
-}
-
 const createAcademicYear = async (req, res) => {
   try {
     const {
+      name: nameRaw,
       year_name: yearNameRaw,
       start_date: startDateRaw,
       end_date: endDateRaw,
       is_current: isCurrent,
       is_active: isActive,
+      copy_from_year_id: copyFromYearRaw,
+      copy_options: copyOptionsRaw,
     } = req.body;
 
-    const year_name = String(yearNameRaw).trim();
+    const year_name = String(yearNameRaw ?? nameRaw ?? '').trim();
     const start_date = normalizeDateString(startDateRaw);
     const end_date = normalizeDateString(endDateRaw);
+    const copyFromYearId =
+      copyFromYearRaw == null || copyFromYearRaw === ''
+        ? null
+        : parseYearId(copyFromYearRaw);
+    const normalizedCopyOptions = normalizeCopyOptions(copyOptionsRaw);
+    const shouldClone = copyFromYearId != null && anyCopySelected(normalizedCopyOptions);
+
+    if (!year_name) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Year name is required',
+      });
+    }
+
+    if (copyFromYearRaw != null && copyFromYearRaw !== '' && !copyFromYearId) {
+      return res.status(400).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_INVALID_COPY_SOURCE',
+        message: 'copy_from_year_id must be a positive integer',
+      });
+    }
 
     if (end_date && compareIsoDates(end_date, start_date) < 0) {
       return res.status(400).json({
@@ -264,13 +252,54 @@ const createAcademicYear = async (req, res) => {
          RETURNING *`,
         [year_name, start_date, endInsert, is_current, is_active, created_by]
       );
-      return ins.rows[0];
+      const inserted = ins.rows[0];
+
+      let cloneResult = null;
+      if (shouldClone) {
+        if (copyFromYearId === inserted.id) {
+          throw makeHttpError(
+            400,
+            'ACADEMIC_YEAR_COPY_SOURCE_EQUALS_TARGET',
+            'Source and target academic year cannot be the same'
+          );
+        }
+        try {
+          cloneResult = await cloneAcademicYearData(client, {
+            sourceYearId: copyFromYearId,
+            targetYearId: inserted.id,
+            options: normalizedCopyOptions,
+            createdByStaffId: created_by,
+          });
+        } catch (e) {
+          if (e && e.status && e.code && e.message) {
+            throw makeHttpError(e.status, e.code, e.message, e.details);
+          }
+          throw makeHttpError(
+            500,
+            'ACADEMIC_YEAR_CLONE_FAILED',
+            e?.message || 'Failed to clone data from source academic year'
+          );
+        }
+      }
+
+      return { inserted, cloneResult };
     });
 
     res.status(201).json({
       status: 'SUCCESS',
       message: 'Academic year created successfully',
-      data: row,
+      data: row.inserted,
+      ...(row.cloneResult
+        ? {
+            clone: {
+              source_year_id: copyFromYearId,
+              options: row.cloneResult.options,
+              summary: row.cloneResult.summary,
+              counts: row.cloneResult.summary,
+              details: row.cloneResult.details || {},
+            },
+          }
+        : {}),
     });
   } catch (error) {
     if (error && error.status && error.code && error.message) {
@@ -284,6 +313,7 @@ const createAcademicYear = async (req, res) => {
     if (error && error.code === '23505') {
       return res.status(409).json({
         status: 'ERROR',
+        code: 'ACADEMIC_YEAR_NAME_EXISTS',
         message: 'An academic year with this name already exists',
       });
     }
@@ -399,6 +429,7 @@ const updateAcademicYear = async (req, res) => {
     if (error && error.code === '23505') {
       return res.status(409).json({
         status: 'ERROR',
+        code: 'ACADEMIC_YEAR_NAME_EXISTS',
         message: 'An academic year with this name already exists',
       });
     }
@@ -424,7 +455,7 @@ const deleteAcademicYear = async (req, res) => {
     }
     // Verify against users.password_hash (same as login)
     const userId = req.user?.id;
-    const ph = await query('SELECT password_hash FROM users WHERE id = $1 LIMIT 1', [userId]);
+    const ph = await query('SELECT password_hash FROM users WHERE id = $1 AND is_active = true LIMIT 1', [userId]);
     const passwordHash = ph.rows?.[0]?.password_hash;
     let ok = false;
     try {
@@ -455,22 +486,126 @@ const deleteAcademicYear = async (req, res) => {
       });
     }
 
-    // Hard delete is only safe when no FK references exist (most FKs are RESTRICT).
-    const usage = await getAcademicYearUsageCounts(id);
-    if (hasBlockingReferences(usage)) {
-      return res.status(409).json({
-        status: 'ERROR',
-        code: 'ACADEMIC_YEAR_DELETE_HAS_REFERENCES',
-        message:
-          'This academic year is already used in school records. It cannot be deleted. Set it to inactive instead.',
-        data: { usage },
-      });
-    }
-
     await executeTransaction(async (client) => {
-      // Lock row to avoid races with new inserts.
+      // Lock target row to avoid races with concurrent writes.
       await client.query('SELECT id FROM academic_years WHERE id = $1 FOR UPDATE', [id]);
-      // class_syllabus is ON DELETE SET NULL; others should be zero due to usage check above.
+
+      // Keep only "current year" as the blocking rule by re-pointing FK references
+      // from the deleted year to another existing year (prefer current).
+      const fallbackRes = await client.query(
+        `
+        SELECT id
+        FROM academic_years
+        WHERE id <> $1
+        ORDER BY (is_current = true) DESC, start_date DESC NULLS LAST, id DESC
+        LIMIT 1
+        `,
+        [id]
+      );
+      const fallbackYearId = fallbackRes.rows?.[0]?.id ?? null;
+      if (!fallbackYearId) {
+        throw makeHttpError(
+          409,
+          'ACADEMIC_YEAR_DELETE_FALLBACK_REQUIRED',
+          'Cannot delete this academic year because no fallback year exists. Create another year first.'
+        );
+      }
+
+      const fkColsRes = await client.query(
+        `
+        SELECT
+          ns.nspname AS schema_name,
+          cls.relname AS table_name,
+          att.attname AS column_name
+        FROM pg_constraint con
+        JOIN pg_class cls ON cls.oid = con.conrelid
+        JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+        JOIN unnest(con.conkey) AS k(attnum) ON TRUE
+        JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+        WHERE con.contype = 'f'
+          AND con.confrelid = 'public.academic_years'::regclass
+          AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+        `
+      );
+
+      // class_schedules has unique indexes that can conflict after year reassignment.
+      // For any source schedule that would collide in fallback year, drop dependent
+      // teacher_routines for that source row, then delete the source schedule row.
+      await client.query(
+        `
+        DELETE FROM teacher_routines tr
+        USING class_schedules src
+        WHERE tr.class_schedule_id = src.id
+          AND src.academic_year_id = $1
+          AND EXISTS (
+            SELECT 1
+            FROM class_schedules dst
+            WHERE dst.academic_year_id = $2
+              AND (
+                (
+                  src.teacher_id IS NOT NULL
+                  AND dst.teacher_id = src.teacher_id
+                  AND dst.day_of_week = src.day_of_week
+                  AND dst.time_slot_id = src.time_slot_id
+                )
+                OR (
+                  dst.class_id = src.class_id
+                  AND COALESCE(dst.section_id, -1) = COALESCE(src.section_id, -1)
+                  AND dst.day_of_week = src.day_of_week
+                  AND dst.time_slot_id = src.time_slot_id
+                )
+              )
+          )
+        `,
+        [id, fallbackYearId]
+      );
+
+      await client.query(
+        `
+        DELETE FROM class_schedules src
+        WHERE src.academic_year_id = $1
+          AND EXISTS (
+            SELECT 1
+            FROM class_schedules dst
+            WHERE dst.academic_year_id = $2
+              AND (
+                (
+                  src.teacher_id IS NOT NULL
+                  AND dst.teacher_id = src.teacher_id
+                  AND dst.day_of_week = src.day_of_week
+                  AND dst.time_slot_id = src.time_slot_id
+                )
+                OR (
+                  dst.class_id = src.class_id
+                  AND COALESCE(dst.section_id, -1) = COALESCE(src.section_id, -1)
+                  AND dst.day_of_week = src.day_of_week
+                  AND dst.time_slot_id = src.time_slot_id
+                )
+              )
+          )
+        `,
+        [id, fallbackYearId]
+      );
+
+      for (const row of fkColsRes.rows || []) {
+        const schema = String(row.schema_name || '').replace(/"/g, '""');
+        const table = String(row.table_name || '').replace(/"/g, '""');
+        const column = String(row.column_name || '').replace(/"/g, '""');
+        if (!schema || !table || !column) continue;
+        if (schema === 'public' && table === 'class_schedules' && column === 'academic_year_id') {
+          // already conflict-cleaned above; handle explicitly once.
+          await client.query(
+            'UPDATE public.class_schedules SET academic_year_id = $1 WHERE academic_year_id = $2',
+            [fallbackYearId, id]
+          );
+          continue;
+        }
+        await client.query(
+          `UPDATE "${schema}"."${table}" SET "${column}" = $1 WHERE "${column}" = $2`,
+          [fallbackYearId, id]
+        );
+      }
+
       await client.query('DELETE FROM academic_years WHERE id = $1', [id]);
     });
 
@@ -480,6 +615,40 @@ const deleteAcademicYear = async (req, res) => {
       data: { id },
     });
   } catch (error) {
+    if (error && error.status && error.code && error.message) {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: error.code,
+        message: error.message,
+      });
+    }
+    if (error && error.code === '23503') {
+      console.error('Academic year delete FK block:', {
+        code: error.code,
+        schema: error.schema,
+        table: error.table,
+        constraint: error.constraint,
+        detail: error.detail,
+      });
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DELETE_CONSTRAINT_BLOCKED',
+        message: 'Delete is blocked by database constraints.',
+        data: {
+          schema: error.schema || null,
+          table: error.table || null,
+          constraint: error.constraint || null,
+          detail: error.detail || null,
+        },
+      });
+    }
+    if (error && error.code === '23505') {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DELETE_REASSIGN_CONFLICT',
+        message: 'Delete failed because fallback-year reassignment created duplicate records.',
+      });
+    }
     console.error('Error deleting academic year:', error);
     return res.status(500).json({
       status: 'ERROR',
