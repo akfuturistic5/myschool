@@ -19,6 +19,11 @@ interface TeacherSidebarProps {
     pan_number?: string | null;
     id_number?: string | null;
     languages_known?: string | null;
+    hostel_name?: string | null;
+    room_number?: string | null;
+    route_name?: string | null;
+    vehicle_number?: string | null;
+    pickup_point_name?: string | null;
   } | null;
 }
 
@@ -43,7 +48,11 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
   const email = teacher?.email ?? "N/A";
   const panOrId = teacher?.pan_number || teacher?.id_number || "N/A";
   const languages = teacher?.languages_known ?? "N/A";
-
+  const hostelName = teacher?.hostel_name ?? "N/A";
+  const roomNumber = teacher?.room_number ?? "N/A";
+  const routeName = teacher?.route_name ?? "N/A";
+  const vehicleNumber = teacher?.vehicle_number ?? "N/A";
+  const pickupPointName = teacher?.pickup_point_name ?? "N/A";
   return (
     <div className="col-xxl-3 col-xl-4 theiaStickySidebar">
       <div className="stickytopbar pb-4">
@@ -154,8 +163,8 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
                     <i className="ti ti-building-fortress fs-16" />
                   </span>
                   <div>
-                    <h6 className="mb-1">HI-Hostel, Floor</h6>
-                    <p className="text-primary">Room No : 25</p>
+                    <h6 className="mb-1">{hostelName}</h6>
+                    <p className="text-primary">Room No : {roomNumber}</p>
                   </div>
                 </div>
               </div>
@@ -166,20 +175,20 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
                   </span>
                   <div>
                     <span className="fs-12 mb-1">Route</span>
-                    <p className="text-dark">Newyork</p>
+                    <p className="text-dark">{routeName}</p>
                   </div>
                 </div>
                 <div className="row">
                   <div className="col-sm-6">
                     <div className="mb-3">
                       <span className="fs-12 mb-1">Bus Number</span>
-                      <p className="text-dark">AM 54548</p>
+                      <p className="text-dark">{vehicleNumber}</p>
                     </div>
                   </div>
                   <div className="col-sm-6">
                     <div className="mb-3">
                       <span className="fs-12 mb-1">Pickup Point</span>
-                      <p className="text-dark">Cincinatti</p>
+                      <p className="text-dark">{pickupPointName}</p>
                     </div>
                   </div>
                 </div>

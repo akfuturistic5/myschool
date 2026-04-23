@@ -102,6 +102,11 @@ const getAllTeachers = async (req, res) => {
         s.experience_years,
         s.photo_url,
         s.is_active,
+        t.youtube,
+        t.instagram,
+        t.other_info,
+        t.account_name,
+        t.account_number,
         c.class_name,
         sub.subject_name
       FROM teachers t
@@ -110,7 +115,7 @@ const getAllTeachers = async (req, res) => {
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       ORDER BY s.first_name ASC, s.last_name ASC
     `);
-    
+
     return success(res, 200, 'Teachers fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching teachers:', error);
@@ -177,6 +182,11 @@ const getCurrentTeacher = async (req, res) => {
         s.experience_years,
         s.photo_url,
         s.is_active,
+        t.youtube,
+        t.instagram,
+        t.other_info,
+        t.account_name,
+        t.account_number,
         c.class_name,
         sub.subject_name
       FROM teachers t
@@ -207,7 +217,7 @@ const getTeacherById = async (req, res) => {
     if (!requester?.id || roleId == null) {
       return errorResponse(res, 401, 'Not authenticated');
     }
-    
+
     const result = await query(`
       SELECT
         t.id,
@@ -260,6 +270,12 @@ const getTeacherById = async (req, res) => {
         s.photo_url,
         s.is_active,
         s.user_id,
+        t.youtube,
+        t.instagram,
+        t.other_info,
+        t.account_name,
+        t.account_number,
+        t.epf_no,
         c.class_name,
         sub.subject_name
       FROM teachers t
@@ -268,7 +284,7 @@ const getTeacherById = async (req, res) => {
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       WHERE t.id = $1
     `, [id]);
-    
+
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Teacher not found');
     }
@@ -279,7 +295,7 @@ const getTeacherById = async (req, res) => {
     if (!isAdmin && !isSelf) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
-    
+
     return success(res, 200, 'Teacher fetched successfully', row);
   } catch (error) {
     console.error('Error fetching teacher:', error);
@@ -348,6 +364,11 @@ const getTeachersByClass = async (req, res) => {
         s.experience_years,
         s.photo_url,
         s.is_active,
+        t.youtube,
+        t.instagram,
+        t.other_info,
+        t.account_name,
+        t.account_number,
         c.class_name,
         sub.subject_name
       FROM teachers t
@@ -380,7 +401,7 @@ const getTeacherRoutine = async (req, res) => {
     `,
       [id]
     );
-    
+
     if (teacherCheck.rows.length === 0) {
       return errorResponse(res, 404, 'Teacher not found');
     }
@@ -596,13 +617,13 @@ const getTeacherRoutine = async (req, res) => {
     // Format the response
     const routine = schedulesResult.rows.map(row => {
       // Get day value from any possible column name
-      const dayValue = row.day_of_week || row.day || row.weekday || 
-                       row['day of week'] || row['dayOfWeek'];
-      
+      const dayValue = row.day_of_week || row.day || row.weekday ||
+        row['day of week'] || row['dayOfWeek'];
+
       // Get time from slot join or from class_schedules directly
       const startTime = row.start_time || row.startTime || row.period_start;
       const endTime = row.end_time || row.endTime || row.period_end;
-      
+
       return {
         id: row.id,
         classId: row.class_id,
@@ -675,6 +696,8 @@ const createTeacher = async (req, res) => {
       current_address, permanent_address, pan_number, id_number,
       bank_name, branch, ifsc, contract_type, shift, work_location,
       facebook, twitter, linkedin,
+      youtube, instagram, other_info,
+      account_name, account_number, epf_no,
       employee_code: clientEmployeeCode,
       status, is_active,
     } = body;
@@ -851,9 +874,9 @@ const createTeacher = async (req, res) => {
           previous_school_name, previous_school_address, previous_school_phone,
           current_address, permanent_address, pan_number, id_number, status,
           bank_name, branch, ifsc, contract_type, shift, work_location,
-          facebook, twitter, linkedin, blood_group, resume, joining_letter, created_at, modified_at
+          facebook, twitter, linkedin, youtube, instagram, other_info, account_name, account_number, blood_group, epf_no, resume, joining_letter, created_at, modified_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, NULL, NULL, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NULL, NULL, NOW(), NOW()
         ) RETURNING id`,
         [
           staffId,
@@ -880,7 +903,13 @@ const createTeacher = async (req, res) => {
           facebook || null,
           twitter || null,
           linkedin || null,
+          youtube || null,
+          instagram || null,
+          other_info || null,
+          account_name || null,
+          account_number || null,
           bgText,
+          epf_no || null,
         ]
       );
       return { teacherId: tIns.rows[0].id, staffId };
@@ -915,6 +944,11 @@ const createTeacher = async (req, res) => {
         t.facebook,
         t.twitter,
         t.linkedin,
+        t.youtube,
+        t.instagram,
+        t.other_info,
+        t.account_name,
+        t.account_number,
         t.status,
         t.created_at,
         t.resume,
@@ -941,6 +975,7 @@ const createTeacher = async (req, res) => {
         s.experience_years,
         s.photo_url,
         s.is_active,
+        t.epf_no,
         c.class_name,
         sub.subject_name
       FROM teachers t
@@ -999,8 +1034,8 @@ const updateTeacher = async (req, res) => {
       class_id, subject_id, father_name, mother_name, marital_status, languages_known,
       blood_group, blood_group_id, previous_school_name, previous_school_address, previous_school_phone,
       current_address, permanent_address, pan_number, id_number,
-      bank_name, branch, ifsc, contract_type, shift, work_location,
-      facebook, twitter, linkedin, photo_url
+      bank_name, branch, ifsc, account_name, account_number, epf_no, contract_type, shift, work_location,
+      facebook, twitter, linkedin, youtube, instagram, other_info, photo_url
     } = req.body;
 
     let isActiveBoolean = false;
@@ -1038,9 +1073,9 @@ const updateTeacher = async (req, res) => {
     const languagesArr = Array.isArray(languages_known) ? languages_known : (typeof languages_known === 'string' ? languages_known.split(',').map(s => s.trim()).filter(Boolean) : null);
 
     if (first_name != null || last_name != null || gender != null || date_of_birth != null ||
-        phone != null || email != null || address != null || emergency_contact_name != null ||
-        emergency_contact_phone != null || designation_id != null || department_id != null ||
-        joining_date != null || salary != null || qualification != null || experience_years != null || photo_url !== undefined) {
+      phone != null || email != null || address != null || emergency_contact_name != null ||
+      emergency_contact_phone != null || designation_id != null || department_id != null ||
+      joining_date != null || salary != null || qualification != null || experience_years != null || photo_url !== undefined) {
       const staffUpdates = [];
       const staffParams = [];
       let idx = 1;
@@ -1072,7 +1107,7 @@ const updateTeacher = async (req, res) => {
       if (staffUpdates.length > 0) {
         staffParams.push(staffId);
         await query(`UPDATE staff SET ${staffUpdates.join(', ')} WHERE id = $${idx}`, staffParams);
-        
+
         if (photo_url !== undefined && existingPhoto && existingPhoto !== photo_url) {
           const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
           await deleteFileIfExist(existingPhoto);
@@ -1112,12 +1147,18 @@ const updateTeacher = async (req, res) => {
     tadd('facebook', facebook);
     tadd('twitter', twitter);
     tadd('linkedin', linkedin);
+    tadd('youtube', youtube);
+    tadd('instagram', instagram);
+    tadd('other_info', other_info);
+    tadd('account_name', account_name);
+    tadd('account_number', account_number);
+    tadd('epf_no', epf_no);
     teacherUpdates.push('modified_at = NOW()');
     teacherParams.push(teacherIdNum);
     await query(`UPDATE teachers SET ${teacherUpdates.join(', ')} WHERE id = $${tidx}`, teacherParams);
 
     const result = await query(`
-      SELECT t.id, t.status, t.staff_id, s.is_active
+      SELECT t.id, t.status, t.staff_id, s.is_active, t.youtube, t.instagram, t.other_info, t.account_name, t.account_number, t.epf_no
       FROM teachers t INNER JOIN staff s ON t.staff_id = s.id
       WHERE t.id = $1
     `, [teacherIdNum]);

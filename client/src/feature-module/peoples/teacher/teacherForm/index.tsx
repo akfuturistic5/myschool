@@ -32,7 +32,7 @@ import { useHostels } from "../../../../core/hooks/useHostels";
 import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
 import {
@@ -136,6 +136,15 @@ const TeacherForm = () => {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [selectedContractType, setSelectedContractType] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
+  const [selectedPickupPointId, setSelectedPickupPointId] = useState<string | null>(null);
+  const [fatherName, setFatherName] = useState("");
+  const [motherName, setMotherName] = useState("");
+  const [panNumber, setPanNumber] = useState("");
+  const [idNumber, setIdNumber] = useState("");
+  const [prevSchoolPhone, setPrevSchoolPhone] = useState("");
+  const [epfNo, setEpfNo] = useState("");
   const handleTagsChange = (newTags: string[]) => {
     setOwner(newTags);
   };
@@ -180,6 +189,13 @@ const TeacherForm = () => {
       subject_id: selectedSubjectId,
       new_password: newPassword,
       confirm_password: confirmPassword,
+      epf_no: epfNo,
+      father_name: fatherName,
+      mother_name: motherName,
+      pan_number: panNumber,
+      id_number: idNumber,
+      previous_school_phone: prevSchoolPhone,
+      marital_status: selectedMaritalStatus || "",
     }),
     [
       firstName,
@@ -192,6 +208,14 @@ const TeacherForm = () => {
       selectedSubjectId,
       newPassword,
       confirmPassword,
+      epfNo,
+      selectedPickupPointId,
+      fatherName,
+      motherName,
+      panNumber,
+      idNumber,
+      prevSchoolPhone,
+      selectedMaritalStatus,
     ]
   );
 
@@ -304,7 +328,7 @@ const TeacherForm = () => {
   const { hostelRooms } = useHostelRooms();
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
 
@@ -340,6 +364,9 @@ const TeacherForm = () => {
       setSelectedDepartmentId(null);
       setSelectedContractType(null);
       setSelectedShift(null);
+      setSelectedRouteId(null);
+      setSelectedVehicleId(null);
+      setSelectedPickupPointId(null);
       setSelectedStatus("Active");
       setOwner(["English"]);
       setDobDate(null);
@@ -362,6 +389,12 @@ const TeacherForm = () => {
       setFormBanner(null);
       setResumeFileError(null);
       setJoiningLetterFileError(null);
+      setFatherName("");
+      setMotherName("");
+      setPanNumber("");
+      setIdNumber("");
+      setPrevSchoolPhone("");
+      setEpfNo("");
     }
   }, [location.pathname]);
 
@@ -380,9 +413,15 @@ const TeacherForm = () => {
       setJoiningDate(jd);
       setLeavingDate(null);
       if (teacherData.languages_known) {
-        const tags = typeof teacherData.languages_known === "string"
-          ? teacherData.languages_known.split(",").map((s: string) => s.trim()).filter(Boolean)
-          : [];
+        let tags: string[] = [];
+        if (Array.isArray(teacherData.languages_known)) {
+          tags = teacherData.languages_known.map(String);
+        } else if (typeof teacherData.languages_known === "string") {
+          tags = teacherData.languages_known
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+        }
         setOwner(tags.length ? tags : ["English"]);
       } else {
         setOwner(["English"]);
@@ -406,11 +445,20 @@ const TeacherForm = () => {
       );
       setSelectedContractType(teacherData.contract_type ?? null);
       setSelectedShift(teacherData.shift ?? null);
+      setSelectedRouteId(teacherData.route_id ? String(teacherData.route_id) : null);
+      setSelectedVehicleId(teacherData.vehicle_id ? String(teacherData.vehicle_id) : null);
+      setSelectedPickupPointId(teacherData.pickup_point_id ? String(teacherData.pickup_point_id) : null);
       setFirstName(teacherData.first_name ?? "");
       setLastName(teacherData.last_name ?? "");
       setPhone(teacherData.phone ?? "");
       setEmail(teacherData.email ?? "");
       setQualification(teacherData.qualification ?? "");
+      setFatherName(teacherData.father_name ?? "");
+      setMotherName(teacherData.mother_name ?? "");
+      setPanNumber(teacherData.pan_number ?? "");
+      setIdNumber(teacherData.id_number ?? "");
+      setPrevSchoolPhone(teacherData.previous_school_phone ?? "");
+      setEpfNo(teacherData.epf_no ?? "");
       setTouched({});
       setSubmitAttempted(false);
       setFormBanner(null);
@@ -831,26 +879,36 @@ const TeacherForm = () => {
                             )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="father_name">
                           <div className="mb-3">
                             <label className="form-label">Father’s Name</label>
                             <input
                               name="father_name"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.father_name ?? "") : undefined}
+                              className={`form-control ${showFieldError("father_name") && mergedErrors.father_name ? "is-invalid" : ""}`}
+                              value={fatherName}
+                              onChange={(e) => setFatherName(e.target.value)}
+                              onBlur={() => touchField("father_name")}
                             />
+                            {showFieldError("father_name") && mergedErrors.father_name && (
+                              <div className="field-hint-error">{mergedErrors.father_name}</div>
+                            )}
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="mother_name">
                           <div className="mb-3">
                             <label className="form-label">Mother’s Name</label>
                             <input
                               name="mother_name"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.mother_name ?? "") : undefined}
+                              className={`form-control ${showFieldError("mother_name") && mergedErrors.mother_name ? "is-invalid" : ""}`}
+                              value={motherName}
+                              onChange={(e) => setMotherName(e.target.value)}
+                              onBlur={() => touchField("mother_name")}
                             />
+                            {showFieldError("mother_name") && mergedErrors.mother_name && (
+                              <div className="field-hint-error">{mergedErrors.mother_name}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -870,7 +928,7 @@ const TeacherForm = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="marital_status">
                           <div className="mb-3">
                             <label className="form-label">Marital Status</label>
                             <CommonSelect
@@ -886,8 +944,12 @@ const TeacherForm = () => {
                               value={selectedMaritalStatus}
                               onChange={(value: string | null) => {
                                 setSelectedMaritalStatus(value);
+                                touchField("marital_status");
                               }}
                             />
+                            {showFieldError("marital_status") && mergedErrors.marital_status && (
+                              <div className="field-hint-error">{mergedErrors.marital_status}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -960,17 +1022,20 @@ const TeacherForm = () => {
                             />
                           </div>
                         </div>
-                        <div className="col-xxl col-xl-3 col-md-6">
+                        <div className="col-xxl col-xl-3 col-md-6" data-validation-field="previous_school_phone">
                           <div className="mb-3">
-                            <label className="form-label">
-                              Previous School Phone No
-                            </label>
+                            <label className="form-label">Previous School Phone No</label>
                             <input
                               name="previous_school_phone"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.previous_school_phone ?? "") : undefined}
+                              className={`form-control ${showFieldError("previous_school_phone") && mergedErrors.previous_school_phone ? "is-invalid" : ""}`}
+                              value={prevSchoolPhone}
+                              onChange={(e) => setPrevSchoolPhone(e.target.value)}
+                              onBlur={() => touchField("previous_school_phone")}
                             />
+                            {showFieldError("previous_school_phone") && mergedErrors.previous_school_phone && (
+                              <div className="field-hint-error">{mergedErrors.previous_school_phone}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl-3 col-xl-3 col-md-6">
@@ -997,30 +1062,36 @@ const TeacherForm = () => {
                             />
                           </div>
                         </div>
-                        <div className="col-xxl-3 col-xl-3 col-md-6">
+                        <div className="col-xxl-3 col-xl-3 col-md-6" data-validation-field="pan_number">
                           <div className="mb-3">
-                            <label className="form-label">
-                              PAN Number
-                            </label>
+                            <label className="form-label">PAN Number</label>
                             <input
                               name="pan_number"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.pan_number ?? "") : undefined}
+                              className={`form-control ${showFieldError("pan_number") && mergedErrors.pan_number ? "is-invalid" : ""}`}
+                              value={panNumber}
+                              onChange={(e) => setPanNumber(e.target.value)}
+                              onBlur={() => touchField("pan_number")}
                             />
+                            {showFieldError("pan_number") && mergedErrors.pan_number && (
+                              <div className="field-hint-error">{mergedErrors.pan_number}</div>
+                            )}
                           </div>
                         </div>
-                        <div className="col-xxl-3 col-xl-3 col-md-6">
+                        <div className="col-xxl-3 col-xl-3 col-md-6" data-validation-field="id_number">
                           <div className="mb-3">
-                            <label className="form-label">
-                              ID Number
-                            </label>
+                            <label className="form-label">ID Number</label>
                             <input
                               name="id_number"
                               type="text"
-                              className="form-control"
-                              defaultValue={isEdit && t ? (t.id_number ?? "") : undefined}
+                              className={`form-control ${showFieldError("id_number") && mergedErrors.id_number ? "is-invalid" : ""}`}
+                              value={idNumber}
+                              onChange={(e) => setIdNumber(e.target.value)}
+                              onBlur={() => touchField("id_number")}
                             />
+                            {showFieldError("id_number") && mergedErrors.id_number && (
+                              <div className="field-hint-error">{mergedErrors.id_number}</div>
+                            )}
                           </div>
                         </div>
                         <div className="col-xxl-3 col-xl-3 col-md-6">
@@ -1047,14 +1118,11 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Notes</label>
                             <textarea
+                              name="other_info"
                               className="form-control"
                               placeholder="Other Information"
                               rows={4}
-                              defaultValue={
-                                isEdit
-                                  ? "Depending on the specific needs of your organization or system, additional information may be collected or tracked. Its important to ensure that any data collected complies with privacy regulations and policies to protect students sensitive information"
-                                  : undefined
-                              }
+                              defaultValue={isEdit && t ? (t.other_info ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -1081,9 +1149,11 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">EPF No</label>
                             <input
+                              name="epf_no"
                               type="text"
                               className="form-control"
-                              defaultValue={isEdit && t ? (t.epf_no ?? "") : undefined}
+                              value={epfNo}
+                              onChange={(e) => setEpfNo(e.target.value)}
                             />
                           </div>
                         </div>
@@ -1296,9 +1366,10 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Account Name</label>
                             <input
+                              name="account_name"
                               type="text"
                               className="form-control"
-                              defaultValue={isEdit && t ? (t.emergency_contact_name ?? "") : undefined}
+                              defaultValue={isEdit && t ? (t.account_name ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -1306,9 +1377,10 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Account Number</label>
                             <input
+                              name="account_number"
                               type="text"
                               className="form-control"
-                              defaultValue={isEdit && t ? (t.emergency_contact_phone ?? "") : undefined}
+                              defaultValue={isEdit && t ? (t.account_number ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -1390,7 +1462,11 @@ const TeacherForm = () => {
                                 value: String((r.originalData?.id ?? r.id) ?? ''),
                                 label: r.routes ?? r.originalData?.route_name ?? 'N/A',
                               }))}
-                              defaultValue={undefined}
+                              value={selectedRouteId}
+                              onChange={(value) => {
+                                setSelectedRouteId(value);
+                                setSelectedVehicleId(null);
+                              }}
                             />
                           )}
                         </div>
@@ -1411,11 +1487,14 @@ const TeacherForm = () => {
                           ) : (
                             <CommonSelect
                               className="select"
-                              options={(vehicles || []).map((v: any) => ({
-                                value: String((v.originalData?.id ?? v.id) ?? ''),
-                                label: v.vehicleNumber ?? v.originalData?.vehicle_number ?? 'N/A',
-                              }))}
-                              defaultValue={undefined}
+                              options={(vehicles || [])
+                                .filter((v: any) => selectedRouteId ? String(v.originalData?.route_id) === selectedRouteId : true)
+                                .map((v: any) => ({
+                                  value: String(v.originalData?.vehicle_id ?? ''),
+                                  label: v.vehicle ?? v.originalData?.vehicle_number ?? 'N/A',
+                                }))}
+                              value={selectedVehicleId}
+                              onChange={(value) => setSelectedVehicleId(value)}
                             />
                           )}
                         </div>
@@ -1440,7 +1519,8 @@ const TeacherForm = () => {
                                 value: String((p.originalData?.id ?? p.id) ?? ''),
                                 label: p.pickupPoint ?? p.originalData?.pickup_point_name ?? 'N/A',
                               }))}
-                              defaultValue={undefined}
+                              value={selectedPickupPointId}
+                              onChange={(value) => setSelectedPickupPointId(value)}
                             />
                           )}
                         </div>
@@ -1524,13 +1604,12 @@ const TeacherForm = () => {
                         </div>
                         <div className="col-xxl col-xl-3 col-lg-4 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Instagram</label>
+                            <label className="form-label">Twitter</label>
                             <input
+                              name="twitter"
                               type="text"
                               className="form-control"
-                              defaultValue={
-                                isEdit ? "www.instagram.com" : undefined
-                              }
+                              defaultValue={isEdit && t ? (t.twitter ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -1549,22 +1628,21 @@ const TeacherForm = () => {
                           <div className="mb-3">
                             <label className="form-label">Youtube</label>
                             <input
+                              name="youtube"
                               type="text"
                               className="form-control"
-                              defaultValue={
-                                isEdit ? "www.youtube.com" : undefined
-                              }
+                              defaultValue={isEdit && t ? (t.youtube ?? "") : undefined}
                             />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-lg-4 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Twitter URL</label>
+                            <label className="form-label">Instagram</label>
                             <input
-                              name="twitter"
+                              name="instagram"
                               type="text"
                               className="form-control"
-                              defaultValue={isEdit && t ? (t.twitter ?? "") : undefined}
+                              defaultValue={isEdit && t ? (t.instagram ?? "") : undefined}
                             />
                           </div>
                         </div>
@@ -1783,28 +1861,34 @@ const TeacherForm = () => {
                             phone: phone || teacherData?.phone,
                             email: email || teacherData?.email,
                             address: get('address') || teacherData?.address,
-                            father_name: get('father_name') || teacherData?.father_name,
-                            mother_name: get('mother_name') || teacherData?.mother_name,
+                            father_name: fatherName,
+                            mother_name: motherName,
+                            account_name: get('account_name') || teacherData?.account_name,
+                            account_number: get('account_number') || teacherData?.account_number,
                             qualification: qualification || teacherData?.qualification,
                             experience_years: getNum('experience_years') ?? teacherData?.experience_years,
                             previous_school_name: get('previous_school_name') || teacherData?.previous_school_name,
                             previous_school_address: get('previous_school_address') || teacherData?.previous_school_address,
-                            previous_school_phone: get('previous_school_phone') || teacherData?.previous_school_phone,
+                            previous_school_phone: prevSchoolPhone,
                             bank_name: get('bank_name') || teacherData?.bank_name,
                             branch: get('branch') || teacherData?.branch,
                             ifsc: get('ifsc') || teacherData?.ifsc,
                             current_address: get('address') || teacherData?.current_address || teacherData?.address,
                             permanent_address: get('permanent_address') || teacherData?.permanent_address,
-                            pan_number: get('pan_number') || teacherData?.pan_number,
-                            id_number: get('id_number') || teacherData?.id_number,
+                            pan_number: panNumber,
+                            id_number: idNumber,
+                            epf_no: epfNo,
                             facebook: get('facebook') || teacherData?.facebook,
                             twitter: get('twitter') || teacherData?.twitter,
                             linkedin: get('linkedin') || teacherData?.linkedin,
+                            youtube: get('youtube') || teacherData?.youtube,
+                            instagram: get('instagram') || teacherData?.instagram,
+                            other_info: get('other_info') || teacherData?.other_info,
                             languages_known: owner?.length ? owner : (teacherData?.languages_known ? (Array.isArray(teacherData.languages_known) ? teacherData.languages_known : [teacherData.languages_known]) : undefined),
                             class_id: selectedClassId ? parseInt(selectedClassId, 10) : teacherData?.class_id,
                             subject_id: selectedSubjectId ? parseInt(selectedSubjectId, 10) : teacherData?.subject_id,
                             gender: selectedGender || teacherData?.gender,
-                            marital_status: selectedMaritalStatus || teacherData?.marital_status,
+                            marital_status: selectedMaritalStatus,
                             designation_id: selectedDesignationId ? parseInt(selectedDesignationId, 10) : undefined,
                             department_id: selectedDepartmentId ? parseInt(selectedDepartmentId, 10) : undefined,
                             blood_group_id: selectedBloodGroupId ? parseInt(selectedBloodGroupId, 10) : undefined,
@@ -1824,7 +1908,7 @@ const TeacherForm = () => {
                                 ? dayjs(teacherData.joining_date).format('YYYY-MM-DD')
                                 : undefined),
                           };
-                          Object.keys(updateData).forEach(k => { if (updateData[k] === undefined || updateData[k] === null) delete updateData[k]; });
+                          Object.keys(updateData).forEach(k => { if (updateData[k] === undefined) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
                           if (response && response.status === 'SUCCESS') {
                             const rFile = resumeFileRef.current;
@@ -1859,10 +1943,10 @@ const TeacherForm = () => {
                           }
                         } catch (error: any) {
                           console.error('Error updating teacher:', error);
-                          setFormBanner({
-                            title: "Failed to save teacher",
-                            message: parseTeacherApiErrorMessage(error, "Failed to update teacher. Please try again."),
-                          });
+                            setFormBanner({
+                              title: "Failed to save teacher",
+                              message: parseTeacherApiErrorMessage(error, "Failed to update teacher. Please try again."),
+                            });
                         } finally {
                           setIsUpdating(false);
                         }
@@ -1925,18 +2009,19 @@ const TeacherForm = () => {
                               ? parseInt(selectedBloodGroupId, 10)
                               : undefined,
                             blood_group: bgRow?.blood_group,
-                            father_name: get("father_name") || undefined,
-                            mother_name: get("mother_name") || undefined,
+                            father_name: fatherName || undefined,
+                            mother_name: motherName || undefined,
                             address: get("address") || undefined,
                             qualification: qualification.trim() || undefined,
                             experience_years: getNum("experience_years"),
                             previous_school_name: get("previous_school_name") || undefined,
                             previous_school_address: get("previous_school_address") || undefined,
-                            previous_school_phone: get("previous_school_phone") || undefined,
+                            previous_school_phone: prevSchoolPhone || undefined,
                             current_address: get("address") || undefined,
                             permanent_address: get("permanent_address") || undefined,
-                            pan_number: get("pan_number") || undefined,
-                            id_number: get("id_number") || undefined,
+                            pan_number: panNumber || undefined,
+                            id_number: idNumber || undefined,
+                            epf_no: epfNo || undefined,
                             bank_name: get("bank_name") || undefined,
                             branch: get("branch") || undefined,
                             ifsc: get("ifsc") || undefined,
@@ -1947,6 +2032,11 @@ const TeacherForm = () => {
                             facebook: get("facebook") || undefined,
                             twitter: get("twitter") || undefined,
                             linkedin: get("linkedin") || undefined,
+                            youtube: get("youtube") || undefined,
+                            instagram: get("instagram") || undefined,
+                            other_info: get("other_info") || undefined,
+                            account_name: get("account_name") || undefined,
+                            account_number: get("account_number") || undefined,
                             languages_known: owner?.length ? owner : ["English"],
                             employee_code: get("employee_code") || undefined,
                             date_of_birth: dobDate ? dobDate.format("YYYY-MM-DD") : undefined,
@@ -1955,7 +2045,7 @@ const TeacherForm = () => {
                             emergency_contact_phone: get("emergency_contact_phone") || undefined,
                           };
                           Object.keys(payload).forEach((k) => {
-                            if (payload[k] === undefined || payload[k] === null || payload[k] === "")
+                            if (payload[k] === undefined)
                               delete payload[k];
                           });
                           const response = await apiService.createTeacher(payload);

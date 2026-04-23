@@ -22,12 +22,14 @@ export const useTransportVehicles = (initialParams = {}) => {
     ...initialParams
   });
 
+  const paramsKey = JSON.stringify(params);
+
   const fetchVehicles = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
       setError(null);
 
-      const combinedParams = { ...paramsRef.current, ...overrides };
+      const combinedParams = { ...params, ...overrides };
       const response = await apiService.getTransportVehicles(combinedParams);
       
       if (response && response.status === "SUCCESS") {
@@ -64,7 +66,7 @@ export const useTransportVehicles = (initialParams = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [paramsKey]);
+  }, [paramsKey, params]);
 
   useEffect(() => {
     fetchVehicles();
