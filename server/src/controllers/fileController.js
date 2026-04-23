@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { isSafeFileOrLinkUrl } = require('../utils/safeUrl');
+const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 
 // Get all files for current user
 const getAllFiles = async (req, res) => {
@@ -184,6 +185,10 @@ const deleteFile = async (req, res) => {
     }
     
     success(res, 200, 'File deleted successfully');
+
+    if (result.rows[0].file_url) {
+      await deleteFileIfExist(result.rows[0].file_url);
+    }
   } catch (error) {
     console.error('Error deleting file:', error);
     errorResponse(res, 500, 'Failed to delete file');

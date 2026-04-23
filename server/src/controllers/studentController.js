@@ -21,6 +21,7 @@ const {
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScaleService');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
+const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -28,7 +29,19 @@ const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 function normalizeStudentDocumentPath(schoolId, raw) {
   if (schoolId == null || raw == null || String(raw).trim() === '') return null;
   const s = String(raw).trim().replace(/\\/g, '/');
-  const m = /^school_(\d+)\/documents\/[a-z0-9._-]+\.pdf$/i.exec(s);
+  // Allow subfolders (e.g. user_123)
+  const m = /^school_(\d+)\/documents\/(?:user_\d+\/)?[a-z0-9._-]+\.pdf$/i.exec(s);
+  if (!m) return null;
+  if (Number(m[1]) !== Number(schoolId)) return null;
+  return s;
+}
+
+/** Validates photo path structure. */
+function normalizeStudentPhotoPath(schoolId, raw) {
+  if (schoolId == null || raw == null || String(raw).trim() === '') return null;
+  const s = String(raw).trim().replace(/\\/g, '/');
+  // Allow subfolders (e.g. user_123)
+  const m = /^school_(\d+)\/students\/(?:user_\d+\/)?[a-z0-9._-]+\.(jpe?g|png|svg)$/i.exec(s);
   if (!m) return null;
   if (Number(m[1]) !== Number(schoolId)) return null;
   return s;
@@ -141,7 +154,7 @@ const createStudent = async (req, res) => {
       mother_name, mother_email, mother_phone, mother_occupation, mother_image_url,
       // Guardian fields
       guardian_first_name, guardian_last_name, guardian_relation, guardian_phone,
-      guardian_email, guardian_occupation, guardian_address,
+      guardian_email, guardian_occupation, guardian_address, guardian_image_url,
       father_person_id, mother_person_id, guardian_person_id,
       // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
@@ -152,12 +165,13 @@ const createStudent = async (req, res) => {
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
       known_allergies, medications, medical_condition, other_information,
-      medical_document_path, transfer_certificate_path,
+      medical_document_path, transfer_certificate_path, photo_url,
     } = req.body;
 
     const tenantSchoolId = getSchoolIdFromRequest(req);
     const medDocPath = normalizeStudentDocumentPath(tenantSchoolId, medical_document_path);
     const tcDocPath = normalizeStudentDocumentPath(tenantSchoolId, transfer_certificate_path);
+    const photoUrlPath = normalizeStudentPhotoPath(tenantSchoolId, photo_url);
 
     // Validate required fields
     if (!admission_number || !first_name || !last_name) {
@@ -224,29 +238,12 @@ const createStudent = async (req, res) => {
       let effFatherOcc = father_occupation;
       let fatherUserId = parseUserId(father_person_id);
 
-      if (fatherUserId) {
-        const prow = await resolveLinkedUser(client, fatherUserId, [ROLES.PARENT]);
-        effFatherName = prow.full_name;
-        effFatherEmail = prow.email;
-        effFatherPhone = prow.phone;
-        effFatherOcc = prow.occupation || father_occupation;
-      }
-
       let effMotherName = mother_name;
       let effMotherEmail = mother_email;
       let effMotherPhone = mother_phone;
       let effMotherOcc = mother_occupation;
       let motherUserId = parseUserId(mother_person_id);
 
-      if (motherUserId) {
-        const prow = await resolveLinkedUser(client, motherUserId, [ROLES.PARENT]);
-        effMotherName = prow.full_name;
-        effMotherEmail = prow.email;
-        effMotherPhone = prow.phone;
-        effMotherOcc = prow.occupation || mother_occupation;
-      }
-
-      const gFullName = [guardian_first_name, guardian_last_name].filter(Boolean).join(' ').trim();
       let effGFirst = guardian_first_name;
       let effGLast = guardian_last_name;
       let effGPhone = guardian_phone;
@@ -255,17 +252,6 @@ const createStudent = async (req, res) => {
       let effGAddr = guardian_address;
       let effGRel = guardian_relation;
       let guardianUserId = parseUserId(guardian_person_id);
-
-      if (guardianUserId) {
-        const prow = await resolveLinkedUser(client, guardianUserId, [ROLES.GUARDIAN, ROLES.PARENT]);
-        const parts = (prow.full_name || '').trim().split(/\s+/);
-        effGFirst = parts[0] || 'Guardian';
-        effGLast = parts.slice(1).join(' ') || '';
-        effGPhone = prow.phone;
-        effGEmail = prow.email;
-        effGOcc = prow.occupation || guardian_occupation;
-        effGAddr = prow.address || guardian_address;
-      }
 
       const hasParentInfo = Boolean(
         effFatherName || effFatherEmail || effFatherPhone || effFatherOcc ||
@@ -329,20 +315,20 @@ const createStudent = async (req, res) => {
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
-            medical_document_path, transfer_certificate_path,
+            medical_document_path, transfer_certificate_path, photo_url,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
           first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
           date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
           cast_id || null, phone || null, email || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal,
-          current_address || addrVal || null,
-          permanent_address || null,
+          addrVal || 'Not Provided',
+          current_address || addrVal || 'Not Provided',
+          permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
@@ -355,6 +341,7 @@ const createStudent = async (req, res) => {
           grNormCreate,
           medDocPath,
           tcDocPath,
+          photoUrlPath,
         ]);
       } catch (e) {
         await client.query('ROLLBACK TO SAVEPOINT student_insert');
@@ -375,18 +362,18 @@ const createStudent = async (req, res) => {
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
-            medical_document_path, transfer_certificate_path,
+            medical_document_path, transfer_certificate_path, photo_url,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
           first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
           date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
           cast_id || null, phone || null, email || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal,
+          addrVal || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
@@ -399,6 +386,7 @@ const createStudent = async (req, res) => {
           grNormCreate,
           medDocPath,
           tcDocPath,
+          photoUrlPath,
         ]);
       }
 
@@ -464,6 +452,12 @@ const createStudent = async (req, res) => {
           await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
             mother_image_url,
             sync.motherUserId,
+          ]);
+        }
+        if (guardian_image_url && sync.guardianUserId) {
+          await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
+            guardian_image_url,
+            sync.guardianUserId,
           ]);
         }
       }
@@ -563,7 +557,7 @@ const updateStudent = async (req, res) => {
       mother_name, mother_email, mother_phone, mother_occupation, mother_image_url,
       // Guardian fields
       guardian_first_name, guardian_last_name, guardian_relation, guardian_phone,
-      guardian_email, guardian_occupation, guardian_address,
+      guardian_email, guardian_occupation, guardian_address, guardian_image_url,
       father_person_id, mother_person_id, guardian_person_id,
       // Address, siblings, transport, hostel, bank, medical, other
       current_address, permanent_address, address,
@@ -574,7 +568,7 @@ const updateStudent = async (req, res) => {
       is_hostel_required, hostel_id, hostel_room_id,
       bank_name, branch, ifsc,
       known_allergies, medications, medical_condition, other_information,
-      medical_document_path, transfer_certificate_path,
+      medical_document_path, transfer_certificate_path, photo_url,
     } = req.body;
 
     // Validate required fields
@@ -649,27 +643,11 @@ const updateStudent = async (req, res) => {
       let effFatherOcc = father_occupation;
       let fatherUserId = parseUserId(father_person_id);
 
-      if (fatherUserId) {
-        const prow = await resolveLinkedUser(client, fatherUserId, [ROLES.PARENT]);
-        effFatherName = prow.full_name;
-        effFatherEmail = prow.email;
-        effFatherPhone = prow.phone;
-        effFatherOcc = prow.occupation || father_occupation;
-      }
-
       let effMotherName = mother_name;
       let effMotherEmail = mother_email;
       let effMotherPhone = mother_phone;
       let effMotherOcc = mother_occupation;
       let motherUserId = parseUserId(mother_person_id);
-
-      if (motherUserId) {
-        const prow = await resolveLinkedUser(client, motherUserId, [ROLES.PARENT]);
-        effMotherName = prow.full_name;
-        effMotherEmail = prow.email;
-        effMotherPhone = prow.phone;
-        effMotherOcc = prow.occupation || mother_occupation;
-      }
 
       let effGFirst = guardian_first_name;
       let effGLast = guardian_last_name;
@@ -679,17 +657,6 @@ const updateStudent = async (req, res) => {
       let effGAddr = guardian_address;
       let effGRel = guardian_relation;
       let guardianUserId = parseUserId(guardian_person_id);
-
-      if (guardianUserId) {
-        const prow = await resolveLinkedUser(client, guardianUserId, [ROLES.GUARDIAN, ROLES.PARENT]);
-        const parts = (prow.full_name || '').trim().split(/\s+/);
-        effGFirst = parts[0] || 'Guardian';
-        effGLast = parts.slice(1).join(' ') || '';
-        effGPhone = prow.phone;
-        effGEmail = prow.email;
-        effGOcc = prow.occupation || guardian_occupation;
-        effGAddr = prow.address || guardian_address;
-      }
 
       const hasParentInfo = Boolean(
         effFatherName || effFatherEmail || effFatherPhone || effFatherOcc ||
@@ -795,12 +762,32 @@ const updateStudent = async (req, res) => {
       );
 
       const existingDocRes = await client.query(
-        'SELECT medical_document_path, transfer_certificate_path FROM students WHERE id = $1 LIMIT 1',
+        `SELECT s.medical_document_path, s.transfer_certificate_path, s.photo_url,
+                father_u.avatar AS father_avatar, mother_u.avatar AS mother_avatar,
+                guardian_u.avatar AS guardian_avatar,
+                sync.father_user_id, sync.mother_user_id, sync.guardian_user_id
+         FROM students s
+         LEFT JOIN LATERAL (
+           SELECT 
+             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) = 'father' THEN g.user_id END) AS father_user_id,
+             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) = 'mother' THEN g.user_id END) AS mother_user_id,
+             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) NOT IN ('father', 'mother') THEN g.user_id END) AS guardian_user_id
+           FROM guardians g
+           WHERE g.student_id = s.id AND g.is_active = true
+         ) sync ON true
+         LEFT JOIN users father_u ON father_u.id = sync.father_user_id
+         LEFT JOIN users mother_u ON mother_u.id = sync.mother_user_id
+         LEFT JOIN users guardian_u ON guardian_u.id = sync.guardian_user_id
+         WHERE s.id = $1 LIMIT 1`,
         [id]
       );
       const docRow = existingDocRes.rows[0] || {};
       const existingMedDoc = docRow.medical_document_path ?? null;
       const existingTcDoc = docRow.transfer_certificate_path ?? null;
+      const existingPhoto = docRow.photo_url ?? null;
+      const oldFatherAvatar = docRow.father_avatar ?? null;
+      const oldMotherAvatar = docRow.mother_avatar ?? null;
+      const oldGuardianAvatar = docRow.guardian_avatar ?? null;
 
       const tenantSchoolIdUp = getSchoolIdFromRequest(req);
 
@@ -827,6 +814,19 @@ const updateStudent = async (req, res) => {
         tcDocPathFinal = normalizeStudentDocumentPath(tenantSchoolIdUp, transfer_certificate_path);
         if (!tcDocPathFinal) {
           const err = new Error('Invalid transfer certificate path');
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+      let photoUrlPathFinal;
+      if (photo_url === undefined) {
+        photoUrlPathFinal = existingPhoto;
+      } else if (photo_url === null || String(photo_url).trim() === '') {
+        photoUrlPathFinal = null;
+      } else {
+        photoUrlPathFinal = normalizeStudentPhotoPath(tenantSchoolIdUp, photo_url);
+        if (!photoUrlPathFinal) {
+          const err = new Error('Invalid photo URL path');
           err.statusCode = 400;
           throw err;
         }
@@ -881,19 +881,20 @@ const updateStudent = async (req, res) => {
             gr_number = $41,
             medical_document_path = $42,
             transfer_certificate_path = $43,
+            photo_url = $44,
             modified_at = NOW()
-          WHERE id = $44
+          WHERE id = $45
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
           first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
           date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
           cast_id || null, phone || null, email || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal,
-          current_address || addrVal || null,
-          permanent_address || null,
+          addrVal || 'Not Provided',
+          current_address || addrVal || 'Not Provided',
+          permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
           route_id || null, pickup_point_id || null, vehicle_number || null,
@@ -906,9 +907,20 @@ const updateStudent = async (req, res) => {
           grNormUpdate,
           medDocPathFinal,
           tcDocPathFinal,
+          photoUrlPathFinal,
           id
         ]);
         await client.query('RELEASE SAVEPOINT sp_student_update');
+
+        if (medical_document_path !== undefined && existingMedDoc && existingMedDoc !== medDocPathFinal) {
+          await deleteFileIfExist(existingMedDoc);
+        }
+        if (transfer_certificate_path !== undefined && existingTcDoc && existingTcDoc !== tcDocPathFinal) {
+          await deleteFileIfExist(existingTcDoc);
+        }
+        if (photo_url !== undefined && existingPhoto && existingPhoto !== photoUrlPathFinal) {
+          await deleteFileIfExist(existingPhoto);
+        }
       } catch (e) {
         await client.query('ROLLBACK TO SAVEPOINT sp_student_update');
         const hasAddrColsError = e.message && (e.message.includes('current_address') || e.message.includes('permanent_address'));
@@ -963,11 +975,11 @@ const updateStudent = async (req, res) => {
             `, [
               academic_year_id || null, admission_number, admission_date || null, roll_number || null,
               first_name, last_name, class_id || null, section_id || null,
-              (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+              (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
               date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
               cast_id || null, phone || null, email || null, mother_tongue_id || null,
               status === 'Active' ? true : false,
-              addrVal,
+              addrVal || 'Not Provided',
               previous_school || null, previous_school_address || null,
               is_transport_required === true || is_transport_required === 'true',
               route_id || null, pickup_point_id || null, vehicle_number || null,
@@ -1037,13 +1049,13 @@ const updateStudent = async (req, res) => {
           `, [
             academic_year_id || null, admission_number, admission_date || null, roll_number || null,
             first_name, last_name, class_id || null, section_id || null,
-            (gender && typeof gender === 'string' && ['male','female','other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
+            (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
             date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
             cast_id || null, phone || null, email || null, mother_tongue_id || null,
             status === 'Active' ? true : false,
-            addrVal,
-            current_address || addrVal || null,
-            permanent_address || null,
+            addrVal || 'Not Provided',
+            current_address || addrVal || 'Not Provided',
+            permanent_address || 'Not Provided',
             previous_school || null, previous_school_address || null,
             is_transport_required === true || is_transport_required === 'true',
             route_id || null, pickup_point_id || null, vehicle_number || null,
@@ -1124,25 +1136,44 @@ const updateStudent = async (req, res) => {
           updateWarnings
         );
         studentRow.guardian_id = sync.primaryGuardianId;
-        if (father_image_url && sync.fatherUserId) {
-          await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-            father_image_url,
+
+        if (father_image_url !== undefined && sync.fatherUserId) {
+          const newFatherAvatar = (father_image_url || '').toString().trim() || '';
+          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+            newFatherAvatar,
             sync.fatherUserId,
           ]);
+          if (oldFatherAvatar && oldFatherAvatar !== newFatherAvatar) {
+            await deleteFileIfExist(oldFatherAvatar);
+          }
         }
-        if (mother_image_url && sync.motherUserId) {
-          await client.query(`UPDATE users SET avatar = COALESCE(NULLIF(TRIM($1::text), ''), avatar) WHERE id = $2`, [
-            mother_image_url,
+        if (mother_image_url !== undefined && sync.motherUserId) {
+          const newMotherAvatar = (mother_image_url || '').toString().trim() || '';
+          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+            newMotherAvatar,
             sync.motherUserId,
           ]);
+          if (oldMotherAvatar && oldMotherAvatar !== newMotherAvatar) {
+            await deleteFileIfExist(oldMotherAvatar);
+          }
+        }
+        if (guardian_image_url !== undefined && sync.guardianUserId) {
+          const newGuardianAvatar = (guardian_image_url || '').toString().trim() || '';
+          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+            newGuardianAvatar,
+            sync.guardianUserId,
+          ]);
+          if (oldGuardianAvatar && oldGuardianAvatar !== newGuardianAvatar) {
+            await deleteFileIfExist(oldGuardianAvatar);
+          }
         }
       }
 
       // Sync current & permanent address into addresses table so that
       // Student Details and Edit Student form stay consistent with the DB.
       if ((current_address || permanent_address || addrVal) && studentRow.user_id) {
-        const currentAddrVal = current_address || addrVal || null;
-        const permanentAddrVal = permanent_address || null;
+        const currentAddrVal = current_address || addrVal || 'Not Provided';
+        const permanentAddrVal = permanent_address || 'Not Provided';
 
         const existingAddr = await client.query(
           'SELECT id FROM addresses WHERE user_id = $1 AND role_id = $2 LIMIT 1',
@@ -1215,6 +1246,9 @@ const updateStudent = async (req, res) => {
     }
     if (error.statusCode === 404) {
       return res.status(404).json({ status: 'ERROR', message: process.env.NODE_ENV === 'production' ? 'Not found' : error.message });
+    }
+    if (error.statusCode === 409) {
+      return res.status(409).json({ status: 'ERROR', message: error.message });
     }
     const devMsg = process.env.NODE_ENV !== 'production' ? (error.message || 'Failed to update student') : 'Failed to update student';
     res.status(500).json({
@@ -4131,8 +4165,8 @@ const getAttendanceReport = async (req, res) => {
       const attendanceDateKey =
         row.attendance_date instanceof Date
           ? `${String(row.attendance_date.getFullYear()).padStart(4, '0')}-${String(
-              row.attendance_date.getMonth() + 1
-            ).padStart(2, '0')}-${String(row.attendance_date.getDate()).padStart(2, '0')}`
+            row.attendance_date.getMonth() + 1
+          ).padStart(2, '0')}-${String(row.attendance_date.getDate()).padStart(2, '0')}`
           : String(row.attendance_date || '').slice(0, 10);
       attendanceByStudent.get(studentKey)[attendanceDateKey] = normalizeAttendanceStatus(row.status);
     });

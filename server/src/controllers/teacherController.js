@@ -1000,7 +1000,7 @@ const updateTeacher = async (req, res) => {
       blood_group, blood_group_id, previous_school_name, previous_school_address, previous_school_phone,
       current_address, permanent_address, pan_number, id_number,
       bank_name, branch, ifsc, contract_type, shift, work_location,
-      facebook, twitter, linkedin
+      facebook, twitter, linkedin, photo_url
     } = req.body;
 
     let isActiveBoolean = false;
@@ -1022,11 +1022,17 @@ const updateTeacher = async (req, res) => {
       }
     }
 
-    const teacherCheck = await query(`SELECT staff_id FROM teachers WHERE id = $1`, [teacherIdNum]);
+    const teacherCheck = await query(
+      `SELECT t.staff_id, s.photo_url 
+       FROM teachers t
+       INNER JOIN staff s ON t.staff_id = s.id
+       WHERE t.id = $1`,
+      [teacherIdNum]
+    );
     if (teacherCheck.rows.length === 0) {
       return errorResponse(res, 404, 'Teacher not found');
     }
-    const staffId = teacherCheck.rows[0].staff_id;
+    const { staff_id: staffId, photo_url: existingPhoto } = teacherCheck.rows[0];
     const statusValue = isActiveBoolean ? 'Active' : 'Inactive';
 
     const languagesArr = Array.isArray(languages_known) ? languages_known : (typeof languages_known === 'string' ? languages_known.split(',').map(s => s.trim()).filter(Boolean) : null);
@@ -1034,7 +1040,7 @@ const updateTeacher = async (req, res) => {
     if (first_name != null || last_name != null || gender != null || date_of_birth != null ||
         phone != null || email != null || address != null || emergency_contact_name != null ||
         emergency_contact_phone != null || designation_id != null || department_id != null ||
-        joining_date != null || salary != null || qualification != null || experience_years != null) {
+        joining_date != null || salary != null || qualification != null || experience_years != null || photo_url !== undefined) {
       const staffUpdates = [];
       const staffParams = [];
       let idx = 1;
@@ -1058,11 +1064,19 @@ const updateTeacher = async (req, res) => {
       add('qualification', qualification);
       add('experience_years', experience_years != null ? parseInt(experience_years, 10) : null);
       add('blood_group_id', blood_group_id || null);
+      if (photo_url !== undefined) {
+        add('photo_url', (photo_url || '').toString().trim().slice(0, 500) || null);
+      }
       add('is_active', isActiveBoolean);
       add('modified_at', new Date());
       if (staffUpdates.length > 0) {
         staffParams.push(staffId);
         await query(`UPDATE staff SET ${staffUpdates.join(', ')} WHERE id = $${idx}`, staffParams);
+        
+        if (photo_url !== undefined && existingPhoto && existingPhoto !== photo_url) {
+          const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
+          await deleteFileIfExist(existingPhoto);
+        }
       } else if (is_active !== undefined) {
         await query(`UPDATE staff SET is_active = $1 WHERE id = $2`, [isActiveBoolean, staffId]);
       }

@@ -15,7 +15,11 @@ const uploadSchoolFile = async (req, res) => {
     if (!schoolId) {
       return errorResponse(res, 401, 'School context required');
     }
-    const folder = String(req.body?.folder || '').trim();
+    let folder = String(req.body?.folder || '').trim();
+    const userId = req.body?.userId;
+    if (userId && !Number.isNaN(Number(userId))) {
+      folder = `${folder}/user_${userId}`;
+    }
     const topFolder = folder.split('/')[0];
     if (!ALLOWED_FOLDERS.includes(topFolder)) {
       return errorResponse(res, 400, `Invalid folder. Allowed: ${ALLOWED_FOLDERS.join(', ')}`);

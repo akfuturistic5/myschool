@@ -43,6 +43,7 @@ const createStudentSchema = Joi.object({
   guardian_occupation: Joi.string().trim().optional().allow(null, ''),
   guardian_address: Joi.string().trim().optional().allow(null, ''),
   guardian_person_id: Joi.number().integer().positive().optional().allow(null),
+  guardian_image_url: Joi.string().trim().optional().allow(null, ''),
   // Address & previous school
   current_address: Joi.string().trim().optional().allow(null, ''),
   permanent_address: Joi.string().trim().optional().allow(null, ''),
@@ -88,6 +89,7 @@ const createStudentSchema = Joi.object({
   other_information: Joi.string().trim().optional().allow(null, ''),
   medical_document_path: Joi.string().trim().max(512).optional().allow(null, ''),
   transfer_certificate_path: Joi.string().trim().max(512).optional().allow(null, ''),
+  photo_url: Joi.string().trim().max(500).optional().allow(null, ''),
 });
 
 const updateStudentSchema = createStudentSchema;

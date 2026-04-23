@@ -1,6 +1,7 @@
 const { query, executeTransaction } = require('../config/database');
 const { createGuardianUser } = require('../utils/createPersonUser');
 const { guardiansIsSlimSchema } = require('../utils/studentContactSync');
+const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 
 const guardianSelectBase = `
         g.id,
@@ -193,7 +194,7 @@ const updateGuardian = async (req, res) => {
       }
 
       const existingRes = await client.query(
-        'SELECT id, student_id, user_id FROM guardians WHERE id = $1 LIMIT 1',
+        'SELECT g.id, g.student_id, g.user_id, u.avatar FROM guardians g INNER JOIN users u ON u.id = g.user_id WHERE g.id = $1 LIMIT 1',
         [id]
       );
       if (existingRes.rows.length === 0) {
@@ -202,6 +203,7 @@ const updateGuardian = async (req, res) => {
         throw err;
       }
       const existing = existingRes.rows[0];
+      const oldAvatar = existing.avatar;
       const targetStudentId = student_id || existing.student_id;
       if (!targetStudentId) {
         const err = new Error('Student ID is required');
@@ -248,7 +250,7 @@ const updateGuardian = async (req, res) => {
           email || null,
           occupation || null,
           avatar !== undefined,
-          avatar || null,
+          avatar || '',
           existing.user_id
         ]
       );
@@ -287,6 +289,11 @@ const updateGuardian = async (req, res) => {
         `SELECT ${guardianSelectBase} ${guardianJoins} WHERE g.id = $1`,
         [row.id]
       );
+
+      if (avatar !== undefined && oldAvatar && oldAvatar !== avatar) {
+        await deleteFileIfExist(oldAvatar);
+      }
+
       return full.rows[0] || row;
     });
 

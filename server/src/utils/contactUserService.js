@@ -64,25 +64,75 @@ async function findUserIdByPhoneOrEmail(client, roleId, phone, email) {
 /**
  * Ensure a Parent-role user for father/mother contact. Reuses by phone/email.
  */
-async function ensureParentContactUser(client, { full_name, email, phone, occupation }, warnings, warnLabel) {
-  const { isUserEmailTaken } = require('./createPersonUser');
+async function ensureParentContactUser(client, { id, full_name, email, phone, occupation }, warnings, warnLabel) {
+  const { isUserEmailTaken, parseFullName, findUserRowByEmail } = require('./createPersonUser');
   const e = String(email ?? '').trim();
   const p = String(phone ?? '').trim();
   const fn = String(full_name ?? '').trim();
+
+  // 1. If we have an ID, we are updating an EXISTING linked user
+  if (id) {
+    const userId = parseInt(id, 10);
+    if (!Number.isNaN(userId) && userId > 0) {
+      const { first_name, last_name } = parseFullName(fn);
+      // Update email if provided in request
+      const targetEmail = e || null;
+      if (targetEmail) {
+        const conflict = await findUserRowByEmail(client, targetEmail, { excludeId: userId });
+        if (conflict) {
+          const err = new Error(`${warnLabel}: Email "${targetEmail}" is already linked to another account.`);
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+      await client.query(`UPDATE users SET email = $1 WHERE id = $2`, [targetEmail, userId]);
+      
+      await client.query(
+        `UPDATE users SET
+          first_name = COALESCE($1::text, first_name),
+          last_name = $2::text,
+          phone = $3::text,
+          occupation = $4::text,
+          current_address = COALESCE(current_address, 'Not Provided'),
+          permanent_address = COALESCE(permanent_address, 'Not Provided'),
+          modified_at = NOW()
+        WHERE id = $5`,
+        [first_name || null, last_name || null, p || null, occupation || null, userId]
+      );
+      return userId;
+    }
+  }
+
   if (!e && !p && !fn) return null;
 
+  // 2. Try to reuse existing Parent by phone or email
   const existing = await findUserIdByPhoneOrEmail(client, ROLES.PARENT, p, e);
   if (existing) {
+    const { first_name, last_name } = parseFullName(fn);
+    if (e) {
+      const conflict = await findUserRowByEmail(client, e, { excludeId: existing });
+      if (conflict) {
+        const err = new Error(`${warnLabel}: Email "${e}" is already linked to another account.`);
+        err.statusCode = 409;
+        throw err;
+      }
+      await client.query(`UPDATE users SET email = $1 WHERE id = $2`, [e, existing]);
+    }
     await client.query(
       `UPDATE users SET
-        occupation = COALESCE($1::text, occupation),
+        first_name = COALESCE($1::text, first_name),
+        last_name = $2::text,
+        occupation = COALESCE($3::text, occupation),
+        current_address = COALESCE(current_address, 'Not Provided'),
+        permanent_address = COALESCE(permanent_address, 'Not Provided'),
         modified_at = NOW()
-      WHERE id = $2`,
-      [occupation || null, existing]
+      WHERE id = $4`,
+      [first_name || null, last_name || null, occupation || null, existing]
     );
     return existing;
   }
 
+  // 3. Create new user
   const uid = await createParentIndividualUser(client, {
     full_name: full_name || 'Parent',
     email: e || null,
@@ -90,13 +140,13 @@ async function ensureParentContactUser(client, { full_name, email, phone, occupa
     parent_row_id: 0,
     side: 'p',
   });
-  if (!uid && e && (await isUserEmailTaken(client, e)) && warnLabel) {
-    warnings.push({
-      code: 'EMAIL_IN_USE',
-      field: 'parent_email',
-      message: `${warnLabel}: Email already in use.`,
-    });
+  
+  if (!uid && e && (await isUserEmailTaken(client, e))) {
+    const err = new Error(`${warnLabel || 'Parent'}: Email "${e}" is already used by another account.`);
+    err.statusCode = 409;
+    throw err;
   }
+  
   if (uid && occupation) {
     await client.query(`UPDATE users SET occupation = $1, modified_at = NOW() WHERE id = $2`, [
       occupation,
@@ -111,45 +161,92 @@ async function ensureParentContactUser(client, { full_name, email, phone, occupa
  */
 async function ensureGuardianContactUser(
   client,
-  { first_name, last_name, email, phone, occupation, address },
+  { id, first_name, last_name, email, phone, occupation, address },
   warnings
 ) {
-  const { isUserEmailTaken } = require('./createPersonUser');
+  const { isUserEmailTaken, findUserRowByEmail } = require('./createPersonUser');
   const e = String(email ?? '').trim();
   const p = String(phone ?? '').trim();
   const fn = String(first_name ?? '').trim();
+
+  // 1. If we have an ID, we are updating an EXISTING linked user
+  if (id) {
+    const userId = parseInt(id, 10);
+    if (!Number.isNaN(userId) && userId > 0) {
+      // Update email if provided in request
+      const targetEmail = e || null;
+      if (targetEmail) {
+        const conflict = await findUserRowByEmail(client, targetEmail, { excludeId: userId });
+        if (conflict) {
+          const err = new Error(`Guardian: Email "${targetEmail}" is already used by another account.`);
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+      await client.query(`UPDATE users SET email = $1 WHERE id = $2`, [targetEmail, userId]);
+      
+      await client.query(
+        `UPDATE users SET
+          first_name = COALESCE($1::text, first_name),
+          last_name = $2::text,
+          phone = $3::text,
+          occupation = $4::text,
+          current_address = $5::text,
+          permanent_address = COALESCE(permanent_address, 'Not Provided'),
+          modified_at = NOW()
+        WHERE id = $6`,
+        [fn || null, last_name || null, p || null, occupation || null, address || 'Not Provided', userId]
+      );
+      return userId;
+    }
+  }
+
   if (!e && !p && !fn) return null;
 
+  // 2. Try to reuse existing Guardian by phone or email
   const existing = await findUserIdByPhoneOrEmail(client, ROLES.GUARDIAN, p, e);
   if (existing) {
+    if (e) {
+      const conflict = await findUserRowByEmail(client, e, { excludeId: existing });
+      if (conflict) {
+        const err = new Error(`Guardian: Email "${e}" is already used by another account.`);
+        err.statusCode = 409;
+        throw err;
+      }
+      await client.query(`UPDATE users SET email = $1 WHERE id = $2`, [e, existing]);
+    }
     await client.query(
       `UPDATE users SET
-        occupation = COALESCE($1::text, occupation),
-        current_address = COALESCE($2::text, current_address),
+        first_name = COALESCE($1::text, first_name),
+        last_name = $2::text,
+        occupation = COALESCE($3::text, occupation),
+        current_address = COALESCE($4::text, current_address),
+        permanent_address = COALESCE(permanent_address, 'Not Provided'),
         modified_at = NOW()
-      WHERE id = $3`,
-      [occupation || null, address || null, existing]
+      WHERE id = $5`,
+      [fn || null, last_name || null, occupation || null, address || 'Not Provided', existing]
     );
     return existing;
   }
 
+  // 3. Create new user
   const uid = await createGuardianUser(client, {
     first_name: first_name || 'Guardian',
     last_name: last_name || '',
     phone: p || null,
     email: e || null,
   });
+  
   if (!uid && e && (await isUserEmailTaken(client, e))) {
-    warnings.push({
-      code: 'EMAIL_IN_USE',
-      field: 'guardian_email',
-      message: 'Guardian: Email already in use.',
-    });
+    const err = new Error(`Guardian: Email "${e}" is already used by another account.`);
+    err.statusCode = 409;
+    throw err;
   }
+  
   if (uid) {
     await client.query(
-      `UPDATE users SET occupation = COALESCE($1::text, occupation), current_address = COALESCE($2::text, current_address), modified_at = NOW() WHERE id = $3`,
-      [occupation || null, address || null, uid]
+      `UPDATE users SET occupation = COALESCE($1::text, occupation), current_address = COALESCE($2::text, current_address), permanent_address = COALESCE(permanent_address, 'Not Provided'), modified_at = NOW() WHERE id = $3`,
+      [occupation || null, address || 'Not Provided', uid]
     );
   }
   return uid;

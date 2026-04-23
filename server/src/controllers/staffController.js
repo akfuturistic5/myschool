@@ -3,6 +3,7 @@ const { query, executeTransaction } = require('../config/database');
 const { ADMIN_ROLE_IDS, ROLES } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { createAdministrativeStaffUser, isUserEmailTaken } = require('../utils/createPersonUser');
+const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 
 const TEACHER_EMAIL_MAX_LEN = 100;
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -744,6 +745,10 @@ const updateStaff = async (req, res) => {
       if (staffUpdates.length >= 1) {
         staffParams.push(staffIdNum);
         await client.query(`UPDATE staff SET ${staffUpdates.join(', ')} WHERE id = $${idx}`, staffParams);
+
+        if (photo_url !== undefined && prev.photo_url && prev.photo_url !== photo_url) {
+          await deleteFileIfExist(prev.photo_url);
+        }
       }
 
       if (is_active !== undefined && prev.user_id && nextIsActive === false) {

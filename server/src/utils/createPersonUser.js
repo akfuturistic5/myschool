@@ -14,13 +14,15 @@ const USERS_USERNAME_MAX_LEN = 50;
 /**
  * Find active user row by email (case-insensitive). Used to avoid users_email_key violations inside a transaction.
  */
-async function findUserRowByEmail(client, email, { includeInactive = true } = {}) {
+async function findUserRowByEmail(client, email, { includeInactive = true, excludeId = null } = {}) {
   const e = (email || '').toString().trim();
   if (!e) return null;
   const activeClause = includeInactive ? '' : ' AND is_active = true';
+  const excludeIdNum = parseInt(excludeId, 10);
+  const excludeClause = !Number.isNaN(excludeIdNum) ? ` AND id <> ${excludeIdNum}` : '';
   const r = await client.query(
     `SELECT id, role_id FROM users
-     WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1))${activeClause}
+     WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1))${activeClause}${excludeClause}
      LIMIT 1`,
     [e]
   );
@@ -150,8 +152,8 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   let r;
   try {
     r = await client.query(
-      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, created_at, modified_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
+      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, current_address, permanent_address, created_at, modified_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, 'Not Provided', 'Not Provided', NOW(), NOW())
        RETURNING id`,
       [username, email, phone, passwordHash, roleId, firstName, lastName]
     );
@@ -455,4 +457,5 @@ module.exports = {
   createAdministrativeStaffUser,
   isUserEmailTaken,
   parseFullName,
+  findUserRowByEmail,
 };

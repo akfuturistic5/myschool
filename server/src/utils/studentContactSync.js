@@ -149,10 +149,35 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
   const gFull = [effGFirst, effGLast].filter(Boolean).join(' ').trim();
   const hasG = gFull || effGPhone || effGEmail || effGOcc || effGRel;
 
-  if (hasFather && !fatherUserId) {
+  // --- Cross-entity duplicate email check ---
+  // Emails must be unique across father / mother / guardian slots.
+  // If two slots share the same email we throw immediately so the transaction
+  // rolls back and the caller gets a 409 rather than silently corrupting data.
+  const emailSlots = [
+    { label: 'Father', email: (effFatherEmail || '').trim().toLowerCase() },
+    { label: 'Mother', email: (effMotherEmail || '').trim().toLowerCase() },
+    { label: 'Guardian', email: (effGEmail || '').trim().toLowerCase() },
+  ].filter(s => s.email !== '');
+
+  const seenEmails = new Map();
+  for (const { label, email } of emailSlots) {
+    if (seenEmails.has(email)) {
+      const firstLabel = seenEmails.get(email);
+      const err = new Error(
+        `Email "${email}" is already used for ${firstLabel}. Each contact (Father, Mother, Guardian) must have a unique email.`
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+    seenEmails.set(email, label);
+  }
+  // --- End cross-entity duplicate email check ---
+
+  if (hasFather) {
     fatherUserId = await ensureParentContactUser(
       client,
       {
+        id: fatherUserId,
         full_name: effFatherName || 'Father',
         email: effFatherEmail,
         phone: effFatherPhone,
@@ -162,10 +187,11 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
       'Father'
     );
   }
-  if (hasMother && !motherUserId) {
+  if (hasMother) {
     motherUserId = await ensureParentContactUser(
       client,
       {
+        id: motherUserId,
         full_name: effMotherName || 'Mother',
         email: effMotherEmail,
         phone: effMotherPhone,
@@ -175,10 +201,11 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
       'Mother'
     );
   }
-  if (hasG && !guardianUserId) {
+  if (hasG) {
     guardianUserId = await ensureGuardianContactUser(
       client,
       {
+        id: guardianUserId,
         first_name: effGFirst || 'Guardian',
         last_name: effGLast || '',
         email: effGEmail,
@@ -288,41 +315,45 @@ async function loadStudentLinkedUserIds(query, studentId) {
 
 /** List/detail SQL: contact fields from guardians + users (post-unify schema). */
 const STUDENT_CONTACT_LATERAL_SELECT = `
+      father_u.user_id AS father_person_id,
       NULLIF(TRIM(CONCAT(COALESCE(father_u.first_name,''), ' ', COALESCE(father_u.last_name,''))), '') AS father_name,
       father_u.email AS father_email,
       father_u.phone AS father_phone,
       father_u.occupation AS father_occupation,
       father_u.avatar AS father_image_url,
+      mother_u.user_id AS mother_person_id,
       NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), '') AS mother_name,
       mother_u.email AS mother_email,
       mother_u.phone AS mother_phone,
       mother_u.occupation AS mother_occupation,
       mother_u.avatar AS mother_image_url,
+      gu_u.user_id AS guardian_person_id,
       gu_u.first_name AS guardian_first_name,
       gu_u.last_name AS guardian_last_name,
       gu_u.phone AS guardian_phone,
       gu_u.email AS guardian_email,
       gu_u.occupation AS guardian_occupation,
       gu_u.relation AS guardian_relation,
-      gu_u.current_address AS guardian_address`;
+      gu_u.current_address AS guardian_address,
+      gu_u.avatar AS guardian_image_url`;
 
 const STUDENT_CONTACT_LATERAL_JOINS = `
       LEFT JOIN LATERAL (
-        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
+        SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
         WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'father'
         ORDER BY g.id ASC LIMIT 1
       ) father_u ON true
       LEFT JOIN LATERAL (
-        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
+        SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
         WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'mother'
         ORDER BY g.id ASC LIMIT 1
       ) mother_u ON true
       LEFT JOIN LATERAL (
-        SELECT u.first_name, u.last_name, u.email, u.phone, u.occupation, g.relation, u.current_address
+        SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, g.relation, u.current_address, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
         WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'guardian'

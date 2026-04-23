@@ -2761,6 +2761,30 @@ class ApiService {
     });
   }
 
+  async uploadStudentPhoto(file, userId = null) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'students');
+    if (userId) formData.append('userId', String(userId));
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
+  async uploadTeacherPhoto(file, userId = null) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'teachers');
+    if (userId) formData.append('userId', String(userId));
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
+    });
+  }
+
   /** @param {string} relativePath — e.g. school_12/students/abc.jpg */
   async deleteSchoolStorageFile(relativePath) {
     return this.makeRequest('/storage/file', {

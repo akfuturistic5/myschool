@@ -2,6 +2,7 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { isSafeFileOrLinkUrl } = require('../utils/safeUrl');
 const { getStorageProvider } = require('../storage');
+const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { ROLES } = require('../config/roles');
 
@@ -467,6 +468,12 @@ const updateEvent = async (req, res) => {
       return errorResponse(res, 400, 'target_designation_ids must be an array of IDs');
     }
 
+    const existing = await query('SELECT attachment_url FROM events WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
+      return errorResponse(res, 404, 'Event not found');
+    }
+    const previousAttachmentUrl = existing.rows[0].attachment_url;
+
     const updates = [];
     const values = [];
     let paramCount = 1;
@@ -546,6 +553,10 @@ const updateEvent = async (req, res) => {
     }
 
     success(res, 200, 'Event updated successfully', result.rows[0]);
+
+    if (attachment_url !== undefined && previousAttachmentUrl && previousAttachmentUrl !== attachment_url) {
+      await deleteFileIfExist(previousAttachmentUrl);
+    }
   } catch (err) {
     console.error('Error updating event:', err);
     errorResponse(res, 500, 'Failed to update event');
@@ -558,10 +569,38 @@ const updateEvent = async (req, res) => {
 const deleteEvent = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM events WHERE id = $1 RETURNING id', [id]);
 
-    if (result.rows.length === 0) {
+    // Fetch attachment_url and any event_attachments before deleting
+    const existing = await query('SELECT attachment_url FROM events WHERE id = $1', [id]);
+    if (existing.rows.length === 0) {
       return errorResponse(res, 404, 'Event not found');
+    }
+    const eventAttachmentUrl = existing.rows[0].attachment_url;
+
+    let attachments = [];
+    try {
+      const attRes = await query('SELECT relative_path, file_url FROM event_attachments WHERE event_id = $1', [id]);
+      attachments = attRes.rows;
+    } catch (e) {
+      // event_attachments might not exist yet
+    }
+
+    await query('DELETE FROM events WHERE id = $1', [id]);
+
+    // Cleanup physical files
+    if (eventAttachmentUrl) {
+      await deleteFileIfExist(eventAttachmentUrl);
+    }
+    for (const att of attachments) {
+      if (att.relative_path) {
+        try {
+          await getStorageProvider().delete(att.relative_path);
+        } catch (e) {
+          console.warn('Failed to delete event attachment file:', e.message);
+        }
+      } else if (att.file_url) {
+        await deleteFileIfExist(att.file_url);
+      }
     }
 
     success(res, 200, 'Event deleted successfully');

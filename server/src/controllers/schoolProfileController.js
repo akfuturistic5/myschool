@@ -228,6 +228,19 @@ const uploadLogo = async (req, res) => {
       );
     }
 
+    if (previousLogoUrl && previousLogoUrl !== logoUrl) {
+      try {
+        const tenant = sanitizeTenant(req.tenant?.db_name);
+        const filename = sanitizeFilename(path.basename(previousLogoUrl));
+        const oldPath = resolveExistingLogoPath(tenant, filename);
+        if (oldPath && fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      } catch (err) {
+        console.warn('Failed to delete old school logo:', err.message);
+      }
+    }
+
     return success(res, 200, 'School logo uploaded', updated.rows[0] || null);
   } catch (err) {
     console.error('School logo upload error:', err);

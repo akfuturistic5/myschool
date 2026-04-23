@@ -159,6 +159,7 @@ const AddStudent = () => {
     guardian_address: string;
     guardian_person_id: number | null;
     guardian_matched_from_legacy: boolean;
+    guardian_image_url: string;
     // Siblings
     siblings: {
       is_in_same_school: boolean;
@@ -192,6 +193,7 @@ const AddStudent = () => {
     other_information: string;
     medical_document_path: string | null;
     transfer_certificate_path: string | null;
+    photo_url: string | null;
   }>({
     academic_year_id: null,
     unique_student_ids: '',
@@ -240,6 +242,7 @@ const AddStudent = () => {
     guardian_address: '',
     guardian_person_id: null,
     guardian_matched_from_legacy: false,
+    guardian_image_url: '',
     siblings: [
       { is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }
     ],
@@ -263,6 +266,7 @@ const AddStudent = () => {
     other_information: '',
     medical_document_path: null,
     transfer_certificate_path: null,
+    photo_url: null,
   });
 
   const [baselineAdmission, setBaselineAdmission] = useState('');
@@ -271,6 +275,18 @@ const AddStudent = () => {
   const [tcDocUploadStatus, setTcDocUploadStatus] = useState<DocUploadUiStatus>("idle");
   const medicalDocInputRef = useRef<HTMLInputElement>(null);
   const tcDocInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const fatherPhotoInputRef = useRef<HTMLInputElement>(null);
+  const motherPhotoInputRef = useRef<HTMLInputElement>(null);
+  const guardianPhotoInputRef = useRef<HTMLInputElement>(null);
+  const [photoUploadStatus, setPhotoUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const [fatherPhotoUploadStatus, setFatherPhotoUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const [motherPhotoUploadStatus, setMotherPhotoUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const [guardianPhotoUploadStatus, setGuardianPhotoUploadStatus] = useState<DocUploadUiStatus>("idle");
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [fatherPhotoPreview, setFatherPhotoPreview] = useState<string | null>(null);
+  const [motherPhotoPreview, setMotherPhotoPreview] = useState<string | null>(null);
+  const [guardianPhotoPreview, setGuardianPhotoPreview] = useState<string | null>(null);
 
   const {
     fieldErrors,
@@ -416,8 +432,8 @@ const AddStudent = () => {
         phone: raw.phone || '',
         email: raw.email || '',
         mother_tongue_id: raw.mother_tongue_id ? raw.mother_tongue_id.toString() : null,
-        current_address: raw.current_address || raw.address || '',
-        permanent_address: raw.permanent_address || '',
+        current_address: (raw.current_address === 'Not Provided') ? '' : (raw.current_address || raw.address || ''),
+        permanent_address: (raw.permanent_address === 'Not Provided') ? '' : (raw.permanent_address || ''),
         father_name: raw.father_name || '',
         father_email: raw.father_email || '',
         father_phone: raw.father_phone || '',
@@ -440,10 +456,11 @@ const AddStudent = () => {
         guardian_phone: raw.guardian_phone || '',
         guardian_email: raw.guardian_email || '',
         guardian_occupation: raw.guardian_occupation || '',
-        guardian_address: raw.guardian_address || '',
+        guardian_address: (raw.guardian_address === 'Not Provided') ? '' : (raw.guardian_address || ''),
         guardian_person_id:
           raw.guardian_person_id != null ? Number(raw.guardian_person_id) : null,
         guardian_matched_from_legacy: false,
+        guardian_image_url: raw.guardian_image_url || '',
         siblings: Array.isArray(raw.siblings) && raw.siblings.length > 0 
           ? raw.siblings.map((s: any) => ({
               is_in_same_school: !!s.is_in_same_school,
@@ -479,6 +496,11 @@ const AddStudent = () => {
         })(),
         transfer_certificate_path: (() => {
           const v = raw.transfer_certificate_path ?? raw.transferCertificatePath;
+          if (v == null || String(v).trim() === "") return null;
+          return String(v).trim();
+        })(),
+        photo_url: (() => {
+          const v = raw.photo_url ?? raw.photoUrl;
           if (v == null || String(v).trim() === "") return null;
           return String(v).trim();
         })(),
@@ -674,6 +696,105 @@ const AddStudent = () => {
     }
   };
 
+  const uploadStudentPhoto = async (file: File) => {
+    if (file.size > 4 * 1024 * 1024) {
+      void Swal.fire({ icon: "error", title: "File too large", text: "Student photo must be under 4MB" });
+      setPhotoUploadStatus("error");
+      return;
+    }
+    const allowed = ["image/jpeg", "image/png", "image/svg+xml"];
+    if (!allowed.includes(file.type)) {
+      setPhotoUploadStatus("error");
+      void Swal.fire({ icon: "error", title: "Invalid file type", text: "Please upload JPG, PNG or SVG" });
+      return;
+    }
+
+    setPhotoUploadStatus("uploading");
+    try {
+      const userId = isEdit && id ? parseInt(id, 10) : null;
+      const res = await apiService.uploadStudentPhoto(file, userId);
+      const payload = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
+      const rel = (payload as { relativePath?: string })?.relativePath;
+      if (!rel || typeof rel !== "string") {
+        throw new Error("Upload did not return a file path");
+      }
+      handleInputChange("photo_url", rel);
+      setPhotoUploadStatus("success");
+    } catch (err: unknown) {
+      setPhotoUploadStatus("error");
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      void Swal.fire({ icon: "error", title: "Upload failed", text: msg });
+    }
+  };
+
+  const uploadContactPhoto = async (
+    file: File, 
+    userId: number | null, 
+    field: "father_image_url" | "mother_image_url" | "guardian_image_url",
+    setStatus: (s: DocUploadUiStatus) => void
+  ) => {
+    if (file.size > 4 * 1024 * 1024) {
+      void Swal.fire({ icon: "error", title: "File too large", text: "Photo must be under 4MB" });
+      setStatus("error");
+      return;
+    }
+    const allowed = ["image/jpeg", "image/png", "image/svg+xml"];
+    if (!allowed.includes(file.type)) {
+      setStatus("error");
+      void Swal.fire({ icon: "error", title: "Invalid file type", text: "Please upload JPG, PNG or SVG" });
+      return;
+    }
+
+    setStatus("uploading");
+    try {
+      // Reusing student photo endpoint but specifying the contact's userId if they exist
+      const res = await apiService.uploadStudentPhoto(file, userId); 
+      const payload = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
+      const rel = (payload as { relativePath?: string })?.relativePath;
+      if (!rel || typeof rel !== "string") {
+        throw new Error("Upload did not return a file path");
+      }
+      handleInputChange(field, rel);
+      setStatus("success");
+    } catch (err: unknown) {
+      setStatus("error");
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      void Swal.fire({ icon: "error", title: "Upload failed", text: msg });
+    }
+  };
+
+  useEffect(() => {
+    if (formData.photo_url) {
+      apiService.getSchoolStorageFileAbsoluteUrl(formData.photo_url).then(setPhotoPreview);
+    } else {
+      setPhotoPreview(null);
+    }
+  }, [formData.photo_url]);
+
+  useEffect(() => {
+    if (formData.father_image_url) {
+      apiService.getSchoolStorageFileAbsoluteUrl(formData.father_image_url).then(setFatherPhotoPreview);
+    } else {
+      setFatherPhotoPreview(null);
+    }
+  }, [formData.father_image_url]);
+
+  useEffect(() => {
+    if (formData.mother_image_url) {
+      apiService.getSchoolStorageFileAbsoluteUrl(formData.mother_image_url).then(setMotherPhotoPreview);
+    } else {
+      setMotherPhotoPreview(null);
+    }
+  }, [formData.mother_image_url]);
+
+  useEffect(() => {
+    if (formData.guardian_image_url) {
+      apiService.getSchoolStorageFileAbsoluteUrl(formData.guardian_image_url).then(setGuardianPhotoPreview);
+    } else {
+      setGuardianPhotoPreview(null);
+    }
+  }, [formData.guardian_image_url]);
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -699,6 +820,35 @@ const AddStudent = () => {
         setIsSubmitting(false);
         return;
       }
+
+      // --- Cross-field email duplicate check ---
+      const emailsToCheck: { label: string; email: string }[] = [
+        { label: 'Father', email: (formData.father_email || '').trim().toLowerCase() },
+        { label: 'Mother', email: (formData.mother_email || '').trim().toLowerCase() },
+        { label: 'Guardian', email: (formData.guardian_email || '').trim().toLowerCase() },
+      ].filter(x => x.email !== '');
+
+      const emailsSeen = new Map<string, string>();
+      const emailDuplicates: string[] = [];
+      for (const { label, email } of emailsToCheck) {
+        if (emailsSeen.has(email)) {
+          emailDuplicates.push(`"${email}" is used for both ${emailsSeen.get(email)} and ${label}.`);
+        } else {
+          emailsSeen.set(email, label);
+        }
+      }
+
+      if (emailDuplicates.length > 0) {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Duplicate Email',
+          html: emailDuplicates.map(d => `<p>${d}</p>`).join(''),
+          confirmButtonText: 'Fix Emails',
+        });
+        setIsSubmitting(false);
+        return;
+      }
+      // --- End cross-field email duplicate check ---
 
       // Prepare data for submission (omit UI-only legacy flags)
       const {
@@ -774,6 +924,7 @@ const AddStudent = () => {
         other_information: formData.other_information || null,
         medical_document_path: formData.medical_document_path || null,
         transfer_certificate_path: formData.transfer_certificate_path || null,
+        photo_url: formData.photo_url || null,
       };
 
       let response: { status?: string; warnings?: { message?: string }[] };
@@ -789,25 +940,43 @@ const AddStudent = () => {
         Array.isArray(response.warnings) &&
         response.warnings.length > 0
       ) {
+        // Backend returned warnings (e.g. email already in use by another account type).
+        // Show the warning and STAY on the form — do NOT navigate — so the user can fix the email.
         const lines = response.warnings
           .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
           .filter(Boolean);
         await Swal.fire({
-          icon: "warning",
-          title: "Email already in use",
-          text:
-            lines.length > 0
-              ? lines.join("\n\n")
-              : "One or more emails are already registered to another account.",
-          confirmButtonText: "OK",
+          icon: "error",
+          title: "Email Already In Use",
+          html: lines.length > 0
+            ? lines.map(l => `<p>${l}</p>`).join('')
+            : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
+          confirmButtonText: "Fix Emails",
         });
+        // Do NOT navigate — stay on the form so the user can correct the emails
+        setIsSubmitting(false);
+        return;
       }
 
-      // Navigate to student list on success
+      // Navigate to student list only on clean success (no warnings)
       navigate(routes.studentList);
     } catch (error: any) {
       console.error('Error saving student:', error);
-      setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);
+      // 409 = email conflict — show a clear modal and stay on the form
+      if (error?.status === 409) {
+        // Extract the message from the error (apiService sets error.message = "HTTP error! status: 409, message: <backend msg>")
+        const raw: string = error.message || '';
+        const match = raw.match(/message:\s*(.+)/);
+        const userMsg = match ? match[1] : raw || 'An email address is already in use by another account.';
+        await Swal.fire({
+          icon: 'error',
+          title: 'Duplicate Email',
+          text: userMsg,
+          confirmButtonText: 'Fix Emails',
+        });
+      } else {
+        setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -915,22 +1084,38 @@ const AddStudent = () => {
                       <div className="row">
                         <div className="col-md-12">
                           <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                              <i className="ti ti-photo-plus fs-16" />
+                            <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                              {photoPreview ? (
+                                <img src={photoPreview} alt="Student" className="img-fluid h-100 w-100 object-fit-cover" />
+                              ) : (
+                                <i className="ti ti-photo-plus fs-16" />
+                              )}
                             </div>
                             <div className="profile-upload">
                               <div className="profile-uploader d-flex align-items-center">
                                 <div className="drag-upload-btn mb-3">
-                                  Upload
+                                  {photoUploadStatus === "uploading" ? "Uploading..." : "Upload"}
                                   <input
                                     type="file"
                                     className="form-control image-sign"
-                                    multiple
+                                    ref={photoInputRef}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) uploadStudentPhoto(file);
+                                    }}
+                                    accept=".jpg,.jpeg,.png,.svg"
                                   />
                                 </div>
-                                <Link to="#" className="btn btn-primary mb-3">
+                                <button
+                                  type="button"
+                                  className="btn btn-primary mb-3 ms-2"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, photo_url: null }));
+                                    if (photoInputRef.current) photoInputRef.current.value = "";
+                                  }}
+                                >
                                   Remove
-                                </Link>
+                                </button>
                               </div>
                               <p className="fs-12">
                                 Upload image size 4MB, Format JPG, PNG, SVG
@@ -1509,22 +1694,34 @@ const AddStudent = () => {
                           </div>
                           <div className="col-md-12">
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                                <i className="ti ti-photo-plus fs-16" />
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                                {fatherPhotoPreview ? (
+                                  <img src={fatherPhotoPreview} alt="Father" className="img-fluid h-100 w-100 object-fit-cover" />
+                                ) : (
+                                  <i className="ti ti-photo-plus fs-16" />
+                                )}
                               </div>
                               <div className="profile-upload">
                                 <div className="profile-uploader d-flex align-items-center">
                                   <div className="drag-upload-btn mb-3">
-                                    Upload
+                                    {fatherPhotoUploadStatus === "uploading" ? "Uploading..." : "Upload"}
                                     <input
                                       type="file"
+                                      ref={fatherPhotoInputRef}
                                       className="form-control image-sign"
-                                      multiple
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) uploadContactPhoto(file, formData.father_person_id, "father_image_url", setFatherPhotoUploadStatus);
+                                      }}
                                     />
                                   </div>
-                                  <Link to="#" className="btn btn-primary mb-3">
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary mb-3 ms-2"
+                                    onClick={() => handleInputChange("father_image_url", "")}
+                                  >
                                     Remove
-                                  </Link>
+                                  </button>
                                 </div>
                                 <p className="fs-12">
                                   Upload image size 4MB, Format JPG, PNG, SVG
@@ -1636,22 +1833,34 @@ const AddStudent = () => {
                           </div>
                           <div className="col-md-12">
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                                <i className="ti ti-photo-plus fs-16" />
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                                {motherPhotoPreview ? (
+                                  <img src={motherPhotoPreview} alt="Mother" className="img-fluid h-100 w-100 object-fit-cover" />
+                                ) : (
+                                  <i className="ti ti-photo-plus fs-16" />
+                                )}
                               </div>
                               <div className="profile-upload">
                                 <div className="profile-uploader d-flex align-items-center">
                                   <div className="drag-upload-btn mb-3">
-                                    Upload
+                                    {motherPhotoUploadStatus === "uploading" ? "Uploading..." : "Upload"}
                                     <input
                                       type="file"
+                                      ref={motherPhotoInputRef}
                                       className="form-control image-sign"
-                                      multiple
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) uploadContactPhoto(file, formData.mother_person_id, "mother_image_url", setMotherPhotoUploadStatus);
+                                      }}
                                     />
                                   </div>
-                                  <Link to="#" className="btn btn-primary mb-3">
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary mb-3 ms-2"
+                                    onClick={() => handleInputChange("mother_image_url", "")}
+                                  >
                                     Remove
-                                  </Link>
+                                  </button>
                                 </div>
                                 <p className="fs-12">
                                   Upload image size 4MB, Format JPG, PNG, SVG
@@ -1816,22 +2025,34 @@ const AddStudent = () => {
                               </div>
                             </div>
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                                <i className="ti ti-photo-plus fs-16" />
+                              <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                                {guardianPhotoPreview ? (
+                                  <img src={guardianPhotoPreview} alt="Guardian" className="img-fluid h-100 w-100 object-fit-cover" />
+                                ) : (
+                                  <i className="ti ti-photo-plus fs-16" />
+                                )}
                               </div>
                               <div className="profile-upload">
                                 <div className="profile-uploader d-flex align-items-center">
                                   <div className="drag-upload-btn mb-3">
-                                    Upload
+                                    {guardianPhotoUploadStatus === "uploading" ? "Uploading..." : "Upload"}
                                     <input
                                       type="file"
+                                      ref={guardianPhotoInputRef}
                                       className="form-control image-sign"
-                                      multiple
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) uploadContactPhoto(file, formData.guardian_person_id, "guardian_image_url", setGuardianPhotoUploadStatus);
+                                      }}
                                     />
                                   </div>
-                                  <Link to="#" className="btn btn-primary mb-3">
+                                  <button
+                                    type="button"
+                                    className="btn btn-primary mb-3 ms-2"
+                                    onClick={() => handleInputChange("guardian_image_url", "")}
+                                  >
                                     Remove
-                                  </Link>
+                                  </button>
                                 </div>
                                 <p className="fs-12">
                                   Upload image size 4MB, Format JPG, PNG, SVG
@@ -2735,9 +2956,13 @@ const AddStudent = () => {
                   </div>
                   {/* /Other Details */}
                   <div className="text-end">
-                    <button type="button" className="btn btn-light me-3">
+                    <Link
+                      to={id ? `${routes.studentList}` : routes.studentList}
+                      state={id ? { studentId: id } : undefined}
+                      className="btn btn-light me-3"
+                    >
                       Cancel
-                    </button>
+                    </Link>
                     <button
                       type="submit"
                       className="btn btn-primary"
