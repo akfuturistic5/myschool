@@ -1224,6 +1224,222 @@ async function viewExamResults(req, res) {
   }
 }
 
+async function viewExamTopPerformers(req, res) {
+  try {
+    const ctx = getAuthContext(req);
+    const examId = parseId(req.query.exam_id);
+    const classId = parseId(req.query.class_id);
+    const sectionId = parseId(req.query.section_id);
+    const topParam = String(req.query.top || '').trim().toLowerCase();
+    const allowedTopValues = new Set(['3', '5', '10', '15', '20', 'all']);
+    const safeTop = allowedTopValues.has(topParam) ? topParam : 'all';
+    const topLimit = safeTop === 'all' ? null : Number.parseInt(safeTop, 10);
+
+    if (!examId) return error(res, 400, 'exam_id is required');
+
+    const examRes = await query(
+      `SELECT id, exam_name, exam_type
+       FROM exams
+       WHERE id = $1
+       LIMIT 1`,
+      [examId]
+    );
+    if (!examRes.rows.length) return error(res, 404, 'Exam not found');
+
+    let allowedScopes = [];
+    if (isAdmin(ctx)) {
+      const scopeRes = await query(
+        `SELECT DISTINCT class_id, section_id
+         FROM exam_subjects
+         WHERE exam_id = $1
+           AND class_id IS NOT NULL
+           AND section_id IS NOT NULL`,
+        [examId]
+      );
+      allowedScopes = (scopeRes.rows || []).map((r) => ({
+        class_id: parseId(r.class_id),
+        section_id: parseId(r.section_id),
+      })).filter((r) => r.class_id && r.section_id);
+    } else if (isTeacherRole(ctx)) {
+      const { teacherIds, staffIds } = await getTeacherMaps(ctx.userId);
+      if (!teacherIds.length && !staffIds.length) {
+        return success(res, 200, 'Top performers loaded', {
+          exam: examRes.rows[0],
+          rows: [],
+          scope: { class_id: classId || null, section_id: sectionId || null },
+        });
+      }
+      const scopeRes = await query(
+        `SELECT DISTINCT es.class_id, es.section_id
+         FROM exam_subjects es
+         WHERE es.exam_id = $1
+           AND es.class_id IS NOT NULL
+           AND es.section_id IS NOT NULL
+           AND (
+             EXISTS (
+               SELECT 1 FROM sections s
+               WHERE s.id = es.section_id
+                 AND s.class_id = es.class_id
+                 AND s.section_teacher_id = ANY($2::int[])
+             )
+             OR EXISTS (
+               SELECT 1 FROM class_schedules cs
+               WHERE cs.class_id = es.class_id
+                 AND (cs.section_id = es.section_id OR cs.section_id IS NULL)
+                 AND cs.teacher_id = ANY($3::int[])
+             )
+             OR EXISTS (
+               SELECT 1 FROM classes c
+               WHERE c.id = es.class_id
+                 AND (c.class_teacher_id = ANY($3::int[]) OR c.class_teacher_id = ANY($2::int[]))
+             )
+           )`,
+        [examId, staffIds, teacherIds]
+      );
+      allowedScopes = (scopeRes.rows || []).map((r) => ({
+        class_id: parseId(r.class_id),
+        section_id: parseId(r.section_id),
+      })).filter((r) => r.class_id && r.section_id);
+    } else {
+      const selfStudent = await resolveStudentScopeByUser(ctx);
+      if (!selfStudent?.class_id || !selfStudent?.section_id) {
+        return success(res, 200, 'Top performers loaded', {
+          exam: examRes.rows[0],
+          rows: [],
+          scope: { class_id: classId || null, section_id: sectionId || null },
+        });
+      }
+      allowedScopes = [{
+        class_id: parseId(selfStudent.class_id),
+        section_id: parseId(selfStudent.section_id),
+      }].filter((r) => r.class_id && r.section_id);
+    }
+
+    if (classId) {
+      allowedScopes = allowedScopes.filter((s) => s.class_id === classId);
+    }
+    if (sectionId) {
+      allowedScopes = allowedScopes.filter((s) => s.section_id === sectionId);
+    }
+    if (!allowedScopes.length) {
+      return success(res, 200, 'Top performers loaded', {
+        exam: examRes.rows[0],
+        rows: [],
+        scope: { class_id: classId || null, section_id: sectionId || null },
+      });
+    }
+
+    const scopeValuesSql = [];
+    const scopeParams = [];
+    allowedScopes.forEach((scope, idx) => {
+      scopeParams.push(scope.class_id, scope.section_id);
+      scopeValuesSql.push(`($${idx * 2 + 1}, $${idx * 2 + 2})`);
+    });
+    const examParamIdx = scopeParams.length + 1;
+    const rowsRes = await query(
+      `WITH allowed_scopes(class_id, section_id) AS (
+         VALUES ${scopeValuesSql.join(', ')}
+       ),
+       subject_plan AS (
+         SELECT es.class_id, es.section_id, es.subject_id,
+                COALESCE(es.max_marks, 100) AS max_marks,
+                COALESCE(es.passing_marks, 35) AS passing_marks
+         FROM exam_subjects es
+         INNER JOIN allowed_scopes a
+           ON a.class_id::text = es.class_id::text
+          AND a.section_id::text = es.section_id::text
+         WHERE es.exam_id = $${examParamIdx}
+       ),
+       scored AS (
+         SELECT
+           st.id AS student_id,
+           st.first_name,
+           st.last_name,
+           st.photo_url,
+           st.class_id,
+           st.section_id,
+           COUNT(sp.subject_id)::int AS planned_subject_count,
+           COUNT(er.student_id)::int AS entered_subject_count,
+           COALESCE(SUM(CASE WHEN COALESCE(er.is_absent, false) THEN 0 ELSE COALESCE(er.marks_obtained, 0) END), 0)::numeric AS total_obtained,
+           COALESCE(SUM(sp.max_marks), 0)::numeric AS total_max,
+           BOOL_OR(COALESCE(er.is_absent, false) = true) AS has_absent,
+           BOOL_OR(
+             er.student_id IS NOT NULL
+             AND COALESCE(er.is_absent, false) = false
+             AND COALESCE(er.marks_obtained, 0) < COALESCE(sp.passing_marks, 0)
+           ) AS has_fail_subject
+         FROM students st
+         INNER JOIN allowed_scopes a
+           ON a.class_id::text = st.class_id::text
+          AND a.section_id::text = st.section_id::text
+         INNER JOIN subject_plan sp
+           ON sp.class_id::text = st.class_id::text
+          AND sp.section_id::text = st.section_id::text
+         LEFT JOIN exam_results er
+           ON er.exam_id = $${examParamIdx}
+          AND er.student_id = st.id
+          AND er.subject_id = sp.subject_id
+         WHERE COALESCE(st.is_active, true) = true
+         GROUP BY st.id, st.first_name, st.last_name, st.photo_url, st.class_id, st.section_id
+       )
+       SELECT
+         s.student_id,
+         CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')) AS student_name,
+         s.photo_url,
+         s.class_id,
+         c.class_name,
+         s.section_id,
+         sec.section_name,
+         s.total_obtained,
+         s.total_max,
+         CASE
+           WHEN s.entered_subject_count = 0 THEN NULL
+           WHEN s.total_max = 0 THEN 0
+           ELSE ROUND((s.total_obtained * 100.0) / NULLIF(s.total_max, 0), 2)
+         END AS percentage,
+         CASE
+           WHEN s.entered_subject_count = 0 THEN 'PENDING'
+           WHEN s.entered_subject_count < s.planned_subject_count THEN 'PENDING'
+           WHEN s.has_absent OR s.has_fail_subject THEN 'FAIL'
+           ELSE 'PASS'
+         END AS result_status
+       FROM scored s
+       LEFT JOIN classes c ON c.id = s.class_id
+       LEFT JOIN sections sec ON sec.id = s.section_id
+       ORDER BY percentage DESC NULLS LAST, total_obtained DESC, student_name ASC
+       ${topLimit ? `LIMIT ${topLimit}` : ''}`,
+      [...scopeParams, examId]
+    );
+
+    const gradeScale = await loadActiveGradeScale();
+    const withRank = (rowsRes.rows || []).map((r, idx) => ({
+      rank: idx + 1,
+      student_id: parseId(r.student_id),
+      student_name: String(r.student_name || '').trim() || 'N/A',
+      photo_url: r.photo_url || null,
+      class_id: parseId(r.class_id),
+      class_name: r.class_name || null,
+      section_id: parseId(r.section_id),
+      section_name: r.section_name || null,
+      total_obtained: r.total_obtained != null ? Number(r.total_obtained) : 0,
+      total_max: r.total_max != null ? Number(r.total_max) : 0,
+      percentage: r.percentage != null ? Number(r.percentage) : null,
+      grade: r.percentage == null ? null : getGradeFromScale(r.percentage, gradeScale),
+      result_status: r.result_status || 'PENDING',
+    }));
+
+    return success(res, 200, 'Top performers loaded', {
+      exam: examRes.rows[0],
+      rows: withRank,
+      scope: { class_id: classId || null, section_id: sectionId || null },
+      top: safeTop,
+    });
+  } catch (e) {
+    console.error('viewExamTopPerformers', e);
+    return error(res, 500, 'Failed to load top performers');
+  }
+}
+
 async function listSelfExamOptions(req, res) {
   try {
     const ctx = getAuthContext(req);
@@ -1854,6 +2070,7 @@ module.exports = {
   saveExamMarks,
   viewExamSchedule,
   viewExamResults,
+  viewExamTopPerformers,
   listSelfExamOptions,
 };
 

@@ -5,7 +5,7 @@ import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
-import { getDashboardForRole } from "../../../core/utils/roleUtils";
+import { getDashboardForRole, isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
 import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
 import { apiService } from "../../../core/services/apiService";
@@ -24,6 +24,7 @@ const statusClassMap: Record<string, string> = {
   late: "bg-pending",
   half_day: "bg-dark",
   absent: "bg-danger",
+  leaved: "bg-secondary",
   holiday: "bg-info",
   weekly_holiday: "bg-info",
 };
@@ -31,10 +32,11 @@ const statusTextMap: Record<string, string> = {
   present: "P",
   late: "L",
   absent: "A",
+  leaved: "LV",
   holiday: "H",
   weekly_holiday: "H",
-  half_day: "F",
-  halfday: "F",
+  half_day: "HD",
+  halfday: "HD",
 };
 
 const getTodayLocalYMD = () => {
@@ -50,7 +52,9 @@ const StudentAttendanceReport = () => {
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const role = (user?.role || "").toLowerCase();
   const roleId = Number(user?.user_role_id ?? user?.role_id);
-  const isTeacher = role === "teacher" || roleId === 2;
+  const isHeadmaster = isHeadmasterRole(user);
+  const isAdministrative = isAdministrativeRole(user);
+  const isTeacher = !isHeadmaster && !isAdministrative && (role === "teacher" || roleId === 2);
   const dashboardRoute = getDashboardForRole(role);
   const today = getTodayLocalYMD();
 
@@ -262,6 +266,15 @@ const StudentAttendanceReport = () => {
         key: day.date,
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
+          if (status === "leaved") {
+            return (
+              <span
+                className="attendance-range"
+                style={{ opacity: 0.15, width: 22, height: 18, display: "inline-flex" }}
+                title={`${day.date}: Leaved`}
+              />
+            );
+          }
           const pillStyle = {
             width: 20,
             height: 16,
@@ -300,7 +313,7 @@ const StudentAttendanceReport = () => {
           const cls = statusClassMap[status] || "bg-light";
           const sLo = String(status).toLowerCase();
           const short =
-            sLo === "half_day" || sLo === "halfday" ? "F" : formatAttendanceDayShort(status);
+            sLo === "half_day" || sLo === "halfday" ? "HD" : formatAttendanceDayShort(status);
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
@@ -346,6 +359,13 @@ const StudentAttendanceReport = () => {
               </Link>
             </p>
             <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
+            {record.isLeaved && (
+              <div className="mt-1">
+                <span className="badge bg-danger text-white">
+                  Leaved{record.leavingDate ? ` (${record.leavingDate})` : ""}
+                </span>
+              </div>
+            )}
           </div>
         ),
       },
@@ -362,7 +382,7 @@ const StudentAttendanceReport = () => {
       { title: "L", key: "late", render: (_: any, record: any) => record.summary?.late ?? 0 },
       { title: "A", key: "absent", render: (_: any, record: any) => record.summary?.absent ?? 0 },
       { title: "H", key: "holiday", render: (_: any, record: any) => record.summary?.holiday ?? 0 },
-      { title: "F", key: "halfDay", render: (_: any, record: any) => record.summary?.halfDay ?? 0 },
+      { title: "HD", key: "halfDay", render: (_: any, record: any) => record.summary?.halfDay ?? 0 },
       ...reportDayColumns,
     ],
     [reportDayColumns, reportReturnTo]
@@ -374,6 +394,7 @@ const StudentAttendanceReport = () => {
       const base: Record<string, any> = {
         Student: row.name || "",
         RollNo: row.rollNo || "",
+        Leaved: row.isLeaved ? (row.leavingDate ? `Yes (${row.leavingDate})` : "Yes") : "No",
         Percentage: row.summary?.percentage ?? 0,
         Present: row.summary?.present ?? 0,
         Late: row.summary?.late ?? 0,

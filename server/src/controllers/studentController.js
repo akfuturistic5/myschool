@@ -3475,7 +3475,8 @@ const getStudentAttendance = async (req, res) => {
       const sid = parseId(requestedStudentId);
       if (!sid) return [];
       const baseRes = await query(
-        `SELECT id, user_id, admission_number, roll_number
+        `SELECT id, user_id, admission_number, roll_number, unique_student_ids, gr_number,
+                first_name, last_name, date_of_birth
          FROM students
          WHERE id = $1
          LIMIT 1`,
@@ -3486,14 +3487,37 @@ const getStudentAttendance = async (req, res) => {
       const baseUserId = parseId(base.user_id);
       const baseAdmissionNo = String(base.admission_number || '').trim();
       const baseRollNo = String(base.roll_number || '').trim();
+      const baseUniqueStudentIds = String(base.unique_student_ids || '').trim();
+      const baseGrNumber = String(base.gr_number || '').trim();
+      const baseFirstName = String(base.first_name || '').trim();
+      const baseLastName = String(base.last_name || '').trim();
+      const baseDob = String(base.date_of_birth || '').slice(0, 10);
       const linked = await query(
         `SELECT id
          FROM students
          WHERE ($1::int IS NOT NULL AND user_id = $1)
             OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
             OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
-            OR id = $4`,
-        [baseUserId, baseAdmissionNo, baseRollNo, sid]
+            OR ($4::text <> '' AND TRIM(COALESCE(unique_student_ids, '')) = $4)
+            OR ($5::text <> '' AND TRIM(COALESCE(gr_number, '')) = $5)
+            OR (
+              $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
+              AND LOWER(TRIM(COALESCE(first_name, ''))) = LOWER($6)
+              AND LOWER(TRIM(COALESCE(last_name, ''))) = LOWER($7)
+              AND date_of_birth = $8::date
+            )
+            OR id = $9`,
+        [
+          baseUserId,
+          baseAdmissionNo,
+          baseRollNo,
+          baseUniqueStudentIds,
+          baseGrNumber,
+          baseFirstName,
+          baseLastName,
+          /^\d{4}-\d{2}-\d{2}$/.test(baseDob) ? baseDob : null,
+          sid,
+        ]
       );
       const ids = (linked.rows || [])
         .map((r) => parseId(r.id))
@@ -4382,6 +4406,30 @@ const getAttendanceReport = async (req, res) => {
       rosterParams
     );
 
+    const rosterStudentIds = (rosterRes.rows || [])
+      .map((row) => parseId(row.id))
+      .filter(Boolean);
+    const leavingDateByStudentId = new Map();
+    if (rosterStudentIds.length > 0) {
+      const leavingRes = await query(
+        `SELECT DISTINCT ON (ls.student_id)
+           ls.student_id,
+           ls.leaving_date::date AS leaving_date
+         FROM leaving_students ls
+         WHERE ls.student_id = ANY($1::int[])
+           AND COALESCE(ls.is_active, true) = true
+         ORDER BY ls.student_id, ls.leaving_date DESC, ls.id DESC`,
+        [rosterStudentIds]
+      );
+      (leavingRes.rows || []).forEach((row) => {
+        const sid = parseId(row.student_id);
+        const leavingDate = toYmd(row.leaving_date);
+        if (sid && leavingDate) {
+          leavingDateByStudentId.set(sid, leavingDate);
+        }
+      });
+    }
+
     const attendanceParams = [...rosterParams, monthStartDateStr, monthEndDateStr];
     const attendanceRes = await query(
       `SELECT
@@ -4442,7 +4490,14 @@ const getAttendanceReport = async (req, res) => {
 
     const rows = rosterRes.rows.map((student) => {
       const daily = { ...(attendanceByStudent.get(String(student.id)) || {}) };
+      const leavingDate = leavingDateByStudentId.get(Number(student.id)) || null;
       days.forEach((day) => {
+        if (leavingDate && day.date > leavingDate) {
+          // After leaving date, attendance should not be counted as absent.
+          // Keep day visible in report with a dedicated status marker.
+          daily[day.date] = 'leaved';
+          return;
+        }
         const existing = daily[day.date];
         const isHoliday = holidayDates.has(day.date);
         if (isHoliday) {
@@ -4481,6 +4536,9 @@ const getAttendanceReport = async (req, res) => {
         else if (status === 'absent') summary.absent += 1;
         else if (status === 'half_day') summary.halfDay += 1;
         else if (status === 'holiday') summary.holiday += 1;
+        else if (status === 'leaved') {
+          // Intentionally ignored in attendance totals.
+        }
       });
 
       const workedDays = summary.present + summary.late + summary.absent + summary.halfDay;
@@ -4496,6 +4554,8 @@ const getAttendanceReport = async (req, res) => {
         gender: student.gender || '',
         sectionId: student.section_id,
         sectionName: student.section_name || '',
+        isLeaved: Boolean(leavingDate),
+        leavingDate: leavingDate,
         summary,
         daily,
       };

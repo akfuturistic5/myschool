@@ -7,6 +7,7 @@ import { useDispatch } from "react-redux";
 import { setAuthFromSession } from "../../../core/data/redux/authSlice";
 import { apiService } from "../../../core/services/apiService";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
+import { normalizeAuthRole } from "../../../core/utils/roleUtils";
 import {
   validateStrongPassword,
   showPasswordRequirementsAlert,
@@ -78,7 +79,7 @@ const Profile = () => {
         [d.first_name, d.last_name].filter(Boolean).join(" ") ||
         d.username ||
         "User";
-      const role = d.display_role || d.role_name || "User";
+      const role = normalizeAuthRole(d.role_name, d.role_id);
       dispatch(
         setAuthFromSession({
           user: {

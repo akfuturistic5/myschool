@@ -122,10 +122,10 @@ export function isAdministrativeRole(role: RoleInput, explicitRoleId?: number | 
   return getRoleScope(role, explicitRoleId) === 'administrative';
 }
 
-/** Matches server EVENT_MANAGER_ROLES: Headmaster, Administrative, Teacher. */
+/** Matches server EVENT_MANAGER_ROLES: Headmaster, Administrative. */
 export function canManageSchoolEvents(role: RoleInput, explicitRoleId?: number | null): boolean {
   const scope = getRoleScope(role, explicitRoleId);
-  return scope === 'headmaster' || scope === 'administrative' || scope === 'teacher';
+  return scope === 'headmaster' || scope === 'administrative';
 }
 
 export function getDisplayRoleLabel(role: RoleInput, explicitRoleId?: number | null): string {
@@ -148,6 +148,32 @@ export function getDisplayRoleLabel(role: RoleInput, explicitRoleId?: number | n
       const { roleName } = getRoleParts(role, explicitRoleId);
       return roleName ? roleName.charAt(0).toUpperCase() + roleName.slice(1) : 'User';
     }
+  }
+}
+
+/**
+ * Canonical auth role used by routing/guards.
+ * IMPORTANT: this is based on role_id/role_name only, not designation/display_role.
+ */
+export function normalizeAuthRole(role: RoleInput, explicitRoleId?: number | null): UserRole | 'Admin' | 'User' {
+  const scope = getRoleScope(role, explicitRoleId);
+  switch (scope) {
+    case 'headmaster':
+      return 'Admin';
+    case 'administrative':
+      return 'Administrative';
+    case 'teacher':
+      return 'Teacher';
+    case 'student':
+      return 'Student';
+    case 'parent':
+      return 'Parent';
+    case 'guardian':
+      return 'Guardian';
+    case 'driver':
+      return 'Driver';
+    default:
+      return 'User';
   }
 }
 

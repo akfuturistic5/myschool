@@ -35,7 +35,7 @@ router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getAllEvents);
 router.get('/upcoming', requireRole(ALL_AUTHENTICATED_ROLES), getUpcomingEvents);
 router.get('/completed', requireRole(ALL_AUTHENTICATED_ROLES), getCompletedEvents);
 
-// Headmaster + Teacher only - create, update, delete
+// Headmaster + Administrative only - create, update, delete
 router.post('/', requireRole(EVENT_MANAGER_ROLES), createEvent);
 router.put('/:id', requireRole(EVENT_MANAGER_ROLES), updateEvent);
 router.delete('/:id', requireRole(EVENT_MANAGER_ROLES), deleteEvent);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import ReactApexChart from "react-apexcharts";
+import type { ApexOptions } from "apexcharts";
 import { Link } from "react-router-dom";
 import CountUp from "react-countup";
 import { Calendar } from "primereact/calendar";
@@ -54,6 +55,43 @@ function endOfWeekSunday(ref: Date): Date {
   end.setDate(start.getDate() + 6);
   return end;
 }
+
+type RecentActivityItem = {
+  message?: string;
+  date?: string;
+};
+
+type ClassRoutineItem = {
+  id?: string | number;
+  teacherPhotoUrl?: string | null;
+  teacherName?: string;
+  className?: string;
+  sectionName?: string;
+  subjectName?: string;
+  day?: string;
+};
+
+type LeaveApplicationItem = {
+  key: string;
+  photoUrl?: string;
+  name?: string;
+  badgeClass?: string;
+  leaveType?: string;
+  role?: string;
+  status?: string;
+  leaveRange?: string;
+  applyOn?: string;
+};
+
+type NoticeItem = {
+  id?: string | number;
+  title?: string;
+  modified_at?: string;
+  created_at?: string;
+};
+
+type DonutChartConfig = ApexOptions & { series: number[] };
+type AxisChartConfig = ApexOptions & { series: Array<{ name: string; data: number[] }> };
 
 const AdminDashboard = () => {
   const routes = all_routes;
@@ -148,7 +186,7 @@ const AdminDashboard = () => {
     attendanceDate: attendanceDateStr,
     attendanceScope,
   });
-  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
+  const { leaveApplications: leaveApplicationsRaw, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 10,
     canUseAdminList: true,
     pendingOnly: true,
@@ -157,9 +195,9 @@ const AdminDashboard = () => {
     leaveFrom: leaveWindow.from ?? undefined,
     leaveTo: leaveWindow.to ?? undefined,
   });
-  const { user: currentUser, loading: userLoading } = useCurrentUser();
+  const { user: currentUserRaw, loading: userLoading } = useCurrentUser();
   const { upcomingEvents, loading: eventsLoading, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 12 });
-  const { routine: classRoutine, loading: routineLoading } = useDashboardClassRoutine({ limit: 5, academicYearId });
+  const { routine: classRoutineRaw, loading: routineLoading } = useDashboardClassRoutine({ limit: 5, academicYearId });
   const { performers: bestPerformers } = useDashboardBestPerformers({ limit: 3, academicYearId });
   const { students: starStudents } = useDashboardStarStudents({ limit: 3, academicYearId });
   const { summary: performanceSummary } = useDashboardPerformanceSummary({
@@ -177,12 +215,17 @@ const AdminDashboard = () => {
     if (topSubjectsClassId == null) return "All classes";
     return dashboardClasses.find((c) => c.id === topSubjectsClassId)?.class_name ?? "Class";
   }, [topSubjectsClassId, dashboardClasses]);
-  const { activity: recentActivity } = useDashboardRecentActivity({ academicYearId });
+  const { activity: recentActivityRaw } = useDashboardRecentActivity({ academicYearId });
   const { activityItems: studentActivityItems, loading: activityLoading, error: activityError } = useDashboardStudentActivity({ limit: 5, academicYearId });
   const { todos: dashboardTodos, loading: todosLoading, error: todosError } = useDashboardMyTodos({ limit: 5 });
-  const { notices: dashboardNotices } = useDashboardNoticeBoard({ limit: 5 });
+  const { notices: dashboardNoticesRaw } = useDashboardNoticeBoard({ limit: 5 });
   const { feeStats } = useDashboardFeeStats({ academicYearId, feePeriod });
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId, feePeriod });
+  const currentUser = currentUserRaw as { name?: string } | null;
+  const recentActivity = recentActivityRaw as RecentActivityItem | null;
+  const classRoutine = (classRoutineRaw ?? []) as ClassRoutineItem[];
+  const leaveApplications = (leaveApplicationsRaw ?? []) as LeaveApplicationItem[];
+  const dashboardNotices = (dashboardNoticesRaw ?? []) as NoticeItem[];
 
   const stuAtt = attendanceToday.students;
   const staffAtt = attendanceToday.staff;
@@ -275,11 +318,11 @@ const AdminDashboard = () => {
     nextArrow: <SampleNextArrow />,
     prevArrow: <SamplePrevArrow />,
   };
-  const studentDonutChart = {
+  const studentDonutChart: DonutChartConfig = {
     chart: {
       height: 218,
       width: 218,
-      type: "donut",
+      type: "donut" as const,
       toolbar: {
         show: false,
       },
@@ -303,11 +346,11 @@ const AdminDashboard = () => {
       },
     ],
   };
-  const staffDonutChart = {
+  const staffDonutChart: DonutChartConfig = {
     chart: {
       height: 218,
       width: 218,
-      type: "donut",
+      type: "donut" as const,
       toolbar: {
         show: false,
       },
@@ -331,11 +374,11 @@ const AdminDashboard = () => {
       },
     ],
   };
-  const classDonutChart = {
+  const classDonutChart: DonutChartConfig = {
     chart: {
       height: 218,
       width: 218,
-      type: "donut",
+      type: "donut" as const,
       toolbar: {
         show: false,
       },
@@ -371,10 +414,10 @@ const AdminDashboard = () => {
       },
     ],
   };
-  const feesBar = {
+  const feesBar: AxisChartConfig = {
     chart: {
       height: 275,
-      type: 'bar',
+      type: "bar" as const,
       stacked: true,
       toolbar: {
         show: false,
@@ -382,8 +425,8 @@ const AdminDashboard = () => {
     },
     legend: {
       show: true,
-      horizontalAlign: 'left',
-      position: 'top',
+      horizontalAlign: "left" as const,
+      position: "top" as const,
       fontSize: '14px',
       labels: {
         colors: '#5D6369',
@@ -393,7 +436,6 @@ const AdminDashboard = () => {
       bar: {
         horizontal: false,
         columnWidth: '50%',
-        endingShape: 'rounded'
       },
     },
     colors: ['#3D5EE1', '#E9EDF4'],
@@ -442,10 +484,10 @@ const AdminDashboard = () => {
       }
     }
   };
-  const totalEarningArea = {
+  const totalEarningArea: AxisChartConfig = {
     chart: {
       height: 90,
-      type: 'area',
+      type: "area" as const,
       toolbar: {
         show: false,
       },
@@ -458,17 +500,17 @@ const AdminDashboard = () => {
       enabled: false
     },
     stroke: {
-      curve: 'straight'
+      curve: "straight" as const
     },
     series: [{
       name: 'Income',
       data: [(financeSummary.totalEarnings ?? 0) + (financeSummary.totalFines ?? 0)]
     }]
   };
-  const totalExpenseArea = {
+  const totalExpenseArea: AxisChartConfig = {
     chart: {
       height: 90,
-      type: 'area',
+      type: "area" as const,
       toolbar: {
         show: false,
       },
@@ -481,7 +523,7 @@ const AdminDashboard = () => {
       enabled: false
     },
     stroke: {
-      curve: 'straight'
+      curve: "straight" as const
     },
     series: [{
       name: 'Expense',
@@ -1207,56 +1249,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 {/* /Quick Links */}
-                {/* Timetable preview (grid: Create timetable) */}
-                <div className="card flex-fill">
-                  <div className="card-header d-flex align-items-center justify-content-between">
-                    <h4 className="card-title">Timetable</h4>
-                    <Link
-                      to={all_routes.classTimetable}
-                      className="link-primary fw-medium"
-                    >
-                      <i className="ti ti-table me-1" />
-                      Create / edit grid
-                    </Link>
-                  </div>
-                  <div className="card-body">
-                    {routineLoading && (
-                      <p className="mb-0 text-muted small">Loading timetable entries...</p>
-                    )}
-                    {!routineLoading && classRoutine.length === 0 && (
-                      <p className="mb-0 text-muted small">No entries yet. Add periods under Timetable → Time slots, then build the grid under Create timetable.</p>
-                    )}
-                    {!routineLoading && classRoutine.length > 0 && classRoutine.map((r, idx) => (
-                      <div key={r.id || idx} className={`d-flex align-items-center rounded border p-3 ${idx < classRoutine.length - 1 ? 'mb-3' : 'mb-0'}`}>
-                        <span className="avatar avatar-md flex-shrink-0 border rounded me-2">
-                          {r.teacherPhotoUrl ? (
-                            <img src={r.teacherPhotoUrl} alt={r.teacherName} className="rounded" style={{ width: 40, height: 40, objectFit: 'cover' }} />
-                          ) : (
-                            <span className="d-flex align-items-center justify-content-center w-100 h-100 bg-primary rounded text-white">
-                              <i className="ti ti-user" />
-                            </span>
-                          )}
-                        </span>
-                        <div className="w-100">
-                          <p className="mb-1">
-                            {[r.className, r.sectionName].filter(Boolean).join(' - ') || 'Class'} • {r.subjectName || 'Subject'} • {r.day || 'Day'}
-                          </p>
-                          <div className="progress progress-xs flex-grow-1 mb-1">
-                            <div
-                              className={`progress-bar progress-bar-striped progress-bar-animated rounded ${idx % 3 === 0 ? 'bg-primary' : idx % 3 === 1 ? 'bg-warning' : 'bg-success'}`}
-                              role="progressbar"
-                              style={{ width: "100%" }}
-                              aria-valuenow={100}
-                              aria-valuemin={0}
-                              aria-valuemax={100}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {/* /Timetable preview */}
                 {/* Class Wise Performance */}
                 <div className="card flex-fill">
                   <div className="card-header d-flex align-items-center justify-content-between">
@@ -1495,7 +1487,7 @@ const AdminDashboard = () => {
                                 className="avatar avatar-lg flex-shrink-0 me-2"
                               >
                                 <ImageWithBasePath
-                                  src={item.photoUrl}
+                                  src={item.photoUrl ?? ""}
                                   alt={item.name}
                                 />
                               </Link>
@@ -1714,7 +1706,11 @@ const AdminDashboard = () => {
                               <h6 className="text-truncate mb-1">{n.title}</h6>
                               <p className="mb-0">
                                 <i className="ti ti-calendar me-2" />
-                                {n.modified_at ? `Modified: ${new Date(n.modified_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : `Added: ${new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                                {n.modified_at
+                                  ? `Modified: ${new Date(n.modified_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                  : n.created_at
+                                    ? `Added: ${new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                    : "Added: —"}
                               </p>
                             </div>
                           </div>

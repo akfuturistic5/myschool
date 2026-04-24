@@ -35,8 +35,6 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
       })
     : "N/A";
   const photoSrc = teacher?.photo_url || "assets/img/teachers/teacher-01.jpg";
-  const classSection = teacher?.class_name ?? "N/A";
-  const subject = teacher?.subject_name ?? "N/A";
   const gender = teacher?.gender ?? "N/A";
   const bloodGroup = teacher?.blood_group ?? "N/A";
   const phone = teacher?.phone ?? "N/A";
@@ -67,18 +65,10 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
           <div className="card-body">
             <h5 className="mb-3">Basic Information</h5>
             <dl className="row mb-0">
-              <dt className="col-6 fw-medium text-dark mb-3">
-                Class &amp; Section
-              </dt>
-              <dd className="col-6  mb-3">{classSection}</dd>
-              <dt className="col-6 fw-medium text-dark mb-3">Subject</dt>
-              <dd className="col-6  mb-3">{subject}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Gender</dt>
               <dd className="col-6  mb-3">{gender}</dd>
               <dt className="col-6 fw-medium text-dark mb-3">Blood Group</dt>
               <dd className="col-6  mb-3">{bloodGroup}</dd>
-              <dt className="col-6 fw-medium text-dark mb-3">Language Known</dt>
-              <dd className="col-6  mb-3">{languages}</dd>
               <dt className="col-6 fw-medium text-dark mb-0">Language</dt>
               <dd className="col-6  mb-0">
                 <span className="badge badge-light text-dark me-2">

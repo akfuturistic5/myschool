@@ -30,12 +30,14 @@ const statusClassMap: Record<string, string> = {
   late: "bg-pending",
   half_day: "bg-dark",
   absent: "bg-danger",
+  leaved: "bg-secondary",
   holiday: "bg-info",
 };
 const statusTextMap: Record<string, string> = {
   present: "P",
   absent: "A",
   late: "L",
+  leaved: "LV",
   holiday: "H",
   half_day: "HD",
 };
@@ -198,6 +200,19 @@ const AttendanceReport = () => {
         render: (_text: any, record: any) => {
           const status = record.daily?.[day.date];
           const hasStatus = Boolean(status);
+          if (status === "leaved") {
+            return (
+              <span
+                className="attendance-range"
+                style={{
+                  display: "inline-flex",
+                  width: 22,
+                  height: 22,
+                }}
+                title={`${day.date}: Leaved`}
+              />
+            );
+          }
           const pillStyle = {
             display: "inline-flex" as const,
             width: 22,
@@ -285,6 +300,13 @@ const AttendanceReport = () => {
                 </Link>
               </p>
               <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
+              {record.isLeaved && (
+                <div className="mt-1">
+                  <span className="badge bg-danger text-white">
+                    Leaved{record.leavingDate ? ` (${record.leavingDate})` : ""}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         ),
@@ -359,6 +381,7 @@ const AttendanceReport = () => {
       { title: "Admission No", dataKey: "admissionNo" },
       { title: "Roll No", dataKey: "rollNo" },
       { title: "Student", dataKey: "name" },
+      { title: "Leaved", dataKey: "leavedLabel" },
       { title: "Section", dataKey: "sectionName" },
       { title: "Attendance %", dataKey: "attendancePercentage" },
       { title: "Present", dataKey: "presentCount" },
@@ -376,6 +399,7 @@ const AttendanceReport = () => {
         admissionNo: row.admissionNo || "—",
         rollNo: row.rollNo || "—",
         name: row.name || "—",
+        leavedLabel: row.isLeaved ? (row.leavingDate ? `Yes (${row.leavingDate})` : "Yes") : "No",
         sectionName: row.sectionName || "—",
         attendancePercentage: `${row.summary?.percentage ?? 0}%`,
         presentCount: row.summary?.present ?? 0,

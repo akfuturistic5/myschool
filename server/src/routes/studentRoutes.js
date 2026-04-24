@@ -104,9 +104,10 @@ router.get('/:studentId/exam-results', requireRole(ALL_AUTHENTICATED_ROLES), get
 // Get student by ID
 router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
 
-// Create/Update student - Admin only
+// Create student: Headmaster/Administrative
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);
-router.put('/:id', requireRole(PEOPLE_MANAGER_ROLES), validate(updateStudentSchema), updateStudent);
+// Update student: Headmaster/Administrative/Teacher (teacher scope enforced in controller via canAccessStudent)
+router.put('/:id', requireRole([...PEOPLE_MANAGER_ROLES, ROLES.TEACHER]), validate(updateStudentSchema), updateStudent);
 router.delete('/:id', requireRole(PEOPLE_MANAGER_ROLES), deleteStudent);
 
 module.exports = router;

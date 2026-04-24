@@ -86,16 +86,20 @@ const StudentLeaves = () => {
   // studentOnly = student; parentChildren = parent; studentId+canUseAdminList = admin/teacher
   // canUseAdminList: avoid 403 when role loading - never call admin endpoint until role is confirmed
   const normalizedRole = String(role || "").trim().toLowerCase();
+  const compactRole = normalizedRole.replace(/[\s_-]+/g, "");
   const canUseAdminList =
     normalizedRole === "admin" ||
     normalizedRole === "administrator" ||
     normalizedRole === "teacher" ||
     normalizedRole === "headmaster" ||
     normalizedRole === "administrative" ||
+    normalizedRole === "head_master" ||
     normalizedRole.includes("admin") ||
     normalizedRole.includes("teacher") ||
     normalizedRole.includes("headmaster") ||
-    normalizedRole.includes("administrative");
+    normalizedRole.includes("administrative") ||
+    compactRole.includes("headmaster") ||
+    compactRole.includes("administrative");
   const { leaveApplications: leaveList, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     parentChildren: isParentLeaveViewer,

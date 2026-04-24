@@ -26,7 +26,7 @@ export const exportAttendancePdf = (title: string, filename: string, rows: Recor
     if (s === "late") return "L";
     if (s === "absent") return "A";
     if (s === "holiday" || s === "weekly holiday") return "H";
-    if (s === "half day" || s === "half_day") return "F";
+    if (s === "half day" || s === "half_day") return "HD";
     return s.slice(0, 1).toUpperCase();
   };
   const formatDayLabel = (header: string) => {

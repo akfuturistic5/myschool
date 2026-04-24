@@ -5,7 +5,7 @@ import { all_routes } from "../../router/all_routes";
 import { useDispatch, useSelector } from "react-redux";
 import { setAuth, selectUser } from "../../../core/data/redux/authSlice";
 import { apiService } from "../../../core/services/apiService";
-import { getDashboardForRole } from "../../../core/utils/roleUtils";
+import { getDashboardForRole, normalizeAuthRole } from "../../../core/utils/roleUtils";
 import Swal from "sweetalert2";
 import withReactContent from "sweetalert2-react-content";
 
@@ -34,8 +34,8 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      const role = user.role || "Admin";
-      const dashboard = getDashboardForRole(role);
+      const canonicalRole = normalizeAuthRole(user.role, user.user_role_id);
+      const dashboard = getDashboardForRole(canonicalRole, user.user_role_id);
       navigate(dashboard);
     } else if (isAuthenticated) {
       navigate(routes.adminDashboard);
@@ -53,14 +53,24 @@ const Login = () => {
     try {
       const res = await apiService.login(instituteNumber.trim(), username.trim(), password);
       if (res.status === "SUCCESS" && res.data) {
+        const canonicalRole = normalizeAuthRole(
+          res.data.user?.role,
+          res.data.user?.role_id ?? res.data.user?.user_role_id
+        );
         dispatch(
           setAuth({
-            user: res.data.user,
+            user: {
+              ...res.data.user,
+              role: canonicalRole,
+              user_role_id: res.data.user?.role_id ?? res.data.user?.user_role_id,
+            },
             token: res.data.accessToken ?? undefined,
           })
         );
-        const role = res.data.user?.role || "Admin";
-        const dashboard = getDashboardForRole(role);
+        const dashboard = getDashboardForRole(
+          canonicalRole,
+          res.data.user?.role_id ?? res.data.user?.user_role_id
+        );
         navigate(dashboard);
       } else {
         setError(res.message || "Login failed");

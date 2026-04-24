@@ -61,6 +61,7 @@ const SUB_LABEL: Record<string, string> = {
   absent: "Absent",
   half_day: "Half Day",
   halfday: "Half Day",
+  leaved: "Leaved",
 };
 
 export function formatAttendanceDayHumanLabel(status: string | null | undefined): string {
@@ -72,6 +73,7 @@ export function formatAttendanceDayHumanLabel(status: string | null | undefined)
     return `Holiday + ${SUB_LABEL[rest] || rest.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase())}`;
   }
   if (s === "holiday") return "Holiday";
+  if (s === "leaved") return "Leaved";
   return s.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
@@ -94,6 +96,7 @@ export function formatAttendanceDayShort(status: string | null | undefined): str
     return `H/${sub}`;
   }
   if (s === "holiday") return "H";
+  if (s === "leaved") return "LV";
   if (s === "present") return "P";
   if (s === "late") return "L";
   if (s === "absent") return "A";

@@ -437,17 +437,23 @@ async function loadStudentLinkedUserIds(query, studentId) {
 /** List/detail SQL: contact fields from guardians + users (post-unify schema). */
 const STUDENT_CONTACT_LATERAL_SELECT = `
       father_u.user_id AS father_person_id,
-      NULLIF(TRIM(CONCAT(COALESCE(father_u.first_name,''), ' ', COALESCE(father_u.last_name,''))), '') AS father_name,
-      father_u.email AS father_email,
-      father_u.phone AS father_phone,
-      father_u.occupation AS father_occupation,
-      father_u.avatar AS father_image_url,
+      COALESCE(
+        NULLIF(TRIM(CONCAT(COALESCE(father_u.first_name,''), ' ', COALESCE(father_u.last_name,''))), ''),
+        NULLIF(TRIM(COALESCE(legacy_parent.father_name, '')), '')
+      ) AS father_name,
+      COALESCE(father_u.email, legacy_parent.father_email) AS father_email,
+      COALESCE(father_u.phone, legacy_parent.father_phone) AS father_phone,
+      COALESCE(father_u.occupation, legacy_parent.father_occupation) AS father_occupation,
+      COALESCE(father_u.avatar, legacy_parent.father_image_url) AS father_image_url,
       mother_u.user_id AS mother_person_id,
-      NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), '') AS mother_name,
-      mother_u.email AS mother_email,
-      mother_u.phone AS mother_phone,
-      mother_u.occupation AS mother_occupation,
-      mother_u.avatar AS mother_image_url,
+      COALESCE(
+        NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), ''),
+        NULLIF(TRIM(COALESCE(legacy_parent.mother_name, '')), '')
+      ) AS mother_name,
+      COALESCE(mother_u.email, legacy_parent.mother_email) AS mother_email,
+      COALESCE(mother_u.phone, legacy_parent.mother_phone) AS mother_phone,
+      COALESCE(mother_u.occupation, legacy_parent.mother_occupation) AS mother_occupation,
+      COALESCE(mother_u.avatar, legacy_parent.mother_image_url) AS mother_image_url,
       gu_u.user_id AS guardian_person_id,
       gu_u.first_name AS guardian_first_name,
       gu_u.last_name AS guardian_last_name,
@@ -460,17 +466,53 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
 
 const STUDENT_CONTACT_LATERAL_JOINS = `
       LEFT JOIN LATERAL (
+        SELECT
+          p.father_name,
+          p.father_email,
+          p.father_phone,
+          p.father_occupation,
+          p.father_image_url,
+          p.mother_name,
+          p.mother_email,
+          p.mother_phone,
+          p.mother_occupation,
+          p.mother_image_url
+        FROM parents p
+        WHERE p.student_id = s.id
+        ORDER BY p.id DESC
+        LIMIT 1
+      ) legacy_parent ON true
+      LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
-        WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'father'
-        ORDER BY g.id ASC LIMIT 1
+        WHERE g.student_id = s.id
+          AND g.is_active = true
+          AND (
+            LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('father', 'dad', 'papa', 'abbu')
+            OR LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('father', 'dad', 'papa', 'abbu')
+            OR u.role_id = ${ROLES.PARENT}
+          )
+        ORDER BY
+          CASE
+            WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
+            WHEN LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
+            WHEN u.role_id = ${ROLES.PARENT} THEN 2
+            ELSE 9
+          END,
+          g.id ASC
+        LIMIT 1
       ) father_u ON true
       LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g
         JOIN users u ON u.id = g.user_id
-        WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'mother'
+        WHERE g.student_id = s.id
+          AND g.is_active = true
+          AND (
+            LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('mother', 'mom', 'mummy', 'ammi')
+            OR LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('mother', 'mom', 'mummy', 'ammi')
+          )
         ORDER BY g.id ASC LIMIT 1
       ) mother_u ON true
       LEFT JOIN LATERAL (

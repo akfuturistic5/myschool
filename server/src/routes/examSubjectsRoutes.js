@@ -12,6 +12,7 @@ const {
   saveExamMarks,
   viewExamSchedule,
   viewExamResults,
+  viewExamTopPerformers,
   listSelfExamOptions,
 } = require('../controllers/examModuleController');
 
@@ -27,6 +28,7 @@ router.get('/marks-context', requireRole([ROLES.TEACHER]), getExamMarksContext);
 router.post('/marks-save', requireRole([ROLES.TEACHER]), saveExamMarks);
 router.get('/schedule', requireRole(ALL_AUTHENTICATED_ROLES), viewExamSchedule);
 router.get('/results', requireRole(ALL_AUTHENTICATED_ROLES), viewExamResults);
+router.get('/top-performers', requireRole(ALL_AUTHENTICATED_ROLES), viewExamTopPerformers);
 router.get('/self-exams', requireRole(ALL_AUTHENTICATED_ROLES), listSelfExamOptions);
 
 module.exports = router;

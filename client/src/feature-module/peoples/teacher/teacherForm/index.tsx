@@ -25,6 +25,7 @@ import CommonSelect from "../../../../core/common/commonSelect";
 import TagInput from "../../../../core/common/Taginput";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../../core/data/redux/authSlice";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSubjects } from "../../../../core/hooks/useSubjects";
 import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
@@ -71,6 +72,26 @@ function teacherStoredDocBasename(stored: string | null | undefined): string {
   if (!stored) return "";
   const idx = stored.lastIndexOf("/");
   return idx >= 0 ? stored.slice(idx + 1) : stored;
+}
+
+function normalizeCompareValue(v: unknown): string {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function resolveSelectValue(
+  options: Array<{ value: string; label: string }>,
+  candidates: Array<unknown>
+): string | null {
+  const normalized = candidates
+    .map(normalizeCompareValue)
+    .filter((v) => v.length > 0);
+  if (!normalized.length) return null;
+  const hit = options.find((opt) => {
+    const ov = normalizeCompareValue(opt.value);
+    const ol = normalizeCompareValue(opt.label);
+    return normalized.includes(ov) || normalized.includes(ol);
+  });
+  return hit?.value ?? null;
 }
 
 /** Create-teacher API returns the new row in `data`; tolerate string ids from drivers. */
@@ -120,6 +141,13 @@ const TeacherForm = () => {
   const state = location.state as TeacherLocationState | null;
   const teacherId = state?.teacherId ?? state?.teacher?.id;
   const formRef = useRef<HTMLFormElement>(null);
+  const currentUser = useSelector(selectUser);
+  const currentUserRole = String(currentUser?.role ?? "").trim().toLowerCase();
+  const canRunUniqueCheck =
+    currentUserRole === "admin" ||
+    currentUserRole === "administrative" ||
+    currentUserRole === "administrator" ||
+    currentUserRole === "headmaster";
 
   const [isEdit, setIsEdit] = useState<boolean>(false);
   const [teacherData, setTeacherData] = useState<any>(null);
@@ -265,6 +293,11 @@ const TeacherForm = () => {
 
   // Debounced uniqueness (mobile / email) — optional enhancement
   useEffect(() => {
+    if (!canRunUniqueCheck) {
+      setCheckingUnique(false);
+      setAsyncErrors({});
+      return;
+    }
     const pErr = validateField("phone", phone);
     const eErr = validateField("email", email);
     if (pErr || eErr) {
@@ -293,7 +326,7 @@ const TeacherForm = () => {
         .finally(() => setCheckingUnique(false));
     }, 450);
     return () => window.clearTimeout(t);
-  }, [phone, email, isEdit, teacherData?.user_id]);
+  }, [phone, email, isEdit, teacherData?.user_id, canRunUniqueCheck]);
 
   // Lookup data from API (real data for dropdowns)
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -391,21 +424,69 @@ const TeacherForm = () => {
         ? 'Active' 
         : 'Inactive';
       setSelectedStatus(currentStatus);
-      setSelectedClassId(teacherData.class_id ? String(teacherData.class_id) : null);
-      setSelectedSubjectId(teacherData.subject_id ? String(teacherData.subject_id) : null);
-      setSelectedGender(teacherData.gender ?? null);
-      setSelectedMaritalStatus(teacherData.marital_status ?? null);
+      const classOptions = (classes || []).map((cls: any) => ({
+        value: String(cls.id ?? ""),
+        label: String(cls.class_name ?? ""),
+      }));
+      const subjectOptions = (subjects || []).map((sub: any) => ({
+        value: String(sub.id ?? ""),
+        label: String(sub.subject_name ?? ""),
+      }));
+      const bloodGroupOptions = (bloodGroups || []).map((bg: any) => ({
+        value: String(bg.id ?? ""),
+        label: String(bg.blood_group ?? ""),
+      }));
+      const designationOptions = (designations || []).map((d: any) => ({
+        value: String(d?.originalData?.id ?? d?.key ?? ""),
+        label: String(d?.designation ?? d?.originalData?.designation_name ?? ""),
+      }));
+      const departmentOptions = (departments || []).map((d: any) => ({
+        value: String(d?.originalData?.id ?? d?.key ?? ""),
+        label: String(d?.department ?? d?.originalData?.department_name ?? ""),
+      }));
+
+      setSelectedClassId(
+        resolveSelectValue(classOptions, [teacherData.class_id, teacherData.class_name]) ??
+          (teacherData.class_id != null ? String(teacherData.class_id) : null)
+      );
+      setSelectedSubjectId(
+        resolveSelectValue(subjectOptions, [teacherData.subject_id, teacherData.subject_name]) ??
+          (teacherData.subject_id != null ? String(teacherData.subject_id) : null)
+      );
+      setSelectedGender(
+        resolveSelectValue(gender as Array<{ value: string; label: string }>, [teacherData.gender])
+      );
+      setSelectedMaritalStatus(
+        resolveSelectValue(Marital as Array<{ value: string; label: string }>, [
+          teacherData.marital_status,
+        ])
+      );
       setSelectedBloodGroupId(
-        teacherData.blood_group_id != null ? String(teacherData.blood_group_id) : null
+        resolveSelectValue(bloodGroupOptions, [teacherData.blood_group_id, teacherData.blood_group]) ??
+          (teacherData.blood_group_id != null ? String(teacherData.blood_group_id) : null)
       );
       setSelectedDesignationId(
-        teacherData.designation_id != null ? String(teacherData.designation_id) : null
+        resolveSelectValue(designationOptions, [
+          teacherData.designation_id,
+          teacherData.designation_name,
+          teacherData.designation,
+        ]) ?? (teacherData.designation_id != null ? String(teacherData.designation_id) : null)
       );
       setSelectedDepartmentId(
-        teacherData.department_id != null ? String(teacherData.department_id) : null
+        resolveSelectValue(departmentOptions, [
+          teacherData.department_id,
+          teacherData.department_name,
+          teacherData.department,
+        ]) ?? (teacherData.department_id != null ? String(teacherData.department_id) : null)
       );
-      setSelectedContractType(teacherData.contract_type ?? null);
-      setSelectedShift(teacherData.shift ?? null);
+      setSelectedContractType(
+        resolveSelectValue(Contract as Array<{ value: string; label: string }>, [
+          teacherData.contract_type,
+        ])
+      );
+      setSelectedShift(
+        resolveSelectValue(Shift as Array<{ value: string; label: string }>, [teacherData.shift])
+      );
       setFirstName(teacherData.first_name ?? "");
       setLastName(teacherData.last_name ?? "");
       setPhone(teacherData.phone ?? "");
@@ -415,7 +496,7 @@ const TeacherForm = () => {
       setSubmitAttempted(false);
       setFormBanner(null);
     }
-  }, [teacherData, isEdit]);
+  }, [teacherData, isEdit, classes, subjects, bloodGroups, designations, departments]);
 
   if (isEdit && teacherId && loadingTeacher) {
     return (

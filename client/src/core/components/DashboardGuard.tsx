@@ -21,8 +21,8 @@ const DashboardGuard = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const user = useSelector(selectUser);
-  const role = user?.role || "Admin";
-  const userDashboard = getDashboardForRole(role);
+  const role = user?.role || "User";
+  const userDashboard = getDashboardForRole(role, user?.user_role_id);
 
   useEffect(() => {
     const path = location.pathname;

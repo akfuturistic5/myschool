@@ -859,7 +859,7 @@ async function resolveLinkedStudentIds(studentId) {
   const sid = Number(studentId);
   if (!Number.isFinite(sid) || sid <= 0) return [];
   const baseRes = await query(
-    `SELECT id, user_id, admission_number, roll_number
+    `SELECT id, user_id, admission_number, roll_number, unique_student_ids, gr_number
      FROM students
      WHERE id = $1
      LIMIT 1`,
@@ -871,14 +871,18 @@ async function resolveLinkedStudentIds(studentId) {
   const normalizedUserId = Number.isFinite(baseUserId) && baseUserId > 0 ? baseUserId : null;
   const baseAdmissionNo = String(base.admission_number || '').trim();
   const baseRollNo = String(base.roll_number || '').trim();
+  const baseUniqueStudentIds = String(base.unique_student_ids || '').trim();
+  const baseGrNumber = String(base.gr_number || '').trim();
   const linkedRes = await query(
     `SELECT id
      FROM students
      WHERE ($1::int IS NOT NULL AND user_id = $1)
         OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
         OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
-        OR id = $4`,
-    [normalizedUserId, baseAdmissionNo, baseRollNo, sid]
+        OR ($4::text <> '' AND TRIM(COALESCE(unique_student_ids, '')) = $4)
+        OR ($5::text <> '' AND TRIM(COALESCE(gr_number, '')) = $5)
+        OR id = $6`,
+    [normalizedUserId, baseAdmissionNo, baseRollNo, baseUniqueStudentIds, baseGrNumber, sid]
   );
   const linkedIds = (linkedRes.rows || [])
     .map((r) => Number(r.id))
