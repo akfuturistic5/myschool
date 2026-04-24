@@ -58,6 +58,7 @@ async function ensureSchoolsTable() {
         status VARCHAR(20) NOT NULL DEFAULT 'active',
         type VARCHAR(512) NULL,
         logo TEXT NULL,
+        deleted_at TIMESTAMPTZ NULL,
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -76,6 +77,11 @@ async function ensureSchoolsTable() {
     await masterPool.query(`
       ALTER TABLE schools
       ADD COLUMN IF NOT EXISTS logo TEXT NULL;
+    `);
+
+    await masterPool.query(`
+      ALTER TABLE schools
+      ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
     `);
 
     // Upsert three schools
