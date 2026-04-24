@@ -15,11 +15,11 @@ function mapVehicleRow(row, driverMap = {}) {
     id: row.id,
     vehicle_code: row.vehicle_code ?? `VEH-${String(row.id).padStart(4, '0')}`,
     vehicle_number: row.vehicle_number ?? '',
-    vehicle_model: row.vehicle_model ?? '',
+    vehicle_model: row.vehicle_model ?? row.model ?? '',
     made_of_year: row.made_of_year ?? '',
     registration_number: row.registration_number ?? '',
     chassis_number: row.chassis_number ?? '',
-    seat_capacity: row.seat_capacity ?? '',
+    seat_capacity: row.seat_capacity ?? row.seating_capacity ?? '',
     gps_device_id: row.gps_device_id ?? '',
     academic_year_id: row.academic_year_id ?? null,
     driver_id: row.driver_id ?? null,
@@ -60,7 +60,7 @@ const getAllVehicles = async (req, res) => {
 
     if (search) {
       queryParams.push(`%${search}%`);
-      whereClause += ` AND (v.vehicle_number ILIKE $${queryParams.length} OR v.vehicle_model ILIKE $${queryParams.length} OR d.driver_name ILIKE $${queryParams.length} OR r.route_name ILIKE $${queryParams.length})`;
+      whereClause += ` AND (v.vehicle_number ILIKE $${queryParams.length} OR v.model ILIKE $${queryParams.length} OR d.driver_name ILIKE $${queryParams.length} OR r.route_name ILIKE $${queryParams.length})`;
     }
 
     if (scopedDriverId != null) {
@@ -84,12 +84,13 @@ const getAllVehicles = async (req, res) => {
     }
 
     // Sorting
-    const allowedSortFields = ['id', 'vehicle_number', 'vehicle_model', 'made_of_year', 'is_active', 'created_at', 'driver_name', 'route_name', 'point_name'];
+    const allowedSortFields = ['id', 'vehicle_number', 'model', 'vehicle_model', 'made_of_year', 'is_active', 'created_at', 'driver_name', 'route_name', 'point_name'];
     let finalSortField = 'v.id';
     if (allowedSortFields.includes(sortField)) {
         if (sortField === 'driver_name') finalSortField = 'd.driver_name';
         else if (sortField === 'route_name') finalSortField = 'r.route_name';
         else if (sortField === 'point_name') finalSortField = 'point_name'; // Uses the alias from subquery
+        else if (sortField === 'vehicle_model') finalSortField = 'v.model';
         else finalSortField = `v.${sortField}`;
     }
     const finalSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';

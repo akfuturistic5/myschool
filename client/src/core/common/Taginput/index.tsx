@@ -12,6 +12,11 @@ const TagInput: React.FC<TagInputProps> = ({ initialTags = [], onTagsChange }) =
   const [inputVisible,] = useState(false);
   const inputRef = useRef<InputRef | null>(null);
 
+  // Sync with initialTags when they change (e.g. after async data fetch)
+  useEffect(() => {
+    setTags(initialTags);
+  }, [initialTags]);
+
   useEffect(() => {
     if (inputVisible && inputRef.current) {
       inputRef.current.focus();

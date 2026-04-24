@@ -122,7 +122,7 @@ BEGIN
   -- ---------------------------------------------------------------------------
   INSERT INTO classes (
     class_name, class_code, academic_year_id, class_teacher_id, max_students,
-    class_fee, description, is_active, no_of_students
+    class_fee, description, is_active
   )
   SELECT
     s.class_name,
@@ -132,8 +132,7 @@ BEGIN
     40,
     s.class_fee,
     s.description,
-    true,
-    0
+    true
   FROM (
     VALUES
       ('Class 1', 'DMY-AY-C1', 24000.00::numeric, 'Foundational class for current academic year'),
@@ -149,7 +148,7 @@ BEGIN
   -- ---------------------------------------------------------------------------
   INSERT INTO sections (
     section_name, class_id, section_teacher_id, max_students, room_number,
-    description, is_active, no_of_students
+    description, is_active
   )
   SELECT
     sec.section_name,
@@ -158,8 +157,7 @@ BEGIN
     35,
     sec.room_number,
     sec.description,
-    true,
-    0
+    true
   FROM classes c
   CROSS JOIN (
     VALUES
@@ -380,8 +378,7 @@ BEGIN
     date_of_birth, place_of_birth, blood_group_id, religion_id, cast_id, mother_tongue_id,
     nationality, phone, email, address, academic_year_id, class_id, section_id, house_id,
     admission_date, previous_school, photo_url, is_transport_required, is_hostel_required, is_active,
-    bank_name, branch, ifsc, known_allergies, medications, sibiling_1, sibiling_2,
-    sibiling_1_class, sibiling_2_class, previous_school_address, medical_condition,
+    bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition,
     other_information, vehicle_number, current_address, permanent_address,
     unique_student_ids, pen_number, aadhar_no, gr_number
   )
@@ -417,10 +414,6 @@ BEGIN
     'SBIN0001234',
     'None',
     'None',
-    'Not Applicable',
-    'Not Applicable',
-    'N/A',
-    'N/A',
     'Old Town Road, Mumbai',
     'No chronic condition',
     'Participates in co-curricular activities',
@@ -465,184 +458,72 @@ BEGIN
     AND (s.address_id IS NULL OR s.address_id <> a.id);
 
   -- ---------------------------------------------------------------------------
-  -- 12) Parent users (father + mother) for each seeded student
+  -- 12) Parent persons (father + mother) for each seeded student
   -- ---------------------------------------------------------------------------
-  INSERT INTO users (
-    username, email, password_hash, role_id,
-    first_name, last_name, phone, is_active,
-    current_address, permanent_address, avatar
-  )
+  -- We use parent_persons table now.
+  
+  -- Insert Fathers
+  INSERT INTO parent_persons (full_name, phone, email, address, occupation)
   SELECT
-    'father_' || lower(replace(s.admission_number, '-', '_')),
-    lower(replace(s.admission_number, '-', '.')) || '.father@myschool.local',
-    crypt(('97' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
-    v_parent_role_id,
-    'Imran',
-    (s.last_name || ' Sr'),
-    ('97' || LPAD(s.id::text, 8, '0')),
-    true,
-    s.current_address,
-    s.permanent_address,
-    'https://api.dicebear.com/8.x/avataaars/svg?seed=father'
-  FROM students s
-  WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-    AND NOT EXISTS (
-      SELECT 1 FROM users u WHERE u.username = 'father_' || lower(replace(s.admission_number, '-', '_'))
-    );
-
-  INSERT INTO users (
-    username, email, password_hash, role_id,
-    first_name, last_name, phone, is_active,
-    current_address, permanent_address, avatar
-  )
-  SELECT
-    'mother_' || lower(replace(s.admission_number, '-', '_')),
-    lower(replace(s.admission_number, '-', '.')) || '.mother@myschool.local',
-    crypt(('96' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
-    v_parent_role_id,
-    'Sana',
-    (s.last_name || ' Sr'),
-    ('96' || LPAD(s.id::text, 8, '0')),
-    true,
-    s.current_address,
-    s.permanent_address,
-    'https://api.dicebear.com/8.x/avataaars/svg?seed=mother'
-  FROM students s
-  WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-    AND NOT EXISTS (
-      SELECT 1 FROM users u WHERE u.username = 'mother_' || lower(replace(s.admission_number, '-', '_'))
-    );
-
-  -- ---------------------------------------------------------------------------
-  -- 13) Parents table rows + link to students.parent_id
-  -- ---------------------------------------------------------------------------
-  INSERT INTO parents (
-    student_id, father_name, father_email, father_phone, father_occupation, father_image_url,
-    mother_name, mother_email, mother_phone, mother_occupation, mother_image_url,
-    user_id, father_user_id, mother_user_id
-  )
-  SELECT
-    s.id,
     ('Imran ' || s.last_name),
-    fu.email,
-    fu.phone,
-    'Business Owner',
-    'https://api.dicebear.com/8.x/avataaars/svg?seed=imran' || s.id,
-    ('Sana ' || s.last_name),
-    mu.email,
-    mu.phone,
-    'Teacher',
-    'https://api.dicebear.com/8.x/avataaars/svg?seed=sana' || s.id,
-    fu.id,
-    fu.id,
-    mu.id
+    ('97' || LPAD(s.id::text, 8, '0')),
+    lower(replace(s.admission_number, '-', '.')) || '.father@myschool.local',
+    s.current_address,
+    'Business Owner'
   FROM students s
-  JOIN users fu ON fu.username = 'father_' || lower(replace(s.admission_number, '-', '_'))
-  JOIN users mu ON mu.username = 'mother_' || lower(replace(s.admission_number, '-', '_'))
   WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-    AND NOT EXISTS (
-      SELECT 1 FROM parents p WHERE p.student_id = s.id
-    );
+  ON CONFLICT DO NOTHING;
 
+  -- Insert Mothers
+  INSERT INTO parent_persons (full_name, phone, email, address, occupation)
+  SELECT
+    ('Sana ' || s.last_name),
+    ('96' || LPAD(s.id::text, 8, '0')),
+    lower(replace(s.admission_number, '-', '.')) || '.mother@myschool.local',
+    s.current_address,
+    'Teacher'
+  FROM students s
+  WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
+  ON CONFLICT DO NOTHING;
+
+  -- Link students to fathers
   UPDATE students s
-  SET parent_id = p.id
-  FROM parents p
-  WHERE p.student_id = s.id
-    AND s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-    AND (s.parent_id IS NULL OR s.parent_id <> p.id);
+  SET father_person_id = p.id
+  FROM parent_persons p
+  WHERE p.email = lower(replace(s.admission_number, '-', '.')) || '.father@myschool.local'
+    AND s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%');
+
+  -- Link students to mothers
+  UPDATE students s
+  SET mother_person_id = p.id
+  FROM parent_persons p
+  WHERE p.email = lower(replace(s.admission_number, '-', '.')) || '.mother@myschool.local'
+    AND s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%');
 
   -- ---------------------------------------------------------------------------
-  -- 14) Guardian users + guardians table + link students.guardian_id
+  -- 14) Guardian persons
   -- ---------------------------------------------------------------------------
-  IF v_guardian_role_id IS NOT NULL THEN
-    INSERT INTO users (
-      username, email, password_hash, role_id,
-      first_name, last_name, phone, is_active,
-      current_address, permanent_address, avatar
-    )
-    SELECT
-      'guardian_' || lower(replace(s.admission_number, '-', '_')),
-      lower(replace(s.admission_number, '-', '.')) || '.guardian@myschool.local',
-      crypt(('95' || LPAD(s.id::text, 8, '0')), gen_salt('bf', 10)),
-      v_guardian_role_id,
-      'Rafiq',
-      (s.last_name || ' Uncle'),
-      ('95' || LPAD(s.id::text, 8, '0')),
-      true,
-      s.current_address,
-      s.permanent_address,
-      'https://api.dicebear.com/8.x/avataaars/svg?seed=guardian'
-    FROM students s
-    WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-      AND NOT EXISTS (
-        SELECT 1 FROM users u WHERE u.username = 'guardian_' || lower(replace(s.admission_number, '-', '_'))
-      );
+  INSERT INTO parent_persons (full_name, phone, email, address, occupation)
+  SELECT
+    ('Rafiq ' || s.last_name),
+    ('95' || LPAD(s.id::text, 8, '0')),
+    lower(replace(s.admission_number, '-', '.')) || '.guardian@myschool.local',
+    s.current_address,
+    'Supervisor'
+  FROM students s
+  WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
+  ON CONFLICT DO NOTHING;
 
-    INSERT INTO guardians (
-      student_id, guardian_type, first_name, last_name, relation, occupation,
-      phone, email, address, office_address, annual_income,
-      is_primary_contact, is_emergency_contact, is_active, user_id
-    )
-    SELECT
-      s.id,
-      'guardian',
-      'Rafiq',
-      s.last_name,
-      'Uncle',
-      'Supervisor',
-      gu.phone,
-      gu.email,
-      s.current_address,
-      'Industrial Area, Mumbai',
-      420000.00,
-      false,
-      true,
-      true,
-      gu.id
-    FROM students s
-    JOIN users gu ON gu.username = 'guardian_' || lower(replace(s.admission_number, '-', '_'))
-    WHERE s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-      AND NOT EXISTS (
-        SELECT 1 FROM guardians g WHERE g.student_id = s.id
-      );
-
-    UPDATE students s
-    SET guardian_id = g.id
-    FROM guardians g
-    WHERE g.student_id = s.id
-      AND s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%')
-      AND (s.guardian_id IS NULL OR s.guardian_id <> g.id);
-  END IF;
+  -- Link students to guardians
+  UPDATE students s
+  SET guardian_person_id = p.id
+  FROM parent_persons p
+  WHERE p.email = lower(replace(s.admission_number, '-', '.')) || '.guardian@myschool.local'
+    AND s.admission_number LIKE ('ADM-AY' || v_current_ay_id || '-%');
 
   -- ---------------------------------------------------------------------------
-  -- 15) Update class/section headcount fields for seeded structures
+  -- 15) Snapshot update skipped
   -- ---------------------------------------------------------------------------
-  UPDATE sections s
-  SET no_of_students = COALESCE(x.cnt, 0)
-  FROM (
-    SELECT section_id, COUNT(*)::int AS cnt
-    FROM students
-    WHERE section_id IS NOT NULL
-    GROUP BY section_id
-  ) x
-  WHERE s.id = x.section_id
-    AND s.id IN (
-      SELECT s2.id
-      FROM sections s2
-      JOIN classes c2 ON c2.id = s2.class_id
-      WHERE c2.class_code IN ('DMY-AY-C1', 'DMY-AY-C2', 'DMY-AY-C3')
-    );
-
-  UPDATE classes c
-  SET no_of_students = COALESCE(x.cnt, 0)
-  FROM (
-    SELECT class_id, COUNT(*)::int AS cnt
-    FROM students
-    WHERE class_id IS NOT NULL
-    GROUP BY class_id
-  ) x
-  WHERE c.id = x.class_id
-    AND c.class_code IN ('DMY-AY-C1', 'DMY-AY-C2', 'DMY-AY-C3');
 
   -- ---------------------------------------------------------------------------
   -- 16) Optional: enrich existing teachers record with class/subject mappings
@@ -682,44 +563,8 @@ BEGIN
     AND m.subject_id IS NOT NULL;
 
   -- ---------------------------------------------------------------------------
-  -- 17) Seed attendance snapshots (student/teacher/staff)
+  -- 17) Attendance snapshots skipped
   -- ---------------------------------------------------------------------------
-  INSERT INTO attendance (student_id, class_id, section_id, attendance_date, status, remarks, academic_year_id)
-  SELECT
-    s.id,
-    s.class_id,
-    s.section_id,
-    CURRENT_DATE - offs.day_offset,
-    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
-    'Seeded attendance',
-    s.academic_year_id
-  FROM students s
-  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
-  WHERE s.class_id IS NOT NULL
-  ON CONFLICT (student_id, attendance_date) DO NOTHING;
-
-  INSERT INTO teacher_attendance (teacher_id, attendance_date, status, remark, academic_year_id)
-  SELECT
-    t.id,
-    CURRENT_DATE - offs.day_offset,
-    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
-    'Seeded attendance',
-    t.academic_year_id
-  FROM teachers t
-  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
-  ON CONFLICT (teacher_id, attendance_date) DO NOTHING;
-
-  INSERT INTO staff_attendance (staff_id, attendance_date, status, remark, academic_year_id)
-  SELECT
-    st.id,
-    CURRENT_DATE - offs.day_offset,
-    (ARRAY['present','present','late','absent','half_day'])[1 + floor(random() * 5)::int],
-    'Seeded attendance',
-    st.academic_year_id
-  FROM staff st
-  CROSS JOIN (VALUES (0), (1), (2), (3), (4)) AS offs(day_offset)
-  WHERE st.is_active = true
-  ON CONFLICT (staff_id, attendance_date) DO NOTHING;
 
 END $$;
 

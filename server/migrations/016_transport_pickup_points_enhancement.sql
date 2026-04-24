@@ -102,13 +102,13 @@ SELECT
     NOW(),
     NOW()
 FROM public.vehicles v
-WHERE v.deleted_at IS NULL
+WHERE 1=1
   AND v.route_id IS NOT NULL
   AND v.driver_id IS NOT NULL
   AND NOT EXISTS (
       SELECT 1
       FROM public.transport_assignments ta
-      WHERE ta.deleted_at IS NULL
+      WHERE 1=1
         AND ta.vehicle_id = v.id
         AND ta.route_id = v.route_id
         AND ta.driver_id = v.driver_id

@@ -115,6 +115,8 @@ import ReturnBook from "../management/library/returnBook";
 import PlayersList from "../management/sports/playersList";
 import SportsList from "../management/sports/sportsList";
 import TransportAssignVehicle from "../management/transport/transportAssignVehicle";
+import TransportAllocation from "../management/transport/transportAllocation";
+import TransportFees from "../management/transport/transportFees";
 import TransportPickupPoints from "../management/transport/transportPickupPoints";
 import TransportRoutes from "../management/transport/transportRoutes";
 import TransportVehicle from "../management/transport/transportVehicle";
@@ -1170,6 +1172,16 @@ export const publicRoutes = [
   {
     path: routes.transportVehicle,
     element: <TransportVehicle />,
+    route: Route,
+  },
+  {
+    path: routes.transportFees,
+    element: <TransportFees />,
+    route: Route,
+  },
+  {
+    path: routes.transportAllocation,
+    element: <TransportAllocation />,
     route: Route,
   },
   {

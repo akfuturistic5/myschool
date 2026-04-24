@@ -317,6 +317,8 @@ export const SidebarData = [
           { label: "Drivers", link: routes.transportVehicleDrivers },
           { label: "Vehicle", link: routes.transportVehicle },
           { label: "Assign Vehicle", link: routes.transportAssignVehicle },
+          { label: "Transport Fees", link: routes.transportFees },
+          { label: "Transport Allocation", link: routes.transportAllocation },
         ],
       },
     ],
@@ -402,8 +404,8 @@ export const SidebarData = [
         submenu: true,
         showSubRoute: false,
         submenuItems: [
-          { label: "Expenses", link: routes.expense },
           { label: "Expense Category", link: routes.expenseCategory },
+          { label: "Expenses", link: routes.expense },
           { label: "Income", link: routes.accountsIncome },
           {
             label: "Invoices",

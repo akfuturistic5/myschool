@@ -13,7 +13,13 @@ export type TeacherFormField =
   | "new_password"
   | "confirm_password"
   | "resume"
-  | "joining_letter";
+  | "joining_letter"
+  | "father_name"
+  | "mother_name"
+  | "pan_number"
+  | "id_number"
+  | "previous_school_phone"
+  | "marital_status";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_RE = /^[0-9]{10}$/;
@@ -35,16 +41,19 @@ export function validateField(
       const t = v.trim();
       if (!t) return "First name is required";
       if (t.length < 2) return "First name must be at least 2 characters";
+      if (t.length > 50) return "First name cannot exceed 50 characters";
       return null;
     }
     case "last_name": {
       const t = v.trim();
       if (!t) return "Last name is required";
       if (t.length < 2) return "Last name must be at least 2 characters";
+      if (t.length > 50) return "Last name cannot exceed 50 characters";
       return null;
     }
     case "phone": {
       if (!v.trim()) return "Mobile is required";
+      if (/[a-zA-Z]/.test(v)) return "Mobile number cannot contain letters";
       const digits = v.replace(/\D/g, "");
       if (!MOBILE_RE.test(digits)) return "Enter a valid 10-digit mobile number";
       return null;
@@ -85,6 +94,27 @@ export function validateField(
       if (pw !== cf) return "Passwords do not match";
       return null;
     }
+    case "father_name":
+      if (v.length > 100) return "Father name cannot exceed 100 characters";
+      return null;
+    case "mother_name":
+      if (v.length > 100) return "Mother name cannot exceed 100 characters";
+      return null;
+    case "pan_number":
+      if (v.length > 10) return "PAN number cannot exceed 10 characters";
+      return null;
+    case "id_number":
+      if (v.length > 50) return "ID number cannot exceed 50 characters";
+      return null;
+    case "previous_school_phone": {
+      if (!v.trim()) return null;
+      if (/[a-zA-Z]/.test(v)) return "Phone number cannot contain letters";
+      if (v.length > 15) return "Phone number cannot exceed 15 characters";
+      return null;
+    }
+    case "marital_status":
+      if (v.length > 20) return "Marital status cannot exceed 20 characters";
+      return null;
     case "resume":
     case "joining_letter":
       return null;
@@ -104,6 +134,12 @@ export type TeacherFormValues = {
   subject_id: string | null;
   new_password: string;
   confirm_password: string;
+  father_name: string;
+  mother_name: string;
+  pan_number: string;
+  id_number: string;
+  previous_school_phone: string;
+  marital_status: string;
 };
 
 export function validateTeacherFormSync(
@@ -128,6 +164,12 @@ export function validateTeacherFormSync(
     { key: "phone", val: values.phone },
     { key: "email", val: values.email },
     { key: "qualification", val: values.qualification },
+    { key: "father_name", val: values.father_name },
+    { key: "mother_name", val: values.mother_name },
+    { key: "pan_number", val: values.pan_number },
+    { key: "id_number", val: values.id_number },
+    { key: "previous_school_phone", val: values.previous_school_phone },
+    { key: "marital_status", val: values.marital_status },
   ];
   for (const { key, val } of simple) {
     const err = validateField(key, val, ctxBase);
@@ -165,6 +207,12 @@ export const TEACHER_FORM_FIELD_ORDER: TeacherFormField[] = [
   "confirm_password",
   "resume",
   "joining_letter",
+  "father_name",
+  "mother_name",
+  "pan_number",
+  "id_number",
+  "previous_school_phone",
+  "marital_status",
 ];
 
 export function firstErrorFieldKey(

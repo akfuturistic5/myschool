@@ -415,6 +415,18 @@ const TeacherDetails = () => {
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
+                        <p className="mb-1 text-dark fw-medium">Account Name</p>
+                        <p>{teacher.account_name ?? 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <p className="mb-1 text-dark fw-medium">Account Number</p>
+                        <p>{teacher.account_number ?? 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
                         <p className="mb-1 text-dark fw-medium">IFSC</p>
                         <p>{teacher.ifsc ?? 'N/A'}</p>
                       </div>
@@ -509,13 +521,7 @@ const TeacherDetails = () => {
                   <h5>Other Info</h5>
                 </div>
                 <div className="card-body">
-                  <p>
-                    Depending on the specific needs of your organization or
-                    system, additional information may be collected or tracked.
-                    It's important to ensure that any data collected complies
-                    with privacy regulations and policies to protect students'
-                    sensitive information.
-                  </p>
+                  <p>{teacher.other_info || 'N/A'}</p>
                 </div>
               </div>
             </div>

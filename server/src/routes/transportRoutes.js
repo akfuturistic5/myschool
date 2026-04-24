@@ -6,6 +6,13 @@ const { getAllPickupPoints, createPickupPoint, getPickupPointById, updatePickupP
 const { getAllVehicles, getVehicleById, createVehicle, updateVehicle, deleteVehicle } = require('../controllers/transportVehicleController');
 const { getAllDrivers, getDriverById, createDriver, updateDriver, deleteDriver } = require('../controllers/transportDriverController');
 const { getAllAssignments, createAssignment, updateAssignment, deleteAssignment } = require('../controllers/transportAssignmentController');
+const { getAllTransportFees, createTransportFee, updateTransportFee, deleteTransportFee } = require('../controllers/transportFeeController');
+const {
+  getAllTransportAllocations,
+  createTransportAllocation,
+  updateTransportAllocation,
+  deleteTransportAllocation,
+} = require('../controllers/transportAllocationController');
 
 const router = express.Router();
 
@@ -42,5 +49,17 @@ router.get('/assignments', requireRole(ALL_AUTHENTICATED_ROLES), getAllAssignmen
 router.post('/assignments', requireRole([ROLES.ADMIN]), createAssignment);
 router.put('/assignments/:id', requireRole([ROLES.ADMIN]), updateAssignment);
 router.delete('/assignments/:id', requireRole([ROLES.ADMIN]), deleteAssignment);
+
+// Transport fee plans (pickup-point based)
+router.get('/fees', requireRole(ALL_AUTHENTICATED_ROLES), getAllTransportFees);
+router.post('/fees', requireRole([ROLES.ADMIN]), createTransportFee);
+router.put('/fees/:id', requireRole([ROLES.ADMIN]), updateTransportFee);
+router.delete('/fees/:id', requireRole([ROLES.ADMIN]), deleteTransportFee);
+
+// Transport allocations (student/staff with history)
+router.get('/allocations', requireRole(ALL_AUTHENTICATED_ROLES), getAllTransportAllocations);
+router.post('/allocations', requireRole([ROLES.ADMIN]), createTransportAllocation);
+router.put('/allocations/:id', requireRole([ROLES.ADMIN]), updateTransportAllocation);
+router.delete('/allocations/:id', requireRole([ROLES.ADMIN]), deleteTransportAllocation);
 
 module.exports = router;

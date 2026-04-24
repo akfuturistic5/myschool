@@ -28,12 +28,14 @@ export const useTransportVehicles = (initialParams = {}) => {
     paramsRef.current = params;
   }, [params]);
 
+  const paramsKey = JSON.stringify(params);
+
   const fetchVehicles = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
       setError(null);
 
-      const combinedParams = { ...paramsRef.current, ...overrides };
+      const combinedParams = { ...params, ...overrides };
       const response = await apiService.getTransportVehicles(combinedParams);
       
       if (response && response.status === "SUCCESS") {
@@ -43,12 +45,13 @@ export const useTransportVehicles = (initialParams = {}) => {
           id: row.id,
           displayId: row.vehicle_code,
           vehicleNo: row.vehicle_number || 'N/A',
-          vehicleModel: row.vehicle_model || row.model || 'N/A',
+          vehicleModel: row.vehicle_model || row.model || '-',
           img: row.photo_url || defaultImg,
           madeofYear: row.made_of_year || 'N/A',
           registrationNo: row.registration_number || 'N/A',
           chassisNo: row.chassis_number || 'N/A',
           gps: row.gps_device_id || 'N/A',
+          seatCapacity: row.seat_capacity ?? row.seating_capacity ?? '-',
           name: row.driver_name || 'N/A',
           phone: row.driver_phone || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
@@ -70,7 +73,7 @@ export const useTransportVehicles = (initialParams = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [paramsKey]);
+  }, [paramsKey, params]);
 
   useEffect(() => {
     fetchVehicles();
