@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { apiService, clearTenantBearerToken } from '../services/apiService';
 import { setAuthFromSession, setAuthChecked, clearAuth } from '../data/redux/authSlice';
+import { normalizeAuthRole } from '../utils/roleUtils';
 
 /** Paths where we skip /auth/me (avoids 401 loop and logout spam on login page) */
 const SKIP_GET_ME_PATHS = ['/login', '/register', '/forgot-password'];
@@ -41,7 +42,7 @@ export const AuthBootstrap = () => {
             [d.first_name, d.last_name].filter(Boolean).join(' ') ||
             d.username ||
             'User';
-          const role = d.role_name || d.display_role || 'User';
+          const role = normalizeAuthRole(d.role_name, d.role_id);
           dispatch(
             setAuthFromSession({
               user: {

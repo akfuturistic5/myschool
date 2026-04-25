@@ -33,6 +33,7 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       s.modified_at AS updated_at,
       s.first_name AS student_first_name,
       s.last_name AS student_last_name,
+      NULLIF(TRIM(s.photo_url), '') AS student_image_url,
       s.admission_number,
       s.roll_number,
       c.class_name,
@@ -315,14 +316,28 @@ const parentListSelectSql = `
         s.modified_at AS updated_at,
         s.first_name AS student_first_name,
         s.last_name AS student_last_name,
+        NULLIF(TRIM(s.photo_url), '') AS student_image_url,
         s.admission_number,
         s.roll_number,
         c.class_name,
         sec.section_name,
         (SELECT g.user_id FROM guardians g
+          LEFT JOIN users u ON u.id = g.user_id
           WHERE g.student_id = s.id AND g.is_active = true
-            AND LOWER(COALESCE(g.guardian_type::text, '')) = 'father'
-          ORDER BY g.id ASC LIMIT 1) AS father_user_id`;
+            AND (
+              LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+              OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+              OR u.role_id = ${ROLES.PARENT}
+            )
+          ORDER BY
+            CASE
+              WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
+              WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
+              WHEN u.role_id = ${ROLES.PARENT} THEN 2
+              ELSE 9
+            END,
+            g.id ASC
+          LIMIT 1) AS father_user_id`;
 
 const parentListJoins = `
         FROM students s
@@ -463,14 +478,28 @@ const getAllParents = async (req, res) => {
           s.modified_at AS updated_at,
           s.first_name AS student_first_name,
           s.last_name AS student_last_name,
+          NULLIF(TRIM(s.photo_url), '') AS student_image_url,
           s.admission_number,
           s.roll_number,
           NULL::text AS class_name,
           NULL::text AS section_name,
           (SELECT g.user_id FROM guardians g
+            LEFT JOIN users u ON u.id = g.user_id
             WHERE g.student_id = s.id AND g.is_active = true
-              AND LOWER(COALESCE(g.guardian_type::text, '')) = 'father'
-            ORDER BY g.id ASC LIMIT 1) AS father_user_id
+              AND (
+                LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+                OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+                OR u.role_id = ${ROLES.PARENT}
+              )
+            ORDER BY
+              CASE
+                WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
+                WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
+                WHEN u.role_id = ${ROLES.PARENT} THEN 2
+                ELSE 9
+              END,
+              g.id ASC
+            LIMIT 1) AS father_user_id
         FROM students s
         ${STUDENT_CONTACT_LATERAL_JOINS}
         WHERE s.is_active = true

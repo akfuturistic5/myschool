@@ -30,6 +30,10 @@ export const useParents = (options = {}) => {
         const rawData = Array.isArray(response.data) ? response.data : [];
         const transformedData = rawData.map((parent) => {
           if (!parent || typeof parent !== 'object') return null;
+          const resolvedName = parent.father_name || '';
+          const resolvedEmail = parent.father_email || '';
+          const resolvedPhone = parent.father_phone || '';
+          const resolvedImage = parent.father_image_url || "assets/img/parents/parent-01.jpg";
           let addedon = 'N/A';
           try {
             if (parent.created_at) {
@@ -39,16 +43,16 @@ export const useParents = (options = {}) => {
           return {
           key: parent.id,
           id: parent.id,
-          name: parent.father_name || '',
+          name: resolvedName,
           Addedon: addedon,
           Child: `${parent.student_first_name || ''} ${parent.student_last_name || ''}`.trim() || '',
           class: `${parent.class_name || ''}, ${parent.section_name || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, '') || '',
           class_name: parent.class_name || null,
           section_name: parent.section_name || null,
-          phone: parent.father_phone || '',
-          email: parent.father_email || '',
-          ParentImage: parent.father_image_url || "assets/img/parents/parent-01.jpg",
-          ChildImage: "assets/img/students/student-01.jpg",
+          phone: resolvedPhone,
+          email: resolvedEmail,
+          ParentImage: resolvedImage,
+          ChildImage: parent.student_image_url || "assets/img/students/student-01.jpg",
           student_admission_number: parent.admission_number,
           student_roll_number: parent.roll_number,
           mother_name: parent.mother_name,

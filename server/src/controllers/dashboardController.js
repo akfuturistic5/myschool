@@ -878,71 +878,157 @@ const getStarStudents = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 3, 10);
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
-
-    let rows = [];
-    try {
-      const params = hasYearFilter ? [academicYearId, limit] : [limit];
-      const sql = hasYearFilter
-        ? `SELECT st.id, st.first_name, st.last_name, st.photo_url,
-                  c.class_name, sec.section_name,
-                  ROUND(AVG(er.marks_obtained)::numeric, 1) AS avg_marks
-           FROM students st
-           LEFT JOIN classes c ON st.class_id = c.id
-           LEFT JOIN sections sec ON st.section_id = sec.id
-           INNER JOIN exam_results er ON er.student_id = st.id
-           WHERE st.is_active = true AND st.academic_year_id = $1
-             AND er.is_absent = false AND COALESCE(er.is_active, true) = true
-           GROUP BY st.id, st.first_name, st.last_name, st.photo_url, c.class_name, sec.section_name
-           ORDER BY avg_marks DESC NULLS LAST
-           LIMIT $2`
-        : `SELECT st.id, st.first_name, st.last_name, st.photo_url,
-                  c.class_name, sec.section_name,
-                  ROUND(AVG(er.marks_obtained)::numeric, 1) AS avg_marks
-           FROM students st
-           LEFT JOIN classes c ON st.class_id = c.id
-           LEFT JOIN sections sec ON st.section_id = sec.id
-           INNER JOIN exam_results er ON er.student_id = st.id
-           WHERE st.is_active = true
-             AND er.is_absent = false AND COALESCE(er.is_active, true) = true
-           GROUP BY st.id, st.first_name, st.last_name, st.photo_url, c.class_name, sec.section_name
-           ORDER BY avg_marks DESC NULLS LAST
-           LIMIT $1`;
-      const result = await query(sql, params);
-      rows = result.rows;
-    } catch (e) {
-      console.warn('Dashboard: exam-based star students failed', e.message);
+    const ctx = getAuthContext(req);
+    if (!ctx.userId) {
+      return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
     }
 
-    if (rows.length === 0) {
-      const fb = await query(
-        hasYearFilter
-          ? `SELECT st.id, st.first_name, st.last_name, st.photo_url, st.class_id, st.section_id,
-                    c.class_name, sec.section_name
-             FROM students st
-             LEFT JOIN classes c ON st.class_id = c.id
-             LEFT JOIN sections sec ON st.section_id = sec.id
-             WHERE st.is_active = true AND st.academic_year_id = $1
-             ORDER BY st.first_name ASC, st.last_name ASC
-             LIMIT $2`
-          : `SELECT st.id, st.first_name, st.last_name, st.photo_url, st.class_id, st.section_id,
-                    c.class_name, sec.section_name
-             FROM students st
-             LEFT JOIN classes c ON st.class_id = c.id
-             LEFT JOIN sections sec ON st.section_id = sec.id
-             WHERE st.is_active = true
-             ORDER BY st.first_name ASC, st.last_name ASC
-             LIMIT $1`,
-        hasYearFilter ? [academicYearId, limit] : [limit]
-      );
-      rows = fb.rows.map((r) => ({ ...r, avg_marks: null }));
+    const isTeacherUser = ctx.roleName === 'teacher' || ctx.roleId === ROLES.TEACHER;
+    let teacherStaffId = null;
+    if (isTeacherUser) {
+      teacherStaffId = await resolveTeacherStaffIdForUser(ctx.userId);
+      if (!teacherStaffId) {
+        return res.status(200).json({
+          status: 'SUCCESS',
+          message: 'Star students fetched successfully',
+          data: [],
+        });
+      }
     }
 
-    const data = rows.map((r) => ({
+    const baseParams = [];
+    let p = 1;
+    let examYearClause = '';
+    if (hasYearFilter) {
+      examYearClause = ` AND st.academic_year_id = $${p}`;
+      baseParams.push(academicYearId);
+      p += 1;
+    }
+    let teacherScopeCte = '';
+    let teacherScopeWhere = '';
+    if (isTeacherUser) {
+      teacherScopeCte = `teacher_scope AS (
+        SELECT DISTINCT cs.class_id, cs.section_id
+        FROM class_schedules cs
+        WHERE cs.teacher_id = $${p}
+          ${hasYearFilter ? `AND cs.academic_year_id = $${p + 1}` : ''}
+          AND cs.class_id IS NOT NULL
+      ),`;
+      baseParams.push(teacherStaffId);
+      if (hasYearFilter) {
+        baseParams.push(academicYearId);
+      }
+      p += hasYearFilter ? 2 : 1;
+      teacherScopeWhere = ` AND EXISTS (
+        SELECT 1
+        FROM teacher_scope ts
+        WHERE ts.class_id = st.class_id
+          AND (ts.section_id IS NULL OR ts.section_id = st.section_id)
+      )`;
+    }
+
+    const latestExamResult = await query(
+      `WITH ${teacherScopeCte}
+        latest_exam AS (
+          SELECT
+            er.exam_id,
+            COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+            MAX(COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at)) AS sort_date
+          FROM exam_results er
+          INNER JOIN students st ON st.id = er.student_id
+          LEFT JOIN exams e ON e.id = er.exam_id
+          WHERE st.is_active = true
+            AND er.exam_id IS NOT NULL
+            AND er.is_absent = false
+            AND COALESCE(er.is_active, true) = true
+            ${examYearClause}
+            ${teacherScopeWhere}
+          GROUP BY er.exam_id
+        )
+       SELECT exam_id, exam_name, sort_date
+       FROM latest_exam
+       ORDER BY sort_date DESC NULLS LAST, exam_id DESC
+       LIMIT 1`,
+      baseParams
+    );
+
+    const latestExam = latestExamResult.rows[0];
+    if (!latestExam?.exam_id) {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Star students fetched successfully',
+        data: [],
+      });
+    }
+
+    const topParams = [...baseParams, latestExam.exam_id, limit];
+    const topExamIdParam = p;
+    const topLimitParam = p + 1;
+    const rowsResult = await query(
+      `WITH ${teacherScopeCte}
+       scored AS (
+         SELECT
+           st.id,
+           st.first_name,
+           st.last_name,
+           st.photo_url,
+           c.class_name,
+           sec.section_name,
+           SUM(er.marks_obtained::numeric) AS marks_obtained,
+           SUM(COALESCE(e.total_marks::numeric, 100)) AS total_marks,
+           COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+           MAX(COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at)) AS exam_date
+         FROM exam_results er
+         INNER JOIN students st ON st.id = er.student_id
+         LEFT JOIN classes c ON c.id = st.class_id
+         LEFT JOIN sections sec ON sec.id = st.section_id
+         LEFT JOIN exams e ON e.id = er.exam_id
+         WHERE st.is_active = true
+           AND er.exam_id = $${topExamIdParam}
+           AND er.is_absent = false
+           AND COALESCE(er.is_active, true) = true
+           ${examYearClause}
+           ${teacherScopeWhere}
+         GROUP BY
+           st.id, st.first_name, st.last_name, st.photo_url,
+           c.class_name, sec.section_name
+       )
+       SELECT
+         id,
+         first_name,
+         last_name,
+         photo_url,
+         class_name,
+         section_name,
+         marks_obtained,
+         total_marks,
+         ROUND(
+           CASE
+             WHEN total_marks > 0 THEN (marks_obtained / total_marks) * 100
+             ELSE 0
+           END::numeric,
+           1
+         ) AS percentage,
+         exam_name,
+         exam_date
+       FROM scored
+       ORDER BY percentage DESC NULLS LAST, marks_obtained DESC NULLS LAST, first_name ASC, last_name ASC
+       LIMIT $${topLimitParam}`,
+      topParams
+    );
+
+    const data = rowsResult.rows.map((r) => ({
       id: r.id,
       name: [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || 'N/A',
       classSection: [r.class_name, r.section_name].filter(Boolean).join(', ') || 'N/A',
       photoUrl: r.photo_url || null,
-      avgMarks: r.avg_marks != null ? parseFloat(String(r.avg_marks), 10) : null,
+      avgMarks: r.marks_obtained != null ? parseFloat(String(r.marks_obtained), 10) : null,
+      marksObtained: r.marks_obtained != null ? parseFloat(String(r.marks_obtained), 10) : null,
+      totalMarks: r.total_marks != null ? parseFloat(String(r.total_marks), 10) : null,
+      percentage: r.percentage != null ? parseFloat(String(r.percentage), 10) : null,
+      examId: latestExam.exam_id,
+      examName: r.exam_name || latestExam.exam_name || 'Exam',
+      examDate: r.exam_date || latestExam.sort_date || null,
     }));
     res.status(200).json({
       status: 'SUCCESS',

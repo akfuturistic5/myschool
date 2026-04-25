@@ -268,6 +268,7 @@ export const all_routes = {
   examSchedule: "/academic/exam-schedule",
   grade: "/academic/grade",
   examResult: "/academic/exam-result",
+  examTopPerformers: "/academic/exam-top-performers",
   examAttendance: "/academic/exam-timetable",
   classTimetable: "/academic/class-time-table",
   sectionRoutine: "/academic/section-routine",

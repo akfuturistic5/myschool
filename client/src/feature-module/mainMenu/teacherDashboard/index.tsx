@@ -19,6 +19,7 @@ import { useTeacherClassAttendance } from "../../../core/hooks/useTeacherClassAt
 import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useEvents } from "../../../core/hooks/useEvents";
+import { useDashboardStarStudents } from "../../../core/hooks/useDashboardData";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -50,6 +51,10 @@ const TeacherDashboard = () => {
   const { data: syllabusData } = useClassSyllabus({ academicYearId });
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
   const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 });
+  const { students: topStudents, loading: topStudentsLoading, error: topStudentsError } = useDashboardStarStudents({
+    limit: 3,
+    academicYearId,
+  });
 
   const uniqueClasses = useMemo(() => {
     if (!routine?.length) return [];
@@ -311,10 +316,6 @@ const TeacherDashboard = () => {
                                 Classes : {routine?.length
                                   ? [...new Set(routine.map((r: { class?: string; section?: string }) => `${r.class || ""}-${r.section || ""}`.replace(/^-|-$/g, "")))].filter(Boolean).join(", ") || "—"
                                   : teacher?.class_name ? `${teacher.class_name}${teacher.section_name ? `-${teacher.section_name}` : ""}` : "—"}
-                              </span>
-                              <span className="d-flex align-items-center">
-                                <i className="ti ti-circle-filled text-warning fs-7 me-1" />
-                                {teacher?.subject_name || "—"}
                               </span>
                             </div>
                           </div>
@@ -595,32 +596,76 @@ const TeacherDashboard = () => {
                 {/* Best Performers */}
                 <div className="col-xxl-6 col-xl-6 col-md-6 d-flex flex-column">
                   <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between">
+                    <div className="card-header">
                       <h4 className="card-title">Best Performers</h4>
-                      <Link
-                        to={routes.studentList}
-                        className="link-primary fw-medium"
-                      >
-                        View All
-                      </Link>
                     </div>
                     <div className="card-body pb-1">
-                      <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
-                        <i className="ti ti-info-circle me-2 fs-18" />
-                        <span>No exam/performance data available. Data will appear once exam results are recorded.</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="card flex-fill">
-                    <div className="card-header d-flex align-items-center justify-content-between">
-                      <h4 className="card-title">Student Progress</h4>
-                      <Link to={routes.studentList} className="link-primary fw-medium">View All</Link>
-                    </div>
-                    <div className="card-body">
-                      <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
-                        <i className="ti ti-info-circle me-2 fs-18" />
-                        <span>No progress data available. Data will appear once exam results are recorded.</span>
-                      </div>
+                      {topStudentsLoading && (
+                        <div className="text-center py-3">
+                          <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                          <span className="ms-2">Loading best performers...</span>
+                        </div>
+                      )}
+                      {!topStudentsLoading && topStudentsError && (
+                        <div className="alert alert-warning mb-0 d-flex align-items-center" role="alert">
+                          <i className="ti ti-alert-circle me-2 fs-18" />
+                          <span>{topStudentsError}</span>
+                        </div>
+                      )}
+                      {!topStudentsLoading && !topStudentsError && (!topStudents?.length || topStudents.length === 0) && (
+                        <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No exam/performance data available. Data will appear once exam results are recorded.</span>
+                        </div>
+                      )}
+                      {!topStudentsLoading && !topStudentsError && topStudents?.length > 0 && (
+                        <div>
+                          <div className="mb-3 pb-2 border-bottom">
+                            <h6 className="mb-1 text-truncate">{topStudents[0].examName || "Latest Exam"}</h6>
+                            <p className="text-muted mb-0 small">
+                              <i className="ti ti-calendar-event me-1" />
+                              {topStudents[0].examDate
+                                ? new Date(topStudents[0].examDate).toLocaleDateString("en-GB", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })
+                                : "Date unavailable"}
+                            </p>
+                          </div>
+                          {topStudents.map((student: any, idx: number) => (
+                            <div key={student.id ?? idx} className="d-flex align-items-center justify-content-between mb-3">
+                              <div className="d-flex align-items-center overflow-hidden">
+                                <span className="badge bg-primary me-2 flex-shrink-0">#{idx + 1}</span>
+                                <div className="avatar avatar-md rounded-circle flex-shrink-0 me-2">
+                                  {student.photoUrl ? (
+                                    <img
+                                      src={student.photoUrl}
+                                      alt={student.name || "Student"}
+                                      className="img-fluid rounded-circle"
+                                      style={{ objectFit: "cover", width: "100%", height: "100%" }}
+                                    />
+                                  ) : (
+                                    <ImageWithBasePath src="assets/img/students/student-01.jpg" alt="Student" />
+                                  )}
+                                </div>
+                                <div className="overflow-hidden">
+                                  <h6 className="mb-0 text-truncate">{student.name || "Student"}</h6>
+                                  <small className="text-muted text-truncate d-block">{student.classSection || "Class unavailable"}</small>
+                                </div>
+                              </div>
+                              <div className="text-end ms-2">
+                                <h6 className="mb-0">{student.percentage != null ? `${student.percentage}%` : "--"}</h6>
+                                <small className="text-muted">
+                                  {student.marksObtained != null && student.totalMarks != null
+                                    ? `${student.marksObtained}/${student.totalMarks}`
+                                    : "Marks unavailable"}
+                                </small>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

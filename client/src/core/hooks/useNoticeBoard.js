@@ -14,6 +14,7 @@ export const useNoticeBoard = (options = {}) => {
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   const fetchNotices = useCallback(async () => {
     try {
@@ -27,6 +28,10 @@ export const useNoticeBoard = (options = {}) => {
             title: r.title || '',
             content: r.content || '',
             messageTo: r.messageTo || r.message_to || 'All',
+            notice_date: r.notice_date || null,
+            publish_on: r.publish_on || null,
+            noticeDate: r.noticeDate || formatDate(r.notice_date),
+            publishOn: r.publishOn || formatDate(r.publish_on),
             addedOn: r.addedOn || formatDate(r.created_at),
             modifiedOn: r.modifiedOn || formatDate(r.modified_at),
             created_at: r.created_at,
@@ -48,5 +53,47 @@ export const useNoticeBoard = (options = {}) => {
     fetchNotices();
   }, [fetchNotices]);
 
-  return { notices, loading, error, refetch: fetchNotices };
+  const createNotice = useCallback(async (payload) => {
+    setSaving(true);
+    try {
+      const res = await apiService.createNotice(payload);
+      await fetchNotices();
+      return res;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchNotices]);
+
+  const updateNotice = useCallback(async (id, payload) => {
+    setSaving(true);
+    try {
+      const res = await apiService.updateNotice(id, payload);
+      await fetchNotices();
+      return res;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchNotices]);
+
+  const deleteNotice = useCallback(async (id) => {
+    setSaving(true);
+    try {
+      const res = await apiService.deleteNotice(id);
+      await fetchNotices();
+      return res;
+    } finally {
+      setSaving(false);
+    }
+  }, [fetchNotices]);
+
+  return {
+    notices,
+    loading,
+    error,
+    saving,
+    refetch: fetchNotices,
+    createNotice,
+    updateNotice,
+    deleteNotice,
+  };
 };

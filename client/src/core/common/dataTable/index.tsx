@@ -59,6 +59,16 @@ const Datatable: React.FC<DatatableProps> = ({
     [isSelectionEnabled, selectedRowKeys]
   );
 
+  const totalRows = (filteredDataSource ?? safeData)?.length ?? 0;
+  const basePageSizes = [10, 20, 30];
+  const allPageSizeValue = totalRows > 0 ? totalRows : basePageSizes[basePageSizes.length - 1];
+  const sizeOptions = Array.from(new Set([...basePageSizes, allPageSizeValue])).sort((a, b) => a - b);
+  const pageSizeOptions = sizeOptions.map((n) => String(n));
+  const sizeChangerOptions = sizeOptions.map((n) => ({
+    label: n === allPageSizeValue ? "All" : String(n),
+    value: n,
+  }));
+
   useEffect(() => {
     setFilteredDataSource(safeData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,8 +79,8 @@ const Datatable: React.FC<DatatableProps> = ({
     nextIcon: <span>Next</span>,
     prevIcon: <span>Prev</span>,
     defaultPageSize: 10,
-    showSizeChanger: true,
-    pageSizeOptions: ["10", "20", "30"],
+    showSizeChanger: { options: sizeChangerOptions },
+    pageSizeOptions,
     showTotal: (total: number, range: [number, number]) => `${range[0]}-${range[1]} of ${total} items`,
   };
 

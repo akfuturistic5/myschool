@@ -624,6 +624,15 @@ class ApiService {
     return this.makeRequest(`/exam-subjects/results?${search.toString()}`);
   }
 
+  async getExamTopPerformers(params = {}) {
+    const search = new URLSearchParams();
+    if (params.exam_id != null && params.exam_id !== '') search.set('exam_id', String(params.exam_id));
+    if (params.class_id != null && params.class_id !== '' && params.class_id !== 'all') search.set('class_id', String(params.class_id));
+    if (params.section_id != null && params.section_id !== '' && params.section_id !== 'all') search.set('section_id', String(params.section_id));
+    if (params.top != null && params.top !== '') search.set('top', String(params.top));
+    return this.makeRequest(`/exam-subjects/top-performers?${search.toString()}`);
+  }
+
   async listSelfExams(params = {}) {
     const search = new URLSearchParams(params);
     return this.makeRequest(`/exam-subjects/self-exams?${search.toString()}`);
@@ -2873,9 +2882,24 @@ class ApiService {
    */
   async getSchoolStorageFileAbsoluteUrl(apiPath) {
     if (!apiPath) return "";
+    const rawPath = String(apiPath).trim();
+    if (!rawPath) return "";
+
+    // Already absolute URL (http/https): use as-is.
+    if (/^https?:\/\//i.test(rawPath)) {
+      return rawPath;
+    }
+
+    let origin = '';
     const base = await getApiBaseUrl();
-    const origin = new URL(base).origin;
-    let p = apiPath;
+    try {
+      // Supports both absolute API URLs and relative `/api` proxy URLs.
+      origin = new URL(base, window.location.origin).origin;
+    } catch {
+      origin = window.location.origin;
+    }
+
+    let p = rawPath;
     if (p.startsWith("school_")) {
       p = `/api/storage/files/${p}`;
     } else if (!p.startsWith("/")) {

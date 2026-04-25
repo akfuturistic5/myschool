@@ -58,6 +58,7 @@ import AcademicYearDetail from "../academic/academic-years/detail";
 import Exam from "../academic/examinations/exam";
 import ExamAttendance from "../academic/examinations/exam-attendance";
 import ExamResult from "../academic/examinations/exam-results";
+import TopPerformers from "../academic/examinations/top-performers";
 import ExamSchedule from "../academic/examinations/exam-schedule";
 import Grade from "../academic/examinations/grade";
 import ScheduleClasses from "../academic/schedule-classes";
@@ -915,6 +916,11 @@ export const publicRoutes = [
   {
     path: routes.examResult,
     element: <ExamResult />,
+    route: Route,
+  },
+  {
+    path: routes.examTopPerformers,
+    element: <TopPerformers />,
     route: Route,
   },
   {

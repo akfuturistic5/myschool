@@ -19,11 +19,19 @@ const StudentBreadcrumb = ({ studentId }: StudentBreadcrumbProps) => {
   const user = useSelector(selectUser)
   const role = user?.role || ''
   const roleLower = (role || '').trim().toLowerCase()
+  const isTeacherUser =
+    Number(user?.role_id) === 2 ||
+    Number(user?.user_role_id) === 2 ||
+    roleLower === 'teacher' ||
+    roleLower.includes('teacher')
   const dashboardRoles = ['student', 'parent', 'guardian', 'teacher']
   const roleBasedBack = dashboardRoles.includes(roleLower) ? getDashboardForRole(role) : routes.studentList
   const dashboardLink = getDashboardForRole(role)
   const backTo = state?.returnTo || roleBasedBack
-  const canEditStudent = isHeadmasterRole(user) || isAdministrativeRole(user)
+  const canEditStudent =
+    isHeadmasterRole(user) ||
+    isAdministrativeRole(user) ||
+    isTeacherUser
   const sectionLabel = roleLower === 'parent' || roleLower === 'guardian' ? 'Child Profile' : 'Student'
 
   return (
@@ -53,7 +61,7 @@ const StudentBreadcrumb = ({ studentId }: StudentBreadcrumbProps) => {
           </nav>
         </div>
         <div className="d-flex my-xl-auto right-content align-items-center  flex-wrap">
-          {canEditStudent && (
+          {(isHeadmasterRole(user) || isAdministrativeRole(user)) && (
             <Link
               to="#"
               className="btn btn-light me-2 mb-2"

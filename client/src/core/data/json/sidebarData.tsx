@@ -225,6 +225,7 @@ export const SidebarData = [
           { label: "Exams", link: routes.exam },
           { label: "Schedule", link: routes.examAttendance },
           { label: "Exam Result", link: routes.examResult },
+          { label: "Top Performers", link: routes.examTopPerformers },
           { label: "Grade", link: routes.grade },
         ],
       },

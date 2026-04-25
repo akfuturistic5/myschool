@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { apiService } from "../../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 import { all_routes } from "../../../router/all_routes";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
@@ -118,6 +119,71 @@ const ExamAttendance = () => {
     [contextRows, classId]
   );
 
+  const exportColumns = useMemo(
+    () => [
+      { title: "Subject", dataKey: "subject_name" },
+      { title: "Code", dataKey: "subject_code" },
+      { title: "Date", dataKey: "exam_date" },
+      { title: "Start", dataKey: "start_time" },
+      { title: "End", dataKey: "end_time" },
+      { title: "Max", dataKey: "max_marks" },
+      { title: "Pass", dataKey: "passing_marks" },
+    ],
+    []
+  );
+
+  const selectedExamLabel = useMemo(() => {
+    const selected = exams.find((ex: any) => String(ex.id) === String(selectedExamId));
+    if (!selected) return "Exam Timetable";
+    return `${selected.exam_name || "Exam"}${selected.exam_type ? ` (${selected.exam_type})` : ""}`;
+  }, [exams, selectedExamId]);
+
+  const selectedClassSectionLabel = useMemo(() => {
+    if (selfOnly) return "Self";
+    const match = contextRows.find(
+      (r: any) => String(r.class_id) === String(classId) && String(r.section_id) === String(sectionId)
+    );
+    if (!match) return "Class-Section";
+    return `${match.class_name || "Class"}-${match.section_name || "Section"}`;
+  }, [selfOnly, contextRows, classId, sectionId]);
+
+  const safeToken = (value: string) =>
+    String(value || "")
+      .replace(/[^\w\- ]+/g, "")
+      .trim()
+      .replace(/\s+/g, "_");
+
+  const getExportData = () =>
+    rows.map((r: any) => ({
+      subject_name: r.subject_name || "-",
+      subject_code: r.subject_code || "-",
+      exam_date: r.exam_date ? String(r.exam_date).slice(0, 10) : "-",
+      start_time: r.start_time ? String(r.start_time).slice(0, 5) : "-",
+      end_time: r.end_time ? String(r.end_time).slice(0, 5) : "-",
+      max_marks: r.max_marks ?? "-",
+      passing_marks: r.passing_marks ?? "-",
+    }));
+
+  const handleExport = (type: "pdf" | "excel" | "print") => {
+    if (!rows.length) {
+      setMessage("No timetable data available to export.");
+      return;
+    }
+    const data = getExportData();
+    const title = `Exam Timetable - ${selectedExamLabel} - ${selectedClassSectionLabel}`;
+    const fileName = `exam_timetable_${safeToken(selectedExamLabel)}_${safeToken(selectedClassSectionLabel)}`;
+
+    if (type === "pdf") {
+      exportToPDF(data, title, fileName, exportColumns);
+      return;
+    }
+    if (type === "excel") {
+      exportToExcel(data, fileName, "Exam Timetable");
+      return;
+    }
+    printData(title, exportColumns, data);
+  };
+
   const loadSchedule = async () => {
     if (!selectedExamId) {
       setMessage("Please select exam.");
@@ -216,13 +282,42 @@ const ExamAttendance = () => {
 
         <div className="card">
           <div className="card-body">
+            {rows.length > 0 && (
+              <div className="d-flex justify-content-end mb-3">
+                <div className="dropdown">
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary dropdown-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                    disabled={loading}
+                  >
+                    Export
+                  </button>
+                  <ul className="dropdown-menu">
+                    <li>
+                      <button type="button" className="dropdown-item" onClick={() => handleExport("pdf")}>
+                        Export as PDF
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="dropdown-item" onClick={() => handleExport("print")}>
+                        Print
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" className="dropdown-item" onClick={() => handleExport("excel")}>
+                        Export as Excel
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            )}
             <div className="table-responsive">
               <table className="table align-middle">
                 <thead>
                   <tr>
-                    <th>Exam</th>
-                    <th>Class</th>
-                    <th>Section</th>
                     <th>Subject</th>
                     <th>Code</th>
                     <th>Date</th>
@@ -235,9 +330,6 @@ const ExamAttendance = () => {
                 <tbody>
                   {rows.map((r: any, idx: number) => (
                     <tr key={`${r.exam_id}-${r.subject_id}-${idx}`}>
-                      <td>{r.exam_name}</td>
-                      <td>{r.class_name || "-"}</td>
-                      <td>{r.section_name || "-"}</td>
                       <td>{r.subject_name}</td>
                       <td>{r.subject_code || "-"}</td>
                       <td>{r.exam_date ? String(r.exam_date).slice(0, 10) : "-"}</td>
@@ -249,7 +341,7 @@ const ExamAttendance = () => {
                   ))}
                   {!rows.length && !loading && (
                     <tr>
-                      <td colSpan={10} className="text-center text-muted">
+                      <td colSpan={7} className="text-center text-muted">
                         No data
                       </td>
                     </tr>

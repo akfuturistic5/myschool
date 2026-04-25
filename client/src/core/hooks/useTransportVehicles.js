@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
@@ -21,6 +21,12 @@ export const useTransportVehicles = (initialParams = {}) => {
     status: 'all',
     ...initialParams
   });
+  const paramsRef = useRef(params);
+  const paramsKey = useMemo(() => JSON.stringify(params), [params]);
+
+  useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
 
   const paramsKey = JSON.stringify(params);
 

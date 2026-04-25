@@ -41,8 +41,8 @@ export function FormLabelWithInfo({
         title={infoText}
         placement="topLeft"
         mouseEnterDelay={0.1}
-        overlayClassName="form-label-info-tooltip"
-        destroyTooltipOnHide
+        classNames={{ root: "form-label-info-tooltip" }}
+        destroyOnHidden
         trigger={["hover", "focus", "click"]}
         getPopupContainer={() => document.body}
       >

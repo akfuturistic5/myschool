@@ -65,8 +65,8 @@ const PARENT_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER]
 /** Roles that can list all guardians */
 const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
-/** Roles that can create/update/delete school events (Headmaster + Teacher) */
-const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
+/** Roles that can create/update/delete school events (Headmaster + Administrative) */
+const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 
 /** Roles that can access getLeaveApplications (role-scoped in controller) */
 const LEAVE_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];

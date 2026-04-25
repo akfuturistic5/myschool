@@ -85,8 +85,11 @@ const ParentList = () => {
           <div className="ms-2">
             <p className="text-dark mb-0">
               <Link to="#" onClick={() => handleViewParent(record)}>
-                {text}
+                {text || "N/A"}
               </Link>
+            </p>
+            <p className="text-dark mb-0 fs-12">
+              Mother: {record.mother_name || "N/A"}
             </p>
             <span className="fs-12">{record.Addedon}</span>
           </div>
@@ -128,11 +131,23 @@ const ParentList = () => {
     {
       title: "Phone",
       dataIndex: "phone",
+      render: (text: string, record: any) => (
+        <div>
+          <p className="mb-0">{text || "N/A"}</p>
+          <p className="mb-0 fs-12 text-muted">Mother: {record.mother_phone || "N/A"}</p>
+        </div>
+      ),
       sorter: (a: TableData, b: TableData) => (String(a?.phone ?? '').length) - (String(b?.phone ?? '').length),
     },
     {
       title: "Email",
       dataIndex: "email",
+      render: (text: string, record: any) => (
+        <div>
+          <p className="mb-0">{text || "N/A"}</p>
+          <p className="mb-0 fs-12 text-muted">Mother: {record.mother_email || "N/A"}</p>
+        </div>
+      ),
       sorter: (a: TableData, b: TableData) => (String(a?.email ?? '').length) - (String(b?.email ?? '').length),
     },
     {

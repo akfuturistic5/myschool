@@ -1128,8 +1128,7 @@ const Events = () => {
           <Modal.Body>
             {!canManage ? (
               <Alert variant="warning">
-                Only Headmaster, Administrative staff, and Teachers can create or
-                edit school events.
+                Only Headmaster and Administrative staff can create or edit school events.
               </Alert>
             ) : null}
             <div className="row">
