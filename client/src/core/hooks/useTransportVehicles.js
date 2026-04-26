@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
@@ -21,14 +21,7 @@ export const useTransportVehicles = (initialParams = {}) => {
     status: 'all',
     ...initialParams
   });
-  const paramsRef = useRef(params);
   const paramsKey = useMemo(() => JSON.stringify(params), [params]);
-
-  useEffect(() => {
-    paramsRef.current = params;
-  }, [params]);
-
-  const paramsKey = JSON.stringify(params);
 
   const fetchVehicles = useCallback(async (overrides = {}) => {
     try {
@@ -40,13 +33,13 @@ export const useTransportVehicles = (initialParams = {}) => {
       
       if (response && response.status === "SUCCESS") {
         const list = response.data || [];
-        const mapped = list.map((row, index) => ({
+        const mapped = await Promise.all(list.map(async (row, index) => ({
           key: String(row.id || index + 1),
           id: row.id,
           displayId: row.vehicle_code,
           vehicleNo: row.vehicle_number || 'N/A',
           vehicleModel: row.vehicle_model || row.model || '-',
-          img: row.photo_url || defaultImg,
+          img: (row.photo_url ? await apiService.resolveAvatarUrl(row.photo_url) : '') || defaultImg,
           madeofYear: row.made_of_year || 'N/A',
           registrationNo: row.registration_number || 'N/A',
           chassisNo: row.chassis_number || 'N/A',
@@ -57,7 +50,7 @@ export const useTransportVehicles = (initialParams = {}) => {
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           originalData: row,
-        }));
+        })));
         
         setData(mapped);
         if (response.metadata) {

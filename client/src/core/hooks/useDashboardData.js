@@ -125,7 +125,13 @@ export const useDashboardBestPerformers = (options = {}) => {
 };
 
 export const useDashboardStarStudents = (options = {}) => {
-  const { limit = 3, academicYearId } = options;
+  const {
+    limit = 3,
+    academicYearId,
+    className,
+    sectionName,
+    timeRange,
+  } = options;
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -136,7 +142,13 @@ export const useDashboardStarStudents = (options = {}) => {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getDashboardStarStudents({ limit, academicYearId });
+        const res = await apiService.getDashboardStarStudents({
+          limit,
+          academicYearId,
+          className,
+          sectionName,
+          timeRange,
+        });
         if (mounted && res.status === 'SUCCESS' && Array.isArray(res.data)) {
           setStudents(res.data);
         } else if (mounted) {
@@ -152,7 +164,7 @@ export const useDashboardStarStudents = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [limit, academicYearId]);
+  }, [limit, academicYearId, className, sectionName, timeRange]);
 
   return { students, loading, error };
 };

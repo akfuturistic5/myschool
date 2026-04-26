@@ -46,9 +46,32 @@ interface StudentSidebarProps {
       class_name?: string;
       section_name?: string;
       admission_number?: string;
+      roll_number?: string;
     }>;
   } | null;
 }
+
+const isPlaceholderValue = (value: unknown) => {
+  if (value == null) return true;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "not applicable" ||
+    normalized === "not available" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "undefined" ||
+    normalized === "-" ||
+    normalized === "--"
+  );
+};
+
+const toDisplayValue = (value: unknown) => {
+  if (isPlaceholderValue(value)) return null;
+  return String(value).trim();
+};
 
 const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const currentUser = useSelector(selectUser);
@@ -84,13 +107,40 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const caste = student?.cast_name ?? "N/A";
   const motherTongue = student?.mother_tongue_name ?? "N/A";
   
-  // Sibling logic: Prefer the new dynamic array, fallback to legacy fields
-  const siblings = student?.siblings || [];
+  // Sibling logic: prefer dynamic list, sanitize placeholder values, then fallback to legacy fields.
+  const siblings = Array.isArray(student?.siblings) ? student.siblings : [];
+  const normalizedSiblings = siblings
+    .map((sib) => ({
+      name: toDisplayValue(sib?.name),
+      class_name: toDisplayValue(sib?.class_name),
+      section_name: toDisplayValue(sib?.section_name),
+      admission_number: toDisplayValue(sib?.admission_number),
+      roll_number: toDisplayValue(sib?.roll_number),
+    }))
+    .filter(
+      (sib) =>
+        sib.name ||
+        sib.class_name ||
+        sib.section_name ||
+        sib.admission_number ||
+        sib.roll_number
+    );
+
   const legacySiblings = [];
-  if (student?.sibiling_1) legacySiblings.push({ name: student.sibiling_1, class_name: student.sibiling_1_class || 'N/A' });
-  if (student?.sibiling_2) legacySiblings.push({ name: student.sibiling_2, class_name: student.sibiling_2_class || 'N/A' });
-  
-  const displaySiblings = siblings.length > 0 ? siblings : legacySiblings;
+  if (!isPlaceholderValue(student?.sibiling_1)) {
+    legacySiblings.push({
+      name: toDisplayValue(student?.sibiling_1),
+      class_name: toDisplayValue(student?.sibiling_1_class),
+    });
+  }
+  if (!isPlaceholderValue(student?.sibiling_2)) {
+    legacySiblings.push({
+      name: toDisplayValue(student?.sibiling_2),
+      class_name: toDisplayValue(student?.sibiling_2_class),
+    });
+  }
+
+  const displaySiblings = normalizedSiblings.length > 0 ? normalizedSiblings : legacySiblings;
 
   const hostelName = student?.hostel_name && String(student.hostel_name).trim() ? String(student.hostel_name).trim() : null;
   const hostelFloor = student?.floor && String(student.floor).trim() ? String(student.floor).trim() : null;
@@ -204,8 +254,14 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                     />
                   </span>
                   <div className="ms-2">
-                    <h5 className="fs-14">{sib.name}</h5>
-                    <p>{sib.class_name ?? 'N/A'}{sib.section_name ? `, ${sib.section_name}` : ''}</p>
+                    <h5 className="fs-14">
+                      {sib.name || (sib.admission_number ? `Admission: ${sib.admission_number}` : (sib.roll_number ? `Roll: ${sib.roll_number}` : "N/A"))}
+                    </h5>
+                    <p>
+                      {sib.class_name
+                        ? `${sib.class_name}${sib.section_name ? `, ${sib.section_name}` : ""}`
+                        : "N/A"}
+                    </p>
                   </div>
                 </div>
               ))

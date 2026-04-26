@@ -26,7 +26,7 @@ const StudentTimeTable = () => {
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { student, loading } = useLinkedStudentContext({
+  const { student, loading, role } = useLinkedStudentContext({
     locationState: state,
   });
   const effectiveStudentId = parsePositiveId(student?.id);
@@ -38,11 +38,21 @@ const StudentTimeTable = () => {
     student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
   );
 
-  /** Parents often land here before picking a year in the header; fall back to the child's enrolled year. */
+  /** Parents/guardians should default to the child's enrolled year to avoid empty timetable on header-year mismatch. */
   const studentAcademicYearId = parsePositiveId(
     student?.academic_year_id ?? (student as { academicYearId?: unknown })?.academicYearId
   );
-  const academicYearForSchedules = headerAcademicYearId ?? studentAcademicYearId ?? undefined;
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  const isParentViewer =
+    normalizedRole === "parent" ||
+    normalizedRole === "guardian" ||
+    normalizedRole === "father" ||
+    normalizedRole === "mother" ||
+    normalizedRole.includes("parent") ||
+    normalizedRole.includes("guardian");
+  const academicYearForSchedules = isParentViewer
+    ? studentAcademicYearId ?? headerAcademicYearId ?? undefined
+    : headerAcademicYearId ?? studentAcademicYearId ?? undefined;
 
   const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
     academicYearId: academicYearForSchedules,

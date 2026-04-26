@@ -33,19 +33,19 @@ export const useTransportAssignments = (initialParams = {}) => {
       
       if (response && response.status === "SUCCESS") {
         const list = response.data || [];
-        const mapped = list.map((row, index) => ({
+        const mapped = await Promise.all(list.map(async (row, index) => ({
           key: String(row.id || index + 1),
           id: row.assignment_code || String(row.id),
           route: row.route_name || '—',
           pickupPoint: row.point_name || '—',
           vehicle: row.vehicle_number || 'N/A',
           name: row.driver_name || 'N/A',
-          img: row.photo_url || defaultImg,
+          img: (row.photo_url ? await apiService.resolveAvatarUrl(row.photo_url) : '') || defaultImg,
           phone: row.driver_phone || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           originalData: row,
-        }));
+        })));
         
         setData(mapped);
         if (response.metadata) {

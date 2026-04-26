@@ -6,6 +6,7 @@ import ReactApexChart from "react-apexcharts";
 import { useGuardians } from "../../../core/hooks/useGuardians";
 import { useGuardianWardLeaves } from "../../../core/hooks/useGuardianWardLeaves";
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
+import { useAuthAvatar } from "../../../core/hooks/useAuthAvatar";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { EventsCard } from "../shared/EventsCard";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
@@ -20,19 +21,33 @@ const GuardianDashboard = () => {
   const firstWard = wards[0];
   const activeWard = firstWard ?? null;
   const { data: feeData } = useStudentFees(activeWard?.student_id ?? null);
+  const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
 
   const displayGuardian = activeWard ?? firstWard;
   const guardianName = displayGuardian
     ? [displayGuardian.name].filter(Boolean).join(" ") || "Guardian Profile"
     : "Guardian Profile";
 
+  const approvedWardLeaves = useMemo(
+    () => wardLeaves.filter((l: { status?: string }) => String(l.status || "").toLowerCase() === "approved"),
+    [wardLeaves]
+  );
+  const sumLeaveDays = (rows: Array<{ noOfDays?: string | number }>) =>
+    rows.reduce((sum, row) => {
+      const days = Number(row?.noOfDays || 0);
+      return sum + (Number.isFinite(days) && days > 0 ? days : 0);
+    }, 0);
   const medicalCount = useMemo(() => {
-    return wardLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical")).length;
-  }, [wardLeaves]);
+    return sumLeaveDays(
+      approvedWardLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical"))
+    );
+  }, [approvedWardLeaves]);
 
   const casualCount = useMemo(() => {
-    return wardLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("casual")).length;
-  }, [wardLeaves]);
+    return sumLeaveDays(
+      approvedWardLeaves.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("casual"))
+    );
+  }, [approvedWardLeaves]);
 
   const [statistic_chart] = useState({
     chart: { type: "line" as const, height: 345 },
@@ -108,7 +123,7 @@ const GuardianDashboard = () => {
                       <div className="d-flex align-items-center row-gap-3">
                         <div className="avatar avatar-xxl rounded flex-shrink-0 me-3">
                           <ImageWithBasePath
-                            src="assets/img/parents/parent-01.jpg"
+                            src={hasAuthAvatar ? authAvatarSrc : (displayGuardian?.GuardianImage || "assets/img/profiles/avatar-27.jpg")}
                             alt="Guardian"
                           />
                         </div>

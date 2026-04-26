@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useCurrentStudent } from "../../../core/hooks/useCurrentStudent";
@@ -9,9 +10,11 @@ import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useStudentExamResults } from "../../../core/hooks/useStudentExamResults";
-import { useTodos } from "../../../core/hooks/useTodos";
-import { useEvents } from "../../../core/hooks/useEvents";
 import { useAcademicYears } from "../../../core/hooks/useAcademicYears";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { useEvents } from "../../../core/hooks/useEvents";
+import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
+import { useAuthAvatar } from "../../../core/hooks/useAuthAvatar";
 import { EventsCard } from "../shared/EventsCard";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 import { Calendar } from "primereact/calendar";
@@ -23,16 +26,26 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 const StudentDasboard = () => {
   const routes = all_routes;
+  const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
+  const { academicYears } = useAcademicYears();
+  const currentAcademicYear =
+    (academicYears || []).find((y: { is_current?: boolean }) => y?.is_current) ?? (academicYears || [])[0] ?? null;
+  const resolvedAcademicYearId =
+    (headerAcademicYearId != null && Number(headerAcademicYearId) > 0 ? Number(headerAcademicYearId) : null) ??
+    (currentAcademicYear && Number((currentAcademicYear as { id?: number }).id) > 0
+      ? Number((currentAcademicYear as { id: number }).id)
+      : null);
+
   const { student, loading: studentLoading, error: studentError } = useCurrentStudent();
+  const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null);
   const { data: allSchedules, loading: scheduleLoading } = useClassSchedules();
   const { data: syllabusData } = useClassSyllabus();
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 50 });
-  const { data: feeData } = useStudentFees(student?.id ?? null);
+  const { data: feeData } = useStudentFees(student?.id ?? null, resolvedAcademicYearId);
   const { data: examResultsData } = useStudentExamResults(student?.id ?? null);
-  const { todos } = useTodos();
   const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
-  const { academicYears } = useAcademicYears();
+  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 1 });
 
   const today = new Date();
   const year = today.getFullYear();
@@ -48,13 +61,10 @@ const StudentDasboard = () => {
   const [attendanceRange, setAttendanceRange] = useState<AttendanceRangeKey>("thisWeek");
   type LeaveRangeKey = "thisMonth" | "thisYear" | "lastWeek" | "allTime";
   const [leaveRange, setLeaveRange] = useState<LeaveRangeKey>("thisMonth");
-  type TodoRangeKey = "today" | "thisWeek" | "thisMonth" | "thisYear" | "allTime";
-  const [todoRange, setTodoRange] = useState<TodoRangeKey>("today");
   const [homeWorkSubject, setHomeWorkSubject] = useState<string>("all");
-  const [performanceYearId, setPerformanceYearId] = useState<string | null>(null);
 
   // Date range helpers
-  const getDateRange = (key: AttendanceRangeKey | LeaveRangeKey | TodoRangeKey) => {
+  const getDateRange = (key: AttendanceRangeKey | LeaveRangeKey) => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -69,7 +79,6 @@ const StudentDasboard = () => {
     const startOfYear = new Date(now.getFullYear(), 0, 1);
     const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
 
-    if (key === "today") return { start: startOfToday, end: endOfToday };
     if (key === "thisWeek") return { start: startOfWeek, end: endOfWeek };
     if (key === "lastWeek") {
       const lastWeekStart = new Date(startOfWeek);
@@ -89,7 +98,7 @@ const StudentDasboard = () => {
     return { start: startOfToday, end: endOfToday };
   };
 
-  const isDateInRange = (dateVal: string | Date | null | undefined, rangeKey: AttendanceRangeKey | LeaveRangeKey | TodoRangeKey) => {
+  const isDateInRange = (dateVal: string | Date | null | undefined, rangeKey: AttendanceRangeKey | LeaveRangeKey) => {
     if (rangeKey === "allTime") return true;
     if (!dateVal) return false;
     const d = new Date(dateVal);
@@ -118,14 +127,6 @@ const StudentDasboard = () => {
       isDateInRange(item.startDate, leaveRange)
     );
   }, [myLeaves, leaveRange]);
-
-  // Filtered todos by date range
-  const filteredTodos = useMemo(() => {
-    if (!todos?.length) return [];
-    return todos.filter((t: { due_date?: string }) =>
-      isDateInRange(t.due_date, todoRange)
-    );
-  }, [todos, todoRange]);
 
   // Today's classes - filter schedules by student's class/section and selected date's day
   const todaysClasses = useMemo(() => {
@@ -182,17 +183,6 @@ const StudentDasboard = () => {
     return Array.from(subs).sort();
   }, [classFaculties]);
 
-  // Academic years for Performance dropdown
-  const academicYearsList = (academicYears || []) as Array<{ id?: number; year_name?: string; is_current?: boolean }>;
-  const currentAcademicYear = academicYearsList?.find((year: any) => year?.is_current) ?? null;
-  const selectedPerformanceYear = performanceYearId
-    ? academicYearsList.find((y) => String(y.id) === performanceYearId)
-    : currentAcademicYear || academicYearsList[0];
-
-  if (!academicYears || academicYears.length === 0) {
-    return <div>Loading...</div>;
-  }
-
   return (
     <>
       {/* Page Wrapper */}
@@ -237,27 +227,26 @@ const StudentDasboard = () => {
               Student profile not found. Please contact admin.
             </div>
           )}
-          <div className="row">
-            <div className="col-xxl-8 d-flex">
-              <div className="row flex-fill">
-                {/* Profile */}
-                <div className="col-xl-6 d-flex">
-                  <div className="flex-fill">
-                    <div className="card bg-dark position-relative">
+          <div className="row align-items-stretch">
+            <div className="col-xxl-8 d-flex flex-column gap-3 h-100 min-h-0">
+              <div className="row g-3 align-items-stretch flex-shrink-0">
+                {/* Row 1: Profile | Attendance (equal height). Below xl: stack Profile → Today → Attendance → Notice Board */}
+                <div className="col-xl-6 d-flex order-1">
+                  <div className="card bg-dark position-relative w-100 h-100">
                       <div className="card-body">
                         <div className="d-flex align-items-center row-gap-3 mb-3">
                           <div className="avatar avatar-xxl rounded flex-shrink-0 me-3">
-                            {student?.photo_url ? (
+                            {(hasAuthAvatar || student?.photo_url) ? (
                               <img
-                                src={student.photo_url}
+                                src={hasAuthAvatar ? authAvatarSrc : (student?.photo_url ?? "")}
                                 alt="Profile"
                                 className="img-fluid rounded"
                                 style={{ objectFit: "cover", width: "100%", height: "100%" }}
                               />
                             ) : (
                               <ImageWithBasePath
-                                src="assets/img/students/student-13.jpg"
-                                alt="Img"
+                                src="assets/img/profiles/avatar-27.jpg"
+                                alt="Default avatar"
                               />
                             )}
                           </div>
@@ -276,7 +265,7 @@ const StudentDasboard = () => {
                             </div>
                           </div>
                         </div>
-                        <div className="d-flex align-items-center justify-content-between profile-footer flex-wrap row-gap-3 pt-4">
+                        <div className="d-flex align-items-center justify-content-between profile-footer flex-wrap row-gap-3 pt-3">
                           <div className="d-flex align-items-center">
                             <h6 className="text-white">Academic Status</h6>
                             <span className="badge bg-success d-inline-flex align-items-center ms-2">
@@ -312,61 +301,11 @@ const StudentDasboard = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="card flex-fill">
-                      <div className="card-header d-flex align-items-center justify-content-between">
-                        <h4 className="card-title">Today’s Class</h4>
-                        <div className="d-inline-flex align-items-center class-datepick">
-                          <DatePicker
-                            className="form-control datetimepicker border-0"
-                            format={{
-                              format: "DD-MM-YYYY",
-                              type: "mask",
-                            }}
-                            value={selectedDate}
-                            onChange={(v) => setSelectedDate(v || defaultValue)}
-                            placeholder="Select date"
-                          />
-                        </div>
-                      </div>
-                      <div className="card-body">
-                        {scheduleLoading && (
-                          <div className="text-center py-4">
-                            <div className="spinner-border spinner-border-sm text-primary" role="status" />
-                            <span className="ms-2">Loading schedule...</span>
-                          </div>
-                        )}
-                        {!scheduleLoading && todaysClasses.length === 0 && (
-                          <p className="text-muted mb-0">No classes scheduled for this day.</p>
-                        )}
-                        {!scheduleLoading && todaysClasses?.length > 0 && todaysClasses?.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string }, idx: number) => (
-                          <div key={cls.id ?? idx} className={`card ${idx < todaysClasses.length - 1 ? "mb-3" : "mb-0"}`}>
-                            <div className="d-flex align-items-center justify-content-between flex-wrap p-3 pb-1">
-                              <div className="d-flex align-items-center flex-wrap mb-2">
-                                <span className="avatar avatar-lg flex-shrink-0 rounded me-2 bg-primary-transparent">
-                                  <i className="ti ti-book fs-20 text-primary" />
-                                </span>
-                                <div>
-                                  <h6 className="mb-1">{cls.subject || "—"}</h6>
-                                  <span>
-                                    <i className="ti ti-clock me-2" />
-                                    {cls.startTime || "—"} - {cls.endTime || "—"}
-                                  </span>
-                                </div>
-                              </div>
-                              {cls.classRoom && (
-                                <span className="badge badge-soft-primary shadow-none mb-2">Room: {cls.classRoom}</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
                 </div>
                 {/* /Profile */}
                 {/* Attendance */}
-                <div className="col-xl-6 d-flex">
-                  <div className="card flex-fill">
+                <div className="col-xl-6 d-flex order-3 order-xl-2">
+                  <div className="card w-100 h-100">
                     <div className="card-header d-flex align-items-center justify-content-between">
                       <h4 className="card-title">Attendance</h4>
                       <div className="dropdown">
@@ -403,9 +342,9 @@ const StudentDasboard = () => {
                         </ul>
                       </div>
                     </div>
-                    <div className="card-body">
+                    <div className="card-body py-2 py-xl-3">
                       <div className="attendance-chart">
-                        <p className="mb-3">
+                        <p className="mb-2 small text-muted">
                           <i className="ti ti-calendar-heart text-primary me-2" />
                           Attendance data
                         </p>
@@ -428,47 +367,47 @@ const StudentDasboard = () => {
                           </div>
                         )}
                         {!attendanceLoading && !attendanceError && filteredAttendanceData.records.length > 0 && (
-                          <div className="row g-2">
-                            <div className="col-6 col-sm-3">
-                              <div className="d-flex align-items-center rounded border p-2">
+                          <div className="row g-2 align-items-stretch">
+                            <div className="col-6 col-sm-3 d-flex">
+                              <div className="d-flex align-items-center rounded border p-2 w-100">
                                 <span className="avatar avatar-sm bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
                                   <i className="ti ti-user-check fs-14" />
                                 </span>
-                                <div>
-                                  <small className="text-muted d-block">Present</small>
+                                <div className="min-w-0">
+                                  <small className="text-muted d-block text-nowrap">Present</small>
                                   <strong>{filteredAttendanceData.summary?.present ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
-                            <div className="col-6 col-sm-3">
-                              <div className="d-flex align-items-center rounded border p-2">
+                            <div className="col-6 col-sm-3 d-flex">
+                              <div className="d-flex align-items-center rounded border p-2 w-100">
                                 <span className="avatar avatar-sm bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
                                   <i className="ti ti-user-x fs-14" />
                                 </span>
-                                <div>
-                                  <small className="text-muted d-block">Absent</small>
+                                <div className="min-w-0">
+                                  <small className="text-muted d-block text-nowrap">Absent</small>
                                   <strong>{filteredAttendanceData.summary?.absent ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
-                            <div className="col-6 col-sm-3">
-                              <div className="d-flex align-items-center rounded border p-2">
+                            <div className="col-6 col-sm-3 d-flex">
+                              <div className="d-flex align-items-center rounded border p-2 w-100">
                                 <span className="avatar avatar-sm bg-info-transparent rounded me-2 flex-shrink-0 text-info">
                                   <i className="ti ti-clock-half fs-14" />
                                 </span>
-                                <div>
-                                  <small className="text-muted d-block">Half Day</small>
+                                <div className="min-w-0">
+                                  <small className="text-muted d-block text-nowrap">Half Day</small>
                                   <strong>{filteredAttendanceData.summary?.halfDay ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
-                            <div className="col-6 col-sm-3">
-                              <div className="d-flex align-items-center rounded border p-2">
+                            <div className="col-6 col-sm-3 d-flex">
+                              <div className="d-flex align-items-center rounded border p-2 w-100">
                                 <span className="avatar avatar-sm bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
                                   <i className="ti ti-clock fs-14" />
                                 </span>
-                                <div>
-                                  <small className="text-muted d-block">Late</small>
+                                <div className="min-w-0">
+                                  <small className="text-muted d-block text-nowrap">Late</small>
                                   <strong>{filteredAttendanceData.summary?.late ?? 0}</strong>
                                 </div>
                               </div>
@@ -480,278 +419,232 @@ const StudentDasboard = () => {
                   </div>
                 </div>
                 {/* /Attendance */}
-                {/* Fees */}
-                <div className="col-xl-12 d-flex">
-                  <div className="row flex-fill">
-                    <div className="col-sm-6 col-xl-3 d-flex">
-                      <Link
-                        to={routes.studentFees}
-                        state={student ? { studentId: student.id, student } : undefined}
-                        className="card border-0 border-bottom border-primary border-2 flex-fill animate-card"
-                      >
-                        <div className="card-body">
-                          <div className="d-flex align-items-center">
-                            <span className="avatar avatar-md rounded bg-primary me-2">
-                              <i className="ti ti-report-money fs-16" />
-                            </span>
-                            <h6>My Fees</h6>
+              </div>
+              <div className="row g-3 align-items-start flex-grow-1 min-h-0">
+                {/* Today | Notice Board (notice_board API), then full-width Syllabus — sidebar / Events card unchanged */}
+                <div className="col-12 d-flex flex-column gap-3 min-h-0">
+                  <div className="row g-3 align-items-start mx-0">
+                    <div className="col-xl-6 d-flex flex-column min-h-0 order-2 order-xl-1">
+                  <div className="card w-100 flex-shrink-0">
+                    <div className="card-header d-flex align-items-center justify-content-between">
+                      <h4 className="card-title">Today’s Class</h4>
+                      <div className="d-inline-flex align-items-center class-datepick">
+                        <DatePicker
+                          className="form-control datetimepicker border-0"
+                          format={{
+                            format: "DD-MM-YYYY",
+                            type: "mask",
+                          }}
+                          value={selectedDate}
+                          onChange={(v) => setSelectedDate(v || defaultValue)}
+                          placeholder="Select date"
+                        />
+                      </div>
+                    </div>
+                    <div className="card-body">
+                      {scheduleLoading && (
+                        <div className="text-center py-4">
+                          <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                          <span className="ms-2">Loading schedule...</span>
+                        </div>
+                      )}
+                      {!scheduleLoading && todaysClasses.length === 0 && (
+                        <p className="text-muted mb-0">No classes scheduled for this day.</p>
+                      )}
+                      {!scheduleLoading && todaysClasses?.length > 0 && todaysClasses?.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string }, idx: number) => (
+                        <div key={cls.id ?? idx} className={`card ${idx < todaysClasses.length - 1 ? "mb-3" : "mb-0"}`}>
+                          <div className="d-flex align-items-center justify-content-between flex-wrap p-3 pb-1">
+                            <div className="d-flex align-items-center flex-wrap mb-2">
+                              <span className="avatar avatar-lg flex-shrink-0 rounded me-2 bg-primary-transparent">
+                                <i className="ti ti-book fs-20 text-primary" />
+                              </span>
+                              <div>
+                                <h6 className="mb-1">{cls.subject || "—"}</h6>
+                                <span>
+                                  <i className="ti ti-clock me-2" />
+                                  {cls.startTime || "—"} - {cls.endTime || "—"}
+                                </span>
+                              </div>
+                            </div>
+                            {cls.classRoom && (
+                              <span className="badge badge-soft-primary shadow-none mb-2">Room: {cls.classRoom}</span>
+                            )}
                           </div>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                    </div>
+                    <div className="col-xl-6 order-4 order-xl-2">
+                  <div className="card w-100">
+                    <div className="card-header d-flex align-items-center justify-content-between">
+                      <h4 className="card-title">Notice Board</h4>
+                      <Link to={routes.noticeBoard} className="fw-medium">
+                        View All
                       </Link>
                     </div>
-                    <div className="col-sm-6 col-xl-3 d-flex">
-                      <Link
-                        to={routes.studentResult}
-                        state={student ? { studentId: student.id, student } : undefined}
-                        className="card border-0 border-bottom border-success flex-fill animate-card"
-                      >
-                        <div className="card-body">
-                          <div className="d-flex align-items-center">
-                            <span className="avatar avatar-md rounded bg-success me-2">
-                              <i className="ti ti-hexagonal-prism-plus fs-16" />
-                            </span>
-                            <h6>Exam Result</h6>
-                          </div>
+                    <div className="card-body">
+                      {noticeLoading ? (
+                        <div className="text-center py-3">
+                          <div className="spinner-border spinner-border-sm text-primary" role="status" />
                         </div>
-                      </Link>
+                      ) : !notices?.length ? (
+                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No notices available.</span>
+                        </div>
+                      ) : (
+                        <div className="notice-widget">
+                          {notices.map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
+                            <div key={notice.id} className="d-flex align-items-center justify-content-between mb-4">
+                              <div className="d-flex align-items-center overflow-hidden me-2">
+                                <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">
+                                  <i className="ti ti-calendar fs-16" />
+                                </span>
+                                <div className="overflow-hidden">
+                                  <h6 className="text-truncate mb-1">{notice.title || "Notice"}</h6>
+                                  <p className="mb-0">
+                                    <i className="ti ti-calendar me-2" />
+                                    Added on :{" "}
+                                    {notice.addedOn ||
+                                      (notice.created_at
+                                        ? new Date(notice.created_at).toLocaleDateString("en-GB", {
+                                            day: "numeric",
+                                            month: "short",
+                                            year: "numeric",
+                                          })
+                                        : "—")}
+                                  </p>
+                                </div>
+                              </div>
+                              <Link to={routes.noticeBoard}>
+                                <i className="ti ti-chevron-right fs-16" />
+                              </Link>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div className="col-sm-6 col-xl-3 d-flex">
-                      <Link
-                        to={routes.studentTimeTable}
-                        state={student ? { studentId: student.id, student } : undefined}
-                        className="card border-0 border-bottom border-warning flex-fill animate-card"
-                      >
-                        <div className="card-body">
-                          <div className="d-flex align-items-center">
-                            <span className="avatar avatar-md rounded bg-warning me-2">
-                              <i className="ti ti-calendar fs-16" />
-                            </span>
-                            <h6>Time Table</h6>
-                          </div>
-                        </div>
-                      </Link>
+                  </div>
                     </div>
-                    <div className="col-sm-6 col-xl-3 d-flex">
-                      <Link
-                        to={routes.studentLeaves}
-                        state={student ? { studentId: student.id, student } : undefined}
-                        className="card border-0 border-bottom border-dark border-2 flex-fill animate-card"
-                      >
-                        <div className="card-body">
-                          <div className="d-flex align-items-center">
-                            <span className="avatar avatar-md rounded bg-dark me-2">
-                              <i className="ti ti-calendar-share fs-16" />
-                            </span>
-                            <h6>Leave &amp; Attendance</h6>
-                          </div>
+                  </div>
+                  <div className="card w-100 flex-shrink-0">
+                    <div className="card-header d-flex align-items-center justify-content-between">
+                      <h4 className="card-title">Syllabus</h4>
+                    </div>
+                    <div className="card-body">
+                      {mySyllabus.length === 0 && (
+                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No syllabus data available for your class.</span>
                         </div>
-                      </Link>
+                      )}
+                      {mySyllabus.length > 0 && (
+                        <ul className="list-group">
+                          {mySyllabus.map((s: { id?: string; subjectGroup?: string; subject_group?: string; status?: string; createdDate?: string; created_at?: string }, idx: number) => {
+                            const subjGroup = s.subjectGroup || s.subject_group || "Syllabus";
+                            const createdDate = s.createdDate || s.created_at;
+                            return (
+                              <li key={s.id ?? idx} className="list-group-item">
+                                <div className="row align-items-center">
+                                  <div className="col-sm-6">
+                                    <p className="text-dark mb-0">{subjGroup}</p>
+                                    {createdDate && <small className="text-muted">{createdDate}</small>}
+                                  </div>
+                                  <div className="col-sm-6 text-end">
+                                    <span className={`badge ${s.status === "Active" ? "badge-soft-success" : "badge-soft-secondary"}`}>
+                                      {s.status || "Active"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                  <div className="card w-100 flex-fill min-h-0 d-flex flex-column">
+                    <div className="card-header d-flex align-items-center justify-content-between flex-shrink-0">
+                      <h4 className="card-title">Home Works</h4>
+                      <div className="dropdown">
+                        <button
+                          type="button"
+                          className="btn btn-light dropdown-toggle"
+                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
+                          aria-expanded="false"
+                        >
+                          <i className="ti ti-book-2 me-2" />
+                          {homeWorkSubject === "allTime" ? "All Time" : homeWorkSubject === "all" ? "All Subject" : homeWorkSubject}
+                        </button>
+                        <ul className="dropdown-menu mt-2 p-3">
+                          <li>
+                            <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("allTime")}>
+                              All Time
+                            </button>
+                          </li>
+                          <li>
+                            <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("all")}>
+                              All Subject
+                            </button>
+                          </li>
+                          {homeWorkSubjects.map((subj) => (
+                            <li key={subj}>
+                              <button
+                                type="button"
+                                className="dropdown-item rounded-1"
+                                onClick={() => setHomeWorkSubject(subj)}
+                              >
+                                {subj}
+                              </button>
+                            </li>
+                          ))}
+                          {homeWorkSubjects.length === 0 && (
+                            <li>
+                              <span className="dropdown-item text-muted">No subjects in schedule</span>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="card-body py-1 flex-fill overflow-auto min-h-0">
+                      <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                        <i className="ti ti-info-circle me-2 fs-18" />
+                        <span>No homework assigned. Homework will appear here once assigned.</span>
+                      </div>
                     </div>
                   </div>
                 </div>
-                {/* /Fees */}
               </div>
             </div>
-            {/* Schedules & Events */}
-            <div className="col-xxl-4 d-flex flex-column">
-              <div className="card flex-fill mb-3">
+            {/* Schedules & Events — Schedules is content-height only so its bottom aligns with neighbour cards; Events fills remaining column height */}
+            <div className="col-xxl-4 d-flex flex-column gap-3 h-100 min-h-0">
+              <div className="card flex-shrink-0">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-title">Schedules</h4>
                   <Link to={routes.studentTimeTable} className="link-primary fw-medium">
                     View All
                   </Link>
                 </div>
-                <div className="card-body pb-0">
+                <div className="card-body pb-2">
                   <Calendar
-                    className="datepickers mb-2 custom-cal-react"
+                    className="datepickers mb-0 custom-cal-react"
                     value={date}
                     onChange={(e) => setDate(e.value)}
                     inline
                   />
-                  <h5 className="mb-3">Exams</h5>
-                  <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No upcoming exam schedule available.</span>
-                  </div>
                 </div>
               </div>
-              <EventsCard
-                upcomingEvents={upcomingEvents}
-                completedEvents={completedEvents}
-                loading={eventsLoading}
-                limit={5}
-              />
+              <div className="flex-fill d-flex flex-column min-h-0">
+                <EventsCard
+                  upcomingEvents={upcomingEvents}
+                  completedEvents={completedEvents}
+                  loading={eventsLoading}
+                  limit={5}
+                />
+              </div>
             </div>
             {/* /Schedules & Events */}
-          </div>
-          <div className="row">
-            {/* Performance */}
-            <div className="col-xxl-7 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Performance</h4>
-                  <div className="dropdown">
-                    <button
-                      type="button"
-                      className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                      aria-expanded="false"
-                    >
-                      <i className="ti ti-calendar me-2" />
-                      {performanceYearId === "allTime" ? "All Time" : selectedPerformanceYear?.year_name ?? "Select Year"}
-                    </button>
-                    <ul className="dropdown-menu mt-2 p-3">
-                      {academicYearsList.map((y) => (
-                        <li key={y.id}>
-                          <button
-                            type="button"
-                            className="dropdown-item rounded-1"
-                            onClick={() => setPerformanceYearId(String(y.id))}
-                          >
-                            {y.year_name}
-                          </button>
-                        </li>
-                      ))}
-                      <li>
-                        <button
-                          type="button"
-                          className="dropdown-item rounded-1"
-                          onClick={() => setPerformanceYearId("allTime")}
-                        >
-                          All Time
-                        </button>
-                      </li>
-                      {academicYearsList.length === 0 && (
-                        <li>
-                          <span className="dropdown-item text-muted">No academic years</span>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-                <div className="card-body pb-0">
-                  <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No performance data available. Exam scores and attendance trends will appear here.</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* /Performance */}
-            {/* Home Works */}
-            <div className="col-xxl-5 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Home Works</h4>
-                  <div className="dropdown">
-                    <button
-                      type="button"
-                      className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                      aria-expanded="false"
-                    >
-                      <i className="ti ti-book-2 me-2" />
-                      {homeWorkSubject === "allTime" ? "All Time" : homeWorkSubject === "all" ? "All Subject" : homeWorkSubject}
-                    </button>
-                    <ul className="dropdown-menu mt-2 p-3">
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("allTime")}>
-                          All Time
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("all")}>
-                          All Subject
-                        </button>
-                      </li>
-                      {homeWorkSubjects.map((subj) => (
-                        <li key={subj}>
-                          <button
-                            type="button"
-                            className="dropdown-item rounded-1"
-                            onClick={() => setHomeWorkSubject(subj)}
-                          >
-                            {subj}
-                          </button>
-                        </li>
-                      ))}
-                      {homeWorkSubjects.length === 0 && (
-                        <li>
-                          <span className="dropdown-item text-muted">No subjects in schedule</span>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-                <div className="card-body py-1">
-                  <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No homework assigned. Homework will appear here once assigned.</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            {/* /Home Works */}
-          </div>
-          <div className="row">
-            {/* Class Faculties */}
-            <div className="col-xl-12">
-              <div className="card flex-fill">
-                <div className="card-header">
-                  <h4 className="card-title">Class Faculties</h4>
-                </div>
-                <div className="card-body">
-                  {(!classFaculties || classFaculties.length === 0) && (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No class faculty data available.</span>
-                    </div>
-                  )}
-                  {classFaculties?.length > 0 && (
-                    <div className="row g-3">
-                      {classFaculties?.map((fac: { teacher?: string; subject?: string }, idx: number) => (
-                        <div key={idx} className="col-sm-6 col-md-4 col-xl-3">
-                          <div className="card bg-light-100 mb-0 h-100">
-                            <div className="card-body">
-                              <div className="d-flex align-items-center mb-3">
-                                <span className="avatar avatar-lg rounded me-2 bg-primary-transparent">
-                                  <i className="ti ti-user fs-20 text-primary" />
-                                </span>
-                                <div className="overflow-hidden">
-                                  <h6 className="mb-1 text-truncate">{fac.teacher || "—"}</h6>
-                                  <p className="mb-0">{fac.subject || "—"}</p>
-                                </div>
-                              </div>
-                              <div className="row gx-2">
-                                <div className="col-6">
-                                  <Link
-                                    to="#"
-                                    className="btn btn-outline-light bg-white d-flex align-items-center justify-content-center fw-semibold fs-12"
-                                  >
-                                    <i className="ti ti-mail me-2" />
-                                    Email
-                                  </Link>
-                                </div>
-                                <div className="col-6">
-                                  <Link
-                                    to="#"
-                                    className="btn btn-outline-light bg-white d-flex align-items-center justify-content-center fw-semibold fs-12"
-                                  >
-                                    <i className="ti ti-message-chatbot me-2" />
-                                    Chat
-                                  </Link>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            {/* /Class Faculties */}
           </div>
           <div className="row">
             {/* Leave Status */}
@@ -883,7 +776,7 @@ const StudentDasboard = () => {
                   </Link>
                 </div>
                 <div className="card-body py-1">
-                  {feeData ? (
+                      {feeData ? (
                     <div>
                       <p className="mb-2">
                         <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
@@ -893,11 +786,11 @@ const StudentDasboard = () => {
                       </p>
                       <p className="mb-0">
                         <strong>Outstanding:</strong>{" "}
-                        <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
+                        <span className={Number(feeData.totalOutstanding) > 0 ? "text-danger" : "text-success"}>
                           ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </span>
                       </p>
-                      {feeData.totalOutstanding > 0 && (
+                      {Number(feeData.totalOutstanding) > 0 && (
                         <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
                           <i className="ti ti-alert-circle me-2" />
                           Please pay outstanding amount.
@@ -916,180 +809,64 @@ const StudentDasboard = () => {
             {/* Fees Reminder */}
           </div>
           <div className="row">
-            {/* Notice Board */}
-            <div className="col-xxl-4 col-xl-6 d-flex">
+            {/* Class Faculties — last section on dashboard */}
+            <div className="col-xl-12">
               <div className="card flex-fill">
-                <div className="card-header  d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Notice Board</h4>
-                  <Link to={routes.noticeBoard} className="fw-medium">
-                    View All
-                  </Link>
+                <div className="card-header">
+                  <h4 className="card-title">Class Faculties</h4>
                 </div>
                 <div className="card-body">
-                  {upcomingEvents?.length > 0 ? (
-                    <div className="notice-widget">
-                      {upcomingEvents.slice(0, 5).map((evt: { id?: number; title?: string; start_date?: string }) => (
-                        <div key={evt.id} className="d-flex align-items-center justify-content-between mb-4">
-                          <div className="d-flex align-items-center overflow-hidden me-2">
-                            <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">
-                              <i className="ti ti-calendar fs-16" />
-                            </span>
-                            <div className="overflow-hidden">
-                              <h6 className="text-truncate mb-1">{evt.title || "Event"}</h6>
-                              <p className="mb-0">
-                                <i className="ti ti-calendar me-2" />
-                                {evt.start_date ? new Date(evt.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                              </p>
+                  {(!classFaculties || classFaculties.length === 0) && (
+                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                      <i className="ti ti-info-circle me-2 fs-18" />
+                      <span>No class faculty data available.</span>
+                    </div>
+                  )}
+                  {classFaculties?.length > 0 && (
+                    <div className="row g-3">
+                      {classFaculties?.map((fac: { teacher?: string; subject?: string }, idx: number) => (
+                        <div key={idx} className="col-sm-6 col-md-4 col-xl-3">
+                          <div className="card bg-light-100 mb-0 h-100">
+                            <div className="card-body">
+                              <div className="d-flex align-items-center mb-3">
+                                <span className="avatar avatar-lg rounded me-2 bg-primary-transparent">
+                                  <i className="ti ti-user fs-20 text-primary" />
+                                </span>
+                                <div className="overflow-hidden">
+                                  <h6 className="mb-1 text-truncate">{fac.teacher || "—"}</h6>
+                                  <p className="mb-0">{fac.subject || "—"}</p>
+                                </div>
+                              </div>
+                              <div className="row gx-2">
+                                <div className="col-6">
+                                  <Link
+                                    to="#"
+                                    className="btn btn-outline-light bg-white d-flex align-items-center justify-content-center fw-semibold fs-12"
+                                  >
+                                    <i className="ti ti-mail me-2" />
+                                    Email
+                                  </Link>
+                                </div>
+                                <div className="col-6">
+                                  <Link
+                                    to="#"
+                                    className="btn btn-outline-light bg-white d-flex align-items-center justify-content-center fw-semibold fs-12"
+                                  >
+                                    <i className="ti ti-message-chatbot me-2" />
+                                    Chat
+                                  </Link>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <Link to={routes.events}>
-                            <i className="ti ti-chevron-right fs-16" />
-                          </Link>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No notices or events available.</span>
-                    </div>
                   )}
                 </div>
               </div>
             </div>
-            {/* /Notice Board */}
-            {/* Syllabus */}
-            <div className="col-xxl-4 col-xl-6 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header  d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Syllabus</h4>
-                </div>
-                <div className="card-body">
-                  {mySyllabus.length === 0 && (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No syllabus data available for your class.</span>
-                    </div>
-                  )}
-                  {mySyllabus.length > 0 && (
-                    <ul className="list-group">
-                      {mySyllabus.map((s: { id?: string; subjectGroup?: string; subject_group?: string; status?: string; createdDate?: string; created_at?: string }, idx: number) => {
-                        const subjGroup = s.subjectGroup || s.subject_group || "Syllabus";
-                        const createdDate = s.createdDate || s.created_at;
-                        return (
-                          <li key={s.id ?? idx} className="list-group-item">
-                            <div className="row align-items-center">
-                              <div className="col-sm-6">
-                                <p className="text-dark mb-0">{subjGroup}</p>
-                                {createdDate && <small className="text-muted">{createdDate}</small>}
-                              </div>
-                              <div className="col-sm-6 text-end">
-                                <span className={`badge ${s.status === "Active" ? "badge-soft-success" : "badge-soft-secondary"}`}>
-                                  {s.status || "Active"}
-                                </span>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </div>
-            {/* /Syllabus */}
-            {/* Todo */}
-            <div className="col-xxl-4 col-xl-12 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Todo</h4>
-                  <div className="dropdown">
-                    <button
-                      type="button"
-                      className="btn btn-light dropdown-toggle"
-                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                      aria-expanded="false"
-                    >
-                      <i className="ti ti-calendar me-2" />
-                      {todoRange === "today" ? "Today" : todoRange === "thisWeek" ? "This Week" : todoRange === "thisMonth" ? "This Month" : todoRange === "allTime" ? "All Time" : "This Year"}
-                    </button>
-                    <ul className="dropdown-menu mt-2 p-3">
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setTodoRange("today")}>
-                          Today
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setTodoRange("thisWeek")}>
-                          This Week
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setTodoRange("thisMonth")}>
-                          This Month
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setTodoRange("thisYear")}>
-                          This Year
-                        </button>
-                      </li>
-                      <li>
-                        <button type="button" className="dropdown-item rounded-1" onClick={() => setTodoRange("allTime")}>
-                          All Time
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-                <div className="card-body">
-                  {!filteredTodos?.length && (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No todo items for selected period.</span>
-                    </div>
-                  )}
-                  {filteredTodos?.length > 0 && (
-                    <ul className="list-group list-group-flush todo-list">
-                      {filteredTodos.slice(0, 8).map((todo: { id?: number; title?: string; due_date?: string; status?: string }) => {
-                        const st = String(todo.status || "pending").toLowerCase();
-                        const badgeClass =
-                          st === "done" || st === "completed" ? "badge-soft-success" :
-                            st === "in_progress" || st === "inprogress" ? "badge-soft-skyblue" :
-                              "badge-soft-warning";
-                        const badgeLabel =
-                          st === "done" || st === "completed" ? "Completed" :
-                            st === "in_progress" || st === "inprogress" ? "Inprogress" :
-                              "Yet to Start";
-                        const dueTime = todo.due_date ? new Date(todo.due_date).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
-                        return (
-                          <li key={todo.id} className="list-group-item py-3 px-0">
-                            <div className="d-sm-flex align-items-center justify-content-between">
-                              <div className={`d-flex align-items-center overflow-hidden me-2 ${st === "done" || st === "completed" ? "todo-strike-content" : ""}`}>
-                                <div className="form-check form-check-md me-2">
-                                  <input
-                                    className="form-check-input"
-                                    type="checkbox"
-                                    defaultChecked={st === "done" || st === "completed"}
-                                    readOnly
-                                  />
-                                </div>
-                                <div className="overflow-hidden">
-                                  <h6 className="mb-1 text-truncate">{todo.title || "—"}</h6>
-                                  {dueTime && <p className="mb-0 fs-12">{dueTime}</p>}
-                                </div>
-                              </div>
-                              <span className={`badge ${badgeClass} mt-2 mt-sm-0`}>{badgeLabel}</span>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            </div>
-            {/* /Todo */}
+            {/* /Class Faculties */}
           </div>
         </div>
       </div>

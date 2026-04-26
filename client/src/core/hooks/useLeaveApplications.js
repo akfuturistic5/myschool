@@ -60,7 +60,10 @@ export const useLeaveApplications = (options = {}) => {
       const refreshKey = bustCache ? Date.now() : null;
       let response;
       if (parentChildren) {
-        response = await apiService.getParentChildrenLeaves({ limit });
+        response = await apiService.getParentChildrenLeaves({
+          limit,
+          student_id: studentId != null ? studentId : undefined,
+        });
       } else if (studentOnly) {
         response = await apiService.getMyLeaveApplications({ limit });
       } else if (studentId != null) {
@@ -145,16 +148,18 @@ export const useLeaveApplications = (options = {}) => {
       const dataArr = Array.isArray(rawData) ? rawData : (Array.isArray(rawData?.data) ? rawData.data : rawData?.items) || [];
       if (response.status === 'SUCCESS' && Array.isArray(dataArr)) {
         let rows = dataArr;
-        if (parentChildren && studentId != null) {
-          rows = rows.filter((r) => Number(r.student_id) === Number(studentId));
+        if (!parentChildren && !studentOnly) {
+          rows = rows.filter((r, i, a) => {
+            if (r == null) return false;
+            if (r.id == null) return true;
+            return a.findIndex((x) => x && x.id === r.id) === i;
+          });
         }
-        // For leaving/rejoined flows, backend can intentionally return linked student rows
-        // (same identity across historical student IDs). Do not re-narrow here.
         // Safety: when viewing a specific staff's leaves, filter to only that staff_id
         if (!parentChildren && !studentOnly && staffId != null) {
           rows = rows.filter((r) => r.staff_id != null && Number(r.staff_id) === Number(staffId));
         }
-        const mapped = rows.map((row, index) => {
+        const mapped = await Promise.all(rows.map(async (row, index) => {
           const name =
             [row.applicant_first_name, row.applicant_last_name].filter(Boolean).join(' ') ||
             [row.staff_first_name, row.staff_last_name].filter(Boolean).join(' ') ||
@@ -172,16 +177,26 @@ export const useLeaveApplications = (options = {}) => {
           const endDate = row.end_date || row.to_date;
           const appliedAt = row.applied_at || row.created_at || row.start_date;
           const leaveRange = formatLeaveRange(startDate, endDate);
-          const applyOn = formatLeaveDate(appliedAt);
-          const photoUrl =
+          const appliedOn = formatLeaveDate(appliedAt);
+          const photoRaw =
             row.applicant_photo_url ||
             row.staff_photo_url ||
             row.photo_url ||
-            'assets/img/profiles/avatar-14.jpg';
+            '';
+          const photoUrl = (photoRaw ? await apiService.resolveAvatarUrl(photoRaw) : '') || 'assets/img/profiles/avatar-27.jpg';
 
           const statusRaw = row.status || row.leave_status || 'pending';
           const statusLower = String(statusRaw).toLowerCase();
-          const statusVal = statusLower;
+          let statusVal = statusLower;
+          if (['accept', 'accepted', 'approved'].includes(statusVal) || (statusVal.includes('approv') && !statusVal.includes('reject'))) {
+            statusVal = 'approved';
+          } else if (['rejected', 'decline', 'declined', 'deny', 'denied'].includes(statusVal) || (statusVal.includes('reject') && !statusVal.includes('approv'))) {
+            statusVal = 'rejected';
+          }
+          const approvedByName = String(row.approved_by_name || "").trim();
+          const approvedBy =
+            approvedByName ||
+            (row.approved_by != null && String(row.approved_by).trim() !== "" ? `Staff #${row.approved_by}` : null);
 
           const noOfDays = row.total_days ?? row.no_of_days ?? row.noOfDays ?? (startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000)) + 1 : 1);
 
@@ -200,7 +215,7 @@ export const useLeaveApplications = (options = {}) => {
             startDate,
             endDate,
             noOfDays: String(noOfDays),
-            applyOn,
+            appliedOn,
             photoUrl,
             description:
               row.reason ||
@@ -211,11 +226,16 @@ export const useLeaveApplications = (options = {}) => {
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
             rejectionReason: row.rejection_reason ?? null,
-            approvedBy: row.approved_by ?? null,
+            approvedBy,
             approvedDate: row.approved_date ?? null,
-            statusBadgeClass: statusLower.includes('approv') ? 'bg-success' : statusLower.includes('declin') || statusLower.includes('reject') ? 'bg-danger' : 'bg-skyblue',
+            statusBadgeClass:
+              statusVal === 'approved'
+                ? 'bg-success'
+                : statusVal === 'rejected' || statusLower.includes('declin') || statusLower.includes('reject')
+                ? 'bg-danger'
+                : 'bg-skyblue',
           };
-        });
+        }));
         setList(mapped);
       } else {
         setList([]);

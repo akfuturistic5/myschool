@@ -50,6 +50,7 @@ export const AuthBootstrap = () => {
                 username: d.username,
                 displayName,
                 role,
+                avatar: d.avatar ?? null,
                 user_role_id: d.role_id,
                 staff_id: d.staff_id,
                 accountDisabled: d.account_disabled === true,

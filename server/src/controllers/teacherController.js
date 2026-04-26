@@ -267,7 +267,7 @@ const getTeacherById = async (req, res) => {
         s.salary,
         s.qualification,
         s.experience_years,
-        s.photo_url,
+        COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url,
         s.is_active,
         s.user_id,
         t.youtube,
@@ -280,6 +280,7 @@ const getTeacherById = async (req, res) => {
         sub.subject_name
       FROM teachers t
       INNER JOIN staff s ON t.staff_id = s.id
+      LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON t.class_id = c.id
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       WHERE t.id = $1

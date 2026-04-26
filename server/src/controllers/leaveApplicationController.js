@@ -5,6 +5,8 @@ const { jsonSafeRow } = require('../utils/jsonSafeRow');
 const { canAccessStudent } = require('../utils/accessControl');
 
 const VALID_FINAL_LEAVE_STATUSES = new Set(['approved', 'rejected', 'cancelled']);
+/** Status tokens allowed in ?status= (comma- or space-separated) */
+const ALLOWED_STATUS_QUERY_TOKENS = new Set(['pending', ...VALID_FINAL_LEAVE_STATUSES]);
 
 async function resolveActorStaffId(userId) {
   if (!userId) return null;
@@ -203,6 +205,16 @@ const createLeaveApplication = async (req, res) => {
         message: 'Invalid start or end date',
       });
     }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startOnly = new Date(start);
+    startOnly.setHours(0, 0, 0, 0);
+    if (startOnly < today) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Leave start date cannot be in the past',
+      });
+    }
     if (end < start) {
       return res.status(400).json({
         status: 'ERROR',
@@ -249,12 +261,12 @@ const createLeaveApplication = async (req, res) => {
       if (Number.isFinite(maxDaysPerYear) && maxDaysPerYear > 0) {
         const yearStart = `${start.getFullYear()}-01-01`;
         const yearEnd = `${start.getFullYear()}-12-31`;
-        const balanceResult = await client.query(
+      const balanceResult = await client.query(
           `
           SELECT COALESCE(SUM(total_days), 0)::int AS used_days
           FROM leave_applications
           WHERE leave_type_id = $1
-            AND status IN ('pending', 'approved')
+            AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
             AND start_date <= $2::date
             AND end_date >= $3::date
             AND (
@@ -327,7 +339,7 @@ const updateLeaveApplicationStatus = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Rejection reason is required when rejecting leave' });
     }
     const existing = await query(
-      'SELECT id, status, student_id, staff_id FROM leave_applications WHERE id = $1 LIMIT 1',
+      'SELECT id, status, student_id, staff_id, leave_type_id, total_days, start_date, end_date FROM leave_applications WHERE id = $1 LIMIT 1',
       [leaveId]
     );
     if (existing.rows.length === 0) {
@@ -416,6 +428,48 @@ const updateLeaveApplicationStatus = async (req, res) => {
     const currentStatus = String(existing.rows[0].status || '').trim().toLowerCase();
     if (currentStatus !== 'pending') {
       return res.status(400).json({ status: 'ERROR', message: 'Only pending leave applications can be updated' });
+    }
+    if (statusVal === 'approved') {
+      const leaveTypeId = Number(target.leave_type_id);
+      const totalDays = Number(target.total_days) || 0;
+      if (Number.isFinite(leaveTypeId) && leaveTypeId > 0 && totalDays > 0) {
+        const leaveTypeRes = await query(
+          `SELECT max_days
+           FROM leave_types
+           WHERE id = $1 AND is_active = true
+           LIMIT 1`,
+          [leaveTypeId]
+        );
+        const maxDaysPerYear = Number(leaveTypeRes.rows[0]?.max_days);
+        if (Number.isFinite(maxDaysPerYear) && maxDaysPerYear > 0) {
+          const startDate = target.start_date ? new Date(target.start_date) : null;
+          const year = startDate && !Number.isNaN(startDate.getTime()) ? startDate.getFullYear() : new Date().getFullYear();
+          const yearStart = `${year}-01-01`;
+          const yearEnd = `${year}-12-31`;
+          const approvedUsage = await query(
+            `SELECT COALESCE(SUM(total_days), 0)::int AS used_days
+             FROM leave_applications
+             WHERE leave_type_id = $1
+               AND LOWER(TRIM(COALESCE(status, ''))) = 'approved'
+               AND id <> $2
+               AND start_date <= $3::date
+               AND end_date >= $4::date
+               AND (
+                 ($5::int IS NOT NULL AND student_id = $5::int)
+                 OR
+                 ($6::int IS NOT NULL AND staff_id = $6::int)
+               )`,
+            [leaveTypeId, leaveId, yearEnd, yearStart, target.student_id || null, target.staff_id || null]
+          );
+          const usedDays = Number(approvedUsage.rows[0]?.used_days || 0);
+          if (usedDays + totalDays > maxDaysPerYear) {
+            return res.status(400).json({
+              status: 'ERROR',
+              message: `Leave limit exceeded. Allowed ${maxDaysPerYear} approved days/year, already approved ${usedDays} days.`,
+            });
+          }
+        }
+      }
     }
     const rawApproverId = await resolveActorStaffId(actorUserId);
     const approverStaffId =
@@ -538,25 +592,49 @@ const getMyLeaveApplications = async (req, res) => {
     );
     const isLinkedStaffAccount = staffLinkCheck.rows.length > 0;
 
-    // First try student leaves (by students.user_id)
-    let result = await query(
-      `
-      SELECT
-        la.*,
-        lt.leave_type AS leave_type_name,
-        st.first_name AS applicant_first_name,
-        st.last_name AS applicant_last_name,
-        st.photo_url AS applicant_photo_url,
-        'Student' AS applicant_role
-      FROM leave_applications la
-      INNER JOIN students st ON la.student_id = st.id AND st.user_id = $1
-      LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-      WHERE la.student_id IS NOT NULL
-      ORDER BY la.start_date DESC NULLS LAST
-      LIMIT $2
-      `,
-      [userId, limit]
+    // First try student leaves (by students.user_id), expanded to linked student identities.
+    let result = { rows: [] };
+    const userStudents = await query(
+      `SELECT id
+       FROM students
+       WHERE user_id = $1
+         AND is_active = true`,
+      [userId]
     );
+    const baseStudentIds = (userStudents.rows || [])
+      .map((r) => Number(r.id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (baseStudentIds.length > 0) {
+      const linkedIdSet = new Set();
+      for (let idx = 0; idx < baseStudentIds.length; idx += 1) {
+        const sid = baseStudentIds[idx];
+        const linkedIds = await resolveLinkedStudentIds(sid);
+        linkedIds.forEach((id) => {
+          if (Number.isFinite(Number(id)) && Number(id) > 0) linkedIdSet.add(Number(id));
+        });
+      }
+      const scopedStudentIds = Array.from(linkedIdSet);
+      if (scopedStudentIds.length > 0) {
+        result = await query(
+          `
+          SELECT
+            la.*,
+            lt.leave_type AS leave_type_name,
+            st.first_name AS applicant_first_name,
+            st.last_name AS applicant_last_name,
+            st.photo_url AS applicant_photo_url,
+            'Student' AS applicant_role
+          FROM leave_applications la
+          INNER JOIN students st ON la.student_id = st.id
+          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
+          WHERE la.student_id = ANY($1::int[])
+          ORDER BY la.start_date DESC NULLS LAST
+          LIMIT $2
+          `,
+          [scopedStudentIds, limit]
+        );
+      }
+    }
 
     // Fallback: if no student by user_id, try matching user email/phone to student (when user_id not set).
     // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
@@ -650,6 +728,7 @@ const getParentChildrenLeaves = async (req, res) => {
       });
     }
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const requestedStudentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
 
     let studentIds = [];
     try {
@@ -663,8 +742,28 @@ const getParentChildrenLeaves = async (req, res) => {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
 
-    const placeholders = studentIds.map((_, i) => `$${i + 1}`).join(', ');
-    const limitParam = studentIds.length + 1;
+    let scopedStudentIds = studentIds;
+    if (requestedStudentId && !Number.isNaN(requestedStudentId)) {
+      const linkedIds = await resolveLinkedStudentIds(requestedStudentId);
+      const linkedSet = new Set(
+        (linkedIds.length > 0 ? linkedIds : [requestedStudentId])
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      );
+      const canViewRequested =
+        studentIds.includes(requestedStudentId) ||
+        studentIds.some((sid) => linkedSet.has(Number(sid)));
+      if (!canViewRequested) {
+        return res.status(403).json({
+          status: 'ERROR',
+          message: 'Access denied for requested student',
+        });
+      }
+      scopedStudentIds = Array.from(linkedSet);
+    }
+
+    const placeholders = scopedStudentIds.map((_, i) => `$${i + 1}`).join(', ');
+    const limitParam = scopedStudentIds.length + 1;
     const result = await query(
       `SELECT
         la.*,
@@ -680,7 +779,7 @@ const getParentChildrenLeaves = async (req, res) => {
        WHERE la.student_id IN (${placeholders})
        ORDER BY la.start_date DESC NULLS LAST
        LIMIT $${limitParam}`,
-      [...studentIds, limit]
+      [...scopedStudentIds, limit]
     );
 
     res.status(200).json({
@@ -895,10 +994,12 @@ async function resolveLinkedStudentIds(studentId) {
 // Optional filters: ?student_id=X, ?staff_id=X (for admin viewing specific student/teacher).
 // Optional: ?academic_year_id=X - filter student leaves by academic year.
 // Optional: ?leave_from=&leave_to= or ?from_date=&to_date= (YYYY-MM-DD) — overlap filter on leave range.
-// Optional: ?pending_only=1 — only rows with status pending (Headmaster dashboard "requests awaiting action").
+// Optional: ?status= — one or more of pending|approved|rejected|cancelled (comma or space separated, e.g. approved,rejected).
+// Optional: ?pending_only=1 — only rows with status pending (Headmaster dashboard "requests awaiting action");
+//   when set, ?status= is ignored for filtering.
 const getLeaveApplications = async (req, res) => {
   try {
-    const pageSize = Math.min(parseInt(req.query.page_size || req.query.limit, 10) || 20, 100);
+    const pageSize = Math.min(parseInt(req.query.page_size || req.query.limit, 10) || 20, 200);
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const offset = (page - 1) * pageSize;
     const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
@@ -912,12 +1013,17 @@ const getLeaveApplications = async (req, res) => {
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     const leaveFrom = parseLeaveDateQuery(req.query, ['leave_from', 'from_date']);
     const leaveTo = parseLeaveDateQuery(req.query, ['leave_to', 'to_date']);
-    const statusFilter = String(req.query.status || '').trim().toLowerCase();
+    const statusQueryRaw = String(req.query.status || '').trim();
+    const statusQueryTokens = statusQueryRaw
+      .split(/[, ]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+      .filter((s) => ALLOWED_STATUS_QUERY_TOKENS.has(s));
+    const statusFilters = [...new Set(statusQueryTokens)];
     const applicantTypeRaw = String(req.query.applicant_type || '').trim().toLowerCase();
     const applicantType = applicantTypeRaw === 'student' || applicantTypeRaw === 'staff' ? applicantTypeRaw : null;
     const pendingOnlyRaw = String(req.query.pending_only || '').trim().toLowerCase();
     const pendingOnly = pendingOnlyRaw === '1' || pendingOnlyRaw === 'true' || pendingOnlyRaw === 'yes';
-    const validStatusFilter = VALID_FINAL_LEAVE_STATUSES.has(statusFilter) || statusFilter === 'pending' ? statusFilter : null;
     const sortByRaw = String(req.query.sort_by || '').trim().toLowerCase();
     const sortOrderRaw = String(req.query.sort_order || '').trim().toLowerCase();
     const sortOrder = sortOrderRaw === 'asc' ? 'ASC' : 'DESC';
@@ -975,11 +1081,21 @@ const getLeaveApplications = async (req, res) => {
       params.push(leaveTypeId);
     }
 
+    // Normalize common legacy/variant values so ?status=approved matches "Accept", "Accepted", etc.
+    const leaveStatusNorm = `(CASE
+      WHEN LOWER(TRIM(COALESCE(la.status, ''))) IN ('accept', 'accepted') THEN 'approved'
+      WHEN LOWER(TRIM(COALESCE(la.status, ''))) IN ('decline', 'declined', 'deny', 'denied') THEN 'rejected'
+      ELSE LOWER(TRIM(COALESCE(la.status, '')))
+    END)`;
+
     if (pendingOnly) {
       conditions.push(`LOWER(TRIM(COALESCE(la.status, ''))) = 'pending'`);
-    } else if (validStatusFilter) {
-      conditions.push(`LOWER(TRIM(COALESCE(la.status, ''))) = $${i++}`);
-      params.push(validStatusFilter);
+    } else if (statusFilters.length === 1) {
+      conditions.push(`${leaveStatusNorm} = $${i++}`);
+      params.push(statusFilters[0]);
+    } else if (statusFilters.length > 1) {
+      conditions.push(`${leaveStatusNorm} = ANY($${i++}::text[])`);
+      params.push(statusFilters);
     }
     if (applicantType) {
       conditions.push(`LOWER(TRIM(COALESCE(la.applicant_type, ''))) = $${i++}`);
@@ -1072,12 +1188,17 @@ const getLeaveApplications = async (req, res) => {
         COALESCE(s.first_name, st.first_name) AS applicant_first_name,
         COALESCE(s.last_name, st.last_name) AS applicant_last_name,
         COALESCE(s.photo_url, st.photo_url) AS applicant_photo_url,
-        COALESCE(d.designation_name, 'Student') AS applicant_role
+        COALESCE(d.designation_name, 'Student') AS applicant_role,
+        CASE
+          WHEN apr.id IS NOT NULL THEN TRIM(COALESCE(apr.first_name, '') || ' ' || COALESCE(apr.last_name, ''))
+          ELSE NULL
+        END AS approved_by_name
       FROM leave_applications la
       LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
       LEFT JOIN staff s ON la.staff_id = s.id
       LEFT JOIN designations d ON s.designation_id = d.id
       LEFT JOIN students st ON la.student_id = st.id
+      LEFT JOIN staff apr ON la.approved_by = apr.id
       ${whereClause}
       ${orderBy}
       LIMIT $${limitIdx}

@@ -18,6 +18,25 @@ function parseClassId(req) {
   return Number.isNaN(n) || n < 1 ? null : n;
 }
 
+function parseTextQueryParam(req, key) {
+  const raw = req.query?.[key];
+  if (raw == null) return null;
+  const val = String(raw).trim();
+  if (!val) return null;
+  return val.slice(0, 80);
+}
+
+function parseStarStudentsTimeRange(req) {
+  const raw = String(req.query?.time_range || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  if (raw === 'this_month') return 'this_month';
+  if (raw === 'this_year') return 'this_year';
+  if (raw === 'last_week') return 'last_week';
+  return 'all_time';
+}
+
 /**
  * Teacher row linked to an academic year (not only class_schedules — avoids 0 when timetable not entered).
  * @param {string} t SQL alias for teachers (e.g. 't')
@@ -875,9 +894,13 @@ const getBestPerformers = async (req, res) => {
 
 const getStarStudents = async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit, 10) || 3, 10);
+    const requestedLimit = parseInt(req.query.limit, 10) || 3;
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
     const academicYearId = parseAcademicYearId(req);
     const hasYearFilter = academicYearId != null;
+    const classNameFilter = parseTextQueryParam(req, 'class_name');
+    const sectionNameFilter = parseTextQueryParam(req, 'section_name');
+    const timeRange = parseStarStudentsTimeRange(req);
     const ctx = getAuthContext(req);
     if (!ctx.userId) {
       return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
@@ -913,6 +936,12 @@ const getStarStudents = async (req, res) => {
         WHERE cs.teacher_id = $${p}
           ${hasYearFilter ? `AND cs.academic_year_id = $${p + 1}` : ''}
           AND cs.class_id IS NOT NULL
+        UNION
+        SELECT DISTINCT c.id AS class_id, NULL::int AS section_id
+        FROM classes c
+        WHERE c.class_teacher_id = $${p}
+          ${hasYearFilter ? `AND c.academic_year_id = $${p + 1}` : ''}
+          AND c.id IS NOT NULL
       ),`;
       baseParams.push(teacherStaffId);
       if (hasYearFilter) {
@@ -927,6 +956,26 @@ const getStarStudents = async (req, res) => {
       )`;
     }
 
+    const extraFilters = [];
+    const extraParams = [];
+    let dateFilterSql = '';
+    if (timeRange === 'this_month') {
+      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= DATE_TRUNC('month', CURRENT_DATE)`;
+    } else if (timeRange === 'this_year') {
+      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= DATE_TRUNC('year', CURRENT_DATE)`;
+    } else if (timeRange === 'last_week') {
+      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= CURRENT_DATE - INTERVAL '7 days'`;
+    }
+    if (classNameFilter) {
+      extraFilters.push(`AND LOWER(TRIM(c.class_name)) = LOWER(TRIM($${p + extraParams.length}))`);
+      extraParams.push(classNameFilter);
+    }
+    if (sectionNameFilter) {
+      extraFilters.push(`AND LOWER(TRIM(sec.section_name)) = LOWER(TRIM($${p + extraParams.length}))`);
+      extraParams.push(sectionNameFilter);
+    }
+    const classSectionFilterSql = extraFilters.join('\n            ');
+
     const latestExamResult = await query(
       `WITH ${teacherScopeCte}
         latest_exam AS (
@@ -936,20 +985,24 @@ const getStarStudents = async (req, res) => {
             MAX(COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at)) AS sort_date
           FROM exam_results er
           INNER JOIN students st ON st.id = er.student_id
+          LEFT JOIN classes c ON c.id = st.class_id
+          LEFT JOIN sections sec ON sec.id = st.section_id
           LEFT JOIN exams e ON e.id = er.exam_id
           WHERE st.is_active = true
             AND er.exam_id IS NOT NULL
             AND er.is_absent = false
             AND COALESCE(er.is_active, true) = true
             ${examYearClause}
+            ${dateFilterSql}
             ${teacherScopeWhere}
+            ${classSectionFilterSql}
           GROUP BY er.exam_id
         )
        SELECT exam_id, exam_name, sort_date
        FROM latest_exam
        ORDER BY sort_date DESC NULLS LAST, exam_id DESC
        LIMIT 1`,
-      baseParams
+      [...baseParams, ...extraParams]
     );
 
     const latestExam = latestExamResult.rows[0];
@@ -961,9 +1014,9 @@ const getStarStudents = async (req, res) => {
       });
     }
 
-    const topParams = [...baseParams, latestExam.exam_id, limit];
-    const topExamIdParam = p;
-    const topLimitParam = p + 1;
+    const topParams = [...baseParams, ...extraParams, latestExam.exam_id, limit];
+    const topExamIdParam = p + extraParams.length;
+    const topLimitParam = p + extraParams.length + 1;
     const rowsResult = await query(
       `WITH ${teacherScopeCte}
        scored AS (
@@ -988,7 +1041,9 @@ const getStarStudents = async (req, res) => {
            AND er.is_absent = false
            AND COALESCE(er.is_active, true) = true
            ${examYearClause}
+           ${dateFilterSql}
            ${teacherScopeWhere}
+           ${classSectionFilterSql}
          GROUP BY
            st.id, st.first_name, st.last_name, st.photo_url,
            c.class_name, sec.section_name

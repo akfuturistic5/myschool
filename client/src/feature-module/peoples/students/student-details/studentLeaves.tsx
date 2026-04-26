@@ -12,6 +12,7 @@ import { useGuardianWardLeaves } from "../../../../core/hooks/useGuardianWardLea
 import { useStudentAttendance } from "../../../../core/hooks/useStudentAttendance";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
+import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { apiService } from "../../../../core/services/apiService";
 
 interface StudentDetailsLocationState {
@@ -100,6 +101,7 @@ const StudentLeaves = () => {
     normalizedRole.includes("administrative") ||
     compactRole.includes("headmaster") ||
     compactRole.includes("administrative");
+  const canCancelPendingLeaves = isStudentRole || isParentLeaveViewer || isGuardianViewer;
   const { leaveApplications: leaveList, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 50,
     parentChildren: isParentLeaveViewer,
@@ -112,6 +114,7 @@ const StudentLeaves = () => {
     limit: 50,
     studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
+  const { leaveTypes } = useLeaveTypes();
 
   const data = useMemo(() => {
     if (isGuardianViewer) return guardianLeaves;
@@ -136,7 +139,9 @@ const StudentLeaves = () => {
 
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError, refetch: refetchAttendance } = useStudentAttendance(effectiveStudentId ?? null);
   const attendanceRecords = attendanceData?.records ?? [];
-  const attendanceSummary = attendanceData?.summary ?? { present: 0, absent: 0, halfDay: 0, late: 0 };
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState<"all_current_year" | "current_week" | "current_month" | "last_2_weeks" | "last_2_months" | "custom">("current_month");
+  const [customFromDate, setCustomFromDate] = useState("");
+  const [customToDate, setCustomToDate] = useState("");
 
   useEffect(() => {
     let disposed = false;
@@ -243,17 +248,54 @@ const StudentLeaves = () => {
     }
   };
 
-  const leaveCounts = useMemo(() => {
-    const medical = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("medical"));
-    const casual = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("casual"));
-    const maternity = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("maternity"));
-    const paternity = data.filter((l: { leaveType?: string }) => String(l.leaveType || "").toLowerCase().includes("paternity"));
-    return { medical: medical.length, casual: casual.length, maternity: maternity.length, paternity: paternity.length };
-  }, [data]);
+  const leaveSummaryCards = useMemo(() => {
+    const normalize = (value: unknown) => String(value || "").trim().toLowerCase();
+    const keyToUsedDays = new Map<string, number>();
+    const addUsedDays = (key: string, days: number) => {
+      keyToUsedDays.set(key, (keyToUsedDays.get(key) || 0) + days);
+    };
+    data.forEach((item: { leaveTypeId?: number | string | null; leaveType?: string; status?: string; noOfDays?: string | number }) => {
+      const status = normalize(item.status);
+      if (status !== "approved") return;
+      const days = Number(item.noOfDays || 0);
+      const safeDays = Number.isFinite(days) && days > 0 ? days : 0;
+      const byId = item.leaveTypeId != null ? `id:${String(item.leaveTypeId)}` : "";
+      const byName = item.leaveType ? `name:${normalize(item.leaveType)}` : "";
+      if (byId) addUsedDays(byId, safeDays);
+      if (byName) addUsedDays(byName, safeDays);
+    });
+
+    if (Array.isArray(leaveTypes) && leaveTypes.length > 0) {
+      return leaveTypes.map((type: { id?: number | string; label?: string; max_days?: number | string; max_days_per_year?: number | string }) => {
+        const idKey = type?.id != null ? `id:${String(type.id)}` : "";
+        const nameKey = `name:${normalize(type?.label)}`;
+        const usedDays = (idKey && keyToUsedDays.has(idKey) ? keyToUsedDays.get(idKey) : keyToUsedDays.get(nameKey)) || 0;
+        const totalDaysRaw = Number(type?.max_days_per_year ?? type?.max_days ?? 0);
+        const totalDays = Number.isFinite(totalDaysRaw) && totalDaysRaw > 0 ? totalDaysRaw : 0;
+        return {
+          key: idKey || nameKey,
+          label: type?.label || "Leave",
+          usedDays,
+          totalDays,
+        };
+      });
+    }
+
+    return Array.from(keyToUsedDays.entries())
+      .filter(([k]) => k.startsWith("name:"))
+      .map(([k, v]) => ({
+        key: k,
+        label: k.slice(5) || "Leave",
+        usedDays: v,
+        totalDays: 0,
+      }));
+  }, [data, leaveTypes]);
 
   const showLoading = loading;
 
-  const columns = [
+  // Action column only for roles that may cancel pending leaves (student / parent / guardian).
+  // Teacher, headmaster, admin, etc. use the same table when viewing a student — hide the column (UI-only; API still enforces auth).
+  const leaveTableBaseColumns = [
     {
       title: "Leave Type",
       dataIndex: "leaveType",
@@ -301,25 +343,31 @@ const StudentLeaves = () => {
       },
       sorter: (a: TableData, b: TableData) => a.status.length - b.status.length,
     },
-    {
-      title: "Action",
-      dataIndex: "id",
-      render: (_: unknown, record: { id?: number; status?: string }) => {
-        const isPending = String(record?.status || "").toLowerCase() === "pending";
-        if (!isPending || !record?.id) return "—";
-        return (
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            onClick={() => handleCancelLeave(record.id)}
-            disabled={cancelingLeaveId != null}
-          >
-            {cancelingLeaveId === record.id ? "Cancelling..." : "Cancel"}
-          </button>
-        );
-      },
-    },
   ];
+
+  const columns = canCancelPendingLeaves
+    ? [
+        ...leaveTableBaseColumns,
+        {
+          title: "Action",
+          dataIndex: "id",
+          render: (_: unknown, record: { id?: number; status?: string }) => {
+            const isPending = String(record?.status || "").toLowerCase() === "pending";
+            if (!isPending || !record?.id) return "—";
+            return (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-danger"
+                onClick={() => handleCancelLeave(record.id)}
+                disabled={cancelingLeaveId != null}
+              >
+                {cancelingLeaveId === record.id ? "Cancelling..." : "Cancel"}
+              </button>
+            );
+          },
+        },
+      ]
+    : leaveTableBaseColumns;
   const attendanceTableColumns = [
     {
       title: "Date",
@@ -474,6 +522,119 @@ const StudentLeaves = () => {
   }, [attendanceRecords, todayHoliday, historyHolidayDates, historyHolidayTitles]);
   const hasAttendance = attendanceTableData.length > 0;
 
+  const selectedAttendanceRange = useMemo(() => {
+    const toYmd = (value: unknown) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      const parsed = new Date(raw);
+      if (Number.isNaN(parsed.getTime())) return "";
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+    };
+    const getAcademicYearRange = () => {
+      const startDirect =
+        toYmd((currentAcademicYear as any)?.start_date) ||
+        toYmd((currentAcademicYear as any)?.startDate) ||
+        toYmd((currentAcademicYear as any)?.from_date) ||
+        toYmd((currentAcademicYear as any)?.fromDate);
+      const endDirect =
+        toYmd((currentAcademicYear as any)?.end_date) ||
+        toYmd((currentAcademicYear as any)?.endDate) ||
+        toYmd((currentAcademicYear as any)?.to_date) ||
+        toYmd((currentAcademicYear as any)?.toDate);
+      if (startDirect && endDirect) return { start: startDirect, end: endDirect };
+
+      const yearName = String((currentAcademicYear as any)?.year_name || "").trim();
+      const match = yearName.match(/^(\d{4})\s*-\s*(\d{2,4})$/);
+      if (match) {
+        const startYear = Number(match[1]);
+        const endYearRaw = match[2];
+        const endYear = endYearRaw.length === 2 ? Number(`${String(startYear).slice(0, 2)}${endYearRaw}`) : Number(endYearRaw);
+        if (Number.isFinite(startYear) && Number.isFinite(endYear)) {
+          return {
+            start: `${startYear}-04-01`,
+            end: `${endYear}-03-31`,
+          };
+        }
+      }
+
+      const currentYear = new Date().getFullYear();
+      return { start: `${currentYear}-01-01`, end: `${currentYear}-12-31` };
+    };
+
+    const todayDate = new Date();
+    const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
+    if (attendanceDateFilter === "all_current_year") {
+      const academicYearRange = getAcademicYearRange();
+      return { start: academicYearRange.start, end: academicYearRange.end, isValid: true };
+    }
+    if (attendanceDateFilter === "current_week") {
+      const start = new Date(todayDate);
+      const day = start.getDay();
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      start.setDate(start.getDate() + diffToMonday);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      const startYmd = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      const endYmd = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+      return { start: startYmd, end: endYmd, isValid: true };
+    }
+    if (attendanceDateFilter === "current_month") {
+      const start = `${today.slice(0, 7)}-01`;
+      const end = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(new Date(todayDate.getFullYear(), todayDate.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
+      return { start, end, isValid: true };
+    }
+    if (attendanceDateFilter === "last_2_weeks") {
+      const start = new Date(todayDate);
+      start.setDate(todayDate.getDate() - 13);
+      const startYmd = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      return { start: startYmd, end: today, isValid: true };
+    }
+    if (attendanceDateFilter === "last_2_months") {
+      const start = new Date(todayDate.getFullYear(), todayDate.getMonth() - 1, 1);
+      const startYmd = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+      return { start: startYmd, end: today, isValid: true };
+    }
+    const isFromValid = /^\d{4}-\d{2}-\d{2}$/.test(customFromDate);
+    const isToValid = /^\d{4}-\d{2}-\d{2}$/.test(customToDate);
+    if (!isFromValid || !isToValid || customFromDate > customToDate) {
+      return { start: customFromDate, end: customToDate, isValid: false };
+    }
+    return { start: customFromDate, end: customToDate, isValid: true };
+  }, [attendanceDateFilter, customFromDate, customToDate, currentAcademicYear]);
+
+  const filteredAttendanceTableData = useMemo(() => {
+    if (!selectedAttendanceRange.isValid) return [];
+    return attendanceTableData.filter((row: any) => {
+      const rowDate = String(row?.attendanceDate || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rowDate)) return false;
+      return rowDate >= selectedAttendanceRange.start && rowDate <= selectedAttendanceRange.end;
+    });
+  }, [attendanceTableData, selectedAttendanceRange]);
+
+  const filteredAttendanceSummary = useMemo(() => {
+    const base = { present: 0, absent: 0, halfDay: 0, late: 0 };
+    filteredAttendanceTableData.forEach((row: any) => {
+      const status = String(row?.status || "").trim().toLowerCase();
+      if (status === "present") base.present += 1;
+      if (status === "absent") base.absent += 1;
+      if (status === "late") base.late += 1;
+      if (status === "half_day" || status === "halfday") base.halfDay += 1;
+    });
+    return base;
+  }, [filteredAttendanceTableData]);
+
+  const attendanceFilterLabel = useMemo(() => {
+    if (attendanceDateFilter === "all_current_year") return "All (Current Academic Year)";
+    if (attendanceDateFilter === "current_week") return "Current Week";
+    if (attendanceDateFilter === "current_month") return "Current Month";
+    if (attendanceDateFilter === "last_2_weeks") return "Last 2 Weeks";
+    if (attendanceDateFilter === "last_2_months") return "Last 2 Months";
+    return "Custom Range";
+  }, [attendanceDateFilter]);
+
+  const hasFilteredAttendance = filteredAttendanceTableData.length > 0;
+
   if (showLoading) {
     return (
       <div className="page-wrapper">
@@ -597,50 +758,19 @@ const StudentLeaves = () => {
                     {/* Leave */}
                     <div className={`tab-pane fade ${activeTab === "leave" ? "show active" : ""}`} id="leave">
                       <div className="row gx-3">
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Medical Leave</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">Used : {leaveCounts.medical}</p>
-                                <p className="mb-0">Total : {leaveCounts.medical}</p>
+                        {leaveSummaryCards.map((item) => (
+                          <div className="col-lg-6 col-xxl-3 d-flex" key={item.key}>
+                            <div className="card flex-fill">
+                              <div className="card-body">
+                                <h5 className="mb-2">{item.label}</h5>
+                                <div className="d-flex align-items-center flex-wrap">
+                                  <p className="border-end pe-2 me-2 mb-0">Used : {item.usedDays}</p>
+                                  <p className="mb-0">Total : {item.totalDays}</p>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Casual Leave</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">Used : {leaveCounts.casual}</p>
-                                <p className="mb-0">Total : {leaveCounts.casual}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Maternity Leave</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">Used : {leaveCounts.maternity}</p>
-                                <p className="mb-0">Total : {leaveCounts.maternity}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="col-lg-6 col-xxl-3 d-flex">
-                          <div className="card flex-fill">
-                            <div className="card-body">
-                              <h5 className="mb-2">Paternity Leave</h5>
-                              <div className="d-flex align-items-center flex-wrap">
-                                <p className="border-end pe-2 me-2 mb-0">Used : {leaveCounts.paternity}</p>
-                                <p className="mb-0">Total : {leaveCounts.paternity}</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+                        ))}
                       </div>
                       <div className="card">
                         <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
@@ -686,7 +816,7 @@ const StudentLeaves = () => {
                             <div className="d-flex align-items-center flex-wrap me-3">
                               <p className="text-dark mb-3 me-2">
                                 {hasAttendance && attendanceRecords[0]?.attendanceDate
-                                  ? `Last Updated on : ${new Date(attendanceRecords[0].attendanceDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                                  ? `Last Updated on : ${new Date((filteredAttendanceTableData[0]?.attendanceDate || attendanceRecords[0].attendanceDate)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
                                   : "Last Updated : —"}
                               </p>
                               <Link
@@ -740,7 +870,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Present</p>
-                                  <h5>{attendanceSummary.present}</h5>
+                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.present : 0}</h5>
                                 </div>
                               </div>
                             </div>
@@ -753,7 +883,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Absent</p>
-                                  <h5>{attendanceSummary.absent}</h5>
+                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.absent : 0}</h5>
                                 </div>
                               </div>
                             </div>
@@ -766,7 +896,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Half Day</p>
-                                  <h5>{attendanceSummary.halfDay}</h5>
+                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.halfDay : 0}</h5>
                                 </div>
                               </div>
                             </div>
@@ -779,7 +909,7 @@ const StudentLeaves = () => {
                                 </span>
                                 <div className="ms-2">
                                   <p className="mb-1">Late</p>
-                                  <h5>{attendanceSummary.late}</h5>
+                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.late : 0}</h5>
                                 </div>
                               </div>
                             </div>
@@ -791,9 +921,42 @@ const StudentLeaves = () => {
                       <div className="card">
                         <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-1">
                           <h4 className="mb-3">Leave &amp; Attendance</h4>
-                          <p className="text-muted mb-3">
-                            Showing real attendance records for the selected student.
-                          </p>
+                          <div className="d-flex align-items-center flex-wrap justify-content-end">
+                            <select
+                              className="form-select me-2 mb-2"
+                              style={{ minWidth: 190 }}
+                              value={attendanceDateFilter}
+                              onChange={(e) => setAttendanceDateFilter(e.target.value as "all_current_year" | "current_week" | "current_month" | "last_2_weeks" | "last_2_months" | "custom")}
+                            >
+                              <option value="all_current_year">All</option>
+                              <option value="current_week">Current Week</option>
+                              <option value="current_month">Current Month</option>
+                              <option value="last_2_weeks">Last 2 Weeks</option>
+                              <option value="last_2_months">Last 2 Months</option>
+                              <option value="custom">Custom Date Range</option>
+                            </select>
+                            {attendanceDateFilter === "custom" && (
+                              <>
+                                <input
+                                  type="date"
+                                  className="form-control me-2 mb-2"
+                                  style={{ minWidth: 170 }}
+                                  value={customFromDate}
+                                  onChange={(e) => setCustomFromDate(e.target.value)}
+                                  max={customToDate || undefined}
+                                />
+                                <input
+                                  type="date"
+                                  className="form-control me-2 mb-2"
+                                  style={{ minWidth: 170 }}
+                                  value={customToDate}
+                                  onChange={(e) => setCustomToDate(e.target.value)}
+                                  min={customFromDate || undefined}
+                                />
+                              </>
+                            )}
+                            <span className="badge badge-soft-primary mb-2">{attendanceFilterLabel}</span>
+                          </div>
                         </div>
                         <div className="card-body p-0 py-3">
                           <div className="px-3">
@@ -830,19 +993,25 @@ const StudentLeaves = () => {
                               </div>
                             </div>
                           </div>
+                          {!selectedAttendanceRange.isValid && attendanceDateFilter === "custom" && (
+                            <div className="alert alert-warning mx-3 mt-2 mb-3 d-flex align-items-center" role="alert">
+                              <i className="ti ti-alert-triangle me-2 fs-18" />
+                              <span>Please select a valid From Date and To Date range.</span>
+                            </div>
+                          )}
                           {/* Attendance List */}
                           {attendanceLoading && (
                             <div className="p-4 text-center text-muted">Loading attendance records...</div>
                           )}
-                          {!attendanceLoading && !hasAttendance && (
+                          {!attendanceLoading && !hasFilteredAttendance && selectedAttendanceRange.isValid && (
                             <div className="alert alert-info m-3 mb-0 d-flex align-items-center" role="alert">
                               <i className="ti ti-info-circle me-2 fs-18" />
-                              <span>No attendance records available for this student.</span>
+                              <span>No attendance records found for the selected date range.</span>
                             </div>
                           )}
-                          {!attendanceLoading && hasAttendance && (
+                          {!attendanceLoading && hasFilteredAttendance && selectedAttendanceRange.isValid && (
                             <Table
-                              dataSource={attendanceTableData}
+                              dataSource={filteredAttendanceTableData}
                               columns={attendanceTableColumns}
                               Selection={false}
                             />

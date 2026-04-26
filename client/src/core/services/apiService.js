@@ -1310,6 +1310,15 @@ class ApiService {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.className != null && String(params.className).trim() !== '' && String(params.className) !== 'All Classes') {
+      searchParams.set('class_name', String(params.className).trim());
+    }
+    if (params.sectionName != null && String(params.sectionName).trim() !== '' && String(params.sectionName) !== 'All Sections') {
+      searchParams.set('section_name', String(params.sectionName).trim());
+    }
+    if (params.timeRange != null && String(params.timeRange).trim() !== '' && String(params.timeRange) !== 'All Time') {
+      searchParams.set('time_range', String(params.timeRange).trim());
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/star-students${qs ? `?${qs}` : ''}`);
   }
@@ -1613,6 +1622,7 @@ class ApiService {
   async getParentChildrenLeaves(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.student_id != null) searchParams.set('student_id', params.student_id);
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications/parent-children${qs ? `?${qs}` : ''}`);
   }
@@ -2048,6 +2058,17 @@ class ApiService {
     return this.makeRequest('/auth/me', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadMyProfileAvatar(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'users/profile');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
     });
   }
 
@@ -2906,6 +2927,33 @@ class ApiService {
       p = `/${p}`;
     }
     return `${origin}${p}`;
+  }
+
+  /**
+   * Resolve avatar path from DB/API into a safe absolute URL for <img src>.
+   * Supports: absolute URL, `/api/...` path, or storage relative `school_{id}/...`.
+   */
+  async resolveAvatarUrl(avatarPath) {
+    if (!avatarPath) return '';
+    const raw = String(avatarPath).trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/api${raw}`);
+    }
+    if (raw.startsWith('storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/api/${raw}`);
+    }
+    if (raw.startsWith('api/storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/${raw}`);
+    }
+    if (raw.startsWith('/api/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(raw);
+    }
+    if (raw.startsWith('school_')) {
+      return this.getSchoolStorageFileAbsoluteUrl(raw);
+    }
+    return raw;
   }
 
   /**

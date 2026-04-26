@@ -32,6 +32,15 @@ const StudentDetails = () => {
   const [promotionRows, setPromotionRows] = useState<any[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [parentImageUrls, setParentImageUrls] = useState<{
+    father: string | null
+    mother: string | null
+    guardian: string | null
+  }>({
+    father: null,
+    mother: null,
+    guardian: null,
+  })
 
   useEffect(() => {
     if (!student?.id) {
@@ -73,6 +82,45 @@ const StudentDetails = () => {
       cancelled = true
     }
   }, [student?.id, role])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const resolveParentImages = async () => {
+      const fatherRaw = student?.father_image_url
+      const motherRaw = student?.mother_image_url
+      const guardianRaw = student?.guardian_image_url
+
+      if (!fatherRaw && !motherRaw && !guardianRaw) {
+        setParentImageUrls({ father: null, mother: null, guardian: null })
+        return
+      }
+
+      const [father, mother, guardian] = await Promise.all([
+        fatherRaw ? apiService.resolveAvatarUrl(fatherRaw) : Promise.resolve(''),
+        motherRaw ? apiService.resolveAvatarUrl(motherRaw) : Promise.resolve(''),
+        guardianRaw ? apiService.resolveAvatarUrl(guardianRaw) : Promise.resolve(''),
+      ])
+
+      if (!cancelled) {
+        setParentImageUrls({
+          father: father || null,
+          mother: mother || null,
+          guardian: guardian || null,
+        })
+      }
+    }
+
+    resolveParentImages().catch(() => {
+      if (!cancelled) {
+        setParentImageUrls({ father: null, mother: null, guardian: null })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url])
   const historyTableRows = useMemo(
     () =>
       promotionRows.map((row: any) => ({
@@ -153,26 +201,19 @@ const StudentDetails = () => {
   const otherInformation = student.other_information ?? student.otherInformation ?? null
   const currentClass = student.class_name ?? 'N/A'
   const currentSection = student.section_name ?? 'N/A'
-  const currentAcademicYear = student.academic_year_name ?? (student.academic_year_id ? `Year #${student.academic_year_id}` : 'N/A')
-  const currentClassTeacher = [student.class_teacher_first_name, student.class_teacher_last_name]
+  const currentSectionTeacher = [student.section_teacher_first_name, student.section_teacher_last_name]
+    .filter(Boolean)
+    .join(' ') || [student.class_teacher_first_name, student.class_teacher_last_name]
     .filter(Boolean)
     .join(' ') || 'N/A'
-  const currentClassTeacherPhone = student.class_teacher_phone ?? 'N/A'
-  const currentClassTeacherEmail = student.class_teacher_email ?? 'N/A'
-  const currentClassTeacherAddress = student.class_teacher_address ?? 'N/A'
+  const currentSectionTeacherPhone = student.section_teacher_phone ?? student.class_teacher_phone ?? 'N/A'
+  const currentSectionTeacherEmail = student.section_teacher_email ?? student.class_teacher_email ?? 'N/A'
+  const currentSectionTeacherAddress = student.section_teacher_address ?? student.class_teacher_address ?? 'N/A'
   const hasClassTeacherInfo =
-    currentClassTeacher !== 'N/A' ||
-    currentClassTeacherPhone !== 'N/A' ||
-    currentClassTeacherEmail !== 'N/A' ||
-    currentClassTeacherAddress !== 'N/A'
-  const classTeacherIdRaw = Number(student.class_teacher_id)
-  const classTeacherId = Number.isFinite(classTeacherIdRaw) && classTeacherIdRaw > 0 ? classTeacherIdRaw : null
-  const canOpenTeacherDetails =
-    role === 'admin' || role === 'headmaster' || role === 'administrator' || role === 'administrative'
-  const latestPromotion = promotionRows[0] ?? null
-  const lastClass = latestPromotion?.from_class_name || (latestPromotion?.from_class_id != null ? `Class #${latestPromotion.from_class_id}` : 'N/A')
-  const lastSection = latestPromotion?.from_section_name || (latestPromotion?.from_section_id != null ? `Section #${latestPromotion.from_section_id}` : 'N/A')
-  const lastAcademicYear = latestPromotion?.from_academic_year_name || (latestPromotion?.from_academic_year_id != null ? `Year #${latestPromotion.from_academic_year_id}` : 'N/A')
+    currentSectionTeacher !== 'N/A' ||
+    currentSectionTeacherPhone !== 'N/A' ||
+    currentSectionTeacherEmail !== 'N/A' ||
+    currentSectionTeacherAddress !== 'N/A'
   return (
     <>
   {/* Page Wrapper */}
@@ -253,11 +294,20 @@ const StudentDetails = () => {
                         <div className="col-sm-6 col-lg-4">
                           <div className="d-flex align-items-center mb-3">
                             <span className="avatar avatar-lg flex-shrink-0">
-                              <ImageWithBasePath
-                                src="assets/img/parents/parent-13.jpg"
-                                className="img-fluid rounded"
-                                alt="img"
-                              />
+                              {parentImageUrls.father ? (
+                                <img
+                                  src={parentImageUrls.father}
+                                  className="img-fluid rounded"
+                                  alt="Father"
+                                  style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+                                />
+                              ) : (
+                                <ImageWithBasePath
+                                  src="assets/img/profiles/avatar-27.jpg"
+                                  className="img-fluid rounded"
+                                  alt="Father"
+                                />
+                              )}
                             </span>
                             <div className="ms-2 overflow-hidden">
                               <h6 className="text-truncate">{fatherName}</h6>
@@ -286,11 +336,20 @@ const StudentDetails = () => {
                         <div className="col-lg-4 col-sm-6 ">
                           <div className="d-flex align-items-center mb-3">
                             <span className="avatar avatar-lg flex-shrink-0">
-                              <ImageWithBasePath
-                                src="assets/img/parents/parent-14.jpg"
-                                className="img-fluid rounded"
-                                alt="img"
-                              />
+                              {parentImageUrls.mother ? (
+                                <img
+                                  src={parentImageUrls.mother}
+                                  className="img-fluid rounded"
+                                  alt="Mother"
+                                  style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+                                />
+                              ) : (
+                                <ImageWithBasePath
+                                  src="assets/img/profiles/avatar-27.jpg"
+                                  className="img-fluid rounded"
+                                  alt="Mother"
+                                />
+                              )}
                             </span>
                             <div className="ms-2 overflow-hidden">
                               <h6 className="text-truncate">{motherName}</h6>
@@ -319,11 +378,20 @@ const StudentDetails = () => {
                         <div className="col-lg-4 col-sm-6">
                           <div className="d-flex align-items-center mb-3">
                             <span className="avatar avatar-lg flex-shrink-0">
-                              <ImageWithBasePath
-                                src="assets/img/parents/parent-13.jpg"
-                                className="img-fluid rounded"
-                                alt="img"
-                              />
+                              {parentImageUrls.guardian ? (
+                                <img
+                                  src={parentImageUrls.guardian}
+                                  className="img-fluid rounded"
+                                  alt="Guardian"
+                                  style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+                                />
+                              ) : (
+                                <ImageWithBasePath
+                                  src="assets/img/profiles/avatar-27.jpg"
+                                  className="img-fluid rounded"
+                                  alt="Guardian"
+                                />
+                              )}
                             </span>
                             <div className="ms-2 overflow-hidden">
                               <h6 className="text-truncate">{guardianName}</h6>
@@ -351,10 +419,10 @@ const StudentDetails = () => {
               )}
               {/* /Parents Information */}
 
-              {/* Class Teacher Information */}
+              {/* Section Teacher Information */}
               <div className="card">
                 <div className="card-header">
-                  <h5>Class Teacher Information</h5>
+                  <h5>Section Teacher Information</h5>
                 </div>
                 <div className="card-body">
                   {hasClassTeacherInfo ? (
@@ -363,7 +431,7 @@ const StudentDetails = () => {
                         <div className="col-md-6 col-lg-4">
                           <div className="mb-3">
                             <p className="text-dark fw-medium mb-1">Teacher Name</p>
-                            <p>{currentClassTeacher}</p>
+                            <p>{currentSectionTeacher}</p>
                           </div>
                         </div>
                         <div className="col-md-6 col-lg-4">
@@ -375,68 +443,36 @@ const StudentDetails = () => {
                         <div className="col-md-6 col-lg-4">
                           <div className="mb-3">
                             <p className="text-dark fw-medium mb-1">Phone</p>
-                            <p>{currentClassTeacherPhone}</p>
+                            <p>{currentSectionTeacherPhone}</p>
                           </div>
                         </div>
                         <div className="col-md-6 col-lg-4">
                           <div className="mb-3 overflow-hidden me-3">
                             <p className="text-dark fw-medium mb-1">Email</p>
-                            <p className="text-truncate">{currentClassTeacherEmail}</p>
+                            <p className="text-truncate">{currentSectionTeacherEmail}</p>
                           </div>
                         </div>
                         <div className="col-12">
                           <div className="mb-3 mb-md-0">
                             <p className="text-dark fw-medium mb-1">Address</p>
-                            <p>{currentClassTeacherAddress}</p>
+                            <p>{currentSectionTeacherAddress}</p>
                           </div>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-muted mb-0">Class teacher details are not available for this student.</p>
+                    <p className="text-muted mb-0">Section teacher details are not available for this student.</p>
                   )}
                 </div>
               </div>
-              {/* /Class Teacher Information */}
+              {/* /Section Teacher Information */}
 
-              {/* History */}
+              {/* Promotion History */}
               <div className="card">
                 <div className="card-header">
-                  <h5>History</h5>
+                  <h5>Promotion History</h5>
                 </div>
                 <div className="card-body">
-                  <div className="row">
-                    <div className="col-md-6">
-                      <div className="border rounded p-3 mb-3 h-100">
-                        <h6 className="mb-3">Current Details</h6>
-                        <p className="mb-2"><strong>Current Class:</strong> {currentClass}</p>
-                        <p className="mb-2"><strong>Current Section:</strong> {currentSection}</p>
-                        <p className="mb-2"><strong>Current Class Teacher:</strong> {currentClassTeacher}</p>
-                        {classTeacherId && canOpenTeacherDetails && (
-                          <div className="mb-2">
-                            <Link
-                              to={routes.teacherDetails}
-                              state={{ teacherId: classTeacherId }}
-                              className="btn btn-sm btn-outline-primary"
-                            >
-                              <i className="ti ti-user-search me-1" />
-                              View Teacher Details
-                            </Link>
-                          </div>
-                        )}
-                        <p className="mb-0"><strong>Current Academic Year:</strong> {currentAcademicYear}</p>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="border rounded p-3 mb-3 h-100">
-                        <h6 className="mb-3">Last Details</h6>
-                        <p className="mb-2"><strong>Last Class:</strong> {lastClass}</p>
-                        <p className="mb-2"><strong>Last Section:</strong> {lastSection}</p>
-                        <p className="mb-0"><strong>Last Academic Year:</strong> {lastAcademicYear}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <h6 className="mb-2">Promotion History</h6>
                   {historyLoading && <p className="text-muted mb-0">Loading promotion history...</p>}
                   {historyError && <div className="alert alert-danger mb-0">{historyError}</div>}
                   {!historyLoading && !historyError && historyTableRows.length === 0 && (
@@ -474,7 +510,7 @@ const StudentDetails = () => {
                   )}
                 </div>
               </div>
-              {/* /History */}
+              {/* /Promotion History */}
             </div>
             {/* Address */}
             <div className="col-xxl-12 d-flex">
