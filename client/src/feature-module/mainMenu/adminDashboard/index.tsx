@@ -218,7 +218,7 @@ const AdminDashboard = () => {
   const { activity: recentActivityRaw } = useDashboardRecentActivity({ academicYearId });
   const { activityItems: studentActivityItems, loading: activityLoading, error: activityError } = useDashboardStudentActivity({ limit: 5, academicYearId });
   const { todos: dashboardTodos, loading: todosLoading, error: todosError } = useDashboardMyTodos({ limit: 5 });
-  const { notices: dashboardNoticesRaw } = useDashboardNoticeBoard({ limit: 5 });
+  const { notices: dashboardNoticesRaw } = useDashboardNoticeBoard({ limit: 1 });
   const { feeStats } = useDashboardFeeStats({ academicYearId, feePeriod });
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId, feePeriod });
   const currentUser = currentUserRaw as { name?: string } | null;

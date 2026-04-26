@@ -26,7 +26,7 @@ const AdministrativeDashboard = () => {
   const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({ academicYearId });
   const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 8 });
   const { routine: classRoutine, loading: routineLoading, error: routineError, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
-  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } = useDashboardNoticeBoard({ limit: 5 });
+  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } = useDashboardNoticeBoard({ limit: 1 });
   const { activityItems, loading: activityLoading, error: activityError, } = useDashboardStudentActivity({ limit: 5, academicYearId });
   const { feeStats } = useDashboardFeeStats({ academicYearId });
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId });

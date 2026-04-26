@@ -2126,9 +2126,71 @@ const getStudentPromotions = async (req, res) => {
     const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
     const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
     const hasStudentFilter = studentId != null && !Number.isNaN(studentId);
-    const whereClause = hasStudentFilter ? 'WHERE sp.student_id = $1' : '';
-    const params = hasStudentFilter ? [studentId, limit] : [limit];
-    const limitParam = hasStudentFilter ? '$2' : '$1';
+
+    let scopedStudentIds = [];
+    if (hasStudentFilter) {
+      const baseRes = await query(
+        `SELECT id, user_id, admission_number, roll_number, unique_student_ids, gr_number,
+                first_name, last_name, date_of_birth
+         FROM students
+         WHERE id = $1
+         LIMIT 1`,
+        [studentId]
+      );
+      if (baseRes.rows.length > 0) {
+        const base = baseRes.rows[0];
+        const baseUserId = parseId(base.user_id);
+        const baseAdmissionNo = String(base.admission_number || '').trim();
+        const baseRollNo = String(base.roll_number || '').trim();
+        const baseUniqueStudentIds = String(base.unique_student_ids || '').trim();
+        const baseGrNumber = String(base.gr_number || '').trim();
+        const baseFirstName = String(base.first_name || '').trim();
+        const baseLastName = String(base.last_name || '').trim();
+        const baseDob = String(base.date_of_birth || '').slice(0, 10);
+
+        const linked = await query(
+          `SELECT id
+           FROM students
+           WHERE ($1::int IS NOT NULL AND user_id = $1)
+              OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
+              OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
+              OR ($4::text <> '' AND TRIM(COALESCE(unique_student_ids, '')) = $4)
+              OR ($5::text <> '' AND TRIM(COALESCE(gr_number, '')) = $5)
+              OR (
+                $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
+                AND LOWER(TRIM(COALESCE(first_name, ''))) = LOWER($6)
+                AND LOWER(TRIM(COALESCE(last_name, ''))) = LOWER($7)
+                AND date_of_birth = $8::date
+              )
+              OR id = $9`,
+          [
+            baseUserId,
+            baseAdmissionNo,
+            baseRollNo,
+            baseUniqueStudentIds,
+            baseGrNumber,
+            baseFirstName,
+            baseLastName,
+            /^\d{4}-\d{2}-\d{2}$/.test(baseDob) ? baseDob : null,
+            studentId,
+          ]
+        );
+        scopedStudentIds = (linked.rows || [])
+          .map((r) => parseId(r.id))
+          .filter(Boolean);
+      }
+      if (!scopedStudentIds.length) scopedStudentIds = [studentId];
+    }
+
+    const whereParts = ['s.deleted_at IS NULL'];
+    const params = [];
+    if (hasStudentFilter) {
+      params.push(scopedStudentIds);
+      whereParts.push(`sp.student_id = ANY($${params.length}::int[])`);
+    }
+    params.push(limit);
+    const whereClause = `WHERE ${whereParts.join(' AND ')}`;
+    const limitParam = `$${params.length}`;
 
     const result = await query(
       `SELECT
@@ -2168,7 +2230,6 @@ const getStudentPromotions = async (req, res) => {
       LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
       LEFT JOIN staff st ON st.id = sp.promoted_by
       ${whereClause}
-      AND s.deleted_at IS NULL
       ORDER BY sp.promotion_date DESC, sp.id DESC
       LIMIT ${limitParam}`,
       params
@@ -2695,13 +2756,20 @@ const getStudentById = async (req, res) => {
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id, s.vehicle_number,
+      COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url, s.is_transport_required, s.route_id, s.pickup_point_id, s.vehicle_number,
       tr.route_name as route_name, tpp.point_name as pickup_point_name,
       s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
       ay.year_name as academic_year_name,
+      sec.section_teacher_id as section_teacher_id,
+      sec.section_teacher_id as section_teacher_staff_id,
+      sec_staff.first_name as section_teacher_first_name,
+      sec_staff.last_name as section_teacher_last_name,
+      sec_staff.phone as section_teacher_phone,
+      sec_staff.email as section_teacher_email,
+      sec_staff.address as section_teacher_address,
       cls_t.id as class_teacher_id,
       cls_t.staff_id as class_teacher_staff_id,
       cls_staff.first_name as class_teacher_first_name,
@@ -2721,6 +2789,7 @@ const getStudentById = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+      LEFT JOIN staff sec_staff ON sec.section_teacher_id = sec_staff.id
       LEFT JOIN teachers cls_t ON (c.class_teacher_id = cls_t.id OR c.class_teacher_id = cls_t.staff_id)
       LEFT JOIN staff cls_staff ON cls_t.staff_id = cls_staff.id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
@@ -3128,7 +3197,6 @@ const getCurrentStudent = async (req, res) => {
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
       s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id,
       s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
-      s.sibiling_1, s.sibiling_2, s.sibiling_1_class, s.sibiling_2_class,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
@@ -3278,6 +3346,20 @@ const getCurrentStudent = async (req, res) => {
 
     const studentData = result.rows[0];
     const studentId = studentData.id;
+
+    // Siblings are stored in dedicated table in current schema.
+    try {
+      const sibsRes = await query(
+        `SELECT is_in_same_school, name, class_name, section_name, roll_number, admission_number
+         FROM student_siblings
+         WHERE student_id = $1
+         ORDER BY id ASC`,
+        [studentId]
+      );
+      studentData.siblings = sibsRes.rows;
+    } catch (e) {
+      studentData.siblings = [];
+    }
 
     try {
       const extra = await query(

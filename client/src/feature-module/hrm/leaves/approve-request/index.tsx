@@ -43,8 +43,7 @@ const ApproveRequest = () => {
       role: row.role ?? "—",
       leaveDate: row.leaveRange ?? row.leaveDate ?? "—",
       noofDays: row.noOfDays ?? "—",
-      appliedOn: row.applyOn ?? "—",
-      authority: "—",
+      appliedOn: row.appliedOn ?? "—",
       status: row.status ?? "Pending",
     }));
   }, [leaveApplications]);
@@ -134,10 +133,6 @@ const ApproveRequest = () => {
       dataIndex: "appliedOn",
       sorter: (a: TableData, b: TableData) =>
         String(a?.appliedOn ?? "").localeCompare(String(b?.appliedOn ?? "")),
-    },
-    {
-      title: "Authority",
-      dataIndex: "authority",
     },
     {
       title: "Status",

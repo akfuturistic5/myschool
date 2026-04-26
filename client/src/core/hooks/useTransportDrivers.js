@@ -32,7 +32,7 @@ export const useTransportDrivers = (initialParams = {}) => {
       
       if (response && response.status === "SUCCESS") {
         const list = response.data || [];
-        const mapped = list.map((row, index) => ({
+        const mapped = await Promise.all(list.map(async (row, index) => ({
           key: row.id || index + 1,
           id: row.id,
           displayId: row.driver_code || String(row.id),
@@ -43,9 +43,9 @@ export const useTransportDrivers = (initialParams = {}) => {
           address: row.address || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
-          img: row.photo_url || defaultImg,
+          img: (row.photo_url ? await apiService.resolveAvatarUrl(row.photo_url) : '') || defaultImg,
           originalData: row,
-        }));
+        })));
         
         setData(mapped);
         if (response.metadata) {

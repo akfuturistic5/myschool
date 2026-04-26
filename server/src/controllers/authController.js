@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const { secureCookieBase } = require('../utils/cookiePolicy');
 const { getSchoolProfile } = require('../services/schoolProfileService');
 const { ROLE_NAMES } = require('../config/roles');
+const { parseRelativeKey } = require('../storage/LocalFilesystemStorageProvider');
+const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 
 function displayRoleFromRoleRow(user) {
   const rn = (user?.role_name || '').toString().trim();
@@ -304,6 +306,7 @@ const login = async (req, res) => {
         user: {
           id: user.id,
           username: user.username,
+          avatar: user.avatar ?? null,
           displayName,
           role: user.role_name || 'User',
           role_id: user.role_id,
@@ -497,6 +500,24 @@ async function getTableColumns(client, tableName) {
   return new Set((r.rows || []).map((x) => String(x.column_name)));
 }
 
+function normalizeMyAvatarPath(rawAvatar, schoolId) {
+  // Some tenant schemas keep users.avatar as NOT NULL; use empty string as "no avatar".
+  if (rawAvatar == null) return '';
+  const v = String(rawAvatar).trim();
+  if (!v) return '';
+
+  let relative = v.replace(/\\/g, '/');
+  const storageUrlPrefix = '/api/storage/files/';
+  if (relative.startsWith(storageUrlPrefix)) {
+    relative = relative.slice(storageUrlPrefix.length);
+  }
+  const parsed = parseRelativeKey(relative);
+  if (!parsed) return null;
+  if (Number(parsed.schoolId) !== Number(schoolId)) return null;
+  if (!String(parsed.folder || '').startsWith('users/')) return null;
+  return relative;
+}
+
 /**
  * Update current user's own profile (and latest address).
  * - No schema changes
@@ -518,7 +539,16 @@ const updateMe = async (req, res) => {
       phone,
       current_address,
       permanent_address,
+      avatar,
     } = req.body || {};
+    const schoolId = getSchoolIdFromRequest(req);
+    const hasAvatarInPayload = Object.prototype.hasOwnProperty.call(req.body || {}, 'avatar');
+    const normalizedAvatar = hasAvatarInPayload
+      ? normalizeMyAvatarPath(avatar, schoolId)
+      : undefined;
+    if (hasAvatarInPayload && avatar != null && String(avatar).trim() !== '' && !normalizedAvatar) {
+      return errorResponse(res, 400, 'Invalid avatar path');
+    }
 
     const resultUser = await executeTransaction(async (client) => {
       const userCols = await getTableColumns(client, 'users');
@@ -563,6 +593,9 @@ const updateMe = async (req, res) => {
       }
       if (userCols.has('permanent_address') && permanent_address !== undefined) {
         pushUser('permanent_address', permanent_address || null);
+      }
+      if (userCols.has('avatar') && normalizedAvatar !== undefined) {
+        pushUser('avatar', normalizedAvatar);
       }
 
       if (userUpdates.length > 0) {
@@ -770,10 +803,15 @@ const changePassword = async (req, res) => {
       }
 
       const nextHash = await bcrypt.hash(String(newPassword), 10);
-      await client.query(
+      const updateRes = await client.query(
         `UPDATE users SET password_hash = $1 WHERE id = $2 AND is_active = true`,
         [nextHash, userId]
       );
+      if (!updateRes || Number(updateRes.rowCount || 0) !== 1) {
+        const err = new Error('Failed to update password');
+        err.statusCode = 500;
+        throw err;
+      }
     });
 
     success(res, 200, 'Password changed successfully', null);

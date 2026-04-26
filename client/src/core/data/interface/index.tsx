@@ -78,7 +78,6 @@ export interface TableData {
   classe: any;
   rollNo: any;
   admissionNo: any;
-  authority: any;
   noofDays: any;
   submittedBy: any;
   sectionName: any;

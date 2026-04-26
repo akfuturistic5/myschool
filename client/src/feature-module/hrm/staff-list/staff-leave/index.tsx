@@ -58,7 +58,7 @@ const StaffLeave = () => {
       const used = leaves
         .filter((l: any) => {
           const status = String(l?.status || "").toLowerCase();
-          const includeByStatus = ["pending", "approved"].includes(status);
+          const includeByStatus = status === "approved";
           const byId =
             Number.isFinite(typeId) &&
             typeId > 0 &&

@@ -66,6 +66,38 @@
         }
     }
 }
+
+.profile-avatar-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid variables.$danger;
+    color: variables.$danger !important;
+    background: transparent;
+    font-size: variables.$font-size-12;
+    font-weight: variables.$font-weight-medium;
+    line-height: 1;
+    transition: all 0.2s ease;
+    &:hover,
+    &:focus {
+        background: variables.$danger;
+        color: variables.$white !important;
+        text-decoration: none;
+    }
+    &:active {
+        transform: translateY(1px);
+    }
+    &:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        pointer-events: none;
+        background: transparent;
+        color: variables.$danger !important;
+    }
+}
 .language-setup-table {
     border: 1px solid variables.$light-900;
     border-radius: 5px;

@@ -1,10 +1,31 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
-export function useStudentExamResults(studentId) {
-  const [data, setData] = useState(null);
+export interface StudentExamSubjectRow {
+  subjectName?: string;
+  [key: string]: unknown;
+}
+
+export interface StudentExamRow {
+  examId?: number;
+  examName?: string;
+  examLabel?: string;
+  subjects?: StudentExamSubjectRow[];
+  summary?: {
+    percentage?: number;
+    overallResult?: string;
+  };
+  [key: string]: unknown;
+}
+
+export interface StudentExamResultsData {
+  exams: StudentExamRow[];
+}
+
+export function useStudentExamResults(studentId: number | null) {
+  const [data, setData] = useState<StudentExamResultsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refetch = async () => {
     if (!studentId) return;
@@ -13,12 +34,12 @@ export function useStudentExamResults(studentId) {
       setError(null);
       const res = await apiService.getStudentExamResults(studentId);
       if (res?.status === 'SUCCESS' && res.data) {
-        setData(res.data);
+        setData(res.data as StudentExamResultsData);
       } else {
         setData({ exams: [] });
       }
-    } catch (err) {
-      setError(err.message || 'Failed to fetch exam results');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch exam results');
       setData({ exams: [] });
     } finally {
       setLoading(false);
@@ -33,26 +54,28 @@ export function useStudentExamResults(studentId) {
       return;
     }
     let mounted = true;
-    (async () => {
+    void (async () => {
       try {
         setLoading(true);
         setError(null);
         const res = await apiService.getStudentExamResults(studentId);
         if (mounted && res?.status === 'SUCCESS' && res.data) {
-          setData(res.data);
+          setData(res.data as StudentExamResultsData);
         } else if (mounted) {
           setData({ exams: [] });
         }
-      } catch (err) {
+      } catch (err: unknown) {
         if (mounted) {
-          setError(err.message || 'Failed to fetch exam results');
+          setError(err instanceof Error ? err.message : 'Failed to fetch exam results');
           setData({ exams: [] });
         }
       } finally {
         if (mounted) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [studentId]);
 
   return { data, loading, error, refetch };

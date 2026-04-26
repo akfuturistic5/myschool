@@ -759,6 +759,17 @@ const ExamResult = () => {
     );
   };
 
+  const sanitizeMarkInput = (rawValue: any, maxMarks: any) => {
+    const text = String(rawValue ?? "").trim();
+    if (!text) return "";
+    const parsed = Number(text);
+    if (!Number.isFinite(parsed)) return "";
+    const safeMax = Number(maxMarks);
+    const upperBound = Number.isFinite(safeMax) && safeMax >= 0 ? safeMax : undefined;
+    const bounded = upperBound == null ? Math.max(0, parsed) : Math.min(Math.max(0, parsed), upperBound);
+    return String(bounded);
+  };
+
   const saveMarks = async () => {
     if (!selectedExamId || !classId || !sectionId) {
       setMessage("Please select exam, class and section.");
@@ -769,11 +780,25 @@ const ExamResult = () => {
       for (const cell of student.cells || []) {
         const hasMarks = !(cell.marks_obtained === "" || cell.marks_obtained == null);
         if (!cell.is_absent && !hasMarks) continue;
+        const numericMarks = cell.is_absent ? null : Number(cell.marks_obtained);
+        if (!cell.is_absent) {
+          if (!Number.isFinite(numericMarks) || numericMarks < 0) {
+            setMessage("Please enter valid non-negative marks.");
+            return;
+          }
+          const maxMarks = Number(cell.max_marks);
+          if (Number.isFinite(maxMarks) && numericMarks > maxMarks) {
+            setMessage(
+              `Marks cannot exceed max marks (${maxMarks}) for ${student.student_name || "student"}.`
+            );
+            return;
+          }
+        }
         payloadRows.push({
           student_id: Number(student.student_id),
           subject_id: Number(cell.subject_id),
           is_absent: !!cell.is_absent,
-          marks_obtained: cell.is_absent ? null : Number(cell.marks_obtained),
+          marks_obtained: numericMarks,
         });
       }
     }
@@ -1018,7 +1043,16 @@ const ExamResult = () => {
                               max={cell.max_marks}
                               disabled={!!cell.is_absent}
                               value={cell.marks_obtained ?? ""}
-                              onChange={(e) => updateMarkCell(st.student_id, cell.subject_id, { marks_obtained: e.target.value })}
+                              onChange={(e) =>
+                                updateMarkCell(st.student_id, cell.subject_id, {
+                                  marks_obtained: sanitizeMarkInput(e.target.value, cell.max_marks),
+                                })
+                              }
+                              onBlur={(e) =>
+                                updateMarkCell(st.student_id, cell.subject_id, {
+                                  marks_obtained: sanitizeMarkInput(e.target.value, cell.max_marks),
+                                })
+                              }
                             />
                             <div className="form-check">
                               <input

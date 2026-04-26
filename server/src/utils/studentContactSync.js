@@ -444,7 +444,7 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
       COALESCE(father_u.email, legacy_parent.father_email) AS father_email,
       COALESCE(father_u.phone, legacy_parent.father_phone) AS father_phone,
       COALESCE(father_u.occupation, legacy_parent.father_occupation) AS father_occupation,
-      COALESCE(father_u.avatar, legacy_parent.father_image_url) AS father_image_url,
+      COALESCE(father_u.avatar, father_legacy_u.avatar, legacy_parent.father_image_url) AS father_image_url,
       mother_u.user_id AS mother_person_id,
       COALESCE(
         NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), ''),
@@ -453,7 +453,7 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
       COALESCE(mother_u.email, legacy_parent.mother_email) AS mother_email,
       COALESCE(mother_u.phone, legacy_parent.mother_phone) AS mother_phone,
       COALESCE(mother_u.occupation, legacy_parent.mother_occupation) AS mother_occupation,
-      COALESCE(mother_u.avatar, legacy_parent.mother_image_url) AS mother_image_url,
+      COALESCE(mother_u.avatar, mother_legacy_u.avatar, legacy_parent.mother_image_url) AS mother_image_url,
       gu_u.user_id AS guardian_person_id,
       gu_u.first_name AS guardian_first_name,
       gu_u.last_name AS guardian_last_name,
@@ -482,6 +482,22 @@ const STUDENT_CONTACT_LATERAL_JOINS = `
         ORDER BY p.id DESC
         LIMIT 1
       ) legacy_parent ON true
+      LEFT JOIN LATERAL (
+        SELECT u.id AS user_id, u.avatar
+        FROM users u
+        WHERE legacy_parent.father_email IS NOT NULL
+          AND NULLIF(TRIM(legacy_parent.father_email), '') IS NOT NULL
+          AND LOWER(TRIM(u.email)) = LOWER(TRIM(legacy_parent.father_email))
+        LIMIT 1
+      ) father_legacy_u ON true
+      LEFT JOIN LATERAL (
+        SELECT u.id AS user_id, u.avatar
+        FROM users u
+        WHERE legacy_parent.mother_email IS NOT NULL
+          AND NULLIF(TRIM(legacy_parent.mother_email), '') IS NOT NULL
+          AND LOWER(TRIM(u.email)) = LOWER(TRIM(legacy_parent.mother_email))
+        LIMIT 1
+      ) mother_legacy_u ON true
       LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g

@@ -20,9 +20,67 @@ import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useDashboardStarStudents } from "../../../core/hooks/useDashboardData";
+import { useAuthAvatar } from "../../../core/hooks/useAuthAvatar";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const normalizeText = (value?: string | null) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeClassName = (value?: string | null) =>
+  normalizeText(value)
+    .replace(/^class\s*/i, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const normalizeSectionName = (value?: string | null) =>
+  normalizeText(value)
+    .replace(/^section\s*/i, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const buildClassSectionKey = (className?: string | null, sectionName?: string | null) =>
+  `${normalizeClassName(className)}|${normalizeSectionName(sectionName)}`;
+
+const normalizeSubjectToken = (value?: string | null) =>
+  normalizeText(value)
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const splitSubjectTokens = (value?: string | null) => {
+  const normalized = normalizeSubjectToken(value);
+  if (!normalized) return [];
+  return normalized
+    .split(/,|\/| and /)
+    .map((token) => token.trim())
+    .filter(Boolean);
+};
+
+type TeacherProfile = {
+  id?: number;
+  first_name?: string;
+  last_name?: string;
+  photo_url?: string;
+  employee_code?: string;
+  class_name?: string;
+  section_name?: string;
+};
+
+type AttendanceSummary = {
+  present?: number;
+  absent?: number;
+  halfDay?: number;
+  late?: number;
+};
+
+type AttendancePayload = {
+  records?: any[];
+  summary?: AttendanceSummary;
+};
 
 const TeacherDashboard = () => {
   const routes = all_routes;
@@ -31,7 +89,6 @@ const TeacherDashboard = () => {
 
   const [selectedClass, setSelectedClass] = useState<string>("All Classes");
   const [selectedSection, setSelectedSection] = useState<string>("All Sections");
-  const [marksTimeRange, setMarksTimeRange] = useState<string>("All Time");
   const [leaveTimeRange, setLeaveTimeRange] = useState<string>("This Month");
 
   const [attendanceRange, setAttendanceRange] = useState<"thisWeek" | "lastWeek" | "lastMonth" | "allTime">("thisWeek");
@@ -42,19 +99,43 @@ const TeacherDashboard = () => {
     allTime: { days: 0, offset: 0, label: "All Time" },
   } as const;
 
-  const { teacher, loading: teacherLoading, error: teacherError } = useCurrentTeacher();
+  const { teacher, loading: teacherLoading, error: teacherError } = useCurrentTeacher() as {
+    teacher: TeacherProfile | null;
+    loading: boolean;
+    error: string | null;
+  };
+  const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
   const { routine, loading: routineLoading } = useTeacherRoutine(teacher?.id ?? null, { academicYearId });
+  const selectedAttendanceRange = attendanceOptions[attendanceRange];
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useTeacherClassAttendance(
     teacher?.id ?? null,
-    { ...attendanceOptions[attendanceRange], academicYearId }
-  );
-  const { data: syllabusData } = useClassSyllabus({ academicYearId });
+    { days: selectedAttendanceRange.days, offset: selectedAttendanceRange.offset, academicYearId } as any
+  ) as { data: AttendancePayload | null; loading: boolean; error: string | null };
+  const { data: syllabusData, loading: syllabusLoading } = useClassSyllabus({ academicYearId }) as {
+    data: any[];
+    loading: boolean;
+  };
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
-  const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 });
+  const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 }) as {
+    upcomingEvents: any[];
+    completedEvents: any[];
+    loading: boolean;
+    refetch: () => void;
+  };
   const { students: topStudents, loading: topStudentsLoading, error: topStudentsError } = useDashboardStarStudents({
     limit: 3,
     academicYearId,
-  });
+  }) as { students: any[]; loading: boolean; error: string | null };
+  const {
+    students: marksStudents,
+    loading: marksStudentsLoading,
+    error: marksStudentsError,
+  } = useDashboardStarStudents({
+    limit: 100,
+    academicYearId,
+    className: selectedClass !== "All Classes" ? selectedClass : undefined,
+    sectionName: selectedSection !== "All Sections" ? selectedSection : undefined,
+  }) as { students: any[]; loading: boolean; error: string | null };
 
   const uniqueClasses = useMemo(() => {
     if (!routine?.length) return [];
@@ -98,21 +179,35 @@ const TeacherDashboard = () => {
     if (!routine?.length) return new Set<string>();
     const keys = new Set<string>();
     routine.forEach((r: { class?: string; section?: string }) => {
-      const c = (r.class || "").trim().toLowerCase();
-      const s = (r.section || "").trim().toLowerCase();
-      if (c || s) keys.add(`${c}|${s}`);
+      const key = buildClassSectionKey(r.class, r.section);
+      if (key !== "|") keys.add(key);
     });
     return keys;
+  }, [routine]);
+
+  const teacherSubjects = useMemo(() => {
+    if (!routine?.length) return new Set<string>();
+    const subjects = new Set<string>();
+    routine.forEach((r: { subject?: string }) => {
+      splitSubjectTokens(r.subject).forEach((token) => subjects.add(token));
+    });
+    return subjects;
   }, [routine]);
 
   // Syllabus for teacher's classes
   const mySyllabus = useMemo(() => {
     if (!syllabusData?.length) return [];
     return syllabusData.filter(
-      (s: { class?: string; section?: string }) =>
-        teacherClassSectionKeys.has(`${String(s.class || "").toLowerCase()}|${String(s.section || "").toLowerCase()}`)
+      (s: { class?: string; section?: string; subjectGroup?: string }) => {
+        const classSectionMatch = teacherClassSectionKeys.has(buildClassSectionKey(s.class, s.section));
+        if (!classSectionMatch) return false;
+        if (!teacherSubjects.size) return true;
+        const syllabusTokens = splitSubjectTokens(s.subjectGroup);
+        if (!syllabusTokens.length) return true;
+        return syllabusTokens.some((token) => teacherSubjects.has(token));
+      }
     );
-  }, [syllabusData, teacherClassSectionKeys]);
+  }, [syllabusData, teacherClassSectionKeys, teacherSubjects]);
 
   // Syllabus chart: completed vs pending (status=Active = completed-ish, or use a computed %)
   const syllabusChartData = useMemo(() => {
@@ -201,7 +296,7 @@ const TeacherDashboard = () => {
   const studentDonutChart = useMemo(() => ({
     chart: {
       height: 90,
-      type: "donut",
+      type: "donut" as const,
       toolbar: { show: false },
       sparkline: { enabled: true },
     },
@@ -219,6 +314,8 @@ const TeacherDashboard = () => {
       },
     ],
   }), [syllabusChartData]);
+  const attendanceRecords = attendanceData?.records ?? [];
+  const attendanceSummary = attendanceData?.summary ?? {};
 
   return (
     <>
@@ -290,17 +387,17 @@ const TeacherDashboard = () => {
                       <div className="d-sm-flex align-items-center justify-content-between row-gap-3">
                         <div className="d-flex align-items-center overflow-hidden mb-3">
                           <div className="avatar avatar-xxl rounded flex-shrink-0 border border-2 border-white me-3">
-                            {teacher?.photo_url ? (
+                            {(hasAuthAvatar || teacher?.photo_url) ? (
                               <img
-                                src={teacher.photo_url}
+                                src={hasAuthAvatar ? authAvatarSrc : teacher?.photo_url}
                                 alt="Profile"
                                 className="img-fluid rounded"
                                 style={{ objectFit: "cover", width: "100%", height: "100%" }}
                               />
                             ) : (
                               <ImageWithBasePath
-                                src="assets/img/teachers/teacher-05.jpg"
-                                alt="Img"
+                                src="assets/img/profiles/avatar-27.jpg"
+                                alt="Default avatar"
                               />
                             )}
                           </div>
@@ -351,7 +448,7 @@ const TeacherDashboard = () => {
                 </div>
                 <div className="col-xxl-5 col-xl-4 d-flex">
                   <div className="card flex-fill">
-                    <div className="card-body">
+                    <div className="card-body" style={{ minHeight: "170px" }}>
                       <div className="row align-items-center justify-content-between">
                         <div className="col-sm-5">
                           <div
@@ -474,7 +571,7 @@ const TeacherDashboard = () => {
                           onClick={(e) => e.preventDefault()}
                         >
                           <i className="ti ti-calendar-due" />
-                          {attendanceOptions[attendanceRange].label}
+                          {selectedAttendanceRange.label}
                         </Link>
                         <ul className="dropdown-menu dropdown-menu-end">
                           <li>
@@ -520,7 +617,7 @@ const TeacherDashboard = () => {
                       <div className="attendance-chart">
                         <p className="mb-3">
                           <i className="ti ti-calendar-heart text-primary me-2" />
-                          Attendance data ({attendanceOptions[attendanceRange].label})
+                          Attendance data ({selectedAttendanceRange.label})
                         </p>
                         {attendanceError && (
                           <div className="alert alert-warning mb-3 d-flex align-items-center" role="alert">
@@ -534,13 +631,13 @@ const TeacherDashboard = () => {
                             <span className="ms-2">Loading attendance...</span>
                           </div>
                         )}
-                        {!attendanceLoading && !attendanceError && (!attendanceData?.records?.length || attendanceData.records.length === 0) && (
+                        {!attendanceLoading && !attendanceError && attendanceRecords.length === 0 && (
                           <div className="alert alert-info mb-0 d-flex align-items-center" role="alert">
                             <i className="ti ti-info-circle me-2 fs-18" />
                             <span>No attendance data available. Attendance records will appear here once available.</span>
                           </div>
                         )}
-                        {!attendanceLoading && !attendanceError && attendanceData?.records?.length > 0 && (
+                        {!attendanceLoading && !attendanceError && attendanceRecords.length > 0 && (
                           <div className="row g-2">
                             <div className="col-6 col-sm-3">
                               <div className="d-flex align-items-center rounded border p-2">
@@ -549,7 +646,7 @@ const TeacherDashboard = () => {
                                 </span>
                                 <div>
                                   <small className="text-muted d-block">Present</small>
-                                  <strong>{attendanceData.summary?.present ?? 0}</strong>
+                                  <strong>{attendanceSummary.present ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
@@ -560,7 +657,7 @@ const TeacherDashboard = () => {
                                 </span>
                                 <div>
                                   <small className="text-muted d-block">Absent</small>
-                                  <strong>{attendanceData.summary?.absent ?? 0}</strong>
+                                  <strong>{attendanceSummary.absent ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
@@ -571,7 +668,7 @@ const TeacherDashboard = () => {
                                 </span>
                                 <div>
                                   <small className="text-muted d-block">Half Day</small>
-                                  <strong>{attendanceData.summary?.halfDay ?? 0}</strong>
+                                  <strong>{attendanceSummary.halfDay ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
@@ -582,7 +679,7 @@ const TeacherDashboard = () => {
                                 </span>
                                 <div>
                                   <small className="text-muted d-block">Late</small>
-                                  <strong>{attendanceData.summary?.late ?? 0}</strong>
+                                  <strong>{attendanceSummary.late ?? 0}</strong>
                                 </div>
                               </div>
                             </div>
@@ -596,8 +693,11 @@ const TeacherDashboard = () => {
                 {/* Best Performers */}
                 <div className="col-xxl-6 col-xl-6 col-md-6 d-flex flex-column">
                   <div className="card">
-                    <div className="card-header">
+                    <div className="card-header d-flex align-items-center justify-content-between">
                       <h4 className="card-title">Best Performers</h4>
+                      <Link to={routes.examTopPerformers} className="link-primary fw-medium">
+                        View All
+                      </Link>
                     </div>
                     <div className="card-body pb-1">
                       {topStudentsLoading && (
@@ -671,6 +771,84 @@ const TeacherDashboard = () => {
                 </div>
                 {/* /Best Performers */}
               </div>
+              {/* Syllabus */}
+              <div className="row">
+                <div className="col-md-12">
+                  <div className="card">
+                    <div className="card-header d-flex align-items-center justify-content-between">
+                      <h4 className="card-title">Syllabus / Lesson Plan</h4>
+                      <Link
+                        to={routes.classSyllabus}
+                        className="link-primary fw-medium"
+                      >
+                        View All
+                      </Link>
+                    </div>
+                    <div className="card-body">
+                      {syllabusLoading ? (
+                        <div className="alert alert-secondary d-flex align-items-center mb-0" role="status" aria-live="polite">
+                          <i className="ti ti-loader-2 me-2 fs-18" />
+                          <span>Loading syllabus for your classes...</span>
+                        </div>
+                      ) : !mySyllabus?.length ? (
+                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                          <i className="ti ti-info-circle me-2 fs-18" />
+                          <span>No syllabus data for your classes. Syllabus will appear once assigned.</span>
+                        </div>
+                      ) : (
+                        <Slider
+                          {...Syllabus}
+                          className="owl-carousel owl-theme lesson"
+                        >
+                          {mySyllabus.map((s: { id?: number; class?: string; section?: string; subjectGroup?: string; status?: string; originalData?: { description?: string } }, idx: number) => {
+                            const isActive = (s.status || "").toLowerCase() === "active";
+                            const pct = isActive ? 80 : 40;
+                            const bgCls = isActive ? "bg-success-transparent" : "bg-warning-transparent";
+                            const barCls = isActive ? "bg-success" : "bg-warning";
+                            return (
+                              <div key={s.id ?? idx} className="item">
+                                <div className="card mb-0">
+                                  <div className="card-body">
+                                    <div className={`${bgCls} rounded p-2 fw-semibold mb-3 text-center`}>
+                                      Class {s.class || "—"}, {s.section || "—"}
+                                    </div>
+                                    <div className="border-bottom mb-3">
+                                      <h5 className="mb-3">
+                                        {s.subjectGroup || s.originalData?.description || "Syllabus"}
+                                      </h5>
+                                      <div className="progress progress-xs mb-3">
+                                        <div
+                                          className={`progress-bar ${barCls}`}
+                                          role="progressbar"
+                                          style={{ width: `${pct}%` }}
+                                          aria-valuenow={pct}
+                                          aria-valuemin={0}
+                                          aria-valuemax={100}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="d-flex align-items-center justify-content-between">
+                                      <Link to={routes.sheduleClasses} className="fw-medium">
+                                        <i className="ti ti-edit me-1" />
+                                        Reschedule
+                                      </Link>
+                                      <Link to={routes.classSyllabus} className="link-primary">
+                                        <i className="ti ti-share-3 me-1" />
+                                        View All
+                                      </Link>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </Slider>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* /Syllabus */}
             </div>
             {/* Schedules */}
             <div className="col-xxl-4 col-xl-12 d-flex">
@@ -696,15 +874,6 @@ const TeacherDashboard = () => {
                     <div className="d-flex align-items-center gap-2">
                       <Link to={routes.events} className="link-primary fw-medium">
                         View All
-                      </Link>
-                      <Link
-                        to="#"
-                        className="link-primary fw-medium"
-                        data-bs-toggle="modal"
-                        data-bs-target="#add_event"
-                      >
-                        <i className="ti ti-square-plus me-1" />
-                        Add New
                       </Link>
                     </div>
                   </div>
@@ -787,79 +956,6 @@ const TeacherDashboard = () => {
             {/* /Schedules */}
           </div>
           {/* Teacher-profile */}
-          {/* Syllabus */}
-          <div className="row">
-            <div className="col-md-12">
-              <div className="card">
-                <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Syllabus / Lesson Plan</h4>
-                  <Link
-                    to={routes.classSyllabus}
-                    className="link-primary fw-medium"
-                  >
-                    View All
-                  </Link>
-                </div>
-                <div className="card-body">
-                  {!mySyllabus?.length ? (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No syllabus data for your classes. Syllabus will appear once assigned.</span>
-                    </div>
-                  ) : (
-                    <Slider
-                      {...Syllabus}
-                      className="owl-carousel owl-theme lesson"
-                    >
-                      {mySyllabus.map((s: { id?: number; class?: string; section?: string; subjectGroup?: string; status?: string; originalData?: { description?: string } }, idx: number) => {
-                        const isActive = (s.status || "").toLowerCase() === "active";
-                        const pct = isActive ? 80 : 40;
-                        const bgCls = isActive ? "bg-success-transparent" : "bg-warning-transparent";
-                        const barCls = isActive ? "bg-success" : "bg-warning";
-                        return (
-                          <div key={s.id ?? idx} className="item">
-                            <div className="card mb-0">
-                              <div className="card-body">
-                                <div className={`${bgCls} rounded p-2 fw-semibold mb-3 text-center`}>
-                                  Class {s.class || "—"}, {s.section || "—"}
-                                </div>
-                                <div className="border-bottom mb-3">
-                                  <h5 className="mb-3">
-                                    {s.subjectGroup || s.originalData?.description || "Syllabus"}
-                                  </h5>
-                                  <div className="progress progress-xs mb-3">
-                                    <div
-                                      className={`progress-bar ${barCls}`}
-                                      role="progressbar"
-                                      style={{ width: `${pct}%` }}
-                                      aria-valuenow={pct}
-                                      aria-valuemin={0}
-                                      aria-valuemax={100}
-                                    />
-                                  </div>
-                                </div>
-                                <div className="d-flex align-items-center justify-content-between">
-                                  <Link to={routes.sheduleClasses} className="fw-medium">
-                                    <i className="ti ti-edit me-1" />
-                                    Reschedule
-                                  </Link>
-                                  <Link to={routes.classSyllabus} className="link-primary">
-                                    <i className="ti ti-share-3 me-1" />
-                                    View All
-                                  </Link>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </Slider>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* /Syllabus */}
           <div className="row">
             {/* Student Marks */}
             <div className="col-xxl-8 col-xl-7 d-flex">
@@ -915,45 +1011,75 @@ const TeacherDashboard = () => {
                         ))}
                       </ul>
                     </div>
-                    <div className="dropdown ">
-                      <Link
-                        to="#"
-                        className="bg-white dropdown-toggle"
-                        data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                      >
-                        <i className="ti ti-calendar me-2" />
-                        {marksTimeRange}
-                      </Link>
-                      <ul className="dropdown-menu mt-2 p-3">
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1" onClick={(e) => { e.preventDefault(); setMarksTimeRange("This Month"); }}>
-                            This Month
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1" onClick={(e) => { e.preventDefault(); setMarksTimeRange("This Year"); }}>
-                            This Year
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1" onClick={(e) => { e.preventDefault(); setMarksTimeRange("Last Week"); }}>
-                            Last Week
-                          </Link>
-                        </li>
-                        <li>
-                          <Link to="#" className="dropdown-item rounded-1" onClick={(e) => { e.preventDefault(); setMarksTimeRange("All Time"); }}>
-                            All Time
-                          </Link>
-                        </li>
-                      </ul>
-                    </div>
                   </div>
                 </div>
                 <div className="card-body px-0">
-                  <div className="alert alert-info m-3 d-flex align-items-center" role="alert">
-                    <i className="ti ti-info-circle me-2 fs-18" />
-                    <span>No student marks data available. Marks will appear here once exam results are recorded.</span>
-                  </div>
+                  {marksStudentsLoading && (
+                    <div className="text-center py-4">
+                      <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      <span className="ms-2">Loading marks...</span>
+                    </div>
+                  )}
+                  {!marksStudentsLoading && marksStudentsError && (
+                    <div className="alert alert-warning m-3 d-flex align-items-center" role="alert">
+                      <i className="ti ti-alert-circle me-2 fs-18" />
+                      <span>{marksStudentsError}</span>
+                    </div>
+                  )}
+                  {!marksStudentsLoading && !marksStudentsError && (!marksStudents || marksStudents.length === 0) && (
+                    <div className="alert alert-info m-3 d-flex align-items-center" role="alert">
+                      <i className="ti ti-info-circle me-2 fs-18" />
+                      <span>No student marks data available for selected filters.</span>
+                    </div>
+                  )}
+                  {!marksStudentsLoading && !marksStudentsError && marksStudents?.length > 0 && (
+                    <div className="px-3 pb-3">
+                      <div className="mb-3 pb-2 border-bottom">
+                        <h6 className="mb-1 text-truncate">{marksStudents[0].examName || "Latest Exam"}</h6>
+                        <p className="text-muted mb-0 small">
+                          <i className="ti ti-calendar-event me-1" />
+                          {marksStudents[0].examDate
+                            ? new Date(marksStudents[0].examDate).toLocaleDateString("en-GB", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            })
+                            : "Date unavailable"}
+                        </p>
+                      </div>
+                      <div className="table-responsive">
+                        <table className="table mb-0">
+                          <thead>
+                            <tr>
+                              <th style={{ minWidth: "220px" }}>Student</th>
+                              <th>Class</th>
+                              <th className="text-end">Marks</th>
+                              <th className="text-end">Percentage</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {marksStudents.map((student: any, idx: number) => (
+                              <tr key={student.id ?? idx}>
+                                <td>
+                                  <div className="d-flex align-items-center">
+                                    <span className="badge bg-primary me-2">#{idx + 1}</span>
+                                    <span className="text-truncate">{student.name || "Student"}</span>
+                                  </div>
+                                </td>
+                                <td>{student.classSection || "Class unavailable"}</td>
+                                <td className="text-end">
+                                  {student.marksObtained != null && student.totalMarks != null
+                                    ? `${student.marksObtained}/${student.totalMarks}`
+                                    : "--"}
+                                </td>
+                                <td className="text-end">{student.percentage != null ? `${student.percentage}%` : "--"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

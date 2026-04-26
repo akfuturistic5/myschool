@@ -54,6 +54,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [applyReason, setApplyReason] = useState('')
   const [applySubmitting, setApplySubmitting] = useState(false)
   const getModalContainer = () => document.body;
+  const todayStart = dayjs().startOf("day");
 
   // Add Fees form state
   const [feeStructureId, setFeeStructureId] = useState<string>('')
@@ -310,6 +311,10 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
     }
     const fromStr = applyFromDate.format('YYYY-MM-DD')
     const toStr = applyToDate.format('YYYY-MM-DD')
+    if (applyFromDate.startOf("day").isBefore(todayStart)) {
+      alert('Leave From Date cannot be in the past.')
+      return
+    }
     if (toStr < fromStr) {
       alert('To Date must be on or after From Date.')
       return
@@ -684,6 +689,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             value={applyFromDate}
                             onChange={(d) => setApplyFromDate(d)}
                             placeholder="Select date"
+                            disabledDate={(current) => !!current && current.startOf("day").isBefore(todayStart)}
                           />
                           <span className="cal-icon"><i className="ti ti-calendar" /></span>
                         </div>
@@ -698,6 +704,12 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             value={applyToDate}
                             onChange={(d) => setApplyToDate(d)}
                             placeholder="Select date"
+                            disabledDate={(current) => {
+                              if (!current) return false
+                              const inPast = current.startOf("day").isBefore(todayStart)
+                              const beforeFrom = applyFromDate ? current.startOf("day").isBefore(applyFromDate.startOf("day")) : false
+                              return inPast || beforeFrom
+                            }}
                           />
                           <span className="cal-icon"><i className="ti ti-calendar" /></span>
                         </div>

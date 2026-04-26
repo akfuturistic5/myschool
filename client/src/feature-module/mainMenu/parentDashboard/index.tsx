@@ -14,6 +14,7 @@ import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicY
 import { PARENT_PORTAL_SELECTED_STUDENT_STORAGE_KEY } from "../../../core/hooks/useLinkedStudentContext";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
+import { useAuthAvatar } from "../../../core/hooks/useAuthAvatar";
 import { EventsCard } from "../shared/EventsCard";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
@@ -98,7 +99,8 @@ const ParentDashboard = () => {
   const { data: allSchedules } = useClassSchedules({
     academicYearId: resolvedAcademicYearId ?? undefined,
   });
-  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 6 });
+  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 1 });
+  const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
 
   // Filtered leaves by date range
   const filteredLeaves = useMemo(() => {
@@ -153,15 +155,25 @@ const ParentDashboard = () => {
   // Leave counts by type (from real leave data - use filtered for selected child)
   const leaveCounts = useMemo(() => {
     const t = (s: string) => String(s || "").toLowerCase();
-    const medical = myLeaves.filter((l: { leaveType?: string }) => {
+    const approvedLeaves = myLeaves.filter((l: { status?: string }) => t(l.status || "") === "approved");
+    const sumDays = (rows: Array<{ noOfDays?: string | number }>) =>
+      rows.reduce((sum, row) => {
+        const days = Number(row?.noOfDays || 0);
+        return sum + (Number.isFinite(days) && days > 0 ? days : 0);
+      }, 0);
+    const medical = approvedLeaves.filter((l: { leaveType?: string }) => {
       const lt = t(l.leaveType);
       return lt.includes("medical") || lt.includes("sick");
     });
-    const casual = myLeaves.filter((l: { leaveType?: string }) => {
+    const casual = approvedLeaves.filter((l: { leaveType?: string }) => {
       const lt = t(l.leaveType);
       return lt.includes("casual") || lt.includes("casual leave");
     });
-    return { medical: medical.length, casual: casual.length, total: myLeaves.length };
+    return {
+      medical: sumDays(medical),
+      casual: sumDays(casual),
+      total: sumDays(approvedLeaves),
+    };
   }, [myLeaves]);
 
   useEffect(() => {
@@ -245,7 +257,7 @@ const ParentDashboard = () => {
                     <div className="d-flex align-items-center row-gap-3">
                       <div className="avatar avatar-xxl rounded flex-shrink-0 me-3">
                         <ImageWithBasePath
-                          src={firstParent.ParentImage || "assets/img/parents/parent-01.jpg"}
+                          src={hasAuthAvatar ? authAvatarSrc : (firstParent.ParentImage || "assets/img/profiles/avatar-27.jpg")}
                           alt="Parent"
                         />
                       </div>
@@ -764,7 +776,7 @@ const ParentDashboard = () => {
                     </div>
                   ) : (
                     <div className="notice-widget">
-                      {notices.slice(0, 6).map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
+                      {notices.map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
                         <div key={notice.id} className="d-flex align-items-center justify-content-between mb-4">
                           <div className="d-flex align-items-center overflow-hidden me-2">
                             <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">

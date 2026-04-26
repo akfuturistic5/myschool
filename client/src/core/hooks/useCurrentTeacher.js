@@ -29,7 +29,16 @@ export const useCurrentTeacher = () => {
       setError(null);
       const response = await apiService.getCurrentTeacher();
       if (response.status === 'SUCCESS' && response.data) {
-        setTeacher(response.data);
+        const hasUserAvatar = !!String(user?.avatar || '').trim();
+        const preferredAvatarPath = hasUserAvatar ? user.avatar : response.data.photo_url;
+        const resolvedAvatarUrl = preferredAvatarPath
+          ? await apiService.resolveAvatarUrl(preferredAvatarPath)
+          : '';
+        setTeacher({
+          ...response.data,
+          // Prefer profile avatar (users.avatar) so profile page update/remove reflects here.
+          photo_url: resolvedAvatarUrl || null,
+        });
       } else {
         setTeacher(null);
       }
@@ -50,7 +59,7 @@ export const useCurrentTeacher = () => {
       return;
     }
     fetchCurrentTeacher();
-  }, [isTeacherRole]);
+  }, [isTeacherRole, user?.avatar]);
 
   return {
     teacher,

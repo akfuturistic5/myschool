@@ -75,7 +75,7 @@ export const useGuardianWardLeaves = (options = {}) => {
             leaveRange,
             leaveDate: leaveRange,
             noOfDays: String(noOfDays),
-            applyOn: formatLeaveDate(row.applied_at || row.created_at || startDate),
+            appliedOn: formatLeaveDate(row.applied_at || row.created_at || startDate),
             studentId: row.student_id,
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,

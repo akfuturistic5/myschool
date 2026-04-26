@@ -20,7 +20,7 @@ export const useStaff = (options = {}) => {
       const response = await apiService.getStaff();
 
       if (response.status === 'SUCCESS') {
-        const transformedData = response.data.map((staff, index) => {
+        const transformedData = await Promise.all(response.data.map(async (staff, index) => {
           const displayId =
             staff.employee_code ||
             (staff.id != null ? String(staff.id) : `S${index + 1}`);
@@ -52,10 +52,9 @@ export const useStaff = (options = {}) => {
             ? new Date(joiningRaw).toLocaleDateString('en-GB')
             : 'N/A';
 
-          const img =
-            staff.photo_url ||
-            staff.profile_image ||
-            'assets/img/profiles/avatar-27.jpg';
+          const rawImg = staff.photo_url || staff.profile_image || '';
+          const resolvedImg = rawImg ? await apiService.resolveAvatarUrl(rawImg) : '';
+          const img = resolvedImg || 'assets/img/profiles/avatar-27.jpg';
 
           const dbId =
             staff.id != null && !Number.isNaN(Number(staff.id))
@@ -77,7 +76,7 @@ export const useStaff = (options = {}) => {
             img,
             originalData: staff,
           };
-        });
+        }));
 
         setStaffList(transformedData);
       } else {
