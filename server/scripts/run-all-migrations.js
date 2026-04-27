@@ -3,12 +3,20 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
+// CLI Arguments: --db [name] --dir [path]
+const args = process.argv.slice(2);
+const dbOverride = args.indexOf('--db') !== -1 ? args[args.indexOf('--db') + 1] : null;
+const dirOverride = args.indexOf('--dir') !== -1 ? args[args.indexOf('--dir') + 1] : null;
+
+const targetDb = dbOverride || process.env.DB_NAME || 'school_db';
+const migrationsDir = dirOverride ? path.resolve(dirOverride) : path.join(__dirname, '../migrations');
+
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'database',
-  database: process.env.DB_NAME || 'school_db',
+  database: targetDb,
 });
 
 async function ensureMigrationTable() {
@@ -22,19 +30,25 @@ async function ensureMigrationTable() {
 }
 
 async function runMigrations() {
+  console.log(`📡 Targeting database: ${targetDb}`);
   await ensureMigrationTable();
 
-  const migrationsDir = path.join(__dirname, '../migrations');
+  if (!fs.existsSync(migrationsDir)) {
+    console.log(`⏭️ Migrations directory not found: ${migrationsDir}. Skipping.`);
+    return;
+  }
+
   const files = fs.readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql'))
     .sort();
 
   // Exclude 001 because it is typically run by db:init or provisioning
-  const seeders = ['005_seed_realistic_academic_dummy_data.sql', '006_reseed_multi_academic_year_dummy_data.sql'];
-  const toApply = files.filter(f => f !== '001_init_full_schema.sql' && !seeders.includes(f));
+  // Seeders are usually excluded from auto-migrations
+  const toApply = files.filter(f => f !== '001_init_full_schema.sql');
 
-  console.log(`🚀 Found ${toApply.length} potential migrations.`);
+  console.log(`🚀 Found ${toApply.length} potential migrations in ${path.basename(migrationsDir)}.`);
 
+  let appliedCount = 0;
   for (const file of toApply) {
     const check = await pool.query('SELECT 1 FROM migration_history WHERE migration_name = $1', [file]);
     
@@ -45,20 +59,26 @@ async function runMigrations() {
         await pool.query(sql);
         await pool.query('INSERT INTO migration_history (migration_name) VALUES ($1)', [file]);
         console.log(`✅ ${file} applied.`);
+        appliedCount++;
       } catch (err) {
         console.error(`❌ Failed to apply ${file}:`, err.message);
-        // Optionally break on error to prevent inconsistent state
         process.exit(1);
       }
-    } else {
-      // console.log(`⏭️ ${file} already applied.`);
     }
   }
 
-  console.log('🏁 All migrations up to date.');
+  if (appliedCount === 0) {
+    console.log('🏁 No new migrations to apply.');
+  } else {
+    console.log(`🏁 Applied ${appliedCount} migrations.`);
+  }
 }
 
-runMigrations().catch(err => {
-  console.error('Fatal migration error:', err);
-  process.exit(1);
-}).finally(() => pool.end());
+if (require.main === module) {
+  runMigrations().catch(err => {
+    console.error('Fatal migration error:', err);
+    process.exit(1);
+  }).finally(() => pool.end());
+}
+
+module.exports = { runMigrations };

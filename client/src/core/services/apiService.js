@@ -16,9 +16,6 @@ export async function getApiBaseUrl() {
   if (cachedBaseUrl) return cachedBaseUrl;
   if (!isProd) {
     cachedBaseUrl = BUILD_API_URL;
-    // #region agent log
-    fetch('http://127.0.0.1:7697/ingest/5675c3cf-ba29-47b2-b058-4634a8d33708',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ab3cc5'},body:JSON.stringify({sessionId:'ab3cc5',runId:'pre-fix',hypothesisId:'H1',location:'client/src/core/services/apiService.js:getApiBaseUrl',message:'Resolved API base URL (dev shortcut)',data:{isProd,buildApiUrl:BUILD_API_URL,resolvedBaseUrl:cachedBaseUrl},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     return cachedBaseUrl;
   }
   try {
@@ -28,17 +25,11 @@ export async function getApiBaseUrl() {
       if (config && config.apiUrl) {
         cachedBaseUrl = config.apiUrl.replace(/\/+$/, '');
         if (!cachedBaseUrl.endsWith('/api')) cachedBaseUrl += '/api';
-        // #region agent log
-        fetch('http://127.0.0.1:7697/ingest/5675c3cf-ba29-47b2-b058-4634a8d33708',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ab3cc5'},body:JSON.stringify({sessionId:'ab3cc5',runId:'pre-fix',hypothesisId:'H2',location:'client/src/core/services/apiService.js:getApiBaseUrl',message:'Resolved API base URL (prod config.json)',data:{isProd,configApiUrl:config.apiUrl,resolvedBaseUrl:cachedBaseUrl},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         return cachedBaseUrl;
       }
     }
   } catch (_) { }
   cachedBaseUrl = BUILD_API_URL;
-  // #region agent log
-  fetch('http://127.0.0.1:7697/ingest/5675c3cf-ba29-47b2-b058-4634a8d33708',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ab3cc5'},body:JSON.stringify({sessionId:'ab3cc5',runId:'pre-fix',hypothesisId:'H3',location:'client/src/core/services/apiService.js:getApiBaseUrl',message:'Resolved API base URL (fallback)',data:{isProd,buildApiUrl:BUILD_API_URL,resolvedBaseUrl:cachedBaseUrl},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   return cachedBaseUrl;
 }
 
@@ -112,9 +103,6 @@ class ApiService {
     }
 
     if (isDev) console.log('Making API request to:', url);
-    // #region agent log
-    fetch('http://127.0.0.1:7697/ingest/5675c3cf-ba29-47b2-b058-4634a8d33708',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ab3cc5'},body:JSON.stringify({sessionId:'ab3cc5',runId:'pre-fix',hypothesisId:'H1',location:'client/src/core/services/apiService.js:makeRequest',message:'Preparing request URL',data:{endpoint,base,url,method:String((options.method||"GET")).toUpperCase()},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     // Create the request promise
     const requestPromise = this._executeRequest(url, options)

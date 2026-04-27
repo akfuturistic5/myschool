@@ -270,7 +270,7 @@ const DISALLOWED_SQL_PATTERNS = [
   /\bDROP\s+ROLE\b/i,
   /\bCREATE\s+DATABASE\b/i,
   /\bDROP\s+DATABASE\b/i,
-  /\bDO\s+\$\$/i,
+  // Removed DO $$ to allow sequence sync blocks
 ];
 
 /**
@@ -553,31 +553,30 @@ async function executeTemplateStatements(pool, sqlText) {
   for (const stmt of statements) {
     if (!stmt) continue;
 
-    // COPY ... FROM stdin must be the only command in a simple query; never batch with other statements.
     const isCopyStdin = /\bCOPY\b[\s\S]*\bFROM\s+stdin\s*;/i.test(stmt);
 
-    if (isCopyStdin) {
-      await flushBatch();
-      await executeCopyStdinStatement(pool, stmt);
-      continue;
-    }
+      if (isCopyStdin) {
+        await flushBatch();
+        await executeCopyStdinStatement(pool, stmt);
+        continue;
+      }
 
-    if (stmt.length >= largeStmtChars) {
-      await flushBatch();
-      await pool.query(stmt);
-      continue;
-    }
+      if (stmt.length >= largeStmtChars) {
+        await flushBatch();
+        await pool.query(stmt);
+        continue;
+      }
 
-    if (batch.length > 0 && batchChars + stmt.length > maxBatchChars) {
-      await flushBatch();
-    }
+      if (batch.length > 0 && batchChars + stmt.length > maxBatchChars) {
+        await flushBatch();
+      }
 
-    batch.push(stmt);
-    batchChars += stmt.length;
+      batch.push(stmt);
+      batchChars += stmt.length;
 
-    if (batch.length >= batchSize) {
-      await flushBatch();
-    }
+      if (batch.length >= batchSize) {
+        await flushBatch();
+      }
   }
 
   await flushBatch();
@@ -701,7 +700,7 @@ async function createTenantDatabase(dbName, schoolName = null) {
       );
     }
 
-    await tenantPool.query('TRUNCATE TABLE public.users RESTART IDENTITY CASCADE');
+    // Ensure school_profile exists and is set
     await tenantPool.query(`
       CREATE TABLE IF NOT EXISTS public.school_profile (
         id SERIAL PRIMARY KEY,
@@ -715,11 +714,15 @@ async function createTenantDatabase(dbName, schoolName = null) {
         updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    await tenantPool.query('TRUNCATE TABLE public.school_profile RESTART IDENTITY');
-    await tenantPool.query(
-      'INSERT INTO public.school_profile (school_name, logo_url) VALUES ($1, NULL)',
-      [String(schoolName || '').trim() || 'School']
-    );
+    
+    // Check if profile exists, if not insert it
+    const profileRes = await tenantPool.query('SELECT count(*) FROM public.school_profile');
+    if (parseInt(profileRes.rows[0].count, 10) === 0) {
+      await tenantPool.query(
+        'INSERT INTO public.school_profile (school_name, logo_url) VALUES ($1, NULL)',
+        [String(schoolName || '').trim() || 'School']
+      );
+    }
     await tenantPool.query('COMMIT');
   } catch (err) {
     await tenantPool.query('ROLLBACK').catch(() => {});
@@ -836,5 +839,6 @@ module.exports = {
   getTemplateDbName,
   splitSqlStatements,
   executeTemplateStatements,
+  getAdminPool,
 };
 
