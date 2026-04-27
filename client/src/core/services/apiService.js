@@ -1822,6 +1822,7 @@ class ApiService {
     if (params.search) searchParams.set('search', params.search);
     if (params.status && params.status !== 'all') searchParams.set('status', params.status);
     if (params.pickup_point_id && params.pickup_point_id !== 'all') searchParams.set('pickup_point_id', params.pickup_point_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
     const qs = searchParams.toString();
@@ -1856,6 +1857,7 @@ class ApiService {
     if (params.status && params.status !== 'all') searchParams.set('status', params.status);
     if (params.user_type && params.user_type !== 'all') searchParams.set('user_type', params.user_type);
     if (params.vehicle_id && params.vehicle_id !== 'all') searchParams.set('vehicle_id', params.vehicle_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
     const qs = searchParams.toString();
