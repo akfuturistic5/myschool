@@ -11,7 +11,7 @@
     "db:init": "node scripts/run-init-migration.js",
     "db:setup": "node scripts/full-setup.js",
     "db:migrate": "node scripts/run-all-migrations.js",
-    "db:seed:academic": "node -e \"const { Pool } = require('pg'); const fs = require('fs'); const pool = new Pool({ user: 'postgres', password: 'database', host: 'localhost', port: 5432, database: 'school_db' }); async function run() { console.log('Seeding 005...'); await pool.query(fs.readFileSync('migrations/005_seed_realistic_academic_dummy_data.sql', 'utf8')); console.log('Seeding 006...'); await pool.query(fs.readFileSync('migrations/006_reseed_multi_academic_year_dummy_data.sql', 'utf8')); pool.end(); } run();\"",
+    "db:seed:academic": "node scripts/seed-academic.js",
     "db:init:reset": "node scripts/run-init-migration.js --reset-tenant",
     "db:verify": "node scripts/run-init-migration.js --verify-only",
     "db:migrate:student-promotions": "node scripts/run-student-promotions-migration.js",

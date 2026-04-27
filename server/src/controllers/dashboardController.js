@@ -959,12 +959,14 @@ const getStarStudents = async (req, res) => {
     const extraFilters = [];
     const extraParams = [];
     let dateFilterSql = '';
+    // Some deployments have older `exams` schema without start_date/end_date.
+    // Use exam_results timestamps for filtering/sorting to stay compatible.
     if (timeRange === 'this_month') {
-      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= DATE_TRUNC('month', CURRENT_DATE)`;
+      dateFilterSql = `AND COALESCE(er.modified_at, er.created_at) >= DATE_TRUNC('month', CURRENT_DATE)`;
     } else if (timeRange === 'this_year') {
-      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= DATE_TRUNC('year', CURRENT_DATE)`;
+      dateFilterSql = `AND COALESCE(er.modified_at, er.created_at) >= DATE_TRUNC('year', CURRENT_DATE)`;
     } else if (timeRange === 'last_week') {
-      dateFilterSql = `AND COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at) >= CURRENT_DATE - INTERVAL '7 days'`;
+      dateFilterSql = `AND COALESCE(er.modified_at, er.created_at) >= CURRENT_DATE - INTERVAL '7 days'`;
     }
     if (classNameFilter) {
       extraFilters.push(`AND LOWER(TRIM(c.class_name)) = LOWER(TRIM($${p + extraParams.length}))`);
@@ -982,7 +984,7 @@ const getStarStudents = async (req, res) => {
           SELECT
             er.exam_id,
             COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
-            MAX(COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at)) AS sort_date
+            MAX(COALESCE(er.modified_at, er.created_at)) AS sort_date
           FROM exam_results er
           INNER JOIN students st ON st.id = er.student_id
           LEFT JOIN classes c ON c.id = st.class_id
@@ -1030,7 +1032,7 @@ const getStarStudents = async (req, res) => {
            SUM(er.marks_obtained::numeric) AS marks_obtained,
            SUM(COALESCE(e.total_marks::numeric, 100)) AS total_marks,
            COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
-           MAX(COALESCE(e.start_date, e.end_date, er.modified_at, er.created_at)) AS exam_date
+           MAX(COALESCE(er.modified_at, er.created_at)) AS exam_date
          FROM exam_results er
          INNER JOIN students st ON st.id = er.student_id
          LEFT JOIN classes c ON c.id = st.class_id

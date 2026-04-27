@@ -104,7 +104,7 @@ const getAllTeachers = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        t.other_info,
+        NULL::text AS other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -184,7 +184,7 @@ const getCurrentTeacher = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        t.other_info,
+        NULL::text AS other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -272,7 +272,7 @@ const getTeacherById = async (req, res) => {
         s.user_id,
         t.youtube,
         t.instagram,
-        t.other_info,
+        NULL::text AS other_info,
         t.account_name,
         t.account_number,
         t.epf_no,
@@ -367,7 +367,7 @@ const getTeachersByClass = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        t.other_info,
+        NULL::text AS other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -947,7 +947,7 @@ const createTeacher = async (req, res) => {
         t.linkedin,
         t.youtube,
         t.instagram,
-        t.other_info,
+        NULL::text AS other_info,
         t.account_name,
         t.account_number,
         t.status,
@@ -1159,7 +1159,7 @@ const updateTeacher = async (req, res) => {
     await query(`UPDATE teachers SET ${teacherUpdates.join(', ')} WHERE id = $${tidx}`, teacherParams);
 
     const result = await query(`
-      SELECT t.id, t.status, t.staff_id, s.is_active, t.youtube, t.instagram, t.other_info, t.account_name, t.account_number, t.epf_no
+      SELECT t.id, t.status, t.staff_id, s.is_active, t.youtube, t.instagram, NULL::text AS other_info, t.account_name, t.account_number, t.epf_no
       FROM teachers t INNER JOIN staff s ON t.staff_id = s.id
       WHERE t.id = $1
     `, [teacherIdNum]);

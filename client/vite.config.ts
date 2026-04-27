@@ -12,12 +12,12 @@ export default defineConfig({
     // Matches .env.production VITE_API_URL=/api and avoids cross-port localhost issues.
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:5001',
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
       // Only /super-admin/api goes to Express. /super-admin/login etc. are React Router (SPA).
       '/super-admin/api': {
-        target: 'http://127.0.0.1:5001',
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
     },
