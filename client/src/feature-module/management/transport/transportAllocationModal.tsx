@@ -5,6 +5,8 @@ import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import dayjs from "dayjs";
 import { DatePicker } from "antd";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 interface Props {
   selectedAllocation?: any;
@@ -23,6 +25,7 @@ const hideModal = (id: string) => {
 const today = () => new Date().toISOString().slice(0, 10);
 
 const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: Props) => {
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [loading, setLoading] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -79,8 +82,8 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         const [sRes, stRes, pRes, fRes] = await Promise.all([
           apiService.getStudents(),
           apiService.getStaff(),
-          apiService.getTransportPickupPoints({ limit: 1000, status: "active" }),
-          apiService.getTransportFees({ limit: 1000, status: "active" }),
+          apiService.getTransportPickupPoints({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined }),
+          apiService.getTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined }),
         ]);
         if (sRes?.status === "SUCCESS") setStudents(sRes.data || []);
         if (stRes?.status === "SUCCESS") setStaff(stRes.data || []);
@@ -91,7 +94,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
     };
     loadBase();
-  }, []);
+  }, [academicYearId]);
 
   useEffect(() => {
     if (selectedAllocation?.originalData) {
@@ -132,7 +135,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       setRoutes([]);
       return;
     }
-    const res = await apiService.getTransportRoutes({ limit: 1000, status: "active", pickup_point_id: pickupPointId });
+    const res = await apiService.getTransportRoutes({ limit: 1000, status: "active", pickup_point_id: pickupPointId, academic_year_id: academicYearId ?? undefined });
     setRoutes(res?.status === "SUCCESS" ? res.data || [] : []);
   };
 
@@ -141,7 +144,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       setVehicles([]);
       return;
     }
-    const res = await apiService.getTransportVehicles({ limit: 1000, status: "active", route_id: routeId });
+    const res = await apiService.getTransportVehicles({ limit: 1000, status: "active", route_id: routeId, academic_year_id: academicYearId ?? undefined });
     setVehicles(res?.status === "SUCCESS" ? res.data || [] : []);
   };
 
@@ -273,6 +276,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         is_free: singleUserType === "staff" ? singleIsFree : false,
         start_date: singleStartDate,
         status: singleStatus,
+        academic_year_id: academicYearId ?? undefined,
       };
       const id = selectedAllocation?.originalData?.id;
       const res = id
@@ -365,6 +369,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
           is_free: bulkUserType === "staff" ? bulkIsFree : false,
           start_date: bulkStartDate,
           status: bulkStatus,
+          academic_year_id: academicYearId ?? undefined,
         };
         try {
           const res = await apiService.createTransportAllocation(payload);
