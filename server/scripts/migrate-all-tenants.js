@@ -40,6 +40,9 @@ async function main() {
     console.log(`\n🏢 School: ${school_name} (${db_name})`);
     try {
       execSync(`node scripts/run-all-migrations.js --db ${db_name}`, { stdio: 'inherit' });
+      // 3. Unified Guardian Migration (one-time logic)
+      console.log(`🔗 Unifying guardians for ${db_name}...`);
+      execSync(`node scripts/migrate-unify-parents-guardians.js --db ${db_name}`, { stdio: 'inherit' });
     } catch (err) {
       console.error(`❌ Migration failed for school ${school_name}. Continuing to next...`);
     }

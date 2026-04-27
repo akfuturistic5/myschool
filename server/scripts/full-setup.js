@@ -15,10 +15,16 @@ console.log('🏁 Starting Full Database Setup...');
 // 1. Initialize Master DB and Schools Registry
 run('node init-master-database.js');
 
-// 2. Initialize School DB and Base Schema (001)
+// 2. Initialize School DB (No Reset!)
 run('npm run db:init');
 
-// 3. Run all subsequent migrations (002+)
+// 3. Run all migrations (Updates schema to latest state)
 run('npm run db:migrate');
 
-console.log('\n✨ Database setup completed successfully!');
+// 4. Seed the legacy data
+run('npm run db:seed');
+
+// 5. Unified Guardian Migration (Processes seeded data and drops legacy columns)
+run('npm run db:migrate:unify');
+
+console.log('\n✨ Database setup, migration, and seeding completed successfully!');
