@@ -225,7 +225,7 @@ const updateParent = async (req, res) => {
           [fFirst || null, fLast || null, father_email || null, father_phone || null, father_occupation || null, fatherUserId]
         );
       }
- 
+
       // Update Mother's user record if exists
       if (motherUserId) {
         const { first_name: mFirst, last_name: mLast } = parseFullName(mother_name || "");
@@ -685,66 +685,66 @@ const createParentWithChild = async (req, res) => {
         throw err;
       }
 
-        // If primary father details are missing, use mother's details for user account
-        const finalName = name || mother_name;
-        const finalPhone = phone || mother_phone;
-        const finalEmail = email || mother_email;
+      // If primary father details are missing, use mother's details for user account
+      const finalName = name || mother_name;
+      const finalPhone = phone || mother_phone;
+      const finalEmail = email || mother_email;
 
-        const { userId, reused } = await createOrReuseParentUser(
+      const { userId, reused } = await createOrReuseParentUser(
+        client,
+        {
+          fullName: finalName,
+          phone: finalPhone,
+          email: finalEmail,
+          avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+        },
+        warnings
+      );
+
+      let studentName = null;
+      if (student_id != null) {
+        const sid = parseInt(student_id, 10);
+        if (!Number.isFinite(sid) || sid <= 0) {
+          const err = new Error('Invalid student_id');
+          err.statusCode = 400;
+          throw err;
+        }
+        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
+        if (chk.rows.length === 0) {
+          const err = new Error('Student not found');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const hasFather = name || phone;
+        const hasMother = mother_name || mother_phone;
+
+        // Use syncStudentGuardians to handle both Father and Mother
+        await syncStudentGuardians(
           client,
+          sid,
           {
-            fullName: finalName,
-            phone: finalPhone,
-            email: finalEmail,
-            avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+            effFatherName: name || null,
+            effFatherEmail: email || null,
+            effFatherPhone: phone || null,
+            effFatherOcc: null,
+            effMotherName: mother_name || null,
+            effMotherEmail: mother_email || null,
+            effMotherPhone: mother_phone || null,
+            effMotherOcc: mother_occupation || null,
+            effGFirst: null,
+            effGLast: null,
+            effGPhone: null,
+            effGEmail: null,
+            effGOcc: null,
+            effGAddr: null,
+            effGRel: null,
+            fatherUserId: hasFather ? userId : null,
+            motherUserId: !hasFather && hasMother ? userId : null,
+            guardianUserId: null,
           },
           warnings
         );
-
-        let studentName = null;
-        if (student_id != null) {
-          const sid = parseInt(student_id, 10);
-          if (!Number.isFinite(sid) || sid <= 0) {
-            const err = new Error('Invalid student_id');
-            err.statusCode = 400;
-            throw err;
-          }
-          const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
-          if (chk.rows.length === 0) {
-            const err = new Error('Student not found');
-            err.statusCode = 400;
-            throw err;
-          }
-
-          const hasFather = name || phone;
-          const hasMother = mother_name || mother_phone;
-
-          // Use syncStudentGuardians to handle both Father and Mother
-          await syncStudentGuardians(
-            client,
-            sid,
-            {
-              effFatherName: name || null,
-              effFatherEmail: email || null,
-              effFatherPhone: phone || null,
-              effFatherOcc: null,
-              effMotherName: mother_name || null,
-              effMotherEmail: mother_email || null,
-              effMotherPhone: mother_phone || null,
-              effMotherOcc: mother_occupation || null,
-              effGFirst: null,
-              effGLast: null,
-              effGPhone: null,
-              effGEmail: null,
-              effGOcc: null,
-              effGAddr: null,
-              effGRel: null,
-              fatherUserId: hasFather ? userId : null,
-              motherUserId: !hasFather && hasMother ? userId : null,
-              guardianUserId: null,
-            },
-            warnings
-          );
 
         const r = chk.rows[0];
         studentName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;
