@@ -1,0 +1,1171 @@
+{
+  "generatedAt": "2026-04-28T13:18:39.210Z",
+  "report": [
+    {
+      "file": "002_create_student_promotions.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 12,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "002_library_module.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 8,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "003_library_academic_year.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 9,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "003_parents_father_mother_user_ids.sql",
+      "classification": "definitely_pending_structural",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [
+          "idx_parents_father_user_id",
+          "idx_parents_mother_user_id"
+        ],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "004_accounts_module.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 9,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "004_fix_swapped_teacher_student_role_ids.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "004_teachers_resume_joining_modified_at.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "005_accounts_expenses_and_tx_expense_fk.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 13,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "006_global_settings.sql",
+      "classification": "applied_structural",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "007_create_leaving_students.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "008_academic_years_end_date_nullable.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "009_guardian_registry_hardening.sql",
+      "classification": "definitely_pending_structural",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [
+          "uq_guardians_student_email",
+          "uq_guardians_student_phone"
+        ],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "010_assign_section_teachers_round_robin.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "010_fees_module_enterprise.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 17,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "010_parent_persons.sql",
+      "classification": "definitely_pending_structural",
+      "markerCount": 9,
+      "missing": {
+        "tables": [
+          "parent_persons"
+        ],
+        "columns": [
+          {
+            "table": "students",
+            "column": "father_person_id"
+          },
+          {
+            "table": "students",
+            "column": "mother_person_id"
+          },
+          {
+            "table": "students",
+            "column": "guardian_person_id"
+          }
+        ],
+        "indexes": [
+          "idx_parent_persons_phone_digits",
+          "idx_parent_persons_email_lower",
+          "idx_students_father_person",
+          "idx_students_mother_person",
+          "idx_students_guardian_person"
+        ],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "011_add_status_to_fees_types.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "011_reconcile_student_promotions_state.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "011_teacher_assignments.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 7,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "012_add_code_to_fees_types.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "012_driver_designation_and_drivers_staff_id.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "013_add_fine_details_to_fees_master.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "013_user_role_driver.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "014_backfill_drivers_to_staff_users.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "014_fix_fees_assign_unique_constraint.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "015_attendance_module_completion.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 8,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "016_attendance_hardening_and_audit.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "016_transport_pickup_points_enhancement.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 12,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "017_backfill_teacher_class_subject_from_mappings.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "017_transport_drivers_enhancement.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 15,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "018_unify_teacher_into_staff_attendance.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "019_exams_results_module_upgrade.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 10,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "019_leave_applications_approval_columns.sql",
+      "classification": "applied_structural",
+      "markerCount": 5,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "020_exams_results_uniqueness_and_component.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "020_holiday_management_module.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 8,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "021_exams_result_finalization.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "021_users_occupation.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "022_teacher_assignments_unique_slot.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "023_exams_unique_definition.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "024_exam_subjects_schedule_fields.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "024_transport_trigger_cleanup.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "025_remove_exams_results_module.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "026_apply_current_subjects_to_all_classes.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "027_backfill_section_teachers_round_robin.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "028_exams_results_module.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 23,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "029_exam_subjects_drop_legacy_component_unique.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "031_exam_subjects_exam_class_integrity.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "032_drop_manual_counts_from_classes_and_sections.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "032_exam_grade_scale.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "033_school_profile_contact_fields.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "034_account_delete_requests.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "035_enquiries_module.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 5,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "036_enquiries_drop_follow_up_date.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "037_events_attachments_and_indexes.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 8,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "037_hostel_academic_year_and_crud_fields.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "038_events_staff_targeting.sql",
+      "classification": "applied_structural",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "039_timetable_class_schedules_hardening.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 5,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "040_timetable_unique_constraints.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "041_sections_academic_year_scope.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "041_time_slots_slot_name_length.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "042_add_academic_year_to_related_tables.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 9,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "042_time_slots_backfill_duration.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "043_add_deleted_at_to_transport_tables.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 15,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "043_master_tables_remove_academic_year.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "043_transport_fees_and_allocations.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 11,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "044_restore_academic_year_on_core_clone_tables.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 18,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "044_transport_fee_staff_amount.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "045_fix_legacy_section_count_trigger.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "046_create_student_rejoins.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "047_student_rejoins_rejoined_by_user.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "048_fix_classes_uniqueness.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "049_create_student_siblings_table.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": true
+    },
+    {
+      "file": "049_notice_board_dates.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 3,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "050_add_teacher_bank_accounts.sql",
+      "classification": "applied_structural",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "050_notice_board_created_by_backfill.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "051_transport_fees_allocations_academic_year.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 4,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "20260422_add_deleted_at_soft_delete.sql",
+      "classification": "applied_structural_but_contains_data_or_drop_ops",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": true,
+      "hasDropOps": false
+    },
+    {
+      "file": "20260422_add_sibling_section_column.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "20260422_make_student_ids_nullable.sql",
+      "classification": "inconclusive_no_structural_markers",
+      "markerCount": 0,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": true
+    },
+    {
+      "file": "20260423_teacher_profile_enhancements.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "20260424_add_teacher_other_info.sql",
+      "classification": "applied_structural",
+      "markerCount": 1,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    },
+    {
+      "file": "20260427_add_student_docs.sql",
+      "classification": "applied_structural",
+      "markerCount": 2,
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "indexes": [],
+        "constraints": [],
+        "triggers": []
+      },
+      "hasDataOps": false,
+      "hasDropOps": false
+    }
+  ],
+  "definitelyPending": [
+    "003_parents_father_mother_user_ids.sql",
+    "009_guardian_registry_hardening.sql",
+    "010_parent_persons.sql"
+  ]
+}

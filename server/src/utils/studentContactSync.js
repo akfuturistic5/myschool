@@ -18,6 +18,18 @@ async function guardiansIsSlimSchema(client) {
   return r.rows.length === 0;
 }
 
+function splitFullName(fullName, fallbackFirstName = '') {
+  const norm = String(fullName || '').trim();
+  if (!norm) {
+    return { firstName: fallbackFirstName || '', lastName: '' };
+  }
+  const parts = norm.split(/\s+/);
+  return {
+    firstName: parts[0] || fallbackFirstName || '',
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
 /**
  * Map guardian rows + users to legacy API field names for forms.
  */
@@ -230,13 +242,6 @@ async function resolveLinkedUser(client, personId, allowedRoleIds) {
  */
 async function syncStudentGuardians(client, studentId, payload, warnings) {
   const slim = await guardiansIsSlimSchema(client);
-  if (!slim) {
-    const err = new Error(
-      'Database not migrated: run npm run db:migrate:unify (guardians still has legacy columns)'
-    );
-    err.statusCode = 503;
-    throw err;
-  }
 
   const {
     effFatherName,
@@ -370,14 +375,78 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
   let primaryId = null;
   for (const row of rows) {
     const isPrimary = primaryType ? row.type === primaryType : rows.length === 1;
-    const ins = await client.query(
-      `INSERT INTO guardians (
-        student_id, user_id, guardian_type, relation,
-        is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
-      RETURNING id`,
-      [studentId, row.uid, row.type, row.rel, isPrimary, false]
-    );
+    let ins;
+    if (slim) {
+      ins = await client.query(
+        `INSERT INTO guardians (
+          student_id, user_id, guardian_type, relation,
+          is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+        RETURNING id`,
+        [studentId, row.uid, row.type, row.rel, isPrimary, false]
+      );
+    } else {
+      const userRes = await client.query(
+        `SELECT first_name, last_name, phone, email, occupation, current_address
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [row.uid]
+      );
+      const u = userRes.rows[0] || {};
+      const fallbackByType = (() => {
+        if (row.type === 'father') {
+          return {
+            ...splitFullName(effFatherName, 'Father'),
+            occupation: effFatherOcc || null,
+            address: null,
+          };
+        }
+        if (row.type === 'mother') {
+          return {
+            ...splitFullName(effMotherName, 'Mother'),
+            occupation: effMotherOcc || null,
+            address: null,
+          };
+        }
+        return {
+          firstName: effGFirst || 'Guardian',
+          lastName: effGLast || '',
+          occupation: effGOcc || null,
+          address: effGAddr || null,
+        };
+      })();
+      const firstName = (u.first_name || fallbackByType.firstName || '').toString().trim();
+      const lastName = (u.last_name || fallbackByType.lastName || '').toString().trim();
+      const phone = (u.phone || '').toString().trim();
+      const email = (u.email || '').toString().trim() || null;
+      const occupation = (u.occupation || fallbackByType.occupation || '').toString().trim() || null;
+      const address = (u.current_address || fallbackByType.address || '').toString().trim() || null;
+
+      ins = await client.query(
+        `INSERT INTO guardians (
+          student_id, user_id, guardian_type, relation,
+          is_primary_contact, is_emergency_contact, is_active,
+          first_name, last_name, phone, email, address, occupation,
+          created_at, modified_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+        RETURNING id`,
+        [
+          studentId,
+          row.uid,
+          row.type,
+          row.rel,
+          isPrimary,
+          false,
+          firstName || (row.type === 'father' ? 'Father' : row.type === 'mother' ? 'Mother' : 'Guardian'),
+          lastName || '',
+          phone || '',
+          email,
+          address,
+          occupation,
+        ]
+      );
+    }
     if (isPrimary) primaryId = ins.rows[0].id;
   }
   if (!primaryId && rows.length > 0) {
