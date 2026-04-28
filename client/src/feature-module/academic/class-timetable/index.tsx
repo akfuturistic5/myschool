@@ -97,101 +97,45 @@ type CellProps = {
   dayLabel: string;
   dayNum: number;
   slot: PeriodCol;
-  entry: any | undefined;
-  classId: string;
-  sectionId: string;
-  academicYearId: number;
+  subjectId: string;
+  teacherId: string;
+  dirty: boolean;
+  busy: boolean;
   subjectOptions: Opt[];
   teacherOptions: Opt[];
+  subjectTeacherMap: Record<string, string>;
   sectionRoomLabel: string;
-  onSaved: () => void;
+  onSubjectChange: (value: string | null) => void;
+  onTeacherChange: (value: string | null) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
 };
 
 function TimetableCell({
   dayLabel,
-  dayNum,
   slot,
-  entry,
-  classId,
-  sectionId,
-  academicYearId,
+  subjectId,
+  teacherId,
+  dirty,
+  busy,
   subjectOptions,
   teacherOptions,
+  subjectTeacherMap,
   sectionRoomLabel,
-  onSaved,
+  onSubjectChange,
+  onTeacherChange,
+  onSave,
+  onDelete,
+  canDelete,
 }: CellProps) {
-  const od = entry?.originalData ?? {};
-  const existingId = od.id != null && Number.isFinite(Number(od.id)) ? Number(od.id) : null;
-
-  const [subjectId, setSubjectId] = useState("");
-  const [teacherId, setTeacherId] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setSubjectId(od.subject_id != null ? String(od.subject_id) : "");
-    setTeacherId(od.teacher_id != null ? String(od.teacher_id) : "");
-  }, [existingId, od.subject_id, od.teacher_id]);
-
-  const handleSave = async () => {
-    if (!teacherId) {
-      void Swal.fire({
-        icon: "warning",
-        title: "Teacher required",
-        text: "Please select a teacher before saving.",
-      });
-      return;
-    }
-    setBusy(true);
-    try {
-      const payload = {
-        class_id: Number(classId),
-        section_id: Number(sectionId),
-        subject_id: subjectId ? Number(subjectId) : null,
-        teacher_id: Number(teacherId),
-        day_of_week: dayNum,
-        time_slot_id: slot.id,
-        academic_year_id: academicYearId,
-      };
-      if (existingId) {
-        await apiService.updateClassSchedule(existingId, payload);
-      } else {
-        await apiService.createClassSchedule(payload);
-      }
-      onSaved();
-    } catch (e) {
-      const msg = httpErrorMessage(e, "Could not save this slot.");
-      void Swal.fire({
-        icon: "error",
-        title: "Could not save",
-        text: msg,
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!existingId) return;
-    const confirm = await Swal.fire({
-      title: "Remove entry?",
-      text: `Remove this timetable entry for ${dayLabel}?`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonText: "Yes, remove",
-      cancelButtonText: "Cancel",
-      confirmButtonColor: "#dc3545",
-    });
-    if (!confirm.isConfirmed) return;
-    setBusy(true);
-    try {
-      await apiService.deleteClassSchedule(existingId);
-      onSaved();
-      void Swal.fire({ icon: "success", title: "Removed", timer: 1600, showConfirmButton: false });
-    } catch (e) {
-      const msg = httpErrorMessage(e, "Could not delete.");
-      void Swal.fire({ icon: "error", title: "Delete failed", text: msg });
-    } finally {
-      setBusy(false);
+  const handleSubjectChange = (v: string | null) => {
+    const nextSubjectId = v || "";
+    onSubjectChange(nextSubjectId);
+    if (!nextSubjectId) return;
+    const mappedTeacherId = subjectTeacherMap[nextSubjectId];
+    if (mappedTeacherId) {
+      onTeacherChange(mappedTeacherId);
     }
   };
 
@@ -215,7 +159,7 @@ function TimetableCell({
           options={subjectOptions}
           value={subjectId || null}
           placeholder="Subject"
-          onChange={(v) => setSubjectId(v || "")}
+          onChange={handleSubjectChange}
         />
       </div>
       <div className="mb-1">
@@ -231,12 +175,13 @@ function TimetableCell({
         <span className="text-muted">Room: </span>
         <span>{sectionRoomLabel || "—"}</span>
       </div>
+      {dirty ? <div className="small text-warning mb-1">Unsaved change</div> : null}
       <div className="d-flex flex-wrap gap-1">
-        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void handleSave()}>
-          {busy ? "…" : existingId ? "Update" : "Add"}
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onSave}>
+          {busy ? "…" : canDelete ? "Update" : "Add"}
         </button>
-        {existingId ? (
-          <button type="button" className="btn btn-sm btn-outline-danger" disabled={busy} onClick={() => void handleDelete()}>
+        {canDelete ? (
+          <button type="button" className="btn btn-sm btn-outline-danger" disabled={busy} onClick={onDelete}>
             Remove
           </button>
         ) : null}
@@ -244,6 +189,17 @@ function TimetableCell({
     </td>
   );
 }
+
+type CellDraft = {
+  existingId: number | null;
+  dayLabel: string;
+  dayNum: number;
+  slotId: number;
+  slotLabel: string;
+  subjectId: string;
+  teacherId: string;
+  dirty: boolean;
+};
 
 const ClassTimetable = () => {
   const routes = all_routes;
@@ -324,6 +280,18 @@ const ClassTimetable = () => {
       return { value: sid, label: name };
     }),
   ];
+  const subjectTeacherMap = useMemo(() => {
+    const validTeacherIds = new Set(teacherOptions.map((opt) => String(opt.value)));
+    const rows = Array.isArray(subjects) ? subjects : [];
+    return rows.reduce((acc: Record<string, string>, s: Record<string, unknown>) => {
+      const sid = String(s.id ?? "").trim();
+      const tid = String(s.teacher_id ?? "").trim();
+      if (!sid || !tid) return acc;
+      if (!validTeacherIds.has(tid)) return acc;
+      acc[sid] = tid;
+      return acc;
+    }, {});
+  }, [subjects, teacherOptions]);
   const periodColumns: PeriodCol[] = useMemo(() => {
     const raw = Array.isArray(apiSlots) ? apiSlots : [];
     const seenIds = new Set<number>();
@@ -433,6 +401,172 @@ const ClassTimetable = () => {
     printData("Class timetable", exportColumns, exportRows);
   }, [exportRows, exportColumns]);
 
+  const [cellDrafts, setCellDrafts] = useState<Record<string, CellDraft>>({});
+  const [initialCellDrafts, setInitialCellDrafts] = useState<Record<string, CellDraft>>({});
+  const [savingByKey, setSavingByKey] = useState<Record<string, boolean>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+
+  const makeCellKey = useCallback((dayNum: number, slotId: number) => `${dayNum}-${slotId}`, []);
+
+  useEffect(() => {
+    if (!selectionReady || loading || periodColumns.length === 0) {
+      setCellDrafts({});
+      setInitialCellDrafts({});
+      return;
+    }
+    const next: Record<string, CellDraft> = {};
+    WEEK_DAYS.forEach(({ label, dow }) => {
+      periodColumns.forEach((col) => {
+        if (col.isBreak) return;
+        const entry = findCellForSlot(routineData, label, col.id);
+        const od = entry?.originalData ?? {};
+        const existingId = od.id != null && Number.isFinite(Number(od.id)) ? Number(od.id) : null;
+        const key = makeCellKey(dow, col.id);
+        next[key] = {
+          existingId,
+          dayLabel: label,
+          dayNum: dow,
+          slotId: col.id,
+          slotLabel: col.label,
+          subjectId: od.subject_id != null ? String(od.subject_id) : "",
+          teacherId: od.teacher_id != null ? String(od.teacher_id) : "",
+          dirty: false,
+        };
+      });
+    });
+    setCellDrafts(next);
+    setInitialCellDrafts(next);
+  }, [selectionReady, loading, periodColumns, routineData, makeCellKey]);
+
+  const updateCellDraft = useCallback(
+    (key: string, patch: Partial<CellDraft>) => {
+      setCellDrafts((prev) => {
+        const current = prev[key];
+        if (!current) return prev;
+        const next = { ...current, ...patch };
+        const base = initialCellDrafts[key];
+        const dirty = !!base && (next.subjectId !== base.subjectId || next.teacherId !== base.teacherId);
+        return { ...prev, [key]: { ...next, dirty } };
+      });
+    },
+    [initialCellDrafts]
+  );
+
+  const persistCell = useCallback(
+    async (key: string, opts?: { skipRefetch?: boolean }) => {
+      const draft = cellDrafts[key];
+      if (!draft) return { ok: false, message: "Missing cell data." };
+      if (!draft.teacherId) {
+        return {
+          ok: false,
+          message: `${draft.dayLabel} - ${draft.slotLabel}: Please select a teacher before saving.`,
+        };
+      }
+      setSavingByKey((prev) => ({ ...prev, [key]: true }));
+      try {
+        const payload = {
+          class_id: Number(filterClassId),
+          section_id: Number(filterSectionId),
+          subject_id: draft.subjectId ? Number(draft.subjectId) : null,
+          teacher_id: Number(draft.teacherId),
+          day_of_week: draft.dayNum,
+          time_slot_id: draft.slotId,
+          academic_year_id: academicYearId,
+        };
+        if (draft.existingId) {
+          await apiService.updateClassSchedule(draft.existingId, payload);
+        } else {
+          await apiService.createClassSchedule(payload);
+        }
+        if (!opts?.skipRefetch) {
+          await refetch();
+        }
+        return { ok: true, message: "" };
+      } catch (e) {
+        return { ok: false, message: httpErrorMessage(e, "Could not save this slot.") };
+      } finally {
+        setSavingByKey((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [cellDrafts, filterClassId, filterSectionId, academicYearId, refetch]
+  );
+
+  const pendingKeys = useMemo(
+    () => Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty),
+    [cellDrafts]
+  );
+
+  const handleBulkSave = useCallback(async () => {
+    if (!pendingKeys.length) return;
+    setBulkSaving(true);
+    try {
+      const failures: string[] = [];
+      for (const key of pendingKeys) {
+        const result = await persistCell(key, { skipRefetch: true });
+        if (!result.ok) failures.push(result.message);
+      }
+      await refetch();
+      if (failures.length === 0) {
+        void Swal.fire({
+          icon: "success",
+          title: "Bulk save completed",
+          text: `${pendingKeys.length} timetable changes saved successfully.`,
+        });
+      } else {
+        void Swal.fire({
+          icon: "warning",
+          title: "Bulk save completed with issues",
+          text: failures.slice(0, 3).join(" | "),
+        });
+      }
+    } finally {
+      setBulkSaving(false);
+    }
+  }, [pendingKeys, persistCell, refetch]);
+
+  const handleSingleSave = useCallback(
+    async (key: string) => {
+      const result = await persistCell(key);
+      if (!result.ok) {
+        void Swal.fire({
+          icon: "error",
+          title: "Could not save",
+          text: result.message,
+        });
+      }
+    },
+    [persistCell]
+  );
+
+  const handleDelete = useCallback(
+    async (key: string) => {
+      const draft = cellDrafts[key];
+      if (!draft?.existingId) return;
+      const confirm = await Swal.fire({
+        title: "Remove entry?",
+        text: `Remove this timetable entry for ${draft.dayLabel}?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Yes, remove",
+        cancelButtonText: "Cancel",
+        confirmButtonColor: "#dc3545",
+      });
+      if (!confirm.isConfirmed) return;
+      setSavingByKey((prev) => ({ ...prev, [key]: true }));
+      try {
+        await apiService.deleteClassSchedule(draft.existingId);
+        await refetch();
+        void Swal.fire({ icon: "success", title: "Removed", timer: 1600, showConfirmButton: false });
+      } catch (e) {
+        const msg = httpErrorMessage(e, "Could not delete.");
+        void Swal.fire({ icon: "error", title: "Delete failed", text: msg });
+      } finally {
+        setSavingByKey((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [cellDrafts, refetch]
+  );
+
   return (
     <div>
       <div className="page-wrapper">
@@ -499,6 +633,16 @@ const ClassTimetable = () => {
                     onChange={(v) => setFilterSectionId(v || "")}
                   />
                 </div>
+                <div className="col-md-12 col-lg-4 d-flex align-items-end justify-content-lg-end">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void handleBulkSave()}
+                    disabled={!selectionReady || loading || bulkSaving || pendingKeys.length === 0}
+                  >
+                    {bulkSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
               </div>
 
               {error ? (
@@ -537,22 +681,31 @@ const ClassTimetable = () => {
                       {WEEK_DAYS.map(({ label, dow }) => (
                         <tr key={label}>
                           <th className="table-light">{label}</th>
-                          {periodColumns.map((col) => (
-                            <TimetableCell
-                              key={`${label}-${col.id}`}
-                              dayLabel={label}
-                              dayNum={dow}
-                              slot={col}
-                              entry={findCellForSlot(routineData, label, col.id)}
-                              classId={filterClassId}
-                              sectionId={filterSectionId}
-                              academicYearId={academicYearId!}
-                              subjectOptions={subjectOptions}
-                              teacherOptions={teacherOptions}
-                              sectionRoomLabel={sectionRoomLabel}
-                              onSaved={() => void refetch()}
-                            />
-                          ))}
+                          {periodColumns.map((col) => {
+                            const key = makeCellKey(dow, col.id);
+                            const draft = cellDrafts[key];
+                            return (
+                              <TimetableCell
+                                key={`${label}-${col.id}`}
+                                dayLabel={label}
+                                dayNum={dow}
+                                slot={col}
+                                subjectId={draft?.subjectId ?? ""}
+                                teacherId={draft?.teacherId ?? ""}
+                                dirty={Boolean(draft?.dirty)}
+                                busy={Boolean(savingByKey[key]) || bulkSaving}
+                                subjectOptions={subjectOptions}
+                                teacherOptions={teacherOptions}
+                                subjectTeacherMap={subjectTeacherMap}
+                                sectionRoomLabel={sectionRoomLabel}
+                                onSubjectChange={(v) => updateCellDraft(key, { subjectId: v || "" })}
+                                onTeacherChange={(v) => updateCellDraft(key, { teacherId: v || "" })}
+                                onSave={() => void handleSingleSave(key)}
+                                onDelete={() => void handleDelete(key)}
+                                canDelete={Boolean(draft?.existingId)}
+                              />
+                            );
+                          })}
                         </tr>
                       ))}
                     </tbody>
