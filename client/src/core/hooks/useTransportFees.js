@@ -38,7 +38,19 @@ export const useTransportFees = (params = EMPTY_PARAMS) => {
           originalData: row,
         }));
         setData(mapped);
-        setMetadata(response.metadata || metadata);
+        const nextMeta = response.metadata || {
+          totalCount: Number(response.totalCount ?? mapped.length ?? 0),
+          page: Number(response.page ?? paramsRef.current?.page ?? 1),
+          limit: Number(response.limit ?? paramsRef.current?.limit ?? 10),
+          totalPages: Number(
+            response.totalPages ??
+              Math.ceil(
+                Number(response.totalCount ?? mapped.length ?? 0) /
+                  Math.max(1, Number(response.limit ?? paramsRef.current?.limit ?? 10))
+              )
+          ),
+        };
+        setMetadata(nextMeta);
       } else {
         setData([]);
       }

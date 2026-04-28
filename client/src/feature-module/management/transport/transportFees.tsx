@@ -9,9 +9,12 @@ import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 import TransportFeesModal from "./transportFeesModal";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportFees = () => {
   const routes = all_routes;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedFee, setSelectedFee] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -26,15 +29,20 @@ const TransportFees = () => {
     pickup_point_id: "all",
     sortField: "id",
     sortOrder: "DESC",
+    academic_year_id: undefined,
   });
 
   const { data, loading, metadata, refetch } = useTransportFees(params);
 
   useEffect(() => {
-    apiService.getTransportPickupPoints({ limit: 1000, status: "active" }).then((res: any) => {
+    setParams((p: any) => ({ ...p, academic_year_id: academicYearId ?? undefined, page: 1 }));
+  }, [academicYearId]);
+
+  useEffect(() => {
+    apiService.getTransportPickupPoints({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined }).then((res: any) => {
       if (res?.status === "SUCCESS") setPickupOptions(res.data || []);
     });
-  }, []);
+  }, [academicYearId]);
 
   const onRefresh = async () => {
     await refetch();

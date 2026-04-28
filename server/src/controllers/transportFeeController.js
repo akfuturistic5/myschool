@@ -1,5 +1,7 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn } = require('../utils/schemaInspector');
 
 function normalizeStatus(status) {
   if (typeof status !== 'string') return 'Active';
@@ -9,15 +11,18 @@ function normalizeStatus(status) {
 
 const getAllTransportFees = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('transport_fee_master', 'academic_year_id');
     const {
       page = 1,
       limit = 10,
       search = '',
       pickup_point_id,
       status,
+      academic_year_id,
       sortField = 'id',
       sortOrder = 'ASC',
     } = req.query;
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (Number(page) - 1) * Number(limit);
     const allowedSort = ['id', 'plan_name', 'duration_days', 'amount', 'staff_amount', 'status', 'created_at'];
@@ -38,6 +43,10 @@ const getAllTransportFees = async (req, res) => {
     if (status && status !== 'all') {
       params.push(normalizeStatus(status));
       whereClause += ` AND tfm.status = $${params.length}`;
+    }
+    if (hasAcademicYearId && scopedAcademicYearId) {
+      params.push(scopedAcademicYearId);
+      whereClause += ` AND tfm.academic_year_id = $${params.length}`;
     }
 
     const countResult = await query(
@@ -73,7 +82,8 @@ const getAllTransportFees = async (req, res) => {
 
 const createTransportFee = async (req, res) => {
   try {
-    const { pickup_point_id, plan_name, duration_days = null, amount, staff_amount, status } = req.body;
+    const hasAcademicYearId = await hasColumn('transport_fee_master', 'academic_year_id');
+    const { pickup_point_id, plan_name, duration_days = null, amount, staff_amount, status, academic_year_id } = req.body;
     if (
       !pickup_point_id ||
       !plan_name ||
@@ -85,19 +95,38 @@ const createTransportFee = async (req, res) => {
       return errorResponse(res, 400, 'pickup_point_id, plan_name, student amount and staff amount are required');
     }
 
-    const result = await query(
-      `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, amount, staff_amount, status)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        Number(pickup_point_id),
-        String(plan_name).trim(),
-        duration_days == null || duration_days === '' ? null : Number(duration_days),
-        Number(amount),
-        Number(staff_amount),
-        normalizeStatus(status),
-      ]
-    );
+    const scopedAcademicYearId = hasAcademicYearId
+      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+      : null;
+
+    const result = hasAcademicYearId
+      ? await query(
+          `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, amount, staff_amount, status, academic_year_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [
+            Number(pickup_point_id),
+            String(plan_name).trim(),
+            duration_days == null || duration_days === '' ? null : Number(duration_days),
+            Number(amount),
+            Number(staff_amount),
+            normalizeStatus(status),
+            scopedAcademicYearId,
+          ]
+        )
+      : await query(
+          `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, amount, staff_amount, status)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING *`,
+          [
+            Number(pickup_point_id),
+            String(plan_name).trim(),
+            duration_days == null || duration_days === '' ? null : Number(duration_days),
+            Number(amount),
+            Number(staff_amount),
+            normalizeStatus(status),
+          ]
+        );
 
     return success(res, 201, 'Transport fee plan created successfully', result.rows[0]);
   } catch (err) {
@@ -111,12 +140,13 @@ const createTransportFee = async (req, res) => {
 
 const updateTransportFee = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('transport_fee_master', 'academic_year_id');
     const feeId = Number(req.params.id);
     if (Number.isNaN(feeId)) {
       return errorResponse(res, 400, 'Invalid transport fee ID');
     }
 
-    const { pickup_point_id, plan_name, duration_days, amount, staff_amount, status } = req.body;
+    const { pickup_point_id, plan_name, duration_days, amount, staff_amount, status, academic_year_id } = req.body;
     const updates = [];
     const values = [];
     let i = 1;
@@ -144,6 +174,10 @@ const updateTransportFee = async (req, res) => {
     if (status !== undefined) {
       updates.push(`status = $${i++}`);
       values.push(normalizeStatus(status));
+    }
+    if (hasAcademicYearId && academic_year_id !== undefined) {
+      updates.push(`academic_year_id = $${i++}`);
+      values.push(toPositiveInt(academic_year_id));
     }
 
     if (!updates.length) {

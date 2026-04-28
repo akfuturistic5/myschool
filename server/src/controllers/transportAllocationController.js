@@ -1,5 +1,7 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { hasColumn } = require('../utils/schemaInspector');
 
 function normalizeStatus(status) {
   if (typeof status !== 'string') return 'Active';
@@ -125,6 +127,7 @@ async function enforceVehicleCapacity(client, vehicleId, startDate, endDate, exc
 
 const getAllTransportAllocations = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('transport_allocations', 'academic_year_id');
     const {
       page = 1,
       limit = 10,
@@ -132,9 +135,11 @@ const getAllTransportAllocations = async (req, res) => {
       status = 'all',
       search = '',
       vehicle_id,
+      academic_year_id,
       sortField = 'id',
       sortOrder = 'DESC',
     } = req.query;
+    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (Number(page) - 1) * Number(limit);
     const allowedSort = ['id', 'user_type', 'start_date', 'end_date', 'status', 'created_at'];
@@ -155,6 +160,10 @@ const getAllTransportAllocations = async (req, res) => {
     if (vehicle_id && vehicle_id !== 'all') {
       params.push(Number(vehicle_id));
       whereClause += ` AND ta.vehicle_id = $${params.length}`;
+    }
+    if (hasAcademicYearId && scopedAcademicYearId) {
+      params.push(scopedAcademicYearId);
+      whereClause += ` AND ta.academic_year_id = $${params.length}`;
     }
     if (search) {
       params.push(`%${search}%`);
@@ -237,6 +246,7 @@ const getAllTransportAllocations = async (req, res) => {
 
 const createTransportAllocation = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('transport_allocations', 'academic_year_id');
     const {
       user_id,
       user_type,
@@ -248,6 +258,7 @@ const createTransportAllocation = async (req, res) => {
       start_date,
       end_date = null,
       status,
+      academic_year_id,
     } = req.body;
 
     const parsedUserId = Number(user_id);
@@ -275,6 +286,9 @@ const createTransportAllocation = async (req, res) => {
     const result = await executeTransaction(async (client) => {
       const startDate = start_date || new Date().toISOString().slice(0, 10);
       const normalizedIsFree = Boolean(is_free);
+      const scopedAcademicYearId = hasAcademicYearId
+        ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+        : null;
 
       await validateUserTypeAndMembership(client, parsedUserId, normalizedUserType);
       await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
@@ -299,25 +313,46 @@ const createTransportAllocation = async (req, res) => {
         [startDate, parsedUserId, normalizedUserType]
       );
 
-      const insertResult = await client.query(
-        `INSERT INTO transport_allocations
-          (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         RETURNING *`,
-        [
-          parsedUserId,
-          normalizedUserType,
-          parsedRouteId,
-          parsedPickupPointId,
-          parsedVehicleId,
-          fee.feeId,
-          fee.feeAmount,
-          normalizedIsFree,
-          startDate,
-          finalEndDate,
-          normalizeStatus(status),
-        ]
-      );
+      const insertResult = hasAcademicYearId
+        ? await client.query(
+            `INSERT INTO transport_allocations
+              (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status, academic_year_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             RETURNING *`,
+            [
+              parsedUserId,
+              normalizedUserType,
+              parsedRouteId,
+              parsedPickupPointId,
+              parsedVehicleId,
+              fee.feeId,
+              fee.feeAmount,
+              normalizedIsFree,
+              startDate,
+              finalEndDate,
+              normalizeStatus(status),
+              scopedAcademicYearId,
+            ]
+          )
+        : await client.query(
+            `INSERT INTO transport_allocations
+              (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             RETURNING *`,
+            [
+              parsedUserId,
+              normalizedUserType,
+              parsedRouteId,
+              parsedPickupPointId,
+              parsedVehicleId,
+              fee.feeId,
+              fee.feeAmount,
+              normalizedIsFree,
+              startDate,
+              finalEndDate,
+              normalizeStatus(status),
+            ]
+          );
 
       return insertResult.rows[0];
     });
@@ -345,6 +380,7 @@ const createTransportAllocation = async (req, res) => {
 
 const updateTransportAllocation = async (req, res) => {
   try {
+    const hasAcademicYearId = await hasColumn('transport_allocations', 'academic_year_id');
     const allocationId = Number(req.params.id);
     if (Number.isNaN(allocationId)) {
       return errorResponse(res, 400, 'Invalid allocation ID');
@@ -371,6 +407,10 @@ const updateTransportAllocation = async (req, res) => {
       const startDate = payload.start_date !== undefined ? payload.start_date : current.start_date;
       const endDate = payload.end_date !== undefined ? payload.end_date : current.end_date;
       const status = payload.status !== undefined ? payload.status : current.status;
+      const academicYearId =
+        hasAcademicYearId && payload.academic_year_id !== undefined
+          ? toPositiveInt(payload.academic_year_id)
+          : (hasAcademicYearId ? toPositiveInt(current.academic_year_id) : null);
 
       if (
         !Number.isFinite(userId) ||
@@ -402,7 +442,8 @@ const updateTransportAllocation = async (req, res) => {
         Boolean(current.is_free) === Boolean(isFree) &&
         String(current.start_date) === String(startDate) &&
         String(current.end_date || '') === String(endDate || '') &&
-        String(current.status) === String(normalizedStatus);
+        String(current.status) === String(normalizedStatus) &&
+        (!hasAcademicYearId || Number(current.academic_year_id || 0) === Number(academicYearId || 0));
 
       if (noMeaningfulChange) {
         return current;
@@ -419,7 +460,8 @@ const updateTransportAllocation = async (req, res) => {
         Boolean(current.is_free) === Boolean(isFree) &&
         String(current.start_date) === String(startDate) &&
         String(current.end_date || '') === String(endDate || '') &&
-        String(current.status) !== String(normalizedStatus);
+        String(current.status) !== String(normalizedStatus) &&
+        (!hasAcademicYearId || Number(current.academic_year_id || 0) === Number(academicYearId || 0));
 
       if (statusOnlyChange) {
         const updateResult = await client.query(
@@ -455,13 +497,21 @@ const updateTransportAllocation = async (req, res) => {
         [startDate, allocationId]
       );
 
-      const insertResult = await client.query(
-        `INSERT INTO transport_allocations
-          (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         RETURNING *`,
-        [userId, userType, routeId, pickupPointId, vehicleId, fee.feeId, fee.feeAmount, isFree, startDate, finalEndDate, normalizedStatus]
-      );
+      const insertResult = hasAcademicYearId
+        ? await client.query(
+            `INSERT INTO transport_allocations
+              (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status, academic_year_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+             RETURNING *`,
+            [userId, userType, routeId, pickupPointId, vehicleId, fee.feeId, fee.feeAmount, isFree, startDate, finalEndDate, normalizedStatus, academicYearId]
+          )
+        : await client.query(
+            `INSERT INTO transport_allocations
+              (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             RETURNING *`,
+            [userId, userType, routeId, pickupPointId, vehicleId, fee.feeId, fee.feeAmount, isFree, startDate, finalEndDate, normalizedStatus]
+          );
 
       return insertResult.rows[0];
     });
