@@ -86,6 +86,13 @@ type PeriodCol = { id: number; label: string; start: string; end: string; isBrea
 
 type Opt = { value: string; label: string };
 
+function formatClassLabel(c: Record<string, unknown>): string {
+  const name = String(c.class_name ?? "").trim();
+  const code = String(c.class_code ?? "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || `Class #${String(c.id ?? "")}`;
+}
+
 type CellProps = {
   dayLabel: string;
   dayNum: number;
@@ -268,36 +275,47 @@ const ClassTimetable = () => {
   });
 
   const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => {
-    const seen = new Set<string>();
+    const seenIds = new Set<string>();
     const deduped = arr.filter((x: any) => {
-      const label = String(x?.[labelKey] ?? x?.[valueKey] ?? "").trim().toLowerCase();
-      if (!label) return false;
-      if (seen.has(label)) return false;
-      seen.add(label);
+      const id = String(x?.[valueKey] ?? "").trim();
+      if (!id) return false;
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
       return true;
     });
-    return [
-      { value: "", label: "Select" },
-      ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) })),
-    ];
+    return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) }))];
   };
 
   const yearScopedClasses = useMemo(
     () => classes.filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId)),
     [classes, academicYearId]
   );
-  const classOptions = options(yearScopedClasses, "id", "class_name");
+  const classOptions: Opt[] = useMemo(
+    () => [{ value: "", label: "Select" }, ...yearScopedClasses.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
+    [yearScopedClasses]
+  );
   const sectionOptions = options(sections, "id", "section_name");
   const subjectOptions: Opt[] = useMemo(() => {
+    const classIdNum = Number(filterClassId);
     const rows = Array.isArray(subjects) ? subjects : [];
+    const seen = new Set<string>();
+    const filtered = rows.filter((s: Record<string, unknown>) => {
+      const sid = String(s.id ?? "").trim();
+      if (!sid || seen.has(sid)) return false;
+      const sClass = Number(s.class_id);
+      if (!Number.isFinite(classIdNum) || classIdNum <= 0) return false;
+      if (!Number.isFinite(sClass) || sClass !== classIdNum) return false;
+      seen.add(sid);
+      return true;
+    });
     return [
       { value: "", label: "Select" },
-      ...rows.map((s: Record<string, unknown>) => ({
+      ...filtered.map((s: Record<string, unknown>) => ({
         value: String(s.id ?? ""),
         label: formatSubjectOptionLabel(s),
       })),
     ];
-  }, [subjects]);
+  }, [subjects, filterClassId]);
   const teacherOptions: Opt[] = [
     { value: "", label: "Select" },
     ...teachers.map((t: any) => {

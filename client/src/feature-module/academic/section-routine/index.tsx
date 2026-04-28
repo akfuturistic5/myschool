@@ -21,6 +21,13 @@ import {
   RoutineGridCell,
 } from "../utils/sectionRoutineGrid";
 
+function formatClassLabel(c: Record<string, unknown>): string {
+  const name = String(c.class_name ?? "").trim();
+  const code = String(c.class_code ?? "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || `Class #${String(c.id ?? "")}`;
+}
+
 const SectionRoutine = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -53,10 +60,10 @@ const SectionRoutine = () => {
   const options = (arr: any[], valueKey = "id", labelKey = "name") => {
     const seen = new Set<string>();
     const deduped = arr.filter((x: any) => {
-      const label = String(x?.[labelKey] ?? x?.[valueKey] ?? "").trim().toLowerCase();
-      if (!label) return false;
-      if (seen.has(label)) return false;
-      seen.add(label);
+      const id = String(x?.[valueKey] ?? "").trim();
+      if (!id) return false;
+      if (seen.has(id)) return false;
+      seen.add(id);
       return true;
     });
     return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: x[labelKey] ?? String(x[valueKey]) }))];
@@ -65,12 +72,15 @@ const SectionRoutine = () => {
     () => classes.filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId)),
     [classes, academicYearId]
   );
-  const classOptions = options(yearScopedClasses, "id", "class_name");
+  const classOptions = useMemo(
+    () => [{ value: "", label: "Select" }, ...yearScopedClasses.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
+    [yearScopedClasses]
+  );
   const filterSectionOptions = options(filterSections, "id", "section_name");
 
   const selectedClassName = useMemo(() => {
     const c = yearScopedClasses.find((x: { id?: unknown }) => String(x.id) === String(filterClassId));
-    return c ? String((c as { class_name?: string }).class_name ?? filterClassId) : String(filterClassId);
+    return c ? formatClassLabel(c as any) : String(filterClassId);
   }, [yearScopedClasses, filterClassId]);
 
   const selectedSectionName = useMemo(() => {

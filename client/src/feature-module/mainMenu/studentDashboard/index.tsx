@@ -24,6 +24,45 @@ import { DatePicker } from "antd";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** Align syllabus row matching with teacher dashboard (class/section labels vary in DB vs UI). */
+const normalizeText = (value?: string | null) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeClassName = (value?: string | null) =>
+  normalizeText(value)
+    .replace(/^class\s*/i, "")
+    .replace(/[^a-z0-9]/g, "");
+
+const normalizeSectionName = (value?: string | null) =>
+  normalizeText(value)
+    .replace(/^section\s*/i, "")
+    .replace(/[^a-z0-9]/g, "");
+
+function isBlankOrNaSection(value?: string | null): boolean {
+  const t = String(value ?? "").trim();
+  if (!t) return true;
+  if (/^n\/?a$/i.test(t)) return true;
+  if (t === "—" || t === "-") return true;
+  return false;
+}
+
+function syllabusRowMatchesStudent(
+  row: { class?: string; section?: string },
+  studentClass?: string | null,
+  studentSection?: string | null
+): boolean {
+  const sc = normalizeClassName(studentClass);
+  const ss = normalizeSectionName(studentSection);
+  const rc = normalizeClassName(row.class);
+  if (!sc || !rc) return false;
+  if (sc !== rc) return false;
+  if (isBlankOrNaSection(row.section)) return true;
+  return normalizeSectionName(row.section) === ss;
+}
+
 const StudentDasboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
@@ -40,7 +79,7 @@ const StudentDasboard = () => {
   const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null);
   const { data: allSchedules, loading: scheduleLoading } = useClassSchedules();
-  const { data: syllabusData } = useClassSyllabus();
+  const { data: syllabusData } = useClassSyllabus({ academicYearId: resolvedAcademicYearId });
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 50 });
   const { data: feeData } = useStudentFees(student?.id ?? null, resolvedAcademicYearId);
   const { data: examResultsData } = useStudentExamResults(student?.id ?? null);
@@ -162,15 +201,13 @@ const StudentDasboard = () => {
     });
   }, [student, allSchedules]);
 
-  // Syllabus for student's class/section
+  // Syllabus for student's class/section (normalized labels; class-wide rows with N/A section still match)
   const mySyllabus = useMemo(() => {
     if (!student || !syllabusData?.length) return [];
     const classMatch = student.class_name || student.class;
     const sectionMatch = student.section_name || student.section;
-    return syllabusData.filter(
-      (s: { class?: string; section?: string }) =>
-        (String(s.class || "").toLowerCase() === String(classMatch || "").toLowerCase() || !classMatch) &&
-        (String(s.section || "").toLowerCase() === String(sectionMatch || "").toLowerCase() || !sectionMatch)
+    return syllabusData.filter((s: { class?: string; section?: string }) =>
+      syllabusRowMatchesStudent(s, classMatch, sectionMatch)
     );
   }, [student, syllabusData]);
 

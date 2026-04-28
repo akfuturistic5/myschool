@@ -3,7 +3,6 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const {
   getAuthContext,
   isAdmin,
-  isTeacherRole,
   isParentOrGuardianPortalRole,
   resolveTeacherStaffIdForUser,
   resolveTeacherIdForUser,
@@ -27,6 +26,15 @@ const ISO_DAY_NAMES = {
   6: 'Saturday',
   7: 'Sunday',
 };
+
+/**
+ * Keep timetable scoping strict: only actual Teacher role should be teacher-scoped.
+ * Roles like "headteacher"/"head master teacher" must not be treated as teacher here.
+ */
+function isStrictTeacherRole(ctx) {
+  const name = String(ctx?.roleName || '').trim().toLowerCase();
+  return ctx?.roleId === ROLES.TEACHER || name === 'teacher';
+}
 
 function formatTime(val) {
   if (val == null) return null;
@@ -278,7 +286,7 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
     return { where, params, ctx };
   }
 
-  if (isTeacherRole(ctx)) {
+  if (isStrictTeacherRole(ctx)) {
     const staffId = await resolveTeacherStaffIdForUser(ctx.userId);
     if (!staffId) {
       return { where: `${where} AND 1=0`, params, ctx };
@@ -352,7 +360,7 @@ async function assertCanReadScheduleRow(req, row) {
   const classId = parseId(row.class_id);
   const sectionId = parseId(row.section_id);
 
-  if (isTeacherRole(ctx)) {
+  if (isStrictTeacherRole(ctx)) {
     const staffId = await resolveTeacherStaffIdForUser(ctx.userId);
     if (staffId && parseId(row.teacher_id) === staffId) return { ok: true };
     return { ok: false, status: 403, message: 'Access denied' };

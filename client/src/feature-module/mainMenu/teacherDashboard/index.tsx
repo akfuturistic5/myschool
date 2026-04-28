@@ -209,14 +209,14 @@ const TeacherDashboard = () => {
     );
   }, [syllabusData, teacherClassSectionKeys, teacherSubjects]);
 
-  // Syllabus chart: completed vs pending (status=Active = completed-ish, or use a computed %)
+  // Syllabus chart: share of rows marked Active vs other statuses (not lesson completion).
   const syllabusChartData = useMemo(() => {
-    if (!mySyllabus.length) return { completed: 0, pending: 100 };
-    const completed = mySyllabus.filter((s: { status?: string }) => (s.status || "").toLowerCase() === "active").length;
-    const pending = mySyllabus.length - completed;
+    if (!mySyllabus.length) return { activePct: 0, otherPct: 100 };
+    const activeCount = mySyllabus.filter((s: { status?: string }) => (s.status || "").toLowerCase() === "active").length;
+    const otherCount = mySyllabus.length - activeCount;
     const total = mySyllabus.length;
-    const pctComplete = total > 0 ? Math.round((completed / total) * 100) : 0;
-    return { completed: pctComplete, pending: 100 - pctComplete };
+    const activePct = total > 0 ? Math.round((activeCount / total) * 100) : 0;
+    return { activePct, otherPct: 100 - activePct, activeCount, otherCount, total };
   }, [mySyllabus]);
 
   // Today's classes - filter routine by selected date's day
@@ -303,8 +303,8 @@ const TeacherDashboard = () => {
     grid: { show: false, padding: { left: 0, right: 0 } },
     plotOptions: { bar: { horizontal: false, columnWidth: "50%" } },
     dataLabels: { enabled: false },
-    series: [syllabusChartData.completed, syllabusChartData.pending],
-    labels: ["Completed", "Pending"],
+    series: [syllabusChartData.activePct, syllabusChartData.otherPct],
+    labels: ["Active", "Other status"],
     legend: { show: false },
     colors: ["#1ABE17", "#E82646"],
     responsive: [
@@ -408,13 +408,6 @@ const TeacherDashboard = () => {
                             <h3 className="text-white mb-1 text-truncate">
                               {teacherDisplayName}
                             </h3>
-                            <div className="d-flex align-items-center flex-wrap text-light row-gap-2">
-                              <span className="me-2">
-                                Classes : {routine?.length
-                                  ? [...new Set(routine.map((r: { class?: string; section?: string }) => `${r.class || ""}-${r.section || ""}`.replace(/^-|-$/g, "")))].filter(Boolean).join(", ") || "—"
-                                  : teacher?.class_name ? `${teacher.class_name}${teacher.section_name ? `-${teacher.section_name}` : ""}` : "—"}
-                              </span>
-                            </div>
                           </div>
                         </div>
                         <Link
@@ -467,14 +460,21 @@ const TeacherDashboard = () => {
                         <div className="col-sm-7">
                           <div className=" text-center text-sm-start">
                             <h4 className="mb-3">Syllabus</h4>
+                            <p className="text-muted small mb-2">By row status (subject groups for your classes).</p>
                             <p className="mb-2">
                               <i className="ti ti-circle-filled text-success me-1" />
-                              Completed :{" "}
-                              <span className="fw-semibold">{syllabusChartData.completed}%</span>
+                              Active :{" "}
+                              <span className="fw-semibold">{syllabusChartData.activePct}%</span>
+                              {syllabusChartData.total ? (
+                                <span className="text-muted small"> ({syllabusChartData.activeCount})</span>
+                              ) : null}
                             </p>
                             <p>
                               <i className="ti ti-circle-filled text-danger me-1" />
-                              Pending : <span className="fw-semibold">{syllabusChartData.pending}%</span>
+                              Other : <span className="fw-semibold">{syllabusChartData.otherPct}%</span>
+                              {syllabusChartData.total ? (
+                                <span className="text-muted small"> ({syllabusChartData.otherCount})</span>
+                              ) : null}
                             </p>
                           </div>
                         </div>
