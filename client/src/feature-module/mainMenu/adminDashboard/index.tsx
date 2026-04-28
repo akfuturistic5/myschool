@@ -93,6 +93,12 @@ type NoticeItem = {
 type DonutChartConfig = ApexOptions & { series: number[] };
 type AxisChartConfig = ApexOptions & { series: Array<{ name: string; data: number[] }> };
 
+const formatFeeAmount = (value: number | null | undefined): string =>
+  Number(value ?? 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 const AdminDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -479,7 +485,7 @@ const AdminDashboard = () => {
     tooltip: {
       y: {
         formatter: function (val: any) {
-          return "$ " + Number(val).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          return formatFeeAmount(Number(val));
         }
       }
     }
@@ -1044,7 +1050,9 @@ const AdminDashboard = () => {
                         </div>
                         <p className="small text-muted text-center mb-2">
                           {attendanceRange === "all_time"
-                            ? "All-time staff attendance marks are not aggregated here. Pick Today or Yesterday to see counts from Staff Attendance (includes teachers and other staff)."
+                            ? staffMarked
+                              ? `All time: ${staffAtt.totalMarked} staff attendance rows · ${staffAtt.attendancePct}% attended (present + late + half-day). Teachers are included with all staff.`
+                              : "No staff attendance records yet. Open Staff Attendance under HRM to start marking."
                             : staffMarked
                               ? `${attendanceToday.date || attendanceDateStr}: ${staffAtt.totalMarked} staff rows in staff_attendance · ${staffAtt.attendancePct}% attended (present + late + half-day). Teachers are included with all staff.`
                               : `No staff attendance rows for ${attendanceToday.date || attendanceDateStr}. Open Staff Attendance under HRM to mark everyone on staff, including teachers.`}
@@ -1423,7 +1431,7 @@ const AdminDashboard = () => {
               </div>
               {/* /Fees Collection */}
               {/* Leave Requests */}
-              <div className="col-xxl-4 col-xl-6 d-flex">
+              <div className="col-xxl-6 col-xl-6 d-flex">
                 <div className="card flex-fill">
                   <div className="card-header  d-flex align-items-center justify-content-between">
                     <h4 className="card-title">Leave Requests</h4>
@@ -1637,9 +1645,9 @@ const AdminDashboard = () => {
                     <div className="d-flex align-items-center justify-content-between">
                       <div>
                         <h6 className="mb-1">Fee collections</h6>
-                        <h2>${(financeSummary.totalEarnings ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
-                        <small className="text-muted d-block">Fee income window: {feePeriodLabel}. Library fines (returned, all-time): ${(financeSummary.totalFines ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
-                        <small className="text-muted d-block fw-semibold text-dark mt-1">Net position: ${(financeSummary.netPosition ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
+                        <h2>{formatFeeAmount(financeSummary.totalEarnings)}</h2>
+                        <small className="text-muted d-block">Fee income window: {feePeriodLabel}. Library fines (returned, all-time): {formatFeeAmount(financeSummary.totalFines)}</small>
+                        <small className="text-muted d-block fw-semibold text-dark mt-1">Net position: {formatFeeAmount(financeSummary.netPosition)}</small>
                       </div>
                       <span className="avatar avatar-lg bg-primary">
                         <i className="ti ti-user-dollar" />
@@ -1660,7 +1668,7 @@ const AdminDashboard = () => {
                     <div className="d-flex align-items-center justify-content-between">
                       <div>
                         <h6 className="mb-1">Total Expenses</h6>
-                        <h2>${(financeSummary.totalExpenses ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+                        <h2>{formatFeeAmount(financeSummary.totalExpenses)}</h2>
                         <small className="text-muted">
                           {financeSummary.expensesTracked
                             ? 'From school_expenses (all-time total in database).'
@@ -1727,7 +1735,7 @@ const AdminDashboard = () => {
                   <div className="card-body">
                     <p className="mb-2">Total Fees Collected</p>
                     <div className="d-flex align-items-end justify-content-between">
-                      <h4>${(feeStats.totalFeesCollected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <h4>{formatFeeAmount(feeStats.totalFeesCollected)}</h4>
                       <span className="badge badge-soft-success">
                         <i className="ti ti-chart-line me-1" />
                         Real
@@ -1739,7 +1747,7 @@ const AdminDashboard = () => {
                   <div className="card-body">
                     <p className="mb-2">Library fines (returned)</p>
                     <div className="d-flex align-items-end justify-content-between">
-                      <h4>${(feeStats.fineCollected ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <h4>{formatFeeAmount(feeStats.fineCollected)}</h4>
                       <span className="badge badge-soft-danger">
                         <i className="ti ti-chart-line me-1" />
                         Real
@@ -1764,7 +1772,7 @@ const AdminDashboard = () => {
                   <div className="card-body">
                     <p className="mb-2">Total Outstanding</p>
                     <div className="d-flex align-items-end justify-content-between">
-                      <h4>${(feeStats.totalOutstanding ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <h4>{formatFeeAmount(feeStats.totalOutstanding)}</h4>
                       <span className="badge badge-soft-danger">
                         <i className="ti ti-chart-line me-1" />
                         Real
@@ -1777,7 +1785,7 @@ const AdminDashboard = () => {
             </div>
             <div className="row">
               {/* Top Subjects */}
-              <div className="col-xxl-4 col-xl-6 d-flex">
+              <div className="col-xxl-6 col-xl-6 d-flex">
                 <div className="card flex-fill">
                   <div className="card-header  d-flex align-items-center justify-content-between">
                     <h4 className="card-title">Top Subjects</h4>
@@ -1889,7 +1897,7 @@ const AdminDashboard = () => {
                     {!activityLoading && !activityError && studentActivityItems.length === 0 && (
                       <p className="mb-0 text-muted small">No recent student activity.</p>
                     )}
-                    {!activityLoading && !activityError && studentActivityItems.map((it: { id?: string; title?: string; subtitle?: string; date?: string }, i: number) => (
+                    {!activityLoading && !activityError && studentActivityItems.slice(0, 5).map((it: { id?: string; title?: string; subtitle?: string; date?: string }, i: number) => (
                       <div
                         key={it.id || `act-${i}`}
                         className={`d-flex align-items-start overflow-hidden p-3 border rounded ${i < studentActivityItems.length - 1 ? "mb-3" : "mb-0"}`}
@@ -1912,7 +1920,11 @@ const AdminDashboard = () => {
                 </div>
               </div>
               {/* /Student Activity */}
-              {/* Todo */}
+              {/*
+                My Todo card intentionally hidden for now.
+                Keep this full JSX block in comments so it can be restored quickly without rebuilding logic.
+              */}
+              {/*
               <div className="col-xxl-4 col-xl-12 d-flex">
                 <div className="card flex-fill">
                   <div className="card-header  d-flex align-items-center justify-content-between">
@@ -1964,7 +1976,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
-              {/* /Todo */}
+              */}
             </div>
           </>
         </div>

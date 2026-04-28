@@ -168,7 +168,7 @@ function TimetableCell({
           options={teacherOptions}
           value={teacherId || null}
           placeholder="Teacher"
-          onChange={(v) => setTeacherId(v || "")}
+          onChange={(v) => onTeacherChange(v || "")}
         />
       </div>
       <div className="mb-1 small">

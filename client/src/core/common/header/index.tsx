@@ -13,7 +13,7 @@ import {
   setMobileSidebar,
   toggleMiniSidebar,
 } from "../../data/redux/sidebarSlice";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { all_routes } from "../../../feature-module/router/all_routes";
 import { getDashboardForRole, getDisplayRoleLabel, isAdministrativeRole, isHeadmasterRole } from "../../utils/roleUtils";
 import { getSchoolLogoSrc, isMillatStyleLogoPath } from "../../utils/schoolLogo";
@@ -186,8 +186,9 @@ const Header = () => {
     }
   };
   const location = useLocation();
-  const toggleNotification = () => {
-    setNotificationVisible(!notificationVisible);
+  const toggleNotification = (event?: MouseEvent<HTMLElement>) => {
+    event?.preventDefault();
+    setNotificationVisible((prev) => !prev);
   };
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -593,7 +594,14 @@ const Header = () => {
                     </div>
                   </div>
                   <div className="d-flex p-0">
-                    <Link to="#" className="btn btn-light w-100 me-2">
+                    <Link
+                      to="#"
+                      className="btn btn-light w-100 me-2"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setNotificationVisible(false);
+                      }}
+                    >
                       Cancel
                     </Link>
                     <Link to={routes.activity} className="btn btn-primary w-100">
@@ -602,6 +610,12 @@ const Header = () => {
                   </div>
                 </div>
               </div>
+              {/*
+                Comment/chat quick-action is intentionally disabled for now.
+                Keeping this block commented (instead of deleting) preserves existing navigation/UI logic
+                so it can be safely restored in future without reimplementation.
+              */}
+              {/*
               <div className="pe-1">
                 <Link
                   to={routes.chat}
@@ -611,6 +625,7 @@ const Header = () => {
                   <span className="chat-status-dot" />
                 </Link>
               </div>
+              */}
               <div className="pe-1">
                 <Link
                   onClick={toggleFullscreen}

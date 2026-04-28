@@ -8,7 +8,6 @@ import AdminDashboardModal from "../adminDashboard/adminDashboardModal";
 import ReactApexChart from "react-apexcharts";
 import { Calendar } from "primereact/calendar";
 import type { Nullable } from "primereact/ts-helpers";
-import Slider from "react-slick";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import dayjs from "dayjs";
@@ -19,6 +18,7 @@ import { useTeacherClassAttendance } from "../../../core/hooks/useTeacherClassAt
 import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useEvents } from "../../../core/hooks/useEvents";
+import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
 import { useDashboardStarStudents } from "../../../core/hooks/useDashboardData";
 import { useAuthAvatar } from "../../../core/hooks/useAuthAvatar";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
@@ -111,9 +111,8 @@ const TeacherDashboard = () => {
     teacher?.id ?? null,
     { days: selectedAttendanceRange.days, offset: selectedAttendanceRange.offset, academicYearId } as any
   ) as { data: AttendancePayload | null; loading: boolean; error: string | null };
-  const { data: syllabusData, loading: syllabusLoading } = useClassSyllabus({ academicYearId }) as {
+  const { data: syllabusData } = useClassSyllabus({ academicYearId }) as {
     data: any[];
-    loading: boolean;
   };
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
   const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 }) as {
@@ -121,6 +120,9 @@ const TeacherDashboard = () => {
     completedEvents: any[];
     loading: boolean;
     refetch: () => void;
+  };
+  const { notices: dashboardNotices } = useNoticeBoard({ limit: 1 }) as {
+    notices: any[];
   };
   const { students: topStudents, loading: topStudentsLoading, error: topStudentsError } = useDashboardStarStudents({
     limit: 3,
@@ -174,7 +176,6 @@ const TeacherDashboard = () => {
     });
   }, [myLeaves, leaveTimeRange]);
 
-  // Teacher's class IDs from routine (unique class+section combos they teach)
   const teacherClassSectionKeys = useMemo(() => {
     if (!routine?.length) return new Set<string>();
     const keys = new Set<string>();
@@ -194,7 +195,6 @@ const TeacherDashboard = () => {
     return subjects;
   }, [routine]);
 
-  // Syllabus for teacher's classes
   const mySyllabus = useMemo(() => {
     if (!syllabusData?.length) return [];
     return syllabusData.filter(
@@ -209,7 +209,6 @@ const TeacherDashboard = () => {
     );
   }, [syllabusData, teacherClassSectionKeys, teacherSubjects]);
 
-  // Syllabus chart: share of rows marked Active vs other statuses (not lesson completion).
   const syllabusChartData = useMemo(() => {
     if (!mySyllabus.length) return { activePct: 0, otherPct: 100 };
     const activeCount = mySyllabus.filter((s: { status?: string }) => (s.status || "").toLowerCase() === "active").length;
@@ -244,55 +243,30 @@ const TeacherDashboard = () => {
   const teacherDisplayName = teacher
     ? [teacher.first_name, teacher.last_name].filter(Boolean).join(" ") || "Teacher"
     : "Teacher";
-  const noticeText = upcomingEvents?.[0]?.title
-    ? String(upcomingEvents[0].title).trim()
-    : null;
-  const Syllabus = {
-    dots: false,
-    autoplay: false,
-    arrows: false,
-    slidesToShow: 4,
-    margin: 24,
-    speed: 500,
-    responsive: [
-      {
-        breakpoint: 1500,
-        settings: {
-          slidesToShow: 4,
-        },
-      },
-      {
-        breakpoint: 1400,
-        settings: {
-          slidesToShow: 4,
-        },
-      },
-      {
-        breakpoint: 992,
-        settings: {
-          slidesToShow: 4,
-        },
-      },
-      {
-        breakpoint: 800,
-        settings: {
-          slidesToShow: 2,
-        },
-      },
-      {
-        breakpoint: 776,
-        settings: {
-          slidesToShow: 2,
-        },
-      },
-      {
-        breakpoint: 567,
-        settings: {
-          slidesToShow: 1,
-        },
-      },
-    ],
-  };
+  const latestNotice = dashboardNotices?.[0] || null;
+  const noticeTitle = latestNotice?.title ? String(latestNotice.title).trim() : null;
+  const noticeMessage = latestNotice?.content
+    ? String(latestNotice.content).trim()
+    : latestNotice?.message
+      ? String(latestNotice.message).trim()
+      : latestNotice?.description
+        ? String(latestNotice.description).trim()
+        : null;
+  const noticeDate = latestNotice?.addedOn
+    ? String(latestNotice.addedOn).trim()
+    : latestNotice?.modifiedOn
+      ? String(latestNotice.modifiedOn).trim()
+      : latestNotice?.noticeDate
+        ? String(latestNotice.noticeDate).trim()
+        : latestNotice?.publishOn
+          ? String(latestNotice.publishOn).trim()
+          : latestNotice?.created_at
+            ? new Date(latestNotice.created_at).toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+            : null;
   const studentDonutChart = useMemo(() => ({
     chart: {
       height: 90,
@@ -331,7 +305,6 @@ const TeacherDashboard = () => {
                   <li className="breadcrumb-item">
                     <Link to={routes.teacherDashboard}>Dashboard</Link>
                   </li>
-                  <li className="breadcrumb-item">Dashboard</li>
                   <li className="breadcrumb-item active" aria-current="page">
                     Teacher Dashboard
                   </li>
@@ -369,9 +342,15 @@ const TeacherDashboard = () => {
                 <div className="card-body">
                   <h1 className="text-white mb-1">{greeting} {teacherDisplayName}</h1>
                   <p className="text-white mb-3">Have a good day at work</p>
-                  <p className="text-light">
-                    {noticeText ? `Notice: ${noticeText}` : "No upcoming notices."}
-                  </p>
+                  {noticeTitle ? (
+                    <div className="text-light">
+                      <p className="mb-1">Notice: {noticeTitle}</p>
+                      {noticeMessage ? <p className="mb-1">{noticeMessage}</p> : null}
+                      {noticeDate ? <p className="mb-0 small">Date: {noticeDate}</p> : null}
+                    </div>
+                  ) : (
+                    <p className="text-light mb-0">No upcoming notices.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -439,6 +418,11 @@ const TeacherDashboard = () => {
                     </div>
                   </div>
                 </div>
+                {/*
+                  Syllabus summary donut card is intentionally disabled for now.
+                  Keep this block and related logic intact so it can be re-enabled easily in future.
+                */}
+                {/*
                 <div className="col-xxl-5 col-xl-4 d-flex">
                   <div className="card flex-fill">
                     <div className="card-body" style={{ minHeight: "170px" }}>
@@ -482,6 +466,7 @@ const TeacherDashboard = () => {
                     </div>
                   </div>
                 </div>
+                */}
               </div>
               {/* Today's Class */}
               <div className="card">
@@ -771,84 +756,6 @@ const TeacherDashboard = () => {
                 </div>
                 {/* /Best Performers */}
               </div>
-              {/* Syllabus */}
-              <div className="row">
-                <div className="col-md-12">
-                  <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between">
-                      <h4 className="card-title">Syllabus / Lesson Plan</h4>
-                      <Link
-                        to={routes.classSyllabus}
-                        className="link-primary fw-medium"
-                      >
-                        View All
-                      </Link>
-                    </div>
-                    <div className="card-body">
-                      {syllabusLoading ? (
-                        <div className="alert alert-secondary d-flex align-items-center mb-0" role="status" aria-live="polite">
-                          <i className="ti ti-loader-2 me-2 fs-18" />
-                          <span>Loading syllabus for your classes...</span>
-                        </div>
-                      ) : !mySyllabus?.length ? (
-                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                          <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No syllabus data for your classes. Syllabus will appear once assigned.</span>
-                        </div>
-                      ) : (
-                        <Slider
-                          {...Syllabus}
-                          className="owl-carousel owl-theme lesson"
-                        >
-                          {mySyllabus.map((s: { id?: number; class?: string; section?: string; subjectGroup?: string; status?: string; originalData?: { description?: string } }, idx: number) => {
-                            const isActive = (s.status || "").toLowerCase() === "active";
-                            const pct = isActive ? 80 : 40;
-                            const bgCls = isActive ? "bg-success-transparent" : "bg-warning-transparent";
-                            const barCls = isActive ? "bg-success" : "bg-warning";
-                            return (
-                              <div key={s.id ?? idx} className="item">
-                                <div className="card mb-0">
-                                  <div className="card-body">
-                                    <div className={`${bgCls} rounded p-2 fw-semibold mb-3 text-center`}>
-                                      Class {s.class || "—"}, {s.section || "—"}
-                                    </div>
-                                    <div className="border-bottom mb-3">
-                                      <h5 className="mb-3">
-                                        {s.subjectGroup || s.originalData?.description || "Syllabus"}
-                                      </h5>
-                                      <div className="progress progress-xs mb-3">
-                                        <div
-                                          className={`progress-bar ${barCls}`}
-                                          role="progressbar"
-                                          style={{ width: `${pct}%` }}
-                                          aria-valuenow={pct}
-                                          aria-valuemin={0}
-                                          aria-valuemax={100}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="d-flex align-items-center justify-content-between">
-                                      <Link to={routes.sheduleClasses} className="fw-medium">
-                                        <i className="ti ti-edit me-1" />
-                                        Reschedule
-                                      </Link>
-                                      <Link to={routes.classSyllabus} className="link-primary">
-                                        <i className="ti ti-share-3 me-1" />
-                                        View All
-                                      </Link>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </Slider>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* /Syllabus */}
             </div>
             {/* Schedules */}
             <div className="col-xxl-4 col-xl-12 d-flex">

@@ -1752,7 +1752,6 @@ const AddStudent = () => {
                                 id="student-father_email"
                                 type="text"
                                 data-add-student-field="father_email"
-                                readOnly={formData.father_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.father_email)}`}
                                 value={formData.father_email}
                                 onChange={(e) => handleInputChange('father_email', e.target.value)}
@@ -1775,7 +1774,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="father_phone"
-                                readOnly={formData.father_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.father_phone)}`}
                                 value={formData.father_phone}
                                 onChange={(e) => handleInputChange('father_phone', e.target.value)}
@@ -1891,7 +1889,6 @@ const AddStudent = () => {
                                 id="student-mother_email"
                                 type="text"
                                 data-add-student-field="mother_email"
-                                readOnly={formData.mother_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_email)}`}
                                 value={formData.mother_email}
                                 onChange={(e) => handleInputChange('mother_email', e.target.value)}
@@ -1914,7 +1911,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="mother_phone"
-                                readOnly={formData.mother_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_phone)}`}
                                 value={formData.mother_phone}
                                 onChange={(e) => handleInputChange('mother_phone', e.target.value)}
@@ -2106,7 +2102,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="guardian_phone"
-                                readOnly={formData.guardian_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_phone)}`}
                                 value={formData.guardian_phone || ''}
                                 onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
@@ -2128,7 +2123,6 @@ const AddStudent = () => {
                                 id="student-guardian_email"
                                 type="email"
                                 data-add-student-field="guardian_email"
-                                readOnly={formData.guardian_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_email)}`}
                                 value={formData.guardian_email || ''}
                                 onChange={(e) => handleInputChange('guardian_email', e.target.value)}
