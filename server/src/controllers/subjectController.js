@@ -8,6 +8,29 @@ const parseOptionalInt = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
+/**
+ * subjects.teacher_id references staff.id.
+ * Accept either staff.id (preferred) or teachers.id and normalize to staff.id.
+ */
+const resolveTeacherStaffId = async (teacherIdRaw) => {
+  if (teacherIdRaw === undefined || teacherIdRaw === null || teacherIdRaw === '') {
+    return { ok: true, value: null };
+  }
+  const teacherId = parseOptionalInt(teacherIdRaw);
+  if (!teacherId || teacherId < 1) {
+    return { ok: false, message: 'Invalid teacher id' };
+  }
+
+  const staffDirect = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
+  if (staffDirect.rows.length) return { ok: true, value: teacherId };
+
+  const teacherRow = await query('SELECT staff_id FROM teachers WHERE id = $1 LIMIT 1', [teacherId]);
+  const staffId = teacherRow.rows?.[0]?.staff_id ?? null;
+  if (staffId) return { ok: true, value: Number(staffId) };
+
+  return { ok: false, message: 'Invalid teacher id' };
+};
+
 // Get all subjects
 const getAllSubjects = async (req, res) => {
   try {
@@ -133,6 +156,9 @@ const createSubject = async (req, res) => {
       subject_name, subject_code, class_id, teacher_id, theory_hours,
       practical_hours, total_marks, passing_marks, description, is_active
     } = req.body;
+    const teacherResolved = await resolveTeacherStaffId(teacher_id);
+    if (!teacherResolved.ok) return errorResponse(res, 400, teacherResolved.message);
+
     let academicYearId = null;
     if (class_id) {
       const cls = await query('SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1', [class_id]);
@@ -145,7 +171,7 @@ const createSubject = async (req, res) => {
         total_marks, passing_marks, description, is_active, academic_year_id
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [
-        subject_name.trim(), subject_code || null, class_id || null, teacher_id || null,
+        subject_name.trim(), subject_code || null, class_id || null, teacherResolved.value,
         theory_hours || 0, practical_hours || 0, total_marks || 0, passing_marks || 0,
         description || null, is_active !== false, academicYearId
       ]
@@ -167,6 +193,12 @@ const updateSubject = async (req, res) => {
     const current = await query('SELECT * FROM subjects WHERE id = $1', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Subject not found');
     const cur = current.rows[0];
+    let teacherIdToSave = cur.teacher_id;
+    if (Object.prototype.hasOwnProperty.call(payload, 'teacher_id')) {
+      const teacherResolved = await resolveTeacherStaffId(payload.teacher_id);
+      if (!teacherResolved.ok) return errorResponse(res, 400, teacherResolved.message);
+      teacherIdToSave = teacherResolved.value;
+    }
 
     const result = await query(`
       UPDATE subjects
@@ -187,7 +219,7 @@ const updateSubject = async (req, res) => {
       payload.subject_name ?? cur.subject_name,
       payload.subject_code ?? cur.subject_code,
       payload.class_id ?? cur.class_id,
-      payload.teacher_id ?? cur.teacher_id,
+      teacherIdToSave,
       payload.theory_hours ?? cur.theory_hours,
       payload.practical_hours ?? cur.practical_hours,
       payload.total_marks ?? cur.total_marks,

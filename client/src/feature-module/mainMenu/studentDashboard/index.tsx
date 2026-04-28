@@ -6,7 +6,6 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useCurrentStudent } from "../../../core/hooks/useCurrentStudent";
 import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
 import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
-import { useClassSyllabus } from "../../../core/hooks/useClassSyllabus";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
 import { useStudentExamResults } from "../../../core/hooks/useStudentExamResults";
@@ -40,7 +39,6 @@ const StudentDasboard = () => {
   const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
   const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null);
   const { data: allSchedules, loading: scheduleLoading } = useClassSchedules();
-  const { data: syllabusData } = useClassSyllabus();
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 50 });
   const { data: feeData } = useStudentFees(student?.id ?? null, resolvedAcademicYearId);
   const { data: examResultsData } = useStudentExamResults(student?.id ?? null);
@@ -61,7 +59,6 @@ const StudentDasboard = () => {
   const [attendanceRange, setAttendanceRange] = useState<AttendanceRangeKey>("thisWeek");
   type LeaveRangeKey = "thisMonth" | "thisYear" | "lastWeek" | "allTime";
   const [leaveRange, setLeaveRange] = useState<LeaveRangeKey>("thisMonth");
-  const [homeWorkSubject, setHomeWorkSubject] = useState<string>("all");
 
   // Date range helpers
   const getDateRange = (key: AttendanceRangeKey | LeaveRangeKey) => {
@@ -162,27 +159,6 @@ const StudentDasboard = () => {
     });
   }, [student, allSchedules]);
 
-  // Syllabus for student's class/section
-  const mySyllabus = useMemo(() => {
-    if (!student || !syllabusData?.length) return [];
-    const classMatch = student.class_name || student.class;
-    const sectionMatch = student.section_name || student.section;
-    return syllabusData.filter(
-      (s: { class?: string; section?: string }) =>
-        (String(s.class || "").toLowerCase() === String(classMatch || "").toLowerCase() || !classMatch) &&
-        (String(s.section || "").toLowerCase() === String(sectionMatch || "").toLowerCase() || !sectionMatch)
-    );
-  }, [student, syllabusData]);
-
-  // Unique subjects from class schedules for Home Works filter
-  const homeWorkSubjects = useMemo(() => {
-    const subs = new Set<string>();
-    classFaculties?.forEach((f: { subject?: string }) => {
-      if (f.subject?.trim()) subs.add(f.subject.trim());
-    });
-    return Array.from(subs).sort();
-  }, [classFaculties]);
-
   return (
     <>
       {/* Page Wrapper */}
@@ -227,8 +203,8 @@ const StudentDasboard = () => {
               Student profile not found. Please contact admin.
             </div>
           )}
-          <div className="row align-items-stretch">
-            <div className="col-xxl-8 d-flex flex-column gap-3 h-100 min-h-0">
+          <div className="row">
+            <div className="col-xxl-8 d-flex flex-column gap-3">
               <div className="row g-3 align-items-stretch flex-shrink-0">
                 {/* Row 1: Profile | Attendance (equal height). Below xl: stack Profile → Today → Attendance → Notice Board */}
                 <div className="col-xl-6 d-flex order-1">
@@ -420,11 +396,11 @@ const StudentDasboard = () => {
                 </div>
                 {/* /Attendance */}
               </div>
-              <div className="row g-3 align-items-start flex-grow-1 min-h-0">
-                {/* Today | Notice Board (notice_board API), then full-width Syllabus — sidebar / Events card unchanged */}
-                <div className="col-12 d-flex flex-column gap-3 min-h-0">
+              <div className="row g-3 align-items-start">
+                {/* Today | Notice Board (notice_board API) — sidebar / Events card unchanged */}
+                <div className="col-12 d-flex flex-column gap-3">
                   <div className="row g-3 align-items-start mx-0">
-                    <div className="col-xl-6 d-flex flex-column min-h-0 order-2 order-xl-1">
+                    <div className="col-xl-6 d-flex flex-column order-2 order-xl-1">
                   <div className="card w-100 flex-shrink-0">
                     <div className="card-header d-flex align-items-center justify-content-between">
                       <h4 className="card-title">Today’s Class</h4>
@@ -441,7 +417,7 @@ const StudentDasboard = () => {
                         />
                       </div>
                     </div>
-                    <div className="card-body">
+                    <div className="card-body" style={{ minHeight: "460px" }}>
                       {scheduleLoading && (
                         <div className="text-center py-4">
                           <div className="spinner-border spinner-border-sm text-primary" role="status" />
@@ -475,150 +451,70 @@ const StudentDasboard = () => {
                     </div>
                   </div>
                     </div>
-                    <div className="col-xl-6 order-4 order-xl-2">
-                  <div className="card w-100">
-                    <div className="card-header d-flex align-items-center justify-content-between">
-                      <h4 className="card-title">Notice Board</h4>
-                      <Link to={routes.noticeBoard} className="fw-medium">
-                        View All
-                      </Link>
-                    </div>
-                    <div className="card-body">
-                      {noticeLoading ? (
-                        <div className="text-center py-3">
-                          <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                    <div className="col-xl-6 d-flex flex-column gap-3 order-4 order-xl-2">
+                      <div className="card w-100">
+                        <div className="card-header d-flex align-items-center justify-content-between">
+                          <h4 className="card-title">Notice Board</h4>
+                          <Link to={routes.noticeBoard} className="fw-medium">
+                            View All
+                          </Link>
                         </div>
-                      ) : !notices?.length ? (
-                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                          <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No notices available.</span>
-                        </div>
-                      ) : (
-                        <div className="notice-widget">
-                          {notices.map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
-                            <div key={notice.id} className="d-flex align-items-center justify-content-between mb-4">
-                              <div className="d-flex align-items-center overflow-hidden me-2">
-                                <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">
-                                  <i className="ti ti-calendar fs-16" />
-                                </span>
-                                <div className="overflow-hidden">
-                                  <h6 className="text-truncate mb-1">{notice.title || "Notice"}</h6>
-                                  <p className="mb-0">
-                                    <i className="ti ti-calendar me-2" />
-                                    Added on :{" "}
-                                    {notice.addedOn ||
-                                      (notice.created_at
-                                        ? new Date(notice.created_at).toLocaleDateString("en-GB", {
-                                            day: "numeric",
-                                            month: "short",
-                                            year: "numeric",
-                                          })
-                                        : "—")}
-                                  </p>
-                                </div>
-                              </div>
-                              <Link to={routes.noticeBoard}>
-                                <i className="ti ti-chevron-right fs-16" />
-                              </Link>
+                        <div className="card-body">
+                          {noticeLoading ? (
+                            <div className="text-center py-3">
+                              <div className="spinner-border spinner-border-sm text-primary" role="status" />
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                    </div>
-                  </div>
-                  <div className="card w-100 flex-shrink-0">
-                    <div className="card-header d-flex align-items-center justify-content-between">
-                      <h4 className="card-title">Syllabus</h4>
-                    </div>
-                    <div className="card-body">
-                      {mySyllabus.length === 0 && (
-                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                          <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No syllabus data available for your class.</span>
-                        </div>
-                      )}
-                      {mySyllabus.length > 0 && (
-                        <ul className="list-group">
-                          {mySyllabus.map((s: { id?: string; subjectGroup?: string; subject_group?: string; status?: string; createdDate?: string; created_at?: string }, idx: number) => {
-                            const subjGroup = s.subjectGroup || s.subject_group || "Syllabus";
-                            const createdDate = s.createdDate || s.created_at;
-                            return (
-                              <li key={s.id ?? idx} className="list-group-item">
-                                <div className="row align-items-center">
-                                  <div className="col-sm-6">
-                                    <p className="text-dark mb-0">{subjGroup}</p>
-                                    {createdDate && <small className="text-muted">{createdDate}</small>}
-                                  </div>
-                                  <div className="col-sm-6 text-end">
-                                    <span className={`badge ${s.status === "Active" ? "badge-soft-success" : "badge-soft-secondary"}`}>
-                                      {s.status || "Active"}
+                          ) : !notices?.length ? (
+                            <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                              <i className="ti ti-info-circle me-2 fs-18" />
+                              <span>No notices available.</span>
+                            </div>
+                          ) : (
+                            <div className="notice-widget">
+                              {notices.map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
+                                <div key={notice.id} className="d-flex align-items-center justify-content-between mb-4">
+                                  <div className="d-flex align-items-center overflow-hidden me-2">
+                                    <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">
+                                      <i className="ti ti-calendar fs-16" />
                                     </span>
+                                    <div className="overflow-hidden">
+                                      <h6 className="text-truncate mb-1">{notice.title || "Notice"}</h6>
+                                      <p className="mb-0">
+                                        <i className="ti ti-calendar me-2" />
+                                        Added on :{" "}
+                                        {notice.addedOn ||
+                                          (notice.created_at
+                                            ? new Date(notice.created_at).toLocaleDateString("en-GB", {
+                                                day: "numeric",
+                                                month: "short",
+                                                year: "numeric",
+                                              })
+                                            : "—")}
+                                      </p>
+                                    </div>
                                   </div>
+                                  <Link to={routes.noticeBoard}>
+                                    <i className="ti ti-chevron-right fs-16" />
+                                  </Link>
                                 </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                  <div className="card w-100 flex-fill min-h-0 d-flex flex-column">
-                    <div className="card-header d-flex align-items-center justify-content-between flex-shrink-0">
-                      <h4 className="card-title">Home Works</h4>
-                      <div className="dropdown">
-                        <button
-                          type="button"
-                          className="btn btn-light dropdown-toggle"
-                          data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                          aria-expanded="false"
-                        >
-                          <i className="ti ti-book-2 me-2" />
-                          {homeWorkSubject === "allTime" ? "All Time" : homeWorkSubject === "all" ? "All Subject" : homeWorkSubject}
-                        </button>
-                        <ul className="dropdown-menu mt-2 p-3">
-                          <li>
-                            <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("allTime")}>
-                              All Time
-                            </button>
-                          </li>
-                          <li>
-                            <button type="button" className="dropdown-item rounded-1" onClick={() => setHomeWorkSubject("all")}>
-                              All Subject
-                            </button>
-                          </li>
-                          {homeWorkSubjects.map((subj) => (
-                            <li key={subj}>
-                              <button
-                                type="button"
-                                className="dropdown-item rounded-1"
-                                onClick={() => setHomeWorkSubject(subj)}
-                              >
-                                {subj}
-                              </button>
-                            </li>
-                          ))}
-                          {homeWorkSubjects.length === 0 && (
-                            <li>
-                              <span className="dropdown-item text-muted">No subjects in schedule</span>
-                            </li>
+                              ))}
+                            </div>
                           )}
-                        </ul>
+                        </div>
                       </div>
-                    </div>
-                    <div className="card-body py-1 flex-fill overflow-auto min-h-0">
-                      <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                        <i className="ti ti-info-circle me-2 fs-18" />
-                        <span>No homework assigned. Homework will appear here once assigned.</span>
-                      </div>
+                      <EventsCard
+                        upcomingEvents={upcomingEvents}
+                        completedEvents={completedEvents}
+                        loading={eventsLoading}
+                        limit={5}
+                      />
                     </div>
                   </div>
                 </div>
               </div>
             </div>
             {/* Schedules & Events — Schedules is content-height only so its bottom aligns with neighbour cards; Events fills remaining column height */}
-            <div className="col-xxl-4 d-flex flex-column gap-3 h-100 min-h-0">
+            <div className="col-xxl-4 d-flex flex-column gap-3">
               <div className="card flex-shrink-0">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-title">Schedules</h4>
@@ -635,20 +531,49 @@ const StudentDasboard = () => {
                   />
                 </div>
               </div>
-              <div className="flex-fill d-flex flex-column min-h-0">
-                <EventsCard
-                  upcomingEvents={upcomingEvents}
-                  completedEvents={completedEvents}
-                  loading={eventsLoading}
-                  limit={5}
-                />
+              <div className="card flex-fill">
+                <div className="card-header d-flex align-items-center justify-content-between">
+                  <h4 className="card-title">Fees Reminder</h4>
+                  <Link to={routes.studentFees} state={student ? { studentId: student.id, student } : undefined} className="link-primary fw-medium">
+                    View All
+                  </Link>
+                </div>
+                <div className="card-body py-1">
+                  {feeData ? (
+                    <div>
+                      <p className="mb-2">
+                        <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="mb-2">
+                        <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="mb-0">
+                        <strong>Outstanding:</strong>{" "}
+                        <span className={Number(feeData.totalOutstanding) > 0 ? "text-danger" : "text-success"}>
+                          ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </span>
+                      </p>
+                      {Number(feeData.totalOutstanding) > 0 && (
+                        <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
+                          <i className="ti ti-alert-circle me-2" />
+                          Please pay outstanding amount.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
+                      <i className="ti ti-info-circle me-2 fs-18" />
+                      <span>No fees data available. Fee reminders will appear here.</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             {/* /Schedules & Events */}
           </div>
           <div className="row">
             {/* Leave Status */}
-            <div className="col-xxl-4 col-xl-6 d-flex">
+            <div className="col-xxl-6 col-xl-6 d-flex">
               <div className="card flex-fill">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-title">Leave Status</h4>
@@ -720,7 +645,7 @@ const StudentDasboard = () => {
             </div>
             {/* /Leave Status */}
             {/* Exam Result */}
-            <div className="col-xxl-4 col-xl-6 d-flex">
+            <div className="col-xxl-6 col-xl-6 d-flex">
               <div className="card flex-fill">
                 <div className="card-header d-flex align-items-center justify-content-between">
                   <h4 className="card-title">Exam Result</h4>
@@ -766,47 +691,6 @@ const StudentDasboard = () => {
               </div>
             </div>
             {/* /Exam Result */}
-            {/* Fees Reminder */}
-            <div className="col-xxl-4 d-flex">
-              <div className="card flex-fill">
-                <div className="card-header d-flex align-items-center justify-content-between">
-                  <h4 className="card-title">Fees Reminder</h4>
-                  <Link to={routes.studentFees} state={student ? { studentId: student.id, student } : undefined} className="link-primary fw-medium">
-                    View All
-                  </Link>
-                </div>
-                <div className="card-body py-1">
-                      {feeData ? (
-                    <div>
-                      <p className="mb-2">
-                        <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                      </p>
-                      <p className="mb-2">
-                        <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                      </p>
-                      <p className="mb-0">
-                        <strong>Outstanding:</strong>{" "}
-                        <span className={Number(feeData.totalOutstanding) > 0 ? "text-danger" : "text-success"}>
-                          ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </span>
-                      </p>
-                      {Number(feeData.totalOutstanding) > 0 && (
-                        <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
-                          <i className="ti ti-alert-circle me-2" />
-                          Please pay outstanding amount.
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                      <i className="ti ti-info-circle me-2 fs-18" />
-                      <span>No fees data available. Fee reminders will appear here.</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            {/* Fees Reminder */}
           </div>
           <div className="row">
             {/* Class Faculties — last section on dashboard */}

@@ -8,8 +8,6 @@ import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import {
   activeList,
-  classSection,
-  classSylabus,
 } from "../../../core/common/selectoption/selectoption";
 import CommonSelect from "../../../core/common/commonSelect";
 import type { TableData } from "../../../core/data/interface";
@@ -57,7 +55,6 @@ const Classes = () => {
     classTeacherStaffId: "Select",
   });
   const [filterClass, setFilterClass] = useState("Select");
-  const [filterSection, setFilterSection] = useState("Select");
   const [filterStatus, setFilterStatus] = useState("Select");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [editForm, setEditForm] = useState({
@@ -144,6 +141,10 @@ const Classes = () => {
   const handleEditSave = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!editingRow) return;
+    if (!editForm.className.trim()) {
+      showNotification("Class name is required", "danger");
+      return;
+    }
     setSaving(true);
     try {
       let staffId: number | null = null;
@@ -321,43 +322,57 @@ const Classes = () => {
   
   const route = all_routes;
 
-  // Transform API data to match table structure (id = classes table ID)
-  const transformedData = classesWithSections.map((item: any, index: number) => {
-    const teacherDisplay = [item.teacherFirstName, item.teacherLastName].filter(Boolean).join(" ").trim();
-    return {
-      key: (index + 1).toString(),
-      id: item.classId,
-      class: item.className || "N/A",
-      section: item.sectionName || "N/A",
-      teacher: teacherDisplay || "—",
-      noOfStudents: item.noOfStudents || 0,
-      noOfSubjects: item.noOfSubjects || 0,
-      status: item.status || "Active",
-      action: "",
-      classId: item.classId,
-      sectionId: item.sectionId ?? null,
-      className: item.className || "N/A",
-      sectionName: item.sectionName || "N/A",
-      class_teacher_id: item.class_teacher_id ?? null,
-      section_teacher_id: item.section_teacher_id ?? null,
-      class_code: item.classCode ?? null,
-      max_students: item.maxStudents ?? null,
-      class_fee: item.classFee ?? null,
-      class_description: item.classDescription ?? null,
-    };
-  });
+  // Transform section-joined data to one row per class.
+  const transformedData = useMemo(() => {
+    const byClass = new Map<number, any>();
+    classesWithSections.forEach((item: any) => {
+      const classId = item.classId;
+      if (!classId) return;
+      if (!byClass.has(classId)) {
+        byClass.set(classId, {
+          id: classId,
+          class: item.className || "N/A",
+          classCode: item.classCode || "—",
+          teacherStaffId: item.class_teacher_id ?? null,
+          noOfStudents: 0,
+          noOfSubjects: item.noOfSubjects || 0,
+          status: item.classStatus ? "Active" : "Inactive",
+          action: "",
+          classId,
+          sectionId: null,
+          className: item.className || "N/A",
+          sectionName: "",
+          class_teacher_id: item.class_teacher_id ?? null,
+          section_teacher_id: null,
+          class_code: item.classCode ?? null,
+          max_students: item.maxStudents ?? null,
+          class_fee: item.classFee ?? null,
+          class_description: item.classDescription ?? null,
+        });
+      }
+      const row = byClass.get(classId);
+      row.noOfStudents += Number(item.noOfStudents || 0);
+      row.noOfSubjects = Math.max(Number(row.noOfSubjects || 0), Number(item.noOfSubjects || 0));
+    });
+    return Array.from(byClass.values()).map((row, index) => {
+      const teacher = teachers.find((t: any) => String(t.staff_id) === String(row.teacherStaffId));
+      const teacherDisplay = teacher
+        ? `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || `Staff #${teacher.staff_id}`
+        : "—";
+      return {
+        ...row,
+        key: String(index + 1),
+        teacher: teacherDisplay,
+      };
+    });
+  }, [classesWithSections, teachers]);
   const dynamicClassOptions = useMemo(
     () => [{ value: "Select", label: "Select" }, ...Array.from(new Set(transformedData.map((r: any) => r.class))).map((v) => ({ value: v, label: v }))],
-    [transformedData]
-  );
-  const dynamicSectionOptions = useMemo(
-    () => [{ value: "Select", label: "Select" }, ...Array.from(new Set(transformedData.map((r: any) => r.section))).map((v) => ({ value: v, label: v }))],
     [transformedData]
   );
   const filteredData = transformedData
     .filter((r: any) =>
       (filterClass === "Select" || r.class === filterClass) &&
-      (filterSection === "Select" || r.section === filterSection) &&
       (filterStatus === "Select" || r.status === filterStatus)
     )
     .sort((a: any, b: any) =>
@@ -383,13 +398,13 @@ const Classes = () => {
       sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
     },
     {
-      title: "Section",
-      dataIndex: "section",
-      sorter: (a: TableData, b: TableData) =>
-        a.section.length - b.section.length,
+      title: "Class code",
+      dataIndex: "classCode",
+      sorter: (a: any, b: any) =>
+        String(a.classCode || "").localeCompare(String(b.classCode || "")),
     },
     {
-      title: "Class / Section teacher",
+      title: "Class teacher",
       dataIndex: "teacher",
       sorter: (a: TableData, b: TableData) =>
         String(a.teacher || "").localeCompare(String(b.teacher || "")),
@@ -520,7 +535,7 @@ const Classes = () => {
           {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Classes List</h3>
+              <h3 className="page-title mb-1">Classes</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
                   <li className="breadcrumb-item">
@@ -560,7 +575,7 @@ const Classes = () => {
           ) : null}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Classes List</h4>
+              <h4 className="mb-3">Classes</h4>
               <div className="d-flex align-items-center flex-wrap">
                 <div className="input-icon-start mb-3 me-2 position-relative">
                   <PredefinedDateRanges />
@@ -595,17 +610,6 @@ const Classes = () => {
                           </div>
                           <div className="col-md-12">
                             <div className="mb-3">
-                              <label className="form-label">Section</label>
-                              <CommonSelect
-                                className="select"
-                                options={dynamicSectionOptions}
-                                defaultValue={dynamicSectionOptions[0]}
-                                onChange={(v) => setFilterSection(v || "Select")}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
@@ -618,7 +622,7 @@ const Classes = () => {
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3" onClick={() => { setFilterClass("Select"); setFilterSection("Select"); setFilterStatus("Select"); }}>
+                        <Link to="#" className="btn btn-light me-3" onClick={() => { setFilterClass("Select"); setFilterStatus("Select"); }}>
                           Reset
                         </Link>
                         <Link
@@ -800,20 +804,8 @@ const Classes = () => {
                           placeholder="Enter Class Name"
                           value={editForm.className}
                           onChange={(e) => setEditForm((f) => ({ ...f, className: e.target.value }))}
-                          readOnly={!!editingRow?.sectionId}
+                          required
                           maxLength={50}
-                        />
-                      </div>
-                     <div className="mb-3">
-                        <label className="form-label">Section</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Section"
-                          maxLength={10}
-                          value={editForm.sectionName}
-                          onChange={(e) => setEditForm((f) => ({ ...f, sectionName: e.target.value }))}
-                          readOnly={!editingRow?.sectionId}
                         />
                       </div>
                     </div>

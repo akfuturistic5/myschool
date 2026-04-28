@@ -183,36 +183,38 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
     isProxy: false,
     dataSource: 'staff_attendance',
   };
-  if (!isAllTime) {
-    try {
-      const params = hasYear ? [dateStr, academicYearId] : [dateStr];
-      const yearClause = hasYear ? `AND sa.academic_year_id = $2` : '';
-      const marks = await query(
-        `SELECT
-           COUNT(*) FILTER (WHERE sa.status = 'present')::int AS present,
-           COUNT(*) FILTER (WHERE sa.status = 'absent')::int AS absent,
-           COUNT(*) FILTER (WHERE sa.status = 'late')::int AS late,
-           COUNT(*) FILTER (WHERE sa.status = 'half_day')::int AS half_day,
-           COUNT(*)::int AS total_marked
-         FROM staff_attendance sa
-         WHERE sa.attendance_date = $1::date
-         ${yearClause}`,
-        params
-      );
-      const row = marks.rows[0] || {};
-      staff.present = parseInt(row.present, 10) || 0;
-      staff.absent = parseInt(row.absent, 10) || 0;
-      staff.late = parseInt(row.late, 10) || 0;
-      staff.halfDay = parseInt(row.half_day, 10) || 0;
-      staff.totalMarked = parseInt(row.total_marked, 10) || 0;
-      staff.attendancePct = pctPart((staff.present + staff.late) + (staff.halfDay * 0.5), staff.totalMarked);
-    } catch (e) {
-      console.warn('Dashboard: staff attendance snapshot failed', e.message);
-      staff.isProxy = true;
-      staff.dataSource = 'leave_vs_active';
+  try {
+    const params = [];
+    let where = '';
+    // Staff attendance is operationally date-based and may contain mixed/null academic_year_id.
+    // Do not apply academic-year filtering here to avoid hiding valid staff rows.
+    if (!isAllTime) {
+      params.push(dateStr);
+      where = 'WHERE sa.attendance_date = $1::date';
     }
-  } else {
-    staff.dataSource = 'daily_only';
+    const marks = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE sa.status = 'present')::int AS present,
+         COUNT(*) FILTER (WHERE sa.status = 'absent')::int AS absent,
+         COUNT(*) FILTER (WHERE sa.status = 'late')::int AS late,
+         COUNT(*) FILTER (WHERE sa.status = 'half_day')::int AS half_day,
+         COUNT(*)::int AS total_marked
+       FROM staff_attendance sa
+       ${where}`,
+      params
+    );
+    const row = marks.rows[0] || {};
+    staff.present = parseInt(row.present, 10) || 0;
+    staff.absent = parseInt(row.absent, 10) || 0;
+    staff.late = parseInt(row.late, 10) || 0;
+    staff.halfDay = parseInt(row.half_day, 10) || 0;
+    staff.totalMarked = parseInt(row.total_marked, 10) || 0;
+    staff.attendancePct = pctPart((staff.present + staff.late) + (staff.halfDay * 0.5), staff.totalMarked);
+    staff.dataSource = isAllTime ? 'staff_attendance_all_time' : 'staff_attendance';
+  } catch (e) {
+    console.warn('Dashboard: staff attendance snapshot failed', e.message);
+    staff.isProxy = true;
+    staff.dataSource = 'leave_vs_active';
   }
 
   return {

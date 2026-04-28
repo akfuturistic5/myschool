@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -9,8 +9,11 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
 import { useSubjects } from "../../../core/hooks/useSubjects";
 import { useClasses } from "../../../core/hooks/useClasses";
+import { useTeachers } from "../../../core/hooks/useTeachers";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import Swal from "sweetalert2";
 
 const ClassSubject = () => {
   const routes = all_routes;
@@ -18,16 +21,59 @@ const ClassSubject = () => {
   const [classFilterId, setClassFilterId] = useState<string>("");
   const [codeFilter, setCodeFilter] = useState<string>("");
   const { classes = [] } = useClasses(academicYearId);
+  const { teachers = [] } = useTeachers();
   const { subjects, loading, error, refetch } = useSubjects(
     classFilterId ? Number(classFilterId) : null,
     { academicYearId }
   );
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [message, setMessage] = useState("");
+  const [addMessage, setAddMessage] = useState("");
+  const [editMessage, setEditMessage] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [form, setForm] = useState({ subject_name: "", subject_code: "", class_id: "", type: "Theory", is_active: true });
+  const [form, setForm] = useState({
+    subject_name: "",
+    subject_code: "",
+    class_id: "",
+    teacher_id: "",
+    type: "Theory",
+    is_active: true,
+  });
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const classOptions = useMemo(() => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))], [classes]);
+  const formatClassLabel = (c: any) => {
+    const className = String(c?.class_name ?? "").trim();
+    const classCode = String(c?.class_code ?? "").trim();
+    if (className && classCode) return `${className} (${classCode})`;
+    return className || classCode || `Class #${String(c?.id ?? "")}`;
+  };
+  const classOptions = useMemo(
+    () => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
+    [classes]
+  );
+  const classOptionsForForm = useMemo(
+    () => [{ value: "", label: "Select class" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
+    [classes]
+  );
+  const teacherOptionsForForm = useMemo(
+    () => [
+      { value: "", label: "Select teacher" },
+      ...teachers.map((t: any) => {
+        const first = String(t?.first_name ?? "").trim();
+        const last = String(t?.last_name ?? "").trim();
+        const fullName = `${first} ${last}`.trim();
+        const staffId = Number(t?.staff_id);
+        const teacherId = Number(t?.id);
+        const valueId =
+          Number.isFinite(staffId) && staffId > 0
+            ? staffId
+            : Number.isFinite(teacherId) && teacherId > 0
+              ? teacherId
+              : "";
+        return { value: String(valueId), label: fullName || String(t.id) };
+      }),
+    ],
+    [teachers]
+  );
   const codeOptions = useMemo(() => {
     const codes = Array.from(
       new Set(
@@ -41,17 +87,99 @@ const ClassSubject = () => {
     ).sort();
     return [{ value: "", label: "All Codes" }, ...codes.map((c) => ({ value: c, label: c }))];
   }, [subjects]);
+  const classById = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const c of classes || []) {
+      const id = Number((c as any)?.id);
+      if (Number.isFinite(id) && id > 0) map.set(id, c);
+    }
+    return map;
+  }, [classes]);
+  const teacherById = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const t of teachers || []) {
+      const teacherId = Number((t as any)?.id);
+      const staffId = Number((t as any)?.staff_id);
+      if (Number.isFinite(teacherId) && teacherId > 0) map.set(teacherId, t);
+      if (Number.isFinite(staffId) && staffId > 0) map.set(staffId, t);
+    }
+    return map;
+  }, [teachers]);
   const data = (subjects ?? [])
-    .map((s: any, index: number) => ({
-      key: String(s.id ?? index),
-      id: s.id,
-      name: s.subject_name || "N/A",
-      code: s.subject_code || "N/A",
-      type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
-      status: s.is_active ? "Active" : "Inactive",
-      originalData: s,
-    }))
+    .map((s: any, index: number) => {
+      const cid = Number(s.class_id);
+      const classLabel =
+        Number.isFinite(cid) && cid > 0
+          ? (classById.get(cid) ? formatClassLabel(classById.get(cid)) : `Class #${cid}`)
+          : "N/A";
+      const tid = Number(s.teacher_id);
+      const teacherLabel = (() => {
+        if (!Number.isFinite(tid) || tid <= 0) return "N/A";
+        const t = teacherById.get(tid);
+        if (!t) return `Teacher #${tid}`;
+        const first = String(t?.first_name ?? "").trim();
+        const last = String(t?.last_name ?? "").trim();
+        return `${first} ${last}`.trim() || `Teacher #${tid}`;
+      })();
+
+      return {
+        key: String(s.id ?? index),
+        id: s.id,
+        class: classLabel,
+        teacher: teacherLabel,
+        name: s.subject_name || "N/A",
+        code: s.subject_code || "N/A",
+        type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
+        status: s.is_active ? "Active" : "Inactive",
+        originalData: s,
+      };
+    })
     .filter((row) => !codeFilter || String(row.code) === codeFilter);
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Name", dataKey: "name" },
+      { title: "Class", dataKey: "class" },
+      { title: "Teacher", dataKey: "teacher" },
+      { title: "Code", dataKey: "code" },
+      { title: "Type", dataKey: "type" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+  const showNoRowsForExport = useCallback(() => {
+    void Swal.fire({
+      icon: "info",
+      title: "Nothing to export",
+      text: "There are no subject rows in the current view.",
+      timer: 2200,
+      showConfirmButton: false,
+    });
+  }, []);
+  const handleExportExcel = useCallback(() => {
+    if (!data.length) {
+      showNoRowsForExport();
+      return;
+    }
+    exportToExcel(data, "subjects", "Subjects");
+  }, [data, showNoRowsForExport]);
+  const handleExportPdf = useCallback(() => {
+    if (!data.length) {
+      showNoRowsForExport();
+      return;
+    }
+    exportToPDF(data, "Subjects", "subjects", exportColumns);
+  }, [data, exportColumns, showNoRowsForExport]);
+  const handlePrint = useCallback(() => {
+    if (!data.length) {
+      showNoRowsForExport();
+      return;
+    }
+    printData("Subjects", exportColumns, data);
+  }, [data, exportColumns, showNoRowsForExport]);
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
   const handleApplyClick = () => dropdownMenuRef.current?.classList.remove("show");
   const columns = [
     {
@@ -71,6 +199,16 @@ const ClassSubject = () => {
       title: "Name",
       dataIndex: "name",
       sorter: (a: TableData, b: TableData) => String(a.name || "").localeCompare(String(b.name || "")),
+    },
+    {
+      title: "Class",
+      dataIndex: "class",
+      sorter: (a: TableData, b: TableData) => String((a as any).class || "").localeCompare(String((b as any).class || "")),
+    },
+    {
+      title: "Teacher",
+      dataIndex: "teacher",
+      sorter: (a: TableData, b: TableData) => String((a as any).teacher || "").localeCompare(String((b as any).teacher || "")),
     },
     {
       title: "Code",
@@ -123,7 +261,20 @@ const ClassSubject = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    onClick={(e) => { e.preventDefault(); setSelectedSubject(record); setForm({ subject_name: record.originalData?.subject_name || "", subject_code: record.originalData?.subject_code || "", class_id: String(record.originalData?.class_id || ""), type: record.type, is_active: record.status === "Active" }); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("edit_subject"))?.show(); }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setEditMessage("");
+                      setSelectedSubject(record);
+                      setForm({
+                        subject_name: record.originalData?.subject_name || "",
+                        subject_code: record.originalData?.subject_code || "",
+                        class_id: String(record.originalData?.class_id || ""),
+                        teacher_id: String(record.originalData?.teacher_id || ""),
+                        type: record.type,
+                        is_active: record.status === "Active",
+                      });
+                      (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("edit_subject"))?.show();
+                    }}
                   >
                     <i className="ti ti-edit-circle me-2" />
                     Edit
@@ -133,7 +284,7 @@ const ClassSubject = () => {
                   <Link
                     className="dropdown-item rounded-1"
                     to="#"
-                    onClick={(e) => { e.preventDefault(); setSelectedSubject(record); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show(); }}
+                    onClick={(e) => { e.preventDefault(); setDeleteMessage(""); setSelectedSubject(record); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show(); }}
                   >
                     <i className="ti ti-trash-x me-2" />
                     Delete
@@ -171,13 +322,19 @@ const ClassSubject = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
                 <div className="mb-2">
                   <Link
                     to="#"
                     className="btn btn-primary"
                     data-bs-toggle="modal"
                     data-bs-target="#add_subject"
+                    onClick={() => setAddMessage("")}
                   >
                     <i className="ti ti-square-rounded-plus-filled me-2" />
                     Add Subject
@@ -186,7 +343,6 @@ const ClassSubject = () => {
               </div>
             </div>
             {/* /Page Header */}
-            {message ? <div className="alert alert-info">{message}</div> : null}
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                 <h4 className="mb-3">Class Subject</h4>
@@ -362,23 +518,45 @@ const ClassSubject = () => {
               </div>
               <form onSubmit={async (e) => {
                 e.preventDefault();
+                setAddMessage("");
                 if (!form.subject_name.trim()) return;
+                if (!form.class_id) {
+                  setAddMessage("Please select a class");
+                  return;
+                }
+                if (!form.teacher_id) {
+                  setAddMessage("Please select a teacher");
+                  return;
+                }
                 setIsSaving(true);
                 try {
                   await apiService.createSubject({
                     subject_name: form.subject_name.trim(),
                     subject_code: form.subject_code || null,
                     class_id: form.class_id ? Number(form.class_id) : null,
+                    teacher_id: form.teacher_id ? Number(form.teacher_id) : null,
                     practical_hours: form.type === "Practical" ? 1 : 0,
                     theory_hours: form.type === "Theory" ? 1 : 0,
                     is_active: form.is_active,
                   });
                   await refetch();
-                  setMessage("Subject created successfully");
+                  setAddMessage("Subject created successfully");
+                  setForm({
+                    subject_name: "",
+                    subject_code: "",
+                    class_id: "",
+                    teacher_id: "",
+                    type: "Theory",
+                    is_active: true,
+                  });
                   (window as any).bootstrap?.Modal?.getInstance(document.getElementById("add_subject"))?.hide();
-                } catch { setMessage("Failed to create subject"); } finally { setIsSaving(false); }
+                } catch (err: any) {
+                  const msg = err instanceof Error ? err.message : "Failed to create subject";
+                  setAddMessage(msg);
+                } finally { setIsSaving(false); }
               }}>
                 <div className="modal-body">
+                  {addMessage ? <div className="alert alert-info">{addMessage}</div> : null}
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
@@ -391,7 +569,30 @@ const ClassSubject = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Type</label>
-                        <CommonSelect className="select" options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]} defaultValue={{ value: form.type, label: form.type }} onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))} />
+                        <CommonSelect
+                          className="select"
+                          options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]}
+                          value={form.type}
+                          onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Class</label>
+                        <CommonSelect
+                          className="select"
+                          options={classOptionsForForm}
+                          value={form.class_id}
+                          onChange={(v) => setForm((f) => ({ ...f, class_id: v || "" }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Teacher</label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherOptionsForForm}
+                          value={form.teacher_id}
+                          onChange={(v) => setForm((f) => ({ ...f, teacher_id: v || "" }))}
+                        />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -404,6 +605,8 @@ const ClassSubject = () => {
                             type="checkbox"
                             role="switch"
                             id="switch-sm"
+                            checked={form.is_active}
+                            onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
                           />
                         </div>
                       </div>
@@ -442,6 +645,7 @@ const ClassSubject = () => {
               </div>
               <form onSubmit={(e) => e.preventDefault()}>
                 <div className="modal-body">
+                  {editMessage ? <div className="alert alert-info">{editMessage}</div> : null}
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
@@ -456,19 +660,38 @@ const ClassSubject = () => {
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Code</label>
-                        <CommonSelect
-                          className="select"
-                          options={[{ value: form.subject_code || "custom", label: form.subject_code || "custom" }]}
-                          defaultValue={{ value: form.subject_code || "custom", label: form.subject_code || "custom" }}
-                        /><input className="form-control mt-2" value={form.subject_code} onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))} />
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={form.subject_code}
+                          onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))}
+                        />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Type</label>
                         <CommonSelect
                           className="select"
                           options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]}
-                          defaultValue={{ value: form.type, label: form.type }}
+                          value={form.type}
                           onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Class</label>
+                        <CommonSelect
+                          className="select"
+                          options={classOptionsForForm}
+                          value={form.class_id}
+                          onChange={(v) => setForm((f) => ({ ...f, class_id: v || "" }))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Teacher</label>
+                        <CommonSelect
+                          className="select"
+                          options={teacherOptionsForForm}
+                          value={form.teacher_id}
+                          onChange={(v) => setForm((f) => ({ ...f, teacher_id: v || "" }))}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">
@@ -503,23 +726,34 @@ const ClassSubject = () => {
                     className="btn btn-primary"
                     onClick={async (e) => {
                       e.preventDefault();
+                      setEditMessage("");
                       const id = selectedSubject?.originalData?.id || selectedSubject?.id;
                       if (!id || isSaving || !form.subject_name.trim()) return;
+                      if (!form.class_id) {
+                        setEditMessage("Please select a class");
+                        return;
+                      }
+                      if (!form.teacher_id) {
+                        setEditMessage("Please select a teacher");
+                        return;
+                      }
                       setIsSaving(true);
                       try {
                         await apiService.updateSubject(id, {
                           subject_name: form.subject_name.trim(),
                           subject_code: form.subject_code || null,
                           class_id: form.class_id ? Number(form.class_id) : null,
+                          teacher_id: form.teacher_id ? Number(form.teacher_id) : null,
                           practical_hours: form.type === "Practical" ? 1 : 0,
                           theory_hours: form.type === "Theory" ? 1 : 0,
                           is_active: form.is_active,
                         });
                         await refetch();
-                        setMessage("Subject updated successfully");
+                        setEditMessage("Subject updated successfully");
                         (window as any).bootstrap?.Modal?.getInstance(document.getElementById("edit_subject"))?.hide();
-                      } catch {
-                        setMessage("Failed to update subject");
+                      } catch (err: any) {
+                        const msg = err instanceof Error ? err.message : "Failed to update subject";
+                        setEditMessage(msg);
                       } finally {
                         setIsSaving(false);
                       }
@@ -539,6 +773,7 @@ const ClassSubject = () => {
             <div className="modal-content">
               <form >
                 <div className="modal-body text-center">
+                  {deleteMessage ? <div className="alert alert-info text-start">{deleteMessage}</div> : null}
                   <span className="delete-icon">
                     <i className="ti ti-trash-x" />
                   </span>
@@ -562,10 +797,11 @@ const ClassSubject = () => {
                       try {
                         await apiService.deleteSubject(id);
                         await refetch();
-                        setMessage("Subject deleted successfully");
+                        setDeleteMessage("Subject deleted successfully");
                         (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"))?.hide();
-                      } catch {
-                        setMessage("Failed to delete subject");
+                      } catch (err: any) {
+                        const msg = err instanceof Error ? err.message : "Failed to delete subject";
+                        setDeleteMessage(msg);
                       } finally { setIsSaving(false); }
                     }}>{isSaving ? "Deleting..." : "Yes, Delete"}</button>
                   </div>
