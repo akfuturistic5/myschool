@@ -1871,6 +1871,23 @@ class ApiService {
     });
   }
 
+  async createTransportAllocationBulk(payload) {
+    return this.makeRequest('/transport/allocations/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getTransportSeatAvailability(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.vehicle_id != null) searchParams.set('vehicle_id', params.vehicle_id);
+    if (params.start_date) searchParams.set('start_date', params.start_date);
+    if (params.end_date) searchParams.set('end_date', params.end_date);
+    if (params.exclude_allocation_id != null) searchParams.set('exclude_allocation_id', params.exclude_allocation_id);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/seat-availability${qs ? `?${qs}` : ''}`);
+  }
+
   async updateTransportAllocation(id, payload) {
     return this.makeRequest(`/transport/allocations/${id}`, {
       method: 'PUT',

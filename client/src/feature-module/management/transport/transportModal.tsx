@@ -1671,10 +1671,12 @@ const TransportModal = ({
                         <label className="form-label">Seat Capacity</label>
                         <input
                           type="number"
+                          min="1"
                           className="form-control"
                           placeholder="e.g. 50"
                           value={seatCapacity}
                           onChange={(e) => setSeatCapacity(e.target.value)}
+                          required
                         />
                       </div>
                     </div>
@@ -1822,9 +1824,11 @@ const TransportModal = ({
                         <label className="form-label">Seat Capacity</label>
                         <input
                           type="number"
+                          min="1"
                           className="form-control"
                           value={seatCapacity}
                           onChange={(e) => setSeatCapacity(e.target.value)}
+                          required
                         />
                       </div>
                     </div>
