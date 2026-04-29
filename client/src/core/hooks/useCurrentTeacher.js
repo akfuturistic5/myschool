@@ -14,7 +14,7 @@ export const useCurrentTeacher = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const role = (user?.role ?? user?.display_role ?? '').trim().toLowerCase();
+  const role = (user?.role ?? '').trim().toLowerCase();
   const isTeacherRole = role === 'teacher';
 
   const fetchCurrentTeacher = async () => {

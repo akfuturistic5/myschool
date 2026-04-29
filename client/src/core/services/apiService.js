@@ -993,8 +993,13 @@ class ApiService {
     return this.makeRequest('/teachers/me');
   }
 
-  async getTeacherById(id) {
-    return this.makeRequest(`/teachers/${id}`);
+  async getTeacherById(id, params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.academicYearId != null && params.academicYearId !== '') {
+      searchParams.set('academic_year_id', String(params.academicYearId));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/teachers/${id}${qs ? `?${qs}` : ''}`);
   }
 
   async getTeachersByClass(classId) {
@@ -2428,11 +2433,26 @@ class ApiService {
   // Class Syllabus
   async getClassSyllabus(params = {}) {
     const searchParams = new URLSearchParams();
-    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.academicYearId != null && params.academicYearId !== '') {
+      searchParams.set('academic_year_id', String(params.academicYearId));
+    }
+    if (params.classId != null && params.classId !== '') {
+      searchParams.set('class_id', String(params.classId));
+    }
+    if (params.sectionId != null && params.sectionId !== '') {
+      searchParams.set('section_id', String(params.sectionId));
+    }
+    if (params.status != null && params.status !== '' && params.status !== 'Select') {
+      searchParams.set('status', String(params.status));
+    }
+    if (params.dateFrom) searchParams.set('date_from', String(params.dateFrom));
+    if (params.dateTo) searchParams.set('date_to', String(params.dateTo));
+    if (params.sort) searchParams.set('sort', String(params.sort));
     const qs = searchParams.toString();
     return this.makeRequest(`/class-syllabus${qs ? `?${qs}` : ''}`);
   }
 
+  /** Detail fetch for a single syllabus row (available for future detail views). */
   async getClassSyllabusById(id) {
     return this.makeRequest(`/class-syllabus/${id}`);
   }

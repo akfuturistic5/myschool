@@ -66,6 +66,11 @@ function sha256Hex(s) {
 
 const GENERIC_LOGIN_FAIL = 'Invalid credentials';
 
+function looksLikeBcryptHash(value) {
+  const s = String(value || '');
+  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(s);
+}
+
 /**
  * Login - authenticate user with username/phone and password (bcrypt password_hash).
  * Lookup by username, email, or phone. Same error message for all auth failures (no user/institute enumeration).
@@ -113,6 +118,7 @@ const login = async (req, res) => {
     }
 
     const identifier = username.trim().toString();
+    const identifierDigits = identifier.replace(/\D/g, '');
     const enteredPassword = (password || '').toString().trim();
 
     await runWithTenant(targetDbName, async () => {
@@ -124,14 +130,16 @@ const login = async (req, res) => {
                   ur.role_name,
                   st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
                   CASE
-                    WHEN u.username = $1 THEN 1
+                    WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
                     WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 2
-                    WHEN u.phone = $1 THEN 3
+                    WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 3
+                    WHEN u.phone = $1 THEN 4
                     ELSE 9
                   END AS match_rank,
                   CASE
-                    WHEN u.username = $1 THEN 'username'
+                    WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 'username'
                     WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 'email'
+                    WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 'phone'
                     WHEN u.phone = $1 THEN 'phone'
                     ELSE 'other'
                   END AS match_kind
@@ -139,9 +147,14 @@ const login = async (req, res) => {
            LEFT JOIN user_roles ur ON u.role_id = ur.id
            LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
            WHERE u.is_active = true AND u.deleted_at IS NULL
-             AND (u.username = $1 OR LOWER(COALESCE(u.email, '')) = LOWER($1) OR u.phone = $1)
+            AND (
+              LOWER(COALESCE(u.username, '')) = LOWER($1)
+              OR LOWER(COALESCE(u.email, '')) = LOWER($1)
+              OR u.phone = $1
+              OR ($2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2)
+            )
            ORDER BY match_rank ASC, u.id ASC`,
-          [identifier]
+          [identifier, identifierDigits]
         );
         userRows = userResult.rows || [];
       } catch (e) {
@@ -152,21 +165,28 @@ const login = async (req, res) => {
                     ur.role_name,
                     st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
                     CASE
-                      WHEN u.username = $1 THEN 1
-                      WHEN u.phone = $1 THEN 2
+                      WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
+                      WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 2
+                      WHEN u.phone = $1 THEN 3
                       ELSE 9
                     END AS match_rank,
                     CASE
-                      WHEN u.username = $1 THEN 'username'
+                      WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 'username'
+                      WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 'phone'
                       WHEN u.phone = $1 THEN 'phone'
                       ELSE 'other'
                     END AS match_kind
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
              LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-             WHERE u.is_active = true AND u.deleted_at IS NULL AND (u.username = $1 OR u.phone = $1)
+             WHERE u.is_active = true AND u.deleted_at IS NULL
+               AND (
+                 LOWER(COALESCE(u.username, '')) = LOWER($1)
+                 OR u.phone = $1
+                 OR ($2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2)
+               )
              ORDER BY match_rank ASC, u.id ASC`,
-            [identifier]
+            [identifier, identifierDigits]
           );
           userRows = userResult.rows || [];
         } else {
@@ -196,10 +216,32 @@ const login = async (req, res) => {
         const passwordHash = candidate.password_hash;
         if (!passwordHash) continue;
         let ok = false;
+        let needsRehash = false;
         try {
           ok = await bcrypt.compare(enteredPassword, passwordHash);
         } catch {
           ok = false;
+        }
+        // Compatibility path: some manually inserted dummy rows may contain plaintext
+        // in password_hash. Accept only exact match once, then upgrade immediately.
+        if (!ok && !looksLikeBcryptHash(passwordHash) && passwordHash === enteredPassword) {
+          ok = true;
+          needsRehash = true;
+        }
+        if (ok && needsRehash) {
+          try {
+            const upgradedHash = await bcrypt.hash(enteredPassword, 12);
+            await query(
+              `UPDATE users
+               SET password_hash = $1, modified_at = NOW()
+               WHERE id = $2 AND is_active = true AND deleted_at IS NULL`,
+              [upgradedHash, candidate.id]
+            );
+          } catch (rehashErr) {
+            console.error('Login password rehash failed:', rehashErr);
+            // Fail closed if we cannot upgrade insecure stored password.
+            return errorResponse(res, 500, 'Login failed');
+          }
         }
         if (ok) passwordMatchedUsers.push(candidate);
       }

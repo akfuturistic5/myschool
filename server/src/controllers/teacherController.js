@@ -233,7 +233,7 @@ const getAllTeachers = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        NULL::text AS other_info,
+        t.other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -313,7 +313,7 @@ const getCurrentTeacher = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        NULL::text AS other_info,
+        t.other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -401,7 +401,7 @@ const getTeacherById = async (req, res) => {
         s.user_id,
         t.youtube,
         t.instagram,
-        NULL::text AS other_info,
+        t.other_info,
         t.account_name,
         t.account_number,
         t.epf_no,
@@ -470,7 +470,84 @@ const getTeacherById = async (req, res) => {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
 
-    return success(res, 200, 'Teacher fetched successfully', row);
+    const requestedAcademicYearIdRaw = req.query?.academic_year_id;
+    const requestedAcademicYearId =
+      requestedAcademicYearIdRaw != null && String(requestedAcademicYearIdRaw).trim() !== ''
+        ? parseInt(String(requestedAcademicYearIdRaw), 10)
+        : null;
+    const hasAcademicYearFilter =
+      requestedAcademicYearId != null &&
+      Number.isInteger(requestedAcademicYearId) &&
+      requestedAcademicYearId > 0;
+
+    const classTeacherParams = [row.staff_id];
+    let classTeacherWhere = 'WHERE c.class_teacher_id = $1';
+    if (hasAcademicYearFilter) {
+      classTeacherParams.push(requestedAcademicYearId);
+      classTeacherWhere += ` AND c.academic_year_id = $${classTeacherParams.length}`;
+    }
+    const classTeacherResult = await query(
+      `SELECT
+         c.id AS class_id,
+         c.class_name,
+         c.class_code,
+         c.is_active,
+         c.academic_year_id,
+         ay.year_name AS academic_year_name
+       FROM classes c
+       LEFT JOIN academic_years ay ON ay.id = c.academic_year_id
+       ${classTeacherWhere}
+       ORDER BY c.class_name ASC`,
+      classTeacherParams
+    );
+
+    const sectionTeacherParams = [row.staff_id];
+    let sectionTeacherWhere = 'WHERE sec.section_teacher_id = $1';
+    if (hasAcademicYearFilter) {
+      sectionTeacherParams.push(requestedAcademicYearId);
+      sectionTeacherWhere += ` AND c.academic_year_id = $${sectionTeacherParams.length}`;
+    }
+    const sectionTeacherResult = await query(
+      `SELECT
+         sec.id AS section_id,
+         sec.section_name,
+         sec.is_active,
+         sec.class_id,
+         c.class_name,
+         c.class_code,
+         c.academic_year_id,
+         ay.year_name AS academic_year_name
+       FROM sections sec
+       INNER JOIN classes c ON c.id = sec.class_id
+       LEFT JOIN academic_years ay ON ay.id = c.academic_year_id
+       ${sectionTeacherWhere}
+       ORDER BY c.class_name ASC, sec.section_name ASC`,
+      sectionTeacherParams
+    );
+
+    const enrichedRow = {
+      ...row,
+      class_teacher_of: classTeacherResult.rows.map((item) => ({
+        classId: item.class_id,
+        className: item.class_name,
+        classCode: item.class_code,
+        isActive: item.is_active,
+        academicYearId: item.academic_year_id,
+        academicYearName: item.academic_year_name || null,
+      })),
+      section_teacher_of: sectionTeacherResult.rows.map((item) => ({
+        sectionId: item.section_id,
+        sectionName: item.section_name,
+        isActive: item.is_active,
+        classId: item.class_id,
+        className: item.class_name,
+        classCode: item.class_code,
+        academicYearId: item.academic_year_id,
+        academicYearName: item.academic_year_name || null,
+      })),
+    };
+
+    return success(res, 200, 'Teacher fetched successfully', enrichedRow);
   } catch (error) {
     console.error('Error fetching teacher:', error);
     return errorResponse(res, 500, 'Failed to fetch teacher');
@@ -540,7 +617,7 @@ const getTeachersByClass = async (req, res) => {
         s.is_active,
         t.youtube,
         t.instagram,
-        NULL::text AS other_info,
+        t.other_info,
         t.account_name,
         t.account_number,
         c.class_name,
@@ -1125,7 +1202,7 @@ const createTeacher = async (req, res) => {
         t.linkedin,
         t.youtube,
         t.instagram,
-        NULL::text AS other_info,
+        t.other_info,
         t.account_name,
         t.account_number,
         t.status,

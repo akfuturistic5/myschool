@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
+import { normalizeAuthRole } from '../utils/roleUtils';
 
 export const useCurrentUser = () => {
   const [user, setUser] = useState(null);
@@ -26,19 +27,19 @@ export const useCurrentUser = () => {
           userData.username ||
           'User';
 
-        const role = 
-          userData.display_role ||
-          userData.role_name ||
-          (userData.student_first_name ? 'Student' : null) ||
-          (userData.staff_first_name ? (userData.designation_name || 'Teacher') : null) ||
-          'Admin';
+        // IMPORTANT: UI authorization/routing must use canonical auth role only.
+        // `display_role` / designation can be "Headmaster", "Coordinator", etc.
+        // and is for label display, not for permission decisions.
+        const role = normalizeAuthRole(userData.role_name, userData.role_id);
 
+        // Keep canonical fields last so payload keys cannot overwrite auth role.
         setUser({
+          ...userData,
           id: userData.id,
           name,
           role,
+          display_role: userData.display_role || userData.role_name || role,
           account_disabled: userData.account_disabled === true,
-          ...userData,
         });
       } else {
         setError('Failed to fetch user data');

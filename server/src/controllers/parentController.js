@@ -22,6 +22,70 @@ const {
   STUDENT_CONTACT_LATERAL_JOINS,
 } = require('../utils/studentContactSync');
 
+function isBlankValue(value) {
+  return value == null || (typeof value === 'string' && value.trim() === '');
+}
+
+function pickPreferredValue(currentValue, fallbackValue) {
+  return isBlankValue(currentValue) ? (fallbackValue ?? currentValue) : currentValue;
+}
+
+async function loadLatestLegacyParentContacts(studentIds) {
+  const ids = Array.from(new Set((studentIds || []).map((id) => parseId(id)).filter(Boolean)));
+  if (!ids.length) return new Map();
+
+  try {
+    const result = await query(
+      `SELECT DISTINCT ON (p.student_id)
+         p.student_id,
+         p.father_name,
+         p.father_email,
+         p.father_phone,
+         p.father_occupation,
+         p.father_image_url,
+         p.mother_name,
+         p.mother_email,
+         p.mother_phone,
+         p.mother_occupation,
+         p.mother_image_url
+       FROM parents p
+       WHERE p.student_id = ANY($1::int[])
+       ORDER BY p.student_id, COALESCE(p.updated_at, p.created_at) DESC, p.id DESC`,
+      [ids]
+    );
+
+    return new Map(result.rows.map((row) => [parseId(row.student_id), row]));
+  } catch (err) {
+    // parents table may not exist in fully unified deployments.
+    if (String(err?.code || '') === '42P01') return new Map();
+    throw err;
+  }
+}
+
+function mergeLegacyParentContact(row, legacyRow) {
+  if (!legacyRow) return row;
+  return {
+    ...row,
+    father_name: pickPreferredValue(row.father_name, legacyRow.father_name),
+    father_email: pickPreferredValue(row.father_email, legacyRow.father_email),
+    father_phone: pickPreferredValue(row.father_phone, legacyRow.father_phone),
+    father_occupation: pickPreferredValue(row.father_occupation, legacyRow.father_occupation),
+    father_image_url: pickPreferredValue(row.father_image_url, legacyRow.father_image_url),
+    mother_name: pickPreferredValue(row.mother_name, legacyRow.mother_name),
+    mother_email: pickPreferredValue(row.mother_email, legacyRow.mother_email),
+    mother_phone: pickPreferredValue(row.mother_phone, legacyRow.mother_phone),
+    mother_occupation: pickPreferredValue(row.mother_occupation, legacyRow.mother_occupation),
+    mother_image_url: pickPreferredValue(row.mother_image_url, legacyRow.mother_image_url),
+  };
+}
+
+async function enrichRowsWithLegacyParentContacts(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return rows;
+  const legacyByStudent = await loadLatestLegacyParentContacts(rows.map((row) => row.student_id));
+  if (!legacyByStudent.size) return rows;
+  return rows.map((row) => mergeLegacyParentContact(row, legacyByStudent.get(parseId(row.student_id))));
+}
+
 async function fetchParentRowByStudentId(studentId, client = null) {
   const q = client ? client.query.bind(client) : query;
   const sql = `
@@ -45,7 +109,10 @@ async function fetchParentRowByStudentId(studentId, client = null) {
     WHERE s.id = $1 AND s.is_active = true
     LIMIT 1`;
   const r = await q(sql, [studentId]);
-  return r.rows[0] || null;
+  const baseRow = r.rows[0] || null;
+  if (!baseRow) return null;
+  const enrichedRows = await enrichRowsWithLegacyParentContacts([baseRow]);
+  return enrichedRows[0] || baseRow;
 }
 
 const createParent = async (req, res) => {
@@ -225,7 +292,7 @@ const updateParent = async (req, res) => {
           [fFirst || null, fLast || null, father_email || null, father_phone || null, father_occupation || null, fatherUserId]
         );
       }
- 
+
       // Update Mother's user record if exists
       if (motherUserId) {
         const { first_name: mFirst, last_name: mLast } = parseFullName(mother_name || "");
@@ -420,12 +487,13 @@ const getAllParents = async (req, res) => {
         teacherParams
       );
 
+      const enrichedRows = await enrichRowsWithLegacyParentContacts(result.rows);
       return res.status(200).json({
         status: 'SUCCESS',
         message: 'Parents fetched successfully',
-        data: result.rows,
-        count: result.rows.length,
-        pagination: { page: 1, limit: result.rows.length, total: result.rows.length, totalPages: 1 },
+        data: enrichedRows,
+        count: enrichedRows.length,
+        pagination: { page: 1, limit: enrichedRows.length, total: enrichedRows.length, totalPages: 1 },
       });
     }
 
@@ -510,12 +578,13 @@ const getAllParents = async (req, res) => {
       );
     }
 
+    const enrichedRows = await enrichRowsWithLegacyParentContacts(result.rows);
     const total = countResult.rows[0].total;
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Parents fetched successfully',
-      data: result.rows,
-      count: result.rows.length,
+      data: enrichedRows,
+      count: enrichedRows.length,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -685,66 +754,66 @@ const createParentWithChild = async (req, res) => {
         throw err;
       }
 
-        // If primary father details are missing, use mother's details for user account
-        const finalName = name || mother_name;
-        const finalPhone = phone || mother_phone;
-        const finalEmail = email || mother_email;
+      // If primary father details are missing, use mother's details for user account
+      const finalName = name || mother_name;
+      const finalPhone = phone || mother_phone;
+      const finalEmail = email || mother_email;
 
-        const { userId, reused } = await createOrReuseParentUser(
+      const { userId, reused } = await createOrReuseParentUser(
+        client,
+        {
+          fullName: finalName,
+          phone: finalPhone,
+          email: finalEmail,
+          avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+        },
+        warnings
+      );
+
+      let studentName = null;
+      if (student_id != null) {
+        const sid = parseInt(student_id, 10);
+        if (!Number.isFinite(sid) || sid <= 0) {
+          const err = new Error('Invalid student_id');
+          err.statusCode = 400;
+          throw err;
+        }
+        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
+        if (chk.rows.length === 0) {
+          const err = new Error('Student not found');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const hasFather = name || phone;
+        const hasMother = mother_name || mother_phone;
+
+        // Use syncStudentGuardians to handle both Father and Mother
+        await syncStudentGuardians(
           client,
+          sid,
           {
-            fullName: finalName,
-            phone: finalPhone,
-            email: finalEmail,
-            avatarRelativePath: avatarPath || (mother_image_url ? normalizeTenantProfilePath(schoolId, mother_image_url) : null),
+            effFatherName: name || null,
+            effFatherEmail: email || null,
+            effFatherPhone: phone || null,
+            effFatherOcc: null,
+            effMotherName: mother_name || null,
+            effMotherEmail: mother_email || null,
+            effMotherPhone: mother_phone || null,
+            effMotherOcc: mother_occupation || null,
+            effGFirst: null,
+            effGLast: null,
+            effGPhone: null,
+            effGEmail: null,
+            effGOcc: null,
+            effGAddr: null,
+            effGRel: null,
+            fatherUserId: hasFather ? userId : null,
+            motherUserId: !hasFather && hasMother ? userId : null,
+            guardianUserId: null,
           },
           warnings
         );
-
-        let studentName = null;
-        if (student_id != null) {
-          const sid = parseInt(student_id, 10);
-          if (!Number.isFinite(sid) || sid <= 0) {
-            const err = new Error('Invalid student_id');
-            err.statusCode = 400;
-            throw err;
-          }
-          const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
-          if (chk.rows.length === 0) {
-            const err = new Error('Student not found');
-            err.statusCode = 400;
-            throw err;
-          }
-
-          const hasFather = name || phone;
-          const hasMother = mother_name || mother_phone;
-
-          // Use syncStudentGuardians to handle both Father and Mother
-          await syncStudentGuardians(
-            client,
-            sid,
-            {
-              effFatherName: name || null,
-              effFatherEmail: email || null,
-              effFatherPhone: phone || null,
-              effFatherOcc: null,
-              effMotherName: mother_name || null,
-              effMotherEmail: mother_email || null,
-              effMotherPhone: mother_phone || null,
-              effMotherOcc: mother_occupation || null,
-              effGFirst: null,
-              effGLast: null,
-              effGPhone: null,
-              effGEmail: null,
-              effGOcc: null,
-              effGAddr: null,
-              effGRel: null,
-              fatherUserId: hasFather ? userId : null,
-              motherUserId: !hasFather && hasMother ? userId : null,
-              guardianUserId: null,
-            },
-            warnings
-          );
 
         const r = chk.rows[0];
         studentName = [r.first_name, r.last_name].filter(Boolean).join(' ').trim() || null;

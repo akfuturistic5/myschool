@@ -11,7 +11,11 @@ const { ROLES } = require('../src/config/roles');
 const { createParentIndividualUser, createGuardianUser } = require('../src/utils/createPersonUser');
 
 function poolFromEnv() {
-  if (process.env.DATABASE_URL) {
+  const args = process.argv.slice(2);
+  const dbIndex = args.indexOf('--db');
+  const dbName = dbIndex !== -1 ? args[dbIndex + 1] : process.env.DB_NAME || 'school_db';
+
+  if (process.env.DATABASE_URL && dbIndex === -1) {
     return new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : { rejectUnauthorized: false },
@@ -22,7 +26,7 @@ function poolFromEnv() {
     port: parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'school_db',
+    database: dbName,
   });
 }
 

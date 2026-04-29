@@ -6,7 +6,8 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
   // Set the third parameter to '' to load all envs regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '');
-  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:5000';
+  // Keep dev proxy aligned with server default port to avoid auth/login connection failures.
+  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:5001';
 
   return {
     plugins: [react()],

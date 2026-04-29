@@ -18,6 +18,18 @@ async function guardiansIsSlimSchema(client) {
   return r.rows.length === 0;
 }
 
+function splitFullName(fullName, fallbackFirstName = '') {
+  const norm = String(fullName || '').trim();
+  if (!norm) {
+    return { firstName: fallbackFirstName || '', lastName: '' };
+  }
+  const parts = norm.split(/\s+/);
+  return {
+    firstName: parts[0] || fallbackFirstName || '',
+    lastName: parts.slice(1).join(' '),
+  };
+}
+
 /**
  * Map guardian rows + users to legacy API field names for forms.
  */
@@ -230,13 +242,6 @@ async function resolveLinkedUser(client, personId, allowedRoleIds) {
  */
 async function syncStudentGuardians(client, studentId, payload, warnings) {
   const slim = await guardiansIsSlimSchema(client);
-  if (!slim) {
-    const err = new Error(
-      'Database not migrated: run npm run db:migrate:unify (guardians still has legacy columns)'
-    );
-    err.statusCode = 503;
-    throw err;
-  }
 
   const {
     effFatherName,
@@ -370,14 +375,78 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
   let primaryId = null;
   for (const row of rows) {
     const isPrimary = primaryType ? row.type === primaryType : rows.length === 1;
-    const ins = await client.query(
-      `INSERT INTO guardians (
-        student_id, user_id, guardian_type, relation,
-        is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
-      RETURNING id`,
-      [studentId, row.uid, row.type, row.rel, isPrimary, false]
-    );
+    let ins;
+    if (slim) {
+      ins = await client.query(
+        `INSERT INTO guardians (
+          student_id, user_id, guardian_type, relation,
+          is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+        RETURNING id`,
+        [studentId, row.uid, row.type, row.rel, isPrimary, false]
+      );
+    } else {
+      const userRes = await client.query(
+        `SELECT first_name, last_name, phone, email, occupation, current_address
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [row.uid]
+      );
+      const u = userRes.rows[0] || {};
+      const fallbackByType = (() => {
+        if (row.type === 'father') {
+          return {
+            ...splitFullName(effFatherName, 'Father'),
+            occupation: effFatherOcc || null,
+            address: null,
+          };
+        }
+        if (row.type === 'mother') {
+          return {
+            ...splitFullName(effMotherName, 'Mother'),
+            occupation: effMotherOcc || null,
+            address: null,
+          };
+        }
+        return {
+          firstName: effGFirst || 'Guardian',
+          lastName: effGLast || '',
+          occupation: effGOcc || null,
+          address: effGAddr || null,
+        };
+      })();
+      const firstName = (u.first_name || fallbackByType.firstName || '').toString().trim();
+      const lastName = (u.last_name || fallbackByType.lastName || '').toString().trim();
+      const phone = (u.phone || '').toString().trim();
+      const email = (u.email || '').toString().trim() || null;
+      const occupation = (u.occupation || fallbackByType.occupation || '').toString().trim() || null;
+      const address = (u.current_address || fallbackByType.address || '').toString().trim() || null;
+
+      ins = await client.query(
+        `INSERT INTO guardians (
+          student_id, user_id, guardian_type, relation,
+          is_primary_contact, is_emergency_contact, is_active,
+          first_name, last_name, phone, email, address, occupation,
+          created_at, modified_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+        RETURNING id`,
+        [
+          studentId,
+          row.uid,
+          row.type,
+          row.rel,
+          isPrimary,
+          false,
+          firstName || (row.type === 'father' ? 'Father' : row.type === 'mother' ? 'Mother' : 'Guardian'),
+          lastName || '',
+          phone || '',
+          email,
+          address,
+          occupation,
+        ]
+      );
+    }
     if (isPrimary) primaryId = ins.rows[0].id;
   }
   if (!primaryId && rows.length > 0) {
@@ -437,23 +506,17 @@ async function loadStudentLinkedUserIds(query, studentId) {
 /** List/detail SQL: contact fields from guardians + users (post-unify schema). */
 const STUDENT_CONTACT_LATERAL_SELECT = `
       father_u.user_id AS father_person_id,
-      COALESCE(
-        NULLIF(TRIM(CONCAT(COALESCE(father_u.first_name,''), ' ', COALESCE(father_u.last_name,''))), ''),
-        NULLIF(TRIM(COALESCE(legacy_parent.father_name, '')), '')
-      ) AS father_name,
-      COALESCE(father_u.email, legacy_parent.father_email) AS father_email,
-      COALESCE(father_u.phone, legacy_parent.father_phone) AS father_phone,
-      COALESCE(father_u.occupation, legacy_parent.father_occupation) AS father_occupation,
-      COALESCE(father_u.avatar, father_legacy_u.avatar, legacy_parent.father_image_url) AS father_image_url,
+      NULLIF(TRIM(CONCAT(COALESCE(father_u.first_name,''), ' ', COALESCE(father_u.last_name,''))), '') AS father_name,
+      father_u.email AS father_email,
+      father_u.phone AS father_phone,
+      father_u.occupation AS father_occupation,
+      father_u.avatar AS father_image_url,
       mother_u.user_id AS mother_person_id,
-      COALESCE(
-        NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), ''),
-        NULLIF(TRIM(COALESCE(legacy_parent.mother_name, '')), '')
-      ) AS mother_name,
-      COALESCE(mother_u.email, legacy_parent.mother_email) AS mother_email,
-      COALESCE(mother_u.phone, legacy_parent.mother_phone) AS mother_phone,
-      COALESCE(mother_u.occupation, legacy_parent.mother_occupation) AS mother_occupation,
-      COALESCE(mother_u.avatar, mother_legacy_u.avatar, legacy_parent.mother_image_url) AS mother_image_url,
+      NULLIF(TRIM(CONCAT(COALESCE(mother_u.first_name,''), ' ', COALESCE(mother_u.last_name,''))), '') AS mother_name,
+      mother_u.email AS mother_email,
+      mother_u.phone AS mother_phone,
+      mother_u.occupation AS mother_occupation,
+      mother_u.avatar AS mother_image_url,
       gu_u.user_id AS guardian_person_id,
       gu_u.first_name AS guardian_first_name,
       gu_u.last_name AS guardian_last_name,
@@ -465,39 +528,6 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
       gu_u.avatar AS guardian_image_url`;
 
 const STUDENT_CONTACT_LATERAL_JOINS = `
-      LEFT JOIN LATERAL (
-        SELECT
-          p.father_name,
-          p.father_email,
-          p.father_phone,
-          p.father_occupation,
-          p.father_image_url,
-          p.mother_name,
-          p.mother_email,
-          p.mother_phone,
-          p.mother_occupation,
-          p.mother_image_url
-        FROM parents p
-        WHERE p.student_id = s.id
-        ORDER BY p.id DESC
-        LIMIT 1
-      ) legacy_parent ON true
-      LEFT JOIN LATERAL (
-        SELECT u.id AS user_id, u.avatar
-        FROM users u
-        WHERE legacy_parent.father_email IS NOT NULL
-          AND NULLIF(TRIM(legacy_parent.father_email), '') IS NOT NULL
-          AND LOWER(TRIM(u.email)) = LOWER(TRIM(legacy_parent.father_email))
-        LIMIT 1
-      ) father_legacy_u ON true
-      LEFT JOIN LATERAL (
-        SELECT u.id AS user_id, u.avatar
-        FROM users u
-        WHERE legacy_parent.mother_email IS NOT NULL
-          AND NULLIF(TRIM(legacy_parent.mother_email), '') IS NOT NULL
-          AND LOWER(TRIM(u.email)) = LOWER(TRIM(legacy_parent.mother_email))
-        LIMIT 1
-      ) mother_legacy_u ON true
       LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
         FROM guardians g

@@ -2,10 +2,12 @@
 import TeacherModal from '../teacherModal';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { all_routes } from '../../../router/all_routes';
 import TeacherSidebar from './teacherSidebar';
 import TeacherBreadcrumb from './teacherBreadcrumb';
 import { apiService } from '../../../../core/services/apiService';
+import { selectSelectedAcademicYearId } from '../../../../core/data/redux/academicYearSlice';
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -18,6 +20,7 @@ const TeacherDetails = () => {
   const location = useLocation();
   const state = location.state as TeacherDetailsLocationState | null;
   const teacherId = state?.teacherId ?? state?.teacher?.id;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [teacher, setTeacher] = useState<any>(state?.teacher ?? null);
   const [loading, setLoading] = useState(!!teacherId);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -37,7 +40,7 @@ const TeacherDetails = () => {
       setLoading(true);
       setLoadError(null);
       apiService
-        .getTeacherById(teacherId)
+        .getTeacherById(teacherId, { academicYearId })
         .then((res: any) => {
           if (res?.data) {
             setTeacher(res.data);
@@ -51,7 +54,7 @@ const TeacherDetails = () => {
         })
         .finally(() => setLoading(false));
     }
-  }, [teacherId]);
+  }, [teacherId, academicYearId]);
 
   if (loading) {
     return (
@@ -112,6 +115,9 @@ const TeacherDetails = () => {
     typeof teacher.experience_years === 'number'
       ? `${teacher.experience_years} Years`
       : 'N/A';
+
+  const classTeacherOf = Array.isArray(teacher.class_teacher_of) ? teacher.class_teacher_of : [];
+  const sectionTeacherOf = Array.isArray(teacher.section_teacher_of) ? teacher.section_teacher_of : [];
 
   const teacherStoredDocBasename = (storedPath?: string | null) => {
     if (!storedPath) return null;
@@ -271,6 +277,59 @@ const TeacherDetails = () => {
                 </div>
               </div>
               {/* /Parents Information */}
+
+              <div className="card">
+                <div className="card-header">
+                  <h5>Class &amp; Section Teacher Mapping</h5>
+                </div>
+                <div className="card-body">
+                  <div className="row">
+                    <div className="col-xl-6">
+                      <h6 className="mb-3">
+                        Class Teacher Of
+                        <span className="badge bg-primary ms-2">{classTeacherOf.length}</span>
+                      </h6>
+                      {classTeacherOf.length > 0 ? (
+                        <div className="border rounded p-3">
+                          <div className="d-flex flex-wrap gap-2">
+                            {classTeacherOf.map((item: any) => (
+                              <span key={item.classId} className="badge bg-light text-dark border fw-medium px-3 py-2">
+                                {(item.className || 'N/A') + (item.classCode ? ` (${item.classCode})` : '')}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="alert alert-light border mb-0">No class teacher assignment found.</div>
+                      )}
+                    </div>
+                    <div className="col-xl-6">
+                      <h6 className="mb-3">
+                        Section Teacher Of
+                        <span className="badge bg-primary ms-2">{sectionTeacherOf.length}</span>
+                      </h6>
+                      {sectionTeacherOf.length > 0 ? (
+                        <div className="border rounded p-3">
+                          <div className="row g-2">
+                            {sectionTeacherOf.map((item: any) => (
+                              <div key={`${item.classId}-${item.sectionId}`} className="col-12 col-md-6">
+                                <span className="badge bg-light text-dark border fw-medium px-3 py-2 w-100 text-start text-wrap">
+                                  {(item.className || 'N/A') +
+                                    (item.classCode ? ` (${item.classCode})` : '') +
+                                    ' - ' +
+                                    (item.sectionName || 'N/A')}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="alert alert-light border mb-0">No section teacher assignment found.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             {/* Documents */}
             <div className="col-xxl-6 d-flex">
