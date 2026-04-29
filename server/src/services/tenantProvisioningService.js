@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const { pipeline, finished } = require('stream/promises');
 const { Readable } = require('stream');
 require('dotenv').config();
+const { runMigrations } = require('../../scripts/run-all-migrations');
 
 /** Application root (the `server` folder that contains `sql/`). */
 const SERVER_APP_ROOT = path.resolve(__dirname, '../..');
@@ -741,6 +742,16 @@ async function createTenantDatabase(dbName, schoolName = null) {
     );
   } finally {
     await tenantPool.end();
+  }
+
+  // Auto-migrate the new database to latest state (ensures all recent columns are present)
+  try {
+    console.log(`[provisioning] Running auto-migrations for "${dbName}"...`);
+    await runMigrations(dbName);
+  } catch (err) {
+    console.error(`[provisioning] Auto-migration failed for "${dbName}":`, err.message);
+    // We don't drop the DB here because the baseline schema is already imported; 
+    // the admin can manually fix migrations later.
   }
 }
 

@@ -2621,6 +2621,7 @@ CREATE TABLE public.students (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer,
     modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    deleted_at timestamp with time zone,
     parent_id integer,
     guardian_id integer,
     address_id integer,
@@ -2999,6 +3000,7 @@ CREATE TABLE public.users (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer,
     modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    deleted_at timestamp with time zone,
     current_address text DEFAULT 'Not Provided'::text NOT NULL,
     permanent_address text DEFAULT 'Not Provided'::text NOT NULL,
     avatar text DEFAULT ''::text NOT NULL
