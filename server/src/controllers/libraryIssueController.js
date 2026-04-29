@@ -51,7 +51,10 @@ function mapIssueRow(row) {
 
 const listIssues = async (req, res) => {
   try {
-    const yearId = await resolveAcademicYearIdFromQuery(req);
+    const includeAllYears =
+      String(req.query.include_all_years || '').trim() === '1' ||
+      String(req.query.include_all_years || '').trim().toLowerCase() === 'true';
+    let yearId = includeAllYears ? null : await resolveAcademicYearIdFromQuery(req);
     const status = req.query.status ? String(req.query.status).toLowerCase() : '';
     const scope = await getPersonScope(req);
 
@@ -62,14 +65,20 @@ const listIssues = async (req, res) => {
       where += ` AND i.status = $${params.length}`;
     }
 
-    if (yearId != null) {
-      params.push(yearId);
-      where += ` AND b.academic_year_id = $${params.length}`;
-    }
-
     if (scope.student_id != null) {
-      params.push(scope.student_id);
-      where += ` AND i.student_id = $${params.length}`;
+      const scopedStudentIds = [scope.student_id];
+      if (yearId == null) {
+        const sy = await query(
+          `SELECT academic_year_id FROM students WHERE id = $1 LIMIT 1`,
+          [scope.student_id]
+        );
+        const candidate = sy.rows[0]?.academic_year_id;
+        if (candidate != null && Number.isFinite(Number(candidate))) {
+          yearId = Number(candidate);
+        }
+      }
+      params.push(scopedStudentIds);
+      where += ` AND i.student_id = ANY($${params.length}::int[])`;
     } else if (req.query.member_id != null && String(req.query.member_id).trim() !== '') {
       const mid = parseInt(String(req.query.member_id), 10);
       if (Number.isFinite(mid)) {
@@ -95,8 +104,25 @@ const listIssues = async (req, res) => {
         }
       }
     } else if (req.query.student_id != null && String(req.query.student_id).trim() !== '') {
-      params.push(parseInt(req.query.student_id, 10));
-      where += ` AND i.student_id = $${params.length}`;
+      const requestedStudentId = parseInt(req.query.student_id, 10);
+      const resolvedStudentIds = Number.isFinite(requestedStudentId) ? [requestedStudentId] : [];
+      if (yearId == null && resolvedStudentIds.length > 0) {
+        const sy = await query(
+          `SELECT academic_year_id FROM students WHERE id = ANY($1::int[]) ORDER BY id LIMIT 1`,
+          [resolvedStudentIds]
+        );
+        const candidate = sy.rows[0]?.academic_year_id;
+        if (candidate != null && Number.isFinite(Number(candidate))) {
+          yearId = Number(candidate);
+        }
+      }
+      params.push(resolvedStudentIds.length > 0 ? resolvedStudentIds : [requestedStudentId]);
+      where += ` AND i.student_id = ANY($${params.length}::int[])`;
+    }
+
+    if (yearId != null) {
+      params.push(yearId);
+      where += ` AND b.academic_year_id = $${params.length}`;
     }
 
     if (

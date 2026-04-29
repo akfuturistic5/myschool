@@ -59,13 +59,13 @@ const createStudentSchema = Joi.object({
   })).optional().allow(null),
   // Transport
   is_transport_required: Joi.boolean().optional(),
+  vehicle_id: Joi.number().integer().optional().allow(null),
   route_id: Joi.number().integer().optional().allow(null),
   pickup_point_id: Joi.number().integer().optional().allow(null),
-  vehicle_number: Joi.string().trim().optional().allow(null, ''),
+  assigned_fee_id: Joi.number().integer().optional().allow(null),
+  is_free: Joi.boolean().optional(),
   // Hostel
   is_hostel_required: Joi.boolean().optional(),
-  hostel_id: Joi.number().integer().optional().allow(null),
-  hostel_room_id: Joi.number().integer().optional().allow(null),
   // Bank
   bank_name: Joi.string().trim().optional().allow(null, ''),
   branch: Joi.string().trim().optional().allow(null, ''),

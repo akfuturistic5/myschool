@@ -119,6 +119,111 @@ async function allocatePenNumber(client, preferred, admission_number, excludeStu
 
 const MAX_AADHAR_NO_LEN = 12;
 
+async function upsertStudentTransportAllocation(client, studentId, studentAcademicYearId, transportPayload) {
+  const routeId = Number(transportPayload?.route_id);
+  const pickupPointId = Number(transportPayload?.pickup_point_id);
+  const vehicleId = Number(transportPayload?.vehicle_id);
+  const assignedFeeId =
+    transportPayload?.assigned_fee_id != null && transportPayload?.assigned_fee_id !== ''
+      ? Number(transportPayload.assigned_fee_id)
+      : null;
+  const isFree = Boolean(transportPayload?.is_free);
+  const isRequired = Boolean(transportPayload?.is_transport_required);
+  if (!isRequired) {
+    await client.query(
+      `UPDATE transport_allocations
+       SET status = 'Inactive',
+           end_date = COALESCE(end_date, CURRENT_DATE),
+           modified_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1
+         AND LOWER(COALESCE(user_type, '')) = 'student'
+         AND LOWER(COALESCE(status, '')) = 'active'
+         AND end_date IS NULL`,
+      [studentId]
+    );
+    return;
+  }
+  if (
+    !Number.isFinite(routeId) || routeId <= 0 ||
+    !Number.isFinite(pickupPointId) || pickupPointId <= 0 ||
+    !Number.isFinite(vehicleId) || vehicleId <= 0
+  ) {
+    return;
+  }
+  let assignedFeeAmount = null;
+  if (isFree) {
+    assignedFeeAmount = 0;
+  } else if (assignedFeeId != null) {
+    const feeRes = await client.query(
+      `SELECT id, amount, pickup_point_id, status
+       FROM transport_fee_master
+       WHERE id = $1`,
+      [assignedFeeId]
+    );
+    if (feeRes.rows.length > 0) {
+      const feeRow = feeRes.rows[0];
+      if (
+        Number(feeRow.pickup_point_id) === pickupPointId &&
+        String(feeRow.status || '').toLowerCase() === 'active'
+      ) {
+        assignedFeeAmount = Number(feeRow.amount ?? 0);
+      }
+    }
+  }
+  const active = await client.query(
+    `SELECT id
+     FROM transport_allocations
+     WHERE user_id = $1
+       AND LOWER(COALESCE(user_type, '')) = 'student'
+       AND LOWER(COALESCE(status, '')) = 'active'
+       AND end_date IS NULL
+     ORDER BY id DESC
+     LIMIT 1`,
+    [studentId]
+  );
+  if (active.rows.length > 0) {
+    await client.query(
+      `UPDATE transport_allocations
+       SET route_id = $1,
+           pickup_point_id = $2,
+           vehicle_id = $3,
+           assigned_fee_id = $4,
+           assigned_fee_amount = $5,
+           is_free = $6,
+           academic_year_id = COALESCE($7, academic_year_id),
+           modified_at = CURRENT_TIMESTAMP
+       WHERE id = $8`,
+      [
+        routeId,
+        pickupPointId,
+        vehicleId,
+        isFree ? null : assignedFeeId,
+        assignedFeeAmount,
+        isFree,
+        studentAcademicYearId || null,
+        active.rows[0].id,
+      ]
+    );
+    return;
+  }
+  await client.query(
+    `INSERT INTO transport_allocations
+      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, modified_at)
+     VALUES
+      ($1, 'student', $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      studentId,
+      routeId,
+      pickupPointId,
+      vehicleId,
+      isFree ? null : assignedFeeId,
+      assignedFeeAmount,
+      isFree,
+      studentAcademicYearId || null,
+    ]
+  );
+}
+
 /**
  * Column aadhar_no is NOT NULL + UNIQUE (varchar 12). Auto-generate AAD-<admission> when omitted.
  */
@@ -161,8 +266,8 @@ const createStudent = async (req, res) => {
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
       siblings, // New dynamic array
-      is_transport_required, route_id, pickup_point_id, vehicle_number,
-      is_hostel_required, hostel_id, hostel_room_id,
+      is_transport_required, route_id, pickup_point_id, vehicle_id, assigned_fee_id, is_free,
+      is_hostel_required,
       bank_name, branch, ifsc,
       known_allergies, medications, medical_condition, other_information,
       medical_document_path, transfer_certificate_path, photo_url,
@@ -310,14 +415,14 @@ const createStudent = async (req, res) => {
             mother_tongue_id, is_active,
             address, current_address, permanent_address,
             previous_school, previous_school_address,
-            is_transport_required, route_id, pickup_point_id, vehicle_number,
-            is_hostel_required, hostel_id, hostel_room_id,
+            is_transport_required,
+            is_hostel_required,
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path, photo_url,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -331,9 +436,7 @@ const createStudent = async (req, res) => {
           permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
-          route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
-          hostel_id || null, hostel_room_id || null,
           bank_name || null, branch || null, ifsc || null,
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
@@ -357,14 +460,14 @@ const createStudent = async (req, res) => {
             blood_group_id, house_id, ${religionColumn}, cast_id, phone, email,
             mother_tongue_id, is_active,
             address, previous_school, previous_school_address,
-            is_transport_required, route_id, pickup_point_id, vehicle_number,
-            is_hostel_required, hostel_id, hostel_room_id,
+            is_transport_required,
+            is_hostel_required,
             bank_name, branch, ifsc,
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path, photo_url,
             created_at, modified_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW(), NOW())
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -376,9 +479,7 @@ const createStudent = async (req, res) => {
           addrVal || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
-          route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
-          hostel_id || null, hostel_room_id || null,
           bank_name || null, branch || null, ifsc || null,
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
@@ -522,6 +623,14 @@ const createStudent = async (req, res) => {
         }
       }
 
+      await upsertStudentTransportAllocation(client, Number(studentRow.id), Number(studentRow.academic_year_id || academic_year_id || 0), {
+        is_transport_required,
+        route_id,
+        pickup_point_id,
+        vehicle_id,
+        assigned_fee_id,
+        is_free,
+      });
       return { studentRow, warnings: creationWarnings };
     });
 
@@ -564,8 +673,8 @@ const updateStudent = async (req, res) => {
       unique_student_ids, pen_number, aadhaar_no, gr_number,
       previous_school, previous_school_address,
       siblings, // New dynamic array
-      is_transport_required, route_id, pickup_point_id, vehicle_number,
-      is_hostel_required, hostel_id, hostel_room_id,
+      is_transport_required, route_id, pickup_point_id, vehicle_id, assigned_fee_id, is_free,
+      is_hostel_required,
       bank_name, branch, ifsc,
       known_allergies, medications, medical_condition, other_information,
       medical_document_path, transfer_certificate_path, photo_url,
@@ -862,28 +971,23 @@ const updateStudent = async (req, res) => {
             previous_school = $22,
             previous_school_address = $23,
             is_transport_required = $24,
-            route_id = $25,
-            pickup_point_id = $26,
-            vehicle_number = $27,
-            is_hostel_required = $28,
-            hostel_id = $29,
-            hostel_room_id = $30,
-            bank_name = $31,
-            branch = $32,
-            ifsc = $33,
-            known_allergies = $34,
-            medications = $35,
-            medical_condition = $36,
-            other_information = $37,
-            unique_student_ids = $38,
-            pen_number = $39,
-            aadhar_no = $40,
-            gr_number = $41,
-            medical_document_path = $42,
-            transfer_certificate_path = $43,
-            photo_url = $44,
+            is_hostel_required = $25,
+            bank_name = $26,
+            branch = $27,
+            ifsc = $28,
+            known_allergies = $29,
+            medications = $30,
+            medical_condition = $31,
+            other_information = $32,
+            unique_student_ids = $33,
+            pen_number = $34,
+            aadhar_no = $35,
+            gr_number = $36,
+            medical_document_path = $37,
+            transfer_certificate_path = $38,
+            photo_url = $39,
             modified_at = NOW()
-          WHERE id = $45
+          WHERE id = $40
           RETURNING *
         `, [
           academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -897,9 +1001,7 @@ const updateStudent = async (req, res) => {
           permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
           is_transport_required === true || is_transport_required === 'true',
-          route_id || null, pickup_point_id || null, vehicle_number || null,
           is_hostel_required === true || is_hostel_required === 'true',
-          hostel_id || null, hostel_room_id || null,
           bank_name || null, branch || null, ifsc || null,
           knownAllergiesVal, medicationsVal,
           medical_condition || null, other_information || null,
@@ -950,27 +1052,22 @@ const updateStudent = async (req, res) => {
                 previous_school = $20,
                 previous_school_address = $21,
                 is_transport_required = $22,
-                route_id = $23,
-                pickup_point_id = $24,
-                vehicle_number = $25,
-                is_hostel_required = $26,
-                hostel_id = $27,
-                hostel_room_id = $28,
-                bank_name = $29,
-                branch = $30,
-                ifsc = $31,
-                known_allergies = $32,
-                medications = $33,
-                medical_condition = $34,
-                other_information = $35,
-                unique_student_ids = $36,
-                pen_number = $37,
-                aadhar_no = $38,
-                gr_number = $39,
-                medical_document_path = $40,
-                transfer_certificate_path = $41,
+                is_hostel_required = $23,
+                bank_name = $24,
+                branch = $25,
+                ifsc = $26,
+                known_allergies = $27,
+                medications = $28,
+                medical_condition = $29,
+                other_information = $30,
+                unique_student_ids = $31,
+                pen_number = $32,
+                aadhar_no = $33,
+                gr_number = $34,
+                medical_document_path = $35,
+                transfer_certificate_path = $36,
                 modified_at = NOW()
-              WHERE id = $42
+              WHERE id = $37
               RETURNING *
             `, [
               academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -982,9 +1079,7 @@ const updateStudent = async (req, res) => {
               addrVal || 'Not Provided',
               previous_school || null, previous_school_address || null,
               is_transport_required === true || is_transport_required === 'true',
-              route_id || null, pickup_point_id || null, vehicle_number || null,
               is_hostel_required === true || is_hostel_required === 'true',
-              hostel_id || null, hostel_room_id || null,
               bank_name || null, branch || null, ifsc || null,
               knownAllergiesVal, medicationsVal,
               medical_condition || null, other_information || null,
@@ -1024,27 +1119,22 @@ const updateStudent = async (req, res) => {
               previous_school = $22,
               previous_school_address = $23,
               is_transport_required = $24,
-              route_id = $25,
-              pickup_point_id = $26,
-              vehicle_number = $27,
-              is_hostel_required = $28,
-              hostel_id = $29,
-              hostel_room_id = $30,
-              bank_name = $31,
-              branch = $32,
-              ifsc = $33,
-              known_allergies = $34,
-              medications = $35,
-              medical_condition = $36,
-              other_information = $37,
-              unique_student_ids = $38,
-              pen_number = $39,
-              aadhar_no = $40,
-              gr_number = $41,
-              medical_document_path = $42,
-              transfer_certificate_path = $43,
+              is_hostel_required = $25,
+              bank_name = $26,
+              branch = $27,
+              ifsc = $28,
+              known_allergies = $29,
+              medications = $30,
+              medical_condition = $31,
+              other_information = $32,
+              unique_student_ids = $33,
+              pen_number = $34,
+              aadhar_no = $35,
+              gr_number = $36,
+              medical_document_path = $37,
+              transfer_certificate_path = $38,
               modified_at = NOW()
-            WHERE id = $44
+            WHERE id = $39
             RETURNING *
           `, [
             academic_year_id || null, admission_number, admission_date || null, roll_number || null,
@@ -1058,9 +1148,7 @@ const updateStudent = async (req, res) => {
             permanent_address || 'Not Provided',
             previous_school || null, previous_school_address || null,
             is_transport_required === true || is_transport_required === 'true',
-            route_id || null, pickup_point_id || null, vehicle_number || null,
             is_hostel_required === true || is_hostel_required === 'true',
-            hostel_id || null, hostel_room_id || null,
             bank_name || null, branch || null, ifsc || null,
             knownAllergiesVal, medicationsVal,
             medical_condition || null, other_information || null,
@@ -1230,6 +1318,14 @@ const updateStudent = async (req, res) => {
         }
       }
 
+      await upsertStudentTransportAllocation(client, Number(studentRow.id), Number(studentRow.academic_year_id || academic_year_id || 0), {
+        is_transport_required,
+        route_id,
+        pickup_point_id,
+        vehicle_id,
+        assigned_fee_id,
+        is_free,
+      });
       return { studentRow, warnings: updateWarnings };
     });
 
@@ -2499,10 +2595,7 @@ const getAllStudents = async (req, res) => {
           s.previous_school,
           s.photo_url,
           s.is_transport_required,
-          s.route_id,
-          s.pickup_point_id,
           s.is_hostel_required,
-          s.hostel_room_id,
           s.guardian_id,
           COALESCE(s.is_active, true) AS is_active,
           s.created_at,
@@ -2550,10 +2643,7 @@ const getAllStudents = async (req, res) => {
           s.previous_school,
           s.photo_url,
           s.is_transport_required,
-          s.route_id,
-          s.pickup_point_id,
           s.is_hostel_required,
-          s.hostel_room_id,
           s.guardian_id,
           false AS is_active,
           s.created_at,
@@ -2610,10 +2700,7 @@ const getAllStudents = async (req, res) => {
         s.previous_school,
         s.photo_url,
         s.is_transport_required,
-        s.route_id,
-        s.pickup_point_id,
         s.is_hostel_required,
-        s.hostel_room_id,
         s.guardian_id,
         s.is_active,
         s.created_at,
@@ -2756,9 +2843,8 @@ const getStudentById = async (req, res) => {
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url, s.is_transport_required, s.route_id, s.pickup_point_id, s.vehicle_number,
-      tr.route_name as route_name, tpp.point_name as pickup_point_name,
-      s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
+      COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url, s.is_transport_required,
+      s.is_hostel_required, s.guardian_id, s.is_active, s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
@@ -2795,8 +2881,6 @@ const getStudentById = async (req, res) => {
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
-      LEFT JOIN routes tr ON s.route_id = tr.id
-      LEFT JOIN pickup_points tpp ON s.pickup_point_id = tpp.id
       ${STUDENT_CONTACT_LATERAL_JOINS}
       LEFT JOIN LATERAL (
         SELECT current_address, permanent_address 
@@ -2868,7 +2952,7 @@ const getStudentById = async (req, res) => {
     }
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information, vehicle_number FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information FROM students WHERE id = $1',
         [sid]
       );
       if (extra.rows.length > 0) {
@@ -2882,7 +2966,6 @@ const getStudentById = async (req, res) => {
         studentData.previous_school_address = studentData.previous_school_address ?? null;
         studentData.medical_condition = studentData.medical_condition ?? null;
         studentData.other_information = studentData.other_information ?? null;
-        studentData.vehicle_number = studentData.vehicle_number ?? null;
       }
     } catch (e) {
       studentData.bank_name = studentData.bank_name ?? null;
@@ -2893,7 +2976,6 @@ const getStudentById = async (req, res) => {
       studentData.previous_school_address = studentData.previous_school_address ?? null;
       studentData.medical_condition = studentData.medical_condition ?? null;
       studentData.other_information = studentData.other_information ?? null;
-      studentData.vehicle_number = studentData.vehicle_number ?? null;
     }
     // Dedicated fetch for unique_student_ids, pen_number, aadhaar_no (handles alternate column names)
     try {
@@ -2932,79 +3014,111 @@ const getStudentById = async (req, res) => {
       studentData.aadhaar_no = studentData.aadhaar_no ?? null;
       studentData.gr_number = studentData.gr_number ?? null;
     }
+    // Hostel details are intentionally paused for redevelopment.
+    studentData.hostel_name = null;
+    studentData.floor = null;
+    studentData.hostel_room_number = null;
+    // Transport: resolve strictly from transport_allocations (academic-year scoped overlap)
     try {
-      if (studentData.hostel_id || studentData.hostel_room_id) {
-        // Tables: hostels (id, hostel_name), hostel_rooms (id, hostel_id, room_number)
-        // student.hostel_id -> hostels.id | student.hostel_room_id -> hostel_rooms.id
-        // Get hostel from student.hostel_id OR from room's hostel_id (room belongs to hostel)
-        const hostelExtra = await query(`
-          SELECT 
-            h.hostel_name as hostel_name,
-            hr.room_number as hostel_room_number
-          FROM students s
-          LEFT JOIN hostel_rooms hr ON s.hostel_room_id = hr.id
-          LEFT JOIN hostels h ON COALESCE(s.hostel_id, hr.hostel_id) = h.id
-          WHERE s.id = $1
-        `, [sid]);
-        if (hostelExtra.rows.length > 0 && hostelExtra.rows[0]) {
-          const row = hostelExtra.rows[0];
-          studentData.hostel_name = row.hostel_name || null;
-          studentData.floor = null;
-          studentData.hostel_room_number = row.hostel_room_number != null ? String(row.hostel_room_number) : null;
-        }
-        // Fallback: direct queries if JOIN returned nulls (e.g. table name differs)
-        if (!studentData.hostel_name && studentData.hostel_id) {
-          const hRes = await query('SELECT hostel_name FROM hostels WHERE id = $1', [studentData.hostel_id]);
-          if (hRes.rows.length > 0) {
-            studentData.hostel_name = hRes.rows[0].hostel_name || null;
+      // Start from a clean slate so legacy students-table route fields are never shown.
+      studentData.route_id = null;
+      studentData.pickup_point_id = null;
+      studentData.vehicle_id = null;
+      studentData.route_name = null;
+      studentData.pickup_point_name = null;
+      studentData.vehicle_number = null;
+      studentData.transport_assigned_fee_id = null;
+      studentData.transport_assigned_fee_amount = null;
+      studentData.transport_is_free = false;
+      studentData.transport_fee_plan_name = null;
+
+      let resolvedFromAllocation = false;
+      if (studentData.user_id) {
+        const studentUserId = Number(studentData.user_id);
+        const studentRowId = Number(sid);
+        const studentAcademicYearId =
+          Number.isFinite(Number(studentData.academic_year_id)) && Number(studentData.academic_year_id) > 0
+            ? Number(studentData.academic_year_id)
+            : null;
+        if (Number.isFinite(studentUserId) && studentUserId > 0) {
+          const allocationResult = await query(
+          `SELECT
+             ta.route_id,
+             ta.pickup_point_id,
+             ta.vehicle_id,
+             ta.assigned_fee_id,
+             ta.assigned_fee_amount,
+             ta.is_free,
+             r.route_name AS route_name,
+             COALESCE(pp.point_name, pp.address) AS pickup_point_name,
+             v.vehicle_number,
+             tfm.plan_name AS transport_fee_plan_name
+           FROM transport_allocations ta
+           LEFT JOIN routes r ON r.id = ta.route_id
+           LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
+           LEFT JOIN vehicles v ON v.id = ta.vehicle_id
+           LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
+           WHERE (ta.user_id = $1 OR ta.user_id = $3)
+             AND LOWER(COALESCE(ta.user_type, '')) = 'student'
+             AND LOWER(COALESCE(ta.status, '')) = 'active'
+             AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
+           ORDER BY
+             CASE
+               WHEN ta.user_id = $3 THEN 0
+               WHEN ta.user_id = $1 THEN 1
+               ELSE 2
+             END,
+             CASE
+               WHEN $2::int IS NULL THEN 0
+               WHEN ta.academic_year_id = $2 THEN 0
+               WHEN ta.academic_year_id IS NULL THEN 1
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM academic_years ay
+                 WHERE ay.id = $2
+                   AND ta.start_date <= COALESCE(ay.end_date, ta.start_date)
+                   AND COALESCE(ta.end_date, 'infinity'::date) >= COALESCE(ay.start_date, ta.start_date)
+               ) THEN 2
+               ELSE 3
+             END,
+             ta.start_date DESC,
+             ta.id DESC
+           LIMIT 1`,
+            [studentUserId, studentAcademicYearId, studentRowId]
+          );
+          if (allocationResult.rows.length > 0) {
+            const allocation = allocationResult.rows[0];
+            studentData.route_id = allocation.route_id ?? studentData.route_id ?? null;
+            studentData.pickup_point_id = allocation.pickup_point_id ?? studentData.pickup_point_id ?? null;
+            studentData.vehicle_id = allocation.vehicle_id ?? studentData.vehicle_id ?? null;
+            studentData.route_name = allocation.route_name || null;
+            studentData.pickup_point_name = allocation.pickup_point_name || null;
+            studentData.vehicle_number = allocation.vehicle_number || studentData.vehicle_number || null;
+            studentData.transport_assigned_fee_id = allocation.assigned_fee_id ?? null;
+            studentData.transport_assigned_fee_amount = allocation.assigned_fee_amount ?? null;
+            studentData.transport_is_free = allocation.is_free === true;
+            studentData.transport_fee_plan_name = allocation.transport_fee_plan_name || null;
+            resolvedFromAllocation = true;
           }
         }
-        if (!studentData.hostel_room_number && studentData.hostel_room_id) {
-          const rRes = await query('SELECT room_number FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
-          if (rRes.rows.length > 0) {
-            studentData.hostel_room_number = rRes.rows[0].room_number != null ? String(rRes.rows[0].room_number) : null;
-          }
-        }
-        // If we have room but no hostel_name, get it from room's hostel_id
-        if (!studentData.hostel_name && studentData.hostel_room_id) {
-          const rRes = await query('SELECT hostel_id FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
-          if (rRes.rows.length > 0 && rRes.rows[0].hostel_id) {
-            const hRes = await query('SELECT hostel_name FROM hostels WHERE id = $1', [rRes.rows[0].hostel_id]);
-            if (hRes.rows.length > 0) {
-              const h = hRes.rows[0];
-              studentData.hostel_name = h.hostel_name || null;
-            }
-          }
-        }
-      } else {
-        studentData.hostel_name = null;
-        studentData.floor = null;
-        studentData.hostel_room_number = null;
       }
-    } catch (e) {
-      console.error('Error fetching hostel data for student', id, ':', e.message);
-      studentData.hostel_name = null;
-      studentData.floor = null;
-      studentData.hostel_room_number = null;
-    }
-    // Transport: resolve route and pickup point names for edit form
-    try {
-      if (studentData.route_id) {
-        const routeResult = await query('SELECT route_name, name FROM routes WHERE id = $1', [studentData.route_id]);
-        if (routeResult.rows.length > 0) {
-          const r = routeResult.rows[0];
-          studentData.route_name = r.route_name || r.name || null;
-        }
-      }
-      if (studentData.pickup_point_id) {
-        const ppResult = await query('SELECT address, pickup_point, name, location, point_name, point_address FROM pickup_points WHERE id = $1', [studentData.pickup_point_id]);
-        if (ppResult.rows.length > 0) {
-          const pp = ppResult.rows[0];
-          studentData.pickup_point_name = pp.pickup_point || pp.address || pp.name || pp.location || pp.point_name || pp.point_address || null;
-        }
+
+      if (!resolvedFromAllocation) {
+        // No active allocation for this student + academic year.
       }
     } catch (e) {
       console.error('Error fetching transport names for student', id, ':', e.message);
+      // Never leak old students-table transport values on allocation lookup errors.
+      studentData.route_id = null;
+      studentData.pickup_point_id = null;
+      studentData.vehicle_id = null;
+      studentData.route_name = null;
+      studentData.pickup_point_name = null;
+      studentData.vehicle_number = null;
+      studentData.transport_assigned_fee_id = null;
+      studentData.transport_assigned_fee_amount = null;
+      studentData.transport_is_free = false;
+      studentData.transport_fee_plan_name = null;
     }
     // Fallback: if phone/email still empty, fetch from users table (safety for JOIN edge cases)
     if (studentData.user_id && (!studentData.phone || !studentData.email)) {
@@ -3195,8 +3309,8 @@ const getCurrentStudent = async (req, res) => {
       s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
       s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
       s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      s.photo_url, s.is_transport_required, s.route_id, s.pickup_point_id,
-      s.is_hostel_required, s.hostel_id, s.hostel_room_id, s.guardian_id, s.is_active, s.created_at,
+      s.photo_url, s.is_transport_required,
+      s.is_hostel_required, s.guardian_id, s.is_active, s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
@@ -3363,7 +3477,7 @@ const getCurrentStudent = async (req, res) => {
 
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information, vehicle_number FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information FROM students WHERE id = $1',
         [studentId]
       );
       if (extra.rows.length > 0) {
@@ -3378,7 +3492,6 @@ const getCurrentStudent = async (req, res) => {
       studentData.previous_school_address = studentData.previous_school_address ?? null;
       studentData.medical_condition = studentData.medical_condition ?? null;
       studentData.other_information = studentData.other_information ?? null;
-      studentData.vehicle_number = studentData.vehicle_number ?? null;
     }
     // Fallback: if phone/email still empty, fetch from users table
     if (studentData.user_id && (!studentData.phone || !studentData.email)) {
@@ -3391,58 +3504,111 @@ const getCurrentStudent = async (req, res) => {
         }
       } catch (e) { }
     }
-    // Hostel: resolve hostel_name, floor, hostel_room_number from hostels + hostel_rooms
+    // Hostel details are intentionally paused for redevelopment.
+    studentData.hostel_name = null;
+    studentData.floor = null;
+    studentData.hostel_room_number = null;
+    // Transport: resolve strictly from transport_allocations (academic-year scoped overlap)
     try {
-      if (studentData.hostel_id || studentData.hostel_room_id) {
-        const hostelRes = await query(`
-          SELECT h.hostel_name as hostel_name, hr.room_number as hostel_room_number
-          FROM students s
-          LEFT JOIN hostel_rooms hr ON s.hostel_room_id = hr.id
-          LEFT JOIN hostels h ON COALESCE(s.hostel_id, hr.hostel_id) = h.id
-          WHERE s.id = $1
-        `, [studentId]);
-        if (hostelRes.rows.length > 0 && hostelRes.rows[0]) {
-          const row = hostelRes.rows[0];
-          studentData.hostel_name = row.hostel_name || null;
-          studentData.floor = null;
-          studentData.hostel_room_number = row.hostel_room_number != null ? String(row.hostel_room_number) : null;
-        }
-        if (!studentData.hostel_name && studentData.hostel_id) {
-          const hRes = await query('SELECT hostel_name FROM hostels WHERE id = $1', [studentData.hostel_id]);
-          if (hRes.rows.length > 0) { studentData.hostel_name = hRes.rows[0].hostel_name || null; }
-        }
-        if (!studentData.hostel_room_number && studentData.hostel_room_id) {
-          const rRes = await query('SELECT room_number FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
-          if (rRes.rows.length > 0) { studentData.hostel_room_number = rRes.rows[0].room_number != null ? String(rRes.rows[0].room_number) : null; }
-        }
-        if (!studentData.hostel_name && studentData.hostel_room_id) {
-          const rRes = await query('SELECT hostel_id FROM hostel_rooms WHERE id = $1', [studentData.hostel_room_id]);
-          if (rRes.rows.length > 0 && rRes.rows[0].hostel_id) {
-            const hRes = await query('SELECT hostel_name FROM hostels WHERE id = $1', [rRes.rows[0].hostel_id]);
-            if (hRes.rows.length > 0) { studentData.hostel_name = hRes.rows[0].hostel_name || null; }
+      // Start from a clean slate so legacy students-table route fields are never shown.
+      studentData.route_id = null;
+      studentData.pickup_point_id = null;
+      studentData.vehicle_id = null;
+      studentData.route_name = null;
+      studentData.pickup_point_name = null;
+      studentData.vehicle_number = null;
+      studentData.transport_assigned_fee_id = null;
+      studentData.transport_assigned_fee_amount = null;
+      studentData.transport_is_free = false;
+      studentData.transport_fee_plan_name = null;
+
+      let resolvedFromAllocation = false;
+      if (studentData.user_id) {
+        const studentUserId = Number(studentData.user_id);
+        const studentRowId = Number(studentId);
+        const studentAcademicYearId =
+          Number.isFinite(Number(studentData.academic_year_id)) && Number(studentData.academic_year_id) > 0
+            ? Number(studentData.academic_year_id)
+            : null;
+        if (Number.isFinite(studentUserId) && studentUserId > 0) {
+          const allocationRes = await query(
+          `SELECT
+             ta.route_id,
+             ta.pickup_point_id,
+             ta.vehicle_id,
+             ta.assigned_fee_id,
+             ta.assigned_fee_amount,
+             ta.is_free,
+             r.route_name AS route_name,
+             COALESCE(pp.point_name, pp.address) AS pickup_point_name,
+             v.vehicle_number,
+             tfm.plan_name AS transport_fee_plan_name
+           FROM transport_allocations ta
+           LEFT JOIN routes r ON r.id = ta.route_id
+           LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
+           LEFT JOIN vehicles v ON v.id = ta.vehicle_id
+           LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
+           WHERE (ta.user_id = $1 OR ta.user_id = $3)
+             AND LOWER(COALESCE(ta.user_type, '')) = 'student'
+             AND LOWER(COALESCE(ta.status, '')) = 'active'
+             AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
+           ORDER BY
+             CASE
+               WHEN ta.user_id = $3 THEN 0
+               WHEN ta.user_id = $1 THEN 1
+               ELSE 2
+             END,
+             CASE
+               WHEN $2::int IS NULL THEN 0
+               WHEN ta.academic_year_id = $2 THEN 0
+               WHEN ta.academic_year_id IS NULL THEN 1
+               WHEN EXISTS (
+                 SELECT 1
+                 FROM academic_years ay
+                 WHERE ay.id = $2
+                   AND ta.start_date <= COALESCE(ay.end_date, ta.start_date)
+                   AND COALESCE(ta.end_date, 'infinity'::date) >= COALESCE(ay.start_date, ta.start_date)
+               ) THEN 2
+               ELSE 3
+             END,
+             ta.start_date DESC,
+             ta.id DESC
+           LIMIT 1`,
+            [studentUserId, studentAcademicYearId, studentRowId]
+          );
+          if (allocationRes.rows.length > 0) {
+            const row = allocationRes.rows[0];
+            studentData.route_id = row.route_id ?? studentData.route_id ?? null;
+            studentData.pickup_point_id = row.pickup_point_id ?? studentData.pickup_point_id ?? null;
+            studentData.vehicle_id = row.vehicle_id ?? studentData.vehicle_id ?? null;
+            studentData.route_name = row.route_name || null;
+            studentData.pickup_point_name = row.pickup_point_name || null;
+            studentData.vehicle_number = row.vehicle_number || studentData.vehicle_number || null;
+            studentData.transport_assigned_fee_id = row.assigned_fee_id ?? null;
+            studentData.transport_assigned_fee_amount = row.assigned_fee_amount ?? null;
+            studentData.transport_is_free = row.is_free === true;
+            studentData.transport_fee_plan_name = row.transport_fee_plan_name || null;
+            resolvedFromAllocation = true;
           }
         }
-      } else {
-        studentData.hostel_name = null;
-        studentData.floor = null;
-        studentData.hostel_room_number = null;
+      }
+
+      if (!resolvedFromAllocation) {
+        // No active allocation for this student + academic year.
       }
     } catch (e) {
-      studentData.hostel_name = null;
-      studentData.floor = null;
-      studentData.hostel_room_number = null;
+      // Never leak old students-table transport values on allocation lookup errors.
+      studentData.route_id = null;
+      studentData.pickup_point_id = null;
+      studentData.vehicle_id = null;
+      studentData.route_name = null;
+      studentData.pickup_point_name = null;
+      studentData.vehicle_number = null;
+      studentData.transport_assigned_fee_id = null;
+      studentData.transport_assigned_fee_amount = null;
+      studentData.transport_is_free = false;
+      studentData.transport_fee_plan_name = null;
     }
-    // Transport: route_name, pickup_point_name for display
-    try {
-      if (studentData.route_id) {
-        const routeRes = await query('SELECT route_name, name FROM routes WHERE id = $1', [studentData.route_id]);
-        if (routeRes.rows.length > 0) { studentData.route_name = routeRes.rows[0].route_name || routeRes.rows[0].name || null; }
-      }
-      if (studentData.pickup_point_id) {
-        const ppRes = await query('SELECT pickup_point_name, name FROM pickup_points WHERE id = $1', [studentData.pickup_point_id]);
-        if (ppRes.rows.length > 0) { studentData.pickup_point_name = ppRes.rows[0].pickup_point_name || ppRes.rows[0].name || null; }
-      }
-    } catch (e) { }
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.status(200).json({
       status: 'SUCCESS',
@@ -3498,10 +3664,7 @@ const getStudentsByClass = async (req, res) => {
         s.previous_school,
         s.photo_url,
         s.is_transport_required,
-        s.route_id,
-        s.pickup_point_id,
         s.is_hostel_required,
-        s.hostel_room_id,
         s.guardian_id,
         s.is_active,
         s.created_at,
