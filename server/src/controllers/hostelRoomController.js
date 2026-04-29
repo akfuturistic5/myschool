@@ -3,13 +3,6 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 
 const getAllHostelRooms = async (req, res) => {
   try {
-    const academicYearId = req.query.academic_year_id;
-    const yearNum =
-      academicYearId !== undefined && academicYearId !== null && academicYearId !== ''
-        ? Number(academicYearId)
-        : NaN;
-    const useYear = !Number.isNaN(yearNum);
-
     const result = await query(
       `
       SELECT 
@@ -36,30 +29,8 @@ const getAllHostelRooms = async (req, res) => {
     `
     );
 
-    let rows = result.rows;
-
-    if (useYear && rows.length > 0) {
-      try {
-        const idRes = await query(
-          `
-          SELECT id FROM hostels
-          WHERE is_active = true
-            AND (academic_year_id = $1 OR academic_year_id IS NULL)
-        `,
-          [yearNum]
-        );
-        const allowed = new Set(idRes.rows.map((r) => r.id));
-        rows = rows.filter((r) => r.hostel_id == null || allowed.has(r.hostel_id));
-      } catch (err) {
-        if (err && err.code !== '42703') {
-          throw err;
-        }
-        /* column academic_year_id missing — keep full list */
-      }
-    }
-
-    return success(res, 200, 'Hostel rooms fetched successfully', rows, {
-      count: rows.length,
+    return success(res, 200, 'Hostel rooms fetched successfully', result.rows, {
+      count: result.rows.length,
     });
   } catch (error) {
     console.error('Error fetching hostel rooms:', error);

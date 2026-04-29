@@ -338,7 +338,6 @@ CREATE TABLE public.attendance (
     check_out_time time without time zone,
     marked_by integer,
     remarks text,
-    academic_year_id integer,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     created_by integer,
     modified_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
@@ -811,7 +810,6 @@ CREATE TABLE public.classes (
     id integer NOT NULL,
     class_name character varying(50) NOT NULL,
     class_code character varying(10),
-    academic_year_id integer,
     class_teacher_id integer,
     max_students integer DEFAULT 30,
     class_fee numeric(10,2),
@@ -6068,15 +6066,6 @@ CREATE TRIGGER update_todos_updated_at BEFORE UPDATE ON public.todos FOR EACH RO
 
 
 --
--- TOC entry 4090 (class 2606 OID 215441)
--- Name: attendance attendance_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.attendance
-    ADD CONSTRAINT attendance_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
-
-
---
 -- TOC entry 4091 (class 2606 OID 215446)
 -- Name: attendance attendance_class_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
 --
@@ -6254,15 +6243,6 @@ ALTER TABLE ONLY public.class_schedules
 
 ALTER TABLE ONLY public.class_schedules
     ADD CONSTRAINT class_schedules_time_slot_id_fkey FOREIGN KEY (time_slot_id) REFERENCES public.time_slots(id);
-
-
---
--- TOC entry 4114 (class 2606 OID 215546)
--- Name: classes classes_academic_year_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.classes
-    ADD CONSTRAINT classes_academic_year_id_fkey FOREIGN KEY (academic_year_id) REFERENCES public.academic_years(id);
 
 
 --
