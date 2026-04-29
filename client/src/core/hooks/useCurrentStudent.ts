@@ -30,7 +30,7 @@ export const useCurrentStudent = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const role = (authUser?.role || authUser?.display_role || '').toString().toLowerCase();
+  const role = (authUser?.role || '').toString().toLowerCase();
   const isStudentRole = role === 'student';
 
   const fetchCurrentStudent = async () => {

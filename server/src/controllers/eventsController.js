@@ -75,6 +75,12 @@ function getUserRoleId(req) {
   return Number.isInteger(roleId) ? roleId : null;
 }
 
+function isMissingGuardiansTableError(err) {
+  if (!err) return false;
+  if (String(err.code || '') !== '42P01') return false;
+  return /relation\s+"?guardians"?\s+does not exist/i.test(String(err.message || ''));
+}
+
 /**
  * Restrict visible school events by selected audience.
  * Managers (admin/administrative/teacher) can still view all for management screens.
@@ -120,13 +126,28 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
   }
   if (roleId === ROLES.PARENT) {
     where.push(`LOWER(COALESCE(e.event_for, 'all')) IN ('all','parents')`);
-    const linkedRes = await query(
-      `SELECT s.class_id, s.section_id
-       FROM parents p
-       INNER JOIN students s ON s.id = p.student_id
-       WHERE p.user_id = $1 AND s.is_active = true`,
-      [req.user?.id]
-    );
+    let linkedRes;
+    try {
+      linkedRes = await query(
+        `SELECT s.class_id, s.section_id
+         FROM guardians g
+         INNER JOIN students s ON s.id = g.student_id
+         WHERE g.user_id = $1 AND g.is_active = true AND s.is_active = true`,
+        [req.user?.id]
+      );
+    } catch (guardiansErr) {
+      // Legacy-safe fallback for deployments still using parents table.
+      if (!isMissingGuardiansTableError(guardiansErr)) {
+        throw guardiansErr;
+      }
+      linkedRes = await query(
+        `SELECT s.class_id, s.section_id
+         FROM parents p
+         INNER JOIN students s ON s.id = p.student_id
+         WHERE p.user_id = $1 AND s.is_active = true`,
+        [req.user?.id]
+      );
+    }
     const classIds = Array.from(
       new Set(
         linkedRes.rows
