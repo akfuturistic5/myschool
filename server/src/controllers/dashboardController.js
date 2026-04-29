@@ -524,7 +524,7 @@ const getDashboardStudentActivity = async (req, res) => {
       const leaveYear = hasYearFilter ? 'AND st.academic_year_id = $1' : '';
       const leaveRes = await query(
         `SELECT la.id, st.first_name, st.last_name, lt.leave_type AS leave_type_name,
-                COALESCE(la.applied_at, la.created_at, la.modified_at, la.start_date::timestamp) AS sort_date
+                COALESCE(la.created_at, la.modified_at, la.start_date::timestamp) AS sort_date
          FROM leave_applications la
          INNER JOIN students st ON la.student_id = st.id
          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
@@ -1030,7 +1030,7 @@ const getStarStudents = async (req, res) => {
            c.class_name,
            sec.section_name,
            SUM(er.marks_obtained::numeric) AS marks_obtained,
-           SUM(COALESCE(e.total_marks::numeric, 100)) AS total_marks,
+           SUM(COALESCE(er.total_marks::numeric, 100)) AS total_marks,
            COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
            MAX(COALESCE(er.modified_at, er.created_at)) AS exam_date
          FROM exam_results er
@@ -1133,7 +1133,7 @@ const getPerformanceSummary = async (req, res) => {
         `WITH scored AS (
            SELECT st.id AS student_id,
              AVG(
-               (er.marks_obtained::numeric / NULLIF(COALESCE(e.total_marks, 100), 0)::numeric) * 100
+               (er.marks_obtained::numeric / NULLIF(COALESCE(er.total_marks, 100), 0)::numeric) * 100
              ) AS avg_score_pct
            FROM students st
            INNER JOIN exam_results er ON er.student_id = st.id
