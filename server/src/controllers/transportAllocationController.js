@@ -145,7 +145,54 @@ async function enforceVehicleCapacity(client, vehicleId, startDate, endDate, exc
   );
 
   const occupied = Number(allocationResult.rows[0]?.occupied || 0);
-  if (occupied >= capacity) throw new Error('VEHICLE_CAPACITY_EXCEEDED');
+  const availableSeats = Math.max(capacity - occupied, 0);
+  if (occupied >= capacity) {
+    const capacityError = new Error('VEHICLE_CAPACITY_EXCEEDED');
+    capacityError.availableSeats = availableSeats;
+    capacityError.totalCapacity = capacity;
+    capacityError.occupiedSeats = occupied;
+    throw capacityError;
+  }
+}
+
+async function getVehicleSeatAvailability(client, vehicleId, startDate, endDate, excludeAllocationId = null) {
+  const vehicleResult = await client.query(
+    `SELECT id, seating_capacity
+     FROM vehicles
+     WHERE id = $1 AND deleted_at IS NULL`,
+    [vehicleId]
+  );
+  if (!vehicleResult.rows.length) throw new Error('VEHICLE_NOT_FOUND');
+
+  const capacity = Number(vehicleResult.rows[0].seating_capacity || 0);
+  if (capacity <= 0) throw new Error('INVALID_VEHICLE_CAPACITY');
+
+  const params = [vehicleId, startDate || null, endDate || null];
+  let excludeSql = '';
+  if (excludeAllocationId) {
+    params.push(excludeAllocationId);
+    excludeSql = ` AND ta.id <> $${params.length}`;
+  }
+
+  const allocationResult = await client.query(
+    `SELECT COUNT(*) AS occupied
+     FROM transport_allocations ta
+     WHERE ta.vehicle_id = $1
+       AND ta.status = 'Active'
+       AND (
+         COALESCE(ta.end_date, 'infinity'::date) >= COALESCE($2::date, CURRENT_DATE)
+         AND ta.start_date <= COALESCE($3::date, 'infinity'::date)
+       )
+       ${excludeSql}`,
+    params
+  );
+
+  const occupied = Number(allocationResult.rows[0]?.occupied || 0);
+  return {
+    capacity,
+    occupied,
+    available: Math.max(capacity - occupied, 0),
+  };
 }
 
 const getAllTransportAllocations = async (req, res) => {
@@ -403,10 +450,188 @@ const createTransportAllocation = async (req, res) => {
     if (err.message === 'FEE_PLAN_INACTIVE') return errorResponse(res, 400, 'Selected fee plan is inactive');
     if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
     if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
-    if (err.message === 'VEHICLE_CAPACITY_EXCEEDED') return errorResponse(res, 400, 'Vehicle seat capacity exceeded');
+    if (err.message === 'VEHICLE_CAPACITY_EXCEEDED') {
+      const available = Number.isFinite(err.availableSeats) ? err.availableSeats : 0;
+      const total = Number.isFinite(err.totalCapacity) ? err.totalCapacity : null;
+      const occupied = Number.isFinite(err.occupiedSeats) ? err.occupiedSeats : null;
+      const details = total != null && occupied != null
+        ? ` (occupied ${occupied}/${total})`
+        : '';
+      return errorResponse(res, 400, `No seat available in selected vehicle. Available seats: ${available}${details}`);
+    }
     if (err.code === '23503') return errorResponse(res, 400, 'Invalid related record selected (user/route/pickup/vehicle/fee)');
     if (err.code === '23514') return errorResponse(res, 400, 'Invalid allocation values or date range');
     return errorResponse(res, 500, 'Failed to create transport allocation');
+  }
+};
+
+const getTransportSeatAvailability = async (req, res) => {
+  try {
+    const vehicleId = Number(req.query.vehicle_id);
+    const startDate = req.query.start_date || new Date().toISOString().slice(0, 10);
+    const endDate = req.query.end_date || null;
+    const excludeAllocationId = req.query.exclude_allocation_id ? Number(req.query.exclude_allocation_id) : null;
+
+    if (!Number.isFinite(vehicleId)) {
+      return errorResponse(res, 400, 'vehicle_id is required');
+    }
+
+    const seatInfo = await executeTransaction(async (client) =>
+      getVehicleSeatAvailability(client, vehicleId, startDate, endDate, excludeAllocationId)
+    );
+
+    return success(res, 200, 'Seat availability fetched successfully', seatInfo);
+  } catch (err) {
+    if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
+    if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
+    return errorResponse(res, 500, 'Failed to fetch seat availability');
+  }
+};
+
+const createBulkTransportAllocations = async (req, res) => {
+  try {
+    const hasAcademicYearId = await hasColumn('transport_allocations', 'academic_year_id');
+    const {
+      user_type,
+      user_ids = [],
+      route_id,
+      pickup_point_id,
+      vehicle_id,
+      assigned_fee_id,
+      is_free = false,
+      start_date,
+      end_date = null,
+      status,
+      academic_year_id,
+    } = req.body || {};
+
+    const parsedRouteId = Number(route_id);
+    const parsedPickupPointId = Number(pickup_point_id);
+    const parsedVehicleId = Number(vehicle_id);
+    const parsedAssignedFeeId = assigned_fee_id != null && assigned_fee_id !== '' ? Number(assigned_fee_id) : null;
+    const normalizedUserType = String(user_type || '').toLowerCase();
+
+    if (!Array.isArray(user_ids) || user_ids.length === 0) {
+      return errorResponse(res, 400, 'Please select at least one user');
+    }
+    if (!Number.isFinite(parsedRouteId) || !Number.isFinite(parsedPickupPointId) || !Number.isFinite(parsedVehicleId)) {
+      return errorResponse(res, 400, 'route_id, pickup_point_id and vehicle_id must be valid numbers');
+    }
+    if (!['student', 'staff'].includes(normalizedUserType)) {
+      return errorResponse(res, 400, 'user_type must be student or staff');
+    }
+
+    const result = await executeTransaction(async (client) => {
+      const startDate = start_date || new Date().toISOString().slice(0, 10);
+      const normalizedIsFree = Boolean(is_free);
+      const scopedAcademicYearId = hasAcademicYearId
+        ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
+        : null;
+
+      await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
+      const fee = await resolveAssignedFee(
+        client,
+        parsedPickupPointId,
+        parsedAssignedFeeId,
+        normalizedIsFree,
+        normalizedUserType,
+        startDate
+      );
+      const finalEndDate = fee.computedEndDate || (end_date || null);
+
+      const resolvedIds = [];
+      for (const rawId of user_ids) {
+        const subjectId = await resolveAllocationSubjectId(client, rawId, normalizedUserType);
+        if (!resolvedIds.includes(subjectId)) {
+          resolvedIds.push(subjectId);
+        }
+      }
+
+      // Close existing active allocations for selected users first; transaction rollback protects consistency.
+      await client.query(
+        `UPDATE transport_allocations
+         SET end_date = GREATEST($1::date, start_date), status = 'Inactive'
+         WHERE user_type = $2
+           AND user_id = ANY($3::int[])
+           AND end_date IS NULL
+           AND status = 'Active'`,
+        [startDate, normalizedUserType, resolvedIds]
+      );
+
+      const seatInfo = await getVehicleSeatAvailability(client, parsedVehicleId, startDate, finalEndDate);
+      if (resolvedIds.length > seatInfo.available) {
+        const bulkCapacityError = new Error('BULK_VEHICLE_CAPACITY_EXCEEDED');
+        bulkCapacityError.availableSeats = seatInfo.available;
+        throw bulkCapacityError;
+      }
+
+      const insertedRows = [];
+      for (const subjectId of resolvedIds) {
+        const insertResult = hasAcademicYearId
+          ? await client.query(
+              `INSERT INTO transport_allocations
+                (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status, academic_year_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               RETURNING *`,
+              [
+                subjectId,
+                normalizedUserType,
+                parsedRouteId,
+                parsedPickupPointId,
+                parsedVehicleId,
+                fee.feeId,
+                fee.feeAmount,
+                normalizedIsFree,
+                startDate,
+                finalEndDate,
+                normalizeStatus(status),
+                scopedAcademicYearId,
+              ]
+            )
+          : await client.query(
+              `INSERT INTO transport_allocations
+                (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, end_date, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               RETURNING *`,
+              [
+                subjectId,
+                normalizedUserType,
+                parsedRouteId,
+                parsedPickupPointId,
+                parsedVehicleId,
+                fee.feeId,
+                fee.feeAmount,
+                normalizedIsFree,
+                startDate,
+                finalEndDate,
+                normalizeStatus(status),
+              ]
+            );
+        insertedRows.push(insertResult.rows[0]);
+      }
+
+      return {
+        createdCount: insertedRows.length,
+        rows: insertedRows,
+      };
+    });
+
+    return success(res, 201, 'Bulk transport allocations created successfully', result);
+  } catch (err) {
+    if (err.message === 'INVALID_STUDENT_USER') return errorResponse(res, 400, 'One or more selected users are not valid students');
+    if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'One or more selected users are not valid staff members');
+    if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
+    if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
+    if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
+    if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
+    if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');
+    if (err.message === 'FEE_PLAN_INACTIVE') return errorResponse(res, 400, 'Selected fee plan is inactive');
+    if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
+    if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
+    if (err.message === 'BULK_VEHICLE_CAPACITY_EXCEEDED') {
+      return errorResponse(res, 400, `Seat not available for all selected users. Available seats: ${Number(err.availableSeats) || 0}`);
+    }
+    return errorResponse(res, 500, 'Failed to create bulk transport allocations');
   }
 };
 
@@ -577,7 +802,15 @@ const updateTransportAllocation = async (req, res) => {
     if (err.message === 'FEE_PLAN_INACTIVE') return errorResponse(res, 400, 'Selected fee plan is inactive');
     if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
     if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
-    if (err.message === 'VEHICLE_CAPACITY_EXCEEDED') return errorResponse(res, 400, 'Vehicle seat capacity exceeded');
+    if (err.message === 'VEHICLE_CAPACITY_EXCEEDED') {
+      const available = Number.isFinite(err.availableSeats) ? err.availableSeats : 0;
+      const total = Number.isFinite(err.totalCapacity) ? err.totalCapacity : null;
+      const occupied = Number.isFinite(err.occupiedSeats) ? err.occupiedSeats : null;
+      const details = total != null && occupied != null
+        ? ` (occupied ${occupied}/${total})`
+        : '';
+      return errorResponse(res, 400, `No seat available in selected vehicle. Available seats: ${available}${details}`);
+    }
     if (err.code === '23503') return errorResponse(res, 400, 'Invalid related record selected (user/route/pickup/vehicle/fee)');
     if (err.code === '23514') return errorResponse(res, 400, 'Invalid allocation values or date range');
     return errorResponse(res, 500, 'Failed to update transport allocation');
@@ -612,7 +845,9 @@ const deleteTransportAllocation = async (req, res) => {
 
 module.exports = {
   getAllTransportAllocations,
+  getTransportSeatAvailability,
   createTransportAllocation,
+  createBulkTransportAllocations,
   updateTransportAllocation,
   deleteTransportAllocation,
 };

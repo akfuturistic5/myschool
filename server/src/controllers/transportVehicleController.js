@@ -204,6 +204,10 @@ const createVehicle = async (req, res) => {
     if (!vehicle_number) {
       return errorResponse(res, 400, 'Vehicle number is required');
     }
+    const parsedSeatCapacity = Number(seat_capacity);
+    if (!Number.isFinite(parsedSeatCapacity) || parsedSeatCapacity <= 0) {
+      return errorResponse(res, 400, 'Seat capacity is required and must be greater than 0');
+    }
 
     const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
 
@@ -224,7 +228,7 @@ const createVehicle = async (req, res) => {
       made_of_year ? parseInt(made_of_year) : null, 
       registration_number || '', 
       chassis_number || '', 
-      seating_capacity ? parseInt(seating_capacity) : null, 
+      parseInt(parsedSeatCapacity), 
       gps_device_id || '', 
       driver_id ? parseInt(driver_id) : null, 
       route_id ? parseInt(route_id) : null,
@@ -286,8 +290,12 @@ const updateVehicle = async (req, res) => {
       values.push(chassis_number || '');
     }
     if (seating_capacity !== undefined) {
+      const parsedSeatCapacity = Number(seating_capacity);
+      if (!Number.isFinite(parsedSeatCapacity) || parsedSeatCapacity <= 0) {
+        return errorResponse(res, 400, 'Seat capacity is required and must be greater than 0');
+      }
       updates.push(`seating_capacity = $${i++}`);
-      values.push(seating_capacity ? parseInt(seating_capacity) : null);
+      values.push(parseInt(parsedSeatCapacity));
     }
     if (gps_device_id !== undefined) {
       updates.push(`gps_device_id = $${i++}`);

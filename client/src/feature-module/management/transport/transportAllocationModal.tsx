@@ -54,6 +54,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkStatus, setBulkStatus] = useState("Active");
   const [bulkAvailableRoutes, setBulkAvailableRoutes] = useState<any[]>([]);
   const [bulkAvailableVehicles, setBulkAvailableVehicles] = useState<any[]>([]);
+  const [bulkSeatAvailability, setBulkSeatAvailability] = useState<{ available: number; occupied: number; capacity: number } | null>(null);
   const [bulkSelectedUserIds, setBulkSelectedUserIds] = useState<number[]>([]);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkClassFilter, setBulkClassFilter] = useState("all");
@@ -64,17 +65,24 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const isEditMode = Boolean(selectedAllocation?.originalData?.id);
 
   const toErrorText = (err: any, fallback: string) => {
-    let msg = err?.message || fallback;
+    let msg: any = err?.message || fallback;
     if (typeof msg === "string" && msg.includes("message:")) {
       try {
-        const raw = msg.split("message:")[1].trim();
+        const raw = msg.substring(msg.indexOf("message:") + "message:".length).trim();
         const parsed = JSON.parse(raw);
         msg = parsed?.message || msg;
       } catch {
         // keep original
       }
     }
-    return msg;
+    if (typeof msg === "string") {
+      msg = msg
+        .replace(/^HTTP error! status:\s*\d+,\s*/i, "")
+        .replace(/^status:\s*\d+,\s*/i, "")
+        .trim();
+      if (!msg) msg = fallback;
+    }
+    return typeof msg === "string" ? msg : fallback;
   };
 
   useEffect(() => {
@@ -199,6 +207,33 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     const defaultVehicleId = bulkAvailableVehicles[0]?.id;
     setBulkVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
   }, [bulkAvailableVehicles, bulkRouteId]);
+
+  useEffect(() => {
+    const loadSeatAvailability = async () => {
+      if (!bulkVehicleId || !bulkStartDate) {
+        setBulkSeatAvailability(null);
+        return;
+      }
+      try {
+        const res = await apiService.getTransportSeatAvailability({
+          vehicle_id: Number(bulkVehicleId),
+          start_date: bulkStartDate,
+        });
+        if (res?.status === "SUCCESS" && res?.data) {
+          setBulkSeatAvailability({
+            available: Number(res.data.available || 0),
+            occupied: Number(res.data.occupied || 0),
+            capacity: Number(res.data.capacity || 0),
+          });
+        } else {
+          setBulkSeatAvailability(null);
+        }
+      } catch {
+        setBulkSeatAvailability(null);
+      }
+    };
+    loadSeatAvailability();
+  }, [bulkVehicleId, bulkStartDate]);
 
   const resetSingleAddForm = () => {
     setSingleUserType("student");
@@ -372,45 +407,34 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       if (bulkSelectedUserIds.length === 0) {
         throw new Error(`Please select at least one ${bulkUserType}`);
       }
-
-      let successCount = 0;
-      const failures: string[] = [];
-      for (const uid of bulkSelectedUserIds) {
-        const payload = {
-          user_type: bulkUserType,
-          ...(bulkUserType === "student"
-            ? { student_id: Number(uid) }
-            : { staff_id: Number(uid) }),
-          route_id: Number(bulkRouteId),
-          pickup_point_id: Number(bulkPickupPointId),
-          vehicle_id: Number(bulkVehicleId),
-          assigned_fee_id:
-            bulkUserType === "staff" && bulkIsFree
-              ? null
-              : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
-          is_free: bulkUserType === "staff" ? bulkIsFree : false,
-          start_date: bulkStartDate,
-          status: bulkStatus,
-          academic_year_id: academicYearId ?? undefined,
-        };
-        try {
-          const res = await apiService.createTransportAllocation(payload);
-          if (res?.status === "SUCCESS") successCount += 1;
-          else failures.push(`User ${uid}: ${res?.message || "failed"}`);
-        } catch (err: any) {
-          failures.push(`User ${uid}: ${toErrorText(err, "failed")}`);
-        }
+      if (bulkSeatAvailability && bulkSelectedUserIds.length > bulkSeatAvailability.available) {
+        throw new Error(`Only ${bulkSeatAvailability.available} seat(s) available. Please select up to ${bulkSeatAvailability.available} ${bulkUserType}(s).`);
       }
 
-      if (successCount === 0) {
-        throw new Error(`No allocations created.\n${failures.slice(0, 3).join("\n")}`);
+      const payload = {
+        user_type: bulkUserType,
+        user_ids: bulkSelectedUserIds.map((id) => Number(id)),
+        route_id: Number(bulkRouteId),
+        pickup_point_id: Number(bulkPickupPointId),
+        vehicle_id: Number(bulkVehicleId),
+        assigned_fee_id:
+          bulkUserType === "staff" && bulkIsFree
+            ? null
+            : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
+        is_free: bulkUserType === "staff" ? bulkIsFree : false,
+        start_date: bulkStartDate,
+        status: bulkStatus,
+        academic_year_id: academicYearId ?? undefined,
+      };
+      const bulkRes = await apiService.createTransportAllocationBulk(payload);
+      if (bulkRes?.status !== "SUCCESS") {
+        throw new Error(bulkRes?.message || "Failed to save bulk allocations");
       }
+
       Swal.fire({
-        icon: failures.length ? "warning" : "success",
-        title: failures.length ? "Partial Success" : "Success",
-        text: failures.length
-          ? `Created ${successCount} allocations. ${failures.length} failed.`
-          : `Created ${successCount} allocations successfully.`,
+        icon: "success",
+        title: "Success",
+        text: `Created ${Number(bulkRes?.data?.createdCount || bulkSelectedUserIds.length)} allocations successfully.`,
       });
       hideModal("add_transport_allocation_bulk");
       resetBulkForm();
@@ -738,6 +762,13 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     </div>
                   )}
                 </div>
+                {bulkSeatAvailability && (
+                  <div className="mb-3">
+                    <span className="badge bg-soft-info">
+                      Seats Available: {bulkSeatAvailability.available} / {bulkSeatAvailability.capacity}
+                    </span>
+                  </div>
+                )}
 
                 <div className="table-responsive border rounded" style={{ maxHeight: "250px", overflowY: "auto" }}>
                   <table className="table mb-0">
@@ -746,10 +777,29 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                         <th style={{ width: "50px" }}>
                           <input
                             type="checkbox"
-                            checked={bulkFilteredUsers.length > 0 && bulkSelectedUserIds.length === bulkFilteredUsers.length}
+                            checked={
+                              bulkFilteredUsers.length > 0 &&
+                              bulkSelectedUserIds.length === Math.min(
+                                bulkFilteredUsers.length,
+                                Math.max(0, bulkSeatAvailability?.available ?? bulkFilteredUsers.length)
+                              )
+                            }
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setBulkSelectedUserIds(bulkFilteredUsers.map((u: any) => Number(u.id)));
+                                const maxSelectable = Math.max(0, bulkSeatAvailability?.available ?? bulkFilteredUsers.length);
+                                if (maxSelectable <= 0) {
+                                  Swal.fire({ icon: "warning", title: "No Seats Available", text: "No seats are available for this vehicle." });
+                                  return;
+                                }
+                                const nextIds = bulkFilteredUsers.slice(0, maxSelectable).map((u: any) => Number(u.id));
+                                setBulkSelectedUserIds(nextIds);
+                                if (bulkFilteredUsers.length > maxSelectable) {
+                                  Swal.fire({
+                                    icon: "warning",
+                                    title: "Seat Limit",
+                                    text: `Only ${maxSelectable} seat(s) are available. You can select up to ${maxSelectable} user(s).`,
+                                  });
+                                }
                               } else {
                                 setBulkSelectedUserIds([]);
                               }
@@ -770,8 +820,20 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                               <input
                                 type="checkbox"
                                 checked={checked}
+                                disabled={!checked && (bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER) <= bulkSelectedUserIds.length}
                                 onChange={(e) => {
-                                  if (e.target.checked) setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  if (e.target.checked) {
+                                    const maxSelectable = Math.max(0, bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER);
+                                    if (bulkSelectedUserIds.length >= maxSelectable) {
+                                      Swal.fire({
+                                        icon: "warning",
+                                        title: "Seat Limit Reached",
+                                        text: `Only ${maxSelectable} seat(s) are available. Please deselect one user to select another.`,
+                                      });
+                                      return;
+                                    }
+                                    setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  }
                                   else setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                 }}
                               />
