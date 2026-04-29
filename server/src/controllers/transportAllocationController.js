@@ -8,31 +8,54 @@ function normalizeStatus(status) {
   return status.trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
 }
 
-async function validateUserTypeAndMembership(client, userId, userType) {
-  const userResult = await client.query('SELECT id FROM users WHERE id = $1', [userId]);
-  if (!userResult.rows.length) {
-    throw new Error('USER_NOT_FOUND');
+async function resolveAllocationSubjectId(client, rawId, userType) {
+  if (!Number.isFinite(Number(rawId))) {
+    throw new Error('INVALID_NUMERIC_INPUT');
   }
-
+  const parsedId = Number(rawId);
   if (userType === 'student') {
     const studentResult = await client.query(
-      'SELECT id FROM students WHERE user_id = $1 LIMIT 1',
-      [userId]
+      `SELECT id
+       FROM students
+       WHERE COALESCE(is_active, true) = true
+         AND (id = $1 OR user_id = $1)
+       ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [parsedId]
     );
     if (!studentResult.rows.length) throw new Error('INVALID_STUDENT_USER');
-    return;
+    return Number(studentResult.rows[0].id);
   }
-
   if (userType === 'staff') {
     const staffResult = await client.query(
-      'SELECT id FROM staff WHERE user_id = $1 LIMIT 1',
-      [userId]
+      `SELECT id
+       FROM staff
+       WHERE COALESCE(is_active, true) = true
+         AND (id = $1 OR user_id = $1)
+       ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [parsedId]
     );
     if (!staffResult.rows.length) throw new Error('INVALID_STAFF_USER');
-    return;
+    return Number(staffResult.rows[0].id);
   }
-
   throw new Error('INVALID_USER_TYPE');
+}
+
+async function resolveUserTypeAndSubjectId(client, payload) {
+  const normalizedUserType = String(payload.user_type || '').toLowerCase();
+  if (!['student', 'staff'].includes(normalizedUserType)) {
+    throw new Error('INVALID_USER_TYPE');
+  }
+  const rawSubjectId =
+    normalizedUserType === 'student'
+      ? (payload.student_id ?? payload.user_id)
+      : (payload.staff_id ?? payload.user_id);
+  if (rawSubjectId == null || rawSubjectId === '') {
+    throw new Error('SUBJECT_ID_REQUIRED');
+  }
+  const subjectId = await resolveAllocationSubjectId(client, rawSubjectId, normalizedUserType);
+  return { userType: normalizedUserType, subjectId };
 }
 
 async function validateRoutePickupMapping(client, routeId, pickupPointId) {
@@ -170,8 +193,9 @@ const getAllTransportAllocations = async (req, res) => {
       whereClause += ` AND (
         r.route_name ILIKE $${params.length}
         OR pp.point_name ILIKE $${params.length}
-        OR u.full_name ILIKE $${params.length}
-        OR u.fallback_name ILIKE $${params.length}
+        OR su.full_name ILIKE $${params.length}
+        OR tu.full_name ILIKE $${params.length}
+        OR CAST(ta.user_id AS TEXT) ILIKE $${params.length}
       )`;
     }
 
@@ -181,19 +205,19 @@ const getAllTransportAllocations = async (req, res) => {
        JOIN routes r ON r.id = ta.route_id
        JOIN pickup_points pp ON pp.id = ta.pickup_point_id
        LEFT JOIN LATERAL (
-         SELECT
-           CASE
-             WHEN ta.user_type = 'student' THEN CONCAT(COALESCE(stu.first_name, ''), ' ', COALESCE(stu.last_name, ''))
-             WHEN ta.user_type = 'staff' THEN CONCAT(COALESCE(stf.first_name, ''), ' ', COALESCE(stf.last_name, ''))
-             ELSE ''
-           END AS full_name,
-           COALESCE(CAST(ta.user_id AS TEXT), '') AS fallback_name
-         FROM users usr
-         LEFT JOIN students stu ON stu.user_id = usr.id
-         LEFT JOIN staff stf ON stf.user_id = usr.id
-         WHERE usr.id = ta.user_id
+         SELECT CONCAT(COALESCE(stu.first_name, ''), ' ', COALESCE(stu.last_name, '')) AS full_name
+         FROM students stu
+         WHERE ta.user_type = 'student' AND (stu.id = ta.user_id OR stu.user_id = ta.user_id)
+         ORDER BY CASE WHEN stu.id = ta.user_id THEN 0 ELSE 1 END
          LIMIT 1
-       ) u ON true
+       ) su ON true
+       LEFT JOIN LATERAL (
+         SELECT CONCAT(COALESCE(stf.first_name, ''), ' ', COALESCE(stf.last_name, '')) AS full_name
+         FROM staff stf
+         WHERE ta.user_type = 'staff' AND (stf.id = ta.user_id OR stf.user_id = ta.user_id)
+         ORDER BY CASE WHEN stf.id = ta.user_id THEN 0 ELSE 1 END
+         LIMIT 1
+       ) tu ON true
        ${whereClause}`,
       params
     );
@@ -207,25 +231,28 @@ const getAllTransportAllocations = async (req, res) => {
          v.vehicle_number,
          tfm.plan_name AS assigned_fee_plan_name,
          tfm.duration_days AS assigned_fee_duration_days,
-         COALESCE(u.full_name, CAST(ta.user_id AS TEXT)) AS user_name
+         CASE WHEN ta.user_type = 'student' THEN ta.user_id ELSE NULL END AS student_id,
+         CASE WHEN ta.user_type = 'staff' THEN ta.user_id ELSE NULL END AS staff_id,
+         COALESCE(su.full_name, tu.full_name, CAST(ta.user_id AS TEXT)) AS user_name
        FROM transport_allocations ta
        JOIN routes r ON r.id = ta.route_id
        JOIN pickup_points pp ON pp.id = ta.pickup_point_id
        JOIN vehicles v ON v.id = ta.vehicle_id
        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
        LEFT JOIN LATERAL (
-         SELECT
-           CASE
-             WHEN ta.user_type = 'student' THEN CONCAT(COALESCE(stu.first_name, ''), ' ', COALESCE(stu.last_name, ''))
-             WHEN ta.user_type = 'staff' THEN CONCAT(COALESCE(stf.first_name, ''), ' ', COALESCE(stf.last_name, ''))
-             ELSE ''
-           END AS full_name
-         FROM users usr
-         LEFT JOIN students stu ON stu.user_id = usr.id
-         LEFT JOIN staff stf ON stf.user_id = usr.id
-         WHERE usr.id = ta.user_id
+         SELECT CONCAT(COALESCE(stu.first_name, ''), ' ', COALESCE(stu.last_name, '')) AS full_name
+         FROM students stu
+         WHERE ta.user_type = 'student' AND (stu.id = ta.user_id OR stu.user_id = ta.user_id)
+         ORDER BY CASE WHEN stu.id = ta.user_id THEN 0 ELSE 1 END
          LIMIT 1
-       ) u ON true
+       ) su ON true
+       LEFT JOIN LATERAL (
+         SELECT CONCAT(COALESCE(stf.first_name, ''), ' ', COALESCE(stf.last_name, '')) AS full_name
+         FROM staff stf
+         WHERE ta.user_type = 'staff' AND (stf.id = ta.user_id OR stf.user_id = ta.user_id)
+         ORDER BY CASE WHEN stf.id = ta.user_id THEN 0 ELSE 1 END
+         LIMIT 1
+       ) tu ON true
        ${whereClause}
        ORDER BY ${orderBy} ${direction}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -249,6 +276,8 @@ const createTransportAllocation = async (req, res) => {
     const hasAcademicYearId = await hasColumn('transport_allocations', 'academic_year_id');
     const {
       user_id,
+      student_id,
+      staff_id,
       user_type,
       route_id,
       pickup_point_id,
@@ -261,23 +290,21 @@ const createTransportAllocation = async (req, res) => {
       academic_year_id,
     } = req.body;
 
-    const parsedUserId = Number(user_id);
     const parsedRouteId = Number(route_id);
     const parsedPickupPointId = Number(pickup_point_id);
     const parsedVehicleId = Number(vehicle_id);
     const parsedAssignedFeeId = assigned_fee_id != null && assigned_fee_id !== '' ? Number(assigned_fee_id) : null;
     const normalizedUserType = String(user_type || '').toLowerCase();
 
-    if (!user_id || !user_type || !route_id || !pickup_point_id || !vehicle_id) {
-      return errorResponse(res, 400, 'user_id, user_type, route_id, pickup_point_id and vehicle_id are required');
+    if ((!user_id && !student_id && !staff_id) || !user_type || !route_id || !pickup_point_id || !vehicle_id) {
+      return errorResponse(res, 400, 'student_id/staff_id, user_type, route_id, pickup_point_id and vehicle_id are required');
     }
     if (
-      !Number.isFinite(parsedUserId) ||
       !Number.isFinite(parsedRouteId) ||
       !Number.isFinite(parsedPickupPointId) ||
       !Number.isFinite(parsedVehicleId)
     ) {
-      return errorResponse(res, 400, 'user_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
+      return errorResponse(res, 400, 'student_id/staff_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
     }
     if (!['student', 'staff'].includes(normalizedUserType)) {
       return errorResponse(res, 400, 'user_type must be student or staff');
@@ -290,7 +317,12 @@ const createTransportAllocation = async (req, res) => {
         ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
         : null;
 
-      await validateUserTypeAndMembership(client, parsedUserId, normalizedUserType);
+      const { subjectId } = await resolveUserTypeAndSubjectId(client, {
+        user_id,
+        student_id,
+        staff_id,
+        user_type: normalizedUserType,
+      });
       await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
       const effectiveEndDateInput = end_date || null;
       await enforceVehicleCapacity(client, parsedVehicleId, startDate, effectiveEndDateInput);
@@ -310,7 +342,7 @@ const createTransportAllocation = async (req, res) => {
         `UPDATE transport_allocations
          SET end_date = GREATEST($1::date, start_date), status = 'Inactive'
          WHERE user_id = $2 AND user_type = $3 AND end_date IS NULL AND status = 'Active'`,
-        [startDate, parsedUserId, normalizedUserType]
+        [startDate, subjectId, normalizedUserType]
       );
 
       const insertResult = hasAcademicYearId
@@ -320,7 +352,7 @@ const createTransportAllocation = async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              RETURNING *`,
             [
-              parsedUserId,
+              subjectId,
               normalizedUserType,
               parsedRouteId,
               parsedPickupPointId,
@@ -340,7 +372,7 @@ const createTransportAllocation = async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
              RETURNING *`,
             [
-              parsedUserId,
+              subjectId,
               normalizedUserType,
               parsedRouteId,
               parsedPickupPointId,
@@ -360,7 +392,7 @@ const createTransportAllocation = async (req, res) => {
     return success(res, 201, 'Transport allocation created successfully', result);
   } catch (err) {
     console.error('Error creating transport allocation:', err);
-    if (err.message === 'USER_NOT_FOUND') return errorResponse(res, 400, 'Selected user does not exist');
+    if (err.message === 'SUBJECT_ID_REQUIRED') return errorResponse(res, 400, 'student_id is required for student allocations and staff_id is required for staff allocations');
     if (err.message === 'INVALID_STUDENT_USER') return errorResponse(res, 400, 'Selected user is not a valid student');
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'Selected user is not a valid staff member');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
@@ -398,8 +430,22 @@ const updateTransportAllocation = async (req, res) => {
       }
       const current = currentResult.rows[0];
 
-      const userId = payload.user_id !== undefined ? Number(payload.user_id) : Number(current.user_id);
       const userType = payload.user_type !== undefined ? String(payload.user_type).toLowerCase() : current.user_type;
+      const { subjectId: userId } = await resolveUserTypeAndSubjectId(client, {
+        user_id:
+          payload.user_id !== undefined
+            ? payload.user_id
+            : (userType === 'student' ? payload.student_id : payload.staff_id),
+        student_id:
+          payload.student_id !== undefined
+            ? payload.student_id
+            : (userType === 'student' ? current.user_id : undefined),
+        staff_id:
+          payload.staff_id !== undefined
+            ? payload.staff_id
+            : (userType === 'staff' ? current.user_id : undefined),
+        user_type: userType,
+      });
       const routeId = payload.route_id !== undefined ? Number(payload.route_id) : Number(current.route_id);
       const pickupPointId = payload.pickup_point_id !== undefined ? Number(payload.pickup_point_id) : Number(current.pickup_point_id);
       const vehicleId = payload.vehicle_id !== undefined ? Number(payload.vehicle_id) : Number(current.vehicle_id);
@@ -475,7 +521,6 @@ const updateTransportAllocation = async (req, res) => {
         return updateResult.rows[0];
       }
 
-      await validateUserTypeAndMembership(client, userId, userType);
       await validateRoutePickupMapping(client, routeId, pickupPointId);
       await enforceVehicleCapacity(client, vehicleId, startDate, endDate, allocationId);
 
@@ -520,11 +565,11 @@ const updateTransportAllocation = async (req, res) => {
   } catch (err) {
     console.error('Error updating transport allocation:', err);
     if (err.message === 'ALLOCATION_NOT_FOUND') return errorResponse(res, 404, 'Transport allocation not found');
-    if (err.message === 'USER_NOT_FOUND') return errorResponse(res, 400, 'Selected user does not exist');
+    if (err.message === 'SUBJECT_ID_REQUIRED') return errorResponse(res, 400, 'student_id is required for student allocations and staff_id is required for staff allocations');
     if (err.message === 'INVALID_STUDENT_USER') return errorResponse(res, 400, 'Selected user is not a valid student');
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'Selected user is not a valid staff member');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
-    if (err.message === 'INVALID_NUMERIC_INPUT') return errorResponse(res, 400, 'user_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
+    if (err.message === 'INVALID_NUMERIC_INPUT') return errorResponse(res, 400, 'student_id/staff_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
     if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
     if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');

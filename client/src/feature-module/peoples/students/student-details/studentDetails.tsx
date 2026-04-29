@@ -279,6 +279,16 @@ const StudentDetails = () => {
                     Exam &amp; Results
                   </Link>
                 </li>
+                <li>
+                  <Link
+                    to={student?.id ? `${routes.studentLibrary}?studentId=${student.id}` : routes.studentLibrary}
+                    className="nav-link"
+                    state={{ studentId: student.id, student }}
+                  >
+                    <i className="ti ti-books me-2" />
+                    Library
+                  </Link>
+                </li>
               </ul>
               {/* /List */}
               {/* Parents Information — only when at least father, mother, or guardian data exists */}

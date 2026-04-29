@@ -61,6 +61,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkDepartmentFilter, setBulkDepartmentFilter] = useState("all");
   const hydratingSinglePickupRef = useRef(false);
   const hydratingSingleRouteRef = useRef(false);
+  const isEditMode = Boolean(selectedAllocation?.originalData?.id);
 
   const toErrorText = (err: any, fallback: string) => {
     let msg = err?.message || fallback;
@@ -102,7 +103,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       hydratingSinglePickupRef.current = true;
       hydratingSingleRouteRef.current = true;
       setSingleUserType(row.user_type || "student");
-      setSingleUserId(String(row.user_id || ""));
+      setSingleUserId(String(row.student_id || row.staff_id || row.user_id || ""));
       setSinglePickupPointId(String(row.pickup_point_id || ""));
       setSingleRouteId(String(row.route_id || ""));
       setSingleVehicleId(String(row.vehicle_id || ""));
@@ -159,7 +160,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     }
     loadRoutesForPickup(singlePickupPointId, setSingleAvailableRoutes);
     if (isHydrating) hydratingSinglePickupRef.current = false;
-  }, [singlePickupPointId]);
+  }, [singlePickupPointId, academicYearId]);
   useEffect(() => {
     const isHydrating = hydratingSingleRouteRef.current;
     if (!isHydrating) {
@@ -167,18 +168,37 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     }
     loadVehiclesForRoute(singleRouteId, setSingleAvailableVehicles);
     if (isHydrating) hydratingSingleRouteRef.current = false;
-  }, [singleRouteId]);
+  }, [singleRouteId, academicYearId]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!singleRouteId) {
+      setSingleVehicleId("");
+      return;
+    }
+    const defaultVehicleId = singleAvailableVehicles[0]?.id;
+    setSingleVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
+  }, [singleAvailableVehicles, singleRouteId, isEditMode]);
 
   useEffect(() => {
     setBulkRouteId("");
     setBulkVehicleId("");
     setBulkAssignedFeeId("");
     loadRoutesForPickup(bulkPickupPointId, setBulkAvailableRoutes);
-  }, [bulkPickupPointId]);
+  }, [bulkPickupPointId, academicYearId]);
   useEffect(() => {
     setBulkVehicleId("");
     loadVehiclesForRoute(bulkRouteId, setBulkAvailableVehicles);
-  }, [bulkRouteId]);
+  }, [bulkRouteId, academicYearId]);
+
+  useEffect(() => {
+    if (!bulkRouteId) {
+      setBulkVehicleId("");
+      return;
+    }
+    const defaultVehicleId = bulkAvailableVehicles[0]?.id;
+    setBulkVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
+  }, [bulkAvailableVehicles, bulkRouteId]);
 
   const resetSingleAddForm = () => {
     setSingleUserType("student");
@@ -227,13 +247,13 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
 
   const singleUserOptions =
     singleUserType === "student"
-      ? students.filter((s: any) => s.user_id != null).map((s: any) => ({
-          value: String(s.user_id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.user_id})`,
+      ? students.filter((s: any) => s.id != null).map((s: any) => ({
+          value: String(s.id),
+          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.id})`,
         }))
-      : staff.filter((s: any) => s.user_id != null).map((s: any) => ({
-          value: String(s.user_id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.user_id})`,
+      : staff.filter((s: any) => s.id != null).map((s: any) => ({
+          value: String(s.id),
+          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.id})`,
         }));
 
   const filteredSingleFees = useMemo(
@@ -255,7 +275,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setLoading(true);
     try {
       if (!singleUserId || !singleRouteId || !singlePickupPointId || !singleVehicleId) {
-        throw new Error("Please select user, pickup point, route and vehicle");
+        throw new Error("Please select user, pickup point and route");
       }
       if (!singleStartDate) {
         throw new Error("Please select a start date");
@@ -264,8 +284,10 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         throw new Error("Please select a fee plan");
       }
       const payload: any = {
-        user_id: Number(singleUserId),
         user_type: singleUserType,
+        ...(singleUserType === "student"
+          ? { student_id: Number(singleUserId) }
+          : { staff_id: Number(singleUserId) }),
         route_id: Number(singleRouteId),
         pickup_point_id: Number(singlePickupPointId),
         vehicle_id: Number(singleVehicleId),
@@ -313,7 +335,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const bulkDepartments = Array.from(new Set(staff.map((s: any) => s.department_name || s.department).filter(Boolean)));
 
   const bulkFilteredUsers = useMemo(() => {
-    let rows = bulkUsersSource.filter((u: any) => u.user_id != null);
+    let rows = bulkUsersSource.filter((u: any) => u.id != null);
     if (bulkSearch.trim()) {
       const q = bulkSearch.trim().toLowerCase();
       rows = rows.filter((u: any) =>
@@ -334,14 +356,12 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     return rows;
   }, [bulkUsersSource, bulkSearch, bulkUserType, bulkClassFilter, bulkSectionFilter, bulkDepartmentFilter]);
 
-  const isEditMode = Boolean(selectedAllocation?.originalData?.id);
-
   const saveBulkAllocation = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (!bulkPickupPointId || !bulkRouteId || !bulkVehicleId) {
-        throw new Error("Please select pickup point, route and vehicle");
+        throw new Error("Please select pickup point and route");
       }
       if (!bulkStartDate) {
         throw new Error("Please select a start date");
@@ -357,8 +377,10 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       const failures: string[] = [];
       for (const uid of bulkSelectedUserIds) {
         const payload = {
-          user_id: Number(uid),
           user_type: bulkUserType,
+          ...(bulkUserType === "student"
+            ? { student_id: Number(uid) }
+            : { staff_id: Number(uid) }),
           route_id: Number(bulkRouteId),
           pickup_point_id: Number(bulkPickupPointId),
           vehicle_id: Number(bulkVehicleId),
@@ -475,7 +497,15 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                 <div className="row">
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Vehicle (for selected route)</label>
-                    <CommonSelect className="select" options={singleAvailableVehicles.map((v: any) => ({ value: String(v.id), label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})` }))} value={singleVehicleId} onChange={(v: string | null) => setSingleVehicleId(v || "")} />
+                    <CommonSelect
+                      className="select"
+                      options={singleAvailableVehicles.map((v: any) => ({
+                        value: String(v.id),
+                        label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})`,
+                      }))}
+                      value={singleVehicleId}
+                      onChange={(v: string | null) => setSingleVehicleId(v || "")}
+                    />
                   </div>
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Start Date</label>
@@ -660,11 +690,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Vehicle (for selected route)</label>
-                    <CommonSelect className="select" options={bulkAvailableVehicles.map((v: any) => ({ value: String(v.id), label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})` }))} value={bulkVehicleId} onChange={(v: string | null) => setBulkVehicleId(v || "")} />
-                  </div>
-                  <div className="col-md-6 mb-3">
+                  <div className="col-md-12 mb-3">
                     <label className="form-label">Start Date</label>
                     <DatePicker
                       className="form-control datetimepicker"
@@ -723,7 +749,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                             checked={bulkFilteredUsers.length > 0 && bulkSelectedUserIds.length === bulkFilteredUsers.length}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setBulkSelectedUserIds(bulkFilteredUsers.map((u: any) => Number(u.user_id)));
+                                setBulkSelectedUserIds(bulkFilteredUsers.map((u: any) => Number(u.id)));
                               } else {
                                 setBulkSelectedUserIds([]);
                               }
@@ -736,7 +762,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     </thead>
                     <tbody>
                       {bulkFilteredUsers.map((u: any) => {
-                        const uid = Number(u.user_id);
+                        const uid = Number(u.id);
                         const checked = bulkSelectedUserIds.includes(uid);
                         return (
                           <tr key={uid}>
