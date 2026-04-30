@@ -20,12 +20,36 @@ interface TeacherSidebarProps {
     id_number?: string | null;
     languages_known?: string | null;
     hostel_name?: string | null;
-    room_number?: string | null;
+    hostel_room_number?: string | null;
     route_name?: string | null;
     vehicle_number?: string | null;
     pickup_point_name?: string | null;
+    route_id?: number | null;
+    pickup_point_id?: number | null;
+    vehicle_id?: number | null;
+    transport_assigned_fee_id?: number | null;
+    transport_fee_plan_name?: string | null;
+    transport_assigned_fee_amount?: number | string | null;
+    transport_is_free?: boolean | null;
   } | null;
 }
+
+const isPlaceholderValue = (value: unknown) => {
+  if (value == null) return true;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "not applicable" ||
+    normalized === "not available" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "undefined" ||
+    normalized === "-" ||
+    normalized === "--"
+  );
+};
 
 const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
   const displayName = teacher
@@ -46,11 +70,14 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
   const email = teacher?.email ?? "N/A";
   const panOrId = teacher?.pan_number || teacher?.id_number || "N/A";
   const languages = teacher?.languages_known ?? "N/A";
-  const hostelName = teacher?.hostel_name ?? "N/A";
-  const roomNumber = teacher?.room_number ?? "N/A";
-  const routeName = teacher?.route_name ?? "N/A";
-  const vehicleNumber = teacher?.vehicle_number ?? "N/A";
-  const pickupPointName = teacher?.pickup_point_name ?? "N/A";
+  const hasTransportAllocation =
+    !isPlaceholderValue(teacher?.route_name) ||
+    !isPlaceholderValue(teacher?.pickup_point_name) ||
+    !isPlaceholderValue(teacher?.vehicle_number) ||
+    teacher?.route_id != null ||
+    teacher?.pickup_point_id != null ||
+    teacher?.vehicle_id != null ||
+    teacher?.transport_assigned_fee_id != null;
   return (
     <div className="col-xxl-3 col-xl-4 theiaStickySidebar">
       <div className="stickytopbar pb-4">
@@ -148,40 +175,58 @@ const TeacherSidebar = ({ teacher }: TeacherSidebarProps) => {
             </ul>
             <div className="tab-content">
               <div className="tab-pane fade show active" id="hostel">
-                <div className="d-flex align-items-center mb-3">
-                  <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                    <i className="ti ti-building-fortress fs-16" />
-                  </span>
-                  <div>
-                    <h6 className="mb-1">{hostelName}</h6>
-                    <p className="text-primary">Room No : {roomNumber}</p>
-                  </div>
-                </div>
+                <p className="text-muted mb-0">Hostel module is in development. Details will be available soon.</p>
               </div>
               <div className="tab-pane fade" id="transport">
-                <div className="d-flex align-items-center mb-3">
-                  <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                    <i className="ti ti-bus fs-16" />
-                  </span>
-                  <div>
-                    <span className="fs-12 mb-1">Route</span>
-                    <p className="text-dark">{routeName}</p>
-                  </div>
-                </div>
-                <div className="row">
-                  <div className="col-sm-6">
-                    <div className="mb-3">
-                      <span className="fs-12 mb-1">Bus Number</span>
-                      <p className="text-dark">{vehicleNumber}</p>
+                {hasTransportAllocation ? (
+                  <>
+                    <div className="d-flex align-items-center mb-3">
+                      <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
+                        <i className="ti ti-bus fs-16" />
+                      </span>
+                      <div>
+                        <span className="fs-12 mb-1">Pickup Point</span>
+                        <p className="text-dark">{teacher?.pickup_point_name ?? "N/A"}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="col-sm-6">
-                    <div className="mb-3">
-                      <span className="fs-12 mb-1">Pickup Point</span>
-                      <p className="text-dark">{pickupPointName}</p>
+                    <div className="row">
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Route</span>
+                          <p className="text-dark">{teacher?.route_name ?? "N/A"}</p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Bus Number</span>
+                          <p className="text-dark">{teacher?.vehicle_number ?? "N/A"}</p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Plan</span>
+                          <p className="text-dark">
+                            {teacher?.transport_is_free
+                              ? "Free Allocation"
+                              : (teacher?.transport_fee_plan_name ?? "N/A")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Assigned Amount</span>
+                          <p className="text-dark">
+                            {teacher?.transport_is_free
+                              ? "0"
+                              : (teacher?.transport_assigned_fee_amount != null ? String(teacher.transport_assigned_fee_amount) : "N/A")}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <p className="text-muted mb-0">Transportation is not allocated to this teacher yet.</p>
+                )}
               </div>
             </div>
           </div>

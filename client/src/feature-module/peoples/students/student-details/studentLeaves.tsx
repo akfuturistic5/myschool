@@ -83,6 +83,7 @@ const StudentLeaves = () => {
     (academicYears || []).find((year: { is_current?: boolean }) => year?.is_current) ??
     (academicYears || [])[0] ??
     null;
+  const currentAcademicYearAny = currentAcademicYear as any;
 
   // studentOnly = student; parentChildren = parent; studentId+canUseAdminList = admin/teacher
   // canUseAdminList: avoid 403 when role loading - never call admin endpoint until role is confirmed
@@ -115,6 +116,7 @@ const StudentLeaves = () => {
     studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
   const { leaveTypes } = useLeaveTypes();
+  const leaveTypesList = Array.isArray(leaveTypes) ? (leaveTypes as any[]) : [];
 
   const data = useMemo(() => {
     if (isGuardianViewer) return guardianLeaves;
@@ -152,7 +154,7 @@ const StudentLeaves = () => {
         const res = await apiService.getHolidays({
           startDate: today,
           endDate: today,
-          academicYearId: currentAcademicYear?.id,
+          academicYearId: currentAcademicYearAny?.id,
         });
         if (disposed) return;
         const rows = Array.isArray(res?.data) ? res.data : [];
@@ -165,7 +167,7 @@ const StudentLeaves = () => {
     return () => {
       disposed = true;
     };
-  }, [currentAcademicYear?.id]);
+  }, [currentAcademicYearAny?.id]);
 
   useEffect(() => {
     let disposed = false;
@@ -195,7 +197,7 @@ const StudentLeaves = () => {
         const res = await apiService.getHolidays({
           startDate,
           endDate,
-          academicYearId: currentAcademicYear?.id,
+          academicYearId: currentAcademicYearAny?.id,
         });
         if (disposed) return;
         const rows = Array.isArray(res?.data) ? res.data : [];
@@ -230,7 +232,7 @@ const StudentLeaves = () => {
     return () => {
       disposed = true;
     };
-  }, [attendanceRecords, currentAcademicYear?.id, holidayRefreshTick]);
+  }, [attendanceRecords, currentAcademicYearAny?.id, holidayRefreshTick]);
 
   const handleCancelLeave = async (id?: number) => {
     if (!id || cancelingLeaveId != null) return;
@@ -265,8 +267,8 @@ const StudentLeaves = () => {
       if (byName) addUsedDays(byName, safeDays);
     });
 
-    if (Array.isArray(leaveTypes) && leaveTypes.length > 0) {
-      return leaveTypes.map((type: { id?: number | string; label?: string; max_days?: number | string; max_days_per_year?: number | string }) => {
+    if (leaveTypesList.length > 0) {
+      return leaveTypesList.map((type: { id?: number | string; label?: string; max_days?: number | string; max_days_per_year?: number | string }) => {
         const idKey = type?.id != null ? `id:${String(type.id)}` : "";
         const nameKey = `name:${normalize(type?.label)}`;
         const usedDays = (idKey && keyToUsedDays.has(idKey) ? keyToUsedDays.get(idKey) : keyToUsedDays.get(nameKey)) || 0;
@@ -289,7 +291,7 @@ const StudentLeaves = () => {
         usedDays: v,
         totalDays: 0,
       }));
-  }, [data, leaveTypes]);
+  }, [data, leaveTypesList]);
 
   const showLoading = loading;
 
@@ -720,6 +722,16 @@ const StudentLeaves = () => {
                         Exam &amp; Results
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-books me-2" />
+                        Library
+                      </Link>
+                    </li>
                   </ul>
                   {/* /List */}
                   {/* Leave Nav*/}
@@ -831,7 +843,7 @@ const StudentLeaves = () => {
                               </Link>
                             </div>
                             <span className="badge badge-soft-primary mb-3">
-                              {currentAcademicYear?.year_name ? `Academic Year: ${currentAcademicYear.year_name}` : "Academic Year not available"}
+                              {(currentAcademicYear as any)?.year_name ? `Academic Year: ${(currentAcademicYear as any).year_name}` : "Academic Year not available"}
                             </span>
                           </div>
                         </div>
