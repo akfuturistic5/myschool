@@ -8,43 +8,9 @@ const normalizeHostelType = (t) => {
   return null;
 };
 
-// Optional academic_year_id filter (requires hostels.academic_year_id from migration 037).
-// If the column is missing, fall back to all active hostels so the API stays usable.
 const getAllHostels = async (req, res) => {
   try {
-    const academicYearId = req.query.academic_year_id;
-    const y =
-      academicYearId !== undefined && academicYearId !== null && academicYearId !== ''
-        ? Number(academicYearId)
-        : NaN;
-    const useYear = !Number.isNaN(y);
-
-    let result;
-    if (useYear) {
-      try {
-        result = await query(
-          `
-          SELECT *
-          FROM hostels
-          WHERE is_active = true
-            AND (academic_year_id = $1 OR academic_year_id IS NULL)
-          ORDER BY hostel_name ASC
-        `,
-          [y]
-        );
-      } catch (err) {
-        if (err && err.code === '42703') {
-          result = await query(
-            `SELECT * FROM hostels WHERE is_active = true ORDER BY hostel_name ASC`
-          );
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      result = await query(`SELECT * FROM hostels WHERE is_active = true ORDER BY hostel_name ASC`);
-    }
-
+    const result = await query(`SELECT * FROM hostels WHERE is_active = true ORDER BY hostel_name ASC`);
     return success(res, 200, 'Hostels fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching hostels:', error);
@@ -83,7 +49,6 @@ const createHostel = async (req, res) => {
       address,
       intake_capacity,
       description,
-      academic_year_id,
       total_rooms,
       contact_number,
       facilities,
@@ -100,11 +65,6 @@ const createHostel = async (req, res) => {
       return errorResponse(res, 400, 'hostel_type must be boys, girls, or mixed');
     }
 
-    const yearId =
-      academic_year_id !== undefined && academic_year_id !== null && academic_year_id !== ''
-        ? Number(academic_year_id)
-        : null;
-
     const intake =
       intake_capacity !== undefined && intake_capacity !== null && intake_capacity !== ''
         ? Number(intake_capacity)
@@ -118,10 +78,10 @@ const createHostel = async (req, res) => {
     const result = await query(
       `
       INSERT INTO hostels (
-        hostel_name, hostel_type, address, intake_capacity, description, academic_year_id,
+        hostel_name, hostel_type, address, intake_capacity, description,
         total_rooms, contact_number, facilities, rules, warden_id, is_active
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
       RETURNING *
     `,
       [
@@ -130,7 +90,6 @@ const createHostel = async (req, res) => {
         address != null ? String(address) : null,
         intake != null && !Number.isNaN(intake) ? intake : null,
         description != null ? String(description) : null,
-        yearId != null && !Number.isNaN(yearId) ? yearId : null,
         rooms != null && !Number.isNaN(rooms) ? rooms : null,
         contact_number != null ? String(contact_number) : null,
         facilities != null ? String(facilities) : null,
@@ -158,7 +117,6 @@ const updateHostel = async (req, res) => {
       address,
       intake_capacity,
       description,
-      academic_year_id,
       total_rooms,
       contact_number,
       facilities,
@@ -195,12 +153,6 @@ const updateHostel = async (req, res) => {
     if (description !== undefined) {
       updates.push(`description = $${idx++}`);
       params.push(description);
-    }
-    if (academic_year_id !== undefined) {
-      const yearId =
-        academic_year_id !== null && academic_year_id !== '' ? Number(academic_year_id) : null;
-      updates.push(`academic_year_id = $${idx++}`);
-      params.push(yearId != null && !Number.isNaN(yearId) ? yearId : null);
     }
     if (total_rooms !== undefined) {
       const rooms = total_rooms !== null && total_rooms !== '' ? Number(total_rooms) : null;

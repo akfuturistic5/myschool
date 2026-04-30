@@ -55,7 +55,6 @@ const upsertStudentRecord = async (client, payload) => {
     remark = null,
     checkInTime = null,
     checkOutTime = null,
-    academicYearId = null,
   } = payload;
   const params = [
     entityId,
@@ -67,7 +66,6 @@ const upsertStudentRecord = async (client, payload) => {
     checkOutTime,
     markedBy,
     remark,
-    academicYearId,
   ];
   const updated = await client.query(
     `UPDATE attendance
@@ -78,8 +76,7 @@ const upsertStudentRecord = async (client, payload) => {
        check_in_time = $6,
        check_out_time = $7,
        marked_by = $8,
-       remarks = $9,
-       academic_year_id = COALESCE($10, academic_year_id)
+       remarks = $9
      WHERE student_id = $1
        AND attendance_date = $4`,
     params
@@ -88,8 +85,8 @@ const upsertStudentRecord = async (client, payload) => {
   await client.query(
     `INSERT INTO attendance (
       student_id, class_id, section_id, attendance_date, status,
-      check_in_time, check_out_time, marked_by, remarks, academic_year_id
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      check_in_time, check_out_time, marked_by, remarks
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
     params
   );
 };
@@ -103,9 +100,8 @@ const upsertStaffRecord = async (client, payload) => {
     remark = null,
     checkInTime = null,
     checkOutTime = null,
-    academicYearId = null,
   } = payload;
-  const params = [entityId, attendanceDate, status, checkInTime, checkOutTime, remark, markedBy, academicYearId];
+  const params = [entityId, attendanceDate, status, checkInTime, checkOutTime, remark, markedBy];
   const updated = await client.query(
     `UPDATE staff_attendance
      SET
@@ -113,8 +109,7 @@ const upsertStaffRecord = async (client, payload) => {
        check_in_time = $4,
        check_out_time = $5,
        remark = $6,
-       marked_by = $7,
-       academic_year_id = COALESCE($8, academic_year_id)
+       marked_by = $7
      WHERE staff_id = $1
        AND attendance_date = $2`,
     params
@@ -122,8 +117,8 @@ const upsertStaffRecord = async (client, payload) => {
   if ((updated.rowCount || 0) > 0) return;
   await client.query(
     `INSERT INTO staff_attendance (
-      staff_id, attendance_date, status, check_in_time, check_out_time, remark, marked_by, academic_year_id
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      staff_id, attendance_date, status, check_in_time, check_out_time, remark, marked_by
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     params
   );
 };
@@ -156,7 +151,7 @@ const getTeacherIdentity = async (userId) => {
 
 const saveAttendance = async (req, res) => {
   try {
-    const { entityType, attendanceDate, records, academicYearId = null } = req.body;
+    const { entityType, attendanceDate, records } = req.body;
     const { isTeacher } = getUserRoleContext(req.user);
 
     if (!canWriteEntity(req.user, entityType)) {
@@ -178,25 +173,15 @@ const saveAttendance = async (req, res) => {
         const studentIds = [...new Set(records.map((record) => Number(record.entityId)).filter(Number.isFinite))];
         if (studentIds.length > 0) {
           const scopeParams = [studentIds, teacherIds, staffIds];
-          let academicYearClause = '';
-          if (academicYearId != null && academicYearId !== '') {
-            scopeParams.push(Number(academicYearId));
-            academicYearClause = ` AND s.academic_year_id = $${scopeParams.length}`;
-          }
-
           const allowedRes = await query(
-            `SELECT s.id
-             FROM students s
+            `SELECT id FROM students s
              WHERE s.id = ANY($1::int[])
-               AND s.is_active = true
-               ${academicYearClause}
                AND (
                  EXISTS (
                    SELECT 1 FROM class_schedules cs
-                   WHERE cs.teacher_id = ANY($2::int[])
-                     AND cs.class_id = s.class_id
+                   WHERE cs.class_id = s.class_id
+                     AND cs.teacher_id = ANY($2::int[])
                      AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-                     AND (cs.academic_year_id = s.academic_year_id OR cs.academic_year_id IS NULL)
                  )
                  OR EXISTS (
                    SELECT 1 FROM teachers t
@@ -231,7 +216,7 @@ const saveAttendance = async (req, res) => {
       }
     }
 
-    const activeHoliday = await getHolidayForDate(attendanceDate, academicYearId);
+    const activeHoliday = await getHolidayForDate(attendanceDate);
     if (activeHoliday) {
       return errorResponse(
         res,
@@ -252,7 +237,6 @@ const saveAttendance = async (req, res) => {
           status,
           attendanceDate,
           markedBy,
-          academicYearId: academicYearId ?? null,
           checkInTime: toNullableTime(record.checkInTime),
           checkOutTime: toNullableTime(record.checkOutTime),
           remark: record.remark ? String(record.remark).trim() : null,
@@ -279,7 +263,7 @@ const updateAttendance = async (req, res) => {
 const getMarkingRoster = async (req, res) => {
   try {
     const { entityType } = req.params;
-    const { date, class_id, section_id, department_id, designation_id, academic_year_id } = req.query;
+    const { date, class_id, section_id, department_id, designation_id } = req.query;
     const { isTeacher } = getUserRoleContext(req.user);
 
     if (!TABLE_BY_ENTITY[entityType]) {
@@ -297,10 +281,6 @@ const getMarkingRoster = async (req, res) => {
         params.push(Number(section_id));
         where += ` AND s.section_id = $${params.length}`;
       }
-      if (academic_year_id) {
-        params.push(Number(academic_year_id));
-        where += ` AND s.academic_year_id = $${params.length}`;
-      }
 
       if (isTeacher) {
         const { teacherIds, staffIds } = await getTeacherIdentity(req.user?.id);
@@ -316,10 +296,9 @@ const getMarkingRoster = async (req, res) => {
         where += ` AND (
           EXISTS (
             SELECT 1 FROM class_schedules cs
-            WHERE cs.teacher_id = ANY(${teacherIdsParamRef})
-              AND cs.class_id = s.class_id
+            WHERE cs.class_id = s.class_id
+              AND cs.teacher_id = ANY(${teacherIdsParamRef})
               AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-              AND (cs.academic_year_id = s.academic_year_id OR cs.academic_year_id IS NULL)
           )
           OR EXISTS (
             SELECT 1 FROM teachers t
@@ -354,7 +333,7 @@ const getMarkingRoster = async (req, res) => {
         ${where}
         ORDER BY s.first_name ASC, s.last_name ASC`;
       const roster = await query(sql, params);
-      const activeHoliday = await getHolidayForDate(date, academic_year_id);
+      const activeHoliday = await getHolidayForDate(date);
       const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
       const rows = holidayMark
         ? (roster.rows || []).map((row) => ({ ...row, status: holidayMark }))
@@ -372,8 +351,7 @@ const getMarkingRoster = async (req, res) => {
       params.push(Number(designation_id));
       where += ` AND st.designation_id = $${params.length}`;
     }
-    const academicYearJoinFilter = academic_year_id ? ` AND sa.academic_year_id = $${params.length + 1}` : '';
-    if (academic_year_id) params.push(Number(academic_year_id));
+    const academicYearJoinFilter = '';
 
     const sql = `
       SELECT
@@ -393,7 +371,7 @@ const getMarkingRoster = async (req, res) => {
       ${where}
       ORDER BY st.first_name ASC, st.last_name ASC`;
     const roster = await query(sql, params);
-    const activeHoliday = await getHolidayForDate(date, academic_year_id);
+    const activeHoliday = await getHolidayForDate(date);
     const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
     const rows = holidayMark
       ? (roster.rows || []).map((row) => ({ ...row, status: holidayMark }))
@@ -408,7 +386,7 @@ const getMarkingRoster = async (req, res) => {
 const getAttendanceReport = async (req, res) => {
   try {
     const { entityType } = req.params;
-    const { month, class_id, section_id, department_id, designation_id, academic_year_id } = req.query;
+    const { month, class_id, section_id, department_id, designation_id } = req.query;
     const [year, monthNumber] = month.split('-').map(Number);
     const monthStart = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
     const monthEndResult = await query(
@@ -429,10 +407,6 @@ const getAttendanceReport = async (req, res) => {
         params.push(Number(section_id));
         where += ` AND s.section_id = $${params.length}`;
       }
-      if (academic_year_id) {
-        params.push(Number(academic_year_id));
-        where += ` AND s.academic_year_id = $${params.length}`;
-      }
       const result = await query(
         `
         SELECT
@@ -452,7 +426,7 @@ const getAttendanceReport = async (req, res) => {
       `,
         params
       );
-      const holidays = await listHolidaysInRange(monthStart, monthEndYmd, academic_year_id);
+      const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
       const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
       const rows = (result.rows || []).map((row) => {
         const day = toYmd(row.attendance_date);
@@ -467,7 +441,7 @@ const getAttendanceReport = async (req, res) => {
         rows,
         summary: buildSummaryFromRows(rows),
         holiday_dates: Array.from(holidayDates),
-        filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, class_id, section_id, academic_year_id },
+        filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, class_id, section_id },
       });
     }
 
@@ -481,8 +455,7 @@ const getAttendanceReport = async (req, res) => {
       params.push(Number(designation_id));
       where += ` AND st.designation_id = $${params.length}`;
     }
-    const academicYearJoinFilter = academic_year_id ? ` AND sa.academic_year_id = $${params.length + 1}` : '';
-    if (academic_year_id) params.push(Number(academic_year_id));
+    const academicYearJoinFilter = '';
     const result = await query(
       `
       SELECT
@@ -502,7 +475,7 @@ const getAttendanceReport = async (req, res) => {
     `,
       params
     );
-    const holidays = await listHolidaysInRange(monthStart, monthEndYmd, academic_year_id);
+    const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
     const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
     const rows = (result.rows || []).map((row) => {
       const day = toYmd(row.attendance_date);
@@ -517,7 +490,7 @@ const getAttendanceReport = async (req, res) => {
       rows,
       summary: buildSummaryFromRows(rows),
       holiday_dates: Array.from(holidayDates),
-      filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, department_id, designation_id, academic_year_id },
+      filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, department_id, designation_id },
     });
   } catch (err) {
     console.error('getAttendanceReport error:', err);
@@ -528,7 +501,7 @@ const getAttendanceReport = async (req, res) => {
 const getAttendanceDayWise = async (req, res) => {
   try {
     const { entityType } = req.params;
-    const { date, class_id, section_id, department_id, academic_year_id } = req.query;
+    const { date, class_id, section_id, department_id } = req.query;
     const params = [date];
     let sql = '';
 
@@ -541,10 +514,6 @@ const getAttendanceDayWise = async (req, res) => {
       if (section_id) {
         params.push(Number(section_id));
         where += ` AND s.section_id = $${params.length}`;
-      }
-      if (academic_year_id) {
-        params.push(Number(academic_year_id));
-        where += ` AND s.academic_year_id = $${params.length}`;
       }
       sql = `
         SELECT
@@ -562,8 +531,7 @@ const getAttendanceDayWise = async (req, res) => {
         params.push(Number(department_id));
         where += ` AND st.department_id = $${params.length}`;
       }
-      const academicYearJoinFilter = academic_year_id ? ` AND sa.academic_year_id = $${params.length + 1}` : '';
-      if (academic_year_id) params.push(Number(academic_year_id));
+      const academicYearJoinFilter = '';
       sql = `
         SELECT
           st.id AS entity_id,
@@ -580,7 +548,7 @@ const getAttendanceDayWise = async (req, res) => {
     }
 
     const result = await query(sql, params);
-    const activeHoliday = await getHolidayForDate(date, academic_year_id);
+    const activeHoliday = await getHolidayForDate(date);
     const holidayMark = rosterHolidayMarkingStatus(activeHoliday);
     const rows = holidayMark
       ? (result.rows || []).map((row) => ({ ...row, status: holidayMark }))
@@ -588,7 +556,7 @@ const getAttendanceDayWise = async (req, res) => {
     return success(res, 200, 'Day-wise attendance fetched', {
       rows,
       summary: buildSummaryFromRows(rows),
-      filters: { entityType, date, class_id, section_id, department_id, academic_year_id },
+      filters: { entityType, date, class_id, section_id, department_id },
       holiday: activeHoliday,
     });
   } catch (err) {
@@ -606,8 +574,6 @@ const getMyAttendance = async (req, res) => {
 
     const daysRaw = Number(req.query?.days);
     const days = Number.isFinite(daysRaw) && daysRaw > 0 ? Math.min(daysRaw, 365) : 30;
-    const academicYearIdRaw = Number(req.query?.academic_year_id);
-    const hasAcademicYear = Number.isFinite(academicYearIdRaw) && academicYearIdRaw > 0;
 
     const staffRes = await query(
       `SELECT id, first_name, last_name
@@ -631,10 +597,6 @@ const getMyAttendance = async (req, res) => {
 
       const params = [entityId, days];
       let academicYearClause = '';
-      if (hasAcademicYear) {
-        params.push(academicYearIdRaw);
-        academicYearClause = ` AND academic_year_id = $${params.length}`;
-      }
 
       const rowsRes = await query(
         `SELECT

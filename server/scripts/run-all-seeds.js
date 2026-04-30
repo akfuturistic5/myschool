@@ -12,6 +12,16 @@ const seedsDir = dirOverride ? path.resolve(__dirname, '..', dirOverride) : path
 async function runSeeds() {
   console.log(`🌱 Seeding database: ${targetDb}`);
 
+  // Ensure master super admin exists (idempotent)
+  if (targetDb === 'master_db' || !dbOverride) {
+    console.log('👤 Ensuring default super admin in master registry...');
+    try {
+      execSync('node scripts/create-default-super-admin.js', { stdio: 'inherit', cwd: path.join(__dirname, '..') });
+    } catch (e) {
+      console.warn('⚠️ Warning: Failed to ensure default super admin:', e.message);
+    }
+  }
+
   if (!fs.existsSync(seedsDir)) {
     console.log(`⏭️ Seeds directory not found: ${seedsDir}. Skipping.`);
     return;

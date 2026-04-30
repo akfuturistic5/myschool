@@ -40,42 +40,19 @@ const parseOptionalInt = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
-
-async function resolveSectionAcademicYear(classId, requestedYearId) {
-  const cls = await query('SELECT id, academic_year_id FROM classes WHERE id = $1 LIMIT 1', [classId]);
-  if (!cls.rows.length) {
-    return { ok: false, status: 400, message: 'Invalid class' };
-  }
-  const classYearId = parseOptionalInt(cls.rows[0].academic_year_id);
-  const reqYear = parseOptionalInt(requestedYearId);
-  if (reqYear && classYearId && reqYear !== classYearId) {
-    return {
-      ok: false,
-      status: 400,
-      message: 'Section academic year must match class academic year',
-    };
-  }
-  return { ok: true, academicYearId: reqYear || classYearId || null };
-}
-
 const getAllSections = async (req, res) => {
   try {
-    const academicYearId = parseOptionalInt(req.query?.academic_year_id);
-    const where = academicYearId ? 'WHERE s.academic_year_id = $1' : '';
-    const params = academicYearId ? [academicYearId] : [];
     const result = await query(`
       SELECT
         s.id, s.section_name, s.class_id, s.section_teacher_id, s.max_students, s.room_number,
         s.description, s.is_active, s.created_at, s.created_by, s.modified_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
-        s.academic_year_id,
         c.class_name, c.class_code, st.first_name as teacher_first_name, st.last_name as teacher_last_name
       FROM sections s
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN staff st ON s.section_teacher_id = st.id
-      ${where}
       ORDER BY c.class_name ASC, s.section_name ASC
-    `, params);
+    `, []);
     return success(res, 200, 'Sections fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching sections:', error);
@@ -100,7 +77,6 @@ const getSectionById = async (req, res) => {
         s.created_by,
         s.modified_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
-        s.academic_year_id,
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -143,7 +119,6 @@ const getSectionsByClass = async (req, res) => {
         s.is_active,
         s.created_at,
         (SELECT COUNT(*)::int FROM students st WHERE st.section_id = s.id AND st.is_active = true) as no_of_students,
-        s.academic_year_id,
         c.class_name,
         c.class_code,
         st.first_name as teacher_first_name,
@@ -166,7 +141,7 @@ const createSection = async (req, res) => {
   try {
     const {
       section_name, class_id, section_teacher_id, max_students, room_number,
-      description, is_active, academic_year_id,
+      description, is_active,
     } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
@@ -181,15 +156,11 @@ const createSection = async (req, res) => {
 
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
     const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
-    const resolvedYear = await resolveSectionAcademicYear(class_id, academic_year_id);
-    if (!resolvedYear.ok) {
-      return errorResponse(res, resolvedYear.status, resolvedYear.message);
-    }
 
     const result = await query(
       `INSERT INTO sections (
-        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by, academic_year_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        section_name, class_id, section_teacher_id, max_students, room_number, description, is_active, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
         nameNorm,
         class_id,
@@ -199,7 +170,6 @@ const createSection = async (req, res) => {
         descNorm,
         normalizeBool(is_active, true),
         createdByArg,
-        resolvedYear.academicYearId,
       ]
     );
     await query('UPDATE classes SET has_sections = true, modified_at = NOW() WHERE id = $1', [class_id]);
@@ -219,7 +189,7 @@ const updateSection = async (req, res) => {
     const current = await query('SELECT * FROM sections WHERE id = $1', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Section not found');
     const cur = current.rows[0];
-    const classId = parseOptionalInt(cur.class_id);
+
     const sectionTeacherId = Object.prototype.hasOwnProperty.call(payload, 'section_teacher_id')
       ? payload.section_teacher_id
       : cur.section_teacher_id;
@@ -249,13 +219,6 @@ const updateSection = async (req, res) => {
     const isActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
       ? normalizeBool(payload.is_active, cur.is_active)
       : cur.is_active;
-    const requestedAcademicYearId = Object.prototype.hasOwnProperty.call(payload, 'academic_year_id')
-      ? payload.academic_year_id
-      : cur.academic_year_id;
-    const resolvedYear = await resolveSectionAcademicYear(classId, requestedAcademicYearId);
-    if (!resolvedYear.ok) {
-      return errorResponse(res, resolvedYear.status, resolvedYear.message);
-    }
 
     const result = await query(`
       UPDATE sections SET
@@ -265,9 +228,8 @@ const updateSection = async (req, res) => {
         room_number = $4,
         description = $5,
         is_active = $6,
-        academic_year_id = $7,
         modified_at = NOW()
-      WHERE id = $8
+      WHERE id = $7
       RETURNING *
     `, [
       sectionName,
@@ -276,7 +238,6 @@ const updateSection = async (req, res) => {
       roomNumber,
       description,
       isActive,
-      resolvedYear.academicYearId,
       id
     ]);
     return success(res, 200, 'Section updated successfully', result.rows[0]);

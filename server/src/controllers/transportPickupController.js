@@ -8,7 +8,6 @@ function mapPickupRow(row) {
   return {
     id: row.id,
     point_name: row.point_name || '',
-    academic_year_id: row.academic_year_id || null,
     is_active: row.is_active !== false && row.is_active !== 'f',
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -17,7 +16,6 @@ function mapPickupRow(row) {
 
 const getAllPickupPoints = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
     const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
@@ -57,11 +55,9 @@ const getAllPickupPoints = async (req, res) => {
       limit = 10, 
       search = '', 
       status = 'all', 
-      academic_year_id,
       sortField = 'point_name', 
       sortOrder = 'ASC' 
     } = req.query;
-    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['point_name', 'id', 'created_at', 'is_active'];
@@ -85,10 +81,6 @@ const getAllPickupPoints = async (req, res) => {
     if (status !== 'all') {
       params.push(status === 'active');
       sqlFilters += ` AND is_active = $${params.length}`;
-    }
-    if (hasAcademicYearId && scopedAcademicYearId) {
-      params.push(scopedAcademicYearId);
-      sqlFilters += ` AND academic_year_id = $${params.length}`;
     }
 
     const countSql = `SELECT COUNT(*) ${baseSql} ${sqlFilters}`;
@@ -171,11 +163,9 @@ const getPickupPointById = async (req, res) => {
 
 const createPickupPoint = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
     const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { 
       point_name, 
-      academic_year_id,
       is_active 
     } = req.body;
 
@@ -183,31 +173,7 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'Pickup point name is required');
     }
 
-    const scopedAcademicYearId = hasAcademicYearId
-      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
-      : null;
-
-    // Check for duplicate name
-    const existing = hasAcademicYearId
-      ? await query(
-          `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'} AND academic_year_id = $2`,
-          [point_name, scopedAcademicYearId]
-        )
-      : await query(
-          `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
-          [point_name]
-        );
-    if (existing.rows.length > 0) {
-      return errorResponse(res, 400, 'A pickup point with this name already exists');
-    }
-
-    const result = hasAcademicYearId
-      ? await query(
-          `INSERT INTO pickup_points (point_name, is_active, academic_year_id) VALUES ($1, $2, $3) 
-           RETURNING *`,
-          [point_name, is_active !== false, scopedAcademicYearId]
-        )
-      : await query(
+    const result = await query(
           `INSERT INTO pickup_points (point_name, is_active) VALUES ($1, $2)
            RETURNING *`,
           [point_name, is_active !== false]
@@ -222,7 +188,6 @@ const createPickupPoint = async (req, res) => {
 
 const updatePickupPoint = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('pickup_points', 'academic_year_id');
     const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { id } = req.params;
     const numericId = parseInt(id);
@@ -233,7 +198,6 @@ const updatePickupPoint = async (req, res) => {
 
     const { 
       point_name, 
-      academic_year_id,
       is_active 
     } = req.body;
 
@@ -262,10 +226,6 @@ const updatePickupPoint = async (req, res) => {
     if (is_active !== undefined) {
       updates.push(`is_active = $${i++}`);
       values.push(is_active !== false);
-    }
-    if (hasAcademicYearId && academic_year_id !== undefined) {
-      updates.push(`academic_year_id = $${i++}`);
-      values.push(toPositiveInt(academic_year_id));
     }
 
     if (updates.length === 0) {
