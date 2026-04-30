@@ -1373,64 +1373,6 @@ const TeacherForm = () => {
                     </div>
                   </div>
                   {/* /Payroll */}
-                  {/* Leaves */}
-                  <div className="card">
-                    <div className="card-header bg-light">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-users fs-16" />
-                        </span>
-                        <h4 className="text-dark">Leaves</h4>
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Medical Leaves</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={isEdit ? "01" : undefined}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Casual Leaves</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={isEdit ? "02" : undefined}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">
-                              Maternity Leaves
-                            </label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={isEdit ? "20" : undefined}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-lg-3 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Sick Leaves</label>
-                            <input
-                              type="text"
-                              className="form-control"
-                              defaultValue={isEdit ? "02" : undefined}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Leaves */}
                   {/* Bank Details */}
                   <div className="card">
                     <div className="card-header bg-light">

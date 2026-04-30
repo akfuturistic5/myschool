@@ -38,7 +38,7 @@ const StudentAttendanceType = () => {
 
     const fetchFilterOptions = async () => {
       try {
-        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const classesPromise = apiService.getClasses();
         const [classesResult, sectionsResult] = await Promise.allSettled([classesPromise, apiService.getSections()]);
         if (cancelled) return;
 

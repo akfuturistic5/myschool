@@ -1,4 +1,4 @@
-import  { useRef, useState } from "react";
+import  { useCallback, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import ParentModal from "../parentModal";
@@ -16,6 +16,7 @@ import CommonSelect from "../../../../core/common/commonSelect";
 import { Modal } from "react-bootstrap";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useParents } from "../../../../core/hooks/useParents";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 const ParentGrid = () => {
   const [show, setShow] = useState(false);
@@ -36,6 +37,50 @@ const ParentGrid = () => {
   // Re-mapping here would lose data (because raw API fields are no longer present),
   // so we just pass the hook data through.
   const data = parents ?? [];
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Parent Name", dataKey: "name" },
+      { title: "Mother Name", dataKey: "motherName" },
+      { title: "Child", dataKey: "child" },
+      { title: "Class", dataKey: "className" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "Mother Phone", dataKey: "motherPhone" },
+      { title: "Email", dataKey: "email" },
+      { title: "Mother Email", dataKey: "motherEmail" },
+    ],
+    []
+  );
+  const exportRows = useMemo(
+    () =>
+      (Array.isArray(data) ? data : []).map((row: any) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        motherName: String(row.mother_name ?? ""),
+        child: String(row.Child ?? ""),
+        className: String(row.class ?? ""),
+        phone: String(row.phone ?? ""),
+        motherPhone: String(row.mother_phone ?? ""),
+        email: String(row.email ?? ""),
+        motherEmail: String(row.mother_email ?? ""),
+      })),
+    [data]
+  );
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "parents-grid", "Parents");
+  }, [exportRows]);
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Parents Grid", "parents-grid", exportColumns);
+  }, [exportRows, exportColumns]);
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Parents Grid", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -80,21 +125,12 @@ const ParentGrid = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
-
-              {canManageParents && (
-                <div className="mb-2">
-                  <Link
-                    to="#"
-                    className="btn btn-primary d-flex align-items-center"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_parent"
-                  >
-                    <i className="ti ti-square-rounded-plus me-2" />
-                    Add Parent
-                  </Link>
-                </div>
-              )}
+            <TooltipOption
+              onRefresh={handleToolbarRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
             </div>
           </div>
           {/* /Page Header */}

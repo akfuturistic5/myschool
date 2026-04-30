@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService.js';
 
-export const useClasses = (academicYearId = null) => {
+export const useClasses = () => {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -11,12 +11,8 @@ export const useClasses = (academicYearId = null) => {
       setLoading(true);
       setError(null);
 
-      let response;
-      if (academicYearId) {
-        response = await apiService.getClassesByAcademicYear(academicYearId);
-      } else {
-        response = await apiService.getClasses();
-      }
+      // classes are no longer scoped by academic year
+      const response = await apiService.getClasses();
 
       // Handle both { data: [...] } and direct array (for different API shapes)
       const raw = response?.data ?? (Array.isArray(response) ? response : null);
@@ -32,7 +28,7 @@ export const useClasses = (academicYearId = null) => {
 
   useEffect(() => {
     fetchClasses();
-  }, [academicYearId]);
+  }, []);
 
   return {
     classes,

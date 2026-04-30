@@ -1,4 +1,4 @@
-import  { useRef, useState } from "react";
+import  { useCallback, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import PredefinedDateRanges from "../../../../core/common/datePicker";
@@ -15,6 +15,7 @@ import TooltipOption from "../../../../core/common/tooltipOption";
 import { useGuardians } from "../../../../core/hooks/useGuardians";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 const GuardianGrid = () => {
   const [show, setShow] = useState(false);
@@ -32,6 +33,48 @@ const GuardianGrid = () => {
   // Re-mapping here would lose data (because raw API fields are no longer present),
   // so we just pass the hook data through.
   const data = guardians ?? [];
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Guardian Name", dataKey: "name" },
+      { title: "Guardian Type", dataKey: "guardianType" },
+      { title: "Relation", dataKey: "relation" },
+      { title: "Child", dataKey: "child" },
+      { title: "Class", dataKey: "className" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "Email", dataKey: "email" },
+    ],
+    []
+  );
+  const exportRows = useMemo(
+    () =>
+      (Array.isArray(data) ? data : []).map((row: any) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        guardianType: String(row.guardian_type ?? ""),
+        relation: String(row.relation ?? ""),
+        child: String(row.Child ?? ""),
+        className: String(row.class ?? ""),
+        phone: String(row.phone ?? ""),
+        email: String(row.email ?? ""),
+      })),
+    [data]
+  );
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "guardians-grid", "Guardians");
+  }, [exportRows]);
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Guardians Grid", "guardians-grid", exportColumns);
+  }, [exportRows, exportColumns]);
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Guardians Grid", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -76,21 +119,12 @@ const GuardianGrid = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
-
-              {!isGuardian && (
-                <div className="mb-2">
-                  <Link
-                    to="#"
-                    className="btn btn-primary d-flex align-items-center"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_guardian"
-                  >
-                    <i className="ti ti-square-rounded-plus me-2" />
-                    Add Guardian
-                  </Link>
-                </div>
-              )}
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
             </div>
           </div>
           {/* /Page Header */}

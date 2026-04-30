@@ -343,6 +343,45 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
     );
   }
 
+  // Final duplicate-email guard:
+  // Even when input emails look unique, resolved/reused users can still map
+  // multiple slots to the same normalized email in legacy guardians schema.
+  // Validate against effective user emails before INSERT to avoid DB 23505.
+  if (!slim) {
+    const slotRows = [
+      { label: 'Father', userId: fatherUserId },
+      { label: 'Mother', userId: motherUserId },
+      { label: 'Guardian', userId: guardianUserId },
+    ].filter((s) => Number.isFinite(Number(s.userId)) && Number(s.userId) > 0);
+
+    if (slotRows.length > 1) {
+      const emailBySlot = [];
+      for (const s of slotRows) {
+        const ures = await client.query(
+          `SELECT email FROM users WHERE id = $1 LIMIT 1`,
+          [s.userId]
+        );
+        const normalized = String(ures.rows[0]?.email || '')
+          .trim()
+          .toLowerCase();
+        if (normalized) emailBySlot.push({ label: s.label, email: normalized });
+      }
+
+      const seen = new Map();
+      for (const entry of emailBySlot) {
+        if (seen.has(entry.email)) {
+          const first = seen.get(entry.email);
+          const err = new Error(
+            `Duplicate guardian email "${entry.email}" for ${first} and ${entry.label}. Each contact (Father, Mother, Guardian) must have a unique email.`
+          );
+          err.statusCode = 409;
+          throw err;
+        }
+        seen.set(entry.email, entry.label);
+      }
+    }
+  }
+
   // Nullify current link first to avoid FK constraint on delete
   await client.query(`UPDATE students SET guardian_id = NULL WHERE id = $1`, [studentId]);
   await client.query(`DELETE FROM guardians WHERE student_id = $1`, [studentId]);

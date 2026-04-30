@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { all_routes } from '../../../router/all_routes'
@@ -12,6 +12,7 @@ import { useStudents } from '../../../../core/hooks/useStudents'
 import { useCurrentStudent } from '../../../../core/hooks/useCurrentStudent'
 import { selectUser } from '../../../../core/data/redux/authSlice'
 import { getDashboardForRole } from '../../../../core/utils/roleUtils'
+import { exportToExcel, exportToPDF, printData } from '../../../../core/utils/exportUtils'
 
 const StudentGrid = () => {
   const routes = all_routes
@@ -22,7 +23,7 @@ const StudentGrid = () => {
   const role = (user?.role || '').toLowerCase()
   const isStudentRole = role === 'student'
 
-  const { students, loading, error } = useStudents()
+  const { students, loading, error, refetch } = useStudents()
   const { student: currentStudent, loading: currentStudentLoading, error: currentStudentError } = useCurrentStudent()
 
   const studentsToShow = isStudentRole ? (currentStudent ? [currentStudent] : []) : students
@@ -57,6 +58,48 @@ const StudentGrid = () => {
   })
 
   const transformedData = studentsToShow.map((student: any) => transformStudent(student))
+  const exportColumns = useMemo(
+    () => [
+      { title: "Admission No", dataKey: "admission_number" },
+      { title: "Name", dataKey: "full_name" },
+      { title: "Roll No", dataKey: "roll_number" },
+      { title: "Class & Section", dataKey: "class_section" },
+      { title: "Gender", dataKey: "gender" },
+      { title: "Joined On", dataKey: "admission_date" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  )
+  const exportRows = useMemo(
+    () =>
+      (Array.isArray(transformedData) ? transformedData : []).map((row: any) => ({
+        admission_number: String(row.admission_number ?? ""),
+        full_name: String(row.full_name ?? ""),
+        roll_number: String(row.roll_number ?? ""),
+        class_section: String(row.class_section ?? ""),
+        gender: String(row.gender ?? ""),
+        admission_date: row.admission_date
+          ? new Date(row.admission_date).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })
+          : 'N/A',
+        status: String(row.status ?? ""),
+      })),
+    [transformedData]
+  )
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch()
+  }, [refetch])
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return
+    exportToExcel(exportRows, 'students-grid', 'Students')
+  }, [exportRows])
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return
+    exportToPDF(exportRows, 'Students Grid', 'students-grid', exportColumns)
+  }, [exportRows, exportColumns])
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return
+    printData('Students Grid', exportColumns, exportRows)
+  }, [exportRows, exportColumns])
 
   const handleApplyClick = () => {
       if (dropdownMenuRef.current) {
@@ -93,7 +136,12 @@ const StudentGrid = () => {
           </nav>
         </div>
         <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-        <TooltipOption />
+        <TooltipOption
+          onRefresh={handleToolbarRefresh}
+          onPrint={handlePrint}
+          onExportPdf={handleExportPdf}
+          onExportExcel={handleExportExcel}
+        />
 
           <div className="mb-2">
             <Link

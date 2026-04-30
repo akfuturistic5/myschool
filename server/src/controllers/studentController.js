@@ -536,6 +536,31 @@ const createStudent = async (req, res) => {
     if (error.statusCode === 400) {
       return res.status(400).json({ status: 'ERROR', message: process.env.NODE_ENV === 'production' ? 'Invalid request' : error.message });
     }
+    if (error.statusCode === 409) {
+      return res.status(409).json({ status: 'ERROR', message: error.message || 'Conflict detected' });
+    }
+    if (
+      error &&
+      error.code === '23505' &&
+      String(error.constraint || '').toLowerCase() === 'uq_guardians_student_email'
+    ) {
+      return res.status(409).json({
+        status: 'ERROR',
+        message:
+          'Guardian contacts for this student contain duplicate email values. Please keep Father, Mother, and Guardian emails unique.',
+      });
+    }
+    if (
+      error &&
+      error.code === '23505' &&
+      String(error.constraint || '').toLowerCase() === 'uq_guardians_student_phone'
+    ) {
+      return res.status(409).json({
+        status: 'ERROR',
+        message:
+          'Guardian contacts for this student contain duplicate phone values. Please keep Father, Mother, and Guardian phone numbers unique.',
+      });
+    }
     const devMsg = process.env.NODE_ENV !== 'production' ? (error.message || 'Failed to create student') : 'Failed to create student';
     res.status(500).json({
       status: 'ERROR',
@@ -1249,6 +1274,28 @@ const updateStudent = async (req, res) => {
     }
     if (error.statusCode === 409) {
       return res.status(409).json({ status: 'ERROR', message: error.message });
+    }
+    if (
+      error &&
+      error.code === '23505' &&
+      String(error.constraint || '').toLowerCase() === 'uq_guardians_student_email'
+    ) {
+      return res.status(409).json({
+        status: 'ERROR',
+        message:
+          'Guardian contacts for this student contain duplicate email values. Please keep Father, Mother, and Guardian emails unique.',
+      });
+    }
+    if (
+      error &&
+      error.code === '23505' &&
+      String(error.constraint || '').toLowerCase() === 'uq_guardians_student_phone'
+    ) {
+      return res.status(409).json({
+        status: 'ERROR',
+        message:
+          'Guardian contacts for this student contain duplicate phone values. Please keep Father, Mother, and Guardian phone numbers unique.',
+      });
     }
     const devMsg = process.env.NODE_ENV !== 'production' ? (error.message || 'Failed to update student') : 'Failed to update student';
     res.status(500).json({

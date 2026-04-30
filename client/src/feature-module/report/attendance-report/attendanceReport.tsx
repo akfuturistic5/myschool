@@ -71,10 +71,10 @@ const AttendanceReport = () => {
 
     const fetchFilterOptions = async () => {
       try {
-        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const classesPromise = apiService.getClasses();
         const [classesResult, sectionsResult] = await Promise.allSettled([
           classesPromise,
-          apiService.getSections(academicYearId ? { academic_year_id: academicYearId } : {}),
+          apiService.getSections(),
         ]);
 
         if (cancelled) return;

@@ -120,9 +120,7 @@ const AdminDashboard = () => {
     (async () => {
       try {
         const res =
-          academicYearId != null
-            ? await apiService.getClassesByAcademicYear(academicYearId)
-            : await apiService.getClasses();
+          await apiService.getClasses();
         const raw = res?.data;
         const arr = Array.isArray(raw) ? raw : [];
         if (!mounted) return;

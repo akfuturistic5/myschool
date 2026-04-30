@@ -1,7 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useTeachers } from "../../../core/hooks/useTeachers";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
 import { useClassRooms } from "../../../core/hooks/useClassRooms";
@@ -79,10 +77,9 @@ function hideBootstrapModalAndWaitForClosed(modalEl: HTMLElement | null): Promis
 
 const ClassSection = () => {
   const routes = all_routes;
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { sections, loading, error, refetch } = useSections(null, { academicYearId });
+  const { sections, loading, error, refetch } = useSections();
   const { teachers = [] } = useTeachers();
-  const { classes = [] } = useClasses(academicYearId);
+  const { classes = [] } = useClasses();
   const { classRooms = [] } = useClassRooms();
   const [selectedSection, setSelectedSection] = useState<any>(null);
   const [editSectionName, setEditSectionName] = useState<string>('');

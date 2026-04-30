@@ -29,7 +29,7 @@ import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
 import {
   focusAddStudentField,
   formControlInvalidClass,
@@ -346,7 +346,7 @@ const AddStudent = () => {
   const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms();
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
   const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
     value: String((h.originalData as { id?: number })?.id ?? ""),
     label: (h.hostelName as string) || "N/A",
@@ -378,14 +378,19 @@ const AddStudent = () => {
     original: p,
   })).filter((o: { value: string }) => o.value);
 
-  const vehicleOptions = (vehicles || []).map((v: any) => {
-    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "";
-    return {
-      value: vehicleNo || "",
-      label: vehicleNo || "N/A",
-      original: v,
-    };
-  }).filter((o: { value: string }) => o.value);
+  const vehicleOptions = (vehicles || [])
+    .filter((v: any) =>
+      formData.route_id ? String(v.originalData?.route_id ?? "") === String(formData.route_id) : true
+    )
+    .map((v: any) => {
+      const vehicleNo = v.vehicle ?? v.vehicleNo ?? v.originalData?.vehicle_number ?? "";
+      return {
+        value: vehicleNo || "",
+        label: vehicleNo || "N/A",
+        original: v,
+      };
+    })
+    .filter((o: { value: string }) => o.value);
 
   // Parse comma-separated or single string into array of non-empty trimmed strings
   const parseTagList = (val: unknown): string[] => {
@@ -552,13 +557,6 @@ const AddStudent = () => {
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
   
-  // Refetch vehicles when route changes
-  useEffect(() => {
-    if (setVehicleParams) {
-      setVehicleParams({ route_id: formData.route_id || 'all' });
-    }
-  }, [formData.route_id, setVehicleParams]);
-
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
     if (!isEdit && academicYearsList.length > 0) {
@@ -945,13 +943,19 @@ const AddStudent = () => {
         const lines = response.warnings
           .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
           .filter(Boolean);
+        const warningsText = lines.join(" ").toLowerCase();
+        const isPhoneConflict = warningsText.includes("phone");
+        const title = isPhoneConflict ? "Duplicate Phone Number" : "Duplicate Email";
+        const confirmText = isPhoneConflict ? "Fix Phone Numbers" : "Fix Emails";
         await Swal.fire({
           icon: "error",
-          title: "Email Already In Use",
+          title,
           html: lines.length > 0
             ? lines.map(l => `<p>${l}</p>`).join('')
-            : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
-          confirmButtonText: "Fix Emails",
+            : isPhoneConflict
+              ? "<p>One or more phone numbers are already conflicting with another contact. Please use a different phone number.</p>"
+              : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
+          confirmButtonText: confirmText,
         });
         // Do NOT navigate — stay on the form so the user can correct the emails
         setIsSubmitting(false);
@@ -962,17 +966,21 @@ const AddStudent = () => {
       navigate(routes.studentList);
     } catch (error: any) {
       console.error('Error saving student:', error);
-      // 409 = email conflict — show a clear modal and stay on the form
+      // 409 = conflict (email/phone) — show a clear modal and stay on the form
       if (error?.status === 409) {
         // Extract the message from the error (apiService sets error.message = "HTTP error! status: 409, message: <backend msg>")
         const raw: string = error.message || '';
         const match = raw.match(/message:\s*(.+)/);
-        const userMsg = match ? match[1] : raw || 'An email address is already in use by another account.';
+        const userMsg = match ? match[1] : raw || 'A contact value is already in use.';
+        const lowerMsg = userMsg.toLowerCase();
+        const isPhoneConflict = lowerMsg.includes('phone');
+        const title = isPhoneConflict ? 'Duplicate Phone Number' : 'Duplicate Email';
+        const confirmText = isPhoneConflict ? 'Fix Phone Numbers' : 'Fix Emails';
         await Swal.fire({
           icon: 'error',
-          title: 'Duplicate Email',
+          title,
           text: userMsg,
-          confirmButtonText: 'Fix Emails',
+          confirmButtonText: confirmText,
         });
       } else {
         setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);

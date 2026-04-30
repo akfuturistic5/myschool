@@ -1,4 +1,4 @@
-import  { useRef } from 'react'
+import  { useCallback, useMemo, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { all_routes } from '../../../router/all_routes'
@@ -12,6 +12,7 @@ import { useTeachers } from '../../../../core/hooks/useTeachers.js'
 import { useCurrentTeacher } from '../../../../core/hooks/useCurrentTeacher.js'
 import { selectUser } from '../../../../core/data/redux/authSlice'
 import { getDashboardForRole } from '../../../../core/utils/roleUtils'
+import { exportToExcel, exportToPDF, printData } from '../../../../core/utils/exportUtils'
 
 const TeacherGrid = () => {
     const routes = all_routes
@@ -21,7 +22,7 @@ const TeacherGrid = () => {
     const role = (user?.role || '').toLowerCase();
     const isTeacherRole = role === 'teacher';
 
-    const { teachers, loading, error } = useTeachers();
+    const { teachers, loading, error, refetch } = useTeachers();
     const { teacher: currentTeacher, loading: currentTeacherLoading, error: currentTeacherError } = useCurrentTeacher();
 
     // For Teacher role: show only logged-in teacher's data; otherwise show all teachers
@@ -32,6 +33,47 @@ const TeacherGrid = () => {
     const listLoading = isTeacherRole ? currentTeacherLoading : loading;
     const listError = isTeacherRole ? currentTeacherError : error;
     const backTo = isTeacherRole ? getDashboardForRole(role) : routes.teacherList;
+    const exportColumns = useMemo(
+      () => [
+        { title: "ID", dataKey: "id" },
+        { title: "Name", dataKey: "name" },
+        { title: "Email", dataKey: "email" },
+        { title: "Phone", dataKey: "phone" },
+        { title: "Status", dataKey: "status" },
+        { title: "Subject", dataKey: "subject" },
+      ],
+      []
+    );
+    const exportRows = useMemo(
+      () =>
+        (Array.isArray(teachersToShow) ? teachersToShow : []).map((teacher: any) => ({
+          id: String(teacher.id ?? ""),
+          name: `${String(teacher.first_name ?? "").trim()} ${String(teacher.last_name ?? "").trim()}`.trim(),
+          email: String(teacher.email ?? "N/A"),
+          phone: String(teacher.phone ?? "N/A"),
+          status:
+            teacher.status === "Active" || teacher.is_active === true || teacher.is_active === 1
+              ? "Active"
+              : "Inactive",
+          subject: String(teacher.subject_name ?? "N/A"),
+        })),
+      [teachersToShow]
+    );
+    const handleToolbarRefresh = useCallback(() => {
+      void refetch();
+    }, [refetch]);
+    const handleExportExcel = useCallback(() => {
+      if (!exportRows.length) return;
+      exportToExcel(exportRows, "teachers-grid", "Teachers");
+    }, [exportRows]);
+    const handleExportPdf = useCallback(() => {
+      if (!exportRows.length) return;
+      exportToPDF(exportRows, "Teachers Grid", "teachers-grid", exportColumns);
+    }, [exportRows, exportColumns]);
+    const handlePrint = useCallback(() => {
+      if (!exportRows.length) return;
+      printData("Teachers Grid", exportColumns, exportRows);
+    }, [exportRows, exportColumns]);
 
     const handleApplyClick = () => {
       if (dropdownMenuRef.current) {
@@ -99,7 +141,12 @@ const TeacherGrid = () => {
           </nav>
         </div>
         <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-        <TooltipOption />
+        <TooltipOption
+          onRefresh={handleToolbarRefresh}
+          onPrint={handlePrint}
+          onExportPdf={handleExportPdf}
+          onExportExcel={handleExportExcel}
+        />
 
           {!isTeacherRole && (
             <div className="mb-2">
@@ -300,7 +347,6 @@ const TeacherGrid = () => {
                           state={{ teacherId: teacher.id, teacher }}
                         >{`${teacher.first_name} ${teacher.last_name}`}</Link>
                       </h6>
-                      <p>{teacher.class_name || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
