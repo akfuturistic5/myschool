@@ -39,7 +39,7 @@ const StudentFees = () => {
     (currentAcademicYear as any)?.id ?? null
   );
 
-  const feeData = (data as any[]) || [];
+  const feeData = ((data as unknown) as any[]) || [];
 
   const showLoading = loading;
   if (showLoading) {
@@ -123,6 +123,16 @@ const StudentFees = () => {
                       >
                         <i className="ti ti-bookmark-edit me-2" />
                         Exam &amp; Results
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-books me-2" />
+                        Library
                       </Link>
                     </li>
                   </ul>

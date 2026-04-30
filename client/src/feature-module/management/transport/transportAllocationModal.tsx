@@ -54,6 +54,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkStatus, setBulkStatus] = useState("Active");
   const [bulkAvailableRoutes, setBulkAvailableRoutes] = useState<any[]>([]);
   const [bulkAvailableVehicles, setBulkAvailableVehicles] = useState<any[]>([]);
+  const [bulkSeatAvailability, setBulkSeatAvailability] = useState<{ available: number; occupied: number; capacity: number } | null>(null);
   const [bulkSelectedUserIds, setBulkSelectedUserIds] = useState<number[]>([]);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkClassFilter, setBulkClassFilter] = useState("all");
@@ -61,19 +62,27 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkDepartmentFilter, setBulkDepartmentFilter] = useState("all");
   const hydratingSinglePickupRef = useRef(false);
   const hydratingSingleRouteRef = useRef(false);
+  const isEditMode = Boolean(selectedAllocation?.originalData?.id);
 
   const toErrorText = (err: any, fallback: string) => {
-    let msg = err?.message || fallback;
+    let msg: any = err?.message || fallback;
     if (typeof msg === "string" && msg.includes("message:")) {
       try {
-        const raw = msg.split("message:")[1].trim();
+        const raw = msg.substring(msg.indexOf("message:") + "message:".length).trim();
         const parsed = JSON.parse(raw);
         msg = parsed?.message || msg;
       } catch {
         // keep original
       }
     }
-    return msg;
+    if (typeof msg === "string") {
+      msg = msg
+        .replace(/^HTTP error! status:\s*\d+,\s*/i, "")
+        .replace(/^status:\s*\d+,\s*/i, "")
+        .trim();
+      if (!msg) msg = fallback;
+    }
+    return typeof msg === "string" ? msg : fallback;
   };
 
   useEffect(() => {
@@ -102,7 +111,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       hydratingSinglePickupRef.current = true;
       hydratingSingleRouteRef.current = true;
       setSingleUserType(row.user_type || "student");
-      setSingleUserId(String(row.user_id || ""));
+      setSingleUserId(String(row.student_id || row.staff_id || row.user_id || ""));
       setSinglePickupPointId(String(row.pickup_point_id || ""));
       setSingleRouteId(String(row.route_id || ""));
       setSingleVehicleId(String(row.vehicle_id || ""));
@@ -159,7 +168,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     }
     loadRoutesForPickup(singlePickupPointId, setSingleAvailableRoutes);
     if (isHydrating) hydratingSinglePickupRef.current = false;
-  }, [singlePickupPointId]);
+  }, [singlePickupPointId, academicYearId]);
   useEffect(() => {
     const isHydrating = hydratingSingleRouteRef.current;
     if (!isHydrating) {
@@ -167,18 +176,64 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     }
     loadVehiclesForRoute(singleRouteId, setSingleAvailableVehicles);
     if (isHydrating) hydratingSingleRouteRef.current = false;
-  }, [singleRouteId]);
+  }, [singleRouteId, academicYearId]);
+
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!singleRouteId) {
+      setSingleVehicleId("");
+      return;
+    }
+    const defaultVehicleId = singleAvailableVehicles[0]?.id;
+    setSingleVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
+  }, [singleAvailableVehicles, singleRouteId, isEditMode]);
 
   useEffect(() => {
     setBulkRouteId("");
     setBulkVehicleId("");
     setBulkAssignedFeeId("");
     loadRoutesForPickup(bulkPickupPointId, setBulkAvailableRoutes);
-  }, [bulkPickupPointId]);
+  }, [bulkPickupPointId, academicYearId]);
   useEffect(() => {
     setBulkVehicleId("");
     loadVehiclesForRoute(bulkRouteId, setBulkAvailableVehicles);
-  }, [bulkRouteId]);
+  }, [bulkRouteId, academicYearId]);
+
+  useEffect(() => {
+    if (!bulkRouteId) {
+      setBulkVehicleId("");
+      return;
+    }
+    const defaultVehicleId = bulkAvailableVehicles[0]?.id;
+    setBulkVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
+  }, [bulkAvailableVehicles, bulkRouteId]);
+
+  useEffect(() => {
+    const loadSeatAvailability = async () => {
+      if (!bulkVehicleId || !bulkStartDate) {
+        setBulkSeatAvailability(null);
+        return;
+      }
+      try {
+        const res = await apiService.getTransportSeatAvailability({
+          vehicle_id: Number(bulkVehicleId),
+          start_date: bulkStartDate,
+        });
+        if (res?.status === "SUCCESS" && res?.data) {
+          setBulkSeatAvailability({
+            available: Number(res.data.available || 0),
+            occupied: Number(res.data.occupied || 0),
+            capacity: Number(res.data.capacity || 0),
+          });
+        } else {
+          setBulkSeatAvailability(null);
+        }
+      } catch {
+        setBulkSeatAvailability(null);
+      }
+    };
+    loadSeatAvailability();
+  }, [bulkVehicleId, bulkStartDate]);
 
   const resetSingleAddForm = () => {
     setSingleUserType("student");
@@ -227,13 +282,13 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
 
   const singleUserOptions =
     singleUserType === "student"
-      ? students.filter((s: any) => s.user_id != null).map((s: any) => ({
-          value: String(s.user_id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.user_id})`,
+      ? students.filter((s: any) => s.id != null).map((s: any) => ({
+          value: String(s.id),
+          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.id})`,
         }))
-      : staff.filter((s: any) => s.user_id != null).map((s: any) => ({
-          value: String(s.user_id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.user_id})`,
+      : staff.filter((s: any) => s.id != null).map((s: any) => ({
+          value: String(s.id),
+          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.id})`,
         }));
 
   const filteredSingleFees = useMemo(
@@ -255,7 +310,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setLoading(true);
     try {
       if (!singleUserId || !singleRouteId || !singlePickupPointId || !singleVehicleId) {
-        throw new Error("Please select user, pickup point, route and vehicle");
+        throw new Error("Please select user, pickup point and route");
       }
       if (!singleStartDate) {
         throw new Error("Please select a start date");
@@ -264,8 +319,10 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         throw new Error("Please select a fee plan");
       }
       const payload: any = {
-        user_id: Number(singleUserId),
         user_type: singleUserType,
+        ...(singleUserType === "student"
+          ? { student_id: Number(singleUserId) }
+          : { staff_id: Number(singleUserId) }),
         route_id: Number(singleRouteId),
         pickup_point_id: Number(singlePickupPointId),
         vehicle_id: Number(singleVehicleId),
@@ -313,7 +370,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const bulkDepartments = Array.from(new Set(staff.map((s: any) => s.department_name || s.department).filter(Boolean)));
 
   const bulkFilteredUsers = useMemo(() => {
-    let rows = bulkUsersSource.filter((u: any) => u.user_id != null);
+    let rows = bulkUsersSource.filter((u: any) => u.id != null);
     if (bulkSearch.trim()) {
       const q = bulkSearch.trim().toLowerCase();
       rows = rows.filter((u: any) =>
@@ -334,14 +391,12 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     return rows;
   }, [bulkUsersSource, bulkSearch, bulkUserType, bulkClassFilter, bulkSectionFilter, bulkDepartmentFilter]);
 
-  const isEditMode = Boolean(selectedAllocation?.originalData?.id);
-
   const saveBulkAllocation = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (!bulkPickupPointId || !bulkRouteId || !bulkVehicleId) {
-        throw new Error("Please select pickup point, route and vehicle");
+        throw new Error("Please select pickup point and route");
       }
       if (!bulkStartDate) {
         throw new Error("Please select a start date");
@@ -352,43 +407,34 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       if (bulkSelectedUserIds.length === 0) {
         throw new Error(`Please select at least one ${bulkUserType}`);
       }
-
-      let successCount = 0;
-      const failures: string[] = [];
-      for (const uid of bulkSelectedUserIds) {
-        const payload = {
-          user_id: Number(uid),
-          user_type: bulkUserType,
-          route_id: Number(bulkRouteId),
-          pickup_point_id: Number(bulkPickupPointId),
-          vehicle_id: Number(bulkVehicleId),
-          assigned_fee_id:
-            bulkUserType === "staff" && bulkIsFree
-              ? null
-              : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
-          is_free: bulkUserType === "staff" ? bulkIsFree : false,
-          start_date: bulkStartDate,
-          status: bulkStatus,
-          academic_year_id: academicYearId ?? undefined,
-        };
-        try {
-          const res = await apiService.createTransportAllocation(payload);
-          if (res?.status === "SUCCESS") successCount += 1;
-          else failures.push(`User ${uid}: ${res?.message || "failed"}`);
-        } catch (err: any) {
-          failures.push(`User ${uid}: ${toErrorText(err, "failed")}`);
-        }
+      if (bulkSeatAvailability && bulkSelectedUserIds.length > bulkSeatAvailability.available) {
+        throw new Error(`Only ${bulkSeatAvailability.available} seat(s) available. Please select up to ${bulkSeatAvailability.available} ${bulkUserType}(s).`);
       }
 
-      if (successCount === 0) {
-        throw new Error(`No allocations created.\n${failures.slice(0, 3).join("\n")}`);
+      const payload = {
+        user_type: bulkUserType,
+        user_ids: bulkSelectedUserIds.map((id) => Number(id)),
+        route_id: Number(bulkRouteId),
+        pickup_point_id: Number(bulkPickupPointId),
+        vehicle_id: Number(bulkVehicleId),
+        assigned_fee_id:
+          bulkUserType === "staff" && bulkIsFree
+            ? null
+            : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
+        is_free: bulkUserType === "staff" ? bulkIsFree : false,
+        start_date: bulkStartDate,
+        status: bulkStatus,
+        academic_year_id: academicYearId ?? undefined,
+      };
+      const bulkRes = await apiService.createTransportAllocationBulk(payload);
+      if (bulkRes?.status !== "SUCCESS") {
+        throw new Error(bulkRes?.message || "Failed to save bulk allocations");
       }
+
       Swal.fire({
-        icon: failures.length ? "warning" : "success",
-        title: failures.length ? "Partial Success" : "Success",
-        text: failures.length
-          ? `Created ${successCount} allocations. ${failures.length} failed.`
-          : `Created ${successCount} allocations successfully.`,
+        icon: "success",
+        title: "Success",
+        text: `Created ${Number(bulkRes?.data?.createdCount || bulkSelectedUserIds.length)} allocations successfully.`,
       });
       hideModal("add_transport_allocation_bulk");
       resetBulkForm();
@@ -475,7 +521,15 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                 <div className="row">
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Vehicle (for selected route)</label>
-                    <CommonSelect className="select" options={singleAvailableVehicles.map((v: any) => ({ value: String(v.id), label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})` }))} value={singleVehicleId} onChange={(v: string | null) => setSingleVehicleId(v || "")} />
+                    <CommonSelect
+                      className="select"
+                      options={singleAvailableVehicles.map((v: any) => ({
+                        value: String(v.id),
+                        label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})`,
+                      }))}
+                      value={singleVehicleId}
+                      onChange={(v: string | null) => setSingleVehicleId(v || "")}
+                    />
                   </div>
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Start Date</label>
@@ -660,11 +714,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Vehicle (for selected route)</label>
-                    <CommonSelect className="select" options={bulkAvailableVehicles.map((v: any) => ({ value: String(v.id), label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})` }))} value={bulkVehicleId} onChange={(v: string | null) => setBulkVehicleId(v || "")} />
-                  </div>
-                  <div className="col-md-6 mb-3">
+                  <div className="col-md-12 mb-3">
                     <label className="form-label">Start Date</label>
                     <DatePicker
                       className="form-control datetimepicker"
@@ -712,6 +762,13 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     </div>
                   )}
                 </div>
+                {bulkSeatAvailability && (
+                  <div className="mb-3">
+                    <span className="badge bg-soft-info">
+                      Seats Available: {bulkSeatAvailability.available} / {bulkSeatAvailability.capacity}
+                    </span>
+                  </div>
+                )}
 
                 <div className="table-responsive border rounded" style={{ maxHeight: "250px", overflowY: "auto" }}>
                   <table className="table mb-0">
@@ -720,10 +777,29 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                         <th style={{ width: "50px" }}>
                           <input
                             type="checkbox"
-                            checked={bulkFilteredUsers.length > 0 && bulkSelectedUserIds.length === bulkFilteredUsers.length}
+                            checked={
+                              bulkFilteredUsers.length > 0 &&
+                              bulkSelectedUserIds.length === Math.min(
+                                bulkFilteredUsers.length,
+                                Math.max(0, bulkSeatAvailability?.available ?? bulkFilteredUsers.length)
+                              )
+                            }
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setBulkSelectedUserIds(bulkFilteredUsers.map((u: any) => Number(u.user_id)));
+                                const maxSelectable = Math.max(0, bulkSeatAvailability?.available ?? bulkFilteredUsers.length);
+                                if (maxSelectable <= 0) {
+                                  Swal.fire({ icon: "warning", title: "No Seats Available", text: "No seats are available for this vehicle." });
+                                  return;
+                                }
+                                const nextIds = bulkFilteredUsers.slice(0, maxSelectable).map((u: any) => Number(u.id));
+                                setBulkSelectedUserIds(nextIds);
+                                if (bulkFilteredUsers.length > maxSelectable) {
+                                  Swal.fire({
+                                    icon: "warning",
+                                    title: "Seat Limit",
+                                    text: `Only ${maxSelectable} seat(s) are available. You can select up to ${maxSelectable} user(s).`,
+                                  });
+                                }
                               } else {
                                 setBulkSelectedUserIds([]);
                               }
@@ -736,7 +812,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     </thead>
                     <tbody>
                       {bulkFilteredUsers.map((u: any) => {
-                        const uid = Number(u.user_id);
+                        const uid = Number(u.id);
                         const checked = bulkSelectedUserIds.includes(uid);
                         return (
                           <tr key={uid}>
@@ -744,8 +820,20 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                               <input
                                 type="checkbox"
                                 checked={checked}
+                                disabled={!checked && (bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER) <= bulkSelectedUserIds.length}
                                 onChange={(e) => {
-                                  if (e.target.checked) setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  if (e.target.checked) {
+                                    const maxSelectable = Math.max(0, bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER);
+                                    if (bulkSelectedUserIds.length >= maxSelectable) {
+                                      Swal.fire({
+                                        icon: "warning",
+                                        title: "Seat Limit Reached",
+                                        text: `Only ${maxSelectable} seat(s) are available. Please deselect one user to select another.`,
+                                      });
+                                      return;
+                                    }
+                                    setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  }
                                   else setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                 }}
                               />

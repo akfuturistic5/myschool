@@ -9,7 +9,9 @@ const { getAllAssignments, createAssignment, updateAssignment, deleteAssignment 
 const { getAllTransportFees, createTransportFee, updateTransportFee, deleteTransportFee } = require('../controllers/transportFeeController');
 const {
   getAllTransportAllocations,
+  getTransportSeatAvailability,
   createTransportAllocation,
+  createBulkTransportAllocations,
   updateTransportAllocation,
   deleteTransportAllocation,
 } = require('../controllers/transportAllocationController');
@@ -57,8 +59,10 @@ router.put('/fees/:id', requireRole([ROLES.ADMIN]), updateTransportFee);
 router.delete('/fees/:id', requireRole([ROLES.ADMIN]), deleteTransportFee);
 
 // Transport allocations (student/staff with history)
+router.get('/seat-availability', requireRole(ALL_AUTHENTICATED_ROLES), getTransportSeatAvailability);
 router.get('/allocations', requireRole(ALL_AUTHENTICATED_ROLES), getAllTransportAllocations);
 router.post('/allocations', requireRole([ROLES.ADMIN]), createTransportAllocation);
+router.post('/allocations/bulk', requireRole([ROLES.ADMIN]), createBulkTransportAllocations);
 router.put('/allocations/:id', requireRole([ROLES.ADMIN]), updateTransportAllocation);
 router.delete('/allocations/:id', requireRole([ROLES.ADMIN]), deleteTransportAllocation);
 
