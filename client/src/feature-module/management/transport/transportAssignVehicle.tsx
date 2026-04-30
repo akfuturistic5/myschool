@@ -9,13 +9,10 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportAssignments } from "../../../core/hooks/useTransportAssignments";
 import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportAssignVehicle = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   
   // State for search/filters
   const [params, setParams] = useState({
@@ -45,18 +42,14 @@ const TransportAssignVehicle = () => {
   useEffect(() => {
     const fetchFilters = async () => {
       try {
-        const res = await apiService.getTransportRoutes({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined });
+        const res = await apiService.getTransportRoutes({ status: 'active', limit: 1000 });
         if (res.status === "SUCCESS") setRoutesData(res.data);
       } catch (err) {
         console.error("Failed to fetch routes for filter:", err);
       }
     };
     fetchFilters();
-  }, [academicYearId]);
-
-  useEffect(() => {
-    setParams((prev) => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
-  }, [academicYearId]);
+  }, []);
 
   const handleSearch = (val: string) => {
     setParams((prev) => ({ ...prev, search: val, page: 1 }));

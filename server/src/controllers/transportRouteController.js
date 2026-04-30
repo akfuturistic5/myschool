@@ -1,7 +1,6 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapRouteRow(row, stops = []) {
@@ -218,20 +217,24 @@ const createRoute = async (req, res) => {
       stops = [] 
     } = req.body;
 
+    if (!route_name) {
+      return errorResponse(res, 400, 'Route name is required');
+    }
+
     const result = await executeTransaction(async (client) => {
       // 1. Insert Route
       const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
       const routeRes = distanceColumn
         ? await client.query(
-                `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
-                 VALUES ($1, $2, $3) RETURNING *`,
-                [route_name, distance_km || 0, is_active !== false]
-              )
+            `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
+             VALUES ($1, $2, $3) RETURNING *`,
+            [route_name, distance_km || 0, is_active !== false]
+          )
         : await client.query(
-                `INSERT INTO routes (route_name, is_active) 
-                 VALUES ($1, $2) RETURNING *`,
-                [route_name, is_active !== false]
-              );
+            `INSERT INTO routes (route_name, is_active) 
+             VALUES ($1, $2) RETURNING *`,
+            [route_name, is_active !== false]
+          );
       const newRoute = routeRes.rows[0];
 
       // 2. Insert Stops
