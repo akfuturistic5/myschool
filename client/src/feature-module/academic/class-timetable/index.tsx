@@ -207,7 +207,7 @@ const ClassTimetable = () => {
   const [filterClassId, setFilterClassId] = useState("");
   const [filterSectionId, setFilterSectionId] = useState("");
 
-  const { classes = [] } = useClasses(academicYearId ?? undefined);
+  const { classes = [] } = useClasses();
   const { sections = [] } = useSections(filterClassId || null, {
     fetchAllWhenNoClass: false,
     academicYearId: academicYearId ?? null,
@@ -242,13 +242,9 @@ const ClassTimetable = () => {
     return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) }))];
   };
 
-  const yearScopedClasses = useMemo(
-    () => classes.filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId)),
-    [classes, academicYearId]
-  );
   const classOptions: Opt[] = useMemo(
-    () => [{ value: "", label: "Select" }, ...yearScopedClasses.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
-    [yearScopedClasses]
+    () => [{ value: "", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
+    [classes]
   );
   const sectionOptions = options(sections, "id", "section_name");
   const subjectOptions: Opt[] = useMemo(() => {

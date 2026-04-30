@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useSelector } from "react-redux";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -10,21 +9,18 @@ import { all_routes } from "../../router/all_routes";
 import { useSubjects } from "../../../core/hooks/useSubjects";
 import { useClasses } from "../../../core/hooks/useClasses";
 import { useTeachers } from "../../../core/hooks/useTeachers";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 
 const ClassSubject = () => {
   const routes = all_routes;
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [classFilterId, setClassFilterId] = useState<string>("");
   const [codeFilter, setCodeFilter] = useState<string>("");
-  const { classes = [] } = useClasses(academicYearId);
+  const { classes = [] } = useClasses();
   const { teachers = [] } = useTeachers();
   const { subjects, loading, error, refetch } = useSubjects(
-    classFilterId ? Number(classFilterId) : null,
-    { academicYearId }
+    classFilterId ? Number(classFilterId) : null
   );
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const [addMessage, setAddMessage] = useState("");

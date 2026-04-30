@@ -34,18 +34,6 @@ const resolveTeacherStaffId = async (teacherIdRaw) => {
 // Get all subjects
 const getAllSubjects = async (req, res) => {
   try {
-    const academicYearId = parseOptionalInt(req.query?.academic_year_id);
-    const params = [];
-    let whereSql = '';
-    if (academicYearId) {
-      params.push(academicYearId);
-      whereSql = `
-        WHERE (
-          s.academic_year_id = $1
-          OR (s.academic_year_id IS NULL AND c.academic_year_id = $1)
-        )
-      `;
-    }
     const result = await query(`
       SELECT
         s.id,
@@ -61,10 +49,8 @@ const getAllSubjects = async (req, res) => {
         s.is_active,
         s.created_at
       FROM subjects s
-      LEFT JOIN classes c ON c.id = s.class_id
-      ${whereSql}
       ORDER BY s.subject_name ASC
-    `, params);
+    `);
     
     return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
@@ -159,21 +145,15 @@ const createSubject = async (req, res) => {
     const teacherResolved = await resolveTeacherStaffId(teacher_id);
     if (!teacherResolved.ok) return errorResponse(res, 400, teacherResolved.message);
 
-    let academicYearId = null;
-    if (class_id) {
-      const cls = await query('SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1', [class_id]);
-      academicYearId = cls.rows?.[0]?.academic_year_id ?? null;
-    }
-
     const result = await query(
       `INSERT INTO subjects (
         subject_name, subject_code, class_id, teacher_id, theory_hours, practical_hours,
-        total_marks, passing_marks, description, is_active, academic_year_id
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        total_marks, passing_marks, description, is_active
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [
         subject_name.trim(), subject_code || null, class_id || null, teacherResolved.value,
         theory_hours || 0, practical_hours || 0, total_marks || 0, passing_marks || 0,
-        description || null, is_active !== false, academicYearId
+        description || null, is_active !== false
       ]
     );
     return success(res, 201, 'Subject created successfully', result.rows[0]);

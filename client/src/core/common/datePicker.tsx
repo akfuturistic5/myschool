@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { DatePicker, Dropdown, Input } from 'antd';
 import dayjs from 'dayjs';
@@ -34,6 +34,15 @@ const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange, v
   };
   const [customVisible, setCustomVisible] = useState(false);
   const rangeRef = useRef<any>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const predefinedRanges: Record<string, [Dayjs, Dayjs]> = {
     Today: [dayjs(), dayjs()],
@@ -51,7 +60,12 @@ const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange, v
     if (key === 'Custom Range') {
       setCustomVisible(true);
       // Trigger calendar popup manually
-      setTimeout(() => rangeRef.current?.focus(), 0);
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+      focusTimeoutRef.current = setTimeout(() => {
+        rangeRef.current?.focus();
+      }, 0);
     } else {
       const newDates = predefinedRanges[key];
       setDateRange(newDates);

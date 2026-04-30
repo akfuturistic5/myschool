@@ -1756,26 +1756,33 @@ const AdminDashboard = () => {
                 </div>
                 <div className="card flex-fill mb-2">
                   <div className="card-body">
-                    <p className="mb-2">Student Not Paid</p>
+                    <p className="mb-2">Student Pending Amount</p>
                     <div className="d-flex align-items-end justify-content-between">
-                      <h4>{feeStats.studentNotPaid ?? 0}</h4>
+                      <h4>{formatFeeAmount(feeStats.totalOutstanding)}</h4>
                       <span className="badge badge-soft-info">
                         <i className="ti ti-chart-line me-1" />
                         Real
                       </span>
                     </div>
+                    <small className="text-muted d-block">Pending students: {feeStats.studentNotPaid ?? 0}</small>
+                    <small className="text-muted d-block">
+                      Assigned: {formatFeeAmount(feeStats.totalAssignedAmount)} | Paid: {formatFeeAmount(feeStats.totalFeesCollected)}
+                    </small>
                   </div>
                 </div>
                 <div className="card flex-fill mb-4">
                   <div className="card-body">
-                    <p className="mb-2">Total Outstanding</p>
+                    <p className="mb-2">Student Not Paid</p>
                     <div className="d-flex align-items-end justify-content-between">
-                      <h4>{formatFeeAmount(feeStats.totalOutstanding)}</h4>
+                      <h4>{feeStats.studentNotPaid ?? 0}</h4>
                       <span className="badge badge-soft-danger">
                         <i className="ti ti-chart-line me-1" />
                         Real
                       </span>
                     </div>
+                    <small className="text-muted d-block">
+                      Assigned students: {feeStats.studentsWithAssignments ?? 0} | Paid at least once: {feeStats.studentsWithAnyPayment ?? 0}
+                    </small>
                   </div>
                 </div>
               </div>

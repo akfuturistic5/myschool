@@ -35,6 +35,8 @@ const Classes = () => {
   const { teachers = [] } = useTeachers();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const editModalRef = useRef<HTMLDivElement | null>(null);
+  const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalCleanupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingRow, setEditingRow] = useState<EditRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -98,9 +100,23 @@ const Classes = () => {
     }
   }, [editingRow]);
 
+  useEffect(() => {
+    return () => {
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
+      }
+      if (modalCleanupTimeoutRef.current) {
+        clearTimeout(modalCleanupTimeoutRef.current);
+      }
+    };
+  }, []);
+
   /** Bootstrap sometimes leaves .modal-backdrop and body.modal-open after hide(); removes stuck overlay. */
   const cleanupModalBackdrops = () => {
-    setTimeout(() => {
+    if (modalCleanupTimeoutRef.current) {
+      clearTimeout(modalCleanupTimeoutRef.current);
+    }
+    modalCleanupTimeoutRef.current = setTimeout(() => {
       document.querySelectorAll(".modal-backdrop").forEach((node) => node.remove());
       document.body.classList.remove("modal-open");
       document.body.style.removeProperty("overflow");
@@ -111,7 +127,10 @@ const Classes = () => {
   const showNotification = (msg: string, type: "success" | "danger" | "info" = "info") => {
     setMessage(msg);
     setMessageType(type);
-    setTimeout(() => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    notificationTimeoutRef.current = setTimeout(() => {
       setMessage("");
     }, 5000);
   };
