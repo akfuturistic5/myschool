@@ -108,39 +108,6 @@ const getClassById = async (req, res) => {
   }
 };
 
-const getClassesByAcademicYear = async (req, res) => {
-  try {
-    const { academicYearId } = req.params;
-    // Since classes are now global, we fetch all classes. 
-    // In a future update, this should probably filter by enrollment in that year.
-    const result = await query(`
-      SELECT
-        c.id,
-        c.class_name,
-        c.class_code,
-        c.class_teacher_id,
-        c.max_students,
-        c.class_fee,
-        c.description,
-        c.is_active,
-        c.has_sections,
-        c.created_at,
-        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
-        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
-        s.first_name as teacher_first_name,
-        s.last_name as teacher_last_name
-      FROM classes c
-      LEFT JOIN staff s ON c.class_teacher_id = s.id
-      ORDER BY c.class_name ASC
-    `);
-
-    return success(res, 200, 'Classes fetched successfully', result.rows, { count: result.rows.length });
-  } catch (error) {
-    console.error('Error fetching classes by academic year:', error);
-    return errorResponse(res, 500, 'Failed to fetch classes');
-  }
-};
-
 const createClass = async (req, res) => {
   try {
     const {
@@ -168,6 +135,8 @@ const createClass = async (req, res) => {
       `INSERT INTO classes (
         class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, has_sections, created_by
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, has_sections, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       RETURNING *`,
       [
         String(class_name).trim(),
@@ -184,6 +153,7 @@ const createClass = async (req, res) => {
     return success(res, 201, 'Class created successfully', result.rows[0]);
   } catch (error) {
     console.error('Error creating class:', error);
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23505') return errorResponse(res, 409, 'Class already exists');
     return errorResponse(res, 500, 'Failed to create class');
@@ -240,7 +210,14 @@ const updateClass = async (req, res) => {
         description = $6,
         is_active = $7,
         has_sections = $8,
+        class_teacher_id = $3,
+        max_students = $4,
+        class_fee = $5,
+        description = $6,
+        is_active = $7,
+        has_sections = $8,
         modified_at = NOW()
+      WHERE id = $9
       WHERE id = $9
       RETURNING *
     `, [
@@ -259,6 +236,7 @@ const updateClass = async (req, res) => {
     return success(res, 200, 'Class updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating class:', error);
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     return errorResponse(res, 500, 'Failed to update class');
   }
@@ -280,7 +258,6 @@ const deleteClass = async (req, res) => {
 module.exports = {
   getAllClasses,
   getClassById,
-  getClassesByAcademicYear,
   createClass,
   updateClass,
   deleteClass,

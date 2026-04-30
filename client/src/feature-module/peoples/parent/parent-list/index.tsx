@@ -1,4 +1,4 @@
-import  { useRef, useState } from "react";
+import  { useCallback, useMemo, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import ParentModal from "../parentModal";
 import { all_routes } from "../../../router/all_routes";
@@ -20,6 +20,7 @@ import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
 import TooltipOption from "../../../../core/common/tooltipOption";
 import { useParents } from "../../../../core/hooks/useParents";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 const ParentList = () => {
   const [show, setShow] = useState(false);
@@ -40,6 +41,50 @@ const ParentList = () => {
   // Re-transforming here against raw API field names causes the "N/A"
   // issue, so we simply use the hook result as-is.
   const data = parents ?? [];
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Parent Name", dataKey: "name" },
+      { title: "Mother Name", dataKey: "motherName" },
+      { title: "Child", dataKey: "child" },
+      { title: "Class", dataKey: "className" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "Mother Phone", dataKey: "motherPhone" },
+      { title: "Email", dataKey: "email" },
+      { title: "Mother Email", dataKey: "motherEmail" },
+    ],
+    []
+  );
+  const exportRows = useMemo(
+    () =>
+      (Array.isArray(data) ? data : []).map((row: any) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        motherName: String(row.mother_name ?? ""),
+        child: String(row.Child ?? ""),
+        className: String(row.class ?? ""),
+        phone: String(row.phone ?? ""),
+        motherPhone: String(row.mother_phone ?? ""),
+        email: String(row.email ?? ""),
+        motherEmail: String(row.mother_email ?? ""),
+      })),
+    [data]
+  );
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "parents-list", "Parents");
+  }, [exportRows]);
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Parents List", "parents-list", exportColumns);
+  }, [exportRows, exportColumns]);
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Parents List", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
@@ -241,21 +286,12 @@ const ParentList = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
-
-              {canManageParents && (
-                <div className="mb-2">
-                  <Link
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_parent"
-                    className="btn btn-primary"
-                  >
-                    <i className="ti ti-square-rounded-plus me-2" />
-                    Add Parent
-                  </Link>
-                </div>
-              )}
+            <TooltipOption
+              onRefresh={handleToolbarRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
             </div>
           </div>
           {/* /Page Header */}

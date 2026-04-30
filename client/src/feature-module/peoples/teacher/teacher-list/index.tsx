@@ -1,4 +1,4 @@
-import  { useRef } from "react";
+import  { useCallback, useMemo, useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../../router/all_routes";
@@ -18,6 +18,7 @@ import { useTeachers } from "../../../../core/hooks/useTeachers.js";
 import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher.js";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { getDashboardForRole } from "../../../../core/utils/roleUtils";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 const TeacherList = () => {
   const routes = all_routes;
@@ -64,6 +65,44 @@ const TeacherList = () => {
       : "badge badge-soft-danger",
     action: ''
   }));
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Name", dataKey: "name" },
+      { title: "Email", dataKey: "email" },
+      { title: "Phone", dataKey: "phone" },
+      { title: "Date Of Join", dataKey: "dateofJoin" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+  const exportRows = useMemo(
+    () =>
+      (Array.isArray(transformedData) ? transformedData : []).map((row: any) => ({
+        id: String(row.id ?? ""),
+        name: String(row.name ?? ""),
+        email: String(row.email ?? ""),
+        phone: String(row.phone ?? ""),
+        dateofJoin: String(row.dateofJoin ?? ""),
+        status: String(row.status ?? ""),
+      })),
+    [transformedData]
+  );
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "teachers-list", "Teachers");
+  }, [exportRows]);
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Teachers List", "teachers-list", exportColumns);
+  }, [exportRows, exportColumns]);
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Teachers List", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
 
   const columns = [
     {
@@ -109,17 +148,6 @@ const TeacherList = () => {
         </div>
       ),
       sorter: (a: TableData, b: TableData) => a.name.length - b.name.length,
-    },
-    {
-      title: "Class",
-      dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => a.class.length - b.class.length,
-    },
-    {
-      title: "Subject",
-      dataIndex: "subject",
-      sorter: (a: TableData, b: TableData) =>
-        a.subject.length - b.subject.length,
     },
     {
       title: "Email",
@@ -289,7 +317,12 @@ const TeacherList = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
               {!isTeacherRole && (
                 <div className="mb-2">
                   <Link

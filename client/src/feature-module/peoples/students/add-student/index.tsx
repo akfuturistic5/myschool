@@ -27,7 +27,7 @@ import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
 import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import {
   focusAddStudentField,
@@ -343,7 +343,7 @@ const AddStudent = () => {
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
   const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
 
   // Typed lists (hooks are JS and return untyped arrays - avoid 'never' inference)
@@ -368,15 +368,20 @@ const AddStudent = () => {
     original: p,
   })).filter((o: { value: string }) => o.value);
 
-  const vehicleOptionsRaw = (vehicles || []).map((v: any) => {
-    const vehicleId = String(v.originalData?.id ?? v.id ?? "");
-    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
-    return {
-      value: vehicleId,
-      label: vehicleNo,
-      original: v,
-    };
-  }).filter((o: { value: string }) => o.value);
+  const vehicleOptionsRaw = (vehicles || [])
+    .filter((v: any) =>
+      formData.route_id ? String(v.originalData?.route_id ?? "") === String(formData.route_id) : true
+    )
+    .map((v: any) => {
+      const vehicleId = String(v.originalData?.id ?? v.id ?? "");
+    const vehicleNo = v.vehicle ?? v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
+      return {
+        value: vehicleId,
+        label: vehicleNo,
+        original: v,
+      };
+    })
+    .filter((o: { value: string }) => o.value);
 
   const routeOptions = useMemo(() => {
     if (!formData.pickup_point_id) return routeOptionsRaw;
@@ -562,13 +567,6 @@ const AddStudent = () => {
       formDataPopulatedRef.current = false;
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
-  
-  // Refetch vehicles when route changes
-  useEffect(() => {
-    if (setVehicleParams) {
-      setVehicleParams({ route_id: formData.route_id || 'all' });
-    }
-  }, [formData.route_id, setVehicleParams]);
 
   useEffect(() => {
     if (!formData.pickup_point_id) return;
@@ -591,7 +589,7 @@ const AddStudent = () => {
       }));
     }
   }, [formData.is_transport_required]);
-
+  
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
     if (!isEdit && academicYearsList.length > 0) {
@@ -979,13 +977,19 @@ const AddStudent = () => {
         const lines = response.warnings
           .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
           .filter(Boolean);
+        const warningsText = lines.join(" ").toLowerCase();
+        const isPhoneConflict = warningsText.includes("phone");
+        const title = isPhoneConflict ? "Duplicate Phone Number" : "Duplicate Email";
+        const confirmText = isPhoneConflict ? "Fix Phone Numbers" : "Fix Emails";
         await Swal.fire({
           icon: "error",
-          title: "Email Already In Use",
+          title,
           html: lines.length > 0
             ? lines.map(l => `<p>${l}</p>`).join('')
-            : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
-          confirmButtonText: "Fix Emails",
+            : isPhoneConflict
+              ? "<p>One or more phone numbers are already conflicting with another contact. Please use a different phone number.</p>"
+              : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
+          confirmButtonText: confirmText,
         });
         // Do NOT navigate — stay on the form so the user can correct the emails
         setIsSubmitting(false);
@@ -996,17 +1000,21 @@ const AddStudent = () => {
       navigate(routes.studentList);
     } catch (error: any) {
       console.error('Error saving student:', error);
-      // 409 = email conflict — show a clear modal and stay on the form
+      // 409 = conflict (email/phone) — show a clear modal and stay on the form
       if (error?.status === 409) {
         // Extract the message from the error (apiService sets error.message = "HTTP error! status: 409, message: <backend msg>")
         const raw: string = error.message || '';
         const match = raw.match(/message:\s*(.+)/);
-        const userMsg = match ? match[1] : raw || 'An email address is already in use by another account.';
+        const userMsg = match ? match[1] : raw || 'A contact value is already in use.';
+        const lowerMsg = userMsg.toLowerCase();
+        const isPhoneConflict = lowerMsg.includes('phone');
+        const title = isPhoneConflict ? 'Duplicate Phone Number' : 'Duplicate Email';
+        const confirmText = isPhoneConflict ? 'Fix Phone Numbers' : 'Fix Emails';
         await Swal.fire({
           icon: 'error',
-          title: 'Duplicate Email',
+          title,
           text: userMsg,
-          confirmButtonText: 'Fix Emails',
+          confirmButtonText: confirmText,
         });
       } else {
         setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);

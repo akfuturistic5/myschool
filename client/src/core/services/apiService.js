@@ -262,10 +262,6 @@ class ApiService {
     return this.makeRequest(`/classes/${id}`);
   }
 
-  async getClassesByAcademicYear(academicYearId) {
-    return this.makeRequest(`/classes/academic-year/${academicYearId}`);
-  }
-
   async updateClass(id, classData) {
     return this.makeRequest(`/classes/${id}`, {
       method: 'PUT',
@@ -280,13 +276,8 @@ class ApiService {
   }
 
   // Sections
-  async getSections(params = {}) {
-    const query = new URLSearchParams();
-    if (params.academic_year_id != null && params.academic_year_id !== '') {
-      query.set('academic_year_id', String(params.academic_year_id));
-    }
-    const qs = query.toString();
-    return this.makeRequest(`/sections${qs ? `?${qs}` : ''}`);
+  async getSections() {
+    return this.makeRequest('/sections');
   }
 
   async getSectionById(id) {
@@ -993,13 +984,8 @@ class ApiService {
     return this.makeRequest('/teachers/me');
   }
 
-  async getTeacherById(id, params = {}) {
-    const searchParams = new URLSearchParams();
-    if (params.academicYearId != null && params.academicYearId !== '') {
-      searchParams.set('academic_year_id', String(params.academicYearId));
-    }
-    const qs = searchParams.toString();
-    return this.makeRequest(`/teachers/${id}${qs ? `?${qs}` : ''}`);
+  async getTeacherById(id) {
+    return this.makeRequest(`/teachers/${id}`);
   }
 
   async getTeachersByClass(classId) {

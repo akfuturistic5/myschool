@@ -1,6 +1,4 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { useTeachers } from "../../../core/hooks/useTeachers";
 import { apiService } from "../../../core/services/apiService";
@@ -33,8 +31,7 @@ type EditRow = {
 };
 
 const Classes = () => {
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classesWithSections, loading, error, refetch } = useClassesWithSections(academicYearId);
+  const { classesWithSections, loading, error, refetch } = useClassesWithSections();
   const { teachers = [] } = useTeachers();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const editModalRef = useRef<HTMLDivElement | null>(null);
@@ -206,12 +203,7 @@ const Classes = () => {
 
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.className.trim() || academicYearId == null) return;
-    const academicYearIdNum = Number(academicYearId);
-    if (!Number.isInteger(academicYearIdNum) || academicYearIdNum < 1) {
-      showNotification("Please select a valid academic year in the header.", "danger");
-      return;
-    }
+    if (!addForm.className.trim()) return;
     setAdding(true);
     try {
       let classTeacherStaffId: number | null = null;
@@ -233,7 +225,6 @@ const Classes = () => {
       };
       const payload: Record<string, unknown> = {
         class_name: addForm.className.trim(),
-        academic_year_id: academicYearIdNum,
         is_active: addForm.isActive,
         class_teacher_id: classTeacherStaffId,
       };
@@ -328,13 +319,17 @@ const Classes = () => {
     classesWithSections.forEach((item: any) => {
       const classId = item.classId;
       if (!classId) return;
+      const classTotalStudents =
+        Number.isFinite(Number(item.classTotalStudents)) && Number(item.classTotalStudents) >= 0
+          ? Number(item.classTotalStudents)
+          : null;
       if (!byClass.has(classId)) {
         byClass.set(classId, {
           id: classId,
           class: item.className || "N/A",
           classCode: item.classCode || "—",
           teacherStaffId: item.class_teacher_id ?? null,
-          noOfStudents: 0,
+          noOfStudents: classTotalStudents ?? 0,
           noOfSubjects: item.noOfSubjects || 0,
           status: item.classStatus ? "Active" : "Inactive",
           action: "",
@@ -348,17 +343,27 @@ const Classes = () => {
           max_students: item.maxStudents ?? null,
           class_fee: item.classFee ?? null,
           class_description: item.classDescription ?? null,
+          classTeacherName: item.classTeacherName || "",
+          hasClassTotalStudents: classTotalStudents != null,
         });
       }
       const row = byClass.get(classId);
-      row.noOfStudents += Number(item.noOfStudents || 0);
+      // Prefer class-level total from classes API; fallback to section roll-up only when unavailable.
+      if (!row.hasClassTotalStudents) row.noOfStudents += Number(item.noOfStudents || 0);
       row.noOfSubjects = Math.max(Number(row.noOfSubjects || 0), Number(item.noOfSubjects || 0));
     });
     return Array.from(byClass.values()).map((row, index) => {
-      const teacher = teachers.find((t: any) => String(t.staff_id) === String(row.teacherStaffId));
-      const teacherDisplay = teacher
-        ? `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || `Staff #${teacher.staff_id}`
-        : "—";
+      const teacher = teachers.find(
+        (t: any) =>
+          String(t.staff_id) === String(row.teacherStaffId) ||
+          String(t.id) === String(row.teacherStaffId)
+      );
+      const teacherDisplay =
+        (teacher
+          ? `${teacher.first_name || ""} ${teacher.last_name || ""}`.trim() || `Staff #${teacher.staff_id || teacher.id}`
+          : "") ||
+        String(row.classTeacherName || "").trim() ||
+        "—";
       return {
         ...row,
         key: String(index + 1),

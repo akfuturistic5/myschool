@@ -52,7 +52,7 @@ const getAllSections = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN staff st ON s.section_teacher_id = st.id
       ORDER BY c.class_name ASC, s.section_name ASC
-    `, []);
+    `);
     return success(res, 200, 'Sections fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching sections:', error);
@@ -156,6 +156,8 @@ const createSection = async (req, res) => {
 
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
     const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
+    const classExists = await query('SELECT id FROM classes WHERE id = $1 LIMIT 1', [class_id]);
+    if (!classExists.rows.length) return errorResponse(res, 400, 'Invalid class');
 
     const result = await query(
       `INSERT INTO sections (
@@ -189,7 +191,6 @@ const updateSection = async (req, res) => {
     const current = await query('SELECT * FROM sections WHERE id = $1', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Section not found');
     const cur = current.rows[0];
-
     const sectionTeacherId = Object.prototype.hasOwnProperty.call(payload, 'section_teacher_id')
       ? payload.section_teacher_id
       : cur.section_teacher_id;

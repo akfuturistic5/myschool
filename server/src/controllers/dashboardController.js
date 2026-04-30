@@ -47,6 +47,16 @@ function sqlTeacherInAcademicYear(t, n) {
     EXISTS (SELECT 1 FROM class_schedules cs WHERE cs.teacher_id = ${t}.staff_id AND cs.academic_year_id = $${n})
     OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.class_teacher_id = ${t}.staff_id)
     OR EXISTS (SELECT 1 FROM classes c WHERE c.academic_year_id = $${n} AND c.id = ${t}.class_id)
+    OR EXISTS (
+      SELECT 1
+      FROM subjects sub
+      LEFT JOIN classes c2 ON c2.id = sub.class_id
+      WHERE sub.teacher_id = ${t}.staff_id
+        AND (
+          sub.academic_year_id = $${n}
+          OR c2.academic_year_id = $${n}
+        )
+    )
   )`;
 }
 
@@ -100,6 +110,44 @@ function pctPart(num, den) {
   const d = parseInt(den, 10) || 0;
   if (d <= 0) return 0;
   return Math.round((100 * n) / d);
+}
+
+/**
+ * Build schema-safe marks expression and optional joins for star-students.
+ * Handles mixed deployments where marks columns vary across exam_results/exam_subjects/exams.
+ */
+async function buildExamResultTotalMarksSpec() {
+  const [columnsResult, examSubjectsTableResult] = await Promise.all([
+    query(
+      `SELECT table_name, column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = ANY($1::text[])
+         AND column_name = ANY($2::text[])`,
+      [['exam_results', 'exam_subjects', 'exams'], ['max_marks', 'full_marks', 'total_marks']]
+    ),
+    query(`SELECT to_regclass('public.exam_subjects') IS NOT NULL AS exists`),
+  ]);
+
+  const has = new Set(columnsResult.rows.map((r) => `${String(r.table_name)}.${String(r.column_name)}`));
+  const hasExamSubjectsTable = Boolean(examSubjectsTableResult.rows[0]?.exists);
+  const parts = [];
+  let joinExamSubjectsSql = '';
+
+  if (has.has('exam_results.max_marks')) parts.push('er.max_marks::numeric');
+  if (has.has('exam_results.full_marks')) parts.push('er.full_marks::numeric');
+  if (has.has('exam_results.total_marks')) parts.push('er.total_marks::numeric');
+  if (hasExamSubjectsTable && has.has('exam_subjects.max_marks')) {
+    joinExamSubjectsSql = 'LEFT JOIN exam_subjects es ON es.id = er.exam_subject_id';
+    parts.push('es.max_marks::numeric');
+  }
+  if (has.has('exams.total_marks')) parts.push('e.total_marks::numeric');
+  parts.push('100');
+
+  return {
+    totalMarksExpr: `COALESCE(${parts.join(', ')})`,
+    joinExamSubjectsSql,
+  };
 }
 
 /**
@@ -903,6 +951,7 @@ const getStarStudents = async (req, res) => {
     const classNameFilter = parseTextQueryParam(req, 'class_name');
     const sectionNameFilter = parseTextQueryParam(req, 'section_name');
     const timeRange = parseStarStudentsTimeRange(req);
+    const { totalMarksExpr, joinExamSubjectsSql } = await buildExamResultTotalMarksSpec();
     const ctx = getAuthContext(req);
     if (!ctx.userId) {
       return res.status(401).json({ status: 'ERROR', message: 'Not authenticated' });
@@ -942,7 +991,13 @@ const getStarStudents = async (req, res) => {
         SELECT DISTINCT c.id AS class_id, NULL::int AS section_id
         FROM classes c
         WHERE c.class_teacher_id = $${p}
-          ${hasYearFilter ? `AND c.academic_year_id = $${p + 1}` : ''}
+          ${hasYearFilter ? `AND EXISTS (
+            SELECT 1
+            FROM students sty
+            WHERE sty.class_id = c.id
+              AND sty.academic_year_id = $${p + 1}
+              AND sty.is_active = true
+          )` : ''}
           AND c.id IS NOT NULL
       ),`;
       baseParams.push(teacherStaffId);
@@ -1032,7 +1087,7 @@ const getStarStudents = async (req, res) => {
            c.class_name,
            sec.section_name,
            SUM(er.marks_obtained::numeric) AS marks_obtained,
-           SUM(COALESCE(er.total_marks::numeric, 100)) AS total_marks,
+           SUM(${totalMarksExpr}) AS total_marks,
            COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
            MAX(COALESCE(er.modified_at, er.created_at)) AS exam_date
          FROM exam_results er
@@ -1040,6 +1095,7 @@ const getStarStudents = async (req, res) => {
          LEFT JOIN classes c ON c.id = st.class_id
          LEFT JOIN sections sec ON sec.id = st.section_id
          LEFT JOIN exams e ON e.id = er.exam_id
+         ${joinExamSubjectsSql}
          WHERE st.is_active = true
            AND er.exam_id = $${topExamIdParam}
            AND er.is_absent = false
