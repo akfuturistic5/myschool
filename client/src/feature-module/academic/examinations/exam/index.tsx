@@ -24,7 +24,7 @@ const Exam = () => {
   const navigate = useNavigate();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { user } = useCurrentUser();
-  const { classes } = useClasses(academicYearId || null);
+  const { classes } = useClasses();
   const role = String(user?.role_name || user?.role || "").toLowerCase();
   const isAdminLike =
     role === "admin" || role === "headmaster" || role === "administrator" || role === "administrative";
@@ -77,7 +77,6 @@ const Exam = () => {
   const classOptions = useMemo(() => {
     const rows = Array.isArray(classes) ? classes : [];
     return rows
-      .filter((c: any) => !academicYearId || Number(c?.academic_year_id) === Number(academicYearId))
       .map((c: any) => {
         const className = String(c?.class_name ?? "").trim();
         const classCode = String(c?.class_code ?? "").trim();
@@ -89,7 +88,7 @@ const Exam = () => {
       })
       .filter((c) => Number.isFinite(c.id) && c.id > 0 && c.className)
       .sort((a, b) => a.className.localeCompare(b.className) || a.id - b.id);
-  }, [classes, academicYearId]);
+  }, [classes]);
 
   const columns = [
     { title: "ID", dataIndex: "id" },

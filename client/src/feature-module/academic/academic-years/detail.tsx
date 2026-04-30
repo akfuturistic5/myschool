@@ -22,7 +22,7 @@ const STAT_LABELS: { key: keyof Stats; label: string; icon: string }[] = [
   { key: "promotions_into_count", label: "Promotions into year", icon: "ti ti-arrow-down-circle" },
   { key: "promotions_from_count", label: "Promotions from year", icon: "ti ti-arrow-up-circle" },
   { key: "attendance_records_count", label: "Attendance records", icon: "ti ti-checklist" },
-  { key: "teacher_routines_count", label: "Teacher routines", icon: "ti ti-route" },
+  { key: "teacher_routines_count", label: "Teacher timetables", icon: "ti ti-route" },
 ];
 
 function formatDisplayDate(value: string | null | undefined): string {

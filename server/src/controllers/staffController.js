@@ -281,9 +281,64 @@ async function fetchStaffRowById(staffId) {
   return result.rows[0] || null;
 }
 
+/**
+ * Backfill legacy teacher-linked staff rows that were created without department/designation.
+ * Applies only when missing values exist, and only for role=teacher users.
+ */
+async function backfillLegacyTeacherStaffAssignments() {
+  const teacherDesignationResult = await query(
+    `SELECT id
+     FROM designations
+     WHERE LOWER(TRIM(designation_name)) IN ('class teacher', 'primary teacher', 'teacher')
+     ORDER BY CASE
+       WHEN LOWER(TRIM(designation_name)) = 'class teacher' THEN 1
+       WHEN LOWER(TRIM(designation_name)) = 'primary teacher' THEN 2
+       WHEN LOWER(TRIM(designation_name)) = 'teacher' THEN 3
+       ELSE 99
+     END, id ASC
+     LIMIT 1`
+  );
+  const teacherDepartmentResult = await query(
+    `SELECT id
+     FROM departments
+     WHERE LOWER(TRIM(department_name)) IN ('primary education', 'academics', 'academic', 'teaching')
+     ORDER BY CASE
+       WHEN LOWER(TRIM(department_name)) = 'primary education' THEN 1
+       WHEN LOWER(TRIM(department_name)) = 'academics' THEN 2
+       WHEN LOWER(TRIM(department_name)) = 'academic' THEN 3
+       WHEN LOWER(TRIM(department_name)) = 'teaching' THEN 4
+       ELSE 99
+     END, id ASC
+     LIMIT 1`
+  );
+
+  const teacherDesignationId = teacherDesignationResult.rows[0]?.id ?? null;
+  const teacherDepartmentId = teacherDepartmentResult.rows[0]?.id ?? null;
+
+  if (!teacherDesignationId && !teacherDepartmentId) return;
+
+  await query(
+    `UPDATE staff s
+       SET designation_id = COALESCE(s.designation_id, $1::int),
+           department_id = COALESCE(s.department_id, $2::int),
+           modified_at = NOW()
+      FROM users u
+      LEFT JOIN user_roles ur ON ur.id = u.role_id
+     WHERE s.user_id = u.id
+       AND s.is_active = true
+       AND LOWER(TRIM(COALESCE(ur.role_name, ''))) = 'teacher'
+       AND (
+         (s.designation_id IS NULL AND $1::int IS NOT NULL) OR
+         (s.department_id IS NULL AND $2::int IS NOT NULL)
+       )`,
+    [teacherDesignationId, teacherDepartmentId]
+  );
+}
+
 // Get all staff members
 const getAllStaff = async (req, res) => {
   try {
+    await backfillLegacyTeacherStaffAssignments();
     const staffSelect = await getStaffSelectSql();
     const result = await query(`
       ${staffSelect}

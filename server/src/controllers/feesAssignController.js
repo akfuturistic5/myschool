@@ -130,21 +130,62 @@ const getFeesAssignments = async (req, res) => {
         }
 
         const result = await query(
-            `SELECT fa.*, 
-                    COALESCE(s.first_name || ' ' || COALESCE(s.last_name, ''), 'Unknown Student') as student_name, 
-                    s.admission_number, 
-                    COALESCE(c.class_name, 'No Class') as class_name, 
-                    COALESCE(fg.name, 'Unknown Group') as fees_group_name,
-                    COALESCE(s.gender, 'All') as gender,
-                    COALESCE(cast_t.cast_name, 'All') as category,
-                    (SELECT COALESCE(SUM(amount), 0) FROM fees_assign_details WHERE fees_assign_id = fa.id) as total_amount
-             FROM fees_assign fa
-             LEFT JOIN students s ON fa.student_id = s.id
-             LEFT JOIN classes c ON fa.class_id = c.id
-             LEFT JOIN fees_groups fg ON fa.fees_group_id = fg.id
-             LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
-             ${whereClause}
-             ORDER BY c.class_name ASC, s.first_name ASC`,
+            `WITH detail_paid AS (
+                SELECT
+                    fcd.fees_assign_details_id,
+                    COALESCE(SUM(fcd.paid_amount::numeric), 0) AS paid_amount
+                FROM fees_collect_details fcd
+                GROUP BY fcd.fees_assign_details_id
+            ),
+            detail_status AS (
+                SELECT
+                    fa.id AS fees_assign_id,
+                    fad.id AS fees_assign_details_id,
+                    fm.fees_type_id,
+                    COALESCE(fad.amount::numeric, 0) AS assigned_amount,
+                    COALESCE(dp.paid_amount, 0) AS paid_amount,
+                    GREATEST(COALESCE(fad.amount::numeric, 0) - COALESCE(dp.paid_amount, 0), 0) AS pending_amount
+                FROM fees_assign fa
+                INNER JOIN fees_assign_details fad ON fad.fees_assign_id = fa.id
+                LEFT JOIN detail_paid dp ON dp.fees_assign_details_id = fad.id
+                LEFT JOIN fees_master fm ON fm.id = fad.fees_master_id
+                ${whereClause}
+            ),
+            assign_rollup AS (
+                SELECT
+                    ds.fees_assign_id,
+                    COALESCE(SUM(ds.assigned_amount), 0) AS total_assigned_amount,
+                    COALESCE(SUM(ds.paid_amount), 0) AS total_paid_amount,
+                    COALESCE(SUM(ds.pending_amount), 0) AS total_pending_amount,
+                    STRING_AGG(DISTINCT ft.name, ', ' ORDER BY ft.name)
+                        FILTER (WHERE ds.pending_amount > 0) AS pending_fees_type_name
+                FROM detail_status ds
+                LEFT JOIN fees_types ft ON ft.id = ds.fees_type_id
+                GROUP BY ds.fees_assign_id
+            )
+            SELECT
+                fa.*,
+                COALESCE(s.first_name || ' ' || COALESCE(s.last_name, ''), 'Unknown Student') as student_name,
+                s.admission_number,
+                COALESCE(c.class_name, 'No Class') as class_name,
+                s.section_id,
+                COALESCE(sec.section_name, '-') as section_name,
+                COALESCE(fg.name, 'Unknown Group') as fees_group_name,
+                COALESCE(s.gender, 'All') as gender,
+                COALESCE(cast_t.cast_name, 'All') as category,
+                COALESCE(ar.total_pending_amount, 0) AS total_amount,
+                COALESCE(ar.total_assigned_amount, 0) AS total_assigned_amount,
+                COALESCE(ar.total_paid_amount, 0) AS total_paid_amount,
+                COALESCE(ar.pending_fees_type_name, 'Unknown Type') AS fees_type_name
+            FROM fees_assign fa
+            INNER JOIN assign_rollup ar ON ar.fees_assign_id = fa.id
+            LEFT JOIN students s ON fa.student_id = s.id
+            LEFT JOIN classes c ON fa.class_id = c.id
+            LEFT JOIN sections sec ON s.section_id = sec.id
+            LEFT JOIN fees_groups fg ON fa.fees_group_id = fg.id
+            LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
+            WHERE ar.total_pending_amount > 0
+            ORDER BY c.class_name ASC, s.first_name ASC`,
             params
         );
 

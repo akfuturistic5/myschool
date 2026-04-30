@@ -141,7 +141,7 @@ export const SidebarData = [
             subLink2: routes.teacherSalary,
             subLink3: routes.teacherLeaves,
           },
-          { label: "Routine", link: routes.teachersRoutine },
+          { label: "Timetable", link: routes.teachersRoutine },
         ],
       },
     ],

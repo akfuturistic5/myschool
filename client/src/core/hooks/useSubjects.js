@@ -3,7 +3,6 @@ import { apiService } from '../services/apiService';
 
 export const useSubjects = (classId = null, options = {}) => {
   const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
-  const academicYearId = options.academicYearId ?? null;
   const [subjects, setSubjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,7 +17,7 @@ export const useSubjects = (classId = null, options = {}) => {
       }
       const response = classId
         ? await apiService.getSubjectsByClass(classId)
-        : await apiService.getSubjects(academicYearId ? { academic_year_id: academicYearId } : {});
+        : await apiService.getSubjects();
       
       if (response.status === 'SUCCESS') {
         setSubjects(response.data);
@@ -35,7 +34,7 @@ export const useSubjects = (classId = null, options = {}) => {
 
   useEffect(() => {
     fetchSubjects();
-  }, [classId, fetchAllWhenNoClass, academicYearId]);
+  }, [classId, fetchAllWhenNoClass]);
 
   return {
     subjects,

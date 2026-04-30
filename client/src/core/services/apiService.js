@@ -1893,13 +1893,8 @@ class ApiService {
   }
 
   // Subjects
-  async getSubjects(params = {}) {
-    const query = new URLSearchParams();
-    if (params.academic_year_id != null && params.academic_year_id !== '') {
-      query.set('academic_year_id', String(params.academic_year_id));
-    }
-    const qs = query.toString();
-    return this.makeRequest(`/subjects${qs ? `?${qs}` : ''}`);
+  async getSubjects() {
+    return this.makeRequest('/subjects');
   }
 
   async getSubjectById(id) {

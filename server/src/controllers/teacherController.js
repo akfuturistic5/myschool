@@ -475,11 +475,10 @@ const getTeacherRoutine = async (req, res) => {
     }
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
-    const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearClause = hasYearFilter
-      ? ' AND (cs.academic_year_id = $2 OR c.academic_year_id = $2 OR cs.academic_year_id IS NULL OR c.academic_year_id IS NULL)'
-      : '';
-    const scheduleParams = hasYearFilter ? [staffId, academicYearId] : [staffId];
+    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
+      return errorResponse(res, 400, 'academic_year_id query parameter is required');
+    }
+    const scheduleParams = [staffId, academicYearId];
 
     // Get class schedules for this teacher
     // Handle both 'slots' and 'time_slots' table names
@@ -508,7 +507,8 @@ const getTeacherRoutine = async (req, res) => {
       LEFT JOIN sections sec ON cs.section_id = sec.id
       LEFT JOIN subjects sub ON cs.subject_id = sub.id
       LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-      WHERE cs.teacher_id = $1${yearClause}
+      WHERE cs.teacher_id = $1
+        AND cs.academic_year_id = $2
       ORDER BY 
         CASE LOWER(TRIM(cs.day_of_week::text))
           WHEN '0' THEN 1
@@ -563,7 +563,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
           LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
           ORDER BY 
             CASE LOWER(TRIM(cs.day_of_week::text))
               WHEN '0' THEN 1
@@ -597,7 +598,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN classes c ON cs.class_id = c.id
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
         `;
         schedulesResult = await query(schedulesQuery, scheduleParams);
       }
@@ -801,6 +803,12 @@ const createTeacher = async (req, res) => {
     const desigParsed = parsePositiveIntOrNull(designation_id);
     const deptParsed = parsePositiveIntOrNull(department_id);
     const bgParsed = parsePositiveIntOrNull(blood_group_id);
+    if (desigParsed == null) {
+      return errorResponse(res, 400, 'Designation is required', 'VALIDATION_ERROR');
+    }
+    if (deptParsed == null) {
+      return errorResponse(res, 400, 'Department is required', 'VALIDATION_ERROR');
+    }
     if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) {
       return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
     }
