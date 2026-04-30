@@ -31,16 +31,21 @@ interface StudentSidebarProps {
     unique_student_ids?: string | null;
     pen_number?: string | null;
     aadhaar_no?: string | null;
-    hostel_id?: number | null;
-    hostel_room_id?: number | null;
+    category_name?: string | null;
+    category?: string | null;
     hostel_name?: string | null;
     floor?: string | null;
     hostel_room_number?: string | null;
     route_id?: number | null;
     pickup_point_id?: number | null;
+    vehicle_id?: number | null;
     route_name?: string | null;
     pickup_point_name?: string | null;
     vehicle_number?: string | null;
+    transport_assigned_fee_id?: number | null;
+    transport_fee_plan_name?: string | null;
+    transport_assigned_fee_amount?: number | string | null;
+    transport_is_free?: boolean | null;
     siblings?: Array<{
       name?: string;
       class_name?: string;
@@ -126,7 +131,13 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
         sib.roll_number
     );
 
-  const legacySiblings = [];
+  const legacySiblings: Array<{
+    name: string | null;
+    class_name: string | null;
+    section_name?: string | null;
+    admission_number?: string | null;
+    roll_number?: string | null;
+  }> = [];
   if (!isPlaceholderValue(student?.sibiling_1)) {
     legacySiblings.push({
       name: toDisplayValue(student?.sibiling_1),
@@ -292,37 +303,33 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
             </ul>
             <div className="tab-content">
               <div className="tab-pane fade show active" id="hostel">
-                {(hostelName || hostelRoomNumber || student?.hostel_id || student?.hostel_room_id) ? (
-                  <div className="d-flex align-items-center mb-3">
-                    <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                      <i className="ti ti-building-fortress fs-16" />
-                    </span>
-                    <div>
-                      <h6 className="fs-14 mb-1">
-                        {hostelName ? `${hostelName}${hostelFloor ? `, ${hostelFloor}` : ''}` : (student?.hostel_id ? 'Hostel assigned' : 'N/A')}
-                      </h6>
-                      <p className="text-primary">
-                        {hostelRoomNumber ? `Room No : ${hostelRoomNumber}` : (student?.hostel_room_id ? 'Room assigned' : 'Room No : N/A')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-muted mb-0">No hostel information available</p>
-                )}
+                <p className="text-muted mb-0">Hostel module is in development. Details will be available soon.</p>
               </div>
               <div className="tab-pane fade" id="transport">
-                {(student?.route_name || student?.pickup_point_name || student?.vehicle_number || student?.route_id || student?.pickup_point_id) ? (
+                {(student?.route_name ||
+                  student?.pickup_point_name ||
+                  student?.vehicle_number ||
+                  student?.route_id ||
+                  student?.pickup_point_id ||
+                  student?.vehicle_id ||
+                  student?.transport_assigned_fee_id) ? (
                   <>
                     <div className="d-flex align-items-center mb-3">
                       <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
                         <i className="ti ti-bus fs-16" />
                       </span>
                       <div>
-                        <span className="fs-12 mb-1">Route</span>
-                        <p className="text-dark">{student.route_name ?? 'N/A'}</p>
+                        <span className="fs-12 mb-1">Pickup Point</span>
+                        <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
                       </div>
                     </div>
                     <div className="row">
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Route</span>
+                          <p className="text-dark">{student.route_name ?? 'N/A'}</p>
+                        </div>
+                      </div>
                       <div className="col-sm-6">
                         <div className="mb-3">
                           <span className="fs-12 mb-1">Bus Number</span>
@@ -331,14 +338,28 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                       </div>
                       <div className="col-sm-6">
                         <div className="mb-3">
-                          <span className="fs-12 mb-1">Pickup Point</span>
-                          <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
+                          <span className="fs-12 mb-1">Plan</span>
+                          <p className="text-dark">
+                            {student.transport_is_free
+                              ? "Free Allocation"
+                              : (student.transport_fee_plan_name ?? "N/A")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Assigned Amount</span>
+                          <p className="text-dark">
+                            {student.transport_is_free
+                              ? "0"
+                              : (student.transport_assigned_fee_amount != null ? String(student.transport_assigned_fee_amount) : "N/A")}
+                          </p>
                         </div>
                       </div>
                     </div>
                   </>
                 ) : (
-                  <p className="text-muted mb-0">No transport information available</p>
+                  <p className="text-muted mb-0">Transportation is not allocated to this student yet.</p>
                 )}
               </div>
             </div>

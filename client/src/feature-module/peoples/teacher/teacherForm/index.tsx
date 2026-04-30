@@ -7,7 +7,6 @@ import { all_routes } from "../../../router/all_routes";
 import { apiService } from "../../../../core/services/apiService";
 import {
   Contract,
-  Hostel,
   Marital,
   PickupPoint,
   Shift,
@@ -16,7 +15,6 @@ import {
   allSubject,
   bloodGroup,
   gender,
-  roomNO,
   route,
   status,
 } from "../../../../core/common/selectoption/selectoption";
@@ -29,11 +27,10 @@ import { selectUser } from "../../../../core/data/redux/authSlice";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSubjects } from "../../../../core/hooks/useSubjects";
 import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
-import { useHostels } from "../../../../core/hooks/useHostels";
-import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
+import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
 import {
@@ -167,6 +164,9 @@ const TeacherForm = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [selectedPickupPointId, setSelectedPickupPointId] = useState<string | null>(null);
+  const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
+  const [isTransportRequired, setIsTransportRequired] = useState(false);
+  const [transportIsFree, setTransportIsFree] = useState(false);
   const [fatherName, setFatherName] = useState("");
   const [motherName, setMotherName] = useState("");
   const [panNumber, setPanNumber] = useState("");
@@ -357,11 +357,78 @@ const TeacherForm = () => {
   const { classes, loading: classesLoading, error: classesError } = useClasses(academicYearId);
   const { subjects, loading: subjectsLoading, error: subjectsError } = useSubjects();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  const { hostels } = useHostels();
-  const { hostelRooms } = useHostelRooms();
-  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
-  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
+  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({
+    academic_year_id: academicYearId ?? undefined,
+  });
+  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({
+    academic_year_id: academicYearId ?? undefined,
+  });
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({
+    academic_year_id: academicYearId ?? undefined,
+  });
+  const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({
+    limit: 1000,
+    status: "active",
+    academic_year_id: academicYearId ?? undefined,
+  });
+  const pickupPointOptions = useMemo(
+    () =>
+      (pickupPoints || [])
+        .map((p: any) => ({
+          value: String((p.originalData?.id ?? p.id) ?? ""),
+          label: p.pickupPoint ?? p.originalData?.point_name ?? p.originalData?.address ?? "N/A",
+          original: p,
+        }))
+        .filter((o: { value: string }) => o.value),
+    [pickupPoints]
+  );
+  const routeOptionsRaw = useMemo(
+    () =>
+      (transportRoutes || [])
+        .map((r: any) => ({
+          value: String((r.originalData?.id ?? r.id) ?? ""),
+          label: r.routes ?? r.originalData?.route_name ?? "N/A",
+          original: r,
+        }))
+        .filter((o: { value: string }) => o.value),
+    [transportRoutes]
+  );
+  const routeOptions = useMemo(() => {
+    if (!selectedPickupPointId) return routeOptionsRaw;
+    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(selectedPickupPointId));
+    const rr = String(selectedPickup?.original?.route_id ?? "");
+    if (!rr) return routeOptionsRaw;
+    return routeOptionsRaw.filter((r: any) => String(r.value) === rr);
+  }, [routeOptionsRaw, pickupPointOptions, selectedPickupPointId]);
+  const feeOptions = useMemo(
+    () =>
+      (transportFees || [])
+        .filter((f: any) => String(f.pickup_point_id ?? f.originalData?.pickup_point_id ?? "") === String(selectedPickupPointId ?? ""))
+        .map((f: any) => {
+          const row = f.originalData ?? f;
+          const amt = row.staff_amount ?? row.amount ?? 0;
+          return {
+            value: String(row.id ?? ""),
+            label: `${row.plan_name ?? "Plan"} — Staff: ${amt}`,
+          };
+        })
+        .filter((o: { value: string }) => o.value),
+    [transportFees, selectedPickupPointId]
+  );
+  const vehicleOptions = useMemo(
+    () =>
+      (vehicles || []).map((v: any) => {
+        const vehicleId = String(v.originalData?.id ?? v.id ?? "");
+        const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
+        return { value: vehicleId, label: vehicleNo };
+      }).filter((o: { value: string }) => o.value),
+    [vehicles]
+  );
+
+  useEffect(() => {
+    if (setVehicleParams) setVehicleParams({ route_id: selectedRouteId || "all" });
+  }, [selectedRouteId, setVehicleParams]);
+
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
 
@@ -400,6 +467,9 @@ const TeacherForm = () => {
       setSelectedRouteId(null);
       setSelectedVehicleId(null);
       setSelectedPickupPointId(null);
+      setSelectedFeeId(null);
+      setIsTransportRequired(false);
+      setTransportIsFree(false);
       setSelectedStatus("Active");
       setOwner(["English"]);
       setDobDate(null);
@@ -529,6 +599,11 @@ const TeacherForm = () => {
       setSelectedRouteId(teacherData.route_id ? String(teacherData.route_id) : null);
       setSelectedVehicleId(teacherData.vehicle_id ? String(teacherData.vehicle_id) : null);
       setSelectedPickupPointId(teacherData.pickup_point_id ? String(teacherData.pickup_point_id) : null);
+      setSelectedFeeId(
+        teacherData.transport_assigned_fee_id != null ? String(teacherData.transport_assigned_fee_id) : null
+      );
+      setIsTransportRequired(!!teacherData.is_transport_required);
+      setTransportIsFree(!!teacherData.transport_is_free);
       setFirstName(teacherData.first_name ?? "");
       setLastName(teacherData.last_name ?? "");
       setPhone(teacherData.phone ?? "");
@@ -1460,68 +1535,23 @@ const TeacherForm = () => {
                         className="form-check-input"
                         type="checkbox"
                         role="switch"
+                        checked={isTransportRequired}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setIsTransportRequired(on);
+                          if (!on) {
+                            setSelectedPickupPointId(null);
+                            setSelectedRouteId(null);
+                            setSelectedVehicleId(null);
+                            setSelectedFeeId(null);
+                            setTransportIsFree(false);
+                          }
+                        }}
                       />
                     </div>
                   </div>
                   <div className="card-body pb-1">
                     <div className="row">
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Route</label>
-                          {routesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading routes...
-                            </div>
-                          ) : routesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {routesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={(transportRoutes || []).map((r: any) => ({
-                                value: String((r.originalData?.id ?? r.id) ?? ''),
-                                label: r.routes ?? r.originalData?.route_name ?? 'N/A',
-                              }))}
-                              value={selectedRouteId}
-                              onChange={(value) => {
-                                setSelectedRouteId(value);
-                                setSelectedVehicleId(null);
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Vehicle Number</label>
-                          {vehiclesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading vehicles...
-                            </div>
-                          ) : vehiclesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {vehiclesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={(vehicles || [])
-                                .filter((v: any) => selectedRouteId ? String(v.originalData?.route_id) === selectedRouteId : true)
-                                .map((v: any) => ({
-                                  value: String(v.originalData?.vehicle_id ?? ''),
-                                  label: v.vehicle ?? v.originalData?.vehicle_number ?? 'N/A',
-                                }))}
-                              value={selectedVehicleId}
-                              onChange={(value) => setSelectedVehicleId(value)}
-                            />
-                          )}
-                        </div>
-                      </div>
                       <div className="col-lg-4 col-md-6">
                         <div className="mb-3">
                           <label className="form-label">Pickup Point</label>
@@ -1538,13 +1568,110 @@ const TeacherForm = () => {
                           ) : (
                             <CommonSelect
                               className="select"
-                              options={(pickupPoints || []).map((p: any) => ({
-                                value: String((p.originalData?.id ?? p.id) ?? ''),
-                                label: p.pickupPoint ?? p.originalData?.pickup_point_name ?? 'N/A',
-                              }))}
+                              options={pickupPointOptions.map((p) => ({ value: p.value, label: p.label }))}
                               value={selectedPickupPointId}
-                              onChange={(value) => setSelectedPickupPointId(value)}
+                              isDisabled={!isTransportRequired}
+                              onChange={(value) => {
+                                setSelectedPickupPointId(value);
+                                setSelectedRouteId(null);
+                                setSelectedVehicleId(null);
+                                setSelectedFeeId(null);
+                              }}
                             />
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-lg-4 col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Route</label>
+                          {routesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading routes...
+                            </div>
+                          ) : routesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {routesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={routeOptions.map((r) => ({ value: r.value, label: r.label }))}
+                              value={selectedRouteId}
+                              isDisabled={!isTransportRequired}
+                              onChange={(value) => {
+                                setSelectedRouteId(value);
+                                setSelectedVehicleId(null);
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-lg-4 col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Vehicle</label>
+                          {vehiclesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading vehicles...
+                            </div>
+                          ) : vehiclesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {vehiclesError}
+                            </div>
+                          ) : (
+                            <CommonSelect
+                              className="select"
+                              options={vehicleOptions.map((v) => ({ value: v.value, label: v.label }))}
+                              value={selectedVehicleId}
+                              isDisabled={!isTransportRequired}
+                              onChange={(value) => setSelectedVehicleId(value)}
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-lg-4 col-md-6">
+                        <div className="mb-3">
+                          <label className="form-label">Transport Plan</label>
+                          {feesLoading ? (
+                            <div className="form-control">
+                              <i className="ti ti-loader ti-spin me-2" />
+                              Loading plans...
+                            </div>
+                          ) : feesError ? (
+                            <div className="form-control text-danger">
+                              <i className="ti ti-alert-circle me-2" />
+                              Error: {feesError}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="form-check mb-2">
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id="teacher_transport_free"
+                                  checked={transportIsFree}
+                                  disabled={!isTransportRequired}
+                                  onChange={(e) => {
+                                    const c = e.target.checked;
+                                    setTransportIsFree(c);
+                                    if (c) setSelectedFeeId(null);
+                                  }}
+                                />
+                                <label className="form-check-label" htmlFor="teacher_transport_free">
+                                  Free allocation (no fee plan)
+                                </label>
+                              </div>
+                              <CommonSelect
+                                className="select"
+                                options={feeOptions}
+                                value={transportIsFree ? null : selectedFeeId}
+                                isDisabled={!isTransportRequired || transportIsFree}
+                                onChange={(value) => setSelectedFeeId(value)}
+                              />
+                            </>
                           )}
                         </div>
                       </div>
@@ -1552,54 +1679,8 @@ const TeacherForm = () => {
                   </div>
                 </div>
                 {/* /Transport Information */}
-                {/* Hostel Information */}
-                <div className="card">
-                  <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-building-fortress fs-16" />
-                      </span>
-                      <h4 className="text-dark">Hostel Information</h4>
-                    </div>
-                    <div className="form-check form-switch">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                      />
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Hostel</label>
-                          <CommonSelect
-                            className="select"
-                            options={(hostels || []).map((h: any) => ({
-                              value: String((h.originalData as { id?: number })?.id ?? ""),
-                              label: (h.hostelName as string) || "N/A",
-                            }))}
-                            defaultValue={undefined}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Room No</label>
-                          <CommonSelect
-                            className="select"
-                            options={(hostelRooms || []).map((r: any) => ({
-                              value: String((r.originalData as { id?: number })?.id ?? ""),
-                              label: (r.roomNo as string) || "N/A",
-                            }))}
-                            defaultValue={undefined}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                {/* Hostel Information - temporarily disabled until hostel workflow redesign (same as student form) */}
+                {/* <div className="card"> ... </div> */}
                 {/* /Hostel Information */}
                 <>
                   {/* Social Media Links */}
@@ -1930,6 +2011,22 @@ const TeacherForm = () => {
                               : (teacherData?.joining_date
                                 ? dayjs(teacherData.joining_date).format('YYYY-MM-DD')
                                 : undefined),
+                            academic_year_id: academicYearId ?? undefined,
+                            is_transport_required: isTransportRequired,
+                            route_id:
+                              isTransportRequired && selectedRouteId ? parseInt(selectedRouteId, 10) : undefined,
+                            pickup_point_id:
+                              isTransportRequired && selectedPickupPointId
+                                ? parseInt(selectedPickupPointId, 10)
+                                : undefined,
+                            vehicle_id:
+                              isTransportRequired && selectedVehicleId ? parseInt(selectedVehicleId, 10) : undefined,
+                            assigned_fee_id:
+                              isTransportRequired && !transportIsFree && selectedFeeId
+                                ? parseInt(selectedFeeId, 10)
+                                : undefined,
+                            is_free: isTransportRequired ? transportIsFree : false,
+                            is_hostel_required: false,
                           };
                           Object.keys(updateData).forEach(k => { if (updateData[k] === undefined) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
@@ -2066,6 +2163,22 @@ const TeacherForm = () => {
                             joining_date: joiningDate ? joiningDate.format("YYYY-MM-DD") : undefined,
                             emergency_contact_name: get("emergency_contact_name") || undefined,
                             emergency_contact_phone: get("emergency_contact_phone") || undefined,
+                            academic_year_id: academicYearId ?? undefined,
+                            is_transport_required: isTransportRequired,
+                            route_id:
+                              isTransportRequired && selectedRouteId ? parseInt(selectedRouteId, 10) : undefined,
+                            pickup_point_id:
+                              isTransportRequired && selectedPickupPointId
+                                ? parseInt(selectedPickupPointId, 10)
+                                : undefined,
+                            vehicle_id:
+                              isTransportRequired && selectedVehicleId ? parseInt(selectedVehicleId, 10) : undefined,
+                            assigned_fee_id:
+                              isTransportRequired && !transportIsFree && selectedFeeId
+                                ? parseInt(selectedFeeId, 10)
+                                : undefined,
+                            is_free: isTransportRequired ? transportIsFree : false,
+                            is_hostel_required: false,
                           };
                           Object.keys(payload).forEach((k) => {
                             if (payload[k] === undefined)

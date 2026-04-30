@@ -28,6 +28,7 @@ const StudentResult = () => {
     locationState: state,
   });
   const { user } = useCurrentUser();
+  const currentUser = user as any;
   const returnToExamResult = typeof state?.returnTo === "string" ? state.returnTo : "";
   const forwardedState = student
     ? {
@@ -93,12 +94,12 @@ const StudentResult = () => {
 
       const schoolProfileRes = await apiService.getSchoolProfile().catch(() => null);
       const schoolProfile = (schoolProfileRes as any)?.data || {};
-      const schoolName = schoolProfile.school_name || user?.school_name || "PreSkool";
+      const schoolName = schoolProfile.school_name || currentUser?.school_name || "PreSkool";
       const schoolAddress =
         schoolProfile.address ||
         [schoolProfile.city, schoolProfile.state, schoolProfile.country].filter(Boolean).join(", ") ||
         "";
-      const logoSource = schoolProfile.logo_url || user?.school_logo || getSchoolLogoSrc(user as any);
+      const logoSource = schoolProfile.logo_url || currentUser?.school_logo || getSchoolLogoSrc(currentUser);
 
       const toAbsoluteUrl = (raw: string) => {
         if (!raw) return "";
@@ -429,6 +430,16 @@ const StudentResult = () => {
                       >
                         <i className="ti ti-bookmark-edit me-2" />
                         Exam &amp; Results
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary}
+                        className="nav-link"
+                        state={forwardedState}
+                      >
+                        <i className="ti ti-books me-2" />
+                        Library
                       </Link>
                     </li>
                   </ul>
