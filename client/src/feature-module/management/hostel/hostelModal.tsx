@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { useSelector } from "react-redux";
 import CommonSelect from "../../../core/common/commonSelect";
 import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const HOSTEL_TYPE_OPTIONS = [
   { value: "boys", label: "Boys" },
@@ -42,8 +40,6 @@ const HostelModal = ({
   roomTypeSelectOptions = [],
   formResetKey = 0,
 }: HostelModalProps) => {
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
-
   const [addHostelName, setAddHostelName] = useState("");
   const [addHostelType, setAddHostelType] = useState<string | null>("boys");
   const [addHostelIntake, setAddHostelIntake] = useState("");
@@ -158,7 +154,6 @@ const HostelModal = ({
         hostel_type: addHostelType || "boys",
         address: addHostelAddress.trim() || null,
         description: addHostelDesc.trim() || null,
-        academic_year_id: academicYearId ?? null,
       };
       if (addHostelIntake.trim() !== "") {
         const n = Number(addHostelIntake);
@@ -193,7 +188,6 @@ const HostelModal = ({
         hostel_type: editHostelType || "boys",
         address: editHostelAddress.trim() || null,
         description: editHostelDesc.trim() || null,
-        academic_year_id: academicYearId ?? null,
       };
       if (editHostelIntake.trim() !== "") {
         const n = Number(editHostelIntake);

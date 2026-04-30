@@ -11,16 +11,13 @@ import { useHostels } from "../../../core/hooks/useHostels";
 import { useRoomTypes } from "../../../core/hooks/useRoomTypes";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
 
 const HostelRooms = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { hostelRooms, loading, error, refetch } = useHostelRooms(academicYearId);
-  const { hostels } = useHostels(academicYearId);
+  const { hostelRooms, loading, error, refetch } = useHostelRooms();
+  const { hostels } = useHostels();
   const { roomTypes } = useRoomTypes();
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [formResetKey, setFormResetKey] = useState(0);

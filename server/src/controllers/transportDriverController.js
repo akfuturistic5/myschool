@@ -2,7 +2,6 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const bcrypt = require('bcryptjs');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn } = require('../utils/schemaInspector');
 
 const TRANSPORT_ROLES = ['driver', 'conductor'];
@@ -85,7 +84,6 @@ function mapDriverRow(row) {
     phone: row.phone ?? '',
     license_number: row.license_number ?? '',
     role: normalizeTransportRole(row.role),
-    academic_year_id: row.academic_year_id ?? null,
     address: row.address ?? '',
     user_id: row.user_id ?? null,
     is_active: row.is_active !== false && row.is_active !== 'f',
@@ -97,7 +95,6 @@ function mapDriverRow(row) {
 
 const getAllDrivers = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const scopedDriverId = await getScopedDriverId(req);
     const activeFilter = hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)';
@@ -114,7 +111,6 @@ const getAllDrivers = async (req, res) => {
       page = 1,
       limit = 10,
       search = '',
-      academic_year_id,
       role,
       status,
       sortField = 'id',
@@ -122,7 +118,6 @@ const getAllDrivers = async (req, res) => {
     } = req.query;
 
     const offset = (page - 1) * limit;
-    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
     let whereClause = `WHERE ${activeFilter}`;
     const queryParams = [];
 
@@ -134,10 +129,6 @@ const getAllDrivers = async (req, res) => {
     if (role && role !== 'all') {
       queryParams.push(normalizeTransportRole(role));
       whereClause += ` AND role = $${queryParams.length}`;
-    }
-    if (hasAcademicYearId && scopedAcademicYearId) {
-      queryParams.push(scopedAcademicYearId);
-      whereClause += ` AND academic_year_id = $${queryParams.length}`;
     }
 
     if (status !== undefined && status !== '' && status !== 'all') {
@@ -203,9 +194,8 @@ const getDriverById = async (req, res) => {
 
 const createDriver = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
-    const { name, phone, license_number, address, role, is_active, academic_year_id } = req.body;
+    const { name, phone, license_number, address, role, is_active } = req.body;
 
     if (!name) {
       return errorResponse(res, 400, 'Driver name is required');
@@ -231,23 +221,12 @@ const createDriver = async (req, res) => {
 
     const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
     const userId = await getOrCreateTransportUser({ name, phone, role: normalizedRole });
-    const scopedAcademicYearId = hasAcademicYearId
-      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
-      : null;
-
-    const result = hasAcademicYearId
-      ? await query(
-          `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active, academic_year_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING *`,
-          [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue, scopedAcademicYearId]
-        )
-      : await query(
-          `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING *`,
-          [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue]
-        );
+    const result = await query(
+      `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue]
+    );
 
     return success(res, 201, 'Driver created successfully', mapDriverRow(result.rows[0]));
   } catch (error) {
@@ -258,7 +237,6 @@ const createDriver = async (req, res) => {
 
 const updateDriver = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('drivers', 'academic_year_id');
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const { id } = req.params;
     const numericId = parseInt(id);
@@ -272,7 +250,6 @@ const updateDriver = async (req, res) => {
       phone,
       license_number,
       role,
-      academic_year_id,
       address,
       is_active
     } = req.body;
@@ -312,10 +289,6 @@ const updateDriver = async (req, res) => {
     if (normalizedRole !== undefined) {
       updates.push(`role = $${i++}`);
       values.push(normalizedRole);
-    }
-    if (hasAcademicYearId && academic_year_id !== undefined) {
-      updates.push(`academic_year_id = $${i++}`);
-      values.push(toPositiveInt(academic_year_id));
     }
     if (address !== undefined) {
       updates.push(`address = $${i++}`);

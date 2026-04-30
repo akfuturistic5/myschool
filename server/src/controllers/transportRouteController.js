@@ -1,14 +1,12 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapRouteRow(row, stops = []) {
   return {
     id: row.id,
     route_name: row.route_name || '',
-    academic_year_id: row.academic_year_id || null,
     distance_km: row.distance_km || 0,
     is_active: row.is_active !== false && row.is_active !== 'f',
     created_at: row.created_at,
@@ -26,7 +24,6 @@ function mapRouteRow(row, stops = []) {
 
 const getAllRoutes = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
@@ -36,11 +33,9 @@ const getAllRoutes = async (req, res) => {
       search = '', 
       status = 'all', 
       pickup_point_id = 'all',
-      academic_year_id,
       sortField = 'route_name', 
       sortOrder = 'ASC' 
     } = req.query;
-    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['route_name', 'distance_km', 'created_at', 'id'];
@@ -75,10 +70,6 @@ const getAllRoutes = async (req, res) => {
       sqlFilters += hasRouteStops
         ? ` AND EXISTS (SELECT 1 FROM route_stops rs WHERE rs.route_id = r.id AND rs.pickup_point_id = $${params.length})`
         : ` AND EXISTS (SELECT 1 FROM pickup_points pp WHERE pp.route_id = r.id AND pp.id = $${params.length})`;
-    }
-    if (hasAcademicYearId && scopedAcademicYearId) {
-      params.push(scopedAcademicYearId);
-      sqlFilters += ` AND r.academic_year_id = $${params.length}`;
     }
 
     if (scopedDriverId != null) {
@@ -216,7 +207,6 @@ const getRouteById = async (req, res) => {
 
 const createRoute = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasRouteStops = await hasTable('route_stops');
@@ -224,7 +214,6 @@ const createRoute = async (req, res) => {
       route_name, 
       distance_km, 
       is_active,
-      academic_year_id,
       stops = [] 
     } = req.body;
 
@@ -232,35 +221,20 @@ const createRoute = async (req, res) => {
       return errorResponse(res, 400, 'Route name is required');
     }
 
-    const scopedAcademicYearId = hasAcademicYearId
-      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
-      : null;
     const result = await executeTransaction(async (client) => {
       // 1. Insert Route
       const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
       const routeRes = distanceColumn
-        ? (hasAcademicYearId
-            ? await client.query(
-                `INSERT INTO routes (route_name, ${distanceColumn}, is_active, academic_year_id) 
-                 VALUES ($1, $2, $3, $4) RETURNING *`,
-                [route_name, distance_km || 0, is_active !== false, scopedAcademicYearId]
-              )
-            : await client.query(
-                `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
-                 VALUES ($1, $2, $3) RETURNING *`,
-                [route_name, distance_km || 0, is_active !== false]
-              ))
-        : (hasAcademicYearId
-            ? await client.query(
-                `INSERT INTO routes (route_name, is_active, academic_year_id) 
-                 VALUES ($1, $2, $3) RETURNING *`,
-                [route_name, is_active !== false, scopedAcademicYearId]
-              )
-            : await client.query(
-                `INSERT INTO routes (route_name, is_active) 
-                 VALUES ($1, $2) RETURNING *`,
-                [route_name, is_active !== false]
-              ));
+        ? await client.query(
+            `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
+             VALUES ($1, $2, $3) RETURNING *`,
+            [route_name, distance_km || 0, is_active !== false]
+          )
+        : await client.query(
+            `INSERT INTO routes (route_name, is_active) 
+             VALUES ($1, $2) RETURNING *`,
+            [route_name, is_active !== false]
+          );
       const newRoute = routeRes.rows[0];
 
       // 2. Insert Stops
@@ -300,7 +274,6 @@ const createRoute = async (req, res) => {
 
 const updateRoute = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('routes', 'academic_year_id');
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
@@ -316,7 +289,6 @@ const updateRoute = async (req, res) => {
       route_name, 
       distance_km, 
       is_active,
-      academic_year_id,
       stops = []
     } = req.body;
 
@@ -340,10 +312,6 @@ const updateRoute = async (req, res) => {
       if (is_active !== undefined) {
         updates.push(`is_active = $${i++}`);
         values.push(is_active !== false);
-      }
-      if (hasAcademicYearId && academic_year_id !== undefined) {
-        updates.push(`academic_year_id = $${i++}`);
-        values.push(toPositiveInt(academic_year_id));
       }
 
       if (updates.length > 0) {

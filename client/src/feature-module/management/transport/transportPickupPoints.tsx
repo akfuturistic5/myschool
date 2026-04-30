@@ -10,13 +10,10 @@ import { useTransportPickupPoints } from "../../../core/hooks/useTransportPickup
 import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportPickupPoints = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
 
   const {
     data,
@@ -32,11 +29,6 @@ const TransportPickupPoints = () => {
   const [selectedPickupPoint, setSelectedPickupPoint] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [draftStatus, setDraftStatus] = useState(params.status || "all");
-
-  useEffect(() => {
-    setParams((prev: any) => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicYearId]);
 
   const handleApplyClick = (e: any) => {
     e.preventDefault();

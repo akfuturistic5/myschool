@@ -11,13 +11,10 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useTransportDrivers } from "../../../core/hooks/useTransportDrivers";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportVehicleDrivers = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   
   // State for filters and pagination
   const [params, setParams] = useState({
@@ -36,10 +33,6 @@ const TransportVehicleDrivers = () => {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [draftRole, setDraftRole] = useState("all");
   const [draftStatus, setDraftStatus] = useState("all");
-
-  useEffect(() => {
-    setParams(prev => ({ ...prev, academic_year_id: academicYearId ?? undefined, page: 1 }));
-  }, [academicYearId]);
 
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {

@@ -9,8 +9,6 @@ import { DatePicker } from "antd";
 
 import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 interface TransportModalProps {
   selectedRoute?: any;
@@ -89,7 +87,6 @@ const TransportModal = ({
   onSuccess,
   deleteId
 }: TransportModalProps) => {
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   // State for Add/Edit Route
   const [routeName, setRouteName] = useState("");
   const [distanceKm, setDistanceKm] = useState<string | number>("");
@@ -113,9 +110,9 @@ const TransportModal = ({
     const fetchSelectData = async () => {
       try {
         const [pickups, vehicles, routes] = await Promise.all([
-          apiService.getTransportPickupPoints({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined }),
-          apiService.getTransportVehicles({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined }),
-          apiService.getTransportRoutes({ limit: 1000, academic_year_id: academicYearId ?? undefined })
+          apiService.getTransportPickupPoints({ status: 'active', limit: 1000 }),
+          apiService.getTransportVehicles({ status: 'active', limit: 1000 }),
+          apiService.getTransportRoutes({ limit: 1000 })
         ]);
         if (pickups.status === "SUCCESS") setPickupsData(pickups.data);
         if (vehicles.status === "SUCCESS") setVehiclesData(vehicles.data);
@@ -125,7 +122,7 @@ const TransportModal = ({
       }
     };
     fetchSelectData();
-  }, [academicYearId]);
+  }, []);
 
   // Update form fields when selectedRoute changes
   useEffect(() => {
@@ -215,7 +212,6 @@ const TransportModal = ({
       const payload = {
         route_name: routeName,
         distance_km: distanceKm,
-        academic_year_id: academicYearId ?? undefined,
         is_active: !!routeStatus,
         stops: stops.filter(s => s.pickup_point_id) // Only send stops with a selected point
       };
@@ -281,7 +277,6 @@ const TransportModal = ({
         vehicle_id: Number(assignVehicleId),
         route_id: Number(assignRouteId),
         driver_id: Number(assignDriverId),
-        academic_year_id: academicYearId ?? undefined,
         is_active: !!assignStatus
       };
 
@@ -365,7 +360,6 @@ const TransportModal = ({
 
       const payload = {
         point_name: pointName.trim(),
-        academic_year_id: academicYearId ?? undefined,
         is_active: !!pointStatus
       };
 
@@ -464,7 +458,6 @@ const TransportModal = ({
         name: driverNameInput,
         phone: phoneDigits, // Send clean 10-digit phone
         role: driverRole,
-        academic_year_id: academicYearId ?? undefined,
         license_number: driverRole === "conductor" ? null : driverLicense,
         address: driverAddressInput,
         is_active: !!driverStatus
@@ -560,7 +553,6 @@ const TransportModal = ({
         seat_capacity: seatCapacity,
         gps_device_id: gpsTrackingId,
         made_of_year: madeOfYear ? madeOfYear.year() : null,
-        academic_year_id: academicYearId ?? undefined,
         is_active: !!vehicleStatus
       };
 

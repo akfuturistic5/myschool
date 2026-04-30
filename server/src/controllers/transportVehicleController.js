@@ -1,7 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function getDriverDisplayName(driverRow) {
@@ -21,7 +20,6 @@ function mapVehicleRow(row, driverMap = {}) {
     chassis_number: row.chassis_number ?? '',
     seat_capacity: row.seat_capacity ?? row.seating_capacity ?? '',
     gps_device_id: row.gps_device_id ?? '',
-    academic_year_id: row.academic_year_id ?? null,
     driver_id: row.driver_id ?? null,
     route_id: row.route_id ?? null,
     is_active: row.is_active !== false && row.is_active !== 'f',
@@ -39,14 +37,12 @@ function mapVehicleRow(row, driverMap = {}) {
 const getAllVehicles = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('vehicles', 'deleted_at');
-    const hasAcademicYearId = await hasColumn('vehicles', 'academic_year_id');
     const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const {
       page = 1,
       limit = 10,
       search = '',
-      academic_year_id,
       status,
       route_id,
       sortField = 'id',
@@ -54,7 +50,6 @@ const getAllVehicles = async (req, res) => {
     } = req.query;
 
     const offset = (page - 1) * limit;
-    const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
     let whereClause = `WHERE ${hasDeletedAt ? 'v.deleted_at IS NULL' : '(v.is_active IS NOT FALSE OR v.is_active IS NULL)'}`;
     const queryParams = [];
 
@@ -77,10 +72,6 @@ const getAllVehicles = async (req, res) => {
     if (route_id && route_id !== 'all') {
       queryParams.push(parseInt(route_id));
       whereClause += ` AND v.route_id = $${queryParams.length}`;
-    }
-    if (scopedAcademicYearId) {
-      queryParams.push(scopedAcademicYearId);
-      whereClause += ` AND v.academic_year_id = $${queryParams.length}`;
     }
 
     // Sorting
@@ -206,7 +197,6 @@ const createVehicle = async (req, res) => {
       gps_device_id, 
       driver_id, 
       route_id,
-      academic_year_id,
       is_active 
     } = req.body;
 
@@ -219,7 +209,6 @@ const createVehicle = async (req, res) => {
     }
 
     const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
 
     // Map frontend fields to DB column names
     const model = vehicle_model;
@@ -228,9 +217,9 @@ const createVehicle = async (req, res) => {
     const result = await query(`
       INSERT INTO vehicles (
         vehicle_number, model, made_of_year, registration_number, 
-        chassis_number, seating_capacity, gps_device_id, driver_id, route_id, is_active, academic_year_id
+        chassis_number, seating_capacity, gps_device_id, driver_id, route_id, is_active
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `, [
       vehicle_number, 
@@ -242,8 +231,7 @@ const createVehicle = async (req, res) => {
       gps_device_id || '', 
       driver_id ? parseInt(driver_id) : null, 
       route_id ? parseInt(route_id) : null,
-      isActiveValue,
-      scopedAcademicYearId
+      isActiveValue
     ]);
 
     return success(res, 201, 'Vehicle created successfully', result.rows[0]);
@@ -273,7 +261,6 @@ const updateVehicle = async (req, res) => {
       gps_device_id,
       driver_id,
       route_id,
-      academic_year_id,
       is_active
     } = req.body;
 
@@ -320,10 +307,6 @@ const updateVehicle = async (req, res) => {
     if (route_id !== undefined) {
       updates.push(`route_id = $${i++}`);
       values.push(route_id ? parseInt(route_id) : null);
-    }
-    if (academic_year_id !== undefined) {
-      updates.push(`academic_year_id = $${i++}`);
-      values.push(toPositiveInt(academic_year_id));
     }
     if (is_active !== undefined) {
       const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';

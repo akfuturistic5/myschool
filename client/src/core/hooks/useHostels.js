@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useHostels = (academicYearId) => {
+export const useHostels = () => {
   const [hostels, setHostels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,9 +10,7 @@ export const useHostels = (academicYearId) => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getHostels({
-        academic_year_id: academicYearId ?? undefined,
-      });
+      const response = await apiService.getHostels();
 
       const rawData = response?.data ?? (Array.isArray(response) ? response : null);
       const dataArray = Array.isArray(rawData) ? rawData : [];
@@ -63,7 +61,7 @@ export const useHostels = (academicYearId) => {
     } finally {
       setLoading(false);
     }
-  }, [academicYearId]);
+  }, []);
 
   useEffect(() => {
     fetchHostels();

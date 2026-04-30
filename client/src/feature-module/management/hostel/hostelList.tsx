@@ -9,8 +9,6 @@ import HostelModal from "./hostelModal";
 import { useHostels } from "../../../core/hooks/useHostels";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
 
 const TYPE_FILTER = [
@@ -23,8 +21,7 @@ const TYPE_FILTER = [
 const HostelList = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const { hostels, loading, error, refetch } = useHostels(academicYearId);
+  const { hostels, loading, error, refetch } = useHostels();
   const [selectedHostel, setSelectedHostel] = useState<any>(null);
   const [formResetKey, setFormResetKey] = useState(0);
   const [draftType, setDraftType] = useState("all");
@@ -240,9 +237,6 @@ const HostelList = () => {
                   </li>
                 </ol>
               </nav>
-              {academicYearId != null && (
-                <p className="text-muted fs-12 mb-0 mt-1">Showing hostels for the selected academic year (and unassigned legacy rows).</p>
-              )}
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
               <TooltipOption
