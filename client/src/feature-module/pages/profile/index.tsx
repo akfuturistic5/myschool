@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { all_routes } from "../../router/all_routes";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { useDispatch } from "react-redux";
-import { setAuthFromSession } from "../../../core/data/redux/authSlice";
+import {
+  patchAuthUser,
+  setAuthFromSession,
+} from "../../../core/data/redux/authSlice";
 import { apiService } from "../../../core/services/apiService";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { normalizeAuthRole } from "../../../core/utils/roleUtils";
@@ -17,8 +19,9 @@ import { extractMessageFromApiError } from "../../../core/utils/apiErrorMessage"
 type PasswordField =
   | "oldPassword"
   | "newPassword"
-  | "confirmPassword"
-  | "currentPassword";
+  | "confirmPassword";
+
+const DEFAULT_AVATAR_SRC = "/assets/img/profiles/avatar-27.jpg";
 
 const Profile = () => {
   const route = all_routes;
@@ -37,6 +40,8 @@ const Profile = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarSrc, setAvatarSrc] = useState(DEFAULT_AVATAR_SRC);
 
   const [pwd, setPwd] = useState({
     currentPassword: "",
@@ -49,6 +54,9 @@ const Profile = () => {
     // Basic guard; if account is disabled we still allow viewing
     return !!user && user.account_disabled !== true;
   }, [user]);
+  const hasProfileAvatar = useMemo(() => {
+    return !!String(user?.avatar || "").trim();
+  }, [user?.avatar]);
 
   useEffect(() => {
     if (!user) return;
@@ -63,6 +71,28 @@ const Profile = () => {
       permanent_address: (user.permanent_address || "").toString(),
     }));
   }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAvatar = async () => {
+      if (!user?.avatar) {
+        if (!cancelled) setAvatarSrc(DEFAULT_AVATAR_SRC);
+        return;
+      }
+      try {
+        const next = await apiService.resolveAvatarUrl(user.avatar);
+        if (!cancelled) {
+          setAvatarSrc(next || DEFAULT_AVATAR_SRC);
+        }
+      } catch {
+        if (!cancelled) setAvatarSrc(DEFAULT_AVATAR_SRC);
+      }
+    };
+    loadAvatar();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.avatar]);
 
   const setField = (key: keyof typeof form, value: string) => {
     setForm((p) => ({ ...p, [key]: value }));
@@ -87,6 +117,7 @@ const Profile = () => {
             username: d.username,
             displayName,
             role,
+            avatar: d.avatar ?? null,
             user_role_id: d.role_id,
             staff_id: d.staff_id,
             accountDisabled: d.account_disabled === true,
@@ -183,11 +214,69 @@ const Profile = () => {
     }
   };
 
+  const onUploadAvatar = async (file: File) => {
+    const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowed.has(file.type)) {
+      setSaveError("Only JPG, PNG, or WEBP images are allowed.");
+      setSaveSuccess(null);
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setSaveError("Image is too large. Maximum size is 4 MB.");
+      setSaveSuccess(null);
+      return;
+    }
+    setSaveError(null);
+    setSaveSuccess(null);
+    setAvatarUploading(true);
+    try {
+      const upload = await apiService.uploadMyProfileAvatar(file);
+      if (upload?.status !== "SUCCESS" || !upload?.data?.relativePath) {
+        throw new Error(upload?.message || "Failed to upload profile picture");
+      }
+      const saveRes = await apiService.updateMe({ avatar: upload.data.relativePath });
+      if (saveRes?.status !== "SUCCESS") {
+        throw new Error(saveRes?.message || "Failed to save profile picture");
+      }
+      const immediateAvatar = await apiService.resolveAvatarUrl(upload.data.relativePath);
+      setAvatarSrc(immediateAvatar || DEFAULT_AVATAR_SRC);
+      dispatch(patchAuthUser({ avatar: upload.data.relativePath }));
+      setSaveSuccess("Profile picture updated");
+      await hydrateReduxFromMe();
+      await refetch();
+    } catch (e: any) {
+      setSaveError(e?.message || "Failed to upload profile picture");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  const onRemoveAvatar = async () => {
+    setSaveError(null);
+    setSaveSuccess(null);
+    setAvatarUploading(true);
+    try {
+      // Send empty string for broad DB compatibility (some tenants keep users.avatar NOT NULL).
+      const res = await apiService.updateMe({ avatar: "" });
+      if (res?.status !== "SUCCESS") {
+        throw new Error(res?.message || "Failed to remove profile picture");
+      }
+      setAvatarSrc(DEFAULT_AVATAR_SRC);
+      dispatch(patchAuthUser({ avatar: "" }));
+      setSaveSuccess("Profile picture removed");
+      await hydrateReduxFromMe();
+      await refetch();
+    } catch (e: any) {
+      setSaveError(e?.message || "Failed to remove profile picture");
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const [passwordVisibility, setPasswordVisibility] = useState({
     oldPassword: false,
     newPassword: false,
     confirmPassword: false,
-    currentPassword: false,
   });
 
   const togglePasswordVisibility = (field: PasswordField) => {
@@ -270,9 +359,14 @@ const Profile = () => {
                   <div className="card-body ">
                     <div className="settings-profile-upload">
                       <span className="profile-pic">
-                        <ImageWithBasePath
-                          src="assets/img/profiles/avatar-27.jpg"
+                        <img
+                          src={avatarSrc}
                           alt="Profile"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (target.src.includes("avatar-27.jpg")) return;
+                            target.src = DEFAULT_AVATAR_SRC;
+                          }}
                         />
                       </span>
                       <div className="title-upload">
@@ -280,12 +374,6 @@ const Profile = () => {
                         <p className="mb-0 text-primary">
                           {user?.display_role || user?.role || "User"}
                         </p>
-                        <Link to="#" className="me-2">
-                          Delete{" "}
-                        </Link>
-                        <Link to="#" className="text-primary">
-                          Update
-                        </Link>
                       </div>
                     </div>
                     <div className="profile-uploader profile-uploader-two mb-0">
@@ -302,10 +390,30 @@ const Profile = () => {
                       <input
                         type="file"
                         className="form-control"
-                        multiple
+                        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                         id="image_sign"
+                        disabled={avatarUploading || !canEdit || meLoading}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.currentTarget.value = "";
+                          if (!file) return;
+                          await onUploadAvatar(file);
+                        }}
                       />
                       <div id="frames" />
+                    </div>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        className="profile-avatar-delete-btn"
+                        disabled={!hasProfileAvatar || avatarUploading || !canEdit || meLoading}
+                        onClick={() => {
+                          if (!hasProfileAvatar || avatarUploading || !canEdit || meLoading) return;
+                          onRemoveAvatar();
+                        }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -457,33 +565,6 @@ const Profile = () => {
                           >
                             Change
                           </Link>
-                        </div>
-                        <div className="card-body pb-0">
-                          <div className="mb-3 mb-3">
-                            <label className="form-label">
-                              Current Password
-                            </label>
-                            <div className="pass-group d-flex">
-                              <input
-                                type={
-                                  passwordVisibility.currentPassword
-                                    ? "text"
-                                    : "password"
-                                }
-                                className="pass-input form-control"
-                              />
-                              <span
-                                className={`ti toggle-passwords ${
-                                  passwordVisibility.currentPassword
-                                    ? "ti-eye"
-                                    : "ti-eye-off"
-                                }`}
-                                onClick={() =>
-                                  togglePasswordVisibility("currentPassword")
-                                }
-                              ></span>
-                            </div>
-                          </div>
                         </div>
                       </div>
                     </div>

@@ -9,7 +9,7 @@ const asArray = (response) => {
   return [];
 };
 
-export const useClassesWithSections = (academicYearId = null) => {
+export const useClassesWithSections = () => {
   const [classesWithSections, setClassesWithSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,13 +19,9 @@ export const useClassesWithSections = (academicYearId = null) => {
       setLoading(true);
       setError(null);
 
-      const classesPromise = academicYearId
-        ? apiService.getClassesByAcademicYear(academicYearId)
-        : apiService.getClasses();
-
       // Fetch classes, sections, and subjects
       const [classesResponse, sectionsResponse, subjectsResponse] = await Promise.all([
-        classesPromise,
+        apiService.getClasses(),
         apiService.getSections(),
         apiService.getSubjects()
       ]);
@@ -45,6 +41,10 @@ export const useClassesWithSections = (academicYearId = null) => {
       
       classes.forEach(classItem => {
         const classSections = sections.filter(section => section.class_id === classItem.id);
+        const classTeacherName = `${classItem.teacher_first_name || ''} ${classItem.teacher_last_name || ''}`.trim();
+        const classTotalStudents = Number.isFinite(Number(classItem.no_of_students))
+          ? Number(classItem.no_of_students)
+          : null;
         
         if (classSections.length > 0) {
           classSections.forEach(section => {
@@ -58,11 +58,13 @@ export const useClassesWithSections = (academicYearId = null) => {
               sectionId: section.id,
               sectionName: section.section_name,
               noOfStudents: section.no_of_students || 0,
-              noOfSubjects: classItem.no_of_subjects || 0,
+              noOfSubjects: subjectCountByClass[classItem.id] || classItem.no_of_subjects || 0,
+              classTotalStudents,
               status: section.is_active ? 'Active' : 'Inactive',
               classStatus: classItem.is_active,
               teacherFirstName: section.teacher_first_name,
               teacherLastName: section.teacher_last_name,
+              classTeacherName,
               roomNumber: section.room_number,
               class_teacher_id: classItem.class_teacher_id ?? null,
               section_teacher_id: section.section_teacher_id ?? null,
@@ -79,11 +81,13 @@ export const useClassesWithSections = (academicYearId = null) => {
             sectionId: null,
             sectionName: 'N/A',
             noOfStudents: classItem.no_of_students || 0,
-            noOfSubjects: classItem.no_of_subjects || 0,
+            noOfSubjects: subjectCountByClass[classItem.id] || classItem.no_of_subjects || 0,
+            classTotalStudents,
             status: classItem.is_active ? 'Active' : 'Inactive',
             classStatus: classItem.is_active,
             teacherFirstName: classItem.teacher_first_name,
             teacherLastName: classItem.teacher_last_name,
+            classTeacherName,
             roomNumber: null,
             class_teacher_id: classItem.class_teacher_id ?? null,
             section_teacher_id: null,
@@ -102,7 +106,7 @@ export const useClassesWithSections = (academicYearId = null) => {
 
   useEffect(() => {
     fetchClassesWithSections();
-  }, [academicYearId]);
+  }, []);
 
   return {
     classesWithSections,

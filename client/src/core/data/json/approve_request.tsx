@@ -6,7 +6,6 @@ export const approveRequest = [
         leaveDate: "05 May 2024-07 may 2024",
         noofDays: 5,
         appliedOn: "05May2024",
-        authority: "Jacquelin",
         status: "Approved"
     },
     {
@@ -16,7 +15,6 @@ export const approveRequest = [
         leaveDate: "07 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "07May2024",
-        authority: "Elizabeth",
         status: "Approved"
     },
     {
@@ -26,7 +24,6 @@ export const approveRequest = [
         leaveDate: "08 May 2024-19 may2024",
         noofDays: 10,
         appliedOn: "02May2024",
-        authority: "Teresa",
         status: "Approved"
     },
     {
@@ -36,7 +33,6 @@ export const approveRequest = [
         leaveDate: "05 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "04May2024",
-        authority: "Edward",
         status: "Approved"
     },
     {
@@ -46,7 +42,6 @@ export const approveRequest = [
         leaveDate: "07 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "06May2024",
-        authority: "Daniel",
         status: "Disapproved"
     },
     {
@@ -56,7 +51,6 @@ export const approveRequest = [
         leaveDate: "08 May 2024-19 may 2024",
         noofDays: 1,
         appliedOn: "12May2024",
-        authority: "Hellana",
         status: "Pending"
     },
     {
@@ -66,7 +60,6 @@ export const approveRequest = [
         leaveDate: "07 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "04May2024",
-        authority: "Erickson",
         status: "Pending"
     },
     {
@@ -76,7 +69,6 @@ export const approveRequest = [
         leaveDate: "05 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "04May2024",
-        authority: "Raul",
         status: "Approved"
     },
     {
@@ -86,7 +78,6 @@ export const approveRequest = [
         leaveDate: "08 May 2024-19 may 2024",
         noofDays: 1,
         appliedOn: "04May2024",
-        authority: "Aaron",
         status: "Pending"
     },
     {
@@ -96,7 +87,6 @@ export const approveRequest = [
         leaveDate: "07 May 2024-07 may 2024",
         noofDays: 1,
         appliedOn: "04May2024",
-        authority: "Morgan",
         status: "Pending"
     }
 ];

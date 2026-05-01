@@ -18,6 +18,7 @@ async function main() {
   const files = [
     '043_transport_fees_and_allocations.sql',
     '044_transport_fee_staff_amount.sql',
+    '051_transport_fees_allocations_academic_year.sql',
   ];
 
   const pool = url

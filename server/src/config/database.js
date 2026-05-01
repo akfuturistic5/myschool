@@ -212,6 +212,15 @@ const masterSchemaBootstrapPromise = (async () => {
         ip_address VARCHAR(100) NULL
       );
     `);
+    // If this table existed before (or was manually imported), the SERIAL sequence can drift.
+    // That causes "duplicate key value violates unique constraint tenant_sessions_pkey" even when
+    // INSERT doesn't specify id. Keep it self-healing at boot.
+    await masterPool.query(`
+      SELECT setval(
+        pg_get_serial_sequence('tenant_sessions', 'id'),
+        COALESCE((SELECT MAX(id) FROM tenant_sessions), 0)
+      );
+    `);
     await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions(school_id);`);
     await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_expires ON tenant_sessions(expires_at);`);
 

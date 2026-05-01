@@ -31,24 +31,52 @@ interface StudentSidebarProps {
     unique_student_ids?: string | null;
     pen_number?: string | null;
     aadhaar_no?: string | null;
-    hostel_id?: number | null;
-    hostel_room_id?: number | null;
+    category_name?: string | null;
+    category?: string | null;
     hostel_name?: string | null;
     floor?: string | null;
     hostel_room_number?: string | null;
     route_id?: number | null;
     pickup_point_id?: number | null;
+    vehicle_id?: number | null;
     route_name?: string | null;
     pickup_point_name?: string | null;
     vehicle_number?: string | null;
+    transport_assigned_fee_id?: number | null;
+    transport_fee_plan_name?: string | null;
+    transport_assigned_fee_amount?: number | string | null;
+    transport_is_free?: boolean | null;
     siblings?: Array<{
       name?: string;
       class_name?: string;
       section_name?: string;
       admission_number?: string;
+      roll_number?: string;
     }>;
   } | null;
 }
+
+const isPlaceholderValue = (value: unknown) => {
+  if (value == null) return true;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "not applicable" ||
+    normalized === "not available" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "undefined" ||
+    normalized === "-" ||
+    normalized === "--"
+  );
+};
+
+const toDisplayValue = (value: unknown) => {
+  if (isPlaceholderValue(value)) return null;
+  return String(value).trim();
+};
 
 const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const currentUser = useSelector(selectUser);
@@ -84,13 +112,46 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const caste = student?.cast_name ?? "N/A";
   const motherTongue = student?.mother_tongue_name ?? "N/A";
   
-  // Sibling logic: Prefer the new dynamic array, fallback to legacy fields
-  const siblings = student?.siblings || [];
-  const legacySiblings = [];
-  if (student?.sibiling_1) legacySiblings.push({ name: student.sibiling_1, class_name: student.sibiling_1_class || 'N/A' });
-  if (student?.sibiling_2) legacySiblings.push({ name: student.sibiling_2, class_name: student.sibiling_2_class || 'N/A' });
-  
-  const displaySiblings = siblings.length > 0 ? siblings : legacySiblings;
+  // Sibling logic: prefer dynamic list, sanitize placeholder values, then fallback to legacy fields.
+  const siblings = Array.isArray(student?.siblings) ? student.siblings : [];
+  const normalizedSiblings = siblings
+    .map((sib) => ({
+      name: toDisplayValue(sib?.name),
+      class_name: toDisplayValue(sib?.class_name),
+      section_name: toDisplayValue(sib?.section_name),
+      admission_number: toDisplayValue(sib?.admission_number),
+      roll_number: toDisplayValue(sib?.roll_number),
+    }))
+    .filter(
+      (sib) =>
+        sib.name ||
+        sib.class_name ||
+        sib.section_name ||
+        sib.admission_number ||
+        sib.roll_number
+    );
+
+  const legacySiblings: Array<{
+    name: string | null;
+    class_name: string | null;
+    section_name?: string | null;
+    admission_number?: string | null;
+    roll_number?: string | null;
+  }> = [];
+  if (!isPlaceholderValue(student?.sibiling_1)) {
+    legacySiblings.push({
+      name: toDisplayValue(student?.sibiling_1),
+      class_name: toDisplayValue(student?.sibiling_1_class),
+    });
+  }
+  if (!isPlaceholderValue(student?.sibiling_2)) {
+    legacySiblings.push({
+      name: toDisplayValue(student?.sibiling_2),
+      class_name: toDisplayValue(student?.sibiling_2_class),
+    });
+  }
+
+  const displaySiblings = normalizedSiblings.length > 0 ? normalizedSiblings : legacySiblings;
 
   const hostelName = student?.hostel_name && String(student.hostel_name).trim() ? String(student.hostel_name).trim() : null;
   const hostelFloor = student?.floor && String(student.floor).trim() ? String(student.floor).trim() : null;
@@ -204,8 +265,14 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                     />
                   </span>
                   <div className="ms-2">
-                    <h5 className="fs-14">{sib.name}</h5>
-                    <p>{sib.class_name ?? 'N/A'}{sib.section_name ? `, ${sib.section_name}` : ''}</p>
+                    <h5 className="fs-14">
+                      {sib.name || (sib.admission_number ? `Admission: ${sib.admission_number}` : (sib.roll_number ? `Roll: ${sib.roll_number}` : "N/A"))}
+                    </h5>
+                    <p>
+                      {sib.class_name
+                        ? `${sib.class_name}${sib.section_name ? `, ${sib.section_name}` : ""}`
+                        : "N/A"}
+                    </p>
                   </div>
                 </div>
               ))
@@ -236,37 +303,33 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
             </ul>
             <div className="tab-content">
               <div className="tab-pane fade show active" id="hostel">
-                {(hostelName || hostelRoomNumber || student?.hostel_id || student?.hostel_room_id) ? (
-                  <div className="d-flex align-items-center mb-3">
-                    <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                      <i className="ti ti-building-fortress fs-16" />
-                    </span>
-                    <div>
-                      <h6 className="fs-14 mb-1">
-                        {hostelName ? `${hostelName}${hostelFloor ? `, ${hostelFloor}` : ''}` : (student?.hostel_id ? 'Hostel assigned' : 'N/A')}
-                      </h6>
-                      <p className="text-primary">
-                        {hostelRoomNumber ? `Room No : ${hostelRoomNumber}` : (student?.hostel_room_id ? 'Room assigned' : 'Room No : N/A')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-muted mb-0">No hostel information available</p>
-                )}
+                <p className="text-muted mb-0">Hostel module is in development. Details will be available soon.</p>
               </div>
               <div className="tab-pane fade" id="transport">
-                {(student?.route_name || student?.pickup_point_name || student?.vehicle_number || student?.route_id || student?.pickup_point_id) ? (
+                {(student?.route_name ||
+                  student?.pickup_point_name ||
+                  student?.vehicle_number ||
+                  student?.route_id ||
+                  student?.pickup_point_id ||
+                  student?.vehicle_id ||
+                  student?.transport_assigned_fee_id) ? (
                   <>
                     <div className="d-flex align-items-center mb-3">
                       <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
                         <i className="ti ti-bus fs-16" />
                       </span>
                       <div>
-                        <span className="fs-12 mb-1">Route</span>
-                        <p className="text-dark">{student.route_name ?? 'N/A'}</p>
+                        <span className="fs-12 mb-1">Pickup Point</span>
+                        <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
                       </div>
                     </div>
                     <div className="row">
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Route</span>
+                          <p className="text-dark">{student.route_name ?? 'N/A'}</p>
+                        </div>
+                      </div>
                       <div className="col-sm-6">
                         <div className="mb-3">
                           <span className="fs-12 mb-1">Bus Number</span>
@@ -275,14 +338,28 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                       </div>
                       <div className="col-sm-6">
                         <div className="mb-3">
-                          <span className="fs-12 mb-1">Pickup Point</span>
-                          <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
+                          <span className="fs-12 mb-1">Plan</span>
+                          <p className="text-dark">
+                            {student.transport_is_free
+                              ? "Free Allocation"
+                              : (student.transport_fee_plan_name ?? "N/A")}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="col-sm-6">
+                        <div className="mb-3">
+                          <span className="fs-12 mb-1">Assigned Amount</span>
+                          <p className="text-dark">
+                            {student.transport_is_free
+                              ? "0"
+                              : (student.transport_assigned_fee_amount != null ? String(student.transport_assigned_fee_amount) : "N/A")}
+                          </p>
                         </div>
                       </div>
                     </div>
                   </>
                 ) : (
-                  <p className="text-muted mb-0">No transport information available</p>
+                  <p className="text-muted mb-0">Transportation is not allocated to this student yet.</p>
                 )}
               </div>
             </div>

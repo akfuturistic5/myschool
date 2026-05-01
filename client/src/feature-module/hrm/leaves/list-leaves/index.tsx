@@ -2,7 +2,12 @@ import { useRef, useMemo, useState } from "react";
 import { useSelector } from "react-redux";
 import type { TableData } from "../../../../core/data/interface";
 import Table from "../../../../core/common/dataTable/index";
-import PredefinedDateRanges from "../../../../core/common/datePicker";
+import LeaveListDateRangeFilter from "./LeaveListDateRangeFilter";
+import {
+  getLeaveListDateBounds,
+  defaultCustomDateRange,
+  type LeaveListDatePreset,
+} from "./leaveListDateRangeUtils";
 import CommonSelect from "../../../../core/common/commonSelect";
 import { leaveType } from "../../../../core/common/selectoption/selectoption";
 import { Link } from "react-router-dom";
@@ -18,11 +23,13 @@ import { useDesignations } from "../../../../core/hooks/useDesignations";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
+/** Default: show decided leaves only (excludes pending & cancelled). Must match server status tokens. */
+const DEFAULT_LIST_LEAVE_STATUSES = "approved,rejected";
+
 const LEAVE_STATUS_OPTIONS = [
-  { value: "pending", label: "Pending" },
-  { value: "approved", label: "Approved" },
-  { value: "rejected", label: "Rejected" },
-  { value: "cancelled", label: "Cancelled" },
+  { value: DEFAULT_LIST_LEAVE_STATUSES, label: "Approved & Rejected" },
+  { value: "approved", label: "Approved only" },
+  { value: "rejected", label: "Rejected only" },
 ];
 
 const ListLeaves = () => {
@@ -33,7 +40,13 @@ const ListLeaves = () => {
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
   const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
   const isOwnLeavesOnly = false;
-  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(DEFAULT_LIST_LEAVE_STATUSES);
+  const [datePreset, setDatePreset] = useState<LeaveListDatePreset>("all");
+  const [customDateRange, setCustomDateRange] = useState(() => defaultCustomDateRange());
+  const { leaveFrom, leaveTo } = useMemo(
+    () => getLeaveListDateBounds(datePreset, customDateRange),
+    [datePreset, customDateRange]
+  );
   const [filterLeaveTypeId, setFilterLeaveTypeId] = useState<string | null>(null);
   const [filterDepartmentId, setFilterDepartmentId] = useState<string | null>(null);
   const [filterDesignationId, setFilterDesignationId] = useState<string | null>(null);
@@ -94,17 +107,23 @@ const ListLeaves = () => {
     [designations]
   );
   const { leaveApplications, loading: leaveLoading, error: leaveError } = useLeaveApplications({
-    limit: 50,
+    limit: 200,
+    page: 1,
+    pageSize: 200,
     canUseAdminList,
     studentOnly: isOwnLeavesOnly,
-    status: filterStatus ? String(filterStatus).toLowerCase() : null,
+    status: filterStatus != null && String(filterStatus).trim() !== "" ? String(filterStatus).toLowerCase() : null,
     leaveTypeId: Number.isFinite(selectedLeaveTypeId) && selectedLeaveTypeId > 0 ? selectedLeaveTypeId : null,
     departmentId: Number.isFinite(selectedDepartmentId) && selectedDepartmentId > 0 ? selectedDepartmentId : null,
     designationId: Number.isFinite(selectedDesignationId) && selectedDesignationId > 0 ? selectedDesignationId : null,
     classId: Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
     sectionId: Number.isFinite(selectedSectionId) && selectedSectionId > 0 ? selectedSectionId : null,
     academicYearId: academicYearId ?? null,
-    sortBy: "start_date",
+    leaveFrom,
+    leaveTo,
+    // Most-recently submitted first; avoids hiding older decided leaves when LIMIT is applied
+    // (sorting only by start_date desc surfaces far-future dates first and drops past rows).
+    sortBy: "created_at",
     sortOrder,
   });
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +143,7 @@ const ListLeaves = () => {
       role: row.role ?? "—",
       leaveDate: row.leaveRange ?? row.leaveDate ?? "—",
       noofDays: row.noOfDays ?? "—",
-      appliedOn: row.applyOn ?? "—",
+      appliedOn: row.appliedOn ?? "—",
       status: row.status ?? "Pending",
     }));
   }, [leaveApplications]);
@@ -168,8 +187,10 @@ const ListLeaves = () => {
       dataIndex: "status",
       render: (text: string) => {
         const t = (text ?? "").toString();
-        const isApproved = t.toLowerCase().includes("approv");
-        const isRejected = t.toLowerCase().includes("reject") || t.toLowerCase().includes("declin");
+        const lo = t.toLowerCase();
+        const isApproved = lo.includes("approv") || lo === "accept" || lo === "accepted";
+        const isRejected =
+          lo.includes("reject") || lo.includes("declin") || lo.includes("denied") || lo.includes("deny");
         const badgeClass = isApproved ? "badge-soft-success" : isRejected ? "badge-soft-danger" : "badge-soft-pending";
         const label = t ? t.charAt(0).toUpperCase() + t.slice(1) : "Pending";
         return (
@@ -217,7 +238,12 @@ const ListLeaves = () => {
                 <h4 className="mb-3">Leave List</h4>
                 <div className="d-flex align-items-center flex-wrap">
                   <div className="input-icon-start mb-3 me-2 position-relative">
-                    <PredefinedDateRanges />
+                    <LeaveListDateRangeFilter
+                      preset={datePreset}
+                      onPresetChange={setDatePreset}
+                      customRange={customDateRange}
+                      onCustomRangeChange={setCustomDateRange}
+                    />
                   </div>
                   <div className="dropdown mb-3 me-2">
                     <Link
@@ -253,8 +279,8 @@ const ListLeaves = () => {
                                 <CommonSelect
                                   className="select"
                                   options={LEAVE_STATUS_OPTIONS}
-                                  value={filterStatus}
-                                  onChange={(value) => setFilterStatus(value)}
+                                  value={filterStatus ?? DEFAULT_LIST_LEAVE_STATUSES}
+                                  onChange={(value) => setFilterStatus(value || DEFAULT_LIST_LEAVE_STATUSES)}
                                 />
                               </div>
                             </div>
@@ -315,11 +341,13 @@ const ListLeaves = () => {
                             className="btn btn-light me-3"
                             onClick={() => {
                               setFilterLeaveTypeId(null);
-                              setFilterStatus(null);
+                              setFilterStatus(DEFAULT_LIST_LEAVE_STATUSES);
                               setFilterDepartmentId(null);
                               setFilterDesignationId(null);
                               setFilterClassId(null);
                               setFilterSectionId(null);
+                              setDatePreset("all");
+                              setCustomDateRange(defaultCustomDateRange());
                             }}
                           >
                             Reset

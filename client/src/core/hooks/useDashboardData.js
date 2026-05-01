@@ -125,7 +125,13 @@ export const useDashboardBestPerformers = (options = {}) => {
 };
 
 export const useDashboardStarStudents = (options = {}) => {
-  const { limit = 3, academicYearId } = options;
+  const {
+    limit = 3,
+    academicYearId,
+    className,
+    sectionName,
+    timeRange,
+  } = options;
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -136,7 +142,13 @@ export const useDashboardStarStudents = (options = {}) => {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getDashboardStarStudents({ limit, academicYearId });
+        const res = await apiService.getDashboardStarStudents({
+          limit,
+          academicYearId,
+          className,
+          sectionName,
+          timeRange,
+        });
         if (mounted && res.status === 'SUCCESS' && Array.isArray(res.data)) {
           setStudents(res.data);
         } else if (mounted) {
@@ -152,7 +164,7 @@ export const useDashboardStarStudents = (options = {}) => {
       }
     })();
     return () => { mounted = false; };
-  }, [limit, academicYearId]);
+  }, [limit, academicYearId, className, sectionName, timeRange]);
 
   return { students, loading, error };
 };
@@ -328,6 +340,9 @@ export const useDashboardFeeStats = (options = {}) => {
     fineCollected: 0,
     studentNotPaid: 0,
     totalOutstanding: 0,
+    totalAssignedAmount: 0,
+    studentsWithAssignments: 0,
+    studentsWithAnyPayment: 0,
     feePeriod: 'all',
   });
   const [loading, setLoading] = useState(true);
@@ -346,13 +361,25 @@ export const useDashboardFeeStats = (options = {}) => {
             fineCollected: res.data.fineCollected ?? 0,
             studentNotPaid: res.data.studentNotPaid ?? 0,
             totalOutstanding: res.data.totalOutstanding ?? 0,
+            totalAssignedAmount: res.data.totalAssignedAmount ?? 0,
+            studentsWithAssignments: res.data.studentsWithAssignments ?? 0,
+            studentsWithAnyPayment: res.data.studentsWithAnyPayment ?? 0,
             feePeriod: res.data.feePeriod ?? feePeriod,
           });
         }
       } catch (err) {
         if (mounted) {
           setError(err.message || 'Failed to fetch fee stats');
-          setFeeStats({ totalFeesCollected: 0, fineCollected: 0, studentNotPaid: 0, totalOutstanding: 0, feePeriod: 'all' });
+          setFeeStats({
+            totalFeesCollected: 0,
+            fineCollected: 0,
+            studentNotPaid: 0,
+            totalOutstanding: 0,
+            totalAssignedAmount: 0,
+            studentsWithAssignments: 0,
+            studentsWithAnyPayment: 0,
+            feePeriod: 'all',
+          });
         }
       } finally {
         if (mounted) setLoading(false);

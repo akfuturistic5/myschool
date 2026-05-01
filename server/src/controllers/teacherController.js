@@ -5,6 +5,135 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const { canAccessClass, parseId, getAuthContext, isAdmin, resolveTeacherIdForUser } = require('../utils/accessControl');
 const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
+const { resolveAcademicYearId } = require('../utils/academicYear');
+
+async function upsertStaffTransportAllocation(client, staffId, staffAcademicYearId, transportPayload) {
+  const routeId = Number(transportPayload?.route_id);
+  const pickupPointId = Number(transportPayload?.pickup_point_id);
+  const vehicleId = Number(transportPayload?.vehicle_id);
+  const assignedFeeId =
+    transportPayload?.assigned_fee_id != null && transportPayload?.assigned_fee_id !== ''
+      ? Number(transportPayload.assigned_fee_id)
+      : null;
+  const isFree = Boolean(transportPayload?.is_free);
+  const isRequired = Boolean(transportPayload?.is_transport_required);
+  if (!isRequired) {
+    await client.query(
+      `UPDATE transport_allocations
+       SET status = 'Inactive',
+           end_date = COALESCE(end_date, CURRENT_DATE),
+           modified_at = CURRENT_TIMESTAMP
+       WHERE user_id = $1
+         AND LOWER(COALESCE(user_type, '')) = 'staff'
+         AND LOWER(COALESCE(status, '')) = 'active'
+         AND end_date IS NULL`,
+      [staffId]
+    );
+    return;
+  }
+  if (
+    !Number.isFinite(routeId) || routeId <= 0 ||
+    !Number.isFinite(pickupPointId) || pickupPointId <= 0 ||
+    !Number.isFinite(vehicleId) || vehicleId <= 0
+  ) {
+    return;
+  }
+  let assignedFeeAmount = null;
+  if (isFree) {
+    assignedFeeAmount = 0;
+  } else if (assignedFeeId != null) {
+    const feeRes = await client.query(
+      `SELECT id, amount, staff_amount, pickup_point_id, status
+       FROM transport_fee_master
+       WHERE id = $1`,
+      [assignedFeeId]
+    );
+    if (feeRes.rows.length > 0) {
+      const feeRow = feeRes.rows[0];
+      if (
+        Number(feeRow.pickup_point_id) === pickupPointId &&
+        String(feeRow.status || '').toLowerCase() === 'active'
+      ) {
+        assignedFeeAmount = Number(feeRow.staff_amount ?? feeRow.amount ?? 0);
+      }
+    }
+  }
+  const active = await client.query(
+    `SELECT id
+     FROM transport_allocations
+     WHERE user_id = $1
+       AND LOWER(COALESCE(user_type, '')) = 'staff'
+       AND LOWER(COALESCE(status, '')) = 'active'
+       AND end_date IS NULL
+     ORDER BY id DESC
+     LIMIT 1`,
+    [staffId]
+  );
+  if (active.rows.length > 0) {
+    await client.query(
+      `UPDATE transport_allocations
+       SET route_id = $1,
+           pickup_point_id = $2,
+           vehicle_id = $3,
+           assigned_fee_id = $4,
+           assigned_fee_amount = $5,
+           is_free = $6,
+           academic_year_id = COALESCE($7, academic_year_id),
+           modified_at = CURRENT_TIMESTAMP
+       WHERE id = $8`,
+      [
+        routeId,
+        pickupPointId,
+        vehicleId,
+        isFree ? null : assignedFeeId,
+        assignedFeeAmount,
+        isFree,
+        staffAcademicYearId || null,
+        active.rows[0].id,
+      ]
+    );
+    return;
+  }
+  await client.query(
+    `INSERT INTO transport_allocations
+      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, modified_at)
+     VALUES
+      ($1, 'staff', $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [
+      staffId,
+      routeId,
+      pickupPointId,
+      vehicleId,
+      isFree ? null : assignedFeeId,
+      assignedFeeAmount,
+      isFree,
+      staffAcademicYearId || null,
+    ]
+  );
+}
+
+async function syncStaffTransportHostel(client, staffId, body, resolvedAcademicYearId) {
+  await client.query(
+    `UPDATE staff SET
+       is_transport_required = $1::boolean,
+       is_hostel_required = $2::boolean,
+       modified_at = NOW()
+     WHERE id = $3`,
+    [
+      Boolean(body?.is_transport_required),
+      Boolean(body?.is_hostel_required),
+      staffId,
+    ]
+  );
+  await upsertStaffTransportAllocation(client, Number(staffId), resolvedAcademicYearId ? Number(resolvedAcademicYearId) : null, {
+    is_transport_required: body?.is_transport_required,
+    route_id: body?.route_id,
+    pickup_point_id: body?.pickup_point_id,
+    vehicle_id: body?.vehicle_id,
+    assigned_fee_id: body?.assigned_fee_id,
+    is_free: body?.is_free,
+  });
+}
 
 const normalizeGender = (g) => {
   if (g == null || g === '') return null;
@@ -267,7 +396,7 @@ const getTeacherById = async (req, res) => {
         s.salary,
         s.qualification,
         s.experience_years,
-        s.photo_url,
+        COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url,
         s.is_active,
         s.user_id,
         t.youtube,
@@ -277,9 +406,54 @@ const getTeacherById = async (req, res) => {
         t.account_number,
         t.epf_no,
         c.class_name,
-        sub.subject_name
+        sub.subject_name,
+        COALESCE(tr.route_id::integer, NULL) AS route_id,
+        tr.pickup_point_id,
+        tr.vehicle_id,
+        tr.transport_assigned_fee_id,
+        tr.transport_assigned_fee_amount,
+        tr.transport_is_free AS transport_is_free,
+        tr.route_alloc_name AS route_name,
+        tr.pickup_alloc_name AS pickup_point_name,
+        tr.vehicle_alloc_no AS vehicle_number,
+        tr.plan_name AS transport_fee_plan_name,
+        s.is_transport_required,
+        s.is_hostel_required,
+        NULL::text AS hostel_name,
+        NULL::text AS hostel_room_number
       FROM teachers t
       INNER JOIN staff s ON t.staff_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT
+          ta.route_id,
+          ta.pickup_point_id,
+          ta.vehicle_id,
+          ta.assigned_fee_id AS transport_assigned_fee_id,
+          ta.assigned_fee_amount AS transport_assigned_fee_amount,
+          ta.is_free AS transport_is_free,
+          rt.route_name AS route_alloc_name,
+          COALESCE(pp.point_name, pp.address) AS pickup_alloc_name,
+          v.vehicle_number AS vehicle_alloc_no,
+          tfm.plan_name
+        FROM transport_allocations ta
+        LEFT JOIN routes rt ON rt.id = ta.route_id
+        LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
+        LEFT JOIN vehicles v ON v.id = ta.vehicle_id
+        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
+        WHERE LOWER(COALESCE(ta.user_type, '')) = 'staff'
+          AND (ta.user_id = s.id OR (s.user_id IS NOT NULL AND ta.user_id = s.user_id))
+          AND LOWER(COALESCE(ta.status, '')) = 'active'
+          AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
+        ORDER BY
+          CASE
+            WHEN s.user_id IS NOT NULL AND ta.user_id = s.user_id THEN 0
+            WHEN ta.user_id = s.id THEN 1
+            ELSE 2
+          END,
+          ta.id DESC
+        LIMIT 1
+      ) tr ON TRUE
+      LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON t.class_id = c.id
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       WHERE t.id = $1
@@ -296,7 +470,56 @@ const getTeacherById = async (req, res) => {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
 
-    return success(res, 200, 'Teacher fetched successfully', row);
+    const classTeacherParams = [row.staff_id];
+    const classTeacherWhere = 'WHERE c.class_teacher_id = $1';
+    const classTeacherResult = await query(
+      `SELECT
+         c.id AS class_id,
+         c.class_name,
+         c.class_code,
+         c.is_active
+       FROM classes c
+       ${classTeacherWhere}
+       ORDER BY c.class_name ASC`,
+      classTeacherParams
+    );
+
+    const sectionTeacherParams = [row.staff_id];
+    const sectionTeacherWhere = 'WHERE sec.section_teacher_id = $1';
+    const sectionTeacherResult = await query(
+      `SELECT
+         sec.id AS section_id,
+         sec.section_name,
+         sec.is_active,
+         sec.class_id,
+         c.class_name,
+         c.class_code
+       FROM sections sec
+       INNER JOIN classes c ON c.id = sec.class_id
+       ${sectionTeacherWhere}
+       ORDER BY c.class_name ASC, sec.section_name ASC`,
+      sectionTeacherParams
+    );
+
+    const enrichedRow = {
+      ...row,
+      class_teacher_of: classTeacherResult.rows.map((item) => ({
+        classId: item.class_id,
+        className: item.class_name,
+        classCode: item.class_code,
+        isActive: item.is_active,
+      })),
+      section_teacher_of: sectionTeacherResult.rows.map((item) => ({
+        sectionId: item.section_id,
+        sectionName: item.section_name,
+        isActive: item.is_active,
+        classId: item.class_id,
+        className: item.class_name,
+        classCode: item.class_code,
+      })),
+    };
+
+    return success(res, 200, 'Teacher fetched successfully', enrichedRow);
   } catch (error) {
     console.error('Error fetching teacher:', error);
     return errorResponse(res, 500, 'Failed to fetch teacher');
@@ -425,11 +648,10 @@ const getTeacherRoutine = async (req, res) => {
     }
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
-    const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearClause = hasYearFilter
-      ? ' AND (cs.academic_year_id = $2 OR c.academic_year_id = $2 OR cs.academic_year_id IS NULL OR c.academic_year_id IS NULL)'
-      : '';
-    const scheduleParams = hasYearFilter ? [staffId, academicYearId] : [staffId];
+    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
+      return errorResponse(res, 400, 'academic_year_id query parameter is required');
+    }
+    const scheduleParams = [staffId, academicYearId];
 
     // Get class schedules for this teacher
     // Handle both 'slots' and 'time_slots' table names
@@ -458,7 +680,8 @@ const getTeacherRoutine = async (req, res) => {
       LEFT JOIN sections sec ON cs.section_id = sec.id
       LEFT JOIN subjects sub ON cs.subject_id = sub.id
       LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-      WHERE cs.teacher_id = $1${yearClause}
+      WHERE cs.teacher_id = $1
+        AND cs.academic_year_id = $2
       ORDER BY 
         CASE LOWER(TRIM(cs.day_of_week::text))
           WHEN '0' THEN 1
@@ -513,7 +736,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
           LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
           ORDER BY 
             CASE LOWER(TRIM(cs.day_of_week::text))
               WHEN '0' THEN 1
@@ -547,7 +771,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN classes c ON cs.class_id = c.id
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
         `;
         schedulesResult = await query(schedulesQuery, scheduleParams);
       }
@@ -751,6 +976,12 @@ const createTeacher = async (req, res) => {
     const desigParsed = parsePositiveIntOrNull(designation_id);
     const deptParsed = parsePositiveIntOrNull(department_id);
     const bgParsed = parsePositiveIntOrNull(blood_group_id);
+    if (desigParsed == null) {
+      return errorResponse(res, 400, 'Designation is required', 'VALIDATION_ERROR');
+    }
+    if (deptParsed == null) {
+      return errorResponse(res, 400, 'Department is required', 'VALIDATION_ERROR');
+    }
     if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) {
       return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
     }
@@ -789,6 +1020,7 @@ const createTeacher = async (req, res) => {
     const permAddr = (permanent_address || '').toString().trim() || null;
 
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+    const resolvedAyCreate = await resolveAcademicYearId(body.academic_year_id);
 
     // Single DB transaction: staff INSERT → user INSERT → teachers INSERT.
     // executeTransaction runs BEGIN / COMMIT or ROLLBACK on any failure — no partial teacher rows.
@@ -912,6 +1144,10 @@ const createTeacher = async (req, res) => {
           epf_no || null,
         ]
       );
+
+      if ('is_transport_required' in body || 'is_hostel_required' in body) {
+        await syncStaffTransportHostel(client, staffId, body, resolvedAyCreate);
+      }
       return { teacherId: tIns.rows[0].id, staffId };
     });
 
@@ -977,9 +1213,53 @@ const createTeacher = async (req, res) => {
         s.is_active,
         t.epf_no,
         c.class_name,
-        sub.subject_name
+        sub.subject_name,
+        COALESCE(tr.route_id::integer, NULL) AS route_id,
+        tr.pickup_point_id,
+        tr.vehicle_id,
+        tr.transport_assigned_fee_id,
+        tr.transport_assigned_fee_amount,
+        tr.transport_is_free AS transport_is_free,
+        tr.route_alloc_name AS route_name,
+        tr.pickup_alloc_name AS pickup_point_name,
+        tr.vehicle_alloc_no AS vehicle_number,
+        tr.plan_name AS transport_fee_plan_name,
+        s.is_transport_required,
+        s.is_hostel_required,
+        NULL::text AS hostel_name,
+        NULL::text AS hostel_room_number
       FROM teachers t
       INNER JOIN staff s ON t.staff_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT
+          ta.route_id,
+          ta.pickup_point_id,
+          ta.vehicle_id,
+          ta.assigned_fee_id AS transport_assigned_fee_id,
+          ta.assigned_fee_amount AS transport_assigned_fee_amount,
+          ta.is_free AS transport_is_free,
+          rt.route_name AS route_alloc_name,
+          COALESCE(pp.point_name, pp.address) AS pickup_alloc_name,
+          v.vehicle_number AS vehicle_alloc_no,
+          tfm.plan_name
+        FROM transport_allocations ta
+        LEFT JOIN routes rt ON rt.id = ta.route_id
+        LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
+        LEFT JOIN vehicles v ON v.id = ta.vehicle_id
+        LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
+        WHERE LOWER(COALESCE(ta.user_type, '')) = 'staff'
+          AND (ta.user_id = s.id OR (s.user_id IS NOT NULL AND ta.user_id = s.user_id))
+          AND LOWER(COALESCE(ta.status, '')) = 'active'
+          AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
+        ORDER BY
+          CASE
+            WHEN s.user_id IS NOT NULL AND ta.user_id = s.user_id THEN 0
+            WHEN ta.user_id = s.id THEN 1
+            ELSE 2
+          END,
+          ta.id DESC
+        LIMIT 1
+      ) tr ON TRUE
       LEFT JOIN classes c ON t.class_id = c.id
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       WHERE t.id = $1
@@ -1157,8 +1437,15 @@ const updateTeacher = async (req, res) => {
     teacherParams.push(teacherIdNum);
     await query(`UPDATE teachers SET ${teacherUpdates.join(', ')} WHERE id = $${tidx}`, teacherParams);
 
+    if ('is_transport_required' in req.body || 'is_hostel_required' in req.body) {
+      const resolvedAyUpdate = await resolveAcademicYearId(req.body.academic_year_id);
+      await executeTransaction(async (client) => {
+        await syncStaffTransportHostel(client, staffId, req.body, resolvedAyUpdate);
+      });
+    }
+
     const result = await query(`
-      SELECT t.id, t.status, t.staff_id, s.is_active, t.youtube, t.instagram, t.other_info, t.account_name, t.account_number, t.epf_no
+      SELECT t.id, t.status, t.staff_id, s.is_active, t.youtube, t.instagram, NULL::text AS other_info, t.account_name, t.account_number, t.epf_no
       FROM teachers t INNER JOIN staff s ON t.staff_id = s.id
       WHERE t.id = $1
     `, [teacherIdNum]);

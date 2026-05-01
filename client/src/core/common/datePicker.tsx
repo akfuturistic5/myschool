@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { Dayjs } from 'dayjs';
 import { DatePicker, Dropdown, Input } from 'antd';
 import dayjs from 'dayjs';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
@@ -15,21 +16,38 @@ const { RangePicker } = DatePicker;
 const dateFormat = 'YYYY/MM/DD';
 
 interface PredefinedDatePickerProps {
-  onChange?: (dates: [dayjs.Dayjs, dayjs.Dayjs]) => void;
+  /** When set, the component is controlled (e.g. sync with list filters / API). */
+  value?: [Dayjs, Dayjs];
+  onChange?: (dates: [Dayjs, Dayjs]) => void;
 }
 
-const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange }) => {
-  const [dates, setDates] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
-    dayjs().subtract(6, 'days'),
-    dayjs(),
-  ]);
+/** Default range: last 7 days (matches “Last 7 Days” in the menu). */
+export const defaultDateRange = (): [Dayjs, Dayjs] => [dayjs().subtract(6, 'days'), dayjs()];
+
+const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange, value: valueFromParent }) => {
+  const isControlled = valueFromParent != null;
+  const [uncontrolled, setUncontrolled] = useState<[Dayjs, Dayjs]>(defaultDateRange);
+  const dates = isControlled ? valueFromParent! : uncontrolled;
+  const setDateRange = (next: [Dayjs, Dayjs]) => {
+    if (!isControlled) setUncontrolled(next);
+    onChange?.(next);
+  };
   const [customVisible, setCustomVisible] = useState(false);
   const rangeRef = useRef<any>(null);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const predefinedRanges: Record<string, [dayjs.Dayjs, dayjs.Dayjs]> = {
+  useEffect(() => {
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const predefinedRanges: Record<string, [Dayjs, Dayjs]> = {
     Today: [dayjs(), dayjs()],
     Yesterday: [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')],
-    'Last 7 Days': [dayjs().subtract(6, 'day'), dayjs()],
+    'Last 7 Days': [dayjs().subtract(6, 'days'), dayjs()],
     'Last 30 Days': [dayjs().subtract(29, 'day'), dayjs()],
     'This Month': [dayjs().startOf('month'), dayjs().endOf('month')],
     'Last Month': [
@@ -42,20 +60,23 @@ const PredefinedDatePicker: React.FC<PredefinedDatePickerProps> = ({ onChange })
     if (key === 'Custom Range') {
       setCustomVisible(true);
       // Trigger calendar popup manually
-      setTimeout(() => rangeRef.current?.focus(), 0);
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+      focusTimeoutRef.current = setTimeout(() => {
+        rangeRef.current?.focus();
+      }, 0);
     } else {
       const newDates = predefinedRanges[key];
-      setDates(newDates);
+      setDateRange(newDates);
       setCustomVisible(false);
-      onChange?.(newDates);
     }
   };
 
   const handleCustomChange = (value: any) => {
     if (value) {
-      setDates(value);
+      setDateRange(value);
       setCustomVisible(false);
-      onChange?.(value);
     }
   };
 

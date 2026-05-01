@@ -5,7 +5,7 @@ import {
   clearCachedCsrfToken,
 } from '../utils/csrfClientStore.js';
 
-const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const BUILD_API_URL = import.meta.env.VITE_API_URL || '/api';
 
 let cachedSuperAdminBaseUrl: string | null = null;
 

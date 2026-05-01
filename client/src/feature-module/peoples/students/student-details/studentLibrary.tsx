@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -23,7 +23,20 @@ const StudentLibrary = () => {
   const role = (currentUser?.role || "").toString().toLowerCase();
   const isStudentRole = role === "student";
 
-  const studentId = state?.studentId ?? state?.student?.id ?? (isStudentRole && currentStudent ? currentStudent.id : null);
+  const queryStudentId = useMemo(() => {
+    try {
+      const raw = new URLSearchParams(location.search).get("studentId");
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }, [location.search]);
+  const studentId =
+    state?.studentId ??
+    state?.student?.id ??
+    queryStudentId ??
+    (isStudentRole && currentStudent ? currentStudent.id : null);
   const [student, setStudent] = useState<any>(state?.student ?? (isStudentRole ? currentStudent : null));
   const [loading, setLoading] = useState(
     (!!studentId && !state?.student && !(isStudentRole && currentStudent)) ||
@@ -36,15 +49,13 @@ const StudentLibrary = () => {
       else if (isStudentRole && currentStudent) setStudent(currentStudent);
       return;
     }
+    // Pre-fill quickly from navigation/current context, but always re-fetch from API
+    // so StudentSidebar (transport/hostel) uses latest backend-derived allocation data.
     if (state?.student && state.student.id === studentId) {
       setStudent(state.student);
-      setLoading(false);
-      return;
     }
     if (isStudentRole && currentStudent?.id === studentId) {
       setStudent(currentStudent);
-      setLoading(false);
-      return;
     }
     setLoading(true);
     apiService
@@ -68,7 +79,11 @@ const StudentLibrary = () => {
     setIssuesLoading(true);
     setIssuesError(null);
     try {
-      const params = isStudentRole ? {} : { student_id: studentId };
+      const params: Record<string, any> = isStudentRole ? {} : { student_id: studentId };
+      const academicYearId = Number(student?.academic_year_id);
+      if (Number.isFinite(academicYearId) && academicYearId > 0) {
+        params.academic_year_id = academicYearId;
+      }
       const res = await apiService.getLibraryIssues(params as any);
       const list = (res as any)?.data || [];
       setIssues(list);
@@ -78,7 +93,7 @@ const StudentLibrary = () => {
     } finally {
       setIssuesLoading(false);
     }
-  }, [studentId, isStudentRole]);
+  }, [studentId, isStudentRole, student?.academic_year_id]);
 
   useEffect(() => {
     loadIssues();
@@ -164,6 +179,16 @@ const StudentLibrary = () => {
                         Exam &amp; Results
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        to={studentId ? `${routes.studentLibrary}?studentId=${studentId}` : routes.studentLibrary}
+                        className="nav-link active"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-books me-2" />
+                        Library
+                      </Link>
+                    </li>
                   </ul>
 
                   <div className="card">
@@ -215,7 +240,9 @@ const StudentLibrary = () => {
                                 <th>Book</th>
                                 <th>Issued</th>
                                 <th>Due</th>
+                                <th>Returned</th>
                                 <th>Status</th>
+                                <th>Remarks</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -224,7 +251,9 @@ const StudentLibrary = () => {
                                   <td>{row.booksIssued || row.book_title || "—"}</td>
                                   <td>{row.dateofIssue || "—"}</td>
                                   <td>{row.dueDate || "—"}</td>
-                                  <td>{row.status || "—"}</td>
+                                  <td>{row.return_date || "—"}</td>
+                                  <td className="text-capitalize">{row.status || "—"}</td>
+                                  <td>{row.issueRemarks || row.remarks || "—"}</td>
                                 </tr>
                               ))}
                             </tbody>

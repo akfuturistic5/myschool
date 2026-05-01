@@ -1,0 +1,336 @@
+{
+  "generatedAt": "2026-04-28T13:51:23.753Z",
+  "definitelyPending": [
+    {
+      "file": "017_transport_drivers_enhancement.sql",
+      "missing": {
+        "tables": [],
+        "columns": [
+          "routes.academic_year_id",
+          "pickup_points.academic_year_id",
+          "drivers.academic_year_id"
+        ],
+        "constraints": [
+          "fk_routes_academic_year",
+          "fk_pickup_points_academic_year",
+          "fk_drivers_academic_year"
+        ],
+        "indexes": [
+          "idx_routes_academic_year_id",
+          "idx_pickup_points_academic_year_id",
+          "idx_drivers_academic_year_id"
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "file": "019_exams_results_module_upgrade.sql",
+      "missing": {
+        "tables": [],
+        "columns": [
+          "exams.section_id"
+        ],
+        "constraints": [
+          "exams_section_id_fkey"
+        ],
+        "indexes": [
+          "idx_exams_class_section_year"
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "file": "020_exams_results_uniqueness_and_component.sql",
+      "missing": {
+        "tables": [],
+        "columns": [
+          "exam_results.exam_component"
+        ],
+        "constraints": [
+          "exam_results_exam_component_check",
+          "exam_results_exam_id_student_id_subject_component_key"
+        ],
+        "indexes": [
+          "idx_exam_results_exam_subject_component"
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "file": "023_exams_unique_definition.sql",
+      "missing": {
+        "tables": [],
+        "columns": [],
+        "constraints": [],
+        "indexes": [
+          "uq_exams_class_section_year_name_type_dates"
+        ],
+        "triggers": []
+      }
+    }
+  ],
+  "reflectedCount": 12,
+  "inconclusiveCount": 65,
+  "inconclusive": [
+    {
+      "file": "002_create_student_promotions.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "002_library_module.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "003_library_academic_year.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "003_parents_father_mother_user_ids.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "004_accounts_module.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "004_fix_swapped_teacher_student_role_ids.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "004_teachers_resume_joining_modified_at.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "005_accounts_expenses_and_tx_expense_fk.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "007_create_leaving_students.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "008_academic_years_end_date_nullable.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "009_guardian_registry_hardening.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "010_assign_section_teachers_round_robin.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "010_fees_module_enterprise.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "010_parent_persons.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "011_reconcile_student_promotions_state.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "011_teacher_assignments.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "012_driver_designation_and_drivers_staff_id.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "013_user_role_driver.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "014_backfill_drivers_to_staff_users.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "014_fix_fees_assign_unique_constraint.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "015_attendance_module_completion.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "016_attendance_hardening_and_audit.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "016_transport_pickup_points_enhancement.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "017_backfill_teacher_class_subject_from_mappings.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "018_unify_teacher_into_staff_attendance.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "020_holiday_management_module.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "021_exams_result_finalization.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "021_users_occupation.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "022_teacher_assignments_unique_slot.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "024_transport_trigger_cleanup.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "025_remove_exams_results_module.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "026_apply_current_subjects_to_all_classes.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "027_backfill_section_teachers_round_robin.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "028_exams_results_module.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "029_exam_subjects_drop_legacy_component_unique.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "031_exam_subjects_exam_class_integrity.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "032_drop_manual_counts_from_classes_and_sections.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "032_exam_grade_scale.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "033_school_profile_contact_fields.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "034_account_delete_requests.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "035_enquiries_module.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "036_enquiries_drop_follow_up_date.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "037_events_attachments_and_indexes.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "037_hostel_academic_year_and_crud_fields.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "039_timetable_class_schedules_hardening.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "040_timetable_unique_constraints.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "041_sections_academic_year_scope.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "041_time_slots_slot_name_length.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "042_add_academic_year_to_related_tables.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "042_time_slots_backfill_duration.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "043_add_deleted_at_to_transport_tables.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "043_master_tables_remove_academic_year.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "043_transport_fees_and_allocations.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "044_restore_academic_year_on_core_clone_tables.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "044_transport_fee_staff_amount.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "045_fix_legacy_section_count_trigger.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "046_create_student_rejoins.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "047_student_rejoins_rejoined_by_user.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "048_fix_classes_uniqueness.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "049_create_student_siblings_table.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "049_notice_board_dates.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "050_notice_board_created_by_backfill.sql",
+      "reason": "no structural markers"
+    },
+    {
+      "file": "051_transport_fees_allocations_academic_year.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "20260422_add_deleted_at_soft_delete.sql",
+      "reason": "data/drop migration"
+    },
+    {
+      "file": "20260422_make_student_ids_nullable.sql",
+      "reason": "no structural markers"
+    }
+  ]
+}

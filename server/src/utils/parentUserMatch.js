@@ -3,6 +3,29 @@
  */
 const { query } = require('../config/database');
 
+function isMissingParentsTableError(err) {
+  if (!err) return false;
+  if (String(err.code || '') !== '42P01') return false;
+  return /relation\s+"?parents"?\s+does not exist/i.test(String(err.message || ''));
+}
+
+function normalizeEmail(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return s || null;
+}
+
+function normalizePhoneDigits(v) {
+  const digits = String(v || '').replace(/\D+/g, '');
+  return digits.length >= 7 ? digits : null;
+}
+
+function isMissingGuardiansLegacyColumnError(err) {
+  if (!err) return false;
+  if (String(err.code || '') !== '42703') return false;
+  const msg = String(err.message || '').toLowerCase();
+  return msg.includes('guardians.first_name') || msg.includes('guardians.last_name') || msg.includes('guardians.email') || msg.includes('guardians.phone');
+}
+
 function fullName(row) {
   return [row.first_name, row.last_name].filter(Boolean).join(' ').trim();
 }
@@ -133,12 +156,13 @@ function mergeRowsByStudent(rows) {
  */
 async function getParentsForUser(userId) {
   const userResult = await query(
-    'SELECT id FROM users WHERE id = $1 AND is_active = true',
+    'SELECT id, username, email, phone FROM users WHERE id = $1 AND is_active = true',
     [userId]
   );
   if (userResult.rows.length === 0) {
     return { parents: [], studentIds: [] };
   }
+  const authUser = userResult.rows[0];
 
   const baseSelect = `
     SELECT
@@ -268,10 +292,101 @@ async function getParentsForUser(userId) {
         return toPayload(r.rows, mapParentsTableRow);
       }
     } catch (e) {
+      if (isMissingParentsTableError(e)) {
+        return { parents: [], studentIds: [] };
+      }
       if (!/father_user_id|mother_user_id/.test(String(e.message || ''))) throw e;
       const r = await query(selectLegacyCols, params);
       if (r.rows.length > 0) {
         return toPayload(r.rows, mapParentsTableRow);
+      }
+    }
+  }
+
+  // Legacy fallback (secure): deployments where guardians.user_id was never linked.
+  // Match only exact normalized identifiers from authenticated user.
+  {
+    const candidateEmails = new Set();
+    const userEmail = normalizeEmail(authUser.email);
+    if (userEmail) candidateEmails.add(userEmail);
+
+    const username = String(authUser.username || '').trim().toLowerCase();
+    if (username) {
+      if (username.includes('@')) {
+        candidateEmails.add(username);
+      } else {
+        candidateEmails.add(`${username}@email.com`);
+      }
+    }
+
+    const normalizedPhone = normalizePhoneDigits(authUser.phone);
+    const emailList = Array.from(candidateEmails).filter(Boolean);
+    const canMatchByEmail = emailList.length > 0;
+    const canMatchByPhone = !!normalizedPhone;
+
+    if (canMatchByEmail || canMatchByPhone) {
+      const params = [];
+      const where = ['s.is_active = true', 'g.is_active = true'];
+
+      if (canMatchByEmail && canMatchByPhone) {
+        params.push(emailList);
+        const emailParam = `$${params.length}`;
+        params.push(normalizedPhone);
+        const phoneParam = `$${params.length}`;
+        where.push(`(
+          LOWER(BTRIM(COALESCE(g.email, ''))) = ANY(${emailParam}::text[])
+          OR regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}
+        )`);
+      } else if (canMatchByEmail) {
+        params.push(emailList);
+        const emailParam = `$${params.length}`;
+        where.push(`LOWER(BTRIM(COALESCE(g.email, ''))) = ANY(${emailParam}::text[])`);
+      } else if (canMatchByPhone) {
+        params.push(normalizedPhone);
+        const phoneParam = `$${params.length}`;
+        where.push(`regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}`);
+      }
+
+      try {
+        const legacyRes = await query(
+          `SELECT
+            g.id AS g_id,
+            g.student_id,
+            g.user_id,
+            g.guardian_type,
+            COALESCE(NULLIF(BTRIM(u.first_name), ''), NULLIF(BTRIM(g.first_name), '')) AS first_name,
+            COALESCE(NULLIF(BTRIM(u.last_name), ''), NULLIF(BTRIM(g.last_name), '')) AS last_name,
+            COALESCE(NULLIF(BTRIM(u.email), ''), NULLIF(BTRIM(g.email), '')) AS email,
+            COALESCE(NULLIF(BTRIM(u.phone), ''), NULLIF(BTRIM(g.phone), '')) AS phone,
+            COALESCE(NULLIF(BTRIM(u.occupation), ''), NULLIF(BTRIM(g.occupation), '')) AS occupation,
+            g.created_at,
+            g.modified_at AS updated_at,
+            s.first_name AS student_first_name,
+            s.last_name AS student_last_name,
+            s.admission_number,
+            s.roll_number,
+            s.class_id,
+            s.section_id,
+            s.academic_year_id,
+            c.class_name,
+            sec.section_name
+          FROM guardians g
+          LEFT JOIN users u ON u.id = g.user_id
+          INNER JOIN students s ON s.id = g.student_id
+          LEFT JOIN classes c ON s.class_id = c.id
+          LEFT JOIN sections sec ON s.section_id = sec.id
+          WHERE ${where.join(' AND ')}
+          ORDER BY s.first_name ASC, s.last_name ASC`,
+          params
+        );
+
+        if (legacyRes.rows.length > 0) {
+          return toPayload(legacyRes.rows);
+        }
+      } catch (legacyErr) {
+        if (!isMissingGuardiansLegacyColumnError(legacyErr)) {
+          throw legacyErr;
+        }
       }
     }
   }

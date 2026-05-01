@@ -300,7 +300,7 @@ const TeacherLeave = () => {
       const used = leaveApplications
         .filter((l: any) => {
           const status = String(l?.status || "").toLowerCase();
-          const includeByStatus = ["pending", "approved"].includes(status);
+          const includeByStatus = status === "approved";
           const byId = Number.isFinite(typeId) && typeId > 0 && Number(l?.leaveTypeId) === typeId;
           const byName =
             !byId &&
@@ -392,7 +392,11 @@ const TeacherLeave = () => {
                   {/* List */}
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
-                      <Link to={routes.teacherDetails} className="nav-link ">
+                      <Link
+                        to={routes.teacherDetails}
+                        className="nav-link "
+                        state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                      >
                         <i className="ti ti-school me-2" />
                         Teacher Details
                       </Link>
@@ -401,25 +405,38 @@ const TeacherLeave = () => {
                       <Link
                         to={routes.teachersRoutine}
                         className="nav-link "
+                        state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
                       >
                         <i className="ti ti-table-options me-2" />
                         Routine
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teacherLeaves} className="nav-link active">
+                      <Link
+                        to={routes.teacherLeaves}
+                        className="nav-link active"
+                        state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                      >
                         <i className="ti ti-calendar-due me-2" />
                         Leave &amp; Attendance
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teacherSalary} className="nav-link">
+                      <Link
+                        to={routes.teacherSalary}
+                        className="nav-link"
+                        state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                      >
                         <i className="ti ti-report-money me-2" />
                         Salary
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teacherLibrary} className="nav-link">
+                      <Link
+                        to={routes.teacherLibrary}
+                        className="nav-link"
+                        state={{ teacherId: effectiveTeacher?.id, teacher: effectiveTeacher }}
+                      >
                         <i className="ti ti-bookmark-edit me-2" />
                         Library
                       </Link>

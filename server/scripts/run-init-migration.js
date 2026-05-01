@@ -166,6 +166,16 @@ function runTenantSqlWithPsql(tenantSql, opts) {
   console.log(`Tenant: applied via "${psql}" (COPY stdin)`);
 }
 
+async function ensureMigrationTable(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS migration_history (
+      id SERIAL PRIMARY KEY,
+      migration_name VARCHAR(255) NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
 async function main() {
   const verifyOnly = process.argv.includes('--verify-only');
   const resetTenant =
@@ -176,6 +186,7 @@ async function main() {
     process.env.TENANT_INIT_DATABASE_URL ? '' : process.env.TENANT_INIT_DB_NAME || process.env.DB_NAME || 'school_db'
   ).trim();
 
+  const migrationName = '001_init_full_schema.sql';
   const raw = fs.readFileSync(migrationPath, 'utf8');
   const { master, tenant } = splitMigrationFile(raw);
 
@@ -197,7 +208,16 @@ async function main() {
 
   try {
     if (!verifyOnly) {
-      await runMasterStatements(masterPool, master);
+      // Check if schools table exists to decide if we should run master SQL
+      const checkMaster = await masterPool.query(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'schools'"
+      );
+      if (checkMaster.rowCount === 0) {
+        console.log('Initializing master database...');
+        await runMasterStatements(masterPool, master);
+      } else {
+        console.log('Master database already initialized. Skipping SQL execution.');
+      }
     }
     for (const t of ['schools', 'super_admin_users', 'tenant_sessions', 'super_admin_audit_log']) {
       const q = await masterPool.query(
@@ -234,18 +254,43 @@ async function main() {
 
   try {
     if (!verifyOnly) {
-      const useSsl = process.env.DATABASE_SSL_MODE === 'require';
-      if (tenantInitUrl) {
-        runTenantSqlWithPsql(tenant, { connectionString: tenantInitUrl, ssl: useSsl });
+      await ensureMigrationTable(tenantPool);
+      const checkTenant = await tenantPool.query(
+        'SELECT 1 FROM migration_history WHERE migration_name = $1',
+        [migrationName]
+      );
+
+      if (checkTenant.rowCount === 0) {
+        // Double check for 'users' table just in case migration_history is missing but DB is not empty
+        const checkUsers = await tenantPool.query(
+          "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'"
+        );
+
+        if (checkUsers.rowCount === 0) {
+          console.log(`Applying tenant initialization (${migrationName})...`);
+          const useSsl = process.env.DATABASE_SSL_MODE === 'require';
+          if (tenantInitUrl) {
+            runTenantSqlWithPsql(tenant, { connectionString: tenantInitUrl, ssl: useSsl });
+          } else {
+            runTenantSqlWithPsql(tenant, {
+              host: process.env.DB_HOST || 'localhost',
+              port: parseInt(process.env.DB_PORT || '5432', 10),
+              user: process.env.DB_USER || 'postgres',
+              password: process.env.DB_PASSWORD || '',
+              database: tenantDbName,
+              ssl: useSsl,
+            });
+          }
+          // Mark as applied
+          await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1)', [migrationName]);
+          console.log(`✅ ${migrationName} applied to tenant.`);
+        } else {
+          console.log('Tenant database seems already initialized (users table exists). Skipping SQL execution.');
+          // Ensure it's recorded in history even if it was run manually before
+          await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1) ON CONFLICT DO NOTHING', [migrationName]);
+        }
       } else {
-        runTenantSqlWithPsql(tenant, {
-          host: process.env.DB_HOST || 'localhost',
-          port: parseInt(process.env.DB_PORT || '5432', 10),
-          user: process.env.DB_USER || 'postgres',
-          password: process.env.DB_PASSWORD || '',
-          database: tenantDbName,
-          ssl: useSsl,
-        });
+        console.log(`Tenant initialization (${migrationName}) already applied. Skipping.`);
       }
     }
     for (const t of ['users', 'students', 'classes', 'attendance', 'fee_collections', 'school_profile']) {

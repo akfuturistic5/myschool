@@ -6,6 +6,7 @@ interface AuthUser {
   username: string;
   displayName: string;
   role: string;
+  avatar?: string | null;
   user_role_id?: number;
   staff_id?: number;
   accountDisabled?: boolean;

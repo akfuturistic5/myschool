@@ -32,6 +32,8 @@ export const useTransportAllocations = (params = EMPTY_PARAMS) => {
           key: String(row.id || index + 1),
           id: row.id,
           displayId: `TAL-${String(row.id).padStart(4, '0')}`,
+          studentId: row.student_id ?? null,
+          staffId: row.staff_id ?? null,
           userId: row.user_id,
           userName: row.user_name || `User ${row.user_id}`,
           userType: row.user_type,
@@ -48,7 +50,19 @@ export const useTransportAllocations = (params = EMPTY_PARAMS) => {
           originalData: row,
         }));
         setData(mapped);
-        setMetadata(response.metadata || metadata);
+        const nextMeta = response.metadata || {
+          totalCount: Number(response.totalCount ?? mapped.length ?? 0),
+          page: Number(response.page ?? paramsRef.current?.page ?? 1),
+          limit: Number(response.limit ?? paramsRef.current?.limit ?? 10),
+          totalPages: Number(
+            response.totalPages ??
+              Math.ceil(
+                Number(response.totalCount ?? mapped.length ?? 0) /
+                  Math.max(1, Number(response.limit ?? paramsRef.current?.limit ?? 10))
+              )
+          ),
+        };
+        setMetadata(nextMeta);
       } else {
         setData([]);
       }

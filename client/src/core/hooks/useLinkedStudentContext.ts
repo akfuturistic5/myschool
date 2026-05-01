@@ -3,6 +3,7 @@ import { apiService } from "../services/apiService";
 import { useCurrentStudent } from "./useCurrentStudent";
 import { useCurrentUser } from "./useCurrentUser";
 import { useParents } from "./useParents";
+import { normalizeAuthRole } from "../utils/roleUtils";
 
 interface LinkedStudentLocationState {
   studentId?: number;
@@ -40,13 +41,14 @@ export const useLinkedStudentContext = ({
   const rawRoleId = Number((currentUser as any)?.user_role_id ?? (currentUser as any)?.role_id);
   const roleId = Number.isFinite(rawRoleId) && rawRoleId > 0 ? rawRoleId : null;
 
-  const roleTokens = [
-    currentUser?.role,
-    (currentUser as any)?.role_name,
-    (currentUser as any)?.display_role,
-  ]
-    .map((v) => String(v || "").trim().toLowerCase())
-    .filter(Boolean);
+  const canonicalRole = normalizeAuthRole(
+    (currentUser as any)?.role_name ?? currentUser?.role,
+    (currentUser as any)?.user_role_id ?? (currentUser as any)?.role_id
+  )
+    .toString()
+    .trim()
+    .toLowerCase();
+  const roleTokens = [canonicalRole].filter(Boolean);
 
   const isStudentRole =
     roleTokens.some((r) => r === "student" || r.includes("student")) || roleId === ROLE_IDS.STUDENT;

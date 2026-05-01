@@ -1,6 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
+const { toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapAssignmentRow(row) {
@@ -10,7 +10,6 @@ function mapAssignmentRow(row) {
     vehicle_id: row.vehicle_id,
     route_id: row.route_id,
     driver_id: row.driver_id,
-    academic_year_id: row.academic_year_id || null,
     vehicle_number: row.vehicle_number || 'N/A',
     route_name: row.route_name || 'N/A',
     point_name: row.point_name || 'N/A',
@@ -29,19 +28,18 @@ const getAllAssignments = async (req, res) => {
     const hasRouteDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasDriverDeletedAt = await hasColumn('drivers', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
+    
     const {
       page = 1,
       limit = 10,
       search = '',
-      academic_year_id,
       status,
       route_id,
       sortField = 'id',
       sortOrder = 'ASC',
     } = req.query;
-
+    
     const offset = (Number(page) - 1) * Number(limit);
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id);
     let whereClause = `WHERE ${hasTaDeletedAt ? 'ta.deleted_at IS NULL' : '1=1'}`;
     const params = [];
 
@@ -64,10 +62,6 @@ const getAllAssignments = async (req, res) => {
     if (route_id && route_id !== 'all') {
       params.push(Number(route_id));
       whereClause += ` AND ta.route_id = $${params.length}`;
-    }
-    if (scopedAcademicYearId) {
-      params.push(scopedAcademicYearId);
-      whereClause += ` AND ta.academic_year_id = $${params.length}`;
     }
 
     const allowedSortFields = ['id', 'vehicle_number', 'route_name', 'driver_name', 'is_active', 'created_at'];
@@ -136,7 +130,7 @@ const getAllAssignments = async (req, res) => {
 
 const createAssignment = async (req, res) => {
   try {
-    const { vehicle_id, route_id, driver_id, is_active, academic_year_id } = req.body;
+    const { vehicle_id, route_id, driver_id, is_active } = req.body;
 
     if (!vehicle_id || !route_id || !driver_id) {
       return errorResponse(res, 400, 'Vehicle, route and driver are required');
@@ -144,24 +138,23 @@ const createAssignment = async (req, res) => {
 
     const isActiveValue =
       is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
-    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
 
     const existing = await query(
       `SELECT id
        FROM transport_assignments
-       WHERE vehicle_id = $1 AND route_id = $2 AND driver_id = $3 AND academic_year_id = $4 AND deleted_at IS NULL
+       WHERE vehicle_id = $1 AND route_id = $2 AND driver_id = $3 AND deleted_at IS NULL
        LIMIT 1`,
-      [Number(vehicle_id), Number(route_id), Number(driver_id), scopedAcademicYearId]
+      [Number(vehicle_id), Number(route_id), Number(driver_id)]
     );
     if (existing.rows.length > 0) {
       return errorResponse(res, 400, 'This route-driver pair is already assigned to this vehicle');
     }
 
     const insert = await query(
-      `INSERT INTO transport_assignments (vehicle_id, route_id, driver_id, is_active, academic_year_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO transport_assignments (vehicle_id, route_id, driver_id, is_active)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [Number(vehicle_id), Number(route_id), Number(driver_id), isActiveValue, scopedAcademicYearId]
+      [Number(vehicle_id), Number(route_id), Number(driver_id), isActiveValue]
     );
 
     // Sync with vehicles table to maintain filtering source of truth
@@ -184,7 +177,7 @@ const updateAssignment = async (req, res) => {
       return errorResponse(res, 400, 'Invalid assignment ID');
     }
 
-    const { vehicle_id, route_id, driver_id, is_active, academic_year_id } = req.body;
+    const { vehicle_id, route_id, driver_id, is_active } = req.body;
     const updates = [];
     const values = [];
     let i = 1;
@@ -206,10 +199,6 @@ const updateAssignment = async (req, res) => {
         is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
       updates.push(`is_active = $${i++}`);
       values.push(isActiveValue);
-    }
-    if (academic_year_id !== undefined) {
-      updates.push(`academic_year_id = $${i++}`);
-      values.push(toPositiveInt(academic_year_id));
     }
 
     if (updates.length === 0) {
@@ -274,7 +263,6 @@ const deleteAssignment = async (req, res) => {
     }
 
     // Clear from vehicles table if this was the active assignment
-    // (Note: This is a simple sync, might need more complex logic if multiple assignments exist)
     const assignmentRes = await query('SELECT vehicle_id FROM transport_assignments WHERE id = $1', [assignmentId]);
     if (assignmentRes.rows.length > 0) {
       await query(
@@ -296,4 +284,3 @@ module.exports = {
   updateAssignment,
   deleteAssignment,
 };
-

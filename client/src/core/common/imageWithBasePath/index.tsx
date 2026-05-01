@@ -6,6 +6,9 @@ function resolveInitialSrc(raw: string): string {
   const s = (raw || '').trim();
   if (!s) return `${img_path}`;
   if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith('/storage/files/')) return `/api${s}`;
+  if (s.startsWith('storage/files/')) return `/api/${s}`;
+  if (s.startsWith('api/storage/files/')) return `/${s}`;
   if (s.startsWith('/api')) return s;
   if (s.startsWith('school_')) return `/api/storage/files/${s}`;
   if (s.startsWith('/')) return s;

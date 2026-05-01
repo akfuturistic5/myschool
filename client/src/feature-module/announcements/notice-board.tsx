@@ -33,16 +33,20 @@ const getInitialForm = () => ({
 
 const NoticeBoard = () => {
   const routes = all_routes;
-  const { notices, loading, error, saving, createNotice, updateNotice, deleteNotice } = useNoticeBoard();
   const { userRoles, loading: rolesLoading } = useUserRoles();
   const { user } = useCurrentUser();
-  const [selectedNotice, setSelectedNotice] = useState<any>(null);
-  const [createForm, setCreateForm] = useState(getInitialForm());
-  const [editForm, setEditForm] = useState(getInitialForm());
   const canManageNotices = useMemo(() => {
     const roleId = Number(user?.role_id);
     return roleId === 1 || roleId === 6;
   }, [user?.role_id]);
+  /** Latest notice only for viewers; headmaster/administrative need full list to edit/delete. */
+  const noticeFetchLimit = canManageNotices ? 100 : 1;
+  const { notices, loading, error, saving, createNotice, updateNotice, deleteNotice } = useNoticeBoard({
+    limit: noticeFetchLimit,
+  });
+  const [selectedNotice, setSelectedNotice] = useState<any>(null);
+  const [createForm, setCreateForm] = useState(getInitialForm());
+  const [editForm, setEditForm] = useState(getInitialForm());
   const targetOptions = useMemo(
     () =>
       userRoles

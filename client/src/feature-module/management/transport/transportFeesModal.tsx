@@ -82,6 +82,7 @@ const TransportFeesModal = ({ selectedFee, deleteId, onSuccess }: Props) => {
         amount: Number(studentAmount),
         staff_amount: Number(staffAmount),
         status,
+        academic_year_id: academicYearId ?? undefined,
       };
 
       const id = selectedFee?.originalData?.id;

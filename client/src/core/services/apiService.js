@@ -5,7 +5,7 @@ import {
   clearCachedCsrfToken,
 } from '../utils/csrfClientStore.js';
 
-const BUILD_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const BUILD_API_URL = import.meta.env.VITE_API_URL || '/api';
 const isDev = import.meta.env.DEV;
 const isProd = import.meta.env.PROD;
 
@@ -262,10 +262,6 @@ class ApiService {
     return this.makeRequest(`/classes/${id}`);
   }
 
-  async getClassesByAcademicYear(academicYearId) {
-    return this.makeRequest(`/classes/academic-year/${academicYearId}`);
-  }
-
   async updateClass(id, classData) {
     return this.makeRequest(`/classes/${id}`, {
       method: 'PUT',
@@ -280,13 +276,8 @@ class ApiService {
   }
 
   // Sections
-  async getSections(params = {}) {
-    const query = new URLSearchParams();
-    if (params.academic_year_id != null && params.academic_year_id !== '') {
-      query.set('academic_year_id', String(params.academic_year_id));
-    }
-    const qs = query.toString();
-    return this.makeRequest(`/sections${qs ? `?${qs}` : ''}`);
+  async getSections() {
+    return this.makeRequest('/sections');
   }
 
   async getSectionById(id) {
@@ -1310,6 +1301,15 @@ class ApiService {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
     if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.className != null && String(params.className).trim() !== '' && String(params.className) !== 'All Classes') {
+      searchParams.set('class_name', String(params.className).trim());
+    }
+    if (params.sectionName != null && String(params.sectionName).trim() !== '' && String(params.sectionName) !== 'All Sections') {
+      searchParams.set('section_name', String(params.sectionName).trim());
+    }
+    if (params.timeRange != null && String(params.timeRange).trim() !== '' && String(params.timeRange) !== 'All Time') {
+      searchParams.set('time_range', String(params.timeRange).trim());
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/dashboard/star-students${qs ? `?${qs}` : ''}`);
   }
@@ -1613,6 +1613,7 @@ class ApiService {
   async getParentChildrenLeaves(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.student_id != null) searchParams.set('student_id', params.student_id);
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications/parent-children${qs ? `?${qs}` : ''}`);
   }
@@ -1812,6 +1813,7 @@ class ApiService {
     if (params.search) searchParams.set('search', params.search);
     if (params.status && params.status !== 'all') searchParams.set('status', params.status);
     if (params.pickup_point_id && params.pickup_point_id !== 'all') searchParams.set('pickup_point_id', params.pickup_point_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
     const qs = searchParams.toString();
@@ -1846,6 +1848,7 @@ class ApiService {
     if (params.status && params.status !== 'all') searchParams.set('status', params.status);
     if (params.user_type && params.user_type !== 'all') searchParams.set('user_type', params.user_type);
     if (params.vehicle_id && params.vehicle_id !== 'all') searchParams.set('vehicle_id', params.vehicle_id);
+    if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
     const qs = searchParams.toString();
@@ -1857,6 +1860,23 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  }
+
+  async createTransportAllocationBulk(payload) {
+    return this.makeRequest('/transport/allocations/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getTransportSeatAvailability(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.vehicle_id != null) searchParams.set('vehicle_id', params.vehicle_id);
+    if (params.start_date) searchParams.set('start_date', params.start_date);
+    if (params.end_date) searchParams.set('end_date', params.end_date);
+    if (params.exclude_allocation_id != null) searchParams.set('exclude_allocation_id', params.exclude_allocation_id);
+    const qs = searchParams.toString();
+    return this.makeRequest(`/transport/seat-availability${qs ? `?${qs}` : ''}`);
   }
 
   async updateTransportAllocation(id, payload) {
@@ -1890,13 +1910,8 @@ class ApiService {
   }
 
   // Subjects
-  async getSubjects(params = {}) {
-    const query = new URLSearchParams();
-    if (params.academic_year_id != null && params.academic_year_id !== '') {
-      query.set('academic_year_id', String(params.academic_year_id));
-    }
-    const qs = query.toString();
-    return this.makeRequest(`/subjects${qs ? `?${qs}` : ''}`);
+  async getSubjects() {
+    return this.makeRequest('/subjects');
   }
 
   async getSubjectById(id) {
@@ -2048,6 +2063,17 @@ class ApiService {
     return this.makeRequest('/auth/me', {
       method: 'PATCH',
       body: JSON.stringify(payload),
+    });
+  }
+
+  async uploadMyProfileAvatar(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'users/profile');
+    return this.makeRequest('/storage/upload', {
+      method: 'POST',
+      body: formData,
+      isMultipart: true,
     });
   }
 
@@ -2388,11 +2414,26 @@ class ApiService {
   // Class Syllabus
   async getClassSyllabus(params = {}) {
     const searchParams = new URLSearchParams();
-    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    if (params.academicYearId != null && params.academicYearId !== '') {
+      searchParams.set('academic_year_id', String(params.academicYearId));
+    }
+    if (params.classId != null && params.classId !== '') {
+      searchParams.set('class_id', String(params.classId));
+    }
+    if (params.sectionId != null && params.sectionId !== '') {
+      searchParams.set('section_id', String(params.sectionId));
+    }
+    if (params.status != null && params.status !== '' && params.status !== 'Select') {
+      searchParams.set('status', String(params.status));
+    }
+    if (params.dateFrom) searchParams.set('date_from', String(params.dateFrom));
+    if (params.dateTo) searchParams.set('date_to', String(params.dateTo));
+    if (params.sort) searchParams.set('sort', String(params.sort));
     const qs = searchParams.toString();
     return this.makeRequest(`/class-syllabus${qs ? `?${qs}` : ''}`);
   }
 
+  /** Detail fetch for a single syllabus row (available for future detail views). */
   async getClassSyllabusById(id) {
     return this.makeRequest(`/class-syllabus/${id}`);
   }
@@ -2906,6 +2947,33 @@ class ApiService {
       p = `/${p}`;
     }
     return `${origin}${p}`;
+  }
+
+  /**
+   * Resolve avatar path from DB/API into a safe absolute URL for <img src>.
+   * Supports: absolute URL, `/api/...` path, or storage relative `school_{id}/...`.
+   */
+  async resolveAvatarUrl(avatarPath) {
+    if (!avatarPath) return '';
+    const raw = String(avatarPath).trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (raw.startsWith('/storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/api${raw}`);
+    }
+    if (raw.startsWith('storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/api/${raw}`);
+    }
+    if (raw.startsWith('api/storage/files/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(`/${raw}`);
+    }
+    if (raw.startsWith('/api/')) {
+      return this.getSchoolStorageFileAbsoluteUrl(raw);
+    }
+    if (raw.startsWith('school_')) {
+      return this.getSchoolStorageFileAbsoluteUrl(raw);
+    }
+    return raw;
   }
 
   /**

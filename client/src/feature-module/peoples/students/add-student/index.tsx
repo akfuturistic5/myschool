@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 // import { feeGroup, feesTypes, paymentType } from '../../../core/common/selectoption/selectoption'
 import { DatePicker } from "antd";
@@ -23,13 +23,14 @@ import { useReligions } from "../../../../core/hooks/useReligions";
 import { useCasts } from "../../../../core/hooks/useCasts";
 import { useMotherTongues } from "../../../../core/hooks/useMotherTongues";
 import { useHouses } from "../../../../core/hooks/useHouses";
-import { useHostels } from "../../../../core/hooks/useHostels";
-import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
+import { useHostels } from "../../../../core/hooks/useHostels";
+import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
+import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import {
   focusAddStudentField,
   formControlInvalidClass,
@@ -172,13 +173,13 @@ const AddStudent = () => {
     is_transport_required: boolean;
     route_id: string | null;
     pickup_point_id: string | null;
+    vehicle_id: string | null;
+    assigned_fee_id: string | null;
+    is_free: boolean;
     route_name: string;
     pickup_point_name: string;
-    vehicle_number: string;
     // Hostel
     is_hostel_required: boolean;
-    hostel_id: string | null;
-    hostel_room_id: string | null;
     hostel_name: string;
     hostel_room_number: string;
     // Medical
@@ -249,12 +250,12 @@ const AddStudent = () => {
     is_transport_required: false,
     route_id: null,
     pickup_point_id: null,
+    vehicle_id: null,
+    assigned_fee_id: null,
+    is_free: false,
     route_name: '',
     pickup_point_name: '',
-    vehicle_number: '',
     is_hostel_required: false,
-    hostel_id: null,
-    hostel_room_id: null,
     hostel_name: '',
     hostel_room_number: '',
     medical_condition: 'Good',
@@ -342,11 +343,14 @@ const AddStudent = () => {
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
-  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels();
-  const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms();
+  // Fetch transport and hostel options from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
   const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
+  const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
+  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
+  const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
+
   const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
     value: String((h.originalData as { id?: number })?.id ?? ""),
     label: (h.hostelName as string) || "N/A",
@@ -366,7 +370,7 @@ const AddStudent = () => {
   const castsList = (casts || []) as CastItem[];
   const motherTonguesList = (motherTongues || []) as MotherTongueItem[];
 
-  const routeOptions = (transportRoutes || []).map((r: any) => ({
+  const routeOptionsRaw = (transportRoutes || []).map((r: any) => ({
     value: String((r.originalData?.id ?? r.id) ?? ""),
     label: r.routes ?? r.originalData?.route_name ?? "N/A",
     original: r,
@@ -378,14 +382,35 @@ const AddStudent = () => {
     original: p,
   })).filter((o: { value: string }) => o.value);
 
-  const vehicleOptions = (vehicles || []).map((v: any) => {
-    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "";
+  const vehicleOptionsRaw = (vehicles || []).map((v: any) => {
+    const vehicleId = String(v.originalData?.id ?? v.id ?? "");
+    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
     return {
-      value: vehicleNo || "",
-      label: vehicleNo || "N/A",
+      value: vehicleId,
+      label: vehicleNo,
       original: v,
     };
   }).filter((o: { value: string }) => o.value);
+
+  const routeOptions = useMemo(() => {
+    if (!formData.pickup_point_id) return routeOptionsRaw;
+    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(formData.pickup_point_id));
+    const selectedRouteId = String(selectedPickup?.original?.route_id ?? "");
+    if (!selectedRouteId) return routeOptionsRaw;
+    return routeOptionsRaw.filter((r: any) => String(r.value) === selectedRouteId);
+  }, [routeOptionsRaw, pickupPointOptions, formData.pickup_point_id]);
+
+  const vehicleOptions = vehicleOptionsRaw;
+  const feeOptions = (transportFees || [])
+    .filter((f: any) => String(f.pickup_point_id ?? f.originalData?.pickup_point_id ?? "") === String(formData.pickup_point_id ?? ""))
+    .map((f: any) => {
+      const row = f.originalData ?? f;
+      return {
+        value: String(row.id ?? ""),
+        label: `${row.plan_name ?? row.planName ?? "Plan"} - ${row.amount ?? 0}`,
+      };
+    })
+    .filter((o: { value: string }) => o.value);
 
   // Parse comma-separated or single string into array of non-empty trimmed strings
   const parseTagList = (val: unknown): string[] => {
@@ -474,12 +499,12 @@ const AddStudent = () => {
         is_transport_required: !!raw.is_transport_required,
         route_id: raw.route_id != null ? raw.route_id.toString() : null,
         pickup_point_id: raw.pickup_point_id != null ? raw.pickup_point_id.toString() : null,
+        vehicle_id: raw.vehicle_id != null ? raw.vehicle_id.toString() : null,
+        assigned_fee_id: raw.transport_assigned_fee_id != null ? String(raw.transport_assigned_fee_id) : null,
+        is_free: !!raw.transport_is_free,
         route_name: raw.route_name || '',
         pickup_point_name: raw.pickup_point_name || '',
-        vehicle_number: raw.vehicle_number || '',
         is_hostel_required: !!raw.is_hostel_required,
-        hostel_id: raw.hostel_id != null ? raw.hostel_id.toString() : null,
-        hostel_room_id: raw.hostel_room_id != null ? raw.hostel_room_id.toString() : null,
         hostel_name: raw.hostel_name || '',
         hostel_room_number: raw.hostel_room_number != null ? String(raw.hostel_room_number) : '',
         medical_condition: raw.medical_condition || 'Good',
@@ -558,6 +583,28 @@ const AddStudent = () => {
       setVehicleParams({ route_id: formData.route_id || 'all' });
     }
   }, [formData.route_id, setVehicleParams]);
+
+  useEffect(() => {
+    if (!formData.pickup_point_id) return;
+    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(formData.pickup_point_id));
+    const selectedRouteId = selectedPickup?.original?.route_id != null ? String(selectedPickup.original.route_id) : null;
+    if (selectedRouteId && formData.route_id !== selectedRouteId) {
+      setFormData((prev) => ({ ...prev, route_id: selectedRouteId, vehicle_id: null }));
+    }
+  }, [formData.pickup_point_id, pickupPointOptions]); 
+
+  useEffect(() => {
+    if (!formData.is_transport_required) {
+      setFormData((prev) => ({
+        ...prev,
+        route_id: null,
+        pickup_point_id: null,
+        vehicle_id: null,
+        assigned_fee_id: null,
+        is_free: false,
+      }));
+    }
+  }, [formData.is_transport_required]);
 
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
@@ -908,9 +955,10 @@ const AddStudent = () => {
         is_transport_required: formData.is_transport_required || false,
         route_id: formData.route_id ? (typeof formData.route_id === 'string' ? parseInt(formData.route_id) : formData.route_id) : null,
         pickup_point_id: formData.pickup_point_id ? (typeof formData.pickup_point_id === 'string' ? parseInt(formData.pickup_point_id) : formData.pickup_point_id) : null,
+        vehicle_id: formData.vehicle_id ? (typeof formData.vehicle_id === 'string' ? parseInt(formData.vehicle_id) : formData.vehicle_id) : null,
+        assigned_fee_id: formData.assigned_fee_id ? (typeof formData.assigned_fee_id === 'string' ? parseInt(formData.assigned_fee_id) : formData.assigned_fee_id) : null,
+        is_free: formData.is_transport_required ? !!formData.is_free : false,
         is_hostel_required: formData.is_hostel_required || false,
-        hostel_id: formData.hostel_id ? (typeof formData.hostel_id === 'string' ? parseInt(formData.hostel_id) : formData.hostel_id) : null,
-        hostel_room_id: formData.hostel_room_id ? (typeof formData.hostel_room_id === 'string' ? parseInt(formData.hostel_room_id) : formData.hostel_room_id) : null,
         bank_name: formData.bank_name || null,
         branch: formData.branch || null,
         ifsc: formData.ifsc || null,
@@ -945,13 +993,19 @@ const AddStudent = () => {
         const lines = response.warnings
           .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
           .filter(Boolean);
+        const warningsText = lines.join(" ").toLowerCase();
+        const isPhoneConflict = warningsText.includes("phone");
+        const title = isPhoneConflict ? "Duplicate Phone Number" : "Duplicate Email";
+        const confirmText = isPhoneConflict ? "Fix Phone Numbers" : "Fix Emails";
         await Swal.fire({
           icon: "error",
-          title: "Email Already In Use",
+          title,
           html: lines.length > 0
             ? lines.map(l => `<p>${l}</p>`).join('')
-            : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
-          confirmButtonText: "Fix Emails",
+            : isPhoneConflict
+              ? "<p>One or more phone numbers are already conflicting with another contact. Please use a different phone number.</p>"
+              : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
+          confirmButtonText: confirmText,
         });
         // Do NOT navigate — stay on the form so the user can correct the emails
         setIsSubmitting(false);
@@ -962,17 +1016,21 @@ const AddStudent = () => {
       navigate(routes.studentList);
     } catch (error: any) {
       console.error('Error saving student:', error);
-      // 409 = email conflict — show a clear modal and stay on the form
+      // 409 = conflict (email/phone) — show a clear modal and stay on the form
       if (error?.status === 409) {
         // Extract the message from the error (apiService sets error.message = "HTTP error! status: 409, message: <backend msg>")
         const raw: string = error.message || '';
         const match = raw.match(/message:\s*(.+)/);
-        const userMsg = match ? match[1] : raw || 'An email address is already in use by another account.';
+        const userMsg = match ? match[1] : raw || 'A contact value is already in use.';
+        const lowerMsg = userMsg.toLowerCase();
+        const isPhoneConflict = lowerMsg.includes('phone');
+        const title = isPhoneConflict ? 'Duplicate Phone Number' : 'Duplicate Email';
+        const confirmText = isPhoneConflict ? 'Fix Phone Numbers' : 'Fix Emails';
         await Swal.fire({
           icon: 'error',
-          title: 'Duplicate Email',
+          title,
           text: userMsg,
-          confirmButtonText: 'Fix Emails',
+          confirmButtonText: confirmText,
         });
       } else {
         setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);
@@ -1752,7 +1810,6 @@ const AddStudent = () => {
                                 id="student-father_email"
                                 type="text"
                                 data-add-student-field="father_email"
-                                readOnly={formData.father_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.father_email)}`}
                                 value={formData.father_email}
                                 onChange={(e) => handleInputChange('father_email', e.target.value)}
@@ -1775,7 +1832,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="father_phone"
-                                readOnly={formData.father_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.father_phone)}`}
                                 value={formData.father_phone}
                                 onChange={(e) => handleInputChange('father_phone', e.target.value)}
@@ -1891,7 +1947,6 @@ const AddStudent = () => {
                                 id="student-mother_email"
                                 type="text"
                                 data-add-student-field="mother_email"
-                                readOnly={formData.mother_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_email)}`}
                                 value={formData.mother_email}
                                 onChange={(e) => handleInputChange('mother_email', e.target.value)}
@@ -1914,7 +1969,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="mother_phone"
-                                readOnly={formData.mother_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.mother_phone)}`}
                                 value={formData.mother_phone}
                                 onChange={(e) => handleInputChange('mother_phone', e.target.value)}
@@ -2106,7 +2160,6 @@ const AddStudent = () => {
                                 type="text"
                                 inputMode="numeric"
                                 data-add-student-field="guardian_phone"
-                                readOnly={formData.guardian_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_phone)}`}
                                 value={formData.guardian_phone || ''}
                                 onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
@@ -2128,7 +2181,6 @@ const AddStudent = () => {
                                 id="student-guardian_email"
                                 type="email"
                                 data-add-student-field="guardian_email"
-                                readOnly={formData.guardian_person_id != null}
                                 className={`form-control ${formControlInvalidClass(!!fieldErrors.guardian_email)}`}
                                 value={formData.guardian_email || ''}
                                 onChange={(e) => handleInputChange('guardian_email', e.target.value)}
@@ -2449,52 +2501,6 @@ const AddStudent = () => {
                       <div className="row">
                         <div className="col-lg-4 col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Route</label>
-                            {routesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading routes...
-                              </div>
-                            ) : routesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {routesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
-                                value={formData.route_id}
-                                onChange={(v) => handleInputChange('route_id', v || null)}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle Number</label>
-                            {vehiclesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading vehicles...
-                              </div>
-                            ) : vehiclesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {vehiclesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
-                                value={formData.vehicle_number || null}
-                                onChange={(v) => handleInputChange('vehicle_number', v || '')}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
                             <label className="form-label">Pickup Point</label>
                             {pickupLoading ? (
                               <div className="form-control">
@@ -2511,7 +2517,84 @@ const AddStudent = () => {
                                 className="select"
                                 options={pickupPointOptions.map(p => ({ value: p.value, label: p.label }))}
                                 value={formData.pickup_point_id}
-                                onChange={(v) => handleInputChange('pickup_point_id', v || null)}
+                                onChange={(v) => {
+                                  handleInputChange('pickup_point_id', v || null);
+                                  handleInputChange('route_id', null);
+                                  handleInputChange('vehicle_id', null);
+                                  handleInputChange('assigned_fee_id', null);
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Route</label>
+                            {routesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading routes...
+                              </div>
+                            ) : routesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {routesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
+                                value={formData.route_id}
+                                onChange={(v) => {
+                                  handleInputChange('route_id', v || null);
+                                  handleInputChange('vehicle_id', null);
+                                }}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Vehicle</label>
+                            {vehiclesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading vehicles...
+                              </div>
+                            ) : vehiclesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {vehiclesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
+                                value={formData.vehicle_id || null}
+                                onChange={(v) => handleInputChange('vehicle_id', v || null)}
+                              />
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-lg-4 col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Transport Plan</label>
+                            {feesLoading ? (
+                              <div className="form-control">
+                                <i className="ti ti-loader ti-spin me-2"></i>
+                                Loading plans...
+                              </div>
+                            ) : feesError ? (
+                              <div className="form-control text-danger">
+                                <i className="ti ti-alert-circle me-2"></i>
+                                Error: {feesError}
+                              </div>
+                            ) : (
+                              <CommonSelect
+                                className="select"
+                                options={feeOptions}
+                                value={formData.assigned_fee_id || null}
+                                onChange={(v) => handleInputChange('assigned_fee_id', v || null)}
                               />
                             )}
                           </div>
@@ -2520,8 +2603,8 @@ const AddStudent = () => {
                     </div>
                   </div>
                   {/* /Transport Information */}
-                  {/* Hostel Information */}
-                  <div className="card">
+                  {/* Hostel Information - temporarily disabled until hostel workflow redesign */}
+                  {/* <div className="card">
                     <div className="card-header bg-light d-flex align-items-center justify-content-between">
                       <div className="d-flex align-items-center">
                         <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
@@ -2621,7 +2704,7 @@ const AddStudent = () => {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </div> */}
                   {/* /Hostel Information */}
                   {/* Documents */}
                   <div className="card">

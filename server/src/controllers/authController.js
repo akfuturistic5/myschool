@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const { secureCookieBase } = require('../utils/cookiePolicy');
 const { getSchoolProfile } = require('../services/schoolProfileService');
 const { ROLE_NAMES } = require('../config/roles');
+const { parseRelativeKey } = require('../storage/LocalFilesystemStorageProvider');
+const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 
 function displayRoleFromRoleRow(user) {
   const rn = (user?.role_name || '').toString().trim();
@@ -76,6 +78,11 @@ function sha256Hex(s) {
 
 const GENERIC_LOGIN_FAIL = 'Invalid credentials';
 
+function looksLikeBcryptHash(value) {
+  const s = String(value || '');
+  return /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(s);
+}
+
 /**
  * Login - authenticate user with username/phone and password (bcrypt password_hash).
  * Lookup by username, email, or phone. Same error message for all auth failures (no user/institute enumeration).
@@ -141,6 +148,7 @@ const login = async (req, res) => {
     }
 
     const identifier = username.trim().toString();
+    const identifierDigits = identifier.replace(/\D/g, '');
     const enteredPassword = (password || '').toString().trim();
 
     await runWithTenant(targetDbName, async () => {
@@ -152,14 +160,16 @@ const login = async (req, res) => {
                   ur.role_name,
                   st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
                   CASE
-                    WHEN u.username = $1 THEN 1
+                    WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
                     WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 2
-                    WHEN u.phone = $1 THEN 3
+                    WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 3
+                    WHEN u.phone = $1 THEN 4
                     ELSE 9
                   END AS match_rank,
                   CASE
-                    WHEN u.username = $1 THEN 'username'
+                    WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 'username'
                     WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 'email'
+                    WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 'phone'
                     WHEN u.phone = $1 THEN 'phone'
                     ELSE 'other'
                   END AS match_kind
@@ -167,9 +177,14 @@ const login = async (req, res) => {
            LEFT JOIN user_roles ur ON u.role_id = ur.id
            LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
            WHERE u.is_active = true AND u.deleted_at IS NULL
-             AND (u.username = $1 OR LOWER(COALESCE(u.email, '')) = LOWER($1) OR u.phone = $1)
+            AND (
+              LOWER(COALESCE(u.username, '')) = LOWER($1)
+              OR LOWER(COALESCE(u.email, '')) = LOWER($1)
+              OR u.phone = $1
+              OR ($2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2)
+            )
            ORDER BY match_rank ASC, u.id ASC`,
-          [identifier]
+          [identifier, identifierDigits]
         );
         userRows = userResult.rows || [];
       } catch (e) {
@@ -180,21 +195,28 @@ const login = async (req, res) => {
                     ur.role_name,
                     st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
                     CASE
-                      WHEN u.username = $1 THEN 1
-                      WHEN u.phone = $1 THEN 2
+                      WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
+                      WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 2
+                      WHEN u.phone = $1 THEN 3
                       ELSE 9
                     END AS match_rank,
                     CASE
-                      WHEN u.username = $1 THEN 'username'
+                      WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 'username'
+                      WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 'phone'
                       WHEN u.phone = $1 THEN 'phone'
                       ELSE 'other'
                     END AS match_kind
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
              LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
-             WHERE u.is_active = true AND u.deleted_at IS NULL AND (u.username = $1 OR u.phone = $1)
+             WHERE u.is_active = true AND u.deleted_at IS NULL
+               AND (
+                 LOWER(COALESCE(u.username, '')) = LOWER($1)
+                 OR u.phone = $1
+                 OR ($2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2)
+               )
              ORDER BY match_rank ASC, u.id ASC`,
-            [identifier]
+            [identifier, identifierDigits]
           );
           userRows = userResult.rows || [];
         } else {
@@ -236,10 +258,32 @@ const login = async (req, res) => {
         const passwordHash = candidate.password_hash;
         if (!passwordHash) continue;
         let ok = false;
+        let needsRehash = false;
         try {
           ok = await bcrypt.compare(enteredPassword, passwordHash);
         } catch {
           ok = false;
+        }
+        // Compatibility path: some manually inserted dummy rows may contain plaintext
+        // in password_hash. Accept only exact match once, then upgrade immediately.
+        if (!ok && !looksLikeBcryptHash(passwordHash) && passwordHash === enteredPassword) {
+          ok = true;
+          needsRehash = true;
+        }
+        if (ok && needsRehash) {
+          try {
+            const upgradedHash = await bcrypt.hash(enteredPassword, 12);
+            await query(
+              `UPDATE users
+               SET password_hash = $1, modified_at = NOW()
+               WHERE id = $2 AND is_active = true AND deleted_at IS NULL`,
+              [upgradedHash, candidate.id]
+            );
+          } catch (rehashErr) {
+            console.error('Login password rehash failed:', rehashErr);
+            // Fail closed if we cannot upgrade insecure stored password.
+            return errorResponse(res, 500, 'Login failed');
+          }
         }
         if (ok) passwordMatchedUsers.push(candidate);
       }
@@ -364,6 +408,7 @@ const login = async (req, res) => {
         user: {
           id: user.id,
           username: user.username,
+          avatar: user.avatar ?? null,
           displayName,
           role: user.role_name || 'User',
           role_id: user.role_id,
@@ -557,6 +602,24 @@ async function getTableColumns(client, tableName) {
   return new Set((r.rows || []).map((x) => String(x.column_name)));
 }
 
+function normalizeMyAvatarPath(rawAvatar, schoolId) {
+  // Some tenant schemas keep users.avatar as NOT NULL; use empty string as "no avatar".
+  if (rawAvatar == null) return '';
+  const v = String(rawAvatar).trim();
+  if (!v) return '';
+
+  let relative = v.replace(/\\/g, '/');
+  const storageUrlPrefix = '/api/storage/files/';
+  if (relative.startsWith(storageUrlPrefix)) {
+    relative = relative.slice(storageUrlPrefix.length);
+  }
+  const parsed = parseRelativeKey(relative);
+  if (!parsed) return null;
+  if (Number(parsed.schoolId) !== Number(schoolId)) return null;
+  if (!String(parsed.folder || '').startsWith('users/')) return null;
+  return relative;
+}
+
 /**
  * Update current user's own profile (and latest address).
  * - No schema changes
@@ -578,7 +641,16 @@ const updateMe = async (req, res) => {
       phone,
       current_address,
       permanent_address,
+      avatar,
     } = req.body || {};
+    const schoolId = getSchoolIdFromRequest(req);
+    const hasAvatarInPayload = Object.prototype.hasOwnProperty.call(req.body || {}, 'avatar');
+    const normalizedAvatar = hasAvatarInPayload
+      ? normalizeMyAvatarPath(avatar, schoolId)
+      : undefined;
+    if (hasAvatarInPayload && avatar != null && String(avatar).trim() !== '' && !normalizedAvatar) {
+      return errorResponse(res, 400, 'Invalid avatar path');
+    }
 
     const resultUser = await executeTransaction(async (client) => {
       const userCols = await getTableColumns(client, 'users');
@@ -623,6 +695,9 @@ const updateMe = async (req, res) => {
       }
       if (userCols.has('permanent_address') && permanent_address !== undefined) {
         pushUser('permanent_address', permanent_address || null);
+      }
+      if (userCols.has('avatar') && normalizedAvatar !== undefined) {
+        pushUser('avatar', normalizedAvatar);
       }
 
       if (userUpdates.length > 0) {
@@ -830,10 +905,15 @@ const changePassword = async (req, res) => {
       }
 
       const nextHash = await bcrypt.hash(String(newPassword), 10);
-      await client.query(
+      const updateRes = await client.query(
         `UPDATE users SET password_hash = $1 WHERE id = $2 AND is_active = true`,
         [nextHash, userId]
       );
+      if (!updateRes || Number(updateRes.rowCount || 0) !== 1) {
+        const err = new Error('Failed to update password');
+        err.statusCode = 500;
+        throw err;
+      }
     });
 
     success(res, 200, 'Password changed successfully', null);

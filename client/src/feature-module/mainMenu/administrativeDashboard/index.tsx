@@ -17,6 +17,12 @@ import {
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 
+const formatFeeAmount = (value: number | null | undefined): string =>
+  Number(value ?? 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 const AdministrativeDashboard = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
@@ -26,7 +32,7 @@ const AdministrativeDashboard = () => {
   const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDashboardStats({ academicYearId });
   const { upcomingEvents, loading: eventsLoading, error: eventsError, refetch: refetchEvents } = useDashboardMergedUpcomingEvents({ limit: 8 });
   const { routine: classRoutine, loading: routineLoading, error: routineError, refetch: refetchRoutine } = useDashboardClassRoutine({ limit: 5, academicYearId });
-  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } = useDashboardNoticeBoard({ limit: 5 });
+  const { notices: dashboardNotices, loading: noticesLoading, error: noticesError, refetch: refetchNotices } = useDashboardNoticeBoard({ limit: 1 });
   const { activityItems, loading: activityLoading, error: activityError, } = useDashboardStudentActivity({ limit: 5, academicYearId });
   const { feeStats } = useDashboardFeeStats({ academicYearId });
   const { financeSummary } = useDashboardFinanceSummary({ academicYearId });
@@ -356,8 +362,8 @@ const AdministrativeDashboard = () => {
             <div className="card flex-fill">
               <div className="card-body">
                 <h6 className="text-muted mb-1">Fees Collected</h6>
-                <h4 className="mb-0">{Number(feeStats.totalFeesCollected || 0).toLocaleString()}</h4>
-                <small className="text-muted">Outstanding: {Number(feeStats.totalOutstanding || 0).toLocaleString()}</small>
+                <h4 className="mb-0">{formatFeeAmount(feeStats.totalFeesCollected)}</h4>
+                <small className="text-muted">Outstanding: {formatFeeAmount(feeStats.totalOutstanding)}</small>
               </div>
             </div>
           </div>
@@ -365,8 +371,8 @@ const AdministrativeDashboard = () => {
             <div className="card flex-fill">
               <div className="card-body">
                 <h6 className="text-muted mb-1">Finance Net</h6>
-                <h4 className="mb-0">{Number(financeSummary.netPosition || 0).toLocaleString()}</h4>
-                <small className="text-muted">Earnings: {Number(financeSummary.totalEarnings || 0).toLocaleString()}</small>
+                <h4 className="mb-0">{formatFeeAmount(financeSummary.netPosition)}</h4>
+                <small className="text-muted">Earnings: {formatFeeAmount(financeSummary.totalEarnings)}</small>
               </div>
             </div>
           </div>

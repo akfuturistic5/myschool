@@ -113,19 +113,31 @@ const TeacherSalary = () => {
                   {/* List */}
                   <ul className="nav nav-tabs nav-tabs-bottom mb-4">
                     <li>
-                      <Link to={routes.teacherDetails} className="nav-link ">
+                      <Link
+                        to={routes.teacherDetails}
+                        className="nav-link "
+                        state={{ teacherId: teacher?.id, teacher }}
+                      >
                         <i className="ti ti-school me-2" />
                         Teacher Details
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teachersRoutine} className="nav-link ">
+                      <Link
+                        to={routes.teachersRoutine}
+                        className="nav-link "
+                        state={{ teacherId: teacher?.id, teacher }}
+                      >
                         <i className="ti ti-table-options me-2" />
                         Routine
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teacherLeaves} className="nav-link">
+                      <Link
+                        to={routes.teacherLeaves}
+                        className="nav-link"
+                        state={{ teacherId: teacher?.id, teacher }}
+                      >
                         <i className="ti ti-calendar-due me-2" />
                         Leave &amp; Attendance
                       </Link>
@@ -140,7 +152,11 @@ const TeacherSalary = () => {
                       </Link>
                     </li>
                     <li>
-                      <Link to={routes.teacherLibrary} className="nav-link">
+                      <Link
+                        to={routes.teacherLibrary}
+                        className="nav-link"
+                        state={{ teacherId: teacher?.id, teacher }}
+                      >
                         <i className="ti ti-bookmark-edit me-2" />
                         Library
                       </Link>

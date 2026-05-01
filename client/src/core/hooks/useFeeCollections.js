@@ -20,12 +20,14 @@ export function useFeeCollections(options = {}) {
       setError(null);
       const res = await apiService.getFeeCollectionsList({ academicYearId });
       const raw = Array.isArray(res?.data) ? res.data : [];
-      const rows = raw.map((r, idx) => {
+      const rows = await Promise.all(raw.map(async (r, idx) => {
         const amount = parseFloat(r.amount ?? r.total_assigned ?? 0) || 0;
         const paid = parseFloat(r.paid ?? r.total_paid ?? 0) || 0;
         const balance = Math.max(amount - paid, 0);
         const statusText = r.status || (balance <= 0 && amount > 0 ? 'Paid' : paid > 0 ? 'Partial' : amount <= 0 ? 'No Fees' : 'Unpaid');
         const last = r.last_payment_date;
+        const rawStudentImage = r.studentImage || r.photo_url || '';
+        const studentImage = rawStudentImage ? await apiService.resolveAvatarUrl(rawStudentImage) : '';
         return {
           key: String(r.id ?? idx),
           id: r.id,
@@ -36,7 +38,7 @@ export function useFeeCollections(options = {}) {
           studentClass: r.class && r.section ? `${r.class}, ${r.section}` : (r.class || r.section || ''),
           class: r.class || '',
           section: r.section || '',
-          studentImage: r.studentImage || r.photo_url || '',
+          studentImage: studentImage || 'assets/img/profiles/avatar-27.jpg',
           amount,
           totalPaid: paid,
           balance,
@@ -46,7 +48,7 @@ export function useFeeCollections(options = {}) {
           statusClass: statusText === 'Paid' ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           view: statusText === 'Paid' ? 'View Details' : 'Collect Fees',
         };
-      });
+      }));
       setData(rows);
     } catch (err) {
       setError(err.message || 'Failed to fetch fee collections');

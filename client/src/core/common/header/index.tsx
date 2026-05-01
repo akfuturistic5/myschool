@@ -13,12 +13,16 @@ import {
   setMobileSidebar,
   toggleMiniSidebar,
 } from "../../data/redux/sidebarSlice";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { all_routes } from "../../../feature-module/router/all_routes";
 import { getDashboardForRole, getDisplayRoleLabel, isAdministrativeRole, isHeadmasterRole } from "../../utils/roleUtils";
 import { getSchoolLogoSrc, isMillatStyleLogoPath } from "../../utils/schoolLogo";
 import { useAcademicYears } from "../../hooks/useAcademicYears";
 import { useSchoolLogoUpload } from "../../hooks/useSchoolLogoUpload";
+import { apiService } from "../../services/apiService";
+
+const DEFAULT_AVATAR_SRC = "/assets/img/profiles/avatar-27.jpg";
+
 const Header = () => {
   const routes = all_routes;
   const dispatch = useDispatch();
@@ -40,6 +44,7 @@ const Header = () => {
   const dataTheme = useSelector((state: any) => state.themeSetting.dataTheme);
   const dataLayout = useSelector((state: any) => state.themeSetting.dataLayout);
   const [notificationVisible, setNotificationVisible] = useState(false);
+  const [avatarSrc, setAvatarSrc] = useState(DEFAULT_AVATAR_SRC);
   /** React-controlled menus: avoids relying on Bootstrap's data-api (fragile with Vite/React + some browsers with display:contents ancestors). */
   const [userProfileMenuOpen, setUserProfileMenuOpen] = useState(false);
   const [mobileUserMenuOpen, setMobileUserMenuOpen] = useState(false);
@@ -69,6 +74,28 @@ const Header = () => {
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [userProfileMenuOpen, mobileUserMenuOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallback = DEFAULT_AVATAR_SRC;
+    const loadAvatar = async () => {
+      const raw = user?.avatar;
+      if (!raw) {
+        if (!cancelled) setAvatarSrc(fallback);
+        return;
+      }
+      try {
+        const resolved = await apiService.resolveAvatarUrl(raw);
+        if (!cancelled) setAvatarSrc(resolved || fallback);
+      } catch {
+        if (!cancelled) setAvatarSrc(fallback);
+      }
+    };
+    loadAvatar();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.avatar]);
 
   // Fetch academic years from API
   const { academicYears, loading, error } = useAcademicYears();
@@ -159,8 +186,9 @@ const Header = () => {
     }
   };
   const location = useLocation();
-  const toggleNotification = () => {
-    setNotificationVisible(!notificationVisible);
+  const toggleNotification = (event?: MouseEvent<HTMLElement>) => {
+    event?.preventDefault();
+    setNotificationVisible((prev) => !prev);
   };
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -566,7 +594,14 @@ const Header = () => {
                     </div>
                   </div>
                   <div className="d-flex p-0">
-                    <Link to="#" className="btn btn-light w-100 me-2">
+                    <Link
+                      to="#"
+                      className="btn btn-light w-100 me-2"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setNotificationVisible(false);
+                      }}
+                    >
                       Cancel
                     </Link>
                     <Link to={routes.activity} className="btn btn-primary w-100">
@@ -575,6 +610,12 @@ const Header = () => {
                   </div>
                 </div>
               </div>
+              {/*
+                Comment/chat quick-action is intentionally disabled for now.
+                Keeping this block commented (instead of deleting) preserves existing navigation/UI logic
+                so it can be safely restored in future without reimplementation.
+              */}
+              {/*
               <div className="pe-1">
                 <Link
                   to={routes.chat}
@@ -584,6 +625,7 @@ const Header = () => {
                   <span className="chat-status-dot" />
                 </Link>
               </div>
+              */}
               <div className="pe-1">
                 <Link
                   onClick={toggleFullscreen}
@@ -604,10 +646,15 @@ const Header = () => {
                   onClick={() => setUserProfileMenuOpen((o) => !o)}
                 >
                   <span className="avatar avatar-md rounded">
-                    <ImageWithBasePath
-                      src="assets/img/profiles/avatar-27.jpg"
+                    <img
+                      src={avatarSrc}
                       alt="Img"
                       className="img-fluid"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (target.src.includes("avatar-27.jpg")) return;
+                        target.src = DEFAULT_AVATAR_SRC;
+                      }}
                     />
                   </span>
                 </button>
@@ -618,9 +665,14 @@ const Header = () => {
                   <div className="d-block">
                     <div className="d-flex align-items-center p-2">
                       <span className="avatar avatar-md me-2 online avatar-rounded">
-                        <ImageWithBasePath
-                          src="assets/img/profiles/avatar-27.jpg"
+                        <img
+                          src={avatarSrc}
                           alt="img"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (target.src.includes("avatar-27.jpg")) return;
+                            target.src = DEFAULT_AVATAR_SRC;
+                          }}
                         />
                       </span>
                       <div>

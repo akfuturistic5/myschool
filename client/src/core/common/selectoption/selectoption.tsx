@@ -481,6 +481,8 @@ export const classSylabus = [
   { value: "II", label: "II" },
   { value: "III", label: "III" },
 ];
+/** Canonical spelling; same array reference as `classSylabus` (legacy export name). */
+export const classSyllabus = classSylabus;
 export const classSection = [
   { value: "Select", label: "Select" },
   { value: "A", label: "A" },

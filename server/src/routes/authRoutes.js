@@ -29,6 +29,7 @@ router.patch(
       phone: Joi.string().trim().allow('', null).max(50).optional(),
       current_address: Joi.string().trim().allow('', null).max(2000).optional(),
       permanent_address: Joi.string().trim().allow('', null).max(2000).optional(),
+      avatar: Joi.string().trim().allow('', null).max(512).optional(),
     }).min(1)
   ),
   updateMe
@@ -39,9 +40,9 @@ router.post(
   authenticate,
   validate(
     Joi.object({
-      currentPassword: Joi.string().required(),
+      currentPassword: Joi.string().trim().min(1).required(),
       newPassword: strongPasswordJoi().required(),
-      confirmPassword: Joi.string().required(),
+      confirmPassword: Joi.string().trim().min(1).required(),
     })
       .custom((v, helpers) => {
       if (v.newPassword !== v.confirmPassword) {
