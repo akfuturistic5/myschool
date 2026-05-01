@@ -27,6 +27,8 @@ import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
+import { useHostels } from "../../../../core/hooks/useHostels";
+import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
 import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import {
@@ -341,10 +343,22 @@ const AddStudent = () => {
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
+  // Fetch transport and hostel options from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
   const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
   const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
+  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
+  const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
+
+  const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
+    value: String((h.originalData as { id?: number })?.id ?? ""),
+    label: (h.hostelName as string) || "N/A",
+  })).filter((o: { value: string }) => o.value);
+  const roomOptions = (hostelRooms || []).map((r: { originalData?: { id: number }; roomNo?: string }) => ({
+    value: String((r.originalData as { id?: number })?.id ?? ""),
+    label: (r.roomNo as string) || "N/A",
+  })).filter((o: { value: string }) => o.value);
 
   // Typed lists (hooks are JS and return untyped arrays - avoid 'never' inference)
   const academicYearsList = (academicYears || []) as AcademicYearItem[];
@@ -979,13 +993,19 @@ const AddStudent = () => {
         const lines = response.warnings
           .map((w) => (w && typeof w.message === "string" ? w.message.trim() : ""))
           .filter(Boolean);
+        const warningsText = lines.join(" ").toLowerCase();
+        const isPhoneConflict = warningsText.includes("phone");
+        const title = isPhoneConflict ? "Duplicate Phone Number" : "Duplicate Email";
+        const confirmText = isPhoneConflict ? "Fix Phone Numbers" : "Fix Emails";
         await Swal.fire({
           icon: "error",
-          title: "Email Already In Use",
+          title,
           html: lines.length > 0
             ? lines.map(l => `<p>${l}</p>`).join('')
-            : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
-          confirmButtonText: "Fix Emails",
+            : isPhoneConflict
+              ? "<p>One or more phone numbers are already conflicting with another contact. Please use a different phone number.</p>"
+              : "<p>One or more emails are already registered to another account. Please use a different email.</p>",
+          confirmButtonText: confirmText,
         });
         // Do NOT navigate — stay on the form so the user can correct the emails
         setIsSubmitting(false);
@@ -996,17 +1016,21 @@ const AddStudent = () => {
       navigate(routes.studentList);
     } catch (error: any) {
       console.error('Error saving student:', error);
-      // 409 = email conflict — show a clear modal and stay on the form
+      // 409 = conflict (email/phone) — show a clear modal and stay on the form
       if (error?.status === 409) {
         // Extract the message from the error (apiService sets error.message = "HTTP error! status: 409, message: <backend msg>")
         const raw: string = error.message || '';
         const match = raw.match(/message:\s*(.+)/);
-        const userMsg = match ? match[1] : raw || 'An email address is already in use by another account.';
+        const userMsg = match ? match[1] : raw || 'A contact value is already in use.';
+        const lowerMsg = userMsg.toLowerCase();
+        const isPhoneConflict = lowerMsg.includes('phone');
+        const title = isPhoneConflict ? 'Duplicate Phone Number' : 'Duplicate Email';
+        const confirmText = isPhoneConflict ? 'Fix Phone Numbers' : 'Fix Emails';
         await Swal.fire({
           icon: 'error',
-          title: 'Duplicate Email',
+          title,
           text: userMsg,
-          confirmButtonText: 'Fix Emails',
+          confirmButtonText: confirmText,
         });
       } else {
         setSubmitError(error.message || `Failed to ${isEdit ? 'update' : 'create'} student`);

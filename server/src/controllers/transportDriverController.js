@@ -221,12 +221,13 @@ const createDriver = async (req, res) => {
 
     const isActiveValue = is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
     const userId = await getOrCreateTransportUser({ name, phone, role: normalizedRole });
+
     const result = await query(
-      `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue]
-    );
+          `INSERT INTO drivers (driver_name, phone, license_number, role, address, user_id, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [name, phone, license_number || null, normalizedRole, address || '', userId, isActiveValue]
+        );
 
     return success(res, 201, 'Driver created successfully', mapDriverRow(result.rows[0]));
   } catch (error) {

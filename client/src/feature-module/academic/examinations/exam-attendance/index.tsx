@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { apiService } from "../../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 import { all_routes } from "../../../router/all_routes";
-import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 
 const ExamAttendance = () => {
   const routes = all_routes;
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { user, loading: userLoading } = useCurrentUser();
   const roleTokens = [user?.role_name, user?.role, (user as any)?.display_role]
     .map((v) => String(v || "").trim().toLowerCase())
@@ -41,7 +38,7 @@ const ExamAttendance = () => {
       try {
         if (userLoading || !user?.id) return;
         if (selfOnly) {
-          const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
+          const res = await apiService.listSelfExams();
           if (cancelled) return;
           const nextExams = (res as any)?.data || [];
           setExams(nextExams);
@@ -54,7 +51,7 @@ const ExamAttendance = () => {
           return;
         }
 
-        const res = await apiService.listExams({ academic_year_id: academicYearId || undefined });
+        const res = await apiService.listExams();
         if (cancelled) return;
         setExams((res as any)?.data || []);
       } catch {
@@ -64,7 +61,7 @@ const ExamAttendance = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selfOnly, userLoading, user?.id]);
+  }, [selfOnly, userLoading, user?.id]);
 
   useEffect(() => {
     if (!selectedExamId || selfOnly) return;

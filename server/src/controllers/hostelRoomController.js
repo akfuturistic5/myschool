@@ -29,10 +29,8 @@ const getAllHostelRooms = async (req, res) => {
     `
     );
 
-    const rows = result.rows;
-
-    return success(res, 200, 'Hostel rooms fetched successfully', rows, {
-      count: rows.length,
+    return success(res, 200, 'Hostel rooms fetched successfully', result.rows, {
+      count: result.rows.length,
     });
   } catch (error) {
     console.error('Error fetching hostel rooms:', error);

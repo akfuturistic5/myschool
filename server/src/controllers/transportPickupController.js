@@ -172,20 +172,11 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'Pickup point name is required');
     }
 
-    // Check for duplicate name
-    const existing = await query(
-      `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
-      [point_name]
-    );
-    if (existing.rows.length > 0) {
-      return errorResponse(res, 400, 'A pickup point with this name already exists');
-    }
-
     const result = await query(
-      `INSERT INTO pickup_points (point_name, is_active) VALUES ($1, $2)
-       RETURNING *`,
-      [point_name, is_active !== false]
-    );
+          `INSERT INTO pickup_points (point_name, is_active) VALUES ($1, $2)
+           RETURNING *`,
+          [point_name, is_active !== false]
+        );
 
     return success(res, 201, 'Pickup point created successfully', mapPickupRow(result.rows[0]));
   } catch (error) {

@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapAssignmentRow(row) {
@@ -27,6 +28,7 @@ const getAllAssignments = async (req, res) => {
     const hasRouteDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasDriverDeletedAt = await hasColumn('drivers', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
+    
     const {
       page = 1,
       limit = 10,
@@ -36,7 +38,7 @@ const getAllAssignments = async (req, res) => {
       sortField = 'id',
       sortOrder = 'ASC',
     } = req.query;
-
+    
     const offset = (Number(page) - 1) * Number(limit);
     let whereClause = `WHERE ${hasTaDeletedAt ? 'ta.deleted_at IS NULL' : '1=1'}`;
     const params = [];
@@ -136,6 +138,7 @@ const createAssignment = async (req, res) => {
 
     const isActiveValue =
       is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
+
     const existing = await query(
       `SELECT id
        FROM transport_assignments
@@ -260,7 +263,6 @@ const deleteAssignment = async (req, res) => {
     }
 
     // Clear from vehicles table if this was the active assignment
-    // (Note: This is a simple sync, might need more complex logic if multiple assignments exist)
     const assignmentRes = await query('SELECT vehicle_id FROM transport_assignments WHERE id = $1', [assignmentId]);
     if (assignmentRes.rows.length > 0) {
       await query(
@@ -282,4 +284,3 @@ module.exports = {
   updateAssignment,
   deleteAssignment,
 };
-

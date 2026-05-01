@@ -52,9 +52,7 @@ const AdminDashboardModal = ({ refetchEvents }: AdminDashboardModalProps) => {
                     return apiService.getTeachers();
                 };
                 const fetchClasses = () =>
-                    academicYearId != null
-                        ? apiService.getClassesByAcademicYear(academicYearId)
-                        : apiService.getClasses();
+                    apiService.getClasses();
                 const [tRes, cRes, sRes] = await Promise.all([
                     fetchTeachers(),
                     fetchClasses(),

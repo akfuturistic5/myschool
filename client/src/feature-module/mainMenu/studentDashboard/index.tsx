@@ -417,7 +417,7 @@ const StudentDasboard = () => {
                         />
                       </div>
                     </div>
-                    <div className="card-body" style={{ minHeight: "460px" }}>
+                    <div className="card-body">
                       {scheduleLoading && (
                         <div className="text-center py-4">
                           <div className="spinner-border spinner-border-sm text-primary" role="status" />
@@ -427,27 +427,28 @@ const StudentDasboard = () => {
                       {!scheduleLoading && todaysClasses.length === 0 && (
                         <p className="text-muted mb-0">No classes scheduled for this day.</p>
                       )}
-                      {!scheduleLoading && todaysClasses?.length > 0 && todaysClasses?.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string }, idx: number) => (
-                        <div key={cls.id ?? idx} className={`card ${idx < todaysClasses.length - 1 ? "mb-3" : "mb-0"}`}>
-                          <div className="d-flex align-items-center justify-content-between flex-wrap p-3 pb-1">
-                            <div className="d-flex align-items-center flex-wrap mb-2">
-                              <span className="avatar avatar-lg flex-shrink-0 rounded me-2 bg-primary-transparent">
-                                <i className="ti ti-book fs-20 text-primary" />
-                              </span>
-                              <div>
-                                <h6 className="mb-1">{cls.subject || "—"}</h6>
-                                <span>
-                                  <i className="ti ti-clock me-2" />
+                      {!scheduleLoading && todaysClasses?.length > 0 && (
+                        <div className="row g-2">
+                          {todaysClasses.map((cls: { id?: string; subject?: string; startTime?: string; endTime?: string; teacher?: string; classRoom?: string }, idx: number) => (
+                            <div key={cls.id ?? idx} className="col-6 d-flex">
+                              <div className="border rounded p-2 w-100 h-100">
+                                <div className="d-flex align-items-center justify-content-between mb-1">
+                                  <span className="badge badge-soft-primary shadow-none">Period {idx + 1}</span>
+                                  {cls.classRoom && (
+                                    <span className="badge bg-light text-muted fw-normal">Room: {cls.classRoom}</span>
+                                  )}
+                                </div>
+                                <h6 className="mb-1 text-truncate">{cls.subject || "—"}</h6>
+                                <p className="mb-1 text-muted small text-truncate">
+                                  <i className="ti ti-clock me-1" />
                                   {cls.startTime || "—"} - {cls.endTime || "—"}
-                                </span>
+                                </p>
+                                <p className="mb-0 small text-truncate">{cls.teacher || "Teacher not assigned"}</p>
                               </div>
                             </div>
-                            {cls.classRoom && (
-                              <span className="badge badge-soft-primary shadow-none mb-2">Room: {cls.classRoom}</span>
-                            )}
-                          </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                     </div>

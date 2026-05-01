@@ -58,7 +58,7 @@ const FeesAssign = () => {
           key: item.id || idx,
           sNo: String(idx + 1),
           feesGroup: item.fees_group_name || "Unknown Group",
-          feesType: item.fees_type_name || "All Types",
+          feesType: item.fees_type_name || "Unknown Type",
           class: item.class_name || "-",
           section: item.section_name || "-",
           amount: item.total_amount || "0",

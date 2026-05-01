@@ -625,14 +625,19 @@ const ParentDashboard = () => {
                       </span>
                     </div>
                   ) : (
-                    <div className="d-flex flex-column gap-3">
-                      {todaysSchedule.slice(0, 4).map((item: { id?: number; subject?: string; startTime?: string; endTime?: string; teacher?: string }, idx: number) => (
-                        <div key={item.id ?? idx} className="border rounded p-3">
-                          <h6 className="mb-1">{item.subject || "Subject"}</h6>
-                          <p className="mb-1 text-muted">
-                            {item.startTime || "—"} - {item.endTime || "—"}
-                          </p>
-                          <p className="mb-0 small">{item.teacher || "Teacher not assigned"}</p>
+                    <div className="row g-2">
+                      {todaysSchedule.map((item: { id?: number; subject?: string; startTime?: string; endTime?: string; teacher?: string }, idx: number) => (
+                        <div key={item.id ?? idx} className="col-6 d-flex">
+                          <div className="border rounded p-2 w-100 h-100">
+                            <div className="d-flex align-items-center justify-content-between mb-1">
+                              <span className="badge badge-soft-primary shadow-none">Period {idx + 1}</span>
+                            </div>
+                            <h6 className="mb-1 text-truncate">{item.subject || "Subject"}</h6>
+                            <p className="mb-1 text-muted small text-truncate">
+                              {item.startTime || "—"} - {item.endTime || "—"}
+                            </p>
+                            <p className="mb-0 small text-truncate">{item.teacher || "Teacher not assigned"}</p>
+                          </div>
                         </div>
                       ))}
                     </div>

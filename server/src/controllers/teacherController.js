@@ -470,43 +470,22 @@ const getTeacherById = async (req, res) => {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
 
-    const requestedAcademicYearIdRaw = req.query?.academic_year_id;
-    const requestedAcademicYearId =
-      requestedAcademicYearIdRaw != null && String(requestedAcademicYearIdRaw).trim() !== ''
-        ? parseInt(String(requestedAcademicYearIdRaw), 10)
-        : null;
-    const hasAcademicYearFilter =
-      requestedAcademicYearId != null &&
-      Number.isInteger(requestedAcademicYearId) &&
-      requestedAcademicYearId > 0;
-
     const classTeacherParams = [row.staff_id];
-    let classTeacherWhere = 'WHERE c.class_teacher_id = $1';
-    if (hasAcademicYearFilter) {
-      classTeacherParams.push(requestedAcademicYearId);
-      classTeacherWhere += ` AND c.academic_year_id = $${classTeacherParams.length}`;
-    }
+    const classTeacherWhere = 'WHERE c.class_teacher_id = $1';
     const classTeacherResult = await query(
       `SELECT
          c.id AS class_id,
          c.class_name,
          c.class_code,
-         c.is_active,
-         c.academic_year_id,
-         ay.year_name AS academic_year_name
+         c.is_active
        FROM classes c
-       LEFT JOIN academic_years ay ON ay.id = c.academic_year_id
        ${classTeacherWhere}
        ORDER BY c.class_name ASC`,
       classTeacherParams
     );
 
     const sectionTeacherParams = [row.staff_id];
-    let sectionTeacherWhere = 'WHERE sec.section_teacher_id = $1';
-    if (hasAcademicYearFilter) {
-      sectionTeacherParams.push(requestedAcademicYearId);
-      sectionTeacherWhere += ` AND c.academic_year_id = $${sectionTeacherParams.length}`;
-    }
+    const sectionTeacherWhere = 'WHERE sec.section_teacher_id = $1';
     const sectionTeacherResult = await query(
       `SELECT
          sec.id AS section_id,
@@ -514,12 +493,9 @@ const getTeacherById = async (req, res) => {
          sec.is_active,
          sec.class_id,
          c.class_name,
-         c.class_code,
-         c.academic_year_id,
-         ay.year_name AS academic_year_name
+         c.class_code
        FROM sections sec
        INNER JOIN classes c ON c.id = sec.class_id
-       LEFT JOIN academic_years ay ON ay.id = c.academic_year_id
        ${sectionTeacherWhere}
        ORDER BY c.class_name ASC, sec.section_name ASC`,
       sectionTeacherParams
@@ -532,8 +508,6 @@ const getTeacherById = async (req, res) => {
         className: item.class_name,
         classCode: item.class_code,
         isActive: item.is_active,
-        academicYearId: item.academic_year_id,
-        academicYearName: item.academic_year_name || null,
       })),
       section_teacher_of: sectionTeacherResult.rows.map((item) => ({
         sectionId: item.section_id,
@@ -542,8 +516,6 @@ const getTeacherById = async (req, res) => {
         classId: item.class_id,
         className: item.class_name,
         classCode: item.class_code,
-        academicYearId: item.academic_year_id,
-        academicYearName: item.academic_year_name || null,
       })),
     };
 
@@ -676,11 +648,10 @@ const getTeacherRoutine = async (req, res) => {
     }
 
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
-    const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearClause = hasYearFilter
-      ? ' AND (cs.academic_year_id = $2 OR c.academic_year_id = $2 OR cs.academic_year_id IS NULL OR c.academic_year_id IS NULL)'
-      : '';
-    const scheduleParams = hasYearFilter ? [staffId, academicYearId] : [staffId];
+    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
+      return errorResponse(res, 400, 'academic_year_id query parameter is required');
+    }
+    const scheduleParams = [staffId, academicYearId];
 
     // Get class schedules for this teacher
     // Handle both 'slots' and 'time_slots' table names
@@ -709,7 +680,8 @@ const getTeacherRoutine = async (req, res) => {
       LEFT JOIN sections sec ON cs.section_id = sec.id
       LEFT JOIN subjects sub ON cs.subject_id = sub.id
       LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-      WHERE cs.teacher_id = $1${yearClause}
+      WHERE cs.teacher_id = $1
+        AND cs.academic_year_id = $2
       ORDER BY 
         CASE LOWER(TRIM(cs.day_of_week::text))
           WHEN '0' THEN 1
@@ -764,7 +736,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
           LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
           ORDER BY 
             CASE LOWER(TRIM(cs.day_of_week::text))
               WHEN '0' THEN 1
@@ -798,7 +771,8 @@ const getTeacherRoutine = async (req, res) => {
           LEFT JOIN classes c ON cs.class_id = c.id
           LEFT JOIN sections sec ON cs.section_id = sec.id
           LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          WHERE cs.teacher_id = $1${yearClause}
+          WHERE cs.teacher_id = $1
+            AND cs.academic_year_id = $2
         `;
         schedulesResult = await query(schedulesQuery, scheduleParams);
       }
@@ -1002,6 +976,12 @@ const createTeacher = async (req, res) => {
     const desigParsed = parsePositiveIntOrNull(designation_id);
     const deptParsed = parsePositiveIntOrNull(department_id);
     const bgParsed = parsePositiveIntOrNull(blood_group_id);
+    if (desigParsed == null) {
+      return errorResponse(res, 400, 'Designation is required', 'VALIDATION_ERROR');
+    }
+    if (deptParsed == null) {
+      return errorResponse(res, 400, 'Department is required', 'VALIDATION_ERROR');
+    }
     if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) {
       return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
     }
