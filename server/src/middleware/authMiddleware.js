@@ -187,6 +187,17 @@ const authenticate = (req, res, next) => {
         }
       }
 
+      if (bearerRaw && !allowBearer) {
+        return errorResponse(
+          res,
+          401,
+          serverConfig.nodeEnv === 'production'
+            ? 'Bearer token not accepted. Set TENANT_BEARER_AUTH=true on the API (production) for mobile/SPA without cookies.'
+            : 'Bearer token not accepted. Set ALLOW_LEGACY_BEARER_AUTH=true in server .env for local/mobile clients using Authorization: Bearer.',
+          'BEARER_DISABLED'
+        );
+      }
+
       if (!cookieToken) {
         return errorResponse(res, 401, 'Access denied. No token provided.');
       }

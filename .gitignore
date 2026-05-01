@@ -40,3 +40,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+client/package-lock.json
+.gitignore
+server/package-lock.json
+server/node_modules/.package-lock.json
+server/package.json
+server/node_modules/.package-lock.json
+server/package-lock.json
+server/.env.example
+docs/FLUTTER_API_HANDBOOK.md

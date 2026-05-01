@@ -20,6 +20,18 @@ function displayRoleFromRoleRow(user) {
 
 const AUTH_COOKIE_NAME = 'auth_token';
 const SESSION_COOKIE_NAME = 'sid';
+const LOGIN_DEBUG_ENABLED =
+  process.env.NODE_ENV !== 'production' &&
+  String(process.env.LOGIN_DEBUG || 'true').toLowerCase() !== 'false';
+
+function logLoginDebug(stage, meta = {}) {
+  if (!LOGIN_DEBUG_ENABLED) return;
+  try {
+    console.log('[auth:login:debug]', { stage, ...meta });
+  } catch {
+    // no-op
+  }
+}
 
 /** Cookie options for HTTP-only auth cookie. SameSite=None for cross-origin (e.g. Render frontend/backend). */
 const getAuthCookieOptions = () => {
@@ -81,6 +93,10 @@ const login = async (req, res) => {
 
     const institute = (instituteNumber || institute_number || '').toString().trim();
     if (!institute) {
+      logLoginDebug('missing_institute', {
+        hasUsername: !!username,
+        identifierLength: String(username || '').length,
+      });
       return errorResponse(res, 400, 'Institute number is required');
     }
 
@@ -95,10 +111,19 @@ const login = async (req, res) => {
         [institute]
       );
       if (schoolRes.rows.length === 0) {
+        logLoginDebug('institute_not_found', {
+          institute,
+          identifier: String(username || '').trim(),
+        });
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
       const s = schoolRes.rows[0];
       if (s.deleted_at || (s.status && String(s.status).toLowerCase() === 'disabled')) {
+        logLoginDebug('school_disabled_or_deleted', {
+          institute,
+          status: s.status,
+          deleted: !!s.deleted_at,
+        });
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
       school = s;
@@ -110,6 +135,11 @@ const login = async (req, res) => {
     const targetDbName = school.db_name;
 
     if (!username || !password) {
+      logLoginDebug('missing_username_or_password', {
+        institute,
+        hasUsername: !!username,
+        hasPassword: !!password,
+      });
       return errorResponse(res, 400, 'Username and password are required');
     }
 
@@ -195,6 +225,11 @@ const login = async (req, res) => {
       }
 
       if (userRows.length === 0) {
+        logLoginDebug('user_not_found_for_identifier', {
+          institute,
+          db: targetDbName,
+          identifier,
+        });
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
 
@@ -203,6 +238,13 @@ const login = async (req, res) => {
       const topRankUsers = userRows.filter((row) => Number(row.match_rank) === bestRank);
       const bestKind = String(topRankUsers[0]?.match_kind || '');
       if ((bestKind === 'phone' || bestKind === 'email') && topRankUsers.length > 1) {
+        logLoginDebug('ambiguous_identifier', {
+          institute,
+          db: targetDbName,
+          identifier,
+          matchKind: bestKind,
+          count: topRankUsers.length,
+        });
         return errorResponse(
           res,
           409,
@@ -247,9 +289,21 @@ const login = async (req, res) => {
       }
 
       if (passwordMatchedUsers.length === 0) {
+        logLoginDebug('password_mismatch', {
+          institute,
+          db: targetDbName,
+          identifier,
+          candidateCount: candidateUsers.length,
+        });
         return errorResponse(res, 401, GENERIC_LOGIN_FAIL);
       }
       if (passwordMatchedUsers.length > 1) {
+        logLoginDebug('multiple_password_matches', {
+          institute,
+          db: targetDbName,
+          identifier,
+          count: passwordMatchedUsers.length,
+        });
         // Prevent accidental cross-account login when identifier (mostly phone) is shared.
         return errorResponse(
           res,
@@ -258,6 +312,12 @@ const login = async (req, res) => {
         );
       }
       const user = passwordMatchedUsers[0];
+      logLoginDebug('login_success', {
+        institute,
+        db: targetDbName,
+        identifier,
+        userId: user.id,
+      });
 
       const payload = {
         id: user.id,
