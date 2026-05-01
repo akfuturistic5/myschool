@@ -42,7 +42,7 @@ const DailyAttendance = () => {
 
     const fetchFilterOptions = async () => {
       try {
-        const classesPromise = academicYearId ? apiService.getClassesByAcademicYear(academicYearId) : apiService.getClasses();
+        const classesPromise = apiService.getClasses();
         const classesResult = await classesPromise.catch(() => null);
         if (cancelled) return;
 

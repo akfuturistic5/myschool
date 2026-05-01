@@ -214,7 +214,7 @@ const TeachersRoutine = () => {
         }
       })
       .catch((err) => {
-        console.error("Error fetching teacher routine:", err);
+        console.error("Error fetching teacher timetable:", err);
         setRoutine([]);
         setApiSlots([]);
       })
@@ -351,14 +351,14 @@ const TeachersRoutine = () => {
 
   const handleExportPdf = useCallback(() => {
     if (!exportGridBody.length) return;
-    exportTimetableGridToPDF(exportTitle, exportGridHeaders, exportGridBody, "teacher-routine", {
+    exportTimetableGridToPDF(exportTitle, exportGridHeaders, exportGridBody, "teacher-timetable", {
       showHead: "firstPage",
     });
   }, [exportTitle, exportGridHeaders, exportGridBody]);
 
   const handleExportExcel = useCallback(() => {
     if (!exportGridBody.length) return;
-    exportTimetableGridToExcel(exportGridHeaders, exportGridBody, "teacher-routine", "Teacher routine");
+    exportTimetableGridToExcel(exportGridHeaders, exportGridBody, "teacher-timetable", "Teacher timetable");
   }, [exportGridHeaders, exportGridBody]);
 
   const teacherSelectFilter = useMemo(() => {
@@ -440,7 +440,7 @@ const TeachersRoutine = () => {
       <div className="content content-two">
         <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
           <div className="my-auto mb-2">
-            <h3 className="page-title mb-1">Teacher routine</h3>
+            <h3 className="page-title mb-1">Teacher timetable</h3>
             <nav>
               <ol className="breadcrumb mb-0">
                 <li className="breadcrumb-item">
@@ -450,7 +450,7 @@ const TeachersRoutine = () => {
                   <Link to={routes.teacherList}>Teachers</Link>
                 </li>
                 <li className="breadcrumb-item active" aria-current="page">
-                  Teacher routine
+                  Teacher timetable
                 </li>
               </ol>
             </nav>
@@ -564,9 +564,9 @@ const TeachersRoutine = () => {
                       ) : routineLoading ? (
                         <div className="d-flex justify-content-center align-items-center p-5">
                           <div className="spinner-border text-primary" role="status">
-                            <span className="visually-hidden">Loading routine...</span>
+                            <span className="visually-hidden">Loading timetable...</span>
                           </div>
-                          <span className="ms-2">Loading routine...</span>
+                          <span className="ms-2">Loading timetable...</span>
                         </div>
                       ) : periodColumns.length === 0 ? (
                         <div className="text-center p-5">
