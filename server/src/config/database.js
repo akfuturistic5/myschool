@@ -29,7 +29,7 @@ function getPrimaryDbName() {
   return process.env.DB_NAME || 'schooldb';
 }
 const primaryDbName = getPrimaryDbName();
-const masterDbName = process.env.MASTER_DB_NAME || 'master_db';
+const masterDbName = process.env.DB_NAME || 'master_db';
 
 // CRITICAL: Application must never use the template DB (e.g. school_template) as primary.
 // Template is only for: CREATE DATABASE new_tenant TEMPLATE school_template during provisioning.
