@@ -342,6 +342,7 @@ const AddStudent = () => {
   // Fetch houses from API
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
+  // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   // Fetch transport and hostel options from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
@@ -604,6 +605,7 @@ const AddStudent = () => {
       }));
     }
   }, [formData.is_transport_required]);
+
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
     if (!isEdit && academicYearsList.length > 0) {

@@ -1,7 +1,6 @@
 const { query, executeTransaction } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapRouteRow(row, stops = []) {

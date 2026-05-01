@@ -11,6 +11,7 @@ const normalizeHostelType = (t) => {
 const getAllHostels = async (req, res) => {
   try {
     const result = await query(`SELECT * FROM hostels WHERE is_active = true ORDER BY hostel_name ASC`);
+
     return success(res, 200, 'Hostels fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching hostels:', error);

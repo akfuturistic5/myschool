@@ -2,7 +2,6 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const bcrypt = require('bcryptjs');
-const { resolveAcademicYearId, toPositiveInt } = require('../utils/academicYear');
 const { hasColumn } = require('../utils/schemaInspector');
 
 const TRANSPORT_ROLES = ['driver', 'conductor'];

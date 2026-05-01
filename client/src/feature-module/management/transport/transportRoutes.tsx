@@ -13,13 +13,10 @@ import { useTransportRoutes } from "../../../core/hooks/useTransportRoutes";
 import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
-import { useSelector } from "react-redux";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
 const TransportRoutes = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   
   const { 
     data, 
@@ -43,7 +40,7 @@ const TransportRoutes = () => {
   useEffect(() => {
     const fetchPickups = async () => {
       try {
-        const res = await apiService.getTransportPickupPoints({ status: 'active', limit: 1000, academic_year_id: academicYearId ?? undefined });
+        const res = await apiService.getTransportPickupPoints({ status: 'active', limit: 1000 });
         if (res.status === "SUCCESS") {
           setPickupsData(res.data);
         }
@@ -52,12 +49,7 @@ const TransportRoutes = () => {
       }
     };
     fetchPickups();
-  }, [academicYearId]);
-
-  useEffect(() => {
-    setParams({ ...params, academic_year_id: academicYearId ?? undefined, page: 1 });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [academicYearId]);
+  }, []);
 
   const handleSearch = (val: string) => {
     setParams({ ...params, search: val, page: 1 });
