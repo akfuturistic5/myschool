@@ -81,6 +81,7 @@ const enquiryRoutes = require('./src/routes/enquiryRoutes');
 const settingsController = require('./src/controllers/settingsController');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
+const { logClientAuthErrors } = require('./src/middleware/logClientAuthErrors');
 
 // Create Express app
 const app = express();
@@ -236,6 +237,8 @@ if (isProduction) {
 const bodyLimit = process.env.REQUEST_BODY_LIMIT || '2mb';
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
+// Log 401/403 with JSON reason (Bearer vs missing token, CSRF, RBAC, etc.) — see logClientAuthErrors
+app.use(logClientAuthErrors);
 
 // CSRF (double-submit cookie) for cookie-authenticated SPA.
 // Requires frontend to send X-XSRF-TOKEN header matching XSRF-TOKEN cookie for unsafe methods.
