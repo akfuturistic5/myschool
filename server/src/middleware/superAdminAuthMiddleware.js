@@ -9,6 +9,33 @@ const SUPER_ADMIN_COOKIE_NAME = 'super_admin_auth';
  * Reads token from HTTP-only cookie or Authorization header and verifies role.
  * Does NOT bind any tenant context (Super Admin operates only on master_db).
  */
+/**
+ * Best-effort Super Admin identity for public endpoints (e.g. session probe).
+ * Never sends 401: missing/invalid token leaves req.superAdmin unset.
+ */
+const optionalAuthenticateSuperAdmin = (req, res, next) => {
+  req.superAdmin = null;
+  try {
+    const cookieToken = req.cookies?.[SUPER_ADMIN_COOKIE_NAME] || null;
+    const authHeader = req.headers.authorization;
+    const bearerToken =
+      serverConfig.allowSuperAdminBearerAuth && authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : null;
+    const token = cookieToken || bearerToken;
+    if (!token || !serverConfig.jwtSuperAdminSecret) {
+      return next();
+    }
+    const decoded = jwt.verify(token, serverConfig.jwtSuperAdminSecret);
+    if (decoded && decoded.role === 'super_admin') {
+      req.superAdmin = decoded;
+    }
+    return next();
+  } catch {
+    return next();
+  }
+};
+
 const authenticateSuperAdmin = (req, res, next) => {
   try {
     const cookieToken = req.cookies?.[SUPER_ADMIN_COOKIE_NAME] || null;
@@ -58,6 +85,7 @@ const requireSuperAdmin = (req, res, next) => {
 };
 
 module.exports = {
+  optionalAuthenticateSuperAdmin,
   authenticateSuperAdmin,
   requireSuperAdmin,
   SUPER_ADMIN_COOKIE_NAME,

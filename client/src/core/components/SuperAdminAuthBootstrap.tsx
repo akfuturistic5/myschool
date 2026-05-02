@@ -9,7 +9,7 @@ import {
 
 /**
  * Hydrates Super Admin auth state from HTTP-only cookie when on /super-admin routes.
- * Calls /super-admin/api/me and sets Redux on success.
+ * Calls /super-admin/api/auth/session (always 200) and sets Redux when authenticated.
  * On failure or when leaving /super-admin, clears client state so UI never shows
  * "authenticated" without a valid session (avoids dashboard API calls with no cookie).
  */
@@ -27,19 +27,27 @@ export const SuperAdminAuthBootstrap = () => {
         return;
       }
       try {
-        const res = await superAdminApiService.getProfile();
+        const res = await superAdminApiService.getSession();
         if (cancelled) return;
-        if (res.status === 'SUCCESS' && res.data) {
-          const d = res.data;
+        const payload = res.data as {
+          authenticated?: boolean;
+          user?: { id: number; username: string; email: string; role?: string };
+        };
+        if (
+          res.status === 'SUCCESS' &&
+          payload?.authenticated === true &&
+          payload.user
+        ) {
+          const u = payload.user;
           await superAdminApiService.ensureCsrfToken();
           if (cancelled) return;
           dispatch(
             setSuperAdminAuthFromSession({
               user: {
-                id: d.id,
-                username: d.username,
-                email: d.email,
-                role: d.role || 'super_admin',
+                id: u.id,
+                username: u.username,
+                email: u.email,
+                role: u.role || 'super_admin',
               },
             })
           );

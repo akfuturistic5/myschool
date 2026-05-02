@@ -3,10 +3,15 @@ const Joi = require('joi');
 const {
   superAdminLogin,
   superAdminLogout,
+  getSuperAdminSession,
   updateSuperAdminProfile,
   changeSuperAdminPassword,
 } = require('../controllers/superAdminAuthController');
-const { authenticateSuperAdmin, requireSuperAdmin } = require('../middleware/superAdminAuthMiddleware');
+const {
+  optionalAuthenticateSuperAdmin,
+  authenticateSuperAdmin,
+  requireSuperAdmin,
+} = require('../middleware/superAdminAuthMiddleware');
 const { validate } = require('../utils/validate');
 const { echoCsrfToken } = require('../utils/csrfEcho');
 const { strongPasswordJoi } = require('../utils/passwordPolicy');
@@ -20,6 +25,7 @@ const superAdminLoginSchema = Joi.object({
 
 router.post('/login', validate(superAdminLoginSchema), superAdminLogin);
 router.get('/csrf-token', echoCsrfToken);
+router.get('/session', optionalAuthenticateSuperAdmin, getSuperAdminSession);
 
 router.patch(
   '/profile',

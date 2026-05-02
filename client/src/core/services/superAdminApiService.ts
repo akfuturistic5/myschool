@@ -42,12 +42,14 @@ async function getSuperAdminApiBaseUrl(): Promise<string> {
   return base;
 }
 
+type RequestMeta = { sessionProbe?: boolean };
+
 class SuperAdminApiService {
-  async makeRequest(endpoint: string, options: RequestInit = {}) {
+  async makeRequest(endpoint: string, options: RequestInit = {}, meta?: RequestMeta) {
     const base = await getSuperAdminApiBaseUrl();
     const url = `${base}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-    if (isDev) {
+    if (isDev && !meta?.sessionProbe) {
       console.log('[SuperAdmin] API request:', url);
     }
 
@@ -73,13 +75,17 @@ class SuperAdminApiService {
         cache: options.cache !== undefined ? options.cache : 'no-store',
       });
 
-      if (isDev) {
+      if (isDev && !meta?.sessionProbe) {
         console.log('[SuperAdmin] Response status:', response.status);
       }
 
       if (!response.ok) {
         const text = await response.text();
-        if (isDev) console.error('[SuperAdmin] Error response:', text);
+        const quietSession = meta?.sessionProbe && response.status === 401;
+        if (isDev && !quietSession) console.error('[SuperAdmin] Error response:', text);
+        if (isDev && quietSession) {
+          console.debug('[SuperAdmin] Session check: not logged in (401).');
+        }
         let apiMessage = text || `HTTP error ${response.status}`;
         try {
           const j = JSON.parse(text) as { message?: string };
@@ -89,9 +95,9 @@ class SuperAdminApiService {
         } catch {
           /* use raw text */
         }
-        // 401 = missing/expired Super Admin session — clear client auth.
+        // 401 = missing/expired Super Admin session — clear client auth (not for silent session probe).
         // 403 = wrong password / forbidden action — must NOT log the user out.
-        if (response.status === 401) {
+        if (response.status === 401 && !meta?.sessionProbe) {
           window.dispatchEvent(new CustomEvent('super-admin:sessionInvalid'));
         }
         const err = new Error(apiMessage) as Error & { status?: number };
@@ -111,7 +117,10 @@ class SuperAdminApiService {
       }
       return data;
     } catch (err) {
-      if (isDev) console.error('[SuperAdmin] API request failed:', err);
+      const status = (err as Error & { status?: number }).status;
+      const quiet401 = meta?.sessionProbe && status === 401;
+      if (isDev && !quiet401) console.error('[SuperAdmin] API request failed:', err);
+      if (isDev && quiet401) console.debug('[SuperAdmin] Session probe finished without a session.');
       throw err;
     }
   }
@@ -148,8 +157,13 @@ class SuperAdminApiService {
     }
   }
 
+  /** SPA bootstrap: always 200 — no 401 in DevTools when logged out (see GET /auth/session). */
+  async getSession() {
+    return this.makeRequest('/auth/session');
+  }
+
   async getProfile() {
-    return this.makeRequest('/me');
+    return this.makeRequest('/me', {}, { sessionProbe: true });
   }
 
   async logout() {
