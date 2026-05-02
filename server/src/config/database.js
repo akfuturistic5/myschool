@@ -218,7 +218,7 @@ const masterSchemaBootstrapPromise = (async () => {
     await masterPool.query(`
       SELECT setval(
         pg_get_serial_sequence('tenant_sessions', 'id'),
-        COALESCE((SELECT MAX(id) FROM tenant_sessions), 0)
+        COALESCE((SELECT MAX(id) FROM tenant_sessions), 1)
       );
     `);
     await masterPool.query(`CREATE INDEX IF NOT EXISTS idx_tenant_sessions_school ON tenant_sessions(school_id);`);

@@ -298,6 +298,13 @@ CREATE TABLE IF NOT EXISTS public.staff (
     CONSTRAINT staff_marital_status_check CHECK (marital_status IN ('Single', 'Married', 'Divorced', 'Widowed'))
 );
 
+-- App code filters on staff.is_active; the canonical model is status + deleted_at.
+ALTER TABLE public.staff
+  ADD COLUMN IF NOT EXISTS is_active boolean
+  GENERATED ALWAYS AS (
+    (deleted_at IS NULL AND LOWER(TRIM(COALESCE(status, 'Active'))) = 'active')
+  ) STORED;
+
 -- 28. Salary Components (Master Layer)
 CREATE TABLE IF NOT EXISTS public.salary_components (
     id SERIAL PRIMARY KEY,
