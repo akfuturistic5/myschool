@@ -8,6 +8,51 @@ const crypto = require('crypto');
 const { secureCookieBase } = require('../utils/cookiePolicy');
 const { verifySuperAdminPassword, writeSuperAdminAudit } = require('../utils/superAdminSecurity');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
+/**
+ * Maps master_db (PostgreSQL) connectivity errors to safe API responses.
+ * Login failures from wrong Super Admin password must stay 401 — this is only for DB unreachable / bad DB credentials.
+ */
+function respondMasterDbQueryError(res, err, { generic500Message, logLabel }) {
+  console.error(logLabel, err);
+  const msg = String(err && err.message ? err.message : '');
+  const code = err && err.code ? String(err.code) : '';
+  const authFailed =
+    code === '28P01' || /password authentication failed/i.test(msg) || /authentication failed/i.test(msg);
+  const connRefused = code === 'ECONNREFUSED';
+  const timeout =
+    /timeout/i.test(msg) || code === 'ETIMEDOUT' || code === '57014';
+
+  if (!isProduction && authFailed) {
+    return errorResponse(
+      res,
+      503,
+      'Master database (master_db) rejected the connection (wrong DB user/password). Set MASTER_DATABASE_URL, or fix DB_USER and DB_PASSWORD so the same PostgreSQL instance can open database "master_db". See server/.env.example.'
+    );
+  }
+  if (!isProduction && connRefused) {
+    return errorResponse(
+      res,
+      503,
+      'Cannot connect to PostgreSQL for master_db (connection refused). Check DB_HOST, DB_PORT, and that the server is running.'
+    );
+  }
+  if (!isProduction && timeout) {
+    return errorResponse(
+      res,
+      503,
+      'Master database (master_db) connection timed out. Check network, MASTER_DATABASE_URL, and DB_CONNECTION_TIMEOUT_MS.'
+    );
+  }
+
+  if (authFailed || connRefused || timeout) {
+    return errorResponse(res, 503, 'Authentication service temporarily unavailable.');
+  }
+
+  return errorResponse(res, 500, generic500Message);
+}
+
 const getSuperAdminCookieOptions = () => {
   const { sameSite, secure } = secureCookieBase();
   const maxAgeMs = 24 * 60 * 60 * 1000; // 1 day
@@ -69,8 +114,10 @@ const superAdminLogin = async (req, res) => {
         [identifier]
       );
     } catch (e) {
-      console.error('Error querying master_db.super_admin_users:', e);
-      return errorResponse(res, 500, 'Failed to authenticate');
+      return respondMasterDbQueryError(res, e, {
+        generic500Message: 'Failed to authenticate',
+        logLabel: 'Error querying master_db.super_admin_users:',
+      });
     }
 
     if (!result.rows || result.rows.length === 0) {
@@ -133,6 +180,59 @@ const superAdminLogin = async (req, res) => {
 };
 
 /**
+ * Lightweight session probe for SPA bootstrap: always HTTP 200.
+ * Avoids 401 on /me before login (browsers log failing fetch as console errors).
+ */
+const getSuperAdminSession = async (req, res) => {
+  try {
+    const sa = req.superAdmin;
+    if (!sa || !sa.id) {
+      return success(res, 200, 'OK', { authenticated: false });
+    }
+
+    let result;
+    try {
+      result = await masterQuery(
+        `
+          SELECT id, username, email, role, is_active
+          FROM super_admin_users
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [sa.id]
+      );
+    } catch (e) {
+      return respondMasterDbQueryError(res, e, {
+        generic500Message: 'Failed to verify Super Admin session',
+        logLabel: 'Error querying master_db.super_admin_users (session):',
+      });
+    }
+
+    if (!result.rows || result.rows.length === 0) {
+      return success(res, 200, 'OK', { authenticated: false });
+    }
+
+    const admin = result.rows[0];
+    if (admin.is_active === false || admin.is_active === 'f' || admin.is_active === 0) {
+      return success(res, 200, 'OK', { authenticated: false });
+    }
+
+    return success(res, 200, 'OK', {
+      authenticated: true,
+      user: {
+        id: admin.id,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role || 'super_admin',
+      },
+    });
+  } catch (err) {
+    console.error('Super Admin session error:', err);
+    return errorResponse(res, 500, 'Failed to verify Super Admin session');
+  }
+};
+
+/**
  * Get current Super Admin profile from master_db.
  * Requires authentication via authenticateSuperAdmin middleware.
  */
@@ -162,8 +262,10 @@ const getSuperAdminProfile = async (req, res) => {
         [sa.id]
       );
     } catch (e) {
-      console.error('Error querying master_db.super_admin_users profile:', e);
-      return errorResponse(res, 500, 'Failed to fetch Super Admin profile');
+      return respondMasterDbQueryError(res, e, {
+        generic500Message: 'Failed to fetch Super Admin profile',
+        logLabel: 'Error querying master_db.super_admin_users profile:',
+      });
     }
 
     if (!result.rows || result.rows.length === 0) {
@@ -341,6 +443,7 @@ const superAdminLogout = (req, res) => {
 
 module.exports = {
   superAdminLogin,
+  getSuperAdminSession,
   getSuperAdminProfile,
   updateSuperAdminProfile,
   changeSuperAdminPassword,

@@ -139,6 +139,7 @@ const shouldSkipRequestLog = (req, res) => {
       path === '/api/auth/me' ||
       path === '/api/auth/csrf-token' ||
       path === '/super-admin/api/auth/csrf-token' ||
+      path === '/super-admin/api/auth/session' ||
       path === '/health' ||
       path.startsWith('/api/school/profile/logo/') ||
       path.startsWith('/api/settings/file/')
