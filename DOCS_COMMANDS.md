@@ -11,28 +11,37 @@ Run these commands from the `server` directory.
 - `npm run start`
   - Starts the backend server in production mode.
 
-### 📦 Multi-Tenant Database Management (RECOMMENDED)
-- `npm run db:migrate:all`
-  - **The "Big Red Button"**. Runs all pending migrations against the Master DB and EVERY school database (Millat, Iqra, etc.) sequentially. Use this for standard updates.
-- `npm run db:migrate:master`
-  - Runs migrations only against the `master_db` school registry.
-- `npm run db:setup`
-  - Performs a full setup of the system, including initializing the master registry and default school database.
+### 📦 Multi-Tenant Database Management (Modular Sequence)
+Run these commands in order for a fresh setup, or use the **Full Setup** command.
 
-### 🌱 Seeding (Dummy Data)
-- `npm run db:seed:all`
-  - Seeds every school database with realistic dummy data (students, teachers, academic records). Use this to populate the system for testing or demos.
-- `npm run db:seed`
-  - Seeds only the default database defined in your `.env`.
+#### **🔥 The Big Red Button**
+- `npm run db:project:setup`
+  - **Clean Platform Setup**. Initializes the master database and creates the super admin. Use this for a fresh production-ready platform.
+- `npm run db:demo:setup`
+  - **Full Automated Demo Setup**. Executes the entire sequence: Master Migration -> Admin Seeding -> School Registration -> Infrastructure Provisioning -> Tenant Migration -> Tenant Seeding -> Demo Data Injection.
 
-### 🛠️ Maintenance & Repair
-- `npm run db:provision:repair`
-  - (Script: `scripts/provision-missing-tenants.js`)
-  - Scans the master registry and creates physical PostgreSQL databases for any schools that are missing them.
-- `npm run db:init`
-  - Initializes the current `DB_NAME` from `.env` with the baseline schema (001).
-- `npm run db:init:reset`
-  - **WARNING**: Wipes the current tenant database and re-initializes it from scratch.
+#### **Step 1: Platform Setup (Master DB)**
+- `npm run db:master:migrate`
+  - Initializes the 5 global management tables (Schools, Super Admins, Sessions, etc.).
+- `npm run db:master:seed:admin`
+  - Adds the default Platform Super Admin (`superadmin` / `admin123`).
+- `npm run db:master:seed:demo-school`
+  - Registers "St. Xavier's International" in the central school registry.
+
+#### **Step 2: Physical Infrastructure**
+- `npm run db:master:create-demo-db`
+  - Physically creates the `sxis_school_db` on your PostgreSQL server.
+- `npm run db:master:provision:all`
+  - **Bulk Infrastructure Provisioning**. Automatically creates physical databases for EVERY school registered in the Master DB.
+
+#### **Step 3: Tenant Operations (Bulk/Global)**
+These commands automatically discover and process **ALL** active school databases:
+- `npm run db:tenants:migrate:all`
+  - Applies the 96-table hardened schema (`schema.sql`) to every school.
+- `npm run db:tenants:seed:lookups`
+  - Seeds **Required Default Data** (Roles, Blood Groups, Religions, Time Slots, etc.) to all schools.
+- `npm run db:tenants:seed:demo`
+  - Injects **Exhaustive Demo Data** (Mock Students, Teachers, Exams, Fees) to all schools for testing.
 
 ### 🧪 Testing
 - `npm run test`

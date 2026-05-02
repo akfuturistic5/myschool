@@ -7,7 +7,7 @@ const bcrypt = require('bcryptjs');
 const { pipeline, finished } = require('stream/promises');
 const { Readable } = require('stream');
 require('dotenv').config();
-const { runMigrations } = require('../../scripts/run-all-migrations');
+// No longer using legacy migrations script here
 
 /** Application root (the `server` folder that contains `sql/`). */
 const SERVER_APP_ROOT = path.resolve(__dirname, '../..');
@@ -587,7 +587,7 @@ function resolveProvisioningTemplatePath() {
   const configured = (process.env.PROVISIONING_TEMPLATE_SQL_PATH || '').toString().trim();
   const resolved = path.isAbsolute(configured)
     ? path.normalize(configured)
-    : path.resolve(SERVER_APP_ROOT, configured || 'sql/template_schema.sql');
+    : path.resolve(SERVER_APP_ROOT, configured || 'migrations/tenant/schema.sql');
   const rel = path.relative(SERVER_APP_ROOT, resolved);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error('Provisioning template path must be inside the server application directory');
@@ -641,6 +641,24 @@ function getTemplateSql() {
   return cachedTemplateSql;
 }
 
+/**
+ * Gets the consolidated tenant seed SQL.
+ */
+let cachedSeedSql = null;
+function getTenantSeedSql() {
+  if (cachedSeedSql) return cachedSeedSql;
+  const seedPath = path.resolve(SERVER_APP_ROOT, 'seeds/tenant/tenant_seed.sql');
+  let sql;
+  try {
+    sql = fs.readFileSync(seedPath, 'utf8');
+  } catch (e) {
+    console.error('[provisioning] tenant seed read failed:', e.message);
+    throw new Error('Tenant seed SQL file could not be read.');
+  }
+  cachedSeedSql = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  return cachedSeedSql;
+}
+
 async function createTenantDatabase(dbName, schoolName = null) {
   const pool = getAdminPool();
   const checkRes = await pool.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
@@ -684,43 +702,24 @@ async function createTenantDatabase(dbName, schoolName = null) {
   try {
     await tenantPool.query('BEGIN');
     if (usedSqlFileImport) {
+      // 1. Run Schema
       const templateSql = getTemplateSql();
       await executeTemplateStatements(tenantPool, templateSql);
+      await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1) ON CONFLICT DO NOTHING', ['schema.sql']);
+      
+      // 2. Run Required Seeds (Lookups)
+      const seedSql = getTenantSeedSql();
+      await executeTemplateStatements(tenantPool, seedSql);
+      await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1) ON CONFLICT DO NOTHING', ['tenant_seed.sql']);
     } else {
       getTemplateSql();
     }
 
-    await ensureTenantDefaultRoles(tenantPool);
-
-    const tableCheck = await tenantPool.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users' LIMIT 1`
-    );
-    if (!tableCheck.rows || tableCheck.rows.length === 0) {
-      throw new Error(
-        'Template import did not create required tables (e.g. users). Ensure template_schema.sql contains full schema.'
-      );
-    }
-
-    // Ensure school_profile exists and is set
-    await tenantPool.query(`
-      CREATE TABLE IF NOT EXISTS public.school_profile (
-        id SERIAL PRIMARY KEY,
-        school_name VARCHAR(255) NOT NULL,
-        logo_url TEXT NULL,
-        phone VARCHAR(30) NULL,
-        email VARCHAR(255) NULL,
-        fax VARCHAR(30) NULL,
-        address TEXT NULL,
-        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    
     // Check if profile exists, if not insert it
     const profileRes = await tenantPool.query('SELECT count(*) FROM public.school_profile');
     if (parseInt(profileRes.rows[0].count, 10) === 0) {
       await tenantPool.query(
-        'INSERT INTO public.school_profile (school_name, logo_url) VALUES ($1, NULL)',
+        'INSERT INTO public.school_profile (school_name) VALUES ($1)',
         [String(schoolName || '').trim() || 'School']
       );
     }
@@ -744,15 +743,9 @@ async function createTenantDatabase(dbName, schoolName = null) {
     await tenantPool.end();
   }
 
-  // Auto-migrate the new database to latest state (ensures all recent columns are present)
-  try {
-    console.log(`[provisioning] Running auto-migrations for "${dbName}"...`);
-    await runMigrations(dbName);
-  } catch (err) {
-    console.error(`[provisioning] Auto-migration failed for "${dbName}":`, err.message);
-    // We don't drop the DB here because the baseline schema is already imported; 
-    // the admin can manually fix migrations later.
-  }
+  // Auto-migration is now handled by the initial import.
+  // In the future, this can call a new migrations-only runner if needed.
+  console.log(`[provisioning] Completed provisioning for "${dbName}".`);
 }
 
 async function dropTenantDatabaseIfExists(dbName) {
@@ -828,12 +821,13 @@ async function createHeadmasterUserInTenant(dbName, adminName, adminEmail, admin
       const employeeCode = `HM-${String(instituteNumber || '').trim() || dbName}`.toUpperCase();
       await pool.query(
         `
-        INSERT INTO public.staff (user_id, employee_code, first_name, last_name, is_active)
-        VALUES ($1, $2, $3, $4, true)
+        INSERT INTO public.staff (user_id, employee_code, status)
+        VALUES ($1, $2, 'Active')
         `,
-        [userId, employeeCode, firstName, lastName]
+        [userId, employeeCode]
       );
-    } catch {
+    } catch (err) {
+      console.warn('[provisioning] Headmaster staff record creation failed:', err.message);
     }
 
     return { userId, username, email };
