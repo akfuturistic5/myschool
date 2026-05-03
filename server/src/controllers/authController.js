@@ -158,7 +158,7 @@ const login = async (req, res) => {
           `SELECT u.id, u.username, u.first_name, u.last_name, u.role_id,
                   u.phone, u.password_hash,
                   ur.role_name,
-                  st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
+                  st.id as staff_id, u.first_name as staff_first_name, u.last_name as staff_last_name,
                   CASE
                     WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
                     WHEN LOWER(COALESCE(u.email, '')) = LOWER($1) THEN 2
@@ -175,7 +175,7 @@ const login = async (req, res) => {
                   END AS match_kind
            FROM users u
            LEFT JOIN user_roles ur ON u.role_id = ur.id
-           LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
+           LEFT JOIN staff st ON u.id = st.user_id AND u.is_active = true
            WHERE u.is_active = true AND u.deleted_at IS NULL
             AND (
               LOWER(COALESCE(u.username, '')) = LOWER($1)
@@ -193,7 +193,7 @@ const login = async (req, res) => {
             `SELECT u.id, u.username, u.first_name, u.last_name, u.role_id,
                     u.phone, u.password_hash,
                     ur.role_name,
-                    st.id as staff_id, st.first_name as staff_first_name, st.last_name as staff_last_name,
+                    st.id as staff_id, u.first_name as staff_first_name, u.last_name as staff_last_name,
                     CASE
                       WHEN LOWER(COALESCE(u.username, '')) = LOWER($1) THEN 1
                       WHEN $2 <> '' AND regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = $2 THEN 2
@@ -208,7 +208,7 @@ const login = async (req, res) => {
                     END AS match_kind
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
-             LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
+             LEFT JOIN staff st ON u.id = st.user_id AND u.is_active = true
              WHERE u.is_active = true AND u.deleted_at IS NULL
                AND (
                  LOWER(COALESCE(u.username, '')) = LOWER($1)
@@ -347,7 +347,7 @@ const login = async (req, res) => {
       let accountDisabled = false;
       try {
         const accCheck = await query(
-          `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, st.is_active AS staff_is_active
+          `SELECT s.id AS student_id, u.is_active AS student_is_active, st.id AS staff_id, u.is_active AS staff_is_active
            FROM users u
            LEFT JOIN students s ON u.id = s.user_id
            LEFT JOIN staff st ON u.id = st.user_id
@@ -453,13 +453,13 @@ const login = async (req, res) => {
         s.id AS student_id,
         s.first_name AS student_first_name,
         s.last_name AS student_last_name,
-        s.is_active AS student_is_active,
+        u.is_active AS student_is_active,
         c.class_name,
         sec.section_name,
         st.id AS staff_id,
-        st.first_name AS staff_first_name,
-        st.last_name AS staff_last_name,
-        st.is_active AS staff_is_active,
+        u.first_name AS staff_first_name,
+        u.last_name AS staff_last_name,
+        u.is_active AS staff_is_active,
         d.designation_name,
         ur.role_name
       FROM users u
@@ -752,13 +752,13 @@ const updateMe = async (req, res) => {
             s.id AS student_id,
             s.first_name AS student_first_name,
             s.last_name AS student_last_name,
-            s.is_active AS student_is_active,
+            u.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
             st.id AS staff_id,
-            st.first_name AS staff_first_name,
-            st.last_name AS staff_last_name,
-            st.is_active AS staff_is_active,
+            u.first_name AS staff_first_name,
+            u.last_name AS staff_last_name,
+            u.is_active AS staff_is_active,
             d.designation_name,
             ur.role_name,
             addr.address_id,
@@ -788,13 +788,13 @@ const updateMe = async (req, res) => {
             s.id AS student_id,
             s.first_name AS student_first_name,
             s.last_name AS student_last_name,
-            s.is_active AS student_is_active,
+            u.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
             st.id AS staff_id,
-            st.first_name AS staff_first_name,
-            st.last_name AS staff_last_name,
-            st.is_active AS staff_is_active,
+            u.first_name AS staff_first_name,
+            u.last_name AS staff_last_name,
+            u.is_active AS staff_is_active,
             d.designation_name,
             ur.role_name
           FROM users u
