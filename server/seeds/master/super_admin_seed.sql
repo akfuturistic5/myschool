@@ -12,7 +12,7 @@ INSERT INTO public.super_admin_users (username, email, password_hash, role, is_a
 VALUES (
     'superadmin', 
     'admin@eschool.com', 
-    '$2b$10$EpjXWzO2yzrvFsBRBySzW.03SleS1AL8p7SR0vY8S.C8u1m6p9S7q', -- admin123
+    '$2a$10$P8mgayf0xJP/tSa4mpl12elRzDbDTY1chWlsvU4xHGL1gdQZnFSy.', -- admin123
     'super_admin', 
     true
 )

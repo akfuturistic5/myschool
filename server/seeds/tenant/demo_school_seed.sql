@@ -61,7 +61,7 @@ BEGIN
 
     -- [3.1] SCHOOL ADMIN USER
     INSERT INTO public.users (username, password_hash, role_id, first_name, last_name, gender) 
-    VALUES ('schooladmin', '$2b$10$EpjXWzO2yzrvFsBRBySzW.03SleS1AL8p7SR0vY8S.C8u1m6p9S7q', v_admin_role_id, 'School', 'Admin', 'male');
+    VALUES ('schooladmin', '$2a$10$P8mgayf0xJP/tSa4mpl12elRzDbDTY1chWlsvU4xHGL1gdQZnFSy.', v_admin_role_id, 'School', 'Admin', 'male');
 
     -- [4] ACADEMIC STRUCTURE
     INSERT INTO public.classes (class_name, class_code) VALUES ('Grade 10', 'G10') RETURNING id INTO v_class_10_id;

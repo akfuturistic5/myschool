@@ -459,7 +459,7 @@ const login = async (req, res) => {
         st.id AS staff_id,
         u.first_name AS staff_first_name,
         u.last_name AS staff_last_name,
-        u.is_active AS staff_is_active,
+        st.is_active AS staff_is_active,
         d.designation_name,
         ur.role_name
       FROM users u
@@ -758,7 +758,7 @@ const updateMe = async (req, res) => {
             st.id AS staff_id,
             u.first_name AS staff_first_name,
             u.last_name AS staff_last_name,
-            u.is_active AS staff_is_active,
+            st.is_active AS staff_is_active,
             d.designation_name,
             ur.role_name,
             addr.address_id,
@@ -794,7 +794,7 @@ const updateMe = async (req, res) => {
             st.id AS staff_id,
             u.first_name AS staff_first_name,
             u.last_name AS staff_last_name,
-            u.is_active AS staff_is_active,
+            st.is_active AS staff_is_active,
             d.designation_name,
             ur.role_name
           FROM users u
