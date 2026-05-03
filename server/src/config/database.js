@@ -9,10 +9,18 @@ require('dotenv').config();
 // - "require" => strict cert verification
 // - "allow-self-signed" => allow self-signed (development only)
 // Default: production is strict; development allows self-signed for convenience.
-const isProduction = process.env.NODE_ENV === 'production';
-let sslConfig = isProduction ? { rejectUnauthorized: true } : { rejectUnauthorized: false };
-if (process.env.DATABASE_SSL_MODE === 'require') sslConfig = { rejectUnauthorized: true };
-if (!isProduction && process.env.DATABASE_SSL_MODE === 'allow-self-signed') sslConfig = { rejectUnauthorized: false };
+let sslConfig = false;
+
+if (process.env.DATABASE_SSL_MODE === 'require') {
+  sslConfig = { rejectUnauthorized: true };
+}
+
+if (process.env.DATABASE_SSL_MODE === 'allow-self-signed') {
+  sslConfig = { rejectUnauthorized: false };
+}
+
+console.log("SSL MODE:", process.env.DATABASE_SSL_MODE);
+console.log("SSL CONFIG:", sslConfig);
 
 const tenantContext = new AsyncLocalStorage();
 
