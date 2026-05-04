@@ -1,6 +1,5 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { toPositiveInt } = require('../utils/academicYear');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 function mapAssignmentRow(row) {
@@ -138,7 +137,6 @@ const createAssignment = async (req, res) => {
 
     const isActiveValue =
       is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active';
-
     const existing = await query(
       `SELECT id
        FROM transport_assignments

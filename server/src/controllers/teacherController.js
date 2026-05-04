@@ -181,68 +181,85 @@ const getAllTeachers = async (req, res) => {
   try {
     const result = await query(`
       SELECT
-        t.id,
-        t.class_id,
-        t.subject_id,
-        t.father_name,
-        t.mother_name,
-        t.marital_status,
-        t.languages_known,
-        t.blood_group,
-        t.previous_school_name,
-        t.previous_school_address,
-        t.previous_school_phone,
-        t.current_address,
-        t.permanent_address,
-        t.pan_number,
-        t.id_number,
-        t.bank_name,
-        t.branch,
-        t.ifsc,
-        t.contract_type,
-        t.shift,
-        t.work_location,
-        t.facebook,
-        t.twitter,
-        t.linkedin,
-        t.status,
-        t.created_at,
-        t.resume,
-        t.joining_letter,
-        t.modified_at AS updated_at,
-        t.staff_id,
+        s.id AS id,
+        NULL::integer AS class_id,
+        NULL::integer AS subject_id,
+        s.father_name,
+        s.mother_name,
+        s.marital_status,
+        s.languages_known,
+        NULL::text AS blood_group,
+        s.previous_school_name,
+        s.previous_school_address,
+        s.previous_school_phone,
+        u.current_address,
+        u.permanent_address,
+        sal.pan_number,
+        s.id_number,
+        sal.bank_name,
+        sal.branch,
+        sal.ifsc_code AS ifsc,
+        sal.contract_type,
+        sal.shift,
+        sal.work_location,
+        u.facebook,
+        u.twitter,
+        u.linkedin,
+        s.status,
+        s.created_at,
+        NULL::text AS resume,
+        NULL::text AS joining_letter,
+        s.updated_at AS updated_at,
+        s.id AS staff_id,
         s.user_id,
         s.employee_code,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
-        s.blood_group_id,
-        s.phone,
-        s.email,
-        s.address,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        u.blood_group_id,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.emergency_contact_name,
         s.emergency_contact_phone,
         s.designation_id,
         s.department_id,
         s.joining_date,
-        s.salary,
+        sal.basic_salary AS salary,
         s.qualification,
         s.experience_years,
         s.photo_url,
         s.is_active,
-        t.youtube,
-        t.instagram,
-        t.other_info,
-        t.account_name,
-        t.account_number,
-        c.class_name,
-        sub.subject_name
-      FROM teachers t
-      INNER JOIN staff s ON t.staff_id = s.id
-      LEFT JOIN classes c ON t.class_id = c.id
-      LEFT JOIN subjects sub ON t.subject_id = sub.id
-      ORDER BY s.first_name ASC, s.last_name ASC
+        u.youtube,
+        u.instagram,
+        s.other_info,
+        sal.account_name,
+        sal.account_no AS account_number,
+        NULL::text AS class_name,
+        NULL::text AS subject_name
+      FROM staff s
+      INNER JOIN users u ON u.id = s.user_id
+      LEFT JOIN LATERAL (
+        SELECT
+          ssa.pan_number,
+          ssa.bank_name,
+          ssa.account_name,
+          ssa.account_no,
+          ssa.branch,
+          ssa.ifsc_code,
+          ssa.contract_type,
+          ssa.shift,
+          ssa.work_location,
+          ssa.basic_salary
+        FROM staff_salary_assignments ssa
+        WHERE ssa.staff_id = s.id
+          AND ssa.valid_period @> CURRENT_DATE::date
+        ORDER BY ssa.id DESC
+        LIMIT 1
+      ) sal ON true
+      WHERE s.deleted_at IS NULL
+      ORDER BY u.first_name ASC, u.last_name ASC
     `);
 
     return success(res, 200, 'Teachers fetched successfully', result.rows, { count: result.rows.length });
@@ -262,67 +279,83 @@ const getCurrentTeacher = async (req, res) => {
 
     const result = await query(`
       SELECT
-        t.id,
-        t.class_id,
-        t.subject_id,
-        t.father_name,
-        t.mother_name,
-        t.marital_status,
-        t.languages_known,
-        t.blood_group,
-        t.previous_school_name,
-        t.previous_school_address,
-        t.previous_school_phone,
-        t.current_address,
-        t.permanent_address,
-        t.pan_number,
-        t.id_number,
-        t.bank_name,
-        t.branch,
-        t.ifsc,
-        t.contract_type,
-        t.shift,
-        t.work_location,
-        t.facebook,
-        t.twitter,
-        t.linkedin,
-        t.status,
-        t.created_at,
-        t.resume,
-        t.joining_letter,
-        t.modified_at AS updated_at,
-        t.staff_id,
+        s.id AS id,
+        NULL::integer AS class_id,
+        NULL::integer AS subject_id,
+        s.father_name,
+        s.mother_name,
+        s.marital_status,
+        s.languages_known,
+        NULL::text AS blood_group,
+        s.previous_school_name,
+        s.previous_school_address,
+        s.previous_school_phone,
+        u.current_address,
+        u.permanent_address,
+        sal.pan_number,
+        s.id_number,
+        sal.bank_name,
+        sal.branch,
+        sal.ifsc_code AS ifsc,
+        sal.contract_type,
+        sal.shift,
+        sal.work_location,
+        u.facebook,
+        u.twitter,
+        u.linkedin,
+        s.status,
+        s.created_at,
+        NULL::text AS resume,
+        NULL::text AS joining_letter,
+        s.updated_at AS updated_at,
+        s.id AS staff_id,
         s.employee_code,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
-        s.blood_group_id,
-        s.phone,
-        s.email,
-        s.address,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        u.blood_group_id,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.emergency_contact_name,
         s.emergency_contact_phone,
         s.designation_id,
         s.department_id,
         s.joining_date,
-        s.salary,
+        sal.basic_salary AS salary,
         s.qualification,
         s.experience_years,
         s.photo_url,
         s.is_active,
-        t.youtube,
-        t.instagram,
-        t.other_info,
-        t.account_name,
-        t.account_number,
-        c.class_name,
-        sub.subject_name
-      FROM teachers t
-      INNER JOIN staff s ON t.staff_id = s.id
-      LEFT JOIN classes c ON t.class_id = c.id
-      LEFT JOIN subjects sub ON t.subject_id = sub.id
-      WHERE s.user_id = $1
+        u.youtube,
+        u.instagram,
+        s.other_info,
+        sal.account_name,
+        sal.account_no AS account_number,
+        NULL::text AS class_name,
+        NULL::text AS subject_name
+      FROM staff s
+      INNER JOIN users u ON u.id = s.user_id
+      LEFT JOIN LATERAL (
+        SELECT
+          ssa.pan_number,
+          ssa.bank_name,
+          ssa.account_name,
+          ssa.account_no,
+          ssa.branch,
+          ssa.ifsc_code,
+          ssa.contract_type,
+          ssa.shift,
+          ssa.work_location,
+          ssa.basic_salary
+        FROM staff_salary_assignments ssa
+        WHERE ssa.staff_id = s.id
+          AND ssa.valid_period @> CURRENT_DATE::date
+        ORDER BY ssa.id DESC
+        LIMIT 1
+      ) sal ON true
+      WHERE s.user_id = $1 AND s.deleted_at IS NULL
       LIMIT 1
     `, [userId]);
 
@@ -380,20 +413,20 @@ const getTeacherById = async (req, res) => {
         t.modified_at AS updated_at,
         t.staff_id,
         s.employee_code,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
-        s.blood_group_id,
-        s.phone,
-        s.email,
-        s.address,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        u.blood_group_id,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.emergency_contact_name,
         s.emergency_contact_phone,
         s.designation_id,
         s.department_id,
         s.joining_date,
-        s.salary,
+        NULL::numeric AS salary,
         s.qualification,
         s.experience_years,
         COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url,
@@ -471,32 +504,36 @@ const getTeacherById = async (req, res) => {
     }
 
     const classTeacherParams = [row.staff_id];
-    const classTeacherWhere = 'WHERE c.class_teacher_id = $1';
     const classTeacherResult = await query(
       `SELECT
          c.id AS class_id,
          c.class_name,
          c.class_code,
          c.is_active
-       FROM classes c
-       ${classTeacherWhere}
+       FROM class_teachers ct
+       INNER JOIN classes c ON c.id = ct.class_id
+       WHERE ct.staff_id = $1
+         AND ct.class_section_id IS NULL
+         AND ct.deleted_at IS NULL
        ORDER BY c.class_name ASC`,
       classTeacherParams
     );
 
     const sectionTeacherParams = [row.staff_id];
-    const sectionTeacherWhere = 'WHERE sec.section_teacher_id = $1';
     const sectionTeacherResult = await query(
       `SELECT
-         sec.id AS section_id,
+         csec.id AS section_id,
          sec.section_name,
-         sec.is_active,
-         sec.class_id,
+         csec.is_active,
+         csec.class_id,
          c.class_name,
          c.class_code
-       FROM sections sec
-       INNER JOIN classes c ON c.id = sec.class_id
-       ${sectionTeacherWhere}
+       FROM class_teachers ct
+       INNER JOIN class_sections csec ON csec.id = ct.class_section_id
+       INNER JOIN sections sec ON sec.id = csec.section_id
+       INNER JOIN classes c ON c.id = csec.class_id
+       WHERE ct.staff_id = $1
+         AND ct.deleted_at IS NULL
        ORDER BY c.class_name ASC, sec.section_name ASC`,
       sectionTeacherParams
     );
@@ -569,20 +606,20 @@ const getTeachersByClass = async (req, res) => {
         t.modified_at AS updated_at,
         t.staff_id,
         s.employee_code,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
-        s.blood_group_id,
-        s.phone,
-        s.email,
-        s.address,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        u.blood_group_id,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.emergency_contact_name,
         s.emergency_contact_phone,
         s.designation_id,
         s.department_id,
         s.joining_date,
-        s.salary,
+        NULL::numeric AS salary,
         s.qualification,
         s.experience_years,
         s.photo_url,
@@ -596,10 +633,11 @@ const getTeachersByClass = async (req, res) => {
         sub.subject_name
       FROM teachers t
       INNER JOIN staff s ON t.staff_id = s.id
+      INNER JOIN users u ON u.id = s.user_id
       LEFT JOIN classes c ON t.class_id = c.id
       LEFT JOIN subjects sub ON t.subject_id = sub.id
       WHERE t.class_id = $1
-      ORDER BY s.first_name ASC, s.last_name ASC
+      ORDER BY u.first_name ASC, u.last_name ASC
     `, [classId]);
 
     return success(res, 200, 'Teachers fetched successfully', result.rows, { count: result.rows.length });
@@ -1193,20 +1231,20 @@ const createTeacher = async (req, res) => {
         t.staff_id,
         s.user_id,
         s.employee_code,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
-        s.blood_group_id,
-        s.phone,
-        s.email,
-        s.address,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        u.blood_group_id,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.emergency_contact_name,
         s.emergency_contact_phone,
         s.designation_id,
         s.department_id,
         s.joining_date,
-        s.salary,
+        NULL::numeric AS salary,
         s.qualification,
         s.experience_years,
         s.photo_url,

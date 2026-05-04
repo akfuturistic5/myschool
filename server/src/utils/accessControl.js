@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 const { ROLES, ADMIN_ROLE_IDS, ADMIN_ROLE_NAMES } = require('../config/roles');
 const { getParentsForUser } = require('./parentUserMatch');
+const { lateralCurrentEnrollment } = require('./studentEnrollmentSql');
 
 function parseId(value) {
   const n = parseInt(String(value), 10);
@@ -58,9 +59,10 @@ async function canAccessStudent(req, studentId) {
 
   // Load student linkage needed for checks.
   const studRes = await query(
-    `SELECT id, user_id, class_id, section_id
-     FROM students
-     WHERE id = $1
+    `SELECT s.id, s.user_id, enr.class_id, enr.section_id
+     FROM students s
+     ${lateralCurrentEnrollment('s.id')}
+     WHERE s.id = $1
      LIMIT 1`,
     [sid]
   );
@@ -76,61 +78,49 @@ async function canAccessStudent(req, studentId) {
 
   // Teacher: must be the teacher assigned to this class OR has schedule mapping for class.
   if (isTeacherRole(ctx)) {
-    // A single user can sometimes have multiple teacher rows; allow access if any active mapping matches.
     const tRes = await query(
-      `SELECT t.id, t.class_id, t.staff_id
-       FROM teachers t
-       INNER JOIN staff st ON t.staff_id = st.id
-       WHERE st.user_id = $1 AND st.is_active = true`,
+      `SELECT st.id AS staff_id
+       FROM staff st
+       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND st.is_active = true`,
       [ctx.userId]
     );
     if (tRes.rows.length === 0) return { ok: false, status: 403, message: 'Access denied' };
+    const staffIds = tRes.rows.map((row) => parseId(row.staff_id)).filter(Boolean);
     const studentClassId = parseId(stud.class_id);
     const studentSectionId = parseId(stud.section_id);
-    const teacherIds = tRes.rows.map((row) => parseId(row.id)).filter(Boolean);
-    const staffIds = tRes.rows.map((row) => parseId(row.staff_id)).filter(Boolean);
-    const teacherClassIds = tRes.rows.map((row) => parseId(row.class_id)).filter(Boolean);
-    const teacherStaffIds = tRes.rows.map((row) => parseId(row.staff_id)).filter(Boolean);
 
-    if (studentClassId && teacherClassIds.includes(studentClassId)) return { ok: true };
-
-    // Section teacher mapping (sections.section_teacher_id -> teachers.staff_id)
-    if (studentSectionId && teacherStaffIds.length > 0) {
-      const sec = await query(
+    if (studentClassId && staffIds.length > 0) {
+      const cs = await query(
         `SELECT 1
-         FROM sections sec
-         WHERE sec.id = $1
-           AND sec.section_teacher_id = ANY($2::int[])
+         FROM class_schedules cs
+         WHERE cs.teacher_id = ANY($1::int[])
+           AND cs.class_id = $2
+           AND ($3::int IS NULL OR EXISTS (
+             SELECT 1 FROM class_sections csec
+             WHERE csec.id = cs.class_section_id AND csec.section_id = $3
+           ) OR $3::int IS NULL)
          LIMIT 1`,
-        [studentSectionId, teacherStaffIds]
+        [staffIds, studentClassId, studentSectionId]
       ).catch(() => ({ rows: [] }));
-      if (sec.rows && sec.rows.length > 0) return { ok: true };
+      if (cs.rows && cs.rows.length > 0) return { ok: true };
     }
 
-    // Class teacher mapping (classes.class_teacher_id -> staff.id; legacy may store teacher.id)
-    if (studentClassId && teacherStaffIds.length > 0) {
-      const cls = await query(
+    if (studentClassId && staffIds.length > 0) {
+      const ct = await query(
         `SELECT 1
-         FROM classes c
-         WHERE c.id = $1
-           AND (c.class_teacher_id = ANY($2::int[]) OR c.class_teacher_id = ANY($3::int[]))
+         FROM class_teachers ct
+         WHERE ct.staff_id = ANY($1::int[])
+           AND ct.class_id = $2
+           AND ct.deleted_at IS NULL
+           AND ($3::int IS NULL OR EXISTS (
+             SELECT 1 FROM class_sections csec
+             WHERE csec.id = ct.class_section_id AND csec.section_id = $3
+           ) OR (ct.class_section_id IS NULL AND $3::int IS NULL))
          LIMIT 1`,
-        [studentClassId, teacherStaffIds, teacherIds]
+        [staffIds, studentClassId, studentSectionId]
       ).catch(() => ({ rows: [] }));
-      if (cls.rows && cls.rows.length > 0) return { ok: true };
+      if (ct.rows && ct.rows.length > 0) return { ok: true };
     }
-
-    // Fallback: teacher has any class_schedule entry for the student's class (optionally section).
-    const cs = await query(
-      `SELECT 1
-       FROM class_schedules cs
-       WHERE cs.teacher_id = ANY($1::int[])
-         AND cs.class_id = $2
-         AND ($3::int IS NULL OR cs.section_id = $3 OR cs.section_id IS NULL)
-       LIMIT 1`,
-      [staffIds, studentClassId, parseId(stud.section_id)]
-    ).catch(() => ({ rows: [] }));
-    if (cs.rows && cs.rows.length > 0) return { ok: true };
 
     return { ok: false, status: 403, message: 'Access denied' };
   }
@@ -159,17 +149,7 @@ async function canAccessStudent(req, studentId) {
 }
 
 async function resolveTeacherIdForUser(userId) {
-  const uid = parseId(userId);
-  if (!uid) return null;
-  const r = await query(
-    `SELECT t.id
-     FROM teachers t
-     INNER JOIN staff st ON t.staff_id = st.id
-     WHERE st.user_id = $1
-     LIMIT 1`,
-    [uid]
-  );
-  return r.rows.length > 0 ? parseId(r.rows[0].id) : null;
+  return resolveTeacherStaffIdForUser(userId);
 }
 
 /** Staff id for the teacher row linked to this user (class_schedules.teacher_id references staff.id). */
@@ -177,10 +157,9 @@ async function resolveTeacherStaffIdForUser(userId) {
   const uid = parseId(userId);
   if (!uid) return null;
   const r = await query(
-    `SELECT t.staff_id
-     FROM teachers t
-     INNER JOIN staff st ON t.staff_id = st.id
-     WHERE st.user_id = $1
+    `SELECT s.id AS staff_id
+     FROM staff s
+     WHERE s.user_id = $1 AND s.deleted_at IS NULL
      LIMIT 1`,
     [uid]
   );
@@ -191,10 +170,11 @@ async function resolveStudentScopeForUser(userId) {
   const uid = parseId(userId);
   if (!uid) return null;
   const r = await query(
-    `SELECT id, class_id, section_id
-     FROM students
-     WHERE user_id = $1 AND is_active = true
-     ORDER BY id ASC
+    `SELECT s.id, enr.class_id, enr.section_id
+     FROM students s
+     ${lateralCurrentEnrollment('s.id')}
+     WHERE s.user_id = $1 AND COALESCE(s.is_active, true) = true
+     ORDER BY s.id ASC
      LIMIT 1`,
     [uid]
   );
@@ -243,37 +223,30 @@ async function canAccessClass(req, classId) {
 
   if (isTeacherRole(ctx)) {
     const tRes = await query(
-      `SELECT t.id, t.class_id, t.staff_id
-       FROM teachers t
-       INNER JOIN staff st ON t.staff_id = st.id
-       WHERE st.user_id = $1`,
+      `SELECT st.id AS staff_id
+       FROM staff st
+       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND st.is_active = true`,
       [ctx.userId]
     );
     if (!tRes.rows.length) return { ok: false, status: 403, message: 'Access denied' };
-    const teacherIds = tRes.rows.map((r) => parseId(r.id)).filter(Boolean);
     const staffIds = tRes.rows.map((r) => parseId(r.staff_id)).filter(Boolean);
-    const teacherClassIds = tRes.rows.map((r) => parseId(r.class_id)).filter(Boolean);
-    if (teacherClassIds.includes(cid)) return { ok: true };
 
-    if (staffIds.length > 0) {
-      const cls = await query(
-        `SELECT 1
-         FROM classes c
-         WHERE c.id = $1
-           AND (c.class_teacher_id = ANY($2::int[]) OR c.class_teacher_id = ANY($3::int[]))
-         LIMIT 1`,
-        [cid, teacherIds, staffIds]
-      ).catch(() => ({ rows: [] }));
-      if (cls.rows && cls.rows.length > 0) return { ok: true };
-    }
+    const ct = await query(
+      `SELECT 1 FROM class_teachers ct
+       WHERE ct.class_id = $1 AND ct.staff_id = ANY($2::int[])
+         AND ct.deleted_at IS NULL
+       LIMIT 1`,
+      [cid, staffIds]
+    ).catch(() => ({ rows: [] }));
+    if (ct.rows && ct.rows.length > 0) return { ok: true };
 
     const cs = await query(
       `SELECT 1
        FROM class_schedules cs
        WHERE cs.class_id = $2
-         AND (cs.teacher_id = ANY($1::int[]) OR cs.teacher_id = ANY($3::int[]))
+         AND cs.teacher_id = ANY($1::int[])
        LIMIT 1`,
-      [teacherIds, cid, staffIds]
+      [staffIds, cid]
     ).catch(() => ({ rows: [] }));
     if (cs.rows && cs.rows.length > 0) return { ok: true };
 
@@ -291,8 +264,9 @@ async function canAccessClass(req, classId) {
     const ids = Array.isArray(studentIds) ? studentIds.map(parseId).filter(Boolean) : [];
     if (!ids.length) return { ok: false, status: 403, message: 'Access denied' };
     const r = await query(
-      `SELECT 1 FROM students
-       WHERE id = ANY($1::int[]) AND class_id = $2 AND is_active = true
+      `SELECT 1 FROM students st
+       ${lateralCurrentEnrollment('st.id')}
+       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND COALESCE(st.is_active, true) = true
        LIMIT 1`,
       [ids, cid]
     );
@@ -303,8 +277,9 @@ async function canAccessClass(req, classId) {
     const wardIds = await resolveWardStudentIdsForUser(req);
     if (!wardIds.length) return { ok: false, status: 403, message: 'Access denied' };
     const r = await query(
-      `SELECT 1 FROM students
-       WHERE id = ANY($1::int[]) AND class_id = $2 AND is_active = true
+      `SELECT 1 FROM students st
+       ${lateralCurrentEnrollment('st.id')}
+       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND COALESCE(st.is_active, true) = true
        LIMIT 1`,
       [wardIds, cid]
     );

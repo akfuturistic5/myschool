@@ -80,8 +80,10 @@ const createHostel = async (req, res) => {
       `
       INSERT INTO hostels (
         hostel_name, hostel_type, address, intake_capacity, description,
+        hostel_name, hostel_type, address, intake_capacity, description,
         total_rooms, contact_number, facilities, rules, warden_id, is_active
       )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
       RETURNING *
     `,

@@ -431,6 +431,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         throw new Error(bulkRes?.message || "Failed to save bulk allocations");
       }
 
+
       Swal.fire({
         icon: "success",
         title: "Success",
@@ -521,6 +522,15 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                 <div className="row">
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Vehicle (for selected route)</label>
+                    <CommonSelect
+                      className="select"
+                      options={singleAvailableVehicles.map((v: any) => ({
+                        value: String(v.id),
+                        label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})`,
+                      }))}
+                      value={singleVehicleId}
+                      onChange={(v: string | null) => setSingleVehicleId(v || "")}
+                    />
                     <CommonSelect
                       className="select"
                       options={singleAvailableVehicles.map((v: any) => ({
@@ -833,8 +843,9 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                                       return;
                                     }
                                     setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  } else {
+                                    setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                   }
-                                  else setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                 }}
                               />
                             </td>

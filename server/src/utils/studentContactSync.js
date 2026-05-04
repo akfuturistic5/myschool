@@ -2,7 +2,6 @@
  * Sync student ↔ guardian links (users as single source of contact data).
  * Replaces parents table + parent_persons FKs.
  */
-const { ROLES } = require('../config/roles');
 const {
   getContactUserById,
   ensureParentContactUser,
@@ -85,29 +84,47 @@ function mapGuardianRowsToLegacyFields(rows) {
  */
 async function loadStudentContactLegacyFields(query, studentId) {
   const readFromUnifiedGuardians = async () => {
+    const linkSql = `
+      SELECT
+        CASE
+          WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 'father'
+          WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('mother', 'mom', 'mummy', 'ammi') THEN 'mother'
+          WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('guardian', 'legal guardian', 'other') THEN 'guardian'
+          ELSE LOWER(BTRIM(COALESCE(sgl.relation::text, '')))
+        END AS guardian_type,
+        sgl.relation,
+        u.first_name, u.last_name, u.email, u.phone, u.occupation, u.current_address
+      FROM student_guardian_links sgl
+      INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
+      INNER JOIN users u ON u.id = g.user_id
+      WHERE sgl.student_id = $1
+      ORDER BY sgl.id ASC`;
     try {
-      return await query(
-        `SELECT g.guardian_type, g.relation,
-                u.first_name, u.last_name, u.email, u.phone, u.occupation, u.current_address
-         FROM guardians g
-         INNER JOIN users u ON u.id = g.user_id
-         WHERE g.student_id = $1 AND g.is_active = true
-         ORDER BY g.id ASC`,
-        [studentId]
-      );
+      return await query(linkSql, [studentId]);
     } catch (_) {
-      // Backward-compatible fallback for older users schema.
-      return await query(
-        `SELECT g.guardian_type, g.relation,
-                u.first_name, u.last_name, u.email, u.phone,
-                NULL::text AS occupation,
-                COALESCE(u.current_address, u.permanent_address) AS current_address
-         FROM guardians g
-         INNER JOIN users u ON u.id = g.user_id
-         WHERE g.student_id = $1 AND g.is_active = true
-         ORDER BY g.id ASC`,
-        [studentId]
-      );
+      try {
+        return await query(
+          `SELECT g.guardian_type, g.relation,
+                  u.first_name, u.last_name, u.email, u.phone, u.occupation, u.current_address
+           FROM guardians g
+           INNER JOIN users u ON u.id = g.user_id
+           WHERE g.student_id = $1 AND g.is_active = true
+           ORDER BY g.id ASC`,
+          [studentId]
+        );
+      } catch (_2) {
+        return await query(
+          `SELECT g.guardian_type, g.relation,
+                  u.first_name, u.last_name, u.email, u.phone,
+                  NULL::text AS occupation,
+                  COALESCE(u.current_address, u.permanent_address) AS current_address
+           FROM guardians g
+           INNER JOIN users u ON u.id = g.user_id
+           WHERE g.student_id = $1 AND g.is_active = true
+           ORDER BY g.id ASC`,
+          [studentId]
+        );
+      }
     }
   };
 
@@ -524,22 +541,51 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
  * For edit form: father_person_id / mother_person_id / guardian_person_id = users.id
  */
 async function loadStudentLinkedUserIds(query, studentId) {
-  const r = await query(
-    `SELECT guardian_type, user_id FROM guardians WHERE student_id = $1 AND is_active = true`,
-    [studentId]
-  );
   const out = {
     father_person_id: null,
     mother_person_id: null,
     guardian_person_id: null,
   };
-  for (const row of r.rows) {
-    const t = (row.guardian_type || '').toString().toLowerCase();
-    if (t === 'father') out.father_person_id = row.user_id;
-    else if (t === 'mother') out.mother_person_id = row.user_id;
-    else if (t === 'guardian' || t === 'other') out.guardian_person_id = row.user_id;
+  const mapRelation = (rel) => {
+    const r = String(rel || '').toLowerCase().trim();
+    if (['father', 'dad', 'papa', 'abbu'].includes(r)) return 'father';
+    if (['mother', 'mom', 'mummy', 'ammi'].includes(r)) return 'mother';
+    if (['guardian', 'legal guardian', 'other'].includes(r)) return 'guardian';
+    return r || 'guardian';
+  };
+  try {
+    const r = await query(
+      `SELECT sgl.relation, g.user_id
+       FROM student_guardian_links sgl
+       INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
+       WHERE sgl.student_id = $1
+       ORDER BY sgl.id ASC`,
+      [studentId]
+    );
+    for (const row of r.rows) {
+      const t = mapRelation(row.relation);
+      if (t === 'father') out.father_person_id = row.user_id;
+      else if (t === 'mother') out.mother_person_id = row.user_id;
+      else if (t === 'guardian' || t === 'other') out.guardian_person_id = row.user_id;
+    }
+    return out;
+  } catch (_) {
+    try {
+      const r = await query(
+        `SELECT guardian_type, user_id FROM guardians WHERE student_id = $1 AND is_active = true`,
+        [studentId]
+      );
+      for (const row of r.rows) {
+        const t = (row.guardian_type || '').toString().toLowerCase();
+        if (t === 'father') out.father_person_id = row.user_id;
+        else if (t === 'mother') out.mother_person_id = row.user_id;
+        else if (t === 'guardian' || t === 'other') out.guardian_person_id = row.user_id;
+      }
+    } catch (_2) {
+      /* ignore */
+    }
+    return out;
   }
-  return out;
 }
 
 /** List/detail SQL: contact fields from guardians + users (post-unify schema). */
@@ -566,46 +612,37 @@ const STUDENT_CONTACT_LATERAL_SELECT = `
       gu_u.current_address AS guardian_address,
       gu_u.avatar AS guardian_image_url`;
 
+/** Canonical schema: links live on student_guardian_links; guardians has no student_id. */
 const STUDENT_CONTACT_LATERAL_JOINS = `
       LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
-        FROM guardians g
-        JOIN users u ON u.id = g.user_id
-        WHERE g.student_id = s.id
-          AND g.is_active = true
-          AND (
-            LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('father', 'dad', 'papa', 'abbu')
-            OR LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('father', 'dad', 'papa', 'abbu')
-            OR u.role_id = ${ROLES.PARENT}
-          )
-        ORDER BY
-          CASE
-            WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
-            WHEN LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
-            WHEN u.role_id = ${ROLES.PARENT} THEN 2
-            ELSE 9
-          END,
-          g.id ASC
+        FROM student_guardian_links sgl
+        INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
+        INNER JOIN users u ON u.id = g.user_id
+        WHERE sgl.student_id = s.id
+          AND LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+        ORDER BY sgl.id ASC
         LIMIT 1
       ) father_u ON true
       LEFT JOIN LATERAL (
         SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, u.avatar
-        FROM guardians g
-        JOIN users u ON u.id = g.user_id
-        WHERE g.student_id = s.id
-          AND g.is_active = true
-          AND (
-            LOWER(BTRIM(COALESCE(g.guardian_type::text,''))) IN ('mother', 'mom', 'mummy', 'ammi')
-            OR LOWER(BTRIM(COALESCE(g.relation::text,''))) IN ('mother', 'mom', 'mummy', 'ammi')
-          )
-        ORDER BY g.id ASC LIMIT 1
+        FROM student_guardian_links sgl
+        INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
+        INNER JOIN users u ON u.id = g.user_id
+        WHERE sgl.student_id = s.id
+          AND LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('mother', 'mom', 'mummy', 'ammi')
+        ORDER BY sgl.id ASC
+        LIMIT 1
       ) mother_u ON true
       LEFT JOIN LATERAL (
-        SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, g.relation, u.current_address, u.avatar
-        FROM guardians g
-        JOIN users u ON u.id = g.user_id
-        WHERE g.student_id = s.id AND g.is_active = true AND LOWER(COALESCE(g.guardian_type::text,'')) = 'guardian'
-        ORDER BY g.id ASC LIMIT 1
+        SELECT u.id AS user_id, u.first_name, u.last_name, u.email, u.phone, u.occupation, sgl.relation, u.current_address, u.avatar
+        FROM student_guardian_links sgl
+        INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
+        INNER JOIN users u ON u.id = g.user_id
+        WHERE sgl.student_id = s.id
+          AND LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('guardian', 'legal guardian', 'other')
+        ORDER BY sgl.id ASC
+        LIMIT 1
       ) gu_u ON true`;
 
 module.exports = {
