@@ -22,6 +22,7 @@ const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScaleService');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -2273,10 +2274,11 @@ const getStudentPromotions = async (req, res) => {
     let scopedStudentIds = [];
     if (hasStudentFilter) {
       const baseRes = await query(
-        `SELECT id, user_id, admission_number, roll_number, unique_student_ids, gr_number,
-                first_name, last_name, date_of_birth
-         FROM students
-         WHERE id = $1
+        `SELECT s.id, s.user_id, s.admission_number, s.roll_number, s.unique_student_ids, s.gr_number,
+                u.first_name, u.last_name, u.date_of_birth
+         FROM students s
+         LEFT JOIN users u ON u.id = s.user_id
+         WHERE s.id = $1 AND s.deleted_at IS NULL
          LIMIT 1`,
         [studentId]
       );
@@ -2292,20 +2294,21 @@ const getStudentPromotions = async (req, res) => {
         const baseDob = String(base.date_of_birth || '').slice(0, 10);
 
         const linked = await query(
-          `SELECT id
-           FROM students
-           WHERE ($1::int IS NOT NULL AND user_id = $1)
-              OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
-              OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
-              OR ($4::text <> '' AND TRIM(COALESCE(unique_student_ids, '')) = $4)
-              OR ($5::text <> '' AND TRIM(COALESCE(gr_number, '')) = $5)
+          `SELECT s.id
+           FROM students s
+           LEFT JOIN users u ON u.id = s.user_id
+           WHERE ($1::int IS NOT NULL AND s.user_id = $1)
+              OR ($2::text <> '' AND TRIM(COALESCE(s.admission_number, '')) = $2)
+              OR ($3::text <> '' AND TRIM(COALESCE(s.roll_number, '')) = $3)
+              OR ($4::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $4)
+              OR ($5::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $5)
               OR (
                 $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
-                AND LOWER(TRIM(COALESCE(first_name, ''))) = LOWER($6)
-                AND LOWER(TRIM(COALESCE(last_name, ''))) = LOWER($7)
-                AND date_of_birth = $8::date
+                AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($6)
+                AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($7)
+                AND u.date_of_birth = $8::date
               )
-              OR id = $9`,
+              OR s.id = $9`,
           [
             baseUserId,
             baseAdmissionNo,
@@ -2325,58 +2328,113 @@ const getStudentPromotions = async (req, res) => {
       if (!scopedStudentIds.length) scopedStudentIds = [studentId];
     }
 
+    const useLegacyPromotions = await hasTable('student_promotions');
     const whereParts = ['s.deleted_at IS NULL'];
     const params = [];
     if (hasStudentFilter) {
       params.push(scopedStudentIds);
-      whereParts.push(`sp.student_id = ANY($${params.length}::int[])`);
+      whereParts.push(
+        `${useLegacyPromotions ? 'sp' : 'l'}.student_id = ANY($${params.length}::int[])`
+      );
     }
     params.push(limit);
     const whereClause = `WHERE ${whereParts.join(' AND ')}`;
     const limitParam = `$${params.length}`;
 
-    const result = await query(
-      `SELECT
-        sp.id,
-        sp.student_id,
-        sp.from_class_id,
-        sp.to_class_id,
-        sp.from_section_id,
-        sp.to_section_id,
-        sp.from_academic_year_id,
-        sp.to_academic_year_id,
-        sp.promotion_date,
-        sp.status,
-        sp.remarks,
-        sp.promoted_by,
-        sp.created_at,
-        sp.modified_at,
-        s.admission_number,
-        s.roll_number,
-        s.first_name,
-        s.last_name,
-        fc.class_name AS from_class_name,
-        tc.class_name AS to_class_name,
-        fs.section_name AS from_section_name,
-        ts.section_name AS to_section_name,
-        fay.year_name AS from_academic_year_name,
-        tay.year_name AS to_academic_year_name,
-        st.first_name AS promoted_by_first_name,
-        st.last_name AS promoted_by_last_name
-      FROM student_promotions sp
-      LEFT JOIN students s ON s.id = sp.student_id
-      LEFT JOIN classes fc ON fc.id = sp.from_class_id
-      LEFT JOIN classes tc ON tc.id = sp.to_class_id
-      LEFT JOIN sections fs ON fs.id = sp.from_section_id
-      LEFT JOIN sections ts ON ts.id = sp.to_section_id
-      LEFT JOIN academic_years fay ON fay.id = sp.from_academic_year_id
-      LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
-      LEFT JOIN staff st ON st.id = sp.promoted_by
-      ${whereClause}
-      ORDER BY sp.promotion_date DESC, sp.id DESC
-      LIMIT ${limitParam}`,
-      params
-    );
+    let result;
+    if (useLegacyPromotions) {
+      result = await query(
+        `SELECT
+          sp.id,
+          sp.student_id,
+          sp.from_class_id,
+          sp.to_class_id,
+          sp.from_section_id,
+          sp.to_section_id,
+          sp.from_academic_year_id,
+          sp.to_academic_year_id,
+          sp.promotion_date,
+          sp.status,
+          sp.remarks,
+          sp.promoted_by,
+          sp.created_at,
+          sp.modified_at,
+          s.admission_number,
+          s.roll_number,
+          u.first_name,
+          u.last_name,
+          fc.class_name AS from_class_name,
+          tc.class_name AS to_class_name,
+          fs.section_name AS from_section_name,
+          ts.section_name AS to_section_name,
+          fay.year_name AS from_academic_year_name,
+          tay.year_name AS to_academic_year_name,
+          pu.first_name AS promoted_by_first_name,
+          pu.last_name AS promoted_by_last_name
+        FROM student_promotions sp
+        LEFT JOIN students s ON s.id = sp.student_id
+        LEFT JOIN users u ON u.id = s.user_id
+        LEFT JOIN classes fc ON fc.id = sp.from_class_id
+        LEFT JOIN classes tc ON tc.id = sp.to_class_id
+        LEFT JOIN sections fs ON fs.id = sp.from_section_id
+        LEFT JOIN sections ts ON ts.id = sp.to_section_id
+        LEFT JOIN academic_years fay ON fay.id = sp.from_academic_year_id
+        LEFT JOIN academic_years tay ON tay.id = sp.to_academic_year_id
+        LEFT JOIN staff stf ON stf.id = sp.promoted_by
+        LEFT JOIN users pu ON pu.id = stf.user_id
+        ${whereClause}
+        ORDER BY sp.promotion_date DESC, sp.id DESC
+        LIMIT ${limitParam}`,
+        params
+      );
+    } else {
+      whereParts.push(`l.event_type = 'PROMOTE'`);
+      const whereLedger = `WHERE ${whereParts.join(' AND ')}`;
+      result = await query(
+        `SELECT
+          l.id,
+          l.student_id,
+          l.from_class_id,
+          l.to_class_id,
+          l.from_section_id,
+          l.to_section_id,
+          l.from_academic_year_id,
+          l.to_academic_year_id,
+          l.event_date AS promotion_date,
+          COALESCE(l.result_status, 'completed') AS status,
+          l.remarks,
+          l.processed_by AS promoted_by,
+          l.created_at,
+          l.updated_at AS modified_at,
+          s.admission_number,
+          s.roll_number,
+          u.first_name,
+          u.last_name,
+          fc.class_name AS from_class_name,
+          tc.class_name AS to_class_name,
+          fs.section_name AS from_section_name,
+          ts.section_name AS to_section_name,
+          fay.year_name AS from_academic_year_name,
+          tay.year_name AS to_academic_year_name,
+          pu.first_name AS promoted_by_first_name,
+          pu.last_name AS promoted_by_last_name
+        FROM student_lifecycle_ledger l
+        INNER JOIN students s ON s.id = l.student_id
+        LEFT JOIN users u ON u.id = s.user_id
+        LEFT JOIN classes fc ON fc.id = l.from_class_id
+        LEFT JOIN classes tc ON tc.id = l.to_class_id
+        LEFT JOIN sections fs ON fs.id = l.from_section_id
+        LEFT JOIN sections ts ON ts.id = l.to_section_id
+        LEFT JOIN academic_years fay ON fay.id = l.from_academic_year_id
+        LEFT JOIN academic_years tay ON tay.id = l.to_academic_year_id
+        LEFT JOIN staff stf ON stf.id = l.processed_by
+        LEFT JOIN users pu ON pu.id = stf.user_id
+        ${whereLedger}
+        ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+        LIMIT ${limitParam}`,
+        params
+      );
+    }
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -2399,48 +2457,108 @@ const getLeavingStudents = async (req, res) => {
     const rawLimit = parseInt(req.query.limit, 10);
     const limit = Number.isNaN(rawLimit) || rawLimit < 1 ? 200 : Math.min(rawLimit, 2000);
 
-    const result = await query(
-      `SELECT
-         ls.id,
-         ls.student_id,
-         ls.admission_number,
-         ls.student_first_name,
-         ls.student_last_name,
-         ls.joining_class_id,
-         ls.joining_section_id,
-         ls.joining_academic_year_id,
-         ls.joining_date,
-         ls.last_class_id,
-         ls.last_section_id,
-         ls.last_academic_year_id,
-         ls.leaving_date,
-         ls.last_class_result,
-         ls.reason,
-         ls.remarks,
-         ls.left_by,
-         COALESCE(ls.is_active, true) AS is_active,
-         ls.created_at,
-         ls.modified_at,
-         jc.class_name AS joining_class_name,
-         js.section_name AS joining_section_name,
-         jay.year_name AS joining_academic_year_name,
-         lc.class_name AS last_class_name,
-         lsn.section_name AS last_section_name,
-         lay.year_name AS last_academic_year_name,
-         st.first_name AS left_by_first_name,
-         st.last_name AS left_by_last_name
-       FROM leaving_students ls
-       LEFT JOIN classes jc ON jc.id = ls.joining_class_id
-       LEFT JOIN sections js ON js.id = ls.joining_section_id
-       LEFT JOIN academic_years jay ON jay.id = ls.joining_academic_year_id
-       LEFT JOIN classes lc ON lc.id = ls.last_class_id
-       LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
-       LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
-       LEFT JOIN staff st ON st.id = ls.left_by
-       ORDER BY ls.leaving_date DESC, ls.id DESC
-       LIMIT $1`,
-      [limit]
-    );
+    const useLegacyLeaving = await hasTable('leaving_students');
+
+    let result;
+    if (useLegacyLeaving) {
+      result = await query(
+        `SELECT
+           ls.id,
+           ls.student_id,
+           ls.admission_number,
+           ls.student_first_name,
+           ls.student_last_name,
+           ls.joining_class_id,
+           ls.joining_section_id,
+           ls.joining_academic_year_id,
+           ls.joining_date,
+           ls.last_class_id,
+           ls.last_section_id,
+           ls.last_academic_year_id,
+           ls.leaving_date,
+           ls.last_class_result,
+           ls.reason,
+           ls.remarks,
+           ls.left_by,
+           COALESCE(ls.is_active, true) AS is_active,
+           ls.created_at,
+           ls.modified_at,
+           jc.class_name AS joining_class_name,
+           js.section_name AS joining_section_name,
+           jay.year_name AS joining_academic_year_name,
+           lc.class_name AS last_class_name,
+           lsn.section_name AS last_section_name,
+           lay.year_name AS last_academic_year_name,
+           pu.first_name AS left_by_first_name,
+           pu.last_name AS left_by_last_name
+         FROM leaving_students ls
+         LEFT JOIN classes jc ON jc.id = ls.joining_class_id
+         LEFT JOIN sections js ON js.id = ls.joining_section_id
+         LEFT JOIN academic_years jay ON jay.id = ls.joining_academic_year_id
+         LEFT JOIN classes lc ON lc.id = ls.last_class_id
+         LEFT JOIN sections lsn ON lsn.id = ls.last_section_id
+         LEFT JOIN academic_years lay ON lay.id = ls.last_academic_year_id
+         LEFT JOIN staff st ON st.id = ls.left_by
+         LEFT JOIN users pu ON pu.id = st.user_id
+         ORDER BY ls.leaving_date DESC, ls.id DESC
+         LIMIT $1`,
+        [limit]
+      );
+    } else {
+      result = await query(
+        `SELECT
+           l.id,
+           l.student_id,
+           s.admission_number,
+           COALESCE(u.first_name, '') AS student_first_name,
+           COALESCE(u.last_name, '') AS student_last_name,
+           adm.to_class_id AS joining_class_id,
+           adm.to_section_id AS joining_section_id,
+           adm.to_academic_year_id AS joining_academic_year_id,
+           adm.event_date AS joining_date,
+           l.from_class_id AS last_class_id,
+           l.from_section_id AS last_section_id,
+           l.from_academic_year_id AS last_academic_year_id,
+           l.event_date AS leaving_date,
+           l.result_status AS last_class_result,
+           l.reason,
+           l.remarks,
+           l.processed_by AS left_by,
+           true AS is_active,
+           l.created_at,
+           l.updated_at AS modified_at,
+           jc.class_name AS joining_class_name,
+           js.section_name AS joining_section_name,
+           jay.year_name AS joining_academic_year_name,
+           lc.class_name AS last_class_name,
+           lsn.section_name AS last_section_name,
+           lay.year_name AS last_academic_year_name,
+           pu.first_name AS left_by_first_name,
+           pu.last_name AS left_by_last_name
+         FROM student_lifecycle_ledger l
+         INNER JOIN students s ON s.id = l.student_id AND s.deleted_at IS NULL
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN LATERAL (
+           SELECT l2.to_class_id, l2.to_section_id, l2.to_academic_year_id, l2.event_date
+           FROM student_lifecycle_ledger l2
+           WHERE l2.student_id = l.student_id AND l2.event_type = 'ADMISSION'
+           ORDER BY l2.event_date ASC NULLS LAST, l2.id ASC
+           LIMIT 1
+         ) adm ON true
+         LEFT JOIN classes jc ON jc.id = adm.to_class_id
+         LEFT JOIN sections js ON js.id = adm.to_section_id
+         LEFT JOIN academic_years jay ON jay.id = adm.to_academic_year_id
+         LEFT JOIN classes lc ON lc.id = l.from_class_id
+         LEFT JOIN sections lsn ON lsn.id = l.from_section_id
+         LEFT JOIN academic_years lay ON lay.id = l.from_academic_year_id
+         LEFT JOIN staff st ON st.id = l.processed_by
+         LEFT JOIN users pu ON pu.id = st.user_id
+         WHERE l.event_type = 'LEAVE'
+         ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+         LIMIT $1`,
+        [limit]
+      );
+    }
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -2560,29 +2678,17 @@ const getAllStudents = async (req, res) => {
     }
 
     const countQuery = hasAcademicYearFilter
-      ? `WITH historical_promotions AS (
-           SELECT DISTINCT ON (sp.student_id)
-             sp.student_id
-           FROM student_promotions sp
-           INNER JOIN students s ON s.id = sp.student_id
-           WHERE sp.from_academic_year_id = $1
-             AND COALESCE(sp.status, 'promoted') = 'promoted'
-             AND COALESCE(s.is_active, true) = true
-             AND COALESCE(s.academic_year_id, 0) <> $1
-             AND COALESCE(sp.to_academic_year_id, 0) = COALESCE(s.academic_year_id, 0)
-             AND COALESCE(sp.to_academic_year_id, 0) <> COALESCE(sp.from_academic_year_id, 0)
-             AND (
-               COALESCE(sp.from_class_id, 0) <> COALESCE(sp.to_class_id, 0)
-               OR COALESCE(sp.from_section_id, 0) <> COALESCE(sp.to_section_id, 0)
-               OR COALESCE(sp.from_academic_year_id, 0) <> COALESCE(sp.to_academic_year_id, 0)
-             )
-           ORDER BY sp.student_id, COALESCE(sp.promotion_date, sp.created_at) DESC, sp.id DESC
-         )
-         SELECT (
-           (SELECT COUNT(*) FROM students WHERE academic_year_id = $1 AND deleted_at IS NULL)
-           +
-           (SELECT COUNT(*) FROM historical_promotions)
-         )::int AS total`
+      ? `
+        SELECT COUNT(*)::int AS total
+        FROM students s
+        INNER JOIN (
+          SELECT DISTINCT ON (l.student_id)
+            l.student_id
+          FROM student_lifecycle_ledger l
+          WHERE l.to_academic_year_id = $1
+          ORDER BY l.student_id, l.event_date DESC NULLS LAST, l.id DESC
+        ) ye ON ye.student_id = s.id
+        WHERE s.deleted_at IS NULL`
       : 'SELECT COUNT(*)::int as total FROM students WHERE deleted_at IS NULL';
     const countParams = hasAcademicYearFilter ? [academicYearId] : [];
     const countResult = await query(countQuery, countParams);
@@ -2594,129 +2700,59 @@ const getAllStudents = async (req, res) => {
 
     const result = await query(hasAcademicYearFilter
       ? `
-      WITH historical_promotions AS (
-        SELECT DISTINCT ON (sp.student_id)
-          sp.student_id,
-          sp.from_class_id,
-          sp.from_section_id
-        FROM student_promotions sp
-        INNER JOIN students s ON s.id = sp.student_id
-        WHERE sp.from_academic_year_id = $1
-          AND COALESCE(sp.status, 'promoted') = 'promoted'
-          AND COALESCE(s.is_active, true) = true
-          AND COALESCE(s.academic_year_id, 0) <> $1
-          AND COALESCE(sp.to_academic_year_id, 0) = COALESCE(s.academic_year_id, 0)
-          AND COALESCE(sp.to_academic_year_id, 0) <> COALESCE(sp.from_academic_year_id, 0)
-          AND (
-            COALESCE(sp.from_class_id, 0) <> COALESCE(sp.to_class_id, 0)
-            OR COALESCE(sp.from_section_id, 0) <> COALESCE(sp.to_section_id, 0)
-            OR COALESCE(sp.from_academic_year_id, 0) <> COALESCE(sp.to_academic_year_id, 0)
-          )
-        ORDER BY sp.student_id, COALESCE(sp.promotion_date, sp.created_at) DESC, sp.id DESC
-      ),
-      combined_students AS (
-        SELECT
-          s.id,
-          s.admission_number,
-          s.roll_number,
-          s.gr_number,
-          s.first_name,
-          s.last_name,
-          s.gender,
-          s.date_of_birth,
-          s.place_of_birth,
-          s.blood_group_id,
-          s.religion_id,
-          s.cast_id,
-          s.mother_tongue_id,
-          s.nationality,
-          s.phone,
-          s.email,
-          s.address,
-          s.user_id,
-          s.academic_year_id,
-          s.class_id,
-          s.section_id,
-          s.house_id,
-          s.admission_date,
-          s.previous_school,
-          s.photo_url,
-          s.is_transport_required,
-          s.is_hostel_required,
-          s.guardian_id,
-          COALESCE(s.is_active, true) AS is_active,
-          s.created_at,
-          ${STUDENT_CONTACT_LATERAL_SELECT},
-          COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-          COALESCE(s.permanent_address, addr.permanent_address) as permanent_address,
-          1 AS source_order
-        FROM students s
-        ${STUDENT_CONTACT_LATERAL_JOINS}
-        LEFT JOIN LATERAL (
-          SELECT current_address, permanent_address 
-          FROM addresses 
-          WHERE user_id = s.user_id 
-          ORDER BY id DESC 
-          LIMIT 1
-        ) addr ON true
-        WHERE s.academic_year_id = $1 AND s.deleted_at IS NULL
-
-        UNION ALL
-
-        SELECT
-          s.id,
-          s.admission_number,
-          s.roll_number,
-          s.gr_number,
-          s.first_name,
-          s.last_name,
-          s.gender,
-          s.date_of_birth,
-          s.place_of_birth,
-          s.blood_group_id,
-          s.religion_id,
-          s.cast_id,
-          s.mother_tongue_id,
-          s.nationality,
-          s.phone,
-          s.email,
-          s.address,
-          s.user_id,
-          $1 AS academic_year_id,
-          hp.from_class_id AS class_id,
-          hp.from_section_id AS section_id,
-          s.house_id,
-          s.admission_date,
-          s.previous_school,
-          s.photo_url,
-          s.is_transport_required,
-          s.is_hostel_required,
-          s.guardian_id,
-          false AS is_active,
-          s.created_at,
-          ${STUDENT_CONTACT_LATERAL_SELECT},
-          COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-          COALESCE(s.permanent_address, addr.permanent_address) as permanent_address,
-          2 AS source_order
-        FROM historical_promotions hp
-        INNER JOIN students s ON s.id = hp.student_id
-        ${STUDENT_CONTACT_LATERAL_JOINS}
-        LEFT JOIN LATERAL (
-          SELECT current_address, permanent_address 
-          FROM addresses 
-          WHERE user_id = s.user_id 
-          ORDER BY id DESC 
-          LIMIT 1
-        ) addr ON true
+      WITH year_enrollment AS (
+        SELECT DISTINCT ON (l.student_id)
+          l.student_id,
+          l.to_class_id AS class_id,
+          l.to_section_id AS section_id
+        FROM student_lifecycle_ledger l
+        WHERE l.to_academic_year_id = $1
+        ORDER BY l.student_id, l.event_date DESC NULLS LAST, l.id DESC
       )
       SELECT
-        cs.*,
+        s.id,
+        s.admission_number,
+        s.roll_number,
+        s.gr_number,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
+        s.place_of_birth,
+        s.blood_group_id,
+        s.religion_id,
+        s.cast_id,
+        s.mother_tongue_id,
+        s.nationality,
+        u.phone,
+        u.email,
+        u.current_address AS address,
+        s.user_id,
+        $1::int AS academic_year_id,
+        ye.class_id,
+        ye.section_id,
+        s.house_id,
+        s.admission_date,
+        s.previous_school_name AS previous_school,
+        NULLIF(TRIM(u.avatar), '') AS photo_url,
+        false AS is_transport_required,
+        false AS is_hostel_required,
+        NULL::integer AS guardian_id,
+        COALESCE(s.is_active, true) AS is_active,
+        s.created_at,
         c.class_name,
-        sec.section_name
-      FROM combined_students cs
-      LEFT JOIN classes c ON cs.class_id = c.id
-      LEFT JOIN sections sec ON cs.section_id = sec.id
-      ORDER BY cs.first_name ASC, cs.last_name ASC, cs.source_order ASC
+        sec.section_name,
+        ${STUDENT_CONTACT_LATERAL_SELECT},
+        COALESCE(u.current_address, u.permanent_address) AS current_address,
+        u.permanent_address AS permanent_address
+      FROM students s
+      INNER JOIN year_enrollment ye ON ye.student_id = s.id
+      INNER JOIN users u ON u.id = s.user_id
+      LEFT JOIN classes c ON ye.class_id = c.id
+      LEFT JOIN sections sec ON ye.section_id = sec.id
+      ${STUDENT_CONTACT_LATERAL_JOINS}
+      WHERE s.deleted_at IS NULL
+      ORDER BY u.first_name ASC, u.last_name ASC
       LIMIT $2 OFFSET $3
     `
       : `
@@ -2725,55 +2761,54 @@ const getAllStudents = async (req, res) => {
         s.admission_number,
         s.roll_number,
         s.gr_number,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
         s.place_of_birth,
         s.blood_group_id,
         s.religion_id,
         s.cast_id,
         s.mother_tongue_id,
         s.nationality,
-        s.phone,
-        s.email,
-        s.address,
+        u.phone,
+        u.email,
+        u.current_address AS address,
         s.user_id,
-        s.academic_year_id,
-        s.class_id,
-        s.section_id,
+        NULL::integer AS academic_year_id,
+        enr.class_id,
+        enr.section_id,
         s.house_id,
         s.admission_date,
-        s.previous_school,
-        s.photo_url,
-        s.is_transport_required,
-        s.is_hostel_required,
-        s.guardian_id,
+        s.previous_school_name AS previous_school,
+        NULLIF(TRIM(u.avatar), '') AS photo_url,
+        false AS is_transport_required,
+        false AS is_hostel_required,
+        NULL::integer AS guardian_id,
         s.is_active,
         s.created_at,
         c.class_name,
         sec.section_name,
         ${STUDENT_CONTACT_LATERAL_SELECT},
-        COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-        COALESCE(s.permanent_address, addr.permanent_address) as permanent_address
+        COALESCE(u.current_address, u.permanent_address) AS current_address,
+        u.permanent_address AS permanent_address
       FROM students s
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      ${STUDENT_CONTACT_LATERAL_JOINS}
+      INNER JOIN users u ON u.id = s.user_id
       LEFT JOIN LATERAL (
-        SELECT current_address, permanent_address 
-        FROM addresses 
-        WHERE user_id = s.user_id 
-        ORDER BY id DESC 
+        SELECT l.to_class_id AS class_id, l.to_section_id AS section_id
+        FROM student_lifecycle_ledger l
+        WHERE l.student_id = s.id
+        ORDER BY l.event_date DESC NULLS LAST, l.id DESC
         LIMIT 1
-      ) addr ON true
+      ) enr ON true
+      LEFT JOIN classes c ON enr.class_id = c.id
+      LEFT JOIN sections sec ON enr.section_id = sec.id
+      ${STUDENT_CONTACT_LATERAL_JOINS}
       WHERE s.deleted_at IS NULL
-      ORDER BY s.first_name ASC, s.last_name ASC LIMIT $1 OFFSET $2
+      ORDER BY u.first_name ASC, u.last_name ASC LIMIT $1 OFFSET $2
     `, selectParams);
 
-    const responseRows = hasAcademicYearFilter
-      ? result.rows.map(({ source_order, ...row }) => row)
-      : result.rows;
+    const responseRows = result.rows;
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -2886,56 +2921,74 @@ const getStudentById = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });
     }
     const baseSelect = `
-      s.id, s.admission_number, s.roll_number, s.gr_number, s.first_name, s.last_name,
-      s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
-      s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
-      s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      COALESCE(NULLIF(TRIM(u.avatar), ''), s.photo_url) AS photo_url, s.is_transport_required,
-      s.is_hostel_required, s.guardian_id, s.is_active, s.created_at,
-      s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
+      s.id, s.admission_number, s.roll_number, s.gr_number,
+      u.first_name, u.last_name,
+      u.gender, u.date_of_birth,
+      s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
+      s.nationality,
+      COALESCE(NULLIF(TRIM(u.phone), ''), NULL) AS phone,
+      COALESCE(NULLIF(TRIM(u.email), ''), NULL) AS email,
+      u.current_address AS address,
+      s.user_id,
+      enr.academic_year_id,
+      enr.class_id,
+      enr.section_id,
+      s.house_id,
+      s.admission_date,
+      s.previous_school_name AS previous_school,
+      NULLIF(TRIM(u.avatar), '') AS photo_url,
+      false AS is_transport_required,
+      false AS is_hostel_required,
+      NULL::integer AS guardian_id,
+      COALESCE(s.is_active, true) AS is_active,
+      s.created_at,
+      s.unique_student_ids, s.pen_number, s.aadhar_no AS aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
-      ay.year_name as academic_year_name,
-      sec.section_teacher_id as section_teacher_id,
-      sec.section_teacher_id as section_teacher_staff_id,
-      sec_staff.first_name as section_teacher_first_name,
-      sec_staff.last_name as section_teacher_last_name,
-      sec_staff.phone as section_teacher_phone,
-      sec_staff.email as section_teacher_email,
-      sec_staff.address as section_teacher_address,
-      cls_t.id as class_teacher_id,
-      cls_t.staff_id as class_teacher_staff_id,
-      cls_staff.first_name as class_teacher_first_name,
-      cls_staff.last_name as class_teacher_last_name,
-      cls_staff.phone as class_teacher_phone,
-      cls_staff.email as class_teacher_email,
-      cls_staff.address as class_teacher_address,
-      bg.blood_group as blood_group_name,
+      ay.year_name AS academic_year_name,
+      NULL::integer AS section_teacher_id,
+      NULL::integer AS section_teacher_staff_id,
+      NULL::text AS section_teacher_first_name,
+      NULL::text AS section_teacher_last_name,
+      NULL::text AS section_teacher_phone,
+      NULL::text AS section_teacher_email,
+      NULL::text AS section_teacher_address,
+      NULL::integer AS class_teacher_id,
+      cls_ct.staff_id AS class_teacher_staff_id,
+      cls_staff_u.first_name AS class_teacher_first_name,
+      cls_staff_u.last_name AS class_teacher_last_name,
+      cls_staff_u.phone AS class_teacher_phone,
+      cls_staff_u.email AS class_teacher_email,
+      COALESCE(cls_staff_u.current_address, cls_staff_u.permanent_address) AS class_teacher_address,
+      bg.blood_group_name AS blood_group_name,
       cast_t.cast_name,
-      mt.language_name as mother_tongue_name,
+      mt.language_name AS mother_tongue_name,
       ${STUDENT_CONTACT_LATERAL_SELECT},
-      COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-      COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
+      COALESCE(u.current_address, u.permanent_address) AS current_address,
+      u.permanent_address AS permanent_address`;
     const fromAndJoins = `
       FROM students s
-      LEFT JOIN users u ON s.user_id = u.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
-      LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
-      LEFT JOIN staff sec_staff ON sec.section_teacher_id = sec_staff.id
-      LEFT JOIN teachers cls_t ON (c.class_teacher_id = cls_t.id OR c.class_teacher_id = cls_t.staff_id)
-      LEFT JOIN staff cls_staff ON cls_t.staff_id = cls_staff.id
+      LEFT JOIN users u ON u.id = s.user_id
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON c.id = enr.class_id
+      LEFT JOIN sections sec ON sec.id = enr.section_id
+      LEFT JOIN academic_years ay ON ay.id = enr.academic_year_id
+      LEFT JOIN LATERAL (
+        SELECT ct.staff_id
+        FROM class_teachers ct
+        WHERE ct.class_id = enr.class_id
+          AND ct.academic_year_id = enr.academic_year_id
+          AND ct.class_section_id IS NULL
+          AND ct.deleted_at IS NULL
+        ORDER BY (ct.role = 'primary') DESC, ct.id DESC
+        LIMIT 1
+      ) cls_ct ON true
+      LEFT JOIN staff cls_staff ON cls_staff.id = cls_ct.staff_id
+      LEFT JOIN users cls_staff_u ON cls_staff_u.id = cls_staff.user_id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
-      ${STUDENT_CONTACT_LATERAL_JOINS}
-      LEFT JOIN LATERAL (
-        SELECT current_address, permanent_address 
-        FROM addresses 
-        WHERE user_id = s.user_id 
-        ORDER BY id DESC 
-        LIMIT 1
-      ) addr ON true`;
+      ${STUDENT_CONTACT_LATERAL_JOINS}`;
     const whereClause = ` WHERE s.id = $1 AND s.deleted_at IS NULL`;
 
     let result;
@@ -3352,38 +3405,47 @@ const getCurrentStudent = async (req, res) => {
     }
 
     const baseSelect = `
-      s.id, s.admission_number, s.roll_number, s.gr_number, s.first_name, s.last_name,
-      s.gender, s.date_of_birth, s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
-      s.nationality, COALESCE(NULLIF(TRIM(s.phone), ''), u.phone) AS phone, COALESCE(NULLIF(TRIM(s.email), ''), u.email) AS email, s.address, s.user_id, s.academic_year_id,
-      s.class_id, s.section_id, s.house_id, s.admission_date, s.previous_school,
-      s.photo_url, s.is_transport_required,
-      s.is_hostel_required, s.guardian_id, s.is_active, s.created_at,
-      s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,
+      s.id, s.admission_number, s.roll_number, s.gr_number,
+      u.first_name, u.last_name,
+      u.gender, u.date_of_birth,
+      s.place_of_birth, s.blood_group_id, s.cast_id, s.mother_tongue_id,
+      s.nationality,
+      COALESCE(NULLIF(TRIM(u.phone), ''), NULL) AS phone,
+      COALESCE(NULLIF(TRIM(u.email), ''), NULL) AS email,
+      u.current_address AS address,
+      s.user_id,
+      enr.academic_year_id,
+      enr.class_id,
+      enr.section_id,
+      s.house_id,
+      s.admission_date,
+      s.previous_school_name AS previous_school,
+      NULLIF(TRIM(u.avatar), '') AS photo_url,
+      false AS is_transport_required,
+      false AS is_hostel_required,
+      NULL::integer AS guardian_id,
+      COALESCE(s.is_active, true) AS is_active,
+      s.created_at,
+      s.unique_student_ids, s.pen_number, s.aadhar_no AS aadhaar_no,
       s.medical_document_path, s.transfer_certificate_path,
       c.class_name, sec.section_name,
-      bg.blood_group as blood_group_name,
+      bg.blood_group_name AS blood_group_name,
       cast_t.cast_name,
-      mt.language_name as mother_tongue_name,
+      mt.language_name AS mother_tongue_name,
       ${STUDENT_CONTACT_LATERAL_SELECT},
-      COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-      COALESCE(s.permanent_address, addr.permanent_address) as permanent_address`;
+      COALESCE(u.current_address, u.permanent_address) AS current_address,
+      u.permanent_address AS permanent_address`;
     const fromAndJoins = `
       FROM students s
-      LEFT JOIN users u ON s.user_id = u.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN users u ON u.id = s.user_id
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON c.id = enr.class_id
+      LEFT JOIN sections sec ON sec.id = enr.section_id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
-      ${STUDENT_CONTACT_LATERAL_JOINS}
-      LEFT JOIN LATERAL (
-        SELECT current_address, permanent_address 
-        FROM addresses 
-        WHERE user_id = s.user_id 
-        ORDER BY id DESC 
-        LIMIT 1
-      ) addr ON true`;
-    const whereClause = ` WHERE s.user_id = $1 AND s.is_active = true LIMIT 1`;
+      ${STUDENT_CONTACT_LATERAL_JOINS}`;
+    const whereClause = ` WHERE s.user_id = $1 AND COALESCE(s.is_active, true) = true LIMIT 1`;
 
     let result;
     try {
@@ -3718,19 +3780,13 @@ const getStudentsByClass = async (req, res) => {
         c.class_name,
         sec.section_name,
         ${STUDENT_CONTACT_LATERAL_SELECT},
-        COALESCE(s.current_address, addr.current_address, s.address) as current_address,
-        COALESCE(s.permanent_address, addr.permanent_address) as permanent_address
+        COALESCE(u.current_address, u.permanent_address) as current_address,
+        u.permanent_address as permanent_address
       FROM students s
+      LEFT JOIN users u ON s.user_id = u.id
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       ${STUDENT_CONTACT_LATERAL_JOINS}
-      LEFT JOIN LATERAL (
-        SELECT current_address, permanent_address 
-        FROM addresses 
-        WHERE user_id = s.user_id 
-        ORDER BY id DESC 
-        LIMIT 1
-      ) addr ON true
       WHERE s.class_id = $1 AND s.is_active = true
       ORDER BY s.first_name ASC, s.last_name ASC
     `, [classId]);
@@ -4214,80 +4270,154 @@ const getStudentsLatestExamSummary = async (req, res) => {
          AND table_name = 'exam_results'`
     );
     const erCols = new Set((erColsRes.rows || []).map((r) => String(r.column_name)));
-    const obtainedCandidates = [
-      'marks_obtained',
-      'obtained_marks',
-      'marks',
-      'marks_scored',
-      'score',
-    ].filter((c) => erCols.has(c));
-    const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min'].filter((c) => erCols.has(c));
-    const hasIsAbsent = erCols.has('is_absent');
+    const useExamScheduleJoin = erCols.has('exam_schedule_id');
 
-    const obtainedExpr = obtainedCandidates.length > 0
-      ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
-      : '0';
-    const minExpr = minCandidates.length > 0
-      ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
-      : '0';
-    const absentExpr = hasIsAbsent ? 'COALESCE(er.is_absent, false)' : 'false';
-    const pendingExpr = obtainedCandidates.length > 0
-      ? obtainedCandidates.map((c) => `er.${c} IS NULL`).join(' AND ')
-      : 'false';
+    let result;
+    if (useExamScheduleJoin) {
+      result = await query(
+        `WITH per_student_exam AS (
+           SELECT
+             er.student_id,
+             es.exam_id,
+             MAX(COALESCE(es.exam_date, e.updated_at::date, e.created_at::date)) AS exam_date,
+             MAX(e.exam_name) AS exam_name,
+             MAX(e.exam_type::text) AS exam_type
+           FROM exam_results er
+           INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id
+           LEFT JOIN exams e ON e.id = es.exam_id
+           WHERE er.student_id = ANY($1::int[])
+             AND es.exam_id IS NOT NULL
+           GROUP BY er.student_id, es.exam_id
+         ),
+         latest_exam AS (
+           SELECT DISTINCT ON (pse.student_id)
+             pse.student_id,
+             pse.exam_id,
+             pse.exam_date,
+             COALESCE(pse.exam_name, 'Exam') AS exam_name,
+             COALESCE(pse.exam_type, '') AS exam_type
+           FROM per_student_exam pse
+           ORDER BY pse.student_id, pse.exam_date DESC NULLS LAST, pse.exam_id DESC
+         ),
+         summary AS (
+           SELECT
+             le.student_id,
+             le.exam_id,
+             le.exam_name,
+             le.exam_type,
+             le.exam_date,
+             COUNT(*)::int AS subject_count,
+             BOOL_OR(
+               COALESCE(er.is_absent, false) = true OR
+               COALESCE(er.marks_obtained, 0) < COALESCE(es.passing_marks, 0)
+             ) AS has_fail,
+             BOOL_OR(
+               COALESCE(er.is_absent, false) = false AND er.marks_obtained IS NULL
+             ) AS has_pending
+           FROM latest_exam le
+           INNER JOIN exam_results er ON er.student_id = le.student_id
+           INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id AND es.exam_id = le.exam_id
+           GROUP BY le.student_id, le.exam_id, le.exam_name, le.exam_type, le.exam_date
+         )
+         SELECT
+           s.student_id,
+           s.exam_id,
+           s.exam_name,
+           s.exam_type,
+           s.exam_date,
+           CASE
+             WHEN s.has_pending THEN 'Pending'
+             WHEN s.has_fail THEN 'Fail'
+             ELSE 'Pass'
+           END AS overall_result
+         FROM summary s`,
+        [studentIds]
+      );
+    } else {
+      const obtainedCandidates = [
+        'marks_obtained',
+        'obtained_marks',
+        'marks',
+        'marks_scored',
+        'score',
+      ].filter((c) => erCols.has(c));
+      const minCandidates = ['min_marks', 'pass_marks', 'min_mark', 'min'].filter((c) =>
+        erCols.has(c)
+      );
+      const hasIsAbsent = erCols.has('is_absent');
 
-    const result = await query(
-      `WITH scoped AS (
-         SELECT
-           er.student_id,
-           er.exam_id,
-           COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
-           COALESCE(e.exam_name, 'Exam') AS exam_name,
-           COALESCE(e.exam_type, '') AS exam_type
-         FROM exam_results er
-         LEFT JOIN exams e ON e.id = er.exam_id
-         WHERE er.student_id = ANY($1::int[])
-           AND er.exam_id IS NOT NULL
-       ),
-       latest_exam AS (
-         SELECT DISTINCT ON (s.student_id)
-           s.student_id, s.exam_id, s.exam_date, s.exam_name, s.exam_type
-         FROM scoped s
-         ORDER BY s.student_id, s.exam_date DESC NULLS LAST, s.exam_id DESC
-       ),
-       summary AS (
-         SELECT
-           le.student_id,
-           le.exam_id,
-           le.exam_name,
-           le.exam_type,
-           le.exam_date,
-           COUNT(*)::int AS subject_count,
-           BOOL_OR(
-             ${absentExpr} = true OR
-             ${obtainedExpr} < ${minExpr}
-           ) AS has_fail,
-           BOOL_OR(
-             ${absentExpr} = false AND
-             (${pendingExpr})
-           ) AS has_pending
-         FROM latest_exam le
-         INNER JOIN exam_results er ON er.student_id = le.student_id AND er.exam_id = le.exam_id
-         GROUP BY le.student_id, le.exam_id, le.exam_name, le.exam_type, le.exam_date
-       )
-       SELECT
-         s.student_id,
-         s.exam_id,
-         s.exam_name,
-         s.exam_type,
-         s.exam_date,
-         CASE
-           WHEN s.has_pending THEN 'Pending'
-           WHEN s.has_fail THEN 'Fail'
-           ELSE 'Pass'
-         END AS overall_result
-       FROM summary s`,
-      [studentIds]
-    );
+      const obtainedExpr =
+        obtainedCandidates.length > 0
+          ? `COALESCE(${obtainedCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+          : '0';
+      const minExpr =
+        minCandidates.length > 0
+          ? `COALESCE(${minCandidates.map((c) => `er.${c}`).join(', ')}, 0)`
+          : '0';
+      const absentExpr = hasIsAbsent ? 'COALESCE(er.is_absent, false)' : 'false';
+      const pendingExpr =
+        obtainedCandidates.length > 0
+          ? obtainedCandidates.map((c) => `er.${c} IS NULL`).join(' AND ')
+          : 'false';
+
+      if (!erCols.has('exam_id')) {
+        result = { rows: [] };
+      } else {
+        result = await query(
+          `WITH scoped AS (
+             SELECT
+               er.student_id,
+               er.exam_id,
+               COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+               COALESCE(e.exam_name, 'Exam') AS exam_name,
+               COALESCE(e.exam_type, '') AS exam_type
+             FROM exam_results er
+             LEFT JOIN exams e ON e.id = er.exam_id
+             WHERE er.student_id = ANY($1::int[])
+               AND er.exam_id IS NOT NULL
+           ),
+           latest_exam AS (
+             SELECT DISTINCT ON (s.student_id)
+               s.student_id, s.exam_id, s.exam_date, s.exam_name, s.exam_type
+             FROM scoped s
+             ORDER BY s.student_id, s.exam_date DESC NULLS LAST, s.exam_id DESC
+           ),
+           summary AS (
+             SELECT
+               le.student_id,
+               le.exam_id,
+               le.exam_name,
+               le.exam_type,
+               le.exam_date,
+               COUNT(*)::int AS subject_count,
+               BOOL_OR(
+                 ${absentExpr} = true OR
+                 ${obtainedExpr} < ${minExpr}
+               ) AS has_fail,
+               BOOL_OR(
+                 ${absentExpr} = false AND
+                 (${pendingExpr})
+               ) AS has_pending
+             FROM latest_exam le
+             INNER JOIN exam_results er ON er.student_id = le.student_id AND er.exam_id = le.exam_id
+             GROUP BY le.student_id, le.exam_id, le.exam_name, le.exam_type, le.exam_date
+           )
+           SELECT
+             s.student_id,
+             s.exam_id,
+             s.exam_name,
+             s.exam_type,
+             s.exam_date,
+             CASE
+               WHEN s.has_pending THEN 'Pending'
+               WHEN s.has_fail THEN 'Fail'
+               ELSE 'Pass'
+             END AS overall_result
+           FROM summary s`,
+          [studentIds]
+        );
+      }
+    }
 
     return res.status(200).json({
       status: 'SUCCESS',

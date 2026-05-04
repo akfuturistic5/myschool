@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { resolveAcademicYearId } = require('../utils/academicYear');
 
 const normalizeBool = (v, fallback = true) => {
   if (v === undefined || v === null) return fallback;
@@ -8,7 +9,6 @@ const normalizeBool = (v, fallback = true) => {
   return fallback;
 };
 
-/** Empty or whitespace-only string -> null (DB stores NULL for optional text fields). */
 const emptyToNull = (v) => {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
@@ -33,39 +33,75 @@ const parseOptionalInt = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
-const parseOptionalFee = (v) => {
-  if (v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  if (Number.isNaN(n)) return null;
-  return Math.round(n * 100) / 100;
-};
-
 const pickPayload = (payload, key, current) =>
   Object.prototype.hasOwnProperty.call(payload, key) ? payload[key] : current;
 
 const getAllClasses = async (req, res) => {
   try {
-    const result = await query(`
+    const academicYearId = await resolveAcademicYearId(req.query?.academic_year_id);
+    const params = [];
+    let p = 0;
+    const ayCondSubjects = academicYearId ? 'AND csj.academic_year_id = $1' : '';
+    const ayCondTeacher = academicYearId ? 'AND ct.academic_year_id = $1' : '';
+    if (academicYearId) {
+      p += 1;
+      params.push(academicYearId);
+    }
+
+    const result = await query(
+      `
       SELECT
         c.id,
         c.class_name,
         c.class_code,
-        c.class_teacher_id,
+        ct.staff_id AS class_teacher_id,
         c.max_students,
-        c.class_fee,
+        NULL::numeric AS class_fee,
         c.description,
         c.is_active,
-        c.has_sections,
+        EXISTS (
+          SELECT 1 FROM class_sections csx
+          WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
+        ) AS has_sections,
         c.created_at,
-        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
-        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
-        s.first_name as teacher_first_name,
-        s.last_name as teacher_last_name
+        (SELECT COUNT(*)::int
+         FROM students st
+         LEFT JOIN LATERAL (
+           SELECT l.to_class_id
+           FROM student_lifecycle_ledger l
+           WHERE l.student_id = st.id
+           ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+           LIMIT 1
+         ) le ON true
+         WHERE st.deleted_at IS NULL AND COALESCE(st.is_active, true) = true
+           AND le.to_class_id = c.id
+        ) AS no_of_students,
+        (SELECT COUNT(DISTINCT csj.subject_id)::int
+         FROM class_subjects csj
+         WHERE csj.class_id = c.id AND csj.deleted_at IS NULL
+           ${ayCondSubjects}
+        ) AS no_of_subjects,
+        u.first_name AS teacher_first_name,
+        u.last_name AS teacher_last_name
       FROM classes c
-      LEFT JOIN staff s ON c.class_teacher_id = s.id
+      LEFT JOIN LATERAL (
+        SELECT staff_id, academic_year_id
+        FROM class_teachers ct
+        WHERE ct.class_id = c.id
+          AND ct.class_section_id IS NULL
+          AND ct.deleted_at IS NULL
+          ${ayCondTeacher}
+        ORDER BY (ct.role = 'primary') DESC, ct.id DESC
+        LIMIT 1
+      ) ct ON true
+      LEFT JOIN staff sf ON sf.id = ct.staff_id
+      LEFT JOIN users u ON u.id = sf.user_id
+      WHERE c.deleted_at IS NULL
       ORDER BY c.class_name ASC
-    `);
-    
+    `,
+      params
+    );
+
     return success(res, 200, 'Classes fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching classes:', error);
@@ -76,26 +112,64 @@ const getAllClasses = async (req, res) => {
 const getClassById = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query(`
+    const academicYearId = await resolveAcademicYearId(req.query?.academic_year_id);
+    const params = [id];
+    const ayCondSubjects = academicYearId ? 'AND csj.academic_year_id = $2' : '';
+    const ayCondTeacher = academicYearId ? 'AND ct.academic_year_id = $2' : '';
+    if (academicYearId) params.push(academicYearId);
+
+    const result = await query(
+      `
       SELECT
         c.id,
         c.class_name,
         c.class_code,
-        c.class_teacher_id,
+        ct.staff_id AS class_teacher_id,
         c.max_students,
-        c.class_fee,
+        NULL::numeric AS class_fee,
         c.description,
         c.is_active,
-        c.has_sections,
+        EXISTS (
+          SELECT 1 FROM class_sections csx
+          WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
+        ) AS has_sections,
         c.created_at,
-        (SELECT COUNT(*)::int FROM students s WHERE s.class_id = c.id AND s.is_active = true) as no_of_students,
-        (SELECT COUNT(DISTINCT subject_id)::int FROM teacher_assignments ta WHERE ta.class_id = c.id) as no_of_subjects,
-        s.first_name as teacher_first_name,
-        s.last_name as teacher_last_name
+        (SELECT COUNT(*)::int
+         FROM students st
+         LEFT JOIN LATERAL (
+           SELECT l.to_class_id
+           FROM student_lifecycle_ledger l
+           WHERE l.student_id = st.id
+           ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+           LIMIT 1
+         ) le ON true
+         WHERE st.deleted_at IS NULL AND COALESCE(st.is_active, true) = true
+           AND le.to_class_id = c.id
+        ) AS no_of_students,
+        (SELECT COUNT(DISTINCT csj.subject_id)::int
+         FROM class_subjects csj
+         WHERE csj.class_id = c.id AND csj.deleted_at IS NULL
+           ${ayCondSubjects}
+        ) AS no_of_subjects,
+        u.first_name AS teacher_first_name,
+        u.last_name AS teacher_last_name
       FROM classes c
-      LEFT JOIN staff s ON c.class_teacher_id = s.id
-      WHERE c.id = $1
-    `, [id]);
+      LEFT JOIN LATERAL (
+        SELECT staff_id, academic_year_id
+        FROM class_teachers ct
+        WHERE ct.class_id = c.id
+          AND ct.class_section_id IS NULL
+          AND ct.deleted_at IS NULL
+          ${ayCondTeacher}
+        ORDER BY (ct.role = 'primary') DESC, ct.id DESC
+        LIMIT 1
+      ) ct ON true
+      LEFT JOIN staff sf ON sf.id = ct.staff_id
+      LEFT JOIN users u ON u.id = sf.user_id
+      WHERE c.id = $1 AND c.deleted_at IS NULL
+    `,
+      params
+    );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Class not found');
@@ -115,15 +189,14 @@ const createClass = async (req, res) => {
       class_code,
       class_teacher_id,
       max_students,
-      class_fee,
+      class_fee: _classFee,
       description,
       is_active,
-      has_sections,
+      has_sections: _hasSections,
     } = req.body;
 
     const codeNorm = normalizeClassCode(class_code);
     const descNorm = normalizeDescription(description);
-    const feeNorm = parseOptionalFee(class_fee);
     let maxNorm;
     if (max_students === undefined) maxNorm = 30;
     else if (max_students === null) maxNorm = null;
@@ -133,27 +206,34 @@ const createClass = async (req, res) => {
 
     const result = await query(
       `INSERT INTO classes (
-        class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, has_sections, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-        class_name, class_code, class_teacher_id, max_students, class_fee, description, is_active, has_sections, created_by
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        class_name, class_code, max_students, description, is_active, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6)
       RETURNING *`,
       [
         String(class_name).trim(),
         codeNorm,
-        class_teacher_id || null,
         maxNorm,
-        feeNorm,
         descNorm,
         normalizeBool(is_active, true),
-        normalizeBool(has_sections, true),
         createdByArg,
       ]
     );
-    return success(res, 201, 'Class created successfully', result.rows[0]);
+    const row = result.rows[0];
+    const classId = row.id;
+    const teacherId = class_teacher_id != null && class_teacher_id !== '' ? parseInt(class_teacher_id, 10) : null;
+    if (Number.isInteger(teacherId) && teacherId > 0) {
+      const ay = await resolveAcademicYearId(req.body?.academic_year_id);
+      if (ay) {
+        await query(
+          `INSERT INTO class_teachers (class_id, class_section_id, staff_id, academic_year_id, role, valid_period)
+           VALUES ($1, NULL, $2, $3, 'primary', daterange(CURRENT_DATE, '9999-12-31', '[]'))`,
+          [classId, teacherId, ay]
+        ).catch(() => {});
+      }
+    }
+    return success(res, 201, 'Class created successfully', row);
   } catch (error) {
     console.error('Error creating class:', error);
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23505') return errorResponse(res, 409, 'Class already exists');
     return errorResponse(res, 500, 'Failed to create class');
@@ -164,11 +244,11 @@ const updateClass = async (req, res) => {
   try {
     const { id } = req.params;
     const payload = req.body;
-    const current = await query('SELECT * FROM classes WHERE id = $1', [id]);
+    const current = await query('SELECT * FROM classes WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Class not found');
     const cur = current.rows[0];
 
-    const classTeacherId = pickPayload(payload, 'class_teacher_id', cur.class_teacher_id);
+    const classTeacherId = pickPayload(payload, 'class_teacher_id', null);
     const className = pickPayload(payload, 'class_name', cur.class_name);
 
     let classCode = cur.class_code;
@@ -187,56 +267,53 @@ const updateClass = async (req, res) => {
         payload.max_students === null ? null : parseOptionalInt(payload.max_students);
     }
 
-    let classFee = cur.class_fee;
-    if (Object.prototype.hasOwnProperty.call(payload, 'class_fee')) {
-      classFee = payload.class_fee === null ? null : parseOptionalFee(payload.class_fee);
-    }
-
     const nameFinal = typeof className === 'string' ? className.trim() : className;
     if (!nameFinal) return errorResponse(res, 400, 'class_name cannot be empty');
 
-    let hasSections = cur.has_sections;
-    if (Object.prototype.hasOwnProperty.call(payload, 'has_sections')) {
-      hasSections = normalizeBool(payload.has_sections, cur.has_sections);
-    }
-
-    const result = await query(`
+    const result = await query(
+      `
       UPDATE classes SET
         class_name = $1,
         class_code = $2,
-        class_teacher_id = $3,
-        max_students = $4,
-        class_fee = $5,
-        description = $6,
-        is_active = $7,
-        has_sections = $8,
-        class_teacher_id = $3,
-        max_students = $4,
-        class_fee = $5,
-        description = $6,
-        is_active = $7,
-        has_sections = $8,
-        modified_at = NOW()
-      WHERE id = $9
-      WHERE id = $9
+        max_students = $3,
+        description = $4,
+        is_active = $5,
+        updated_at = NOW()
+      WHERE id = $6 AND deleted_at IS NULL
       RETURNING *
-    `, [
-      nameFinal,
-      classCode,
-      classTeacherId,
-      maxStudents,
-      classFee,
-      description,
-      Object.prototype.hasOwnProperty.call(payload, 'is_active')
-        ? normalizeBool(payload.is_active, cur.is_active)
-        : normalizeBool(cur.is_active, true),
-      hasSections,
-      id
-    ]);
+    `,
+      [
+        nameFinal,
+        classCode,
+        maxStudents,
+        description,
+        Object.prototype.hasOwnProperty.call(payload, 'is_active')
+          ? normalizeBool(payload.is_active, cur.is_active)
+          : normalizeBool(cur.is_active, true),
+        id,
+      ]
+    );
+
+    if (classTeacherId !== undefined && classTeacherId !== null && classTeacherId !== '') {
+      const tid = parseInt(classTeacherId, 10);
+      const ay = await resolveAcademicYearId(payload?.academic_year_id);
+      if (Number.isInteger(tid) && tid > 0 && ay) {
+        await query(
+          `UPDATE class_teachers SET deleted_at = NOW(), updated_at = NOW()
+           WHERE class_id = $1 AND class_section_id IS NULL AND academic_year_id = $2 AND deleted_at IS NULL`,
+          [id, ay]
+        ).catch(() => {});
+        await query(
+          `INSERT INTO class_teachers (class_id, class_section_id, staff_id, academic_year_id, role, valid_period)
+           VALUES ($1, NULL, $2, $3, 'primary', daterange(CURRENT_DATE, '9999-12-31', '[]'))`,
+          [id, tid, ay]
+        ).catch(() => {});
+      }
+    }
+
     return success(res, 200, 'Class updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating class:', error);
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher');
     return errorResponse(res, 500, 'Failed to update class');
   }
@@ -245,12 +322,14 @@ const updateClass = async (req, res) => {
 const deleteClass = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM classes WHERE id = $1 RETURNING id', [id]);
+    const result = await query(
+      `UPDATE classes SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id`,
+      [id]
+    );
     if (!result.rows.length) return errorResponse(res, 404, 'Class not found');
     return success(res, 200, 'Class deleted successfully', { id: result.rows[0].id });
   } catch (error) {
     console.error('Error deleting class:', error);
-    if (error.code === '23503') return errorResponse(res, 409, 'Class is referenced by related records');
     return errorResponse(res, 500, 'Failed to delete class');
   }
 };
