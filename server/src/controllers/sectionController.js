@@ -242,7 +242,6 @@ const updateSection = async (req, res) => {
     );
     if (!current.rows.length) return errorResponse(res, 404, 'Section not found');
     const cur = current.rows[0];
-
     const sectionTeacherId = Object.prototype.hasOwnProperty.call(payload, 'section_teacher_id')
       ? payload.section_teacher_id
       : null;
