@@ -130,7 +130,6 @@ const getAllAssignments = async (req, res) => {
 const createAssignment = async (req, res) => {
   try {
     const { vehicle_id, route_id, driver_id, is_active } = req.body;
-    const { vehicle_id, route_id, driver_id, is_active } = req.body;
 
     if (!vehicle_id || !route_id || !driver_id) {
       return errorResponse(res, 400, 'Vehicle, route and driver are required');
@@ -142,9 +141,7 @@ const createAssignment = async (req, res) => {
       `SELECT id
        FROM transport_assignments
        WHERE vehicle_id = $1 AND route_id = $2 AND driver_id = $3 AND deleted_at IS NULL
-       WHERE vehicle_id = $1 AND route_id = $2 AND driver_id = $3 AND deleted_at IS NULL
        LIMIT 1`,
-      [Number(vehicle_id), Number(route_id), Number(driver_id)]
       [Number(vehicle_id), Number(route_id), Number(driver_id)]
     );
     if (existing.rows.length > 0) {
@@ -154,10 +151,7 @@ const createAssignment = async (req, res) => {
     const insert = await query(
       `INSERT INTO transport_assignments (vehicle_id, route_id, driver_id, is_active)
        VALUES ($1, $2, $3, $4)
-      `INSERT INTO transport_assignments (vehicle_id, route_id, driver_id, is_active)
-       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [Number(vehicle_id), Number(route_id), Number(driver_id), isActiveValue]
       [Number(vehicle_id), Number(route_id), Number(driver_id), isActiveValue]
     );
 
@@ -181,7 +175,6 @@ const updateAssignment = async (req, res) => {
       return errorResponse(res, 400, 'Invalid assignment ID');
     }
 
-    const { vehicle_id, route_id, driver_id, is_active } = req.body;
     const { vehicle_id, route_id, driver_id, is_active } = req.body;
     const updates = [];
     const values = [];

@@ -55,7 +55,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkAvailableRoutes, setBulkAvailableRoutes] = useState<any[]>([]);
   const [bulkAvailableVehicles, setBulkAvailableVehicles] = useState<any[]>([]);
   const [bulkSeatAvailability, setBulkSeatAvailability] = useState<{ available: number; occupied: number; capacity: number } | null>(null);
-  const [bulkSeatAvailability, setBulkSeatAvailability] = useState<{ available: number; occupied: number; capacity: number } | null>(null);
   const [bulkSelectedUserIds, setBulkSelectedUserIds] = useState<number[]>([]);
   const [bulkSearch, setBulkSearch] = useState("");
   const [bulkClassFilter, setBulkClassFilter] = useState("all");
@@ -64,14 +63,11 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const hydratingSinglePickupRef = useRef(false);
   const hydratingSingleRouteRef = useRef(false);
   const isEditMode = Boolean(selectedAllocation?.originalData?.id);
-  const isEditMode = Boolean(selectedAllocation?.originalData?.id);
 
   const toErrorText = (err: any, fallback: string) => {
     let msg: any = err?.message || fallback;
-    let msg: any = err?.message || fallback;
     if (typeof msg === "string" && msg.includes("message:")) {
       try {
-        const raw = msg.substring(msg.indexOf("message:") + "message:".length).trim();
         const raw = msg.substring(msg.indexOf("message:") + "message:".length).trim();
         const parsed = JSON.parse(raw);
         msg = parsed?.message || msg;
@@ -79,14 +75,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         // keep original
       }
     }
-    if (typeof msg === "string") {
-      msg = msg
-        .replace(/^HTTP error! status:\s*\d+,\s*/i, "")
-        .replace(/^status:\s*\d+,\s*/i, "")
-        .trim();
-      if (!msg) msg = fallback;
-    }
-    return typeof msg === "string" ? msg : fallback;
     if (typeof msg === "string") {
       msg = msg
         .replace(/^HTTP error! status:\s*\d+,\s*/i, "")
@@ -123,7 +111,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       hydratingSinglePickupRef.current = true;
       hydratingSingleRouteRef.current = true;
       setSingleUserType(row.user_type || "student");
-      setSingleUserId(String(row.student_id || row.staff_id || row.user_id || ""));
       setSingleUserId(String(row.student_id || row.staff_id || row.user_id || ""));
       setSinglePickupPointId(String(row.pickup_point_id || ""));
       setSingleRouteId(String(row.route_id || ""));
@@ -182,7 +169,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     loadRoutesForPickup(singlePickupPointId, setSingleAvailableRoutes);
     if (isHydrating) hydratingSinglePickupRef.current = false;
   }, [singlePickupPointId, academicYearId]);
-  }, [singlePickupPointId, academicYearId]);
   useEffect(() => {
     const isHydrating = hydratingSingleRouteRef.current;
     if (!isHydrating) {
@@ -201,24 +187,12 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     const defaultVehicleId = singleAvailableVehicles[0]?.id;
     setSingleVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
   }, [singleAvailableVehicles, singleRouteId, isEditMode]);
-  }, [singleRouteId, academicYearId]);
-
-  useEffect(() => {
-    if (isEditMode) return;
-    if (!singleRouteId) {
-      setSingleVehicleId("");
-      return;
-    }
-    const defaultVehicleId = singleAvailableVehicles[0]?.id;
-    setSingleVehicleId(defaultVehicleId ? String(defaultVehicleId) : "");
-  }, [singleAvailableVehicles, singleRouteId, isEditMode]);
 
   useEffect(() => {
     setBulkRouteId("");
     setBulkVehicleId("");
     setBulkAssignedFeeId("");
     loadRoutesForPickup(bulkPickupPointId, setBulkAvailableRoutes);
-  }, [bulkPickupPointId, academicYearId]);
   }, [bulkPickupPointId, academicYearId]);
   useEffect(() => {
     setBulkVehicleId("");
@@ -311,13 +285,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       ? students.filter((s: any) => s.id != null).map((s: any) => ({
           value: String(s.id),
           label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.id})`,
-      ? students.filter((s: any) => s.id != null).map((s: any) => ({
-          value: String(s.id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.id})`,
         }))
-      : staff.filter((s: any) => s.id != null).map((s: any) => ({
-          value: String(s.id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.id})`,
       : staff.filter((s: any) => s.id != null).map((s: any) => ({
           value: String(s.id),
           label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.id})`,
@@ -343,7 +311,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     try {
       if (!singleUserId || !singleRouteId || !singlePickupPointId || !singleVehicleId) {
         throw new Error("Please select user, pickup point and route");
-        throw new Error("Please select user, pickup point and route");
       }
       if (!singleStartDate) {
         throw new Error("Please select a start date");
@@ -353,9 +320,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
       const payload: any = {
         user_type: singleUserType,
-        ...(singleUserType === "student"
-          ? { student_id: Number(singleUserId) }
-          : { staff_id: Number(singleUserId) }),
         ...(singleUserType === "student"
           ? { student_id: Number(singleUserId) }
           : { staff_id: Number(singleUserId) }),
@@ -407,7 +371,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
 
   const bulkFilteredUsers = useMemo(() => {
     let rows = bulkUsersSource.filter((u: any) => u.id != null);
-    let rows = bulkUsersSource.filter((u: any) => u.id != null);
     if (bulkSearch.trim()) {
       const q = bulkSearch.trim().toLowerCase();
       rows = rows.filter((u: any) =>
@@ -434,7 +397,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     try {
       if (!bulkPickupPointId || !bulkRouteId || !bulkVehicleId) {
         throw new Error("Please select pickup point and route");
-        throw new Error("Please select pickup point and route");
       }
       if (!bulkStartDate) {
         throw new Error("Please select a start date");
@@ -444,9 +406,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
       if (bulkSelectedUserIds.length === 0) {
         throw new Error(`Please select at least one ${bulkUserType}`);
-      }
-      if (bulkSeatAvailability && bulkSelectedUserIds.length > bulkSeatAvailability.available) {
-        throw new Error(`Only ${bulkSeatAvailability.available} seat(s) available. Please select up to ${bulkSeatAvailability.available} ${bulkUserType}(s).`);
       }
       if (bulkSeatAvailability && bulkSelectedUserIds.length > bulkSeatAvailability.available) {
         throw new Error(`Only ${bulkSeatAvailability.available} seat(s) available. Please select up to ${bulkSeatAvailability.available} ${bulkUserType}(s).`);
@@ -474,9 +433,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
 
 
       Swal.fire({
-        icon: "success",
-        title: "Success",
-        text: `Created ${Number(bulkRes?.data?.createdCount || bulkSelectedUserIds.length)} allocations successfully.`,
         icon: "success",
         title: "Success",
         text: `Created ${Number(bulkRes?.data?.createdCount || bulkSelectedUserIds.length)} allocations successfully.`,
@@ -769,7 +725,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                 </div>
                 <div className="row">
                   <div className="col-md-12 mb-3">
-                  <div className="col-md-12 mb-3">
                     <label className="form-label">Start Date</label>
                     <DatePicker
                       className="form-control datetimepicker"
@@ -824,13 +779,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     </span>
                   </div>
                 )}
-                {bulkSeatAvailability && (
-                  <div className="mb-3">
-                    <span className="badge bg-soft-info">
-                      Seats Available: {bulkSeatAvailability.available} / {bulkSeatAvailability.capacity}
-                    </span>
-                  </div>
-                )}
 
                 <div className="table-responsive border rounded" style={{ maxHeight: "250px", overflowY: "auto" }}>
                   <table className="table mb-0">
@@ -839,13 +787,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                         <th style={{ width: "50px" }}>
                           <input
                             type="checkbox"
-                            checked={
-                              bulkFilteredUsers.length > 0 &&
-                              bulkSelectedUserIds.length === Math.min(
-                                bulkFilteredUsers.length,
-                                Math.max(0, bulkSeatAvailability?.available ?? bulkFilteredUsers.length)
-                              )
-                            }
                             checked={
                               bulkFilteredUsers.length > 0 &&
                               bulkSelectedUserIds.length === Math.min(
@@ -882,7 +823,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     <tbody>
                       {bulkFilteredUsers.map((u: any) => {
                         const uid = Number(u.id);
-                        const uid = Number(u.id);
                         const checked = bulkSelectedUserIds.includes(uid);
                         return (
                           <tr key={uid}>
@@ -890,7 +830,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                               <input
                                 type="checkbox"
                                 checked={checked}
-                                disabled={!checked && (bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER) <= bulkSelectedUserIds.length}
                                 disabled={!checked && (bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER) <= bulkSelectedUserIds.length}
                                 onChange={(e) => {
                                   if (e.target.checked) {
@@ -904,20 +843,9 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                                       return;
                                     }
                                     setBulkSelectedUserIds((prev) => [...prev, uid]);
+                                  } else {
+                                    setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                   }
-                                  if (e.target.checked) {
-                                    const maxSelectable = Math.max(0, bulkSeatAvailability?.available ?? Number.MAX_SAFE_INTEGER);
-                                    if (bulkSelectedUserIds.length >= maxSelectable) {
-                                      Swal.fire({
-                                        icon: "warning",
-                                        title: "Seat Limit Reached",
-                                        text: `Only ${maxSelectable} seat(s) are available. Please deselect one user to select another.`,
-                                      });
-                                      return;
-                                    }
-                                    setBulkSelectedUserIds((prev) => [...prev, uid]);
-                                  }
-                                  else setBulkSelectedUserIds((prev) => prev.filter((id) => id !== uid));
                                 }}
                               />
                             </td>

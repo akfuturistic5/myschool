@@ -196,7 +196,6 @@ const createDriver = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const { name, phone, license_number, address, role, is_active } = req.body;
-    const { name, phone, license_number, address, role, is_active } = req.body;
 
     if (!name) {
       return errorResponse(res, 400, 'Driver name is required');
