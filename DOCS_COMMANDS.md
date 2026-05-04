@@ -38,6 +38,13 @@ Run these commands in order for a fresh setup, or use the **Full Setup** command
 These commands automatically discover and process **ALL** active school databases:
 - `npm run db:tenants:migrate:all`
   - Applies the 96-table hardened schema (`schema.sql`) to every school.
+
+#### **API compatibility views (per-tenant SQL)**
+After schema upgrades, apply optional compatibility views (`holidays`, `teachers`) on a target tenant database from the `server` directory:
+
+`node scripts/tenant-bulk-runner.js --sql migrations/055_api_compatibility_views.sql`
+
+Use a comma-separated list for multiple files. This keeps legacy controller queries working against canonical tables (`school_holidays`, `staff`).
 - `npm run db:tenants:seed:lookups`
   - Seeds **Required Default Data** (Roles, Blood Groups, Religions, Time Slots, etc.) to all schools.
 - `npm run db:tenants:seed:demo`

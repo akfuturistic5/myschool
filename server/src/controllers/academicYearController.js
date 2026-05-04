@@ -140,7 +140,7 @@ const getAcademicYearSummary = async (req, res) => {
         (SELECT COUNT(*)::int FROM class_schedules cs WHERE cs.academic_year_id = $1) AS class_schedules_count,
         (SELECT COUNT(*)::int FROM fee_structures fs WHERE fs.academic_year_id = $1) AS fee_structures_count,
         (SELECT COUNT(*)::int FROM exams e WHERE e.academic_year_id = $1) AS exams_count,
-        (SELECT COUNT(*)::int FROM holidays h WHERE h.academic_year_id = $1) AS holidays_count,
+        (SELECT COUNT(*)::int FROM school_holidays h WHERE h.academic_year_id = $1) AS holidays_count,
         (SELECT COUNT(*)::int FROM class_syllabus csy WHERE csy.academic_year_id = $1) AS class_syllabus_count,
         (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.to_academic_year_id = $1) AS promotions_into_count,
         (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.from_academic_year_id = $1) AS promotions_from_count,

@@ -27,6 +27,7 @@ import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
+import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
 import { useHostels } from "../../../../core/hooks/useHostels";
 import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
 import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
@@ -346,7 +347,7 @@ const AddStudent = () => {
   // Fetch transport and hostel options from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({ academic_year_id: academicYearId });
+  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
   const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
   const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
   const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
@@ -382,15 +383,20 @@ const AddStudent = () => {
     original: p,
   })).filter((o: { value: string }) => o.value);
 
-  const vehicleOptionsRaw = (vehicles || []).map((v: any) => {
-    const vehicleId = String(v.originalData?.id ?? v.id ?? "");
-    const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
-    return {
-      value: vehicleId,
-      label: vehicleNo,
-      original: v,
-    };
-  }).filter((o: { value: string }) => o.value);
+  const vehicleOptionsRaw = (vehicles || [])
+    .filter((v: any) =>
+      formData.route_id ? String(v.originalData?.route_id ?? "") === String(formData.route_id) : true
+    )
+    .map((v: any) => {
+      const vehicleId = String(v.originalData?.id ?? v.id ?? "");
+    const vehicleNo = v.vehicle ?? v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
+      return {
+        value: vehicleId,
+        label: vehicleNo,
+        original: v,
+      };
+    })
+    .filter((o: { value: string }) => o.value);
 
   const routeOptions = useMemo(() => {
     if (!formData.pickup_point_id) return routeOptionsRaw;
@@ -576,13 +582,6 @@ const AddStudent = () => {
       formDataPopulatedRef.current = false;
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
-  
-  // Refetch vehicles when route changes
-  useEffect(() => {
-    if (setVehicleParams) {
-      setVehicleParams({ route_id: formData.route_id || 'all' });
-    }
-  }, [formData.route_id, setVehicleParams]);
 
   useEffect(() => {
     if (!formData.pickup_point_id) return;
@@ -605,7 +604,7 @@ const AddStudent = () => {
       }));
     }
   }, [formData.is_transport_required]);
-
+  
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
     if (!isEdit && academicYearsList.length > 0) {

@@ -206,13 +206,25 @@ const getStudentFees = async (req, res) => {
 const getFeeStructures = async (req, res) => {
   try {
     const result = await query(`
-      SELECT fs.id, fs.fee_name, fs.fee_type, fs.amount::numeric, fs.due_date, fs.class_id,
-        c.class_name, ay.year_name AS academic_year_name
-      FROM fee_structures fs
-      LEFT JOIN classes c ON fs.class_id = c.id
-      LEFT JOIN academic_years ay ON fs.academic_year_id = ay.id
-      WHERE COALESCE(fs.is_active, true) = true
-      ORDER BY fs.due_date ASC NULLS LAST
+      SELECT
+        fct.id,
+        ft.name AS fee_name,
+        COALESCE(ft.code, 'fee') AS fee_type,
+        fct.amount::numeric,
+        f.due_date,
+        f.class_id,
+        c.class_name,
+        ay.year_name AS academic_year_name
+      FROM fees_class_types fct
+      INNER JOIN fees f
+        ON f.id = fct.fee_id
+        AND f.class_id = fct.class_id
+        AND f.academic_year_id = fct.academic_year_id
+      INNER JOIN fees_types ft ON ft.id = fct.fee_type_id
+      LEFT JOIN classes c ON c.id = f.class_id
+      LEFT JOIN academic_years ay ON ay.id = f.academic_year_id
+      WHERE f.deleted_at IS NULL
+      ORDER BY f.due_date ASC NULLS LAST, fct.id ASC
     `);
     const data = result.rows.map((r) => ({
       id: r.id,

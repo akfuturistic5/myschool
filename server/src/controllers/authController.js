@@ -9,6 +9,7 @@ const { getSchoolProfile } = require('../services/schoolProfileService');
 const { ROLE_NAMES } = require('../config/roles');
 const { parseRelativeKey } = require('../storage/LocalFilesystemStorageProvider');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 function displayRoleFromRoleRow(user) {
   const rn = (user?.role_name || '').toString().trim();
@@ -451,8 +452,8 @@ const login = async (req, res) => {
       `SELECT 
         u.*,
         s.id AS student_id,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
+        u.first_name AS student_first_name,
+        u.last_name AS student_last_name,
         s.is_active AS student_is_active,
         c.class_name,
         sec.section_name,
@@ -464,8 +465,9 @@ const login = async (req, res) => {
         ur.role_name
       FROM users u
       LEFT JOIN students s ON u.id = s.user_id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON enr.class_id = c.id
+      LEFT JOIN sections sec ON enr.section_id = sec.id
       LEFT JOIN staff st ON u.id = st.user_id
       LEFT JOIN designations d ON st.designation_id = d.id
       LEFT JOIN user_roles ur ON u.role_id = ur.id
@@ -750,8 +752,8 @@ const updateMe = async (req, res) => {
           `SELECT 
             u.*,
             s.id AS student_id,
-            s.first_name AS student_first_name,
-            s.last_name AS student_last_name,
+            u.first_name AS student_first_name,
+            u.last_name AS student_last_name,
             s.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
@@ -766,8 +768,9 @@ const updateMe = async (req, res) => {
             addr.permanent_address
           FROM users u
           LEFT JOIN students s ON u.id = s.user_id
-          LEFT JOIN classes c ON s.class_id = c.id
-          LEFT JOIN sections sec ON s.section_id = sec.id
+          ${lateralCurrentEnrollment('s.id')}
+          LEFT JOIN classes c ON enr.class_id = c.id
+          LEFT JOIN sections sec ON enr.section_id = sec.id
           LEFT JOIN staff st ON u.id = st.user_id
           LEFT JOIN designations d ON st.designation_id = d.id
           LEFT JOIN user_roles ur ON u.role_id = ur.id
@@ -786,8 +789,8 @@ const updateMe = async (req, res) => {
           `SELECT 
             u.*,
             s.id AS student_id,
-            s.first_name AS student_first_name,
-            s.last_name AS student_last_name,
+            u.first_name AS student_first_name,
+            u.last_name AS student_last_name,
             s.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
@@ -799,8 +802,9 @@ const updateMe = async (req, res) => {
             ur.role_name
           FROM users u
           LEFT JOIN students s ON u.id = s.user_id
-          LEFT JOIN classes c ON s.class_id = c.id
-          LEFT JOIN sections sec ON s.section_id = sec.id
+          ${lateralCurrentEnrollment('s.id')}
+          LEFT JOIN classes c ON enr.class_id = c.id
+          LEFT JOIN sections sec ON enr.section_id = sec.id
           LEFT JOIN staff st ON u.id = st.user_id
           LEFT JOIN designations d ON st.designation_id = d.id
           LEFT JOIN user_roles ur ON u.role_id = ur.id

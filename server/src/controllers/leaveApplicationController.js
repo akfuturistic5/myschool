@@ -20,29 +20,15 @@ async function resolveTeacherScopeIds(userId) {
     `SELECT id
      FROM staff
      WHERE user_id = $1
-       AND is_active = true
+       AND deleted_at IS NULL
+       AND COALESCE(is_active, true) = true
      LIMIT 1`,
     [userId]
   );
   const actorStaffId = Number(staffRes.rows?.[0]?.id);
-  const teacherRes = await query(
-    `SELECT t.id, t.staff_id
-     FROM teachers t
-     INNER JOIN staff st ON st.id = t.staff_id
-     WHERE st.user_id = $1
-       AND st.is_active = true`,
-    [userId]
-  );
-  const staffIds = (teacherRes.rows || [])
-    .map((r) => Number(r.staff_id))
-    .filter((id) => Number.isFinite(id) && id > 0);
-  if (Number.isFinite(actorStaffId) && actorStaffId > 0) {
-    staffIds.push(actorStaffId);
-  }
-  return {
-    teacherIds: [...new Set((teacherRes.rows || []).map((r) => Number(r.id)).filter((id) => Number.isFinite(id) && id > 0))],
-    staffIds: [...new Set(staffIds)],
-  };
+  const staffIds =
+    Number.isFinite(actorStaffId) && actorStaffId > 0 ? [actorStaffId] : [];
+  return { teacherIds: [], staffIds };
 }
 
 // Seed leave types if table is empty (handles case when migration seed didn't run)
@@ -1031,48 +1017,67 @@ const getLeaveApplications = async (req, res) => {
     const roleName = String(req.user?.role_name || req.user?.role || '').trim().toLowerCase();
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher' || roleName.includes('teacher');
 
+    if (applicantType === 'student') {
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Leave applications fetched successfully',
+        data: [],
+        count: 0,
+        pagination: { page, page_size: pageSize, total: 0, total_pages: 1 },
+      });
+    }
+
     const conditions = [];
     const params = [];
     let i = 1;
 
     if (studentId && !Number.isNaN(studentId)) {
-      const scopedStudentIds = await resolveLinkedStudentIds(studentId);
-      const safeScopedIds = scopedStudentIds.length > 0 ? scopedStudentIds : [studentId];
-      conditions.push(`la.student_id = ANY($${i++}::int[])`);
-      params.push(safeScopedIds);
-    } else if (staffId && !Number.isNaN(staffId)) {
-      conditions.push(`la.staff_id = $${i++}`);
+      return res.status(200).json({
+        status: 'SUCCESS',
+        message: 'Leave applications fetched successfully',
+        data: [],
+        count: 0,
+        pagination: { page, page_size: pageSize, total: 0, total_pages: 1 },
+      });
+    }
+    if (staffId && !Number.isNaN(staffId)) {
+      conditions.push(`la.applicant_staff_id = $${i++}`);
       params.push(staffId);
     } else if (hasYearFilter) {
-      conditions.push(`(la.student_id IS NULL OR st.academic_year_id = $${i++})`);
+      conditions.push(`EXISTS (
+        SELECT 1 FROM academic_years ay
+        WHERE ay.id = $${i}
+          AND la.valid_period && daterange(ay.start_date, ay.end_date, '[]')
+      )`);
       params.push(academicYearId);
+      i += 1;
     }
 
     if (classId && !Number.isNaN(classId)) {
-      conditions.push(`st.class_id = $${i++}`);
-      params.push(classId);
+      // Canonical leave_applications are staff-only; class filters do not apply.
     }
     if (sectionId && !Number.isNaN(sectionId)) {
-      conditions.push(`st.section_id = $${i++}`);
-      params.push(sectionId);
+      // See classId.
     }
     if (departmentId && !Number.isNaN(departmentId)) {
-      conditions.push(`la.staff_id IS NOT NULL`);
       conditions.push(`s.department_id = $${i++}`);
       params.push(departmentId);
     }
     if (designationId && !Number.isNaN(designationId)) {
-      conditions.push(`la.staff_id IS NOT NULL`);
       conditions.push(`s.designation_id = $${i++}`);
       params.push(designationId);
     }
 
-    if (leaveFrom) {
-      conditions.push(`la.end_date >= $${i++}::date`);
+    if (leaveFrom && leaveTo) {
+      conditions.push(`la.valid_period && daterange($${i++}::date, $${i++}::date, '[]')`);
+      params.push(leaveFrom, leaveTo);
+    } else if (leaveFrom) {
+      conditions.push(
+        `la.valid_period && daterange($${i++}::date, '9999-12-31'::date, '[]')`
+      );
       params.push(leaveFrom);
-    }
-    if (leaveTo) {
-      conditions.push(`la.start_date <= $${i++}::date`);
+    } else if (leaveTo) {
+      conditions.push(`lower(la.valid_period) <= $${i++}::date`);
       params.push(leaveTo);
     }
 
@@ -1097,11 +1102,6 @@ const getLeaveApplications = async (req, res) => {
       conditions.push(`${leaveStatusNorm} = ANY($${i++}::text[])`);
       params.push(statusFilters);
     }
-    if (applicantType) {
-      conditions.push(`LOWER(TRIM(COALESCE(la.applicant_type, ''))) = $${i++}`);
-      params.push(applicantType);
-    }
-
     const shouldApplyTeacherScope = isTeacher && !(studentId && !Number.isNaN(studentId));
 
     if (isTeacher && studentId && !Number.isNaN(studentId)) {
@@ -1115,8 +1115,8 @@ const getLeaveApplications = async (req, res) => {
     }
 
     if (shouldApplyTeacherScope) {
-      const { teacherIds, staffIds } = await resolveTeacherScopeIds(req.user?.id);
-      if (!teacherIds.length && !staffIds.length) {
+      const { staffIds } = await resolveTeacherScopeIds(req.user?.id);
+      if (!staffIds.length) {
         return res.status(200).json({
           status: 'SUCCESS',
           message: 'Leave applications fetched successfully',
@@ -1125,56 +1125,22 @@ const getLeaveApplications = async (req, res) => {
           pagination: { page, page_size: pageSize, total: 0, total_pages: 1 },
         });
       }
-      conditions.push(`la.student_id IS NOT NULL`);
-      params.push(teacherIds);
-      const teacherIdsRef = `$${i++}`;
-      params.push(staffIds);
-      const staffIdsRef = `$${i++}`;
-      conditions.push(`(
-        EXISTS (
-          SELECT 1
-          FROM class_schedules cs
-          WHERE cs.teacher_id = ANY(${teacherIdsRef}::int[])
-            AND cs.class_id = st.class_id
-            AND (cs.section_id = st.section_id OR cs.section_id IS NULL)
-            AND (cs.academic_year_id = st.academic_year_id OR cs.academic_year_id IS NULL)
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM teachers t
-          WHERE t.id = ANY(${teacherIdsRef}::int[])
-            AND t.class_id = st.class_id
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM sections sec_map
-          WHERE sec_map.id = st.section_id
-            AND sec_map.section_teacher_id = ANY(${staffIdsRef}::int[])
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM classes c_map
-          WHERE c_map.id = st.class_id
-            AND (
-              c_map.class_teacher_id = ANY(${teacherIdsRef}::int[])
-              OR c_map.class_teacher_id = ANY(${staffIdsRef}::int[])
-            )
-        )
-      )`);
+      conditions.push(`la.applicant_staff_id = $${i++}`);
+      params.push(staffIds[0]);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const sortColumns = {
-      created_at: 'COALESCE(la.created_at, la.modified_at, la.start_date::timestamp)',
-      start_date: 'la.start_date',
-      end_date: 'la.end_date',
+      created_at: 'COALESCE(la.updated_at, la.created_at)',
+      start_date: 'lower(la.valid_period)',
+      end_date: 'upper(la.valid_period)',
       status: 'LOWER(TRIM(COALESCE(la.status, \'\')))',
       leave_type: 'LOWER(TRIM(COALESCE(lt.leave_type, \'\')))',
-      applicant_name: 'LOWER(TRIM(COALESCE(s.first_name, st.first_name, \'\')))',
+      applicant_name: 'LOWER(TRIM(COALESCE(u.first_name, \'\')))',
     };
     const sortExpr = sortColumns[sortByRaw] || (pendingOnly
-      ? 'COALESCE(la.created_at, la.modified_at, la.start_date::timestamp)'
-      : 'la.start_date');
+      ? 'COALESCE(la.updated_at, la.created_at)'
+      : 'lower(la.valid_period)');
     const orderBy = `ORDER BY ${sortExpr} ${sortOrder} NULLS LAST`;
     params.push(pageSize, offset);
     const limitIdx = i++;
@@ -1183,22 +1149,39 @@ const getLeaveApplications = async (req, res) => {
     const result = await query(
       `
       SELECT
-        la.*,
+        la.id,
+        la.applicant_staff_id,
+        la.applicant_staff_id AS staff_id,
+        la.leave_type_id,
+        la.valid_period,
+        lower(la.valid_period)::date AS start_date,
+        (CASE WHEN upper_inf(la.valid_period) THEN lower(la.valid_period)::date
+         ELSE (upper(la.valid_period)::date - interval '1 day')::date END) AS end_date,
+        la.reason,
+        la.attachment_url,
+        la.status,
+        la.approved_by,
+        la.approval_date,
+        la.rejection_reason,
+        la.remarks,
+        la.created_at,
+        la.updated_at,
         lt.leave_type AS leave_type_name,
-        COALESCE(s.first_name, st.first_name) AS applicant_first_name,
-        COALESCE(s.last_name, st.last_name) AS applicant_last_name,
-        COALESCE(s.photo_url, st.photo_url) AS applicant_photo_url,
-        COALESCE(d.designation_name, 'Student') AS applicant_role,
+        u.first_name AS applicant_first_name,
+        u.last_name AS applicant_last_name,
+        s.photo_url AS applicant_photo_url,
+        COALESCE(d.designation_name, 'Staff') AS applicant_role,
         CASE
-          WHEN apr.id IS NOT NULL THEN TRIM(COALESCE(apr.first_name, '') || ' ' || COALESCE(apr.last_name, ''))
+          WHEN apru.id IS NOT NULL THEN TRIM(COALESCE(apru.first_name, '') || ' ' || COALESCE(apru.last_name, ''))
           ELSE NULL
         END AS approved_by_name
       FROM leave_applications la
       LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-      LEFT JOIN staff s ON la.staff_id = s.id
+      INNER JOIN staff s ON la.applicant_staff_id = s.id
+      INNER JOIN users u ON u.id = s.user_id
       LEFT JOIN designations d ON s.designation_id = d.id
-      LEFT JOIN students st ON la.student_id = st.id
-      LEFT JOIN staff apr ON la.approved_by = apr.id
+      LEFT JOIN staff aprs ON la.approved_by = aprs.id
+      LEFT JOIN users apru ON apru.id = aprs.user_id
       ${whereClause}
       ${orderBy}
       LIMIT $${limitIdx}
@@ -1213,8 +1196,8 @@ const getLeaveApplications = async (req, res) => {
       SELECT COUNT(*)::int AS total
       FROM leave_applications la
       LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-      LEFT JOIN staff s ON la.staff_id = s.id
-      LEFT JOIN students st ON la.student_id = st.id
+      INNER JOIN staff s ON la.applicant_staff_id = s.id
+      INNER JOIN users u ON u.id = s.user_id
       ${whereClause}
       `,
       countParams

@@ -51,22 +51,39 @@ const parseAcademicYearId = (value) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
+/** Map normalized API type values to school_holidays.holiday_type CHECK values */
+const toSchoolHolidayType = (normalizedLower) => {
+  const v = String(normalizedLower || '').toLowerCase();
+  const map = {
+    national: 'National',
+    religious: 'Religious',
+    academic: 'Academic',
+    school: 'School',
+    custom: 'Custom',
+    optional: 'Custom',
+    public: 'National',
+  };
+  return map[v] || 'Custom';
+};
+
 const ensureNoOverlap = async ({ startDate, endDate, excludeId = null }) => {
   const params = [startDate, endDate];
   let excludeClause = '';
   if (excludeId) {
     params.push(Number(excludeId));
-    excludeClause = ` AND id <> $${params.length}`;
+    excludeClause = ` AND h.id <> $${params.length}`;
   }
   const overlap = await query(
     `SELECT
-       id,
-       COALESCE(NULLIF(TRIM(to_jsonb(h)->>'title'), ''), NULLIF(TRIM(to_jsonb(h)->>'holiday_name'), ''), 'Holiday') AS title,
-       start_date,
-       end_date
-     FROM holidays h
-     WHERE start_date <= $2::date
-       AND end_date >= $1::date
+       h.id,
+       COALESCE(NULLIF(TRIM(h.holiday_name), ''), 'Holiday') AS title,
+       lower(h.holiday_period)::date AS start_date,
+       (CASE
+         WHEN upper_inf(h.holiday_period) THEN lower(h.holiday_period)::date
+         ELSE (upper(h.holiday_period)::date - interval '1 day')::date
+       END) AS end_date
+     FROM school_holidays h
+     WHERE h.holiday_period && daterange($1::date, $2::date, '[]')
        ${excludeClause}
      LIMIT 1`,
     params
@@ -74,28 +91,48 @@ const ensureNoOverlap = async ({ startDate, endDate, excludeId = null }) => {
   return overlap.rows[0] || null;
 };
 
+async function resolveAcademicYearIdForHoliday(explicit) {
+  const n = parseAcademicYearId(explicit);
+  if (n) return n;
+  const r = await query(
+    `SELECT id FROM academic_years WHERE is_current = true AND is_active = true ORDER BY id DESC LIMIT 1`
+  );
+  return r.rows[0]?.id != null ? Number(r.rows[0].id) : null;
+}
+
 const createHoliday = async (req, res) => {
   try {
     const title = cleanText(req.body?.title, 200);
     const description = cleanText(req.body?.description, 2000) || null;
     const startDate = String(req.body?.start_date || '');
     const endDate = String(req.body?.end_date || '');
-    const holidayType = normalizeHolidayTypeForDb(req.body?.holiday_type);
-    const academicYearId = parseAcademicYearId(req.body?.academic_year_id);
+    const holidayTypeNorm = normalizeHolidayTypeForDb(req.body?.holiday_type);
+    const dbHolidayType = toSchoolHolidayType(holidayTypeNorm);
+    const academicYearId = await resolveAcademicYearIdForHoliday(req.body?.academic_year_id);
 
     if (!title) return errorResponse(res, 400, 'title is required', 'VALIDATION_ERROR');
     if (!validateDateRange(startDate, endDate)) {
       return errorResponse(res, 400, 'Invalid date range. start_date must be on or before end_date.', 'VALIDATION_ERROR');
+    }
+    if (!academicYearId) {
+      return errorResponse(res, 400, 'academic_year_id is required (no current academic year found)', 'VALIDATION_ERROR');
     }
     const overlap = await ensureNoOverlap({ startDate, endDate });
     if (overlap) return errorResponse(res, 409, 'Holiday date range overlaps an existing holiday.', 'HOLIDAY_OVERLAP');
 
     const createdBy = Number(req.user?.id) || null;
     const result = await query(
-      `INSERT INTO holidays (holiday_name, description, start_date, end_date, holiday_type, academic_year_id, created_by, modified_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)
-       RETURNING id, holiday_name, description, start_date::text AS start_date, end_date::text AS end_date, holiday_type, academic_year_id, created_by, created_at, modified_at`,
-      [title, description, startDate, endDate, holidayType, academicYearId, createdBy]
+      `INSERT INTO school_holidays (
+         academic_year_id, holiday_name, description, holiday_period, holiday_type, target_audience, created_by, updated_at
+       )
+       VALUES ($1,$2,$3, daterange($4::date, $5::date, '[]'), $6, 'ALL', $7, NOW())
+       RETURNING id, holiday_name, description,
+         lower(holiday_period)::text AS start_date,
+         (CASE WHEN upper_inf(holiday_period) THEN lower(holiday_period)::text
+          ELSE ((upper(holiday_period)::date - interval '1 day')::date)::text
+         END) AS end_date,
+         holiday_type, academic_year_id, created_by, created_at, updated_at AS modified_at`,
+      [academicYearId, title, description, startDate, endDate, dbHolidayType, createdBy]
     );
     return success(res, 201, 'Holiday created successfully', serializeHolidayRow(result.rows[0]));
   } catch (err) {
@@ -112,11 +149,16 @@ const listHolidays = async (req, res) => {
     const where = [];
     if (start_date && end_date) {
       params.push(start_date, end_date);
-      where.push(`start_date <= $${params.length}::date AND end_date >= $${params.length - 1}::date`);
+      where.push(
+        `h.holiday_period && daterange($${params.length - 1}::date, $${params.length}::date, '[]')`
+      );
     } else if (month && year) {
-      params.push(`${year}-${String(month).padStart(2, '0')}-01`);
-      where.push(`date_trunc('month', start_date) <= date_trunc('month', $${params.length}::date)`);
-      where.push(`date_trunc('month', end_date) >= date_trunc('month', $${params.length}::date)`);
+      const m = String(month).padStart(2, '0');
+      const lastDay = new Date(Number(year), Number(month), 0).getDate();
+      params.push(`${year}-${m}-01`, `${year}-${m}-${String(lastDay).padStart(2, '0')}`);
+      where.push(
+        `h.holiday_period && daterange($${params.length - 1}::date, $${params.length}::date, '[]')`
+      );
     }
     if (academicYearId) {
       params.push(academicYearId);
@@ -126,18 +168,21 @@ const listHolidays = async (req, res) => {
     const result = await query(
       `SELECT
          h.id,
-         COALESCE(NULLIF(TRIM(to_jsonb(h)->>'title'), ''), NULLIF(TRIM(to_jsonb(h)->>'holiday_name'), ''), 'Holiday') AS title,
+         COALESCE(NULLIF(TRIM(h.holiday_name), ''), 'Holiday') AS title,
          h.description,
-         h.start_date::text AS start_date,
-         h.end_date::text AS end_date,
+         lower(h.holiday_period)::text AS start_date,
+         (CASE
+           WHEN upper_inf(h.holiday_period) THEN lower(h.holiday_period)::text
+           ELSE ((upper(h.holiday_period)::date - interval '1 day')::date)::text
+         END) AS end_date,
          h.holiday_type,
          h.academic_year_id,
          h.created_by,
          h.created_at,
-         COALESCE((to_jsonb(h)->>'updated_at')::timestamp, h.modified_at, h.created_at) AS updated_at
-       FROM holidays h
+         h.updated_at
+       FROM school_holidays h
        ${whereClause}
-       ORDER BY h.start_date ASC, h.id ASC`,
+       ORDER BY lower(h.holiday_period) ASC, h.id ASC`,
       params
     );
     return success(res, 200, 'Holidays fetched successfully', (result.rows || []).map(serializeHolidayRow));
@@ -153,15 +198,19 @@ const getHolidayById = async (req, res) => {
     const result = await query(
       `SELECT
          h.id,
-         COALESCE(NULLIF(TRIM(to_jsonb(h)->>'title'), ''), NULLIF(TRIM(to_jsonb(h)->>'holiday_name'), ''), 'Holiday') AS title,
+         COALESCE(NULLIF(TRIM(h.holiday_name), ''), 'Holiday') AS title,
          h.description,
-         h.start_date::text AS start_date,
-         h.end_date::text AS end_date,
+         lower(h.holiday_period)::text AS start_date,
+         (CASE
+           WHEN upper_inf(h.holiday_period) THEN lower(h.holiday_period)::text
+           ELSE ((upper(h.holiday_period)::date - interval '1 day')::date)::text
+         END) AS end_date,
          h.holiday_type,
+         h.academic_year_id,
          h.created_by,
          h.created_at,
-         COALESCE((to_jsonb(h)->>'updated_at')::timestamp, h.modified_at, h.created_at) AS updated_at
-       FROM holidays h
+         h.updated_at
+       FROM school_holidays h
        WHERE h.id = $1
        LIMIT 1`,
       [id]
@@ -181,28 +230,36 @@ const updateHoliday = async (req, res) => {
     const description = cleanText(req.body?.description, 2000) || null;
     const startDate = String(req.body?.start_date || '');
     const endDate = String(req.body?.end_date || '');
-    const holidayType = normalizeHolidayTypeForDb(req.body?.holiday_type);
-    const academicYearId = parseAcademicYearId(req.body?.academic_year_id);
+    const holidayTypeNorm = normalizeHolidayTypeForDb(req.body?.holiday_type);
+    const dbHolidayType = toSchoolHolidayType(holidayTypeNorm);
+    const academicYearId = await resolveAcademicYearIdForHoliday(req.body?.academic_year_id);
 
     if (!title) return errorResponse(res, 400, 'title is required', 'VALIDATION_ERROR');
     if (!validateDateRange(startDate, endDate)) {
       return errorResponse(res, 400, 'Invalid date range. start_date must be on or before end_date.', 'VALIDATION_ERROR');
     }
+    if (!academicYearId) {
+      return errorResponse(res, 400, 'academic_year_id is required (no current academic year found)', 'VALIDATION_ERROR');
+    }
     const overlap = await ensureNoOverlap({ startDate, endDate, excludeId: id });
     if (overlap) return errorResponse(res, 409, 'Holiday date range overlaps an existing holiday.', 'HOLIDAY_OVERLAP');
 
     const updated = await query(
-      `UPDATE holidays
+      `UPDATE school_holidays
        SET holiday_name = $2,
            description = $3,
-           start_date = $4,
-           end_date = $5,
+           holiday_period = daterange($4::date, $5::date, '[]'),
            holiday_type = $6,
            academic_year_id = $7,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = NOW()
        WHERE id = $1
-       RETURNING id, holiday_name, description, start_date::text AS start_date, end_date::text AS end_date, holiday_type, academic_year_id, created_by, created_at, modified_at`,
-      [id, title, description, startDate, endDate, holidayType, academicYearId]
+       RETURNING id, holiday_name, description,
+         lower(holiday_period)::text AS start_date,
+         (CASE WHEN upper_inf(holiday_period) THEN lower(holiday_period)::text
+          ELSE ((upper(holiday_period)::date - interval '1 day')::date)::text
+         END) AS end_date,
+         holiday_type, academic_year_id, created_by, created_at, updated_at AS modified_at`,
+      [id, title, description, startDate, endDate, dbHolidayType, academicYearId]
     );
     if (!updated.rows.length) return errorResponse(res, 404, 'Holiday not found', 'HOLIDAY_NOT_FOUND');
     return success(res, 200, 'Holiday updated successfully', serializeHolidayRow(updated.rows[0]));
@@ -215,7 +272,7 @@ const updateHoliday = async (req, res) => {
 const deleteHoliday = async (req, res) => {
   try {
     const id = Number(req.params?.id);
-    const deleted = await query(`DELETE FROM holidays WHERE id = $1 RETURNING id`, [id]);
+    const deleted = await query(`DELETE FROM school_holidays WHERE id = $1 RETURNING id`, [id]);
     if (!deleted.rows.length) return errorResponse(res, 404, 'Holiday not found', 'HOLIDAY_NOT_FOUND');
     return success(res, 200, 'Holiday deleted successfully', { id });
   } catch (err) {
