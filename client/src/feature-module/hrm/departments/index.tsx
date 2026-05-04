@@ -1,4 +1,4 @@
-import  { useRef, useState, useMemo } from 'react'
+import  { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import Table from "../../../core/common/dataTable/index";
 import type { TableData } from '../../../core/data/interface';
@@ -8,6 +8,7 @@ import { all_routes } from '../../router/all_routes';
 import TooltipOption from '../../../core/common/tooltipOption';
 import { useDepartments } from '../../../core/hooks/useDepartments';
 import { apiService } from '../../../core/services/apiService';
+import { exportToExcel, exportToPDF, printData } from '../../../core/utils/exportUtils';
 
 const STATUS_FILTER_OPTIONS = [
   { value: '__all__', label: 'All statuses' },
@@ -49,10 +50,14 @@ const Departments = () => {
   const data = departments;
   const [selectedDepartment, setSelectedDepartment] = useState<any>(null);
   const [editDepartmentName, setEditDepartmentName] = useState<string>('');
+  const [editDepartmentCode, setEditDepartmentCode] = useState<string>('');
+  const [editHeadStaffId, setEditHeadStaffId] = useState<string>('');
   const [editDepartmentStatus, setEditDepartmentStatus] = useState<boolean>(true);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [editFormError, setEditFormError] = useState<string | null>(null);
   const [addDepartmentName, setAddDepartmentName] = useState('');
+  const [addDepartmentCode, setAddDepartmentCode] = useState('');
+  const [addHeadStaffId, setAddHeadStaffId] = useState<string>('');
   const [addDepartmentActive, setAddDepartmentActive] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [addFormError, setAddFormError] = useState<string | null>(null);
@@ -66,6 +71,41 @@ const Departments = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const [hodSelectOptions, setHodSelectOptions] = useState<{ value: string; label: string }[]>([
+    { value: '', label: '— No head assigned —' },
+  ]);
+  const [hodOptionsLoading, setHodOptionsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setHodOptionsLoading(true);
+        const res: any = await apiService.getStaff();
+        if (cancelled || res?.status !== 'SUCCESS' || !Array.isArray(res.data)) return;
+        const opts = res.data
+          .filter((s: { id?: number | string }) => s.id != null)
+          .map((s: { id: number | string; first_name?: string; last_name?: string; user_first_name?: string; user_last_name?: string; employee_code?: string }) => {
+            const fn = s.first_name || s.user_first_name || '';
+            const ln = s.last_name || s.user_last_name || '';
+            const name = `${fn} ${ln}`.trim() || 'Staff';
+            const code = s.employee_code ? ` (${s.employee_code})` : '';
+            return { value: String(s.id), label: `${name}${code}` };
+          });
+        opts.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+        setHodSelectOptions([{ value: '', label: '— No head assigned —' }, ...opts]);
+      } catch {
+        if (!cancelled) {
+          setHodSelectOptions([{ value: '', label: '— No head assigned —' }]);
+        }
+      } finally {
+        if (!cancelled) setHodOptionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const departmentFilterSelectOptions = useMemo(() => {
     const all = [{ value: '__all__', label: 'All departments' }];
@@ -121,6 +161,48 @@ const Departments = () => {
     return rows;
   }, [data, filterDeptId, filterStatus, tableSort]);
 
+  const exportColumns = useMemo(
+    () => [
+      { title: 'ID', dataKey: 'id' },
+      { title: 'Department', dataKey: 'department' },
+      { title: 'Code', dataKey: 'code' },
+      { title: 'Head of department', dataKey: 'head' },
+      { title: 'Status', dataKey: 'status' },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      displayData.map((row: any) => ({
+        id: String(row.id ?? ''),
+        department: String(row.department ?? ''),
+        code: row.departmentCode === '—' ? '' : String(row.departmentCode ?? ''),
+        head: row.headOfDepartment === '—' ? '' : String(row.headOfDepartment ?? ''),
+        status: String(row.status ?? ''),
+      })),
+    [displayData]
+  );
+
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, 'departments-list', 'Departments');
+  }, [exportRows]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, 'Departments', 'departments-list', exportColumns);
+  }, [exportRows, exportColumns]);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData('Departments', exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
+
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -135,13 +217,34 @@ const Departments = () => {
           <Link to="#" className="link-primary">{text || record.id || 'N/A'}</Link>
         </>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.id || '').length - String(b.id || '').length,
+      sorter: (a: TableData, b: TableData) =>
+        Number(a.id || 0) - Number(b.id || 0),
     },
     {
       title: "Department",
       dataIndex: "department",
       sorter: (a: TableData, b: TableData) =>
         a.department.length - b.department.length,
+    },
+    {
+      title: "Code",
+      dataIndex: "departmentCode",
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).departmentCode ?? '').localeCompare(
+          String((b as any).departmentCode ?? ''),
+          undefined,
+          { sensitivity: 'base' }
+        ),
+    },
+    {
+      title: "Head of department",
+      dataIndex: "headOfDepartment",
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).headOfDepartment ?? '').localeCompare(
+          String((b as any).headOfDepartment ?? ''),
+          undefined,
+          { sensitivity: 'base' }
+        ),
     },
     {
       title: "Status",
@@ -193,6 +296,12 @@ const Departments = () => {
                       setSelectedDepartment(record);
                       const dept = record.originalData || record;
                       setEditDepartmentName(dept.department_name || dept.department || '');
+                      setEditDepartmentCode(
+                        dept.department_code != null ? String(dept.department_code) : ''
+                      );
+                      setEditHeadStaffId(
+                        dept.head_of_department != null ? String(dept.head_of_department) : ''
+                      );
                       setEditDepartmentStatus(dept.is_active !== false && dept.status !== 'Inactive');
                       setTimeout(() => {
                         const modalElement = document.getElementById('edit_department');
@@ -279,7 +388,12 @@ const Departments = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
+            <TooltipOption
+              onRefresh={handleToolbarRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
               <div className="mb-2">
                 <Link
                   to="#"
@@ -490,6 +604,8 @@ const Departments = () => {
             onClick={() => {
               setAddFormError(null);
               setAddDepartmentName('');
+              setAddDepartmentCode('');
+              setAddHeadStaffId('');
               setAddDepartmentActive(true);
             }}
           >
@@ -507,12 +623,17 @@ const Departments = () => {
             setAddFormError(null);
             try {
               setIsCreating(true);
+              const codeTrim = addDepartmentCode.trim().slice(0, 10);
               const res: any = await apiService.createDepartment({
                 department_name: name,
+                department_code: codeTrim || null,
+                head_of_department: addHeadStaffId ? Number(addHeadStaffId) : null,
                 is_active: addDepartmentActive,
               });
               if (res?.status === 'SUCCESS' || res?.data) {
                 setAddDepartmentName('');
+                setAddDepartmentCode('');
+                setAddHeadStaffId('');
                 setAddDepartmentActive(true);
                 closeModalById('add_department');
                 await refetch();
@@ -546,6 +667,38 @@ const Departments = () => {
                     disabled={isCreating}
                   />
                 </div>
+                <div className="mb-3">
+                  <label className="form-label">Department Code</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={addDepartmentCode}
+                    onChange={(ev) => setAddDepartmentCode(ev.target.value.slice(0, 10))}
+                    maxLength={10}
+                    placeholder="e.g. SCI"
+                    autoComplete="off"
+                    disabled={isCreating}
+                  />
+                  <small className="text-muted">Optional. Max 10 characters. Must be unique if set.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Head of department</label>
+                  {hodOptionsLoading ? (
+                    <div className="form-control d-flex align-items-center text-muted">
+                      <span className="spinner-border spinner-border-sm text-primary me-2" role="status" />
+                      Loading staff…
+                    </div>
+                  ) : (
+                    <CommonSelect
+                      className="select"
+                      options={hodSelectOptions}
+                      value={addHeadStaffId || ''}
+                      onChange={(v) => setAddHeadStaffId(v || '')}
+                      isDisabled={isCreating}
+                      placeholder="Select staff (optional)"
+                    />
+                  )}
+                </div>
               </div>
               <div className="d-flex align-items-center justify-content-between">
                 <div className="status-title">
@@ -575,6 +728,8 @@ const Departments = () => {
               onClick={() => {
                 setAddFormError(null);
                 setAddDepartmentName('');
+                setAddDepartmentCode('');
+                setAddHeadStaffId('');
                 setAddDepartmentActive(true);
               }}
             >
@@ -600,7 +755,11 @@ const Departments = () => {
             className="btn-close custom-btn-close"
             data-bs-dismiss="modal"
             aria-label="Close"
-            onClick={() => setEditFormError(null)}
+            onClick={() => {
+              setEditFormError(null);
+              setEditDepartmentCode('');
+              setEditHeadStaffId('');
+            }}
           >
             <i className="ti ti-x" />
           </button>
@@ -629,6 +788,44 @@ const Departments = () => {
                     autoComplete="off"
                     key={`dept-name-${selectedDepartment?.id || 'new'}`}
                   />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Department Code</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. SCI"
+                    value={editDepartmentCode}
+                    onChange={(e) => {
+                      setEditDepartmentCode(e.target.value.slice(0, 10));
+                      setEditFormError(null);
+                    }}
+                    maxLength={10}
+                    autoComplete="off"
+                    key={`dept-code-${selectedDepartment?.id || 'new'}`}
+                  />
+                  <small className="text-muted">Optional. Max 10 characters. Must be unique if set.</small>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Head of department</label>
+                  {hodOptionsLoading ? (
+                    <div className="form-control d-flex align-items-center text-muted">
+                      <span className="spinner-border spinner-border-sm text-primary me-2" role="status" />
+                      Loading staff…
+                    </div>
+                  ) : (
+                    <CommonSelect
+                      className="select"
+                      options={hodSelectOptions}
+                      value={editHeadStaffId || ''}
+                      onChange={(v) => {
+                        setEditHeadStaffId(v || '');
+                        setEditFormError(null);
+                      }}
+                      placeholder="Select staff (optional)"
+                      key={`dept-hod-${selectedDepartment?.id || 'new'}`}
+                    />
+                  )}
                 </div>
               </div>
               <div className="d-flex align-items-center justify-content-between">
@@ -685,8 +882,11 @@ const Departments = () => {
                   setIsUpdating(true);
                   setEditFormError(null);
 
+                  const codeTrim = editDepartmentCode.trim().slice(0, 10);
                   const payload = {
                     department_name: trimmed,
+                    department_code: codeTrim || null,
+                    head_of_department: editHeadStaffId ? Number(editHeadStaffId) : null,
                     is_active: editDepartmentStatus,
                   };
 
@@ -698,6 +898,8 @@ const Departments = () => {
 
                   setSelectedDepartment(null);
                   setEditDepartmentName('');
+                  setEditDepartmentCode('');
+                  setEditHeadStaffId('');
                   setEditDepartmentStatus(true);
                 } catch (err) {
                   setEditFormError(parseDepartmentApiError(err, 'Failed to update department.'));

@@ -17,7 +17,7 @@ const RoleGuard = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     if (!user) return;
-    const allowed = canAccessPath(path, role);
+    const allowed = canAccessPath(path, role, user?.user_role_id ?? null);
     if (!allowed) {
       const dashboard = getDashboardForRole(role);
       navigate(dashboard, { replace: true });
