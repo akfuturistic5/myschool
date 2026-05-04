@@ -6,13 +6,13 @@ const getAllBloodGroups = async (req, res) => {
     const result = await query(`
       SELECT
         bg.id,
-        bg.blood_group,
+        bg.blood_group_name as blood_group,
         bg.description,
         bg.is_active,
         bg.created_at
       FROM blood_groups bg
       WHERE bg.is_active = true
-      ORDER BY bg.blood_group ASC
+      ORDER BY bg.blood_group_name ASC
     `);
     
     res.status(200).json({
@@ -38,7 +38,7 @@ const getBloodGroupById = async (req, res) => {
     const result = await query(`
       SELECT
         bg.id,
-        bg.blood_group,
+        bg.blood_group_name as blood_group,
         bg.description,
         bg.is_active,
         bg.created_at

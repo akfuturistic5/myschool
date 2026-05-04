@@ -68,6 +68,7 @@ export const useClassesWithSections = () => {
               roomNumber: section.room_number,
               class_teacher_id: classItem.class_teacher_id ?? null,
               section_teacher_id: section.section_teacher_id ?? null,
+              section_ids: classItem.section_ids || [],
             });
           });
         } else {
@@ -91,6 +92,7 @@ export const useClassesWithSections = () => {
             roomNumber: null,
             class_teacher_id: classItem.class_teacher_id ?? null,
             section_teacher_id: null,
+            section_ids: classItem.section_ids || [],
           });
         }
       });

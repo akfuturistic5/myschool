@@ -95,7 +95,7 @@ async function ensureParentContactUser(client, { id, full_name, email, phone, oc
           occupation = $4::text,
           current_address = COALESCE(current_address, 'Not Provided'),
           permanent_address = COALESCE(permanent_address, 'Not Provided'),
-          modified_at = NOW()
+          updated_at = NOW()
         WHERE id = $5`,
         [first_name || null, last_name || null, p || null, occupation || null, userId]
       );
@@ -125,7 +125,7 @@ async function ensureParentContactUser(client, { id, full_name, email, phone, oc
         occupation = COALESCE($3::text, occupation),
         current_address = COALESCE(current_address, 'Not Provided'),
         permanent_address = COALESCE(permanent_address, 'Not Provided'),
-        modified_at = NOW()
+        updated_at = NOW()
       WHERE id = $4`,
       [first_name || null, last_name || null, occupation || null, existing]
     );
@@ -148,7 +148,7 @@ async function ensureParentContactUser(client, { id, full_name, email, phone, oc
   }
   
   if (uid && occupation) {
-    await client.query(`UPDATE users SET occupation = $1, modified_at = NOW() WHERE id = $2`, [
+    await client.query(`UPDATE users SET occupation = $1, updated_at = NOW() WHERE id = $2`, [
       occupation,
       uid,
     ]);
@@ -193,7 +193,7 @@ async function ensureGuardianContactUser(
           occupation = $4::text,
           current_address = $5::text,
           permanent_address = COALESCE(permanent_address, 'Not Provided'),
-          modified_at = NOW()
+          updated_at = NOW()
         WHERE id = $6`,
         [fn || null, last_name || null, p || null, occupation || null, address || 'Not Provided', userId]
       );
@@ -222,7 +222,7 @@ async function ensureGuardianContactUser(
         occupation = COALESCE($3::text, occupation),
         current_address = COALESCE($4::text, current_address),
         permanent_address = COALESCE(permanent_address, 'Not Provided'),
-        modified_at = NOW()
+        updated_at = NOW()
       WHERE id = $5`,
       [fn || null, last_name || null, occupation || null, address || 'Not Provided', existing]
     );
@@ -245,7 +245,7 @@ async function ensureGuardianContactUser(
   
   if (uid) {
     await client.query(
-      `UPDATE users SET occupation = COALESCE($1::text, occupation), current_address = COALESCE($2::text, current_address), permanent_address = COALESCE(permanent_address, 'Not Provided'), modified_at = NOW() WHERE id = $3`,
+      `UPDATE users SET occupation = COALESCE($1::text, occupation), current_address = COALESCE($2::text, current_address), permanent_address = COALESCE(permanent_address, 'Not Provided'), updated_at = NOW() WHERE id = $3`,
       [occupation || null, address || 'Not Provided', uid]
     );
   }

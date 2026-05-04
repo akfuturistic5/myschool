@@ -7,7 +7,6 @@ const getAllMotherTongues = async (req, res) => {
       SELECT
         mt.id,
         mt.language_name,
-        mt.language_code,
         mt.description,
         mt.is_active,
         mt.created_at
@@ -40,7 +39,6 @@ const getMotherTongueById = async (req, res) => {
       SELECT
         mt.id,
         mt.language_name,
-        mt.language_code,
         mt.description,
         mt.is_active,
         mt.created_at

@@ -27,7 +27,7 @@ function mapTxRow(row) {
     category_name: row.category_name,
     academic_year_id: row.academic_year_id,
     created_at: row.created_at,
-    modified_at: row.modified_at,
+    updated_at: row.updated_at,
   };
 }
 

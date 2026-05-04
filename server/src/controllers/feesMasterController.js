@@ -70,7 +70,7 @@ const updateFeesMaster = async (req, res) => {
         const { amount, status, due_date, fine_type, fine_amount, fine_percentage } = req.body;
 
         const result = await query(
-            'UPDATE fees_master SET amount = $1, status = $2, due_date = $3, fine_type = $4, fine_amount = $5, fine_percentage = $6, modified_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *',
+            'UPDATE fees_master SET amount = $1, status = $2, due_date = $3, fine_type = $4, fine_amount = $5, fine_percentage = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *',
             [amount, status || 'Active', due_date || null, fine_type || 'None', fine_amount || 0, fine_percentage || 0, id]
         );
 

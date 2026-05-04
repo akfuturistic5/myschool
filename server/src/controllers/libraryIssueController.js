@@ -205,7 +205,7 @@ const getIssue = async (req, res) => {
               to_char(i.issue_date::date, 'YYYY-MM-DD') AS issue_date,
               to_char(i.due_date::date, 'YYYY-MM-DD') AS due_date,
               to_char(i.return_date::date, 'YYYY-MM-DD') AS return_date,
-              i.fine_amount, i.status, i.remarks, i.created_at, i.issued_by, i.returned_to, i.is_active, i.created_by, i.modified_at,
+              i.fine_amount, i.status, i.remarks, i.created_at, i.issued_by, i.returned_to, i.is_active, i.created_by, i.updated_at,
               b.book_title, b.book_code, b.isbn, b.author,
               TRIM(CONCAT(s.first_name, ' ', s.last_name)) AS student_name,
               s.roll_number,
@@ -293,7 +293,7 @@ const createIssue = async (req, res) => {
       const ins = await client.query(
         `INSERT INTO library_book_issues (
            book_id, student_id, staff_id, issue_date, due_date, status, remarks,
-           issued_by, is_active, created_by, created_at, modified_at
+           issued_by, is_active, created_by, created_at, updated_at
          ) VALUES (
            $1, $2, $3, CURRENT_DATE, $4::date, 'issued', $5,
            $6, true, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -302,7 +302,7 @@ const createIssue = async (req, res) => {
       );
 
       await client.query(
-        `UPDATE library_books SET available_copies = available_copies - 1, modified_at = CURRENT_TIMESTAMP WHERE id = $1`,
+        `UPDATE library_books SET available_copies = available_copies - 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
         [bid]
       );
 
@@ -366,7 +366,7 @@ const returnIssue = async (req, res) => {
            fine_amount = COALESCE($3, 0),
            remarks = COALESCE($4, remarks),
            returned_to = $5,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE id = $1`,
         [
           id,
@@ -379,7 +379,7 @@ const returnIssue = async (req, res) => {
 
       if (stFinal === 'returned') {
         await client.query(
-          `UPDATE library_books SET available_copies = available_copies + 1, modified_at = CURRENT_TIMESTAMP WHERE id = $1`,
+          `UPDATE library_books SET available_copies = available_copies + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
           [issue.book_id]
         );
       }
@@ -390,7 +390,7 @@ const returnIssue = async (req, res) => {
               to_char(issue_date::date, 'YYYY-MM-DD') AS issue_date,
               to_char(due_date::date, 'YYYY-MM-DD') AS due_date,
               to_char(return_date::date, 'YYYY-MM-DD') AS return_date,
-              fine_amount, status, issued_by, returned_to, remarks, is_active, created_at, created_by, modified_at
+              fine_amount, status, issued_by, returned_to, remarks, is_active, created_at, created_by, updated_at
        FROM library_book_issues WHERE id = $1`,
       [id]
     );

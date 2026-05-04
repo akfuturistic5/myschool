@@ -16,7 +16,7 @@ const getAllHostelRooms = async (req, res) => {
         hr.monthly_fee,
         hr.is_active,
         hr.created_at,
-        hr.modified_at,
+        hr.updated_at,
         h.hostel_name,
         rt.room_type,
         rt.description as room_type_description
@@ -56,7 +56,7 @@ const getHostelRoomById = async (req, res) => {
         hr.monthly_fee,
         hr.is_active,
         hr.created_at,
-        hr.modified_at,
+        hr.updated_at,
         h.hostel_name,
         rt.room_type,
         rt.description as room_type_description
@@ -270,7 +270,7 @@ const updateHostelRoom = async (req, res) => {
       return errorResponse(res, 400, 'Nothing to update for hostel room');
     }
 
-    updates.push(`modified_at = NOW()`);
+    updates.push(`updated_at = NOW()`);
     params.push(id);
 
     const result = await query(
@@ -315,7 +315,7 @@ const deleteHostelRoom = async (req, res) => {
     const result = await query(
       `
       UPDATE hostel_rooms
-      SET is_active = false, modified_at = NOW()
+      SET is_active = false, updated_at = NOW()
       WHERE id = $1 AND is_active = true
       RETURNING id
     `,

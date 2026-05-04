@@ -52,6 +52,7 @@ const AcademicYearCreate = () => {
   const dashboard = getDashboardForRole(user);
   const [yearName, setYearName] = useState("");
   const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [isCurrent, setIsCurrent] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -141,8 +142,8 @@ const AcademicYearCreate = () => {
     e.preventDefault();
     setError(null);
     const name = yearName.trim();
-    if (!name || !startDate) {
-      setError("Year name and start date are required.");
+    if (!name || !startDate || !endDate) {
+      setError("Year name, start date, and end date are required.");
       return;
     }
     if (hasAnyYears && !previousEndDate) {
@@ -193,6 +194,7 @@ const AcademicYearCreate = () => {
       const res = await apiService.createAcademicYear({
         year_name: name,
         start_date: startDate,
+        end_date: endDate,
         is_current: isCurrent,
         is_active: isActive,
         ...(shouldClone
@@ -294,8 +296,7 @@ const AcademicYearCreate = () => {
               <div className="card-header bg-white border-bottom py-3">
                 <h5 className="mb-0">Academic session details</h5>
                 <p className="text-muted small mb-0 mt-1">
-                  End date is optional on this form and can be filled later from the academic year detail page when
-                  the session ends. Note: you must record the end date of the current/previous year before creating the
+                  Note: you must record the end date of the current/previous year before creating the
                   next academic year.
                 </p>
               </div>
@@ -342,6 +343,20 @@ const AcademicYearCreate = () => {
                         <strong>{minStartDate}</strong> or later.
                       </div>
                     )}
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label" htmlFor="ay-end">
+                      End date <span className="text-danger">*</span>
+                    </label>
+                    <input
+                      id="ay-end"
+                      type="date"
+                      className="form-control"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      min={startDate || minStartDate || undefined}
+                      required
+                    />
                   </div>
                   <div className="mb-3 form-check">
                     <input

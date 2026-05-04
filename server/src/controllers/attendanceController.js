@@ -141,7 +141,7 @@ const getTeacherIdentity = async (userId) => {
      FROM teachers t
      INNER JOIN staff st ON st.id = t.staff_id
      WHERE st.user_id = $1
-       AND st.is_active = true`,
+       AND st.status = 'Active'`,
     [userId]
   );
   const teacherIds = [...new Set((teacherRows.rows || []).map((row) => Number(row.id)).filter(Number.isFinite))];
@@ -272,7 +272,7 @@ const getMarkingRoster = async (req, res) => {
 
     if (entityType === 'student') {
       const params = [date];
-      let where = 'WHERE s.is_active = true';
+      let where = "WHERE s.status = 'Active'";
       if (class_id) {
         params.push(Number(class_id));
         where += ` AND s.class_id = $${params.length}`;
@@ -342,7 +342,7 @@ const getMarkingRoster = async (req, res) => {
     }
 
     const params = [date];
-    let where = 'WHERE st.is_active = true';
+    let where = "WHERE st.status = 'Active'";
     if (department_id) {
       params.push(Number(department_id));
       where += ` AND st.department_id = $${params.length}`;
@@ -398,7 +398,7 @@ const getAttendanceReport = async (req, res) => {
 
     if (entityType === 'student') {
       const params = [monthStart, monthEnd];
-      let where = 'WHERE s.is_active = true';
+      let where = "WHERE s.status = 'Active'";
       if (class_id) {
         params.push(Number(class_id));
         where += ` AND s.class_id = $${params.length}`;
@@ -446,7 +446,7 @@ const getAttendanceReport = async (req, res) => {
     }
 
     const params = [monthStart, monthEnd];
-    let where = 'WHERE st.is_active = true';
+    let where = "WHERE st.status = 'Active'";
     if (department_id) {
       params.push(Number(department_id));
       where += ` AND st.department_id = $${params.length}`;
@@ -506,7 +506,7 @@ const getAttendanceDayWise = async (req, res) => {
     let sql = '';
 
     if (entityType === 'student') {
-      let where = 'WHERE s.is_active = true';
+      let where = "WHERE s.status = 'Active'";
       if (class_id) {
         params.push(Number(class_id));
         where += ` AND s.class_id = $${params.length}`;
@@ -526,7 +526,7 @@ const getAttendanceDayWise = async (req, res) => {
         ${where}
         ORDER BY s.first_name, s.last_name`;
     } else {
-      let where = 'WHERE st.is_active = true';
+      let where = "WHERE st.status = 'Active'";
       if (department_id) {
         params.push(Number(department_id));
         where += ` AND st.department_id = $${params.length}`;

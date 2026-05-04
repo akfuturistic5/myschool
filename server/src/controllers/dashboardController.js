@@ -158,7 +158,7 @@ async function buildExamResultExamDateSpec() {
        WHERE table_schema = 'public'
          AND table_name = ANY($1::text[])
          AND column_name = ANY($2::text[])`,
-      [['exam_subjects', 'exams'], ['exam_date', 'start_date', 'end_date', 'created_at', 'modified_at']]
+      [['exam_subjects', 'exams'], ['exam_date', 'start_date', 'end_date', 'created_at', 'updated_at']]
     ),
     query(`SELECT to_regclass('public.exam_subjects') IS NOT NULL AS exists`),
   ]);
@@ -172,7 +172,7 @@ async function buildExamResultExamDateSpec() {
   if (has.has('exams.exam_date')) parts.push('e.exam_date::timestamp');
   if (has.has('exams.start_date')) parts.push('e.start_date::timestamp');
   if (has.has('exams.end_date')) parts.push('e.end_date::timestamp');
-  if (has.has('exams.modified_at')) parts.push('e.modified_at');
+  if (has.has('exams.updated_at')) parts.push('e.updated_at');
   if (has.has('exams.created_at')) parts.push('e.created_at');
   parts.push('COALESCE(er.updated_at, er.created_at)');
 
@@ -213,7 +213,7 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
            COUNT(*)::int AS total_marked
          FROM student_attendance a
          INNER JOIN students st ON a.student_id = st.id
-         WHERE COALESCE(st.is_active, true) = true
+         WHERE (st.status = 'Active')
            ${yearClause}`,
         studentParams
       );
@@ -236,7 +236,7 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
          FROM student_attendance a
          INNER JOIN students st ON a.student_id = st.id
          WHERE a.attendance_date = $1::date
-           AND COALESCE(st.is_active, true) = true
+           AND (st.status = 'Active')
            ${yearClause}`,
         studentParams
       );
@@ -326,8 +326,8 @@ const getDashboardStats = async (req, res) => {
           ? `
         SELECT
           COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE st.is_active = true)::int as active,
-          COUNT(*) FILTER (WHERE st.is_active = false)::int as inactive
+          COUNT(*) FILTER (WHERE st.status = 'Active')::int as active,
+          COUNT(*) FILTER (WHERE st.status != 'Active')::int as inactive
         FROM students st
         LEFT JOIN LATERAL (
           SELECT l.to_academic_year_id
@@ -341,8 +341,8 @@ const getDashboardStats = async (req, res) => {
           : `
         SELECT
           COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE is_active = true)::int as active,
-          COUNT(*) FILTER (WHERE is_active = false)::int as inactive
+          COUNT(*) FILTER (WHERE status = 'Active')::int as active,
+          COUNT(*) FILTER (WHERE status != 'Active')::int as inactive
         FROM students
       `,
         hasYearFilter ? [academicYearId] : []
@@ -361,12 +361,17 @@ const getDashboardStats = async (req, res) => {
     try {
       const fetchSchoolWideTeacherCounts = async () => {
         const totalRes = await query(
-          `SELECT COUNT(*)::int AS total FROM staff WHERE deleted_at IS NULL`
+          `SELECT COUNT(DISTINCT s.id)::int AS total 
+           FROM staff s 
+           INNER JOIN users u ON u.id = s.user_id 
+           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.role_id = 2`
         );
         const activeRes = await query(`
-          SELECT COUNT(*)::int AS active
+          SELECT COUNT(DISTINCT s.id)::int AS active
           FROM staff s
-          WHERE s.deleted_at IS NULL AND s.is_active = true
+          INNER JOIN users u ON u.id = s.user_id
+          WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL 
+            AND s.status = 'Active' AND u.role_id = 2
         `);
         return {
           total: parseInt(totalRes.rows[0]?.total, 10) || 0,
@@ -379,7 +384,9 @@ const getDashboardStats = async (req, res) => {
         const teachersTotal = await query(
           `SELECT COUNT(DISTINCT s.id)::int AS total
            FROM staff s
-           WHERE s.deleted_at IS NULL
+           INNER JOIN users u ON u.id = s.user_id
+           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
+             AND u.role_id = 2
              AND ${yearTeacherScope}`,
           [academicYearId]
         );
@@ -387,7 +394,10 @@ const getDashboardStats = async (req, res) => {
         const teachersActive = await query(
           `SELECT COUNT(DISTINCT s.id)::int AS active
            FROM staff s
-           WHERE s.deleted_at IS NULL AND s.is_active = true
+           INNER JOIN users u ON u.id = s.user_id
+           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
+             AND u.role_id = 2
+             AND s.status = 'Active'
              AND ${yearTeacherScope}`,
           [academicYearId]
         );
@@ -412,10 +422,13 @@ const getDashboardStats = async (req, res) => {
     try {
       const staffCount = await query(`
         SELECT
-          COUNT(*)::int as total,
-          COUNT(*) FILTER (WHERE is_active = true)::int as active,
-          COUNT(*) FILTER (WHERE is_active = false)::int as inactive
-        FROM staff
+          COUNT(DISTINCT s.id)::int as total,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'Active')::int as active,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status != 'Active')::int as inactive
+        FROM staff s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
+          AND u.role_id NOT IN (3, 4)
       `);
       if (staffCount.rows[0]) {
         stats.staff.total = parseInt(staffCount.rows[0].total, 10) || 0;
@@ -636,7 +649,7 @@ const getDashboardStudentActivity = async (req, res) => {
          INNER JOIN staff s ON s.id = la.applicant_staff_id
          INNER JOIN users u ON u.id = s.user_id
          LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
-         WHERE COALESCE(s.is_active, true) = true ${leaveYear}
+         WHERE (s.status = 'Active') ${leaveYear}
          ORDER BY sort_date DESC NULLS LAST
          LIMIT 8`,
         leaveParams
@@ -666,7 +679,7 @@ const getDashboardStudentActivity = async (req, res) => {
         `SELECT st.id, u.first_name, u.last_name, st.created_at
          FROM students st
          INNER JOIN users u ON u.id = st.user_id
-         WHERE COALESCE(st.is_active, true) = true AND st.created_at >= CURRENT_TIMESTAMP - INTERVAL '120 days'
+         WHERE (st.status = 'Active') AND st.created_at >= CURRENT_TIMESTAMP - INTERVAL '120 days'
          ${enrYear}
          ORDER BY st.created_at DESC
          LIMIT 8`,
@@ -794,7 +807,7 @@ const getClassRoutineForDashboard = async (req, res) => {
             const wardRows = await query(
               `SELECT DISTINCT class_id, section_id
                FROM students
-               WHERE id = ANY($1) AND is_active = true`,
+               WHERE id = ANY($1) AND status = 'Active' `,
               [wardIds]
             );
             const classIds = [...new Set(wardRows.rows.map((r) => parseId(r.class_id)).filter(Boolean))];
@@ -1093,7 +1106,7 @@ const getStarStudents = async (req, res) => {
           LEFT JOIN sections sec ON sec.id = enr.section_id
           LEFT JOIN exams e ON e.id = esc.exam_id
           ${joinExamSubjectsDateSql}
-          WHERE COALESCE(st.is_active, true) = true
+          WHERE st.status = 'Active'
             AND esc.exam_id IS NOT NULL
             AND er.is_absent = false
             ${examYearClause}
@@ -1150,7 +1163,7 @@ const getStarStudents = async (req, res) => {
          LEFT JOIN sections sec ON sec.id = enr.section_id
         LEFT JOIN exams e ON e.id = esc.exam_id
         ${joinExamSubjectsForScoredSql}
-         WHERE COALESCE(st.is_active, true) = true
+         WHERE st.status = 'Active'
            AND esc.exam_id = $${topExamIdParam}
            AND er.is_absent = false
            ${examYearClause}
@@ -1258,7 +1271,7 @@ const getPerformanceSummary = async (req, res) => {
              ORDER BY l.event_date DESC NULLS LAST, l.id DESC
              LIMIT 1
            ) enr ON true
-           WHERE COALESCE(st.is_active, true) = true
+           WHERE st.status = 'Active'
              ${extra}
            GROUP BY st.id
            HAVING COUNT(er.id) > 0
@@ -1360,7 +1373,7 @@ const getTopSubjects = async (req, res) => {
            ) enr ON true
            WHERE sub.deleted_at IS NULL
              AND er.is_absent = false
-             AND COALESCE(st.is_active, true) = true
+             AND st.status = 'Active'
              AND (csj.deleted_at IS NULL)
              ${extra}
            GROUP BY sub.id, sub.subject_name, sub.subject_code

@@ -20,7 +20,7 @@ function mapInvoiceRow(row) {
     status: row.status,
     academic_year_id: row.academic_year_id,
     created_at: row.created_at,
-    modified_at: row.modified_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -147,7 +147,7 @@ const createInvoice = async (req, res) => {
       const r = await client.query(
         `INSERT INTO accounts_invoices (
            academic_year_id, invoice_number, invoice_date, description, amount,
-           payment_method, due_date, status, created_at, modified_at
+           payment_method, due_date, status, created_at, updated_at
          ) VALUES ($1, $2, $3::date, $4, $5, $6, $7::date, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
@@ -219,7 +219,7 @@ const updateInvoice = async (req, res) => {
            due_date = $6::date,
            status = $7,
            academic_year_id = $8,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE id = $9
          RETURNING *`,
         [invoice_number, invoice_date, description, amount, payment_method, due_date, status, academic_year_id, id]

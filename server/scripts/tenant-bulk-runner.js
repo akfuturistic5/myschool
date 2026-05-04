@@ -176,7 +176,42 @@ async function main() {
     process.exit(1);
   }
   
-  const sqlFiles = args[sqlIdx + 1].split(',').map(f => f.trim());
+  const rawEntries = args[sqlIdx + 1].split(',').map(f => f.trim());
+  const sqlFiles = [];
+
+  for (const entry of rawEntries) {
+    const absoluteEntry = path.isAbsolute(entry) ? entry : path.resolve(process.cwd(), entry);
+    
+    if (fs.existsSync(absoluteEntry)) {
+      const stats = fs.statSync(absoluteEntry);
+      if (stats.isDirectory()) {
+        // Find all .sql files in directory, sort them alphabetically
+        const allFiles = fs.readdirSync(absoluteEntry)
+          .filter(f => f.toLowerCase().endsWith('.sql'))
+          .sort();
+        
+        // Ensure schema.sql always comes first
+        const schemaIdx = allFiles.findIndex(f => f.toLowerCase() === 'schema.sql');
+        if (schemaIdx > -1) {
+          const [schemaFile] = allFiles.splice(schemaIdx, 1);
+          allFiles.unshift(schemaFile);
+        }
+
+        const files = allFiles.map(f => path.join(entry, f));
+        sqlFiles.push(...files);
+      } else {
+        sqlFiles.push(entry);
+      }
+    } else {
+      // If it doesn't exist yet, just push it and let runOnDatabase handle the error
+      sqlFiles.push(entry);
+    }
+  }
+
+  if (sqlFiles.length === 0) {
+    console.error('No SQL files found to execute.');
+    process.exit(0);
+  }
 
   const masterPool = new Pool({
     host: process.env.DB_HOST || 'localhost',
