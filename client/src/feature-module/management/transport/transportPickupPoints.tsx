@@ -53,6 +53,12 @@ const TransportPickupPoints = () => {
     const exportData = (data as any[]).map((item: any) => ({
       ID: item.id,
       "Pickup Point": item.pickupPoint,
+      "Route": item.routeName,
+      "Address": item.address,
+      "Landmark": item.landmark || "N/A",
+      "Pickup Time": item.pickupTime,
+      "Drop Time": item.dropTime,
+      "Distance From School": item.distanceFromSchool || "N/A",
       Status: item.status,
       "Added On": item.addedOn
     }));
@@ -91,6 +97,39 @@ const TransportPickupPoints = () => {
     {
       title: "Pickup Point",
       dataIndex: "pickupPoint",
+      sorter: true,
+    },
+    {
+      title: "Route",
+      dataIndex: "routeName",
+      sorter: true,
+    },
+    {
+      title: "Address",
+      dataIndex: "address",
+      render: (text: string) => text || "N/A",
+    },
+    {
+      title: "Landmark",
+      dataIndex: "landmark",
+      render: (text: string) => text || "N/A",
+    },
+    {
+      title: "Pickup Time",
+      dataIndex: "pickupTime",
+      render: (text: string) => text || "N/A",
+      sorter: true,
+    },
+    {
+      title: "Drop Time",
+      dataIndex: "dropTime",
+      render: (text: string) => text || "N/A",
+      sorter: true,
+    },
+    {
+      title: "Distance (KM)",
+      dataIndex: "distanceFromSchool",
+      render: (text: string | number) => (text === '' || text === null || text === undefined ? "N/A" : text),
       sorter: true,
     },
     {

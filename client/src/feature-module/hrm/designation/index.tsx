@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
@@ -8,17 +8,108 @@ import { Link } from "react-router-dom";
 import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { useDesignations } from "../../../core/hooks/useDesignations";
+import { useDepartments } from "../../../core/hooks/useDepartments";
 import { apiService } from "../../../core/services/apiService";
+import {
+  exportDesignationsExcel,
+  exportDesignationsPdf,
+  printDesignationsTable,
+} from "./designationExport";
+
+function formatSalaryDisplay(v: unknown): string {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
 
 const Designation = () => {
   const routes = all_routes;
   const { designations, loading, error, refetch } = useDesignations();
+  const { departments, loading: departmentsLoading } = useDepartments();
   const data = designations;
   const [selectedDesignation, setSelectedDesignation] = useState<any>(null);
   const [editDesignationName, setEditDesignationName] = useState('');
   const [editDesignationStatus, setEditDesignationStatus] = useState(true);
+  const [editSalaryMin, setEditSalaryMin] = useState('');
+  const [editSalaryMax, setEditSalaryMax] = useState('');
+  const [editDepartmentId, setEditDepartmentId] = useState<string>('');
   const [isUpdating, setIsUpdating] = useState(false);
-    const columns = [
+
+  const [addDesignationName, setAddDesignationName] = useState('');
+  const [addDesignationStatus, setAddDesignationStatus] = useState(true);
+  const [addSalaryMin, setAddSalaryMin] = useState('');
+  const [addSalaryMax, setAddSalaryMax] = useState('');
+  const [addDepartmentId, setAddDepartmentId] = useState<string>('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  const designationExportRows = useMemo(() => {
+    return designations.map((r: any) => {
+      const o = r.originalData || {};
+      const deptId = o.department_id;
+      let deptName = "—";
+      if (deptId != null && deptId !== "") {
+        const match = departments.find(
+          (d: any) => Number(d.originalData?.id ?? d.id) === Number(deptId)
+        );
+        deptName =
+          match?.department ??
+          match?.originalData?.department_name ??
+          `ID ${deptId}`;
+      }
+      return {
+        ID: o.id != null ? String(o.id) : String(r.id ?? ""),
+        Designation: String(r.designation ?? ""),
+        Department: deptName,
+        "Salary min": formatSalaryDisplay(o.salary_range_min),
+        "Salary max": formatSalaryDisplay(o.salary_range_max),
+        Status: String(r.status ?? ""),
+      };
+    });
+  }, [designations, departments]);
+
+  const exportFileStamp = () => new Date().toISOString().slice(0, 10);
+
+  const handleDesignationExportPdf = () => {
+    try {
+      if (!designationExportRows.length) {
+        alert("No designations to export.");
+        return;
+      }
+      exportDesignationsPdf(
+        "Designations",
+        `designations-${exportFileStamp()}`,
+        designationExportRows
+      );
+    } catch (err: any) {
+      alert(err?.message || "PDF export failed.");
+    }
+  };
+
+  const handleDesignationExportExcel = () => {
+    try {
+      if (!designationExportRows.length) {
+        alert("No designations to export.");
+        return;
+      }
+      exportDesignationsExcel(
+        `designations-${exportFileStamp()}`,
+        designationExportRows
+      );
+    } catch (err: any) {
+      alert(err?.message || "Excel export failed.");
+    }
+  };
+
+  const handleDesignationPrint = () => {
+    try {
+      printDesignationsTable("Designations", designationExportRows);
+    } catch (err: any) {
+      alert(err?.message || "Print failed.");
+    }
+  };
+
+  const columns = [
       {
         title: "ID",
         dataIndex: "id",
@@ -34,6 +125,24 @@ const Designation = () => {
         title: "Designation",
         dataIndex: "designation",
         sorter: (a: TableData, b: TableData) => a.designation.length - b.designation.length,
+      },
+      {
+        title: "Salary min",
+        dataIndex: "salaryMin",
+        render: (_: unknown, record: any) =>
+          formatSalaryDisplay(record.originalData?.salary_range_min),
+        sorter: (a: any, b: any) =>
+          Number(a.originalData?.salary_range_min ?? 0) -
+          Number(b.originalData?.salary_range_min ?? 0),
+      },
+      {
+        title: "Salary max",
+        dataIndex: "salaryMax",
+        render: (_: unknown, record: any) =>
+          formatSalaryDisplay(record.originalData?.salary_range_max),
+        sorter: (a: any, b: any) =>
+          Number(a.originalData?.salary_range_max ?? 0) -
+          Number(b.originalData?.salary_range_max ?? 0),
       },
       {
         title: "Status",
@@ -97,6 +206,18 @@ const Designation = () => {
                       }
                       setEditDesignationName(name);
                       setEditDesignationStatus(status);
+                      const smin = desig.salary_range_min;
+                      const smax = desig.salary_range_max;
+                      setEditSalaryMin(
+                        smin != null && smin !== "" ? String(smin) : ""
+                      );
+                      setEditSalaryMax(
+                        smax != null && smax !== "" ? String(smax) : ""
+                      );
+                      const did = desig.department_id;
+                      setEditDepartmentId(
+                        did != null && did !== "" ? String(did) : ""
+                      );
                       setSelectedDesignation(record);
                       setTimeout(() => {
                         const modalElement = document.getElementById('edit_designation');
@@ -131,12 +252,12 @@ const Designation = () => {
         ),
       },
     ];
-    const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-    const handleApplyClick = () => {
-      if (dropdownMenuRef.current) {
-        dropdownMenuRef.current.classList.remove("show");
-      }
-    };
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+  const handleApplyClick = () => {
+    if (dropdownMenuRef.current) {
+      dropdownMenuRef.current.classList.remove("show");
+    }
+  };
   return (
     <div>
       <>
@@ -162,7 +283,12 @@ const Designation = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={refetch}
+                onPrint={handleDesignationPrint}
+                onExportPdf={handleDesignationExportPdf}
+                onExportExcel={handleDesignationExportExcel}
+              />
                 <div className="mb-2">
                   <Link
                     to="#"
@@ -336,13 +462,76 @@ const Designation = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                }}
+              >
                 <div className="modal-body">
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Designation</label>
-                        <input type="text" className="form-control" />
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={addDesignationName}
+                          onChange={(e) => setAddDesignationName(e.target.value)}
+                          autoComplete="off"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-12">
+                      <div className="mb-3">
+                        <label className="form-label">Department (optional)</label>
+                        <select
+                          className="form-select"
+                          value={addDepartmentId}
+                          onChange={(e) => setAddDepartmentId(e.target.value)}
+                          disabled={departmentsLoading}
+                        >
+                          <option value="">— None —</option>
+                          {departments.map((d: any) => {
+                            const oid = d.originalData?.id ?? d.id;
+                            const label =
+                              d.department ??
+                              d.originalData?.department_name ??
+                              `Department ${oid}`;
+                            return (
+                              <option key={String(oid)} value={String(oid)}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Salary range min</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={0}
+                          step="0.01"
+                          value={addSalaryMin}
+                          onChange={(e) => setAddSalaryMin(e.target.value)}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Salary range max</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={0}
+                          step="0.01"
+                          value={addSalaryMax}
+                          onChange={(e) => setAddSalaryMax(e.target.value)}
+                          placeholder="0"
+                        />
                       </div>
                     </div>
                     <div className="d-flex align-items-center justify-content-between">
@@ -355,23 +544,118 @@ const Designation = () => {
                           className="form-check-input"
                           type="checkbox"
                           role="switch"
-                          id="switch-sm"
+                          id="designation-add-status"
+                          checked={addDesignationStatus}
+                          onChange={(e) => setAddDesignationStatus(e.target.checked)}
                         />
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Link
-                    to="#"
+                  <button
+                    type="button"
                     className="btn btn-light me-2"
                     data-bs-dismiss="modal"
+                    onClick={() => {
+                      setAddDesignationName("");
+                      setAddSalaryMin("");
+                      setAddSalaryMax("");
+                      setAddDepartmentId("");
+                      setAddDesignationStatus(true);
+                    }}
                   >
                     Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Designation
-                  </Link>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={isCreating}
+                    onClick={async () => {
+                      const name = addDesignationName.trim();
+                      if (!name) {
+                        alert("Designation name is required");
+                        return;
+                      }
+                      const minStr = addSalaryMin.trim();
+                      const maxStr = addSalaryMax.trim();
+                      const minNum =
+                        minStr === "" ? null : Number(minStr);
+                      const maxNum =
+                        maxStr === "" ? null : Number(maxStr);
+                      if (
+                        (minStr !== "" && !Number.isFinite(minNum)) ||
+                        (maxStr !== "" && !Number.isFinite(maxNum))
+                      ) {
+                        alert("Enter valid numbers for salary range");
+                        return;
+                      }
+                      if (
+                        minNum != null &&
+                        maxNum != null &&
+                        minNum > maxNum
+                      ) {
+                        alert(
+                          "Salary range min must be less than or equal to max"
+                        );
+                        return;
+                      }
+                      const deptParsed = addDepartmentId
+                        ? parseInt(addDepartmentId, 10)
+                        : null;
+                      if (addDepartmentId && !Number.isFinite(deptParsed)) {
+                        alert("Invalid department");
+                        return;
+                      }
+                      setIsCreating(true);
+                      try {
+                        const payload: Record<string, unknown> = {
+                          designation_name: name,
+                          is_active: addDesignationStatus,
+                          department_id: deptParsed,
+                          salary_range_min: minNum,
+                          salary_range_max: maxNum,
+                        };
+                        const response = await apiService.createDesignation(
+                          payload
+                        );
+                        if (response && response.status === "SUCCESS") {
+                          const modalElement =
+                            document.getElementById("add_designation");
+                          if (modalElement) {
+                            const bootstrap = (window as any).bootstrap;
+                            if (bootstrap && bootstrap.Modal) {
+                              const modal =
+                                bootstrap.Modal.getInstance(modalElement) ||
+                                new bootstrap.Modal(modalElement);
+                              modal.hide();
+                            }
+                          }
+                          setAddDesignationName("");
+                          setAddSalaryMin("");
+                          setAddSalaryMax("");
+                          setAddDepartmentId("");
+                          setAddDesignationStatus(true);
+                          await refetch();
+                        } else {
+                          alert(
+                            (response as any)?.message ||
+                              "Failed to create designation"
+                          );
+                        }
+                      } catch (err: any) {
+                        console.error("Error creating designation:", err);
+                        alert(
+                          err?.message ||
+                            "Failed to create designation. Please try again."
+                        );
+                      } finally {
+                        setIsCreating(false);
+                      }
+                    }}
+                  >
+                    {isCreating ? "Saving..." : "Add Designation"}
+                  </button>
                 </div>
               </form>
             </div>
@@ -408,6 +692,59 @@ const Designation = () => {
                         />
                       </div>
                     </div>
+                    <div className="col-md-12">
+                      <div className="mb-3">
+                        <label className="form-label">Department (optional)</label>
+                        <select
+                          className="form-select"
+                          value={editDepartmentId}
+                          onChange={(e) => setEditDepartmentId(e.target.value)}
+                          disabled={departmentsLoading}
+                        >
+                          <option value="">— None —</option>
+                          {departments.map((d: any) => {
+                            const oid = d.originalData?.id ?? d.id;
+                            const label =
+                              d.department ??
+                              d.originalData?.department_name ??
+                              `Department ${oid}`;
+                            return (
+                              <option key={String(oid)} value={String(oid)}>
+                                {label}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Salary range min</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={0}
+                          step="0.01"
+                          value={editSalaryMin}
+                          onChange={(e) => setEditSalaryMin(e.target.value)}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Salary range max</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={0}
+                          step="0.01"
+                          value={editSalaryMax}
+                          onChange={(e) => setEditSalaryMax(e.target.value)}
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
                     <div className="d-flex align-items-center justify-content-between">
                       <div className="status-title">
                         <h5>Status</h5>
@@ -418,7 +755,7 @@ const Designation = () => {
                           className="form-check-input"
                           type="checkbox"
                           role="switch"
-                          id="switch-sm2"
+                          id="designation-edit-status"
                           checked={editDesignationStatus}
                           onChange={(e) => setEditDesignationStatus(e.target.checked)}
                         />
@@ -439,12 +776,45 @@ const Designation = () => {
                     className="btn btn-primary"
                     onClick={async (e) => {
                       e.preventDefault();
-                      const id = selectedDesignation?.originalData?.id || selectedDesignation?.id;
-                      if (!id || isUpdating) return;
+                      const idRaw = selectedDesignation?.originalData?.id;
+                      const id =
+                        typeof idRaw === "number" ? idRaw : parseInt(String(idRaw ?? ""), 10);
+                      if (!Number.isFinite(id) || id <= 0 || isUpdating) return;
 
                       const name = editDesignationName.trim();
                       if (!name) {
                         alert('Designation name is required');
+                        return;
+                      }
+
+                      const minStr = editSalaryMin.trim();
+                      const maxStr = editSalaryMax.trim();
+                      const minNum =
+                        minStr === "" ? null : Number(minStr);
+                      const maxNum =
+                        maxStr === "" ? null : Number(maxStr);
+                      if (
+                        (minStr !== "" && !Number.isFinite(minNum)) ||
+                        (maxStr !== "" && !Number.isFinite(maxNum))
+                      ) {
+                        alert("Enter valid numbers for salary range");
+                        return;
+                      }
+                      if (
+                        minNum != null &&
+                        maxNum != null &&
+                        minNum > maxNum
+                      ) {
+                        alert(
+                          "Salary range min must be less than or equal to max"
+                        );
+                        return;
+                      }
+                      const deptParsed = editDepartmentId
+                        ? parseInt(editDepartmentId, 10)
+                        : null;
+                      if (editDepartmentId && !Number.isFinite(deptParsed)) {
+                        alert("Invalid department");
                         return;
                       }
 
@@ -453,6 +823,9 @@ const Designation = () => {
                         const payload = {
                           designation_name: name,
                           is_active: editDesignationStatus,
+                          department_id: deptParsed,
+                          salary_range_min: minNum,
+                          salary_range_max: maxNum,
                         };
                         const response = await apiService.updateDesignation(id, payload);
                         if (response && response.status === 'SUCCESS') {

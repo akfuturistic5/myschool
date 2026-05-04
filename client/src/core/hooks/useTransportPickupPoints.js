@@ -45,10 +45,14 @@ export const useTransportPickupPoints = (initialParams = {}) => {
           key: String(row.id),
           id: String(row.id),
           pickupPoint: row.point_name || row.address || 'N/A',
-          address: row.address || '',
+          routeId: row.route_id ?? null,
           routeName: row.route_name || 'N/A',
+          address: row.address || '',
+          landmark: row.landmark || '',
           pickupTime: formatTime(row.pickup_time),
           dropTime: formatTime(row.drop_time),
+          distanceFromSchool: row.distance_from_school ?? '',
+          sequenceOrder: row.sequence_order ?? '',
           status: row.is_active ? 'Active' : 'Inactive',
           statusClass: row.is_active ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           addedOn: formatAddedOn(row.created_at),
@@ -84,6 +88,9 @@ export const useTransportPickupPoints = (initialParams = {}) => {
         sortField: sorter.field === 'pickupPoint' ? 'point_name' :
           sorter.field === 'routeName' ? 'route_name' :
             sorter.field === 'status' ? 'is_active' :
+              sorter.field === 'pickupTime' ? 'pickup_time' :
+                sorter.field === 'dropTime' ? 'drop_time' :
+                  sorter.field === 'distanceFromSchool' ? 'distance_from_school' :
               sorter.field,
         sortOrder: sorter.order === 'descend' ? 'DESC' : 'ASC',
         page: 1

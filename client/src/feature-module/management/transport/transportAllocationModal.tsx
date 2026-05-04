@@ -40,6 +40,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [singleAssignedFeeId, setSingleAssignedFeeId] = useState("");
   const [singleIsFree, setSingleIsFree] = useState(false);
   const [singleStartDate, setSingleStartDate] = useState(today());
+  const [singleEndDate, setSingleEndDate] = useState("");
   const [singleStatus, setSingleStatus] = useState("Active");
   const [singleAvailableRoutes, setSingleAvailableRoutes] = useState<any[]>([]);
   const [singleAvailableVehicles, setSingleAvailableVehicles] = useState<any[]>([]);
@@ -51,6 +52,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
   const [bulkAssignedFeeId, setBulkAssignedFeeId] = useState("");
   const [bulkIsFree, setBulkIsFree] = useState(false);
   const [bulkStartDate, setBulkStartDate] = useState(today());
+  const [bulkEndDate, setBulkEndDate] = useState("");
   const [bulkStatus, setBulkStatus] = useState("Active");
   const [bulkAvailableRoutes, setBulkAvailableRoutes] = useState<any[]>([]);
   const [bulkAvailableVehicles, setBulkAvailableVehicles] = useState<any[]>([]);
@@ -118,6 +120,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       setSingleAssignedFeeId(String(row.assigned_fee_id || ""));
       setSingleIsFree(Boolean(row.is_free));
       setSingleStartDate(row.start_date || today());
+      setSingleEndDate(row.end_date || "");
       setSingleStatus(row.status || "Active");
       return;
     }
@@ -129,15 +132,9 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setSingleAssignedFeeId("");
     setSingleIsFree(false);
     setSingleStartDate(today());
+    setSingleEndDate("");
     setSingleStatus("Active");
   }, [selectedAllocation]);
-
-  useEffect(() => {
-    if (singleUserType !== "staff") setSingleIsFree(false);
-  }, [singleUserType]);
-  useEffect(() => {
-    if (bulkUserType !== "staff") setBulkIsFree(false);
-  }, [bulkUserType]);
 
   const loadRoutesForPickup = async (pickupPointId: string, setRoutes: (rows: any[]) => void) => {
     if (!pickupPointId) {
@@ -218,6 +215,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         const res = await apiService.getTransportSeatAvailability({
           vehicle_id: Number(bulkVehicleId),
           start_date: bulkStartDate,
+          end_date: bulkEndDate || undefined,
         });
         if (res?.status === "SUCCESS" && res?.data) {
           setBulkSeatAvailability({
@@ -233,7 +231,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
     };
     loadSeatAvailability();
-  }, [bulkVehicleId, bulkStartDate]);
+  }, [bulkVehicleId, bulkStartDate, bulkEndDate]);
 
   const resetSingleAddForm = () => {
     setSingleUserType("student");
@@ -244,6 +242,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setSingleAssignedFeeId("");
     setSingleIsFree(false);
     setSingleStartDate(today());
+    setSingleEndDate("");
     setSingleStatus("Active");
     setSingleAvailableRoutes([]);
     setSingleAvailableVehicles([]);
@@ -257,6 +256,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setBulkAssignedFeeId("");
     setBulkIsFree(false);
     setBulkStartDate(today());
+    setBulkEndDate("");
     setBulkStatus("Active");
     setBulkAvailableRoutes([]);
     setBulkAvailableVehicles([]);
@@ -315,6 +315,9 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       if (!singleStartDate) {
         throw new Error("Please select a start date");
       }
+      if (singleEndDate && singleEndDate < singleStartDate) {
+        throw new Error("End date cannot be before start date");
+      }
       if (!singleIsFree && !singleAssignedFeeId) {
         throw new Error("Please select a fee plan");
       }
@@ -326,12 +329,10 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         route_id: Number(singleRouteId),
         pickup_point_id: Number(singlePickupPointId),
         vehicle_id: Number(singleVehicleId),
-        assigned_fee_id:
-          singleUserType === "staff" && singleIsFree
-            ? null
-            : (singleAssignedFeeId ? Number(singleAssignedFeeId) : null),
-        is_free: singleUserType === "staff" ? singleIsFree : false,
+        assigned_fee_id: singleIsFree ? null : (singleAssignedFeeId ? Number(singleAssignedFeeId) : null),
+        is_free: singleIsFree,
         start_date: singleStartDate,
+        end_date: singleEndDate || null,
         status: singleStatus,
         academic_year_id: academicYearId ?? undefined,
       };
@@ -401,6 +402,9 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       if (!bulkStartDate) {
         throw new Error("Please select a start date");
       }
+      if (bulkEndDate && bulkEndDate < bulkStartDate) {
+        throw new Error("End date cannot be before start date");
+      }
       if (!bulkIsFree && !bulkAssignedFeeId) {
         throw new Error("Please select a fee plan");
       }
@@ -417,12 +421,10 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         route_id: Number(bulkRouteId),
         pickup_point_id: Number(bulkPickupPointId),
         vehicle_id: Number(bulkVehicleId),
-        assigned_fee_id:
-          bulkUserType === "staff" && bulkIsFree
-            ? null
-            : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
-        is_free: bulkUserType === "staff" ? bulkIsFree : false,
+        assigned_fee_id: bulkIsFree ? null : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
+        is_free: bulkIsFree,
         start_date: bulkStartDate,
+        end_date: bulkEndDate || null,
         status: bulkStatus,
         academic_year_id: academicYearId ?? undefined,
       };
@@ -531,15 +533,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                       value={singleVehicleId}
                       onChange={(v: string | null) => setSingleVehicleId(v || "")}
                     />
-                    <CommonSelect
-                      className="select"
-                      options={singleAvailableVehicles.map((v: any) => ({
-                        value: String(v.id),
-                        label: `${v.vehicle_number} (${v.seat_capacity || v.seating_capacity || 0})`,
-                      }))}
-                      value={singleVehicleId}
-                      onChange={(v: string | null) => setSingleVehicleId(v || "")}
-                    />
                   </div>
                   <div className="col-md-6 mb-3">
                     <label className="form-label">Start Date</label>
@@ -551,14 +544,23 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     />
                   </div>
                 </div>
-                {singleUserType === "staff" && (
-                  <div className="mb-3">
-                    <div className="form-check">
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">End Date</label>
+                    <DatePicker
+                      className="form-control datetimepicker"
+                      format="DD MMM YYYY"
+                      value={singleEndDate ? dayjs(singleEndDate) : null}
+                      onChange={(d) => setSingleEndDate(d ? d.format("YYYY-MM-DD") : "")}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3 d-flex align-items-end">
+                    <div className="form-check mb-2">
                       <input className="form-check-input" type="checkbox" id="single_is_free_allocation" checked={singleIsFree} onChange={(e) => setSingleIsFree(e.target.checked)} />
-                      <label className="form-check-label" htmlFor="single_is_free_allocation">Mark as free allocation</label>
+                      <label className="form-check-label" htmlFor="single_is_free_allocation">Is Free Allocation</label>
                     </div>
                   </div>
-                )}
+                </div>
                 {!singleIsFree && (
                   <div className="mb-3">
                     <label className="form-label">Fee Plan</label>
@@ -646,14 +648,23 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                     />
                   </div>
                 </div>
-                {singleUserType === "staff" && (
-                  <div className="mb-3">
-                    <div className="form-check">
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">End Date</label>
+                    <DatePicker
+                      className="form-control datetimepicker"
+                      format="DD MMM YYYY"
+                      value={singleEndDate ? dayjs(singleEndDate) : null}
+                      onChange={(d) => setSingleEndDate(d ? d.format("YYYY-MM-DD") : "")}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3 d-flex align-items-end">
+                    <div className="form-check mb-2">
                       <input className="form-check-input" type="checkbox" id="edit_single_is_free_allocation" checked={singleIsFree} onChange={(e) => setSingleIsFree(e.target.checked)} />
-                      <label className="form-check-label" htmlFor="edit_single_is_free_allocation">Mark as free allocation</label>
+                      <label className="form-check-label" htmlFor="edit_single_is_free_allocation">Is Free Allocation</label>
                     </div>
                   </div>
-                )}
+                </div>
                 {!singleIsFree && (
                   <div className="mb-3">
                     <label className="form-label">Fee Plan</label>
@@ -724,7 +735,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-12 mb-3">
+                  <div className="col-md-6 mb-3">
                     <label className="form-label">Start Date</label>
                     <DatePicker
                       className="form-control datetimepicker"
@@ -733,15 +744,22 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                       onChange={(d) => setBulkStartDate(d ? d.format("YYYY-MM-DD") : "")}
                     />
                   </div>
-                </div>
-                {bulkUserType === "staff" && (
-                  <div className="mb-3">
-                    <div className="form-check">
-                      <input className="form-check-input" type="checkbox" id="bulk_is_free" checked={bulkIsFree} onChange={(e) => setBulkIsFree(e.target.checked)} />
-                      <label className="form-check-label" htmlFor="bulk_is_free">Mark as free allocation</label>
-                    </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">End Date</label>
+                    <DatePicker
+                      className="form-control datetimepicker"
+                      format="DD MMM YYYY"
+                      value={bulkEndDate ? dayjs(bulkEndDate) : null}
+                      onChange={(d) => setBulkEndDate(d ? d.format("YYYY-MM-DD") : "")}
+                    />
                   </div>
-                )}
+                </div>
+                <div className="mb-3">
+                  <div className="form-check">
+                    <input className="form-check-input" type="checkbox" id="bulk_is_free" checked={bulkIsFree} onChange={(e) => setBulkIsFree(e.target.checked)} />
+                    <label className="form-check-label" htmlFor="bulk_is_free">Is Free Allocation</label>
+                  </div>
+                </div>
                 {!bulkIsFree && (
                   <div className="mb-3">
                     <label className="form-label">Fee Plan</label>

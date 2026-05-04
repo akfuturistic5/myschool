@@ -212,7 +212,7 @@ async function cloneDepartments(client, createdByStaffId, targetYearId) {
   return { map, inserted: insertedCount };
 }
 
-async function cloneDesignations(client, departmentMap, createdByStaffId, targetYearId) {
+async function cloneDesignations(client, departmentMap, createdByStaffId, _targetYearId) {
   const map = new Map();
   let insertedCount = 0;
   const rowsRes = await client.query(
@@ -264,8 +264,8 @@ async function cloneDesignations(client, departmentMap, createdByStaffId, target
 
     const ins = await client.query(
       `INSERT INTO designations (
-        designation_name, department_id, salary_range_min, salary_range_max, description, is_active, created_by, modified_at, academic_year_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+        designation_name, department_id, salary_range_min, salary_range_max, description, is_active, created_by, updated_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id`,
       [
         row.designation_name,
@@ -275,7 +275,7 @@ async function cloneDesignations(client, departmentMap, createdByStaffId, target
         row.description || null,
         normalizeBool(row.is_active, true),
         createdByStaffId || null,
-        targetYearId || null,
+        createdByStaffId || null,
       ]
     );
     map.set(Number(row.id), Number(ins.rows[0].id));

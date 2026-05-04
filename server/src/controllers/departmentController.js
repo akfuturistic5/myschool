@@ -1,6 +1,7 @@
 const { query } = require('../config/database');
 
 const MAX_DEPARTMENT_NAME_LEN = 100;
+const MAX_DEPARTMENT_CODE_LEN = 10;
 
 function normalizeBoolean(value, defaultValue = true) {
   if (typeof value === 'boolean') return value;
@@ -19,14 +20,36 @@ function parsePositiveIntId(raw) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+function normalizeDepartmentCode(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim().slice(0, MAX_DEPARTMENT_CODE_LEN);
+  return t === '' ? null : t;
+}
+
+async function assertValidHeadOfDepartment(staffId) {
+  if (staffId == null) return;
+  const r = await query(`SELECT id FROM staff WHERE id = $1`, [staffId]);
+  if (r.rows.length === 0) {
+    const err = new Error('INVALID_HOD');
+    err.code = 'INVALID_HOD';
+    throw err;
+  }
+}
+
 // Get all departments
 const getAllDepartments = async (req, res) => {
   try {
-    // Use exact table name: departments (plural)
     const result = await query(`
-      SELECT *
-      FROM departments
-      ORDER BY id ASC
+      SELECT
+        d.*,
+        TRIM(
+          CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))
+        ) AS head_of_department_name
+      FROM departments d
+      LEFT JOIN staff h ON h.id = d.head_of_department
+      LEFT JOIN users u ON u.id = h.user_id
+      ORDER BY d.id ASC
     `);
 
     res.status(200).json({
@@ -48,12 +71,17 @@ const getAllDepartments = async (req, res) => {
 const getDepartmentById = async (req, res) => {
   try {
     const { id } = req.params;
-    // Use exact table name: departments (plural)
     const result = await query(
       `
-      SELECT *
-      FROM departments
-      WHERE id = $1
+      SELECT
+        d.*,
+        TRIM(
+          CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))
+        ) AS head_of_department_name
+      FROM departments d
+      LEFT JOIN staff h ON h.id = d.head_of_department
+      LEFT JOIN users u ON u.id = h.user_id
+      WHERE d.id = $1
     `,
       [id]
     );
@@ -91,49 +119,87 @@ const updateDepartment = async (req, res) => {
       });
     }
 
-    const { department_name, is_active } = req.body;
-
-    let nameForUpdate = null;
-    if (typeof department_name === 'string') {
-      const t = department_name.trim().slice(0, MAX_DEPARTMENT_NAME_LEN);
-      nameForUpdate = t === '' ? null : t;
-    } else if (department_name != null) {
-      nameForUpdate = department_name;
-    }
-
-    // Normalize is_active to boolean
-    let normalizedIsActive;
-    if (typeof is_active === 'boolean') {
-      normalizedIsActive = is_active;
-    } else if (typeof is_active === 'number') {
-      normalizedIsActive = is_active === 1;
-    } else if (typeof is_active === 'string') {
-      normalizedIsActive = is_active.toLowerCase() === 'true' || is_active === '1';
-    } else if (is_active === null || typeof is_active === 'undefined') {
-      normalizedIsActive = null;
-    } else {
-      normalizedIsActive = true;
-    }
-
-    const result = await query(
-      `
-      UPDATE departments
-      SET
-        department_name = COALESCE($1, department_name),
-        is_active = COALESCE($2, is_active),
-        modified_at = NOW()
-      WHERE id = $3
-      RETURNING *
-    `,
-      [nameForUpdate, normalizedIsActive, id]
-    );
-
-    if (result.rows.length === 0) {
+    const existing = await query(`SELECT * FROM departments WHERE id = $1`, [id]);
+    if (existing.rows.length === 0) {
       return res.status(404).json({
         status: 'ERROR',
         message: 'Department not found',
       });
     }
+    const row = existing.rows[0];
+    const body = req.body;
+
+    let nameForUpdate = row.department_name;
+    if (typeof body.department_name === 'string') {
+      const t = body.department_name.trim().slice(0, MAX_DEPARTMENT_NAME_LEN);
+      nameForUpdate = t === '' ? null : t;
+      if (nameForUpdate == null) {
+        return res.status(400).json({
+          status: 'ERROR',
+          code: 'VALIDATION_ERROR',
+          message: 'Department name cannot be empty',
+        });
+      }
+    }
+
+    let codeForUpdate = row.department_code;
+    if (Object.prototype.hasOwnProperty.call(body, 'department_code')) {
+      codeForUpdate = normalizeDepartmentCode(body.department_code);
+    }
+
+    let hodForUpdate = row.head_of_department;
+    if (Object.prototype.hasOwnProperty.call(body, 'head_of_department')) {
+      const v = body.head_of_department;
+      hodForUpdate = v == null ? null : parsePositiveIntId(v);
+      if (v != null && hodForUpdate == null) {
+        return res.status(400).json({
+          status: 'ERROR',
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid head of department staff id',
+        });
+      }
+    }
+
+    let normalizedIsActive = row.is_active;
+    if (typeof body.is_active === 'boolean') {
+      normalizedIsActive = body.is_active;
+    } else if (typeof body.is_active === 'number') {
+      normalizedIsActive = body.is_active === 1;
+    } else if (typeof body.is_active === 'string') {
+      normalizedIsActive = body.is_active.toLowerCase() === 'true' || body.is_active === '1';
+    }
+
+    try {
+      await assertValidHeadOfDepartment(hodForUpdate);
+    } catch (e) {
+      if (e.code === 'INVALID_HOD') {
+        return res.status(400).json({
+          status: 'ERROR',
+          code: 'VALIDATION_ERROR',
+          message: 'Head of department must be an existing staff member',
+        });
+      }
+      throw e;
+    }
+
+    const updatedBy =
+      req.user && req.user.id != null ? parsePositiveIntId(req.user.id) : null;
+
+    const result = await query(
+      `
+      UPDATE departments
+      SET
+        department_name = $1,
+        department_code = $2,
+        head_of_department = $3,
+        is_active = $4,
+        updated_at = NOW(),
+        updated_by = $5
+      WHERE id = $6
+      RETURNING *
+    `,
+      [nameForUpdate, codeForUpdate, hodForUpdate, normalizedIsActive, updatedBy, id]
+    );
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -146,7 +212,14 @@ const updateDepartment = async (req, res) => {
       return res.status(409).json({
         status: 'ERROR',
         code: 'DUPLICATE',
-        message: 'A department with this name already exists',
+        message: 'A department with this name or code already exists',
+      });
+    }
+    if (error.code === '42703') {
+      return res.status(500).json({
+        status: 'ERROR',
+        message:
+          'Database schema is missing updated_at/updated_by on departments. Run migration 056_departments_updated_at_columns.sql.',
       });
     }
     res.status(500).json({
@@ -159,31 +232,50 @@ const updateDepartment = async (req, res) => {
 // Create department (admin)
 const createDepartment = async (req, res) => {
   try {
-    const rawName = req.body?.department_name ?? req.body?.department ?? req.body?.name;
-    const name =
-      typeof rawName === 'string'
-        ? rawName.trim().slice(0, MAX_DEPARTMENT_NAME_LEN)
-        : '';
+    const name = String(req.body.department_name).trim().slice(0, MAX_DEPARTMENT_NAME_LEN);
 
-    if (!name) {
+    const isActive = normalizeBoolean(req.body?.is_active, true);
+    const departmentCode = normalizeDepartmentCode(req.body?.department_code);
+    const hodRaw = req.body?.head_of_department;
+    const headOfDepartment = hodRaw == null ? null : parsePositiveIntId(hodRaw);
+    if (hodRaw != null && headOfDepartment == null) {
       return res.status(400).json({
         status: 'ERROR',
         code: 'VALIDATION_ERROR',
-        message: 'Department name is required',
+        message: 'Invalid head of department staff id',
       });
     }
 
-    const isActive = normalizeBoolean(req.body?.is_active, true);
-    const createdBy =
+    try {
+      await assertValidHeadOfDepartment(headOfDepartment);
+    } catch (e) {
+      if (e.code === 'INVALID_HOD') {
+        return res.status(400).json({
+          status: 'ERROR',
+          code: 'VALIDATION_ERROR',
+          message: 'Head of department must be an existing staff member',
+        });
+      }
+      throw e;
+    }
+
+    const userId =
       req.user && req.user.id != null ? parsePositiveIntId(req.user.id) : null;
 
     const result = await query(
       `
-      INSERT INTO departments (department_name, is_active, created_by, modified_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO departments (
+        department_name,
+        department_code,
+        head_of_department,
+        is_active,
+        created_by,
+        updated_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `,
-      [name, isActive, createdBy]
+      [name, departmentCode, headOfDepartment, isActive, userId, userId]
     );
 
     return res.status(201).json({
@@ -197,7 +289,14 @@ const createDepartment = async (req, res) => {
       return res.status(409).json({
         status: 'ERROR',
         code: 'DUPLICATE',
-        message: 'A department with this name already exists',
+        message: 'A department with this name or code already exists',
+      });
+    }
+    if (error.code === '42703') {
+      return res.status(500).json({
+        status: 'ERROR',
+        message:
+          'Database schema is missing columns on departments. Run migrations (updated_at/updated_by or department_code/head_of_department).',
       });
     }
     return res.status(500).json({
@@ -266,7 +365,7 @@ const deleteDepartment = async (req, res) => {
           'Cannot delete this department because other records still reference it.',
       });
     }
-    return res.status(500).json({
+    res.status(500).json({
       status: 'ERROR',
       message: 'Failed to delete department',
     });

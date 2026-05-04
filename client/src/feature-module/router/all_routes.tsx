@@ -138,6 +138,12 @@ export const all_routes = {
   schoolSettings : "/academic-settings/school-settings",
   religion : "/academic-settings/religion",
 
+  /** School master data (Headmaster / Administrative only) */
+  settingsHouses: "/settings/houses",
+  settingsBloodGroups: "/settings/blood-groups",
+  settingsMotherTongues: "/settings/mother-tongues",
+  settingsCasts: "/settings/casts",
+
   connectedApps: "/general-settings/connected-apps",
   notificationssettings: "/general-settings/notifications-settings",
   securitysettings: "/general-settings/security-settings",

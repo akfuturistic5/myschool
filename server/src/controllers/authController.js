@@ -452,8 +452,8 @@ const login = async (req, res) => {
       `SELECT 
         u.*,
         s.id AS student_id,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
+        u.first_name AS student_first_name,
+        u.last_name AS student_last_name,
         s.is_active AS student_is_active,
         c.class_name,
         sec.section_name,
@@ -752,8 +752,8 @@ const updateMe = async (req, res) => {
           `SELECT 
             u.*,
             s.id AS student_id,
-            s.first_name AS student_first_name,
-            s.last_name AS student_last_name,
+            u.first_name AS student_first_name,
+            u.last_name AS student_last_name,
             s.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
@@ -789,8 +789,8 @@ const updateMe = async (req, res) => {
           `SELECT 
             u.*,
             s.id AS student_id,
-            s.first_name AS student_first_name,
-            s.last_name AS student_last_name,
+            u.first_name AS student_first_name,
+            u.last_name AS student_last_name,
             s.is_active AS student_is_active,
             c.class_name,
             sec.section_name,
