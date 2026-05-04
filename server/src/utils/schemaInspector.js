@@ -41,8 +41,14 @@ async function hasTable(tableName) {
   return exists;
 }
 
+function clearSchemaInspectorCache() {
+  columnCache.clear();
+  tableCache.clear();
+}
+
 module.exports = {
   hasColumn,
   hasTable,
+  clearSchemaInspectorCache,
 };
 

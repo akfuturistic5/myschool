@@ -56,7 +56,10 @@ function makeCloneError(status, code, message, details) {
   const err = new Error(message);
   err.status = status;
   err.code = code;
-  if (details !== undefined) err.details = details;
+  if (details !== undefined) {
+    err.details = details;
+    err.data = details;
+  }
   return err;
 }
 
@@ -135,6 +138,453 @@ async function makeUniqueCode(client, tableName, columnName, preferred, maxLen, 
     if (!(await codeExists(client, tableName, columnName, candidate))) return candidate;
   }
   return null;
+}
+
+/** Parse DB/ISO date to local Date at noon (stable day boundaries). */
+function parseLocalDateOnly(value) {
+  if (value == null) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
+  const s = String(value).slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return null;
+  return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0, 0);
+}
+
+function formatLocalDateOnly(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** Whole calendar days from `from` to `to` (to - from). */
+function calendarDaysBetween(to, from) {
+  const a = parseLocalDateOnly(to);
+  const b = parseLocalDateOnly(from);
+  if (!a || !b) return 0;
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
+}
+
+function addCalendarDays(value, deltaDays) {
+  const d = parseLocalDateOnly(value);
+  if (!d) return null;
+  d.setDate(d.getDate() + deltaDays);
+  return d;
+}
+
+/**
+ * uq_timetable_teacher_no_overlap is on (teacher, day, slot, overlapping date range).
+ * Multiple source rows can share that key (e.g. different sections) with the same full-year range;
+ * cloning would insert identical ranges → exclusion failure. Split the target year's inclusive
+ * [rangeStart, rangeEnd] into partCount contiguous slices; this partition is partIndex (0-based).
+ */
+function partitionInclusiveRange(rangeStart, rangeEnd, partIndex, partCount) {
+  const s = parseLocalDateOnly(rangeStart);
+  const e = parseLocalDateOnly(rangeEnd);
+  if (!s || !e) return { from: s, to: e };
+  let pc = Math.max(1, parseInt(partCount, 10) || 1);
+  let pi = parseInt(partIndex, 10) || 0;
+  if (pi < 0) pi = 0;
+  if (pi >= pc) pi = pc - 1;
+  const totalDays = calendarDaysBetween(e, s) + 1;
+  if (totalDays < 1) return { from: s, to: s };
+  const base = Math.floor(totalDays / pc);
+  const rem = totalDays % pc;
+  let startOffset = 0;
+  for (let j = 0; j < pi; j++) {
+    startOffset += base + (j < rem ? 1 : 0);
+  }
+  const lenI = base + (pi < rem ? 1 : 0);
+  const fromD = addCalendarDays(s, startOffset);
+  const toD = addCalendarDays(s, startOffset + Math.max(0, lenI - 1));
+  return { from: fromD, to: toD };
+}
+
+function teacherSlotOverlapKey(teacherId, dayOfWeek, timeSlotId) {
+  return `${teacherId}\t${dayOfWeek}\t${timeSlotId}`;
+}
+
+const TIMETABLE_EXCLUSION_CONSTRAINTS = new Set([
+  'uq_timetable_teacher_no_overlap',
+  'uq_timetable_section_no_overlap',
+  'uq_timetable_room_no_overlap',
+]);
+
+/** Mon..Sun labels for weekday 1..7 */
+const DOW_SHORT = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function timetableDowShort(dow) {
+  const n = Number(dow);
+  return DOW_SHORT[n] || `day ${n}`;
+}
+
+function timetableRangeLabel(validFrom, validTo) {
+  const a = validFrom ? String(validFrom).slice(0, 10) : '?';
+  if (validTo == null || String(validTo).trim() === '') return `${a} → (no end date)`;
+  return `${a} → ${String(validTo).slice(0, 10)}`;
+}
+
+function isPgTimetableExclusionViolation(pgErr) {
+  return !!(pgErr && pgErr.code === '23P01' && TIMETABLE_EXCLUSION_CONSTRAINTS.has(String(pgErr.constraint || '')));
+}
+
+const OVERLAP_TAIL = `
+  AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity'::date))
+      && daterange($VF::date, COALESCE($VT::date, 'infinity'::date))
+  AND cs.day_of_week = $DOW
+  AND cs.time_slot_id = $SLOT`;
+
+/** Conflicting timetable rows matching the exclusion constraint keys + overlapping date ranges. */
+async function selectOverlappingClassSchedules(
+  client,
+  { scopedAcademicYearId, teacherId, classSectionId, classRoomId, dayOfWeek, timeSlotId, validFromStr, validToStr }
+) {
+  const vf = validFromStr;
+  const vt = validToStr === '' || validToStr == null ? null : validToStr;
+  const dow = dayOfWeek;
+  const sid = timeSlotId;
+
+  const BASE_SELECT = `
+    SELECT cs.id,
+           cs.academic_year_id,
+           ay.year_name,
+           ay.end_date::text AS academic_year_end_date,
+           cs.teacher_id,
+           cs.day_of_week,
+           cs.time_slot_id,
+           ts.slot_name AS slot_label,
+           cs.valid_from::text AS valid_from,
+           cs.valid_to::text AS valid_to,
+           cs.class_section_id,
+           cs.class_room_id
+    FROM class_schedules cs
+    LEFT JOIN academic_years ay ON ay.id = cs.academic_year_id
+    LEFT JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
+    WHERE `;
+
+  if (teacherId) {
+    const tail = OVERLAP_TAIL.replace('$VF', '$3').replace('$VT', '$4').replace('$DOW', '$5').replace('$SLOT', '$6');
+    const r1 = await client.query(
+      `${BASE_SELECT} cs.academic_year_id = $1
+         AND cs.teacher_id = $2
+         ${tail}
+       ORDER BY cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [scopedAcademicYearId, teacherId, vf, vt, dow, sid]
+    );
+    if (r1.rows.length) return { rows: r1.rows, usedGlobalScope: false };
+    const tailG = OVERLAP_TAIL.replace('$VF', '$2').replace('$VT', '$3').replace('$DOW', '$4').replace('$SLOT', '$5');
+    const r2 = await client.query(
+      `${BASE_SELECT} cs.teacher_id = $1
+         ${tailG}
+       ORDER BY cs.academic_year_id, cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [teacherId, vf, vt, dow, sid]
+    );
+    return { rows: r2.rows, usedGlobalScope: true };
+  }
+
+  if (classSectionId) {
+    const tail = OVERLAP_TAIL.replace('$VF', '$3').replace('$VT', '$4').replace('$DOW', '$5').replace('$SLOT', '$6');
+    const r1 = await client.query(
+      `${BASE_SELECT} cs.academic_year_id = $1
+         AND cs.class_section_id = $2
+         ${tail}
+       ORDER BY cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [scopedAcademicYearId, classSectionId, vf, vt, dow, sid]
+    );
+    if (r1.rows.length) return { rows: r1.rows, usedGlobalScope: false };
+    const tailG = OVERLAP_TAIL.replace('$VF', '$2').replace('$VT', '$3').replace('$DOW', '$4').replace('$SLOT', '$5');
+    const r2 = await client.query(
+      `${BASE_SELECT} cs.class_section_id = $1
+         ${tailG}
+       ORDER BY cs.academic_year_id, cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [classSectionId, vf, vt, dow, sid]
+    );
+    return { rows: r2.rows, usedGlobalScope: true };
+  }
+
+  if (classRoomId) {
+    const tail = OVERLAP_TAIL.replace('$VF', '$3').replace('$VT', '$4').replace('$DOW', '$5').replace('$SLOT', '$6');
+    const r1 = await client.query(
+      `${BASE_SELECT} cs.academic_year_id = $1
+         AND cs.class_room_id = $2
+         ${tail}
+       ORDER BY cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [scopedAcademicYearId, classRoomId, vf, vt, dow, sid]
+    );
+    if (r1.rows.length) return { rows: r1.rows, usedGlobalScope: false };
+    const tailG = OVERLAP_TAIL.replace('$VF', '$2').replace('$VT', '$3').replace('$DOW', '$4').replace('$SLOT', '$5');
+    const r2 = await client.query(
+      `${BASE_SELECT} cs.class_room_id = $1
+         ${tailG}
+       ORDER BY cs.academic_year_id, cs.valid_from NULLS LAST, cs.id ASC
+       LIMIT 15`,
+      [classRoomId, vf, vt, dow, sid]
+    );
+    return { rows: r2.rows, usedGlobalScope: true };
+  }
+
+  return { rows: [], usedGlobalScope: false };
+}
+
+/**
+ * older rows with valid_to NULL → daterange upper bound "infinity", which blocks later years when the DB
+ * enforces teacher/section/room overlap without academic_year_id in the constraint.
+ * Closes those rows using their academic year's end_date (or the source session end / day before the new row)
+ * — data-only, no DDL.
+ */
+async function closeOpenEndedOverlapsOutsideTargetYear(
+  client,
+  overlapArgs,
+  { targetYearId, sourceYearId, sourceYearEndDateStr }
+) {
+  const bundle = await selectOverlappingClassSchedules(client, overlapArgs);
+  let closed = 0;
+  const patchedIds = [];
+  for (const r of bundle.rows) {
+    if (Number(r.academic_year_id) === Number(targetYearId)) continue;
+    if (r.valid_to != null && String(r.valid_to).trim() !== '') continue;
+
+    let endStr = r.academic_year_end_date ? String(r.academic_year_end_date).slice(0, 10) : null;
+    if (!endStr || !/^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
+      if (sourceYearEndDateStr && Number(r.academic_year_id) === Number(sourceYearId)) {
+        endStr = sourceYearEndDateStr;
+      }
+    }
+    if (!endStr || !/^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
+      if (Number(r.academic_year_id) === Number(sourceYearId) && overlapArgs.validFromStr) {
+        const inc = parseLocalDateOnly(overlapArgs.validFromStr);
+        const dayBefore = inc ? addCalendarDays(inc, -1) : null;
+        endStr = dayBefore ? formatLocalDateOnly(dayBefore) : null;
+      }
+    }
+    if (!endStr || !/^\d{4}-\d{2}-\d{2}$/.test(endStr)) continue;
+
+    const vf = r.valid_from ? String(r.valid_from).slice(0, 10) : null;
+    if (vf && endStr <= vf) continue;
+
+    const up = await client.query(
+      `UPDATE class_schedules
+       SET valid_to = $2::date, updated_at = NOW()
+       WHERE id = $1 AND valid_to IS NULL`,
+      [r.id, endStr]
+    );
+    const n = up.rowCount != null ? up.rowCount : 0;
+    if (n > 0) {
+      closed += n;
+      patchedIds.push(Number(r.id));
+    }
+  }
+  return { closed, patchedIds };
+}
+
+async function reconcileTimetableOverlapsBeforeTripleKeyInsert(client, opts) {
+  const {
+    targetYearId,
+    sourceYearId,
+    sourceYearEndDateStr,
+    teacherId,
+    classSectionId,
+    classRoomId,
+    dow,
+    slotId,
+    validFromSql,
+    validToSql,
+  } = opts;
+  const base = {
+    scopedAcademicYearId: targetYearId,
+    dayOfWeek: dow,
+    timeSlotId: slotId,
+    validFromStr: validFromSql,
+    validToStr: validToSql,
+  };
+  const meta = { targetYearId, sourceYearId, sourceYearEndDateStr };
+  const a = await closeOpenEndedOverlapsOutsideTargetYear(
+    client,
+    { ...base, teacherId, classSectionId: null, classRoomId: null },
+    meta
+  );
+  const b = await closeOpenEndedOverlapsOutsideTargetYear(
+    client,
+    { ...base, teacherId: null, classSectionId, classRoomId: null },
+    meta
+  );
+  const c = await closeOpenEndedOverlapsOutsideTargetYear(
+    client,
+    { ...base, teacherId: null, classSectionId: null, classRoomId },
+    meta
+  );
+  return a.closed + b.closed + c.closed;
+}
+
+async function timetableExclusionToCloneError(client, pgErr, attempted) {
+  const cname = String(pgErr.constraint || '');
+  let kind = 'timetable';
+  let cloneCode = 'ACADEMIC_YEAR_CLONE_TIMETABLE_OVERLAP';
+
+  let slotLabel = attempted.slot_label;
+  if (!slotLabel && toPositiveInt(attempted.time_slot_id)) {
+    try {
+      const sn = await client.query('SELECT slot_name FROM timetable_time_slots WHERE id = $1 LIMIT 1', [
+        attempted.time_slot_id,
+      ]);
+      slotLabel = sn.rows[0]?.slot_name || null;
+    } catch (_) {
+      slotLabel = null;
+    }
+  }
+
+  let teacherId;
+  let classSectionId;
+  let classRoomId;
+
+  if (cname === 'uq_timetable_teacher_no_overlap') {
+    kind = 'teacher';
+    cloneCode = 'ACADEMIC_YEAR_CLONE_TIMETABLE_TEACHER_OVERLAP';
+    teacherId = attempted.teacher_id;
+  } else if (cname === 'uq_timetable_section_no_overlap') {
+    kind = 'section';
+    cloneCode = 'ACADEMIC_YEAR_CLONE_TIMETABLE_SECTION_OVERLAP';
+    classSectionId = attempted.class_section_id;
+  } else if (cname === 'uq_timetable_room_no_overlap') {
+    kind = 'room';
+    cloneCode = 'ACADEMIC_YEAR_CLONE_TIMETABLE_ROOM_OVERLAP';
+    classRoomId = attempted.class_room_id;
+  }
+
+  let conflicts = [];
+  let usedGlobalScope = false;
+
+  try {
+    const bundle = await selectOverlappingClassSchedules(client, {
+      scopedAcademicYearId: attempted.academic_year_id,
+      teacherId,
+      classSectionId,
+      classRoomId,
+      dayOfWeek: attempted.day_of_week,
+      timeSlotId: attempted.time_slot_id,
+      validFromStr: attempted.valid_from,
+      validToStr: attempted.valid_to,
+    });
+    conflicts = bundle.rows || [];
+    usedGlobalScope = bundle.usedGlobalScope;
+  } catch (diagErr) {
+    console.warn('Timetable overlap diagnosis query failed:', diagErr?.message);
+  }
+
+  const attemptLine = `Source timetable row #${
+    attempted.source_class_schedule_id
+  }: ${timetableDowShort(attempted.day_of_week)}, period "${slotLabel || `#${attempted.time_slot_id}`}", dates ${timetableRangeLabel(
+    attempted.valid_from,
+    attempted.valid_to
+  )}.`;
+
+  const conflictLines =
+    conflicts.length > 0
+      ? conflicts.map((row, idx) => {
+          const yr = row.year_name || `(academic_year_id ${row.academic_year_id})`;
+          const sl = row.slot_label || `slot ${row.time_slot_id}`;
+          return `${idx + 1}. ${yr} — ${timetableDowShort(row.day_of_week)} ${sl}, ${timetableRangeLabel(row.valid_from, row.valid_to)} (timetable id ${row.id})`;
+        })
+      : [];
+
+  let headline =
+    kind === 'teacher'
+      ? 'This teacher already has another class in the same period while those date ranges overlap.'
+      : kind === 'section'
+        ? 'This class section already has another subject in the same period while those date ranges overlap.'
+        : 'This room already has another class in the same period while those date ranges overlap.';
+
+  if (kind === 'timetable') {
+    headline = 'Another timetable row uses the same slot and overlapping dates.';
+  }
+
+  const detailStr = typeof pgErr?.detail === 'string' ? pgErr.detail.trim() : '';
+  const legacyGlobalOverlapKeyDetails = detailStr.length > 0 && !/\bacademic_year_id\b/i.test(detailStr);
+  const conflictingOpenEndedRow = conflicts.some((c) => c.valid_to == null || String(c.valid_to).trim() === '');
+  const infinityOverlap = conflictingOpenEndedRow || /\binfinity\b/i.test(detailStr);
+
+  let explainParts = [];
+  if (infinityOverlap || conflictingOpenEndedRow) {
+    explainParts.push(
+      `Why PostgreSQL rejects this is not vague: overlapping entries must not share the same teacher, SAME weekday (${timetableDowShort(
+        attempted.day_of_week
+      )}), SAME period (${slotLabel || `#${attempted.time_slot_id}`}), and overlapping calendar ranges.`
+    );
+    if (infinityOverlap) {
+      explainParts.push(
+        `The conflicting row ends with "(no end date)". In Postgres that becomes "...infinity)" — so chronologically it never stops covering later years. Your new cloned row (${timetableRangeLabel(
+          attempted.valid_from,
+          attempted.valid_to
+        )}) still falls inside that open-ended timeline, hence the exclusion violation — not random corruption.`
+      );
+    }
+  }
+  if (legacyGlobalOverlapKeyDetails || usedGlobalScope) {
+    explainParts.push(
+      'The violation message lists only teacher, weekday, slot, and dateranges (no academic year in that key tuple). Overlap is enforced across ALL academic sessions — so leftover open-ended rows from an older session can block cloning the next one.'
+    );
+  }
+
+  const crossYearHint =
+    usedGlobalScope &&
+    conflicts.some((r) => Number(r.academic_year_id) !== Number(attempted.academic_year_id))
+      ? ' Rows from older academic sessions appear in this conflict; open-ended validity ranges can block clones across sessions until end dates are set.'
+      : '';
+  const hasCrossYearHint = crossYearHint.length > 0;
+
+  const unresolvedOpenIds = conflicts
+    .filter((c) => c.valid_to == null || String(c.valid_to).trim() === '')
+    .map((c) => c.id);
+
+  let manualRemediation = '';
+  if (unresolvedOpenIds.length) {
+    manualRemediation += `\n\nWhat you can change in data (constraints unchanged): set a validity end date on timetable id(s) ${unresolvedOpenIds.join(
+      ', '
+    )}, and/or fill the END date on their academic_year record so clones can clamp old schedules automatically.`;
+  }
+
+  const postgresDetail =
+    pgErr && typeof pgErr.detail === 'string' && pgErr.detail.trim() !== '' ? `\n(Raw PostgreSQL detail: ${pgErr.detail.trim()})` : '';
+
+  const explainBlock =
+    explainParts.length > 0
+      ? `\n\n${explainParts.join('\n\n')}`
+      : '';
+
+  const summary =
+    `Timetable copy failed (${cname}). ${headline} ${attemptLine}${explainBlock}${
+      conflictLines.length ? `\n\nOverlapping rows already in the database:\n${conflictLines.join('\n')}` : ''
+    }${pgErr && !conflictLines.length ? postgresDetail : ''}${manualRemediation}${crossYearHint}`;
+
+  return makeCloneError(409, cloneCode, summary, {
+    constraint: cname,
+    kind,
+    infinity_open_ended_overlap: infinityOverlap,
+    legacy_global_overlap_key_in_detail: legacyGlobalOverlapKeyDetails,
+    postgres_detail: pgErr?.detail ?? null,
+    source_class_schedule_id: attempted.source_class_schedule_id ?? null,
+    attempted: {
+      academic_year_id: attempted.academic_year_id,
+      teacher_id: attempted.teacher_id,
+      class_section_id: attempted.class_section_id,
+      class_room_id: attempted.class_room_id,
+      day_of_week: attempted.day_of_week,
+      time_slot_id: attempted.time_slot_id,
+      valid_from: attempted.valid_from,
+      valid_to: attempted.valid_to,
+    },
+    conflicts,
+    scoped_query_used_global_fallback: usedGlobalScope,
+    cross_year_hint: hasCrossYearHint,
+  });
 }
 
 async function cloneDepartments(client, createdByStaffId, targetYearId) {
@@ -1164,6 +1614,578 @@ async function cloneTransport(client, sourceYearId, targetYearId) {
   };
 }
 
+async function isTripleKeyTenantLayout(client) {
+  if (await columnExists(client, 'classes', 'academic_year_id')) return false;
+  if (!(await tableExists(client, 'class_sections'))) return false;
+  if (!(await columnExists(client, 'class_sections', 'academic_year_id'))) return false;
+  return true;
+}
+
+function tenantSoftDeleteCs(client) {
+  return columnExists(client, 'class_sections', 'deleted_at');
+}
+
+function tenantSoftDeleteCsub(client) {
+  return columnExists(client, 'class_subjects', 'deleted_at');
+}
+
+function tenantSoftDeleteSta(client) {
+  return columnExists(client, 'subject_teacher_assignments', 'deleted_at');
+}
+
+async function validatePreconditionsTenant(client, sourceYearId, targetYearId, options) {
+  const sourceYear = await client.query('SELECT id FROM academic_years WHERE id = $1 LIMIT 1', [sourceYearId]);
+  if (!sourceYear.rows.length) {
+    throw makeCloneError(404, 'ACADEMIC_YEAR_COPY_SOURCE_NOT_FOUND', 'Source academic year not found for cloning');
+  }
+  const targetYear = await client.query('SELECT id FROM academic_years WHERE id = $1 LIMIT 1', [targetYearId]);
+  if (!targetYear.rows.length) {
+    throw makeCloneError(404, 'ACADEMIC_YEAR_COPY_TARGET_NOT_FOUND', 'Target academic year not found for cloning');
+  }
+
+  const csAlive = (await tenantSoftDeleteCs(client)) ? ' AND deleted_at IS NULL' : '';
+
+  if (options.classes || options.sections) {
+    const c = await client.query(
+      `SELECT COUNT(*)::int AS count FROM class_sections WHERE academic_year_id = $1 ${csAlive}`,
+      [targetYearId]
+    );
+    if ((c.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(
+        409,
+        'ACADEMIC_YEAR_CLONE_TARGET_HAS_CLASS_SECTIONS',
+        'Target academic year already has class/section placements. Strict clone requires an empty target year for selected modules.'
+      );
+    }
+  }
+  if (options.subjects) {
+    const csubAlive = (await tenantSoftDeleteCsub(client)) ? ' AND deleted_at IS NULL' : '';
+    const c = await client.query(
+      `SELECT COUNT(*)::int AS count FROM class_subjects WHERE academic_year_id = $1 ${csubAlive}`,
+      [targetYearId]
+    );
+    if ((c.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(
+        409,
+        'ACADEMIC_YEAR_CLONE_TARGET_HAS_CLASS_SUBJECTS',
+        'Target academic year already has class subjects.'
+      );
+    }
+  }
+  if (options.teacherAssignments) {
+    if (!(await tableExists(client, 'subject_teacher_assignments'))) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_TENANT_MISSING_STA',
+        'This database does not have subject_teacher_assignments — teacher assignment copy is unsupported.'
+      );
+    }
+    const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND deleted_at IS NULL' : '';
+    const c = await client.query(
+      `SELECT COUNT(*)::int AS count FROM subject_teacher_assignments WHERE academic_year_id = $1 ${staAlive}`,
+      [targetYearId]
+    );
+    if ((c.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(409, 'ACADEMIC_YEAR_CLONE_TARGET_HAS_ASSIGNMENTS', 'Target academic year already has assignment rows.');
+    }
+  }
+  if (options.timetable) {
+    const c = await client.query('SELECT COUNT(*)::int AS count FROM class_schedules WHERE academic_year_id = $1', [targetYearId]);
+    if ((c.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(409, 'ACADEMIC_YEAR_CLONE_TARGET_HAS_TIMETABLE', 'Target academic year already has timetable entries.');
+    }
+  }
+}
+
+async function collectExpectedCountsTenant(client, sourceYearId, options) {
+  const counts = {};
+  const csAlive = (await tenantSoftDeleteCs(client)) ? ' AND deleted_at IS NULL' : '';
+  const csubAlive = (await tenantSoftDeleteCsub(client)) ? ' AND deleted_at IS NULL' : '';
+  const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND deleted_at IS NULL' : '';
+
+  if (options.classes) {
+    const r = await client.query(
+      `SELECT COUNT(DISTINCT class_id)::int AS count FROM class_sections WHERE academic_year_id = $1 ${csAlive}`,
+      [sourceYearId]
+    );
+    counts.classes_expected = r.rows[0]?.count || 0;
+  }
+  if (options.sections) {
+    const r = await client.query(
+      `SELECT COUNT(*)::int AS count FROM class_sections WHERE academic_year_id = $1 ${csAlive}`,
+      [sourceYearId]
+    );
+    counts.sections_expected = r.rows[0]?.count || 0;
+  }
+  if (options.subjects) {
+    const r = await client.query(
+      `SELECT COUNT(*)::int AS count FROM class_subjects WHERE academic_year_id = $1 ${csubAlive}`,
+      [sourceYearId]
+    );
+    counts.subjects_expected = r.rows[0]?.count || 0;
+  }
+  if (options.teacherAssignments) {
+    const r = await client.query(
+      `SELECT COUNT(*)::int AS count FROM subject_teacher_assignments WHERE academic_year_id = $1 ${staAlive}`,
+      [sourceYearId]
+    );
+    counts.teacher_assignments_expected = r.rows[0]?.count || 0;
+  }
+  if (options.timetable) {
+    const r = await client.query(
+      'SELECT COUNT(*)::int AS count FROM class_schedules WHERE academic_year_id = $1',
+      [sourceYearId]
+    );
+    counts.timetable_expected = r.rows[0]?.count || 0;
+  }
+  return counts;
+}
+
+async function validateSourceDataConsistencyTenant(client, sourceYearId, options) {
+  if (options.teacherAssignments && (await tableExists(client, 'subject_teacher_assignments'))) {
+    const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND sta.deleted_at IS NULL' : '';
+    const missingStaff = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM subject_teacher_assignments sta
+       LEFT JOIN staff st ON st.id = sta.staff_id
+       WHERE sta.academic_year_id = $1 ${staAlive} AND st.id IS NULL`,
+      [sourceYearId]
+    );
+    if ((missingStaff.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_ASSIGNMENT_SOURCE_STAFF_MISSING',
+        'Cannot copy assignments because the source year references missing staff.'
+      );
+    }
+  }
+
+  if (options.timetable) {
+    const hasTts = await tableExists(client, 'timetable_time_slots');
+    const slotJoin = hasTts ? 'timetable_time_slots' : 'time_slots';
+    const missingSlots = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM class_schedules cs
+       LEFT JOIN ${slotJoin} ts ON ts.id = cs.time_slot_id
+       WHERE cs.academic_year_id = $1 AND ts.id IS NULL`,
+      [sourceYearId]
+    );
+    if ((missingSlots.rows[0]?.count || 0) > 0) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_TIMETABLE_SOURCE_SLOT_MISSING',
+        'Cannot clone timetable because the source year has rows with missing time slots.'
+      );
+    }
+  }
+}
+
+async function validateStrictIntegrityTenant(client, summary) {
+  if (summary.skipped !== 0 || (summary.errors && summary.errors.length > 0)) {
+    throw makeCloneError(
+      500,
+      'ACADEMIC_YEAR_CLONE_STRICT_SUMMARY_INVALID',
+      'Clone summary indicates skipped records or unresolved errors.'
+    );
+  }
+}
+
+async function cloneClassesTenant(client, sourceYearId) {
+  const csAlive = (await tenantSoftDeleteCs(client)) ? ' AND deleted_at IS NULL' : '';
+  const r = await client.query(
+    `SELECT DISTINCT class_id FROM class_sections WHERE academic_year_id = $1 ${csAlive} ORDER BY class_id ASC`,
+    [sourceYearId]
+  );
+  const map = new Map();
+  for (const row of r.rows) {
+    const cid = Number(row.class_id);
+    if (cid) map.set(cid, cid);
+  }
+  return { map, inserted: map.size };
+}
+
+async function cloneClassSectionsTenant(client, sourceYearId, targetYearId, createdByStaffId) {
+  const csAlive = (await tenantSoftDeleteCs(client)) ? ' AND deleted_at IS NULL' : '';
+  const rowsRes = await client.query(
+    `SELECT id, class_id, section_id, max_students, room_number, is_active
+     FROM class_sections
+     WHERE academic_year_id = $1 ${csAlive}
+     ORDER BY id ASC`,
+    [sourceYearId]
+  );
+  const classSectionMap = new Map();
+  let insertedCount = 0;
+  const createdBy = createdByStaffId || null;
+  for (const row of rowsRes.rows) {
+    const ins = await client.query(
+      `INSERT INTO class_sections (
+        class_id, section_id, academic_year_id, max_students, room_number, is_active, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+      RETURNING id`,
+      [
+        row.class_id,
+        row.section_id,
+        targetYearId,
+        row.max_students ?? 30,
+        row.room_number || null,
+        normalizeBool(row.is_active, true),
+        createdBy,
+      ]
+    );
+    classSectionMap.set(Number(row.id), Number(ins.rows[0].id));
+    insertedCount += 1;
+  }
+  return { map: classSectionMap, inserted: insertedCount };
+}
+
+async function cloneClassSubjectsTenant(client, sourceYearId, targetYearId, createdByStaffId) {
+  const csubAlive = (await tenantSoftDeleteCsub(client)) ? ' AND deleted_at IS NULL' : '';
+  const rowsRes = await client.query(
+    `SELECT id, class_id, subject_id, is_elective, theory_hours, practical_hours, total_marks, passing_marks
+     FROM class_subjects
+     WHERE academic_year_id = $1 ${csubAlive}
+     ORDER BY id ASC`,
+    [sourceYearId]
+  );
+  const classSubjectMap = new Map();
+  let insertedCount = 0;
+  const createdBy = createdByStaffId || null;
+  const electiveSql = await columnExists(client, 'class_subjects', 'is_elective');
+  for (const row of rowsRes.rows) {
+    const ins = electiveSql
+      ? await client.query(
+          `INSERT INTO class_subjects (
+            class_id, subject_id, academic_year_id, is_elective, theory_hours, practical_hours,
+            total_marks, passing_marks, created_by
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          RETURNING id`,
+          [
+            row.class_id,
+            row.subject_id,
+            targetYearId,
+            normalizeBool(row.is_elective, false),
+            row.theory_hours ?? 0,
+            row.practical_hours ?? 0,
+            row.total_marks ?? 100,
+            row.passing_marks ?? 35,
+            createdBy,
+          ]
+        )
+      : await client.query(
+          `INSERT INTO class_subjects (
+            class_id, subject_id, academic_year_id, theory_hours, practical_hours,
+            total_marks, passing_marks, created_by
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+          RETURNING id`,
+          [
+            row.class_id,
+            row.subject_id,
+            targetYearId,
+            row.theory_hours ?? 0,
+            row.practical_hours ?? 0,
+            row.total_marks ?? 100,
+            row.passing_marks ?? 35,
+            createdBy,
+          ]
+        );
+    classSubjectMap.set(Number(row.id), Number(ins.rows[0].id));
+    insertedCount += 1;
+  }
+  return { map: classSubjectMap, inserted: insertedCount };
+}
+
+async function cloneSubjectTeacherAssignmentsTenant(
+  client,
+  sourceYearId,
+  targetYearId,
+  classSectionMap,
+  classSubjectMap,
+  createdByStaffId
+) {
+  if (!(await tableExists(client, 'subject_teacher_assignments'))) return 0;
+  const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND deleted_at IS NULL' : '';
+  const rowsRes = await client.query(
+    `SELECT id, class_id, class_section_id, class_subject_id, staff_id, valid_period
+     FROM subject_teacher_assignments
+     WHERE academic_year_id = $1 ${staAlive}
+     ORDER BY id ASC`,
+    [sourceYearId]
+  );
+  let inserted = 0;
+  const createdBy = createdByStaffId || null;
+  for (const row of rowsRes.rows) {
+    const oldCs = toPositiveInt(row.class_section_id);
+    const newCs = oldCs ? classSectionMap.get(oldCs) ?? null : null;
+    if (oldCs && newCs == null) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_STA_SECTION_MAPPING_MISSING',
+        `Cannot copy subject teacher assignment ${row.id}: class_section mapping is missing.`
+      );
+    }
+    const oldCsub = toPositiveInt(row.class_subject_id);
+    const newCsub = oldCsub ? classSubjectMap.get(oldCsub) ?? null : null;
+    if (!newCsub) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_STA_SUBJECT_MAPPING_MISSING',
+        `Cannot copy subject teacher assignment ${row.id}: class_subject mapping is missing.`
+      );
+    }
+    const staffId = toPositiveInt(row.staff_id);
+    if (!staffId) {
+      throw makeCloneError(400, 'ACADEMIC_YEAR_CLONE_STA_STAFF_INVALID', `Assignment ${row.id} has invalid staff_id.`);
+    }
+    await client.query(
+      `INSERT INTO subject_teacher_assignments (
+        class_id, class_section_id, class_subject_id, staff_id, academic_year_id, valid_period, created_by
+      ) VALUES ($1,$2,$3,$4,$5, COALESCE($6::daterange, daterange(CURRENT_DATE, '9999-12-31'::date, '[]')), $7)`,
+      [row.class_id, newCs, newCsub, staffId, targetYearId, row.valid_period ?? null, createdBy]
+    );
+    inserted += 1;
+  }
+  return inserted;
+}
+
+async function cloneTimetableTripleKey(client, sourceYearId, targetYearId, classSectionMap, classSubjectMap, createdByStaffId) {
+  const tripleCols =
+    (await columnExists(client, 'class_schedules', 'class_section_id')) &&
+    (await columnExists(client, 'class_schedules', 'class_subject_id'));
+  if (!tripleCols) {
+    throw makeCloneError(
+      400,
+      'ACADEMIC_YEAR_CLONE_TIMETABLE_SCHEMA_UNSUPPORTED',
+      'Timetable copy requires class_schedules.class_section_id and class_subject_id.'
+    );
+  }
+
+  const srcAy = await client.query('SELECT start_date, end_date FROM academic_years WHERE id = $1 LIMIT 1', [sourceYearId]);
+  const tgtAy = await client.query('SELECT start_date, end_date FROM academic_years WHERE id = $1 LIMIT 1', [targetYearId]);
+  const sourceStart = srcAy.rows[0]?.start_date;
+  const sourceEndRaw = srcAy.rows[0]?.end_date;
+  const sourceYearEndDateStr =
+    sourceEndRaw != null && String(sourceEndRaw).trim() !== '' ? String(sourceEndRaw).slice(0, 10) : null;
+  const targetStart = tgtAy.rows[0]?.start_date;
+  const targetEnd = tgtAy.rows[0]?.end_date;
+  if (!sourceStart || !targetStart) {
+    throw makeCloneError(
+      400,
+      'ACADEMIC_YEAR_DATES_REQUIRED',
+      'Cannot copy timetable: source and target academic years must have start_date set.'
+    );
+  }
+  const dayOffset = calendarDaysBetween(targetStart, sourceStart);
+
+  const rowsRes = await client.query(
+    `SELECT id, class_id, class_section_id, class_subject_id, teacher_id, class_room_id, time_slot_id, day_of_week,
+            valid_from, valid_to, remarks
+     FROM class_schedules
+     WHERE academic_year_id = $1
+     ORDER BY id ASC`,
+    [sourceYearId]
+  );
+
+  const slotGroups = new Map();
+  for (const r of rowsRes.rows) {
+    const tid = toPositiveInt(r.teacher_id);
+    const sid = toPositiveInt(r.time_slot_id);
+    const d = toPositiveInt(r.day_of_week);
+    if (!tid || !sid || !d) continue;
+    const k = teacherSlotOverlapKey(tid, d, sid);
+    if (!slotGroups.has(k)) slotGroups.set(k, []);
+    slotGroups.get(k).push(r);
+  }
+  for (const g of slotGroups.values()) {
+    g.sort((a, b) => Number(a.id) - Number(b.id));
+  }
+  const slotPartMeta = new Map();
+  for (const g of slotGroups.values()) {
+    const n = g.length;
+    for (let i = 0; i < g.length; i += 1) {
+      slotPartMeta.set(Number(g[i].id), { partIndex: i, partCount: n });
+    }
+  }
+
+  const rangeStartDate = parseLocalDateOnly(targetStart);
+  let rangeEndDate = parseLocalDateOnly(targetEnd);
+  if (!rangeStartDate) {
+    throw makeCloneError(400, 'ACADEMIC_YEAR_TARGET_START_INVALID', 'Target academic year start_date is invalid.');
+  }
+  if (!rangeEndDate) {
+    rangeEndDate = addCalendarDays(rangeStartDate, 364);
+  }
+  if (rangeEndDate && rangeStartDate.getTime() > rangeEndDate.getTime()) {
+    rangeEndDate = rangeStartDate;
+  }
+
+  let inserted = 0;
+  const createdBy = createdByStaffId || null;
+  const hasRoutine = await tableExists(client, 'teacher_routines');
+
+  for (const row of rowsRes.rows) {
+    const oldCsec = toPositiveInt(row.class_section_id);
+    const newCsec = oldCsec ? classSectionMap.get(oldCsec) ?? null : null;
+    if (!newCsec) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_TIMETABLE_SECTION_MAPPING_MISSING',
+        `Cannot copy timetable row ${row.id}: class_section mapping missing.`
+      );
+    }
+    const oldCsub = toPositiveInt(row.class_subject_id);
+    const newCsub = oldCsub ? classSubjectMap.get(oldCsub) ?? null : null;
+    if (!newCsub) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_TIMETABLE_SUBJECT_MAPPING_MISSING',
+        `Cannot copy timetable row ${row.id}: class_subject mapping missing.`
+      );
+    }
+    const teacherId = toPositiveInt(row.teacher_id);
+    const roomId = toPositiveInt(row.class_room_id);
+    const slotId = toPositiveInt(row.time_slot_id);
+    const dow = toPositiveInt(row.day_of_week);
+    if (!teacherId || !roomId || !slotId || !dow) {
+      throw makeCloneError(400, 'ACADEMIC_YEAR_CLONE_TIMETABLE_REQUIRED_NULL', `Timetable row ${row.id} is incomplete.`);
+    }
+
+    // Exclusions: teacher|section|room + day + slot + overlapping validity (ranges can span DB-wide unless each row has proper end dates).
+    // Shift windows into the target year; if several source rows share (teacher, day, slot), split the window into contiguous slices.
+    const part = slotPartMeta.get(Number(row.id)) || { partIndex: 0, partCount: 1 };
+    let validFromSql;
+    let validToSql;
+    if (part.partCount > 1) {
+      const slice = partitionInclusiveRange(rangeStartDate, rangeEndDate, part.partIndex, part.partCount);
+      validFromSql = formatLocalDateOnly(slice.from) || String(targetStart).slice(0, 10);
+      validToSql = formatLocalDateOnly(slice.to);
+    } else {
+      let vfDate =
+        row.valid_from != null ? addCalendarDays(row.valid_from, dayOffset) : parseLocalDateOnly(targetStart);
+      if (!vfDate) vfDate = parseLocalDateOnly(targetStart);
+      let vtDate = row.valid_to != null ? addCalendarDays(row.valid_to, dayOffset) : null;
+      if (vtDate == null && targetEnd != null) {
+        vtDate = parseLocalDateOnly(targetEnd);
+      }
+      if (vfDate && rangeStartDate && vfDate.getTime() < rangeStartDate.getTime()) vfDate = new Date(rangeStartDate);
+      if (vtDate && rangeEndDate && vtDate.getTime() > rangeEndDate.getTime()) vtDate = new Date(rangeEndDate);
+      if (vfDate && vtDate && vfDate.getTime() > vtDate.getTime()) {
+        vtDate = vfDate;
+      }
+      validFromSql = formatLocalDateOnly(vfDate) || String(targetStart).slice(0, 10);
+      validToSql = vtDate ? formatLocalDateOnly(vtDate) : null;
+    }
+
+    const tripleOverlapOpts = {
+      targetYearId,
+      sourceYearId,
+      sourceYearEndDateStr,
+      teacherId,
+      classSectionId: newCsec,
+      classRoomId: roomId,
+      dow,
+      slotId,
+      validFromSql,
+      validToSql,
+    };
+
+    await reconcileTimetableOverlapsBeforeTripleKeyInsert(client, tripleOverlapOpts);
+
+    let ins;
+    try {
+      ins = await client.query(
+        `INSERT INTO class_schedules (
+        academic_year_id, class_id, class_section_id, class_subject_id, teacher_id, class_room_id, time_slot_id,
+        day_of_week, valid_from, valid_to, remarks, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12)
+      RETURNING id, teacher_id`,
+        [
+          targetYearId,
+          row.class_id,
+          newCsec,
+          newCsub,
+          teacherId,
+          roomId,
+          slotId,
+          dow,
+          validFromSql,
+          validToSql,
+          row.remarks || null,
+          createdBy,
+        ]
+      );
+    } catch (insErr) {
+      if (!isPgTimetableExclusionViolation(insErr)) throw insErr;
+      const repaired = await reconcileTimetableOverlapsBeforeTripleKeyInsert(client, tripleOverlapOpts);
+      if (repaired === 0) {
+        throw await timetableExclusionToCloneError(client, insErr, {
+          source_class_schedule_id: row.id,
+          academic_year_id: targetYearId,
+          teacher_id: teacherId,
+          class_section_id: newCsec,
+          class_room_id: roomId,
+          day_of_week: dow,
+          time_slot_id: slotId,
+          valid_from: validFromSql,
+          valid_to: validToSql,
+          slot_label: null,
+        });
+      }
+      try {
+        ins = await client.query(
+          `INSERT INTO class_schedules (
+        academic_year_id, class_id, class_section_id, class_subject_id, teacher_id, class_room_id, time_slot_id,
+        day_of_week, valid_from, valid_to, remarks, created_by
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,$11,$12)
+      RETURNING id, teacher_id`,
+          [
+            targetYearId,
+            row.class_id,
+            newCsec,
+            newCsub,
+            teacherId,
+            roomId,
+            slotId,
+            dow,
+            validFromSql,
+            validToSql,
+            row.remarks || null,
+            createdBy,
+          ]
+        );
+      } catch (insErr2) {
+        if (isPgTimetableExclusionViolation(insErr2)) {
+          throw await timetableExclusionToCloneError(client, insErr2, {
+            source_class_schedule_id: row.id,
+            academic_year_id: targetYearId,
+            teacher_id: teacherId,
+            class_section_id: newCsec,
+            class_room_id: roomId,
+            day_of_week: dow,
+            time_slot_id: slotId,
+            valid_from: validFromSql,
+            valid_to: validToSql,
+            slot_label: null,
+          });
+        }
+        throw insErr2;
+      }
+    }
+
+    inserted += 1;
+
+    const newSchedId = toPositiveInt(ins.rows[0]?.id);
+    const trTeacher = toPositiveInt(ins.rows[0]?.teacher_id);
+    if (!hasRoutine || !newSchedId || !trTeacher) continue;
+    await client.query(
+      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, modified_at)
+       VALUES ($1, $2, $3, true, NOW(), NOW())`,
+      [trTeacher, newSchedId, targetYearId]
+    );
+  }
+
+  return inserted;
+}
+
 async function validatePreconditions(client, sourceYearId, targetYearId, options) {
   const sourceYear = await client.query('SELECT id FROM academic_years WHERE id = $1 LIMIT 1', [sourceYearId]);
   if (!sourceYear.rows.length) {
@@ -1474,6 +2496,154 @@ async function cloneAcademicYearData(client, { sourceYearId, targetYearId, optio
         skipped: 0,
         errors: [],
       },
+    };
+  }
+
+  const legacyClassesYearScoped = await columnExists(client, 'classes', 'academic_year_id');
+  const tripleKeyTenantLayout = await isTripleKeyTenantLayout(client);
+  const wantsStructuralClone =
+    normalizedOptions.classes ||
+    normalizedOptions.sections ||
+    normalizedOptions.subjects ||
+    normalizedOptions.teacherAssignments ||
+    normalizedOptions.timetable;
+  if (wantsStructuralClone && !legacyClassesYearScoped && !tripleKeyTenantLayout) {
+    throw makeCloneError(
+      409,
+      'ACADEMIC_YEAR_CLONE_SCHEMA_UNSUPPORTED',
+      'This database layout does not support copying academic structure (missing classes.academic_year_id and class_sections year anchors). Create the year without copy options or ask your administrator.'
+    );
+  }
+
+  if (tripleKeyTenantLayout && wantsStructuralClone) {
+    if (normalizedOptions.subjects && !(await tableExists(client, 'class_subjects'))) {
+      throw makeCloneError(
+        400,
+        'ACADEMIC_YEAR_CLONE_TENANT_MISSING_CLASS_SUBJECTS',
+        'Copying subjects requires a class_subjects table (triple-key schema).'
+      );
+    }
+
+    await validatePreconditionsTenant(client, src, target, normalizedOptions);
+    const expectedTenant = await collectExpectedCountsTenant(client, src, normalizedOptions);
+    await validateSourceDataConsistencyTenant(client, src, normalizedOptions);
+
+    const summary = {
+      classes_cloned: 0,
+      sections_cloned: 0,
+      subjects_cloned: 0,
+      assignments_cloned: 0,
+      timetable_entries_cloned: 0,
+      skipped: 0,
+      errors: [],
+    };
+
+    const details = {};
+    let departmentMap = new Map();
+    let classMap = new Map();
+    let classSectionMap = new Map();
+    let classSubjectMap = new Map();
+
+    if (normalizedOptions.departments) {
+      const departmentResult = await cloneDepartments(client, createdByStaffId, target);
+      departmentMap = departmentResult.map;
+      details.departments_cloned = departmentResult.inserted;
+    }
+
+    if (normalizedOptions.designations) {
+      const designationResult = await cloneDesignations(client, departmentMap, createdByStaffId, target);
+      details.designations_cloned = designationResult.inserted;
+    }
+
+    if (normalizedOptions.classes) {
+      const classesResult = await cloneClassesTenant(client, src);
+      classMap = classesResult.map;
+      summary.classes_cloned = classesResult.inserted;
+    }
+
+    if (normalizedOptions.sections) {
+      const sectionsResult = await cloneClassSectionsTenant(client, src, target, createdByStaffId);
+      classSectionMap = sectionsResult.map;
+      summary.sections_cloned = sectionsResult.inserted;
+    }
+
+    if (normalizedOptions.subjects) {
+      const subjectsResult = await cloneClassSubjectsTenant(client, src, target, createdByStaffId);
+      classSubjectMap = subjectsResult.map;
+      summary.subjects_cloned = subjectsResult.inserted;
+    }
+
+    if (normalizedOptions.teacherAssignments) {
+      summary.assignments_cloned = await cloneSubjectTeacherAssignmentsTenant(
+        client,
+        src,
+        target,
+        classSectionMap,
+        classSubjectMap,
+        createdByStaffId
+      );
+    }
+
+    if (normalizedOptions.timetable) {
+      summary.timetable_entries_cloned = await cloneTimetableTripleKey(
+        client,
+        src,
+        target,
+        classSectionMap,
+        classSubjectMap,
+        createdByStaffId
+      );
+    }
+
+    if (normalizedOptions.transport) {
+      const t = await cloneTransport(client, src, target);
+      details.transport = t;
+    }
+
+    if (normalizedOptions.classes && summary.classes_cloned !== (expectedTenant.classes_expected || 0)) {
+      throw makeCloneError(
+        500,
+        'ACADEMIC_YEAR_CLONE_COUNT_MISMATCH_CLASSES',
+        `Classes cloned count mismatch. Expected ${expectedTenant.classes_expected || 0}, got ${summary.classes_cloned}.`
+      );
+    }
+    if (normalizedOptions.sections && summary.sections_cloned !== (expectedTenant.sections_expected || 0)) {
+      throw makeCloneError(
+        500,
+        'ACADEMIC_YEAR_CLONE_COUNT_MISMATCH_SECTIONS',
+        `Sections cloned count mismatch. Expected ${expectedTenant.sections_expected || 0}, got ${summary.sections_cloned}.`
+      );
+    }
+    if (normalizedOptions.subjects && summary.subjects_cloned !== (expectedTenant.subjects_expected || 0)) {
+      throw makeCloneError(
+        500,
+        'ACADEMIC_YEAR_CLONE_COUNT_MISMATCH_SUBJECTS',
+        `Subjects cloned count mismatch. Expected ${expectedTenant.subjects_expected || 0}, got ${summary.subjects_cloned}.`
+      );
+    }
+    if (
+      normalizedOptions.teacherAssignments &&
+      summary.assignments_cloned !== (expectedTenant.teacher_assignments_expected || 0)
+    ) {
+      throw makeCloneError(
+        500,
+        'ACADEMIC_YEAR_CLONE_COUNT_MISMATCH_ASSIGNMENTS',
+        `Teacher assignments cloned count mismatch. Expected ${expectedTenant.teacher_assignments_expected || 0}, got ${summary.assignments_cloned}.`
+      );
+    }
+    if (normalizedOptions.timetable && summary.timetable_entries_cloned !== (expectedTenant.timetable_expected || 0)) {
+      throw makeCloneError(
+        500,
+        'ACADEMIC_YEAR_CLONE_COUNT_MISMATCH_TIMETABLE',
+        `Timetable cloned count mismatch. Expected ${expectedTenant.timetable_expected || 0}, got ${summary.timetable_entries_cloned}.`
+      );
+    }
+
+    await validateStrictIntegrityTenant(client, summary);
+    return {
+      options: normalizedOptions,
+      summary,
+      details,
     };
   }
 

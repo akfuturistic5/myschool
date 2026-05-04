@@ -27,6 +27,20 @@ const ISO_DAY_NAMES = {
   7: 'Sunday',
 };
 
+function timetableExclusionUserMessage(pgErr) {
+  const constraint = String(pgErr?.constraint || '');
+  const detail = String(pgErr?.detail || '').trim();
+  const base =
+    constraint === 'uq_timetable_teacher_no_overlap'
+      ? 'This teacher already has another class in the same weekday and period with overlapping validity dates.'
+      : constraint === 'uq_timetable_section_no_overlap'
+        ? 'This section already has another subject in that weekday and period with overlapping validity dates.'
+        : constraint === 'uq_timetable_room_no_overlap'
+          ? 'This room is already booked for another class in that weekday and period with overlapping validity dates.'
+          : 'Another timetable row uses the same slot and overlapping dates.';
+  return detail ? `${base} Details: ${detail}` : base;
+}
+
 /**
  * Keep timetable scoping strict: only actual Teacher role should be teacher-scoped.
  * Roles like "headteacher"/"head master teacher" must not be treated as teacher here.
@@ -910,6 +924,9 @@ const createClassSchedule = async (req, res) => {
     if (error.code === '23505') {
       return errorResponse(res, 409, uniqueViolationUserMessage(error));
     }
+    if (error.code === '23P01') {
+      return errorResponse(res, 409, timetableExclusionUserMessage(error));
+    }
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
     if (String(error.message || '').includes('class_room_id')) {
       return errorResponse(res, 400, 'class_room_id column missing — run migration 039_timetable_class_schedules_hardening.sql');
@@ -1029,6 +1046,9 @@ const updateClassSchedule = async (req, res) => {
     }
     if (error.code === '23505') {
       return errorResponse(res, 409, uniqueViolationUserMessage(error));
+    }
+    if (error.code === '23P01') {
+      return errorResponse(res, 409, timetableExclusionUserMessage(error));
     }
     if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
     return errorResponse(res, 500, 'Failed to update class routine');

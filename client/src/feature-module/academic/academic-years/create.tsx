@@ -28,21 +28,99 @@ function extractApiError(err: unknown): { message: string; code?: string; detail
   const fallback = { message: err instanceof Error ? err.message : "Request failed" };
   if (!(err instanceof Error)) return fallback;
 
+  const ext = err as Error & { code?: string; data?: unknown };
   const raw = String(err.message || "");
   const marker = "message: ";
   const idx = raw.indexOf(marker);
-  if (idx === -1) return fallback;
-  const jsonPart = raw.slice(idx + marker.length).trim();
-  try {
-    const parsed = JSON.parse(jsonPart);
+  const trailing = idx === -1 ? "" : raw.slice(idx + marker.length).trim();
+
+  let nested: Record<string, unknown> | null = null;
+  if (trailing) {
+    try {
+      nested = JSON.parse(trailing) as Record<string, unknown>;
+    } catch {
+      nested = null;
+    }
+  }
+
+  // apiService attaches `code` and `data` on the Error; message tail is usually plain text from the API
+  if (nested && typeof nested.message === "string") {
     return {
-      message: parsed?.message || fallback.message,
-      code: parsed?.code,
+      message: nested.message,
+      code: (typeof nested.code === "string" && nested.code) || (typeof ext.code === "string" ? ext.code : undefined),
+      details: nested.data !== undefined ? nested.data : ext.data,
+    };
+  }
+
+  if ((typeof ext.code === "string" && ext.code) || ext.data !== undefined) {
+    return {
+      message: trailing || fallback.message,
+      code: typeof ext.code === "string" ? ext.code : undefined,
+      details: ext.data,
+    };
+  }
+
+  if (!trailing) return fallback;
+  try {
+    const parsed = JSON.parse(trailing);
+    return {
+      message: (typeof parsed?.message === "string" && parsed.message) || fallback.message,
+      code: typeof parsed?.code === "string" ? parsed.code : undefined,
       details: parsed?.data,
     };
   } catch {
-    return fallback;
+    return trailing ? { message: trailing } : fallback;
   }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function timetableCloneOverlapCodes(code: string | undefined): boolean {
+  if (!code) return false;
+  return (
+    code === "ACADEMIC_YEAR_CLONE_TIMETABLE_TEACHER_OVERLAP" ||
+    code === "ACADEMIC_YEAR_CLONE_TIMETABLE_SECTION_OVERLAP" ||
+    code === "ACADEMIC_YEAR_CLONE_TIMETABLE_ROOM_OVERLAP" ||
+    code === "ACADEMIC_YEAR_CLONE_TIMETABLE_OVERLAP"
+  );
+}
+
+function buildTimetableCloneOverlapAlertHtml(summary: string, details: Record<string, unknown> | undefined): string {
+  const conflicts = Array.isArray(details?.conflicts)
+    ? (details!.conflicts as Record<string, unknown>[])
+    : [];
+  const lines = conflicts
+    .map((row, i) => {
+      const yr = row.year_name != null ? String(row.year_name) : `year #${row.academic_year_id ?? "?"}`;
+      const dowSlot = `${row.day_of_week != null ? `day ${row.day_of_week}` : "?"}${
+        row.slot_label ? ` · ${String(row.slot_label)}` : row.time_slot_id != null ? ` · slot ${row.time_slot_id}` : ""
+      }`;
+      const vf = row.valid_from != null ? String(row.valid_from).slice(0, 10) : "?";
+      const vt = row.valid_to != null ? String(row.valid_to).slice(0, 10) : "open";
+      const id = row.id != null ? String(row.id) : "?";
+      return `${i + 1}. ${escapeHtml(yr)} — ${escapeHtml(dowSlot)}, ${escapeHtml(vf)}→${escapeHtml(vt)}, id ${escapeHtml(id)}`;
+    })
+    .join("<br/>");
+  const hints = [];
+  if (details?.postgres_detail != null && String(details.postgres_detail).trim())
+    hints.push(`PostgreSQL detail: ${escapeHtml(String(details.postgres_detail).trim())}`);
+  if (details?.cross_year_hint === true)
+    hints.push(
+      "Overlaps include rows tied to other academic sessions. Setting end dates on old timetable rows or on their sessions usually fixes clones."
+    );
+  const hintsBlock =
+    hints.length > 0
+      ? `<p class="small text-muted mt-2 mb-0">${hints.map((h) => `${h}`).join("<br/>")}</p>`
+      : "";
+  return `<div style="text-align:left" class="small"><p style="white-space:pre-wrap" class="mb-2">${escapeHtml(summary)}</p>${
+    lines ? `<div class="fw-semibold mb-1">Overlapping timetable rows:</div><div class="font-monospace mb-2">${lines}</div>` : ""
+  }${hintsBlock}</div>`;
 }
 
 const AcademicYearCreate = () => {
@@ -247,6 +325,21 @@ const AcademicYearCreate = () => {
           text: "Same academic year name already exists. Please enter a different year name.",
           confirmButtonText: "OK",
         });
+        return;
+      }
+      const detailsObj =
+        parsedErr.details != null && typeof parsedErr.details === "object"
+          ? (parsedErr.details as Record<string, unknown>)
+          : undefined;
+      if (timetableCloneOverlapCodes(parsedErr.code)) {
+        await Swal.fire({
+          icon: "error",
+          title: "Timetable copy blocked (overlap)",
+          html: buildTimetableCloneOverlapAlertHtml(msg, detailsObj),
+          width: "34rem",
+          confirmButtonText: "OK",
+        });
+        setError(msg);
         return;
       }
       await Swal.fire({
