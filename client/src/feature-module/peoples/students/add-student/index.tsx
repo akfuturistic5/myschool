@@ -28,6 +28,9 @@ import Swal from "sweetalert2";
 import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
 import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
 import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
+import { useHostels } from "../../../../core/hooks/useHostels";
+import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
+import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
 import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import {
   focusAddStudentField,
@@ -341,10 +344,22 @@ const AddStudent = () => {
   const { houses, loading: housesLoading, error: housesError } = useHouses();
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
+  // Fetch transport and hostel options from API (for dropdowns with real IDs)
   const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
   const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
   const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
   const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
+  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
+  const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
+
+  const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({
+    value: String((h.originalData as { id?: number })?.id ?? ""),
+    label: (h.hostelName as string) || "N/A",
+  })).filter((o: { value: string }) => o.value);
+  const roomOptions = (hostelRooms || []).map((r: { originalData?: { id: number }; roomNo?: string }) => ({
+    value: String((r.originalData as { id?: number })?.id ?? ""),
+    label: (r.roomNo as string) || "N/A",
+  })).filter((o: { value: string }) => o.value);
 
   // Typed lists (hooks are JS and return untyped arrays - avoid 'never' inference)
   const academicYearsList = (academicYears || []) as AcademicYearItem[];
