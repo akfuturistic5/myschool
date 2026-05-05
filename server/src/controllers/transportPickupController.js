@@ -205,8 +205,7 @@ const getAllPickupPoints = async (req, res) => {
       [...params, parseInt(limit), offset]
     );
 
-    const data = result.rows.map((row) => mapPickupRow(row, flags));
-    const totalCount = parseInt(countResult.rows[0].count);
+    const data = dataResult.rows.map((row) => mapPickupRow(row, flags));
 
     return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
@@ -303,8 +302,7 @@ const createPickupPoint = async (req, res) => {
     );
     if (existing.rows.length > 0) {
       return errorResponse(res, 400, 'A pickup point with this name already exists');
-      sequence_order
-    } = req.body;
+    }
 
     if (!route_id || !point_name || sequence_order === undefined) {
       return errorResponse(res, 400, 'Route, point name and sequence order are required');
