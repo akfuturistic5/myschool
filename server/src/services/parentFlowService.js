@@ -45,7 +45,7 @@ async function createOrReuseParentUser(client, { fullName, phone, email, avatarR
         email = CASE WHEN $3::text IS NOT NULL AND TRIM($3::text) <> '' THEN $3::text ELSE email END,
         phone = COALESCE(NULLIF(TRIM($4::text), ''), phone),
         avatar = COALESCE(NULLIF(TRIM($5::text), ''), avatar),
-        modified_at = NOW()
+        updated_at = NOW()
       WHERE id = $6`,
       [first_name || null, last_name || null, emailTrim, phoneTrim, avatarRelativePath || null, existingId]
     );
@@ -70,7 +70,7 @@ async function createOrReuseParentUser(client, { fullName, phone, email, avatarR
     throw err;
   }
   if (avatarRelativePath) {
-    await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+    await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
       avatarRelativePath,
       uid,
     ]);
@@ -98,15 +98,15 @@ async function assignFatherGuardian(client, { userId, studentId }) {
   const ins = await client.query(
     `INSERT INTO guardians (
       student_id, user_id, guardian_type, relation,
-      is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
+      is_primary_contact, is_emergency_contact, is_active, created_at, updated_at
     ) VALUES ($1, $2, 'father', 'Father', true, false, true, NOW(), NOW())
     RETURNING id`,
     [studentId, userId]
   );
   const gid = ins.rows[0].id;
-  await client.query(`UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2`, [gid, studentId]);
+  await client.query(`UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2`, [gid, studentId]);
   await client.query(
-    `UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2`,
+    `UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2`,
     [gid, studentId]
   );
   return { guardianId: gid, created: true };

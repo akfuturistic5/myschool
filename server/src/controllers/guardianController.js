@@ -107,7 +107,7 @@ const createGuardian = async (req, res) => {
           `UPDATE users SET 
             occupation = COALESCE($1, occupation),
             avatar = COALESCE($2, avatar),
-            modified_at = NOW() 
+            updated_at = NOW() 
            WHERE id = $3`,
           [occupation || null, avatar || null, guardianUserId]
         );
@@ -117,7 +117,7 @@ const createGuardian = async (req, res) => {
         `INSERT INTO guardians (
           student_id, user_id, guardian_type, relation,
           is_primary_contact, is_emergency_contact,
-          is_active, created_at, modified_at
+          is_active, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
         RETURNING *`,
         [
@@ -131,12 +131,12 @@ const createGuardian = async (req, res) => {
       );
       const row = result.rows[0];
 
-      await client.query('UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2', [
+      await client.query('UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2', [
         row.id,
         student_id,
       ]);
       await client.query(
-        'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
+        'UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2',
         [row.id, student_id]
       );
 
@@ -241,7 +241,7 @@ const updateGuardian = async (req, res) => {
           email = $4,
           occupation = $5,
           avatar = CASE WHEN $6 = true THEN $7 ELSE avatar END,
-          modified_at = NOW()
+          updated_at = NOW()
         WHERE id = $8`,
         [
           first_name,
@@ -262,7 +262,7 @@ const updateGuardian = async (req, res) => {
           relation = $3,
           is_primary_contact = $4,
           is_emergency_contact = $5,
-          modified_at = NOW()
+          updated_at = NOW()
         WHERE id = $6
         RETURNING *`,
         [
@@ -276,12 +276,12 @@ const updateGuardian = async (req, res) => {
       );
 
       const row = updated.rows[0];
-      await client.query('UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2', [
+      await client.query('UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2', [
         row.id,
         row.student_id,
       ]);
       await client.query(
-        'UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2',
+        'UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2',
         [row.id, row.student_id]
       );
 
@@ -457,7 +457,7 @@ const getGuardianByStudentId = async (req, res) => {
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
       WHERE g.student_id = $1 AND s.is_active = true
-      ORDER BY g.is_primary_contact DESC, g.modified_at DESC, g.id DESC`,
+      ORDER BY g.is_primary_contact DESC, g.updated_at DESC, g.id DESC`,
       [studentId]
     );
 

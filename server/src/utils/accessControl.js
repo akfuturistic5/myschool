@@ -81,7 +81,7 @@ async function canAccessStudent(req, studentId) {
     const tRes = await query(
       `SELECT st.id AS staff_id
        FROM staff st
-       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND st.is_active = true`,
+       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND (st.status = 'Active')`,
       [ctx.userId]
     );
     if (tRes.rows.length === 0) return { ok: false, status: 403, message: 'Access denied' };
@@ -173,7 +173,7 @@ async function resolveStudentScopeForUser(userId) {
     `SELECT s.id, enr.class_id, enr.section_id
      FROM students s
      ${lateralCurrentEnrollment('s.id')}
-     WHERE s.user_id = $1 AND COALESCE(s.is_active, true) = true
+     WHERE s.user_id = $1 AND (s.deleted_at IS NULL AND s.status = 'Active')
      ORDER BY s.id ASC
      LIMIT 1`,
     [uid]
@@ -225,7 +225,7 @@ async function canAccessClass(req, classId) {
     const tRes = await query(
       `SELECT st.id AS staff_id
        FROM staff st
-       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND st.is_active = true`,
+       WHERE st.user_id = $1 AND st.deleted_at IS NULL AND (st.status = 'Active')`,
       [ctx.userId]
     );
     if (!tRes.rows.length) return { ok: false, status: 403, message: 'Access denied' };
@@ -266,7 +266,7 @@ async function canAccessClass(req, classId) {
     const r = await query(
       `SELECT 1 FROM students st
        ${lateralCurrentEnrollment('st.id')}
-       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND COALESCE(st.is_active, true) = true
+       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND (st.status = 'Active')
        LIMIT 1`,
       [ids, cid]
     );
@@ -279,7 +279,7 @@ async function canAccessClass(req, classId) {
     const r = await query(
       `SELECT 1 FROM students st
        ${lateralCurrentEnrollment('st.id')}
-       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND COALESCE(st.is_active, true) = true
+       WHERE st.id = ANY($1::int[]) AND enr.class_id = $2 AND (st.status = 'Active')
        LIMIT 1`,
       [wardIds, cid]
     );

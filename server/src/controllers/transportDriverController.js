@@ -68,7 +68,7 @@ async function getOrCreateTransportUser({ name, phone, role }) {
   const passwordHash = await bcrypt.hash(String(phone), 12);
 
   const insert = await query(
-    `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, created_at, modified_at)
+    `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, created_at, updated_at)
      VALUES ($1, NULL, $2, $3, $4, $5, $6, true, NOW(), NOW())
      RETURNING id`,
     [username, phone, passwordHash, roleId, firstName, lastName]
@@ -89,7 +89,7 @@ function mapDriverRow(row) {
     is_active: row.is_active !== false && row.is_active !== 'f',
     photo_url: row.photo_url || null,
     created_at: row.created_at,
-    updated_at: row.updated_at ?? row.modified_at ?? null
+    updated_at: row.updated_at ?? row.updated_at ?? null
   };
 }
 
@@ -327,7 +327,7 @@ const updateDriver = async (req, res) => {
              first_name = COALESCE($2, first_name),
              last_name = COALESCE($3, last_name),
              role_id = COALESCE($4, role_id),
-             modified_at = NOW()
+             updated_at = NOW()
          WHERE id = $5`,
         [
           phone !== undefined ? phone : null,

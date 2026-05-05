@@ -11,7 +11,7 @@ function mapCategoryRow(row) {
     description: row.description,
     is_active: row.is_active,
     created_at: row.created_at,
-    modified_at: row.modified_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -103,7 +103,7 @@ const createCategory = async (req, res) => {
 
     const r = await query(
       `INSERT INTO accounts_expense_categories (
-         academic_year_id, category_name, description, is_active, created_at, modified_at
+         academic_year_id, category_name, description, is_active, created_at, updated_at
        ) VALUES ($1, $2, $3, COALESCE($4, true), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
       [
@@ -156,7 +156,7 @@ const updateCategory = async (req, res) => {
          description = $2,
          academic_year_id = $3,
          is_active = $4,
-         modified_at = CURRENT_TIMESTAMP
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $5
        RETURNING *`,
       [category_name, description, academic_year_id, is_active, id]

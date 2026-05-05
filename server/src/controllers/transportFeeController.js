@@ -17,7 +17,6 @@ const getAllTransportFees = async (req, res) => {
       limit = 10,
       search = '',
       pickup_point_id,
-      status,
       academic_year_id,
       sortField = 'id',
       sortOrder = 'ASC',
@@ -25,12 +24,12 @@ const getAllTransportFees = async (req, res) => {
     const scopedAcademicYearId = hasAcademicYearId ? await resolveAcademicYearId(academic_year_id) : null;
 
     const offset = (Number(page) - 1) * Number(limit);
-    const allowedSort = ['id', 'plan_name', 'duration_days', 'amount', 'staff_amount', 'status', 'created_at'];
+    const allowedSort = ['id', 'plan_name', 'duration_days', 'student_amount', 'staff_amount', 'status', 'created_at'];
     const orderBy = allowedSort.includes(sortField) ? `tfm.${sortField}` : 'tfm.id';
     const direction = String(sortOrder).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
     const params = [];
-    let whereClause = 'WHERE 1=1';
+    let whereClause = 'WHERE tfm.deleted_at IS NULL';
 
     if (search) {
       params.push(`%${search}%`);
@@ -41,7 +40,7 @@ const getAllTransportFees = async (req, res) => {
       whereClause += ` AND tfm.pickup_point_id = $${params.length}`;
     }
     if (status && status !== 'all') {
-      params.push(normalizeStatus(status));
+      params.push(status);
       whereClause += ` AND tfm.status = $${params.length}`;
     }
     if (hasAcademicYearId && scopedAcademicYearId) {
@@ -52,7 +51,7 @@ const getAllTransportFees = async (req, res) => {
     const countResult = await query(
       `SELECT COUNT(*)
        FROM transport_fee_master tfm
-       JOIN pickup_points pp ON pp.id = tfm.pickup_point_id
+       LEFT JOIN pickup_points pp ON pp.id = tfm.pickup_point_id
        ${whereClause}`,
       params
     );
@@ -61,7 +60,7 @@ const getAllTransportFees = async (req, res) => {
     const dataResult = await query(
       `SELECT tfm.*, pp.point_name
        FROM transport_fee_master tfm
-       JOIN pickup_points pp ON pp.id = tfm.pickup_point_id
+       LEFT JOIN pickup_points pp ON pp.id = tfm.pickup_point_id
        ${whereClause}
        ORDER BY ${orderBy} ${direction}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -82,57 +81,37 @@ const getAllTransportFees = async (req, res) => {
 
 const createTransportFee = async (req, res) => {
   try {
-    const hasAcademicYearId = await hasColumn('transport_fee_master', 'academic_year_id');
-    const { pickup_point_id, plan_name, duration_days = null, amount, staff_amount, status, academic_year_id } = req.body;
-    if (
-      !pickup_point_id ||
-      !plan_name ||
-      amount === undefined ||
-      amount === null ||
-      staff_amount === undefined ||
-      staff_amount === null
-    ) {
-      return errorResponse(res, 400, 'pickup_point_id, plan_name, student amount and staff amount are required');
+    const { pickup_point_id, plan_name, duration_days, student_amount, staff_amount, status, academic_year_id } = req.body;
+    
+    if (!plan_name || student_amount === undefined || staff_amount === undefined) {
+      return errorResponse(res, 400, 'plan_name, student_amount and staff_amount are required');
     }
 
-    const scopedAcademicYearId = hasAcademicYearId
-      ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
-      : null;
+    const scopedAcademicYearId = await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id);
+    if (!scopedAcademicYearId) {
+      return errorResponse(res, 400, 'Academic year is required');
+    }
 
-    const result = hasAcademicYearId
-      ? await query(
-          `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, amount, staff_amount, status, academic_year_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING *`,
-          [
-            Number(pickup_point_id),
-            String(plan_name).trim(),
-            duration_days == null || duration_days === '' ? null : Number(duration_days),
-            Number(amount),
-            Number(staff_amount),
-            normalizeStatus(status),
-            scopedAcademicYearId,
-          ]
-        )
-      : await query(
-          `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, amount, staff_amount, status)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [
-            Number(pickup_point_id),
-            String(plan_name).trim(),
-            duration_days == null || duration_days === '' ? null : Number(duration_days),
-            Number(amount),
-            Number(staff_amount),
-            normalizeStatus(status),
-          ]
-        );
+    const result = await query(
+      `INSERT INTO transport_fee_master (pickup_point_id, plan_name, duration_days, student_amount, staff_amount, status, academic_year_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        pickup_point_id ? Number(pickup_point_id) : null,
+        String(plan_name).trim(),
+        duration_days ? Number(duration_days) : null,
+        Number(student_amount),
+        Number(staff_amount),
+        status || 'Active',
+        scopedAcademicYearId,
+      ]
+    );
 
     return success(res, 201, 'Transport fee plan created successfully', result.rows[0]);
   } catch (err) {
     console.error('Error creating transport fee plan:', err);
     if (err.code === '23505') {
-      return errorResponse(res, 400, 'A fee plan with the same pickup point, name and duration already exists');
+      return errorResponse(res, 400, 'A fee plan with the same pickup point and name already exists for this year');
     }
     return errorResponse(res, 500, 'Failed to create transport fee plan');
   }
@@ -146,14 +125,14 @@ const updateTransportFee = async (req, res) => {
       return errorResponse(res, 400, 'Invalid transport fee ID');
     }
 
-    const { pickup_point_id, plan_name, duration_days, amount, staff_amount, status, academic_year_id } = req.body;
+    const { pickup_point_id, plan_name, duration_days, student_amount, staff_amount, status, academic_year_id } = req.body;
     const updates = [];
     const values = [];
     let i = 1;
 
     if (pickup_point_id !== undefined) {
       updates.push(`pickup_point_id = $${i++}`);
-      values.push(Number(pickup_point_id));
+      values.push(pickup_point_id ? Number(pickup_point_id) : null);
     }
     if (plan_name !== undefined) {
       updates.push(`plan_name = $${i++}`);
@@ -161,11 +140,11 @@ const updateTransportFee = async (req, res) => {
     }
     if (duration_days !== undefined) {
       updates.push(`duration_days = $${i++}`);
-      values.push(duration_days == null || duration_days === '' ? null : Number(duration_days));
+      values.push(duration_days ? Number(duration_days) : null);
     }
-    if (amount !== undefined) {
-      updates.push(`amount = $${i++}`);
-      values.push(Number(amount));
+    if (student_amount !== undefined) {
+      updates.push(`student_amount = $${i++}`);
+      values.push(Number(student_amount));
     }
     if (staff_amount !== undefined) {
       updates.push(`staff_amount = $${i++}`);
@@ -173,7 +152,7 @@ const updateTransportFee = async (req, res) => {
     }
     if (status !== undefined) {
       updates.push(`status = $${i++}`);
-      values.push(normalizeStatus(status));
+      values.push(status);
     }
     if (hasAcademicYearId && academic_year_id !== undefined) {
       updates.push(`academic_year_id = $${i++}`);
@@ -201,7 +180,7 @@ const updateTransportFee = async (req, res) => {
   } catch (err) {
     console.error('Error updating transport fee plan:', err);
     if (err.code === '23505') {
-      return errorResponse(res, 400, 'A fee plan with the same pickup point, name and duration already exists');
+      return errorResponse(res, 400, 'A fee plan with the same pickup point and name already exists for this year');
     }
     return errorResponse(res, 500, 'Failed to update transport fee plan');
   }
@@ -217,7 +196,7 @@ const deleteTransportFee = async (req, res) => {
     const usage = await query(
       `SELECT id
        FROM transport_allocations
-       WHERE assigned_fee_id = $1
+       WHERE fee_master_id = $1
        LIMIT 1`,
       [feeId]
     );

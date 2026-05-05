@@ -11,15 +11,17 @@ INSERT INTO public.academic_years (year_name, start_date, end_date, is_current, 
 VALUES ('2024-25', '2024-04-01', '2025-03-31', true, true)
 ON CONFLICT (year_name) DO NOTHING;
 
--- 2. User Roles
+-- 2. User Roles (Synced with src/config/roles.js)
 INSERT INTO public.user_roles (role_name, description) VALUES
-('Admin', 'School Administrator with full control over school settings'),
-('Teacher', 'Academic staff with access to class management and grading'),
+('Admin', 'School Administrator with full control over school settings'), -- ID: 1
+('Teacher', 'Academic staff with access to class management and grading'), -- ID: 2
+('Student', 'Students enrolled in the school'),                           -- ID: 3
+('Parent', 'Guardians and parents of students'),                          -- ID: 4
+('Guardian', 'Additional guardians of students'),                         -- ID: 5
+('Administrative', 'Staff managing enquiries and front-desk tasks'),       -- ID: 6
 ('Accountant', 'Financial staff managing fees and payroll'),
 ('Librarian', 'Staff managing library assets and circulation'),
-('Receptionist', 'Staff managing enquiries and front-desk tasks'),
-('Student', 'Students enrolled in the school'),
-('Parent', 'Guardians and parents of students')
+('Receptionist', 'Staff managing enquiries and front-desk tasks')
 ON CONFLICT (role_name) DO NOTHING;
 
 -- 3. Blood Groups

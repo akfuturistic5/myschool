@@ -643,7 +643,7 @@ async function cloneDepartments(client, createdByStaffId, targetYearId) {
 
     const ins = await client.query(
       `INSERT INTO departments (
-        department_name, department_code, head_of_department, description, is_active, created_by, modified_at, academic_year_id
+        department_name, department_code, head_of_department, description, is_active, created_by, updated_at, academic_year_id
       ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
       RETURNING id`,
       [
@@ -662,7 +662,7 @@ async function cloneDepartments(client, createdByStaffId, targetYearId) {
   return { map, inserted: insertedCount };
 }
 
-async function cloneDesignations(client, departmentMap, createdByStaffId, targetYearId) {
+async function cloneDesignations(client, departmentMap, createdByStaffId, _targetYearId) {
   const map = new Map();
   let insertedCount = 0;
   const rowsRes = await client.query(
@@ -714,7 +714,7 @@ async function cloneDesignations(client, departmentMap, createdByStaffId, target
 
     const ins = await client.query(
       `INSERT INTO designations (
-        designation_name, department_id, salary_range_min, salary_range_max, description, is_active, created_by, modified_at, academic_year_id
+        designation_name, department_id, salary_range_min, salary_range_max, description, is_active, created_by, updated_at, academic_year_id
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
       RETURNING id`,
       [
@@ -725,7 +725,7 @@ async function cloneDesignations(client, departmentMap, createdByStaffId, target
         row.description || null,
         normalizeBool(row.is_active, true),
         createdByStaffId || null,
-        targetYearId || null,
+        createdByStaffId || null,
       ]
     );
     map.set(Number(row.id), Number(ins.rows[0].id));
@@ -1217,7 +1217,7 @@ async function cloneTimetable(client, sourceYearId, targetYearId, classMap, sect
     const ins = await client.query(
       `INSERT INTO class_schedules (
         class_id, section_id, subject_id, time_slot_id, day_of_week, academic_year_id,
-        room_number, teacher_id, class_room_id, is_active, created_by, modified_at
+        room_number, teacher_id, class_room_id, is_active, created_by, updated_at
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
       RETURNING id, teacher_id`,
       [
@@ -1266,7 +1266,7 @@ async function cloneTimetable(client, sourceYearId, targetYearId, classMap, sect
       );
     }
     await client.query(
-      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, created_by, modified_at)
+      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, created_by, updated_at)
        VALUES ($1, $2, $3, true, NOW(), $4, NOW())`,
       [teacherId, scheduleId, targetYearId, createdByStaffId || null]
     );

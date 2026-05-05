@@ -7,7 +7,12 @@ function mapRouteRow(row, stops = []) {
   return {
     id: row.id,
     route_name: row.route_name || '',
-    distance_km: row.distance_km || 0,
+    route_code: row.route_code || null,
+    start_point: row.start_point || null,
+    end_point: row.end_point || null,
+    distance_km: row.distance_km ?? row.total_distance ?? 0,
+    total_distance: row.total_distance ?? row.distance_km ?? 0,
+    estimated_time: row.estimated_time ?? null,
     is_active: row.is_active !== false && row.is_active !== 'f',
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -26,6 +31,11 @@ const getAllRoutes = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
+    const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartPoint = await hasColumn('routes', 'start_point');
+    const hasEndPoint = await hasColumn('routes', 'end_point');
+    const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
+    const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const scopedDriverId = await getScopedDriverId(req);
     const { 
       page = 1, 
@@ -39,6 +49,11 @@ const getAllRoutes = async (req, res) => {
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['route_name', 'distance_km', 'created_at', 'id'];
+    if (hasRouteCode) validSortFields.push('route_code');
+    if (hasStartPoint) validSortFields.push('start_point');
+    if (hasEndPoint) validSortFields.push('end_point');
+    if (hasEstimatedTime) validSortFields.push('estimated_time');
+    if (hasTotalDistance) validSortFields.push('total_distance');
     
     let actualSortField = validSortFields.includes(sortField) ? sortField : 'route_name';
     actualSortField = `r.${actualSortField}`;
@@ -55,11 +70,15 @@ const getAllRoutes = async (req, res) => {
 
     if (search) {
       params.push(`%${search}%`);
-      sqlFilters += ` AND (r.route_name ILIKE $${params.length})`;
+      const searchParts = [`r.route_name ILIKE $${params.length}`];
+      if (hasRouteCode) searchParts.push(`r.route_code ILIKE $${params.length}`);
+      if (hasStartPoint) searchParts.push(`r.start_point ILIKE $${params.length}`);
+      if (hasEndPoint) searchParts.push(`r.end_point ILIKE $${params.length}`);
+      sqlFilters += ` AND (${searchParts.join(' OR ')})`;
     }
 
     if (status !== 'all') {
-      const isActive = status === 'active';
+      const isActive = status === 'active' || status === 'true' || status === true;
       params.push(isActive);
       sqlFilters += ` AND r.is_active = $${params.length}`;
     }
@@ -209,10 +228,19 @@ const createRoute = async (req, res) => {
   try {
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
+    const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartPoint = await hasColumn('routes', 'start_point');
+    const hasEndPoint = await hasColumn('routes', 'end_point');
+    const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
     const hasRouteStops = await hasTable('route_stops');
     const { 
       route_name, 
       distance_km, 
+      total_distance,
+      route_code,
+      start_point,
+      end_point,
+      estimated_time,
       is_active,
       stops = [] 
     } = req.body;
@@ -223,18 +251,42 @@ const createRoute = async (req, res) => {
 
     const result = await executeTransaction(async (client) => {
       // 1. Insert Route
-      const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
-      const routeRes = distanceColumn
-        ? await client.query(
-            `INSERT INTO routes (route_name, ${distanceColumn}, is_active) 
-             VALUES ($1, $2, $3) RETURNING *`,
-            [route_name, distance_km || 0, is_active !== false]
-          )
-        : await client.query(
-            `INSERT INTO routes (route_name, is_active) 
-             VALUES ($1, $2) RETURNING *`,
-            [route_name, is_active !== false]
-          );
+      const insertCols = ['route_name'];
+      const insertVals = [route_name];
+
+      if (hasDistanceKm) {
+        insertCols.push('distance_km');
+        insertVals.push(distance_km ?? total_distance ?? 0);
+      }
+      if (hasTotalDistance) {
+        insertCols.push('total_distance');
+        insertVals.push(total_distance ?? distance_km ?? 0);
+      }
+      if (hasRouteCode) {
+        insertCols.push('route_code');
+        insertVals.push(route_code ? String(route_code).trim() : null);
+      }
+      if (hasStartPoint) {
+        insertCols.push('start_point');
+        insertVals.push(start_point ? String(start_point).trim() : null);
+      }
+      if (hasEndPoint) {
+        insertCols.push('end_point');
+        insertVals.push(end_point ? String(end_point).trim() : null);
+      }
+      if (hasEstimatedTime) {
+        insertCols.push('estimated_time');
+        insertVals.push(estimated_time === '' || estimated_time == null ? null : Number(estimated_time));
+      }
+
+      insertCols.push('is_active');
+      insertVals.push(is_active !== false);
+
+      const placeholders = insertVals.map((_, idx) => `$${idx + 1}`).join(', ');
+      const routeRes = await client.query(
+        `INSERT INTO routes (${insertCols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+        insertVals
+      );
       const newRoute = routeRes.rows[0];
 
       // 2. Insert Stops
@@ -268,6 +320,9 @@ const createRoute = async (req, res) => {
     return getRouteById({ params: { id: result.id } }, res);
   } catch (error) {
     console.error('Error creating transport route:', error);
+    if (error?.code === '23505' && error?.constraint === 'uq_route_code') {
+      return errorResponse(res, 409, 'Route code already exists');
+    }
     return errorResponse(res, 500, 'Failed to create transport route');
   }
 };
@@ -276,6 +331,10 @@ const updateRoute = async (req, res) => {
   try {
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
+    const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartPoint = await hasColumn('routes', 'start_point');
+    const hasEndPoint = await hasColumn('routes', 'end_point');
+    const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const { id } = req.params;
@@ -288,6 +347,11 @@ const updateRoute = async (req, res) => {
     const { 
       route_name, 
       distance_km, 
+      total_distance,
+      route_code,
+      start_point,
+      end_point,
+      estimated_time,
       is_active,
       stops = []
     } = req.body;
@@ -303,11 +367,34 @@ const updateRoute = async (req, res) => {
         values.push(route_name);
       }
       if (distance_km !== undefined) {
-        const distanceColumn = hasDistanceKm ? 'distance_km' : hasTotalDistance ? 'total_distance' : null;
-        if (distanceColumn) {
-          updates.push(`${distanceColumn} = $${i++}`);
+        if (hasDistanceKm) {
+          updates.push(`distance_km = $${i++}`);
           values.push(distance_km || 0);
         }
+        if (hasTotalDistance && total_distance === undefined) {
+          updates.push(`total_distance = $${i++}`);
+          values.push(distance_km || 0);
+        }
+      }
+      if (total_distance !== undefined && hasTotalDistance) {
+        updates.push(`total_distance = $${i++}`);
+        values.push(total_distance || 0);
+      }
+      if (route_code !== undefined && hasRouteCode) {
+        updates.push(`route_code = $${i++}`);
+        values.push(route_code ? String(route_code).trim() : null);
+      }
+      if (start_point !== undefined && hasStartPoint) {
+        updates.push(`start_point = $${i++}`);
+        values.push(start_point ? String(start_point).trim() : null);
+      }
+      if (end_point !== undefined && hasEndPoint) {
+        updates.push(`end_point = $${i++}`);
+        values.push(end_point ? String(end_point).trim() : null);
+      }
+      if (estimated_time !== undefined && hasEstimatedTime) {
+        updates.push(`estimated_time = $${i++}`);
+        values.push(estimated_time === '' || estimated_time == null ? null : Number(estimated_time));
       }
       if (is_active !== undefined) {
         updates.push(`is_active = $${i++}`);
@@ -364,6 +451,9 @@ const updateRoute = async (req, res) => {
     console.error('Error updating transport route:', error);
     if (error.message === 'Route not found') {
       return errorResponse(res, 404, 'Route not found');
+    }
+    if (error?.code === '23505' && error?.constraint === 'uq_route_code') {
+      return errorResponse(res, 409, 'Route code already exists');
     }
     return errorResponse(res, 500, 'Failed to update transport route');
   }

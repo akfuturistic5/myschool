@@ -51,7 +51,7 @@ const getAllSyllabus = async (req, res) => {
         s.description,
         s.academic_year_id,
         s.created_at,
-        s.modified_at
+        s.updated_at
       FROM class_syllabus s
       LEFT JOIN classes c ON c.id = s.class_id
       LEFT JOIN sections sec ON sec.id = s.section_id${yearWhere}
@@ -63,7 +63,7 @@ const getAllSyllabus = async (req, res) => {
   } catch (err) {
     try {
       const result = await query(`
-        SELECT id, class_id, section_id, class_name, section_name, subject_group, status, created_at, modified_at
+        SELECT id, class_id, section_id, class_name, section_name, subject_group, status, created_at, updated_at
         FROM class_syllabus
         ORDER BY id ASC
       `);
@@ -94,7 +94,7 @@ const getSyllabusById = async (req, res) => {
         s.status,
         s.description,
         s.created_at,
-        s.modified_at
+        s.updated_at
       FROM class_syllabus s
       LEFT JOIN classes c ON c.id = s.class_id
       LEFT JOIN sections sec ON sec.id = s.section_id
@@ -228,7 +228,7 @@ const updateSyllabus = async (req, res) => {
       return errorResponse(res, 400, 'No fields to update');
     }
 
-    updates.push('modified_at = NOW()');
+    updates.push('updated_at = NOW()');
     params.push(id);
 
     const result = await query(`

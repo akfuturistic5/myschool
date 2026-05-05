@@ -100,18 +100,18 @@ const getAllNotices = async (req, res) => {
 
     if (isNoticeManager(req)) {
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.modified_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
-         ORDER BY COALESCE(nb.modified_at, nb.created_at) DESC
+         ORDER BY COALESCE(nb.updated_at, nb.created_at) DESC
          LIMIT $1`,
         [limit]
       );
     } else {
       const roleName = await resolveCurrentRoleName(req);
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.modified_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
@@ -124,7 +124,7 @@ const getAllNotices = async (req, res) => {
                  WHERE LOWER(TRIM(token)) = LOWER($1)
                )
            )
-         ORDER BY COALESCE(nb.modified_at, nb.created_at) DESC
+         ORDER BY COALESCE(nb.updated_at, nb.created_at) DESC
          LIMIT $2`,
         [roleName, limit]
       );
@@ -144,9 +144,9 @@ const getAllNotices = async (req, res) => {
       publishOn: formatDate(r.publish_on),
       createdBy: r.created_by,
       created_at: r.created_at,
-      modified_at: r.modified_at,
+      updated_at: r.updated_at,
       addedOn: formatDate(r.created_at),
-      modifiedOn: formatDate(r.modified_at),
+      modifiedOn: formatDate(r.updated_at),
     }));
     res.status(200).json({
       status: 'SUCCESS',
@@ -169,7 +169,7 @@ const getNoticeById = async (req, res) => {
     let result;
     if (isNoticeManager(req)) {
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.modified_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
@@ -179,7 +179,7 @@ const getNoticeById = async (req, res) => {
     } else {
       const roleName = await resolveCurrentRoleName(req);
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.modified_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
@@ -221,9 +221,9 @@ const getNoticeById = async (req, res) => {
         publishOn: formatDate(r.publish_on),
         createdBy: r.created_by,
         created_at: r.created_at,
-        modified_at: r.modified_at,
+        updated_at: r.updated_at,
         addedOn: formatDate(r.created_at),
-        modifiedOn: formatDate(r.modified_at),
+        modifiedOn: formatDate(r.updated_at),
       },
     });
   } catch (error) {
@@ -280,7 +280,7 @@ const createNotice = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'Title is required' });
     }
     const result = await query(
-      `INSERT INTO notice_board (title, content, message_to, notice_date, publish_on, created_by, created_at, modified_at)
+      `INSERT INTO notice_board (title, content, message_to, notice_date, publish_on, created_by, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
       [safeTitle, safeContent || null, safeTo, safeNoticeDate, safePublishOn, userId]
@@ -299,7 +299,7 @@ const createNotice = async (req, res) => {
         noticeDate: formatDate(r.notice_date),
         publishOn: formatDate(r.publish_on),
         created_at: r.created_at,
-        modified_at: r.modified_at,
+        updated_at: r.updated_at,
       },
     });
   } catch (error) {
@@ -403,7 +403,7 @@ const updateNotice = async (req, res) => {
     }
     values.push(id);
     const result = await query(
-      `UPDATE notice_board SET ${updates.join(', ')}, modified_at = CURRENT_TIMESTAMP
+      `UPDATE notice_board SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
        WHERE id = $${i}
        RETURNING *`,
       values

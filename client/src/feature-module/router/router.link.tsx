@@ -167,6 +167,7 @@ import StudentReport from "../report/student-report/studentReport";
 import TeacherReport from "../report/teacher-report/teacherReport";
 import Religion from "../settings/academicSettings/religion";
 import SchoolSettings from "../settings/academicSettings/schoolSettings";
+import SchoolMasterSettingsPage from "../settings/settingsMasters/SchoolMasterSettingsPage";
 import CustomFields from "../settings/appSettings/customFields";
 import InvoiceSettings from "../settings/appSettings/invoiceSettings";
 import PaymentGateways from "../settings/financialSettings/paymentGateways";
@@ -1384,6 +1385,26 @@ export const publicRoutes = [
   {
     path: routes.religion,
     element: <Religion />,
+    route: Route,
+  },
+  {
+    path: routes.settingsHouses,
+    element: <SchoolMasterSettingsPage kind="houses" />,
+    route: Route,
+  },
+  {
+    path: routes.settingsBloodGroups,
+    element: <SchoolMasterSettingsPage kind="blood-groups" />,
+    route: Route,
+  },
+  {
+    path: routes.settingsMotherTongues,
+    element: <SchoolMasterSettingsPage kind="mother-tongues" />,
+    route: Route,
+  },
+  {
+    path: routes.settingsCasts,
+    element: <SchoolMasterSettingsPage kind="casts" />,
     route: Route,
   },
   {

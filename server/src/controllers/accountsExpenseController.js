@@ -49,7 +49,7 @@ function mapExpenseRow(row) {
     payment_method: row.payment_method,
     status: row.status,
     created_at: row.created_at,
-    modified_at: row.modified_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -191,7 +191,7 @@ const createExpense = async (req, res) => {
       const ins = await client.query(
         `INSERT INTO accounts_expenses (
            academic_year_id, category_id, expense_name, description, expense_date,
-           amount, invoice_no, payment_method, status, created_at, modified_at
+           amount, invoice_no, payment_method, status, created_at, updated_at
          ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
@@ -211,7 +211,7 @@ const createExpense = async (req, res) => {
       await client.query(
         `INSERT INTO accounts_transactions (
            academic_year_id, description, transaction_date, amount, payment_method,
-           transaction_type, status, income_id, expense_id, created_at, modified_at
+           transaction_type, status, income_id, expense_id, created_at, updated_at
          ) VALUES ($1, $2, $3::date, $4, $5, 'Expense', $6, NULL, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           exp.academic_year_id,
@@ -310,7 +310,7 @@ const updateExpense = async (req, res) => {
            invoice_no = $7,
            payment_method = $8,
            status = $9,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE id = $10`,
         [
           academic_year_id,
@@ -335,7 +335,7 @@ const updateExpense = async (req, res) => {
            payment_method = $4,
            academic_year_id = $5,
            status = $6,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE expense_id = $7`,
         [expense_name, expense_date, amount, payment_method, academic_year_id, txStatus, id]
       );

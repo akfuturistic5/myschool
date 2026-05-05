@@ -22,7 +22,7 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
       `UPDATE transport_allocations
        SET status = 'Inactive',
            end_date = COALESCE(end_date, CURRENT_DATE),
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $1
          AND LOWER(COALESCE(user_type, '')) = 'staff'
          AND LOWER(COALESCE(status, '')) = 'active'
@@ -79,7 +79,7 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
            assigned_fee_amount = $5,
            is_free = $6,
            academic_year_id = COALESCE($7, academic_year_id),
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $8`,
       [
         routeId,
@@ -96,7 +96,7 @@ async function upsertStaffTransportAllocation(client, staffId, staffAcademicYear
   }
   await client.query(
     `INSERT INTO transport_allocations
-      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, modified_at)
+      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, updated_at)
      VALUES
       ($1, 'staff', $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [
@@ -117,7 +117,7 @@ async function syncStaffTransportHostel(client, staffId, body, resolvedAcademicY
     `UPDATE staff SET
        is_transport_required = $1::boolean,
        is_hostel_required = $2::boolean,
-       modified_at = NOW()
+       updated_at = NOW()
      WHERE id = $3`,
     [
       Boolean(body?.is_transport_required),
@@ -258,8 +258,8 @@ const getAllTeachers = async (req, res) => {
         ORDER BY ssa.id DESC
         LIMIT 1
       ) sal ON true
-      WHERE s.deleted_at IS NULL
-      ORDER BY u.first_name ASC, u.last_name ASC
+      WHERE s.deleted_at IS NULL AND u.role_id = 2
+      ORDER BY u.first_name ASC, u.last_name ASC, u.id ASC
     `);
 
     return success(res, 200, 'Teachers fetched successfully', result.rows, { count: result.rows.length });
@@ -410,7 +410,7 @@ const getTeacherById = async (req, res) => {
         t.created_at,
         t.resume,
         t.joining_letter,
-        t.modified_at AS updated_at,
+        t.updated_at AS updated_at,
         t.staff_id,
         s.employee_code,
         u.first_name,
@@ -603,7 +603,7 @@ const getTeachersByClass = async (req, res) => {
         t.created_at,
         t.resume,
         t.joining_letter,
-        t.modified_at AS updated_at,
+        t.updated_at AS updated_at,
         t.staff_id,
         s.employee_code,
         u.first_name,
@@ -1092,7 +1092,7 @@ const createTeacher = async (req, res) => {
           user_id, employee_code, first_name, last_name, gender, date_of_birth, blood_group_id,
           phone, email, address, emergency_contact_name, emergency_contact_phone,
           designation_id, department_id, joining_date, salary, qualification, experience_years,
-          is_active, created_by, created_at, modified_at
+          is_active, created_by, created_at, updated_at
         ) VALUES (
           NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
         ) RETURNING id`,
@@ -1136,7 +1136,7 @@ const createTeacher = async (req, res) => {
         err.statusCode = 500;
         throw err;
       }
-      await client.query(`UPDATE staff SET user_id = $1, modified_at = NOW() WHERE id = $2`, [userId, staffId]);
+      await client.query(`UPDATE staff SET user_id = $1, updated_at = NOW() WHERE id = $2`, [userId, staffId]);
 
       const tIns = await client.query(
         `INSERT INTO teachers (
@@ -1144,7 +1144,7 @@ const createTeacher = async (req, res) => {
           previous_school_name, previous_school_address, previous_school_phone,
           current_address, permanent_address, pan_number, id_number, status,
           bank_name, branch, ifsc, contract_type, shift, work_location,
-          facebook, twitter, linkedin, youtube, instagram, other_info, account_name, account_number, blood_group, epf_no, resume, joining_letter, created_at, modified_at
+          facebook, twitter, linkedin, youtube, instagram, other_info, account_name, account_number, blood_group, epf_no, resume, joining_letter, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, NULL, NULL, NOW(), NOW()
         ) RETURNING id`,
@@ -1227,7 +1227,7 @@ const createTeacher = async (req, res) => {
         t.created_at,
         t.resume,
         t.joining_letter,
-        t.modified_at AS updated_at,
+        t.updated_at AS updated_at,
         t.staff_id,
         s.user_id,
         s.employee_code,
@@ -1421,7 +1421,7 @@ const updateTeacher = async (req, res) => {
         add('photo_url', (photo_url || '').toString().trim().slice(0, 500) || null);
       }
       add('is_active', isActiveBoolean);
-      add('modified_at', new Date());
+      add('updated_at', new Date());
       if (staffUpdates.length > 0) {
         staffParams.push(staffId);
         await query(`UPDATE staff SET ${staffUpdates.join(', ')} WHERE id = $${idx}`, staffParams);
@@ -1471,7 +1471,7 @@ const updateTeacher = async (req, res) => {
     tadd('account_name', account_name);
     tadd('account_number', account_number);
     tadd('epf_no', epf_no);
-    teacherUpdates.push('modified_at = NOW()');
+    teacherUpdates.push('updated_at = NOW()');
     teacherParams.push(teacherIdNum);
     await query(`UPDATE teachers SET ${teacherUpdates.join(', ')} WHERE id = $${tidx}`, teacherParams);
 
@@ -1557,7 +1557,7 @@ const getTeacherClassAttendance = async (req, res) => {
       `SELECT a.id, a.student_id, a.class_id, a.section_id, a.attendance_date, a.status,
               a.check_in_time, a.check_out_time, a.marked_by, a.remarks
        FROM attendance a
-       INNER JOIN students s ON a.student_id = s.id AND s.is_active = true
+       INNER JOIN students s ON a.student_id = s.id AND s.status = 'Active'
        WHERE (
          EXISTS (
            SELECT 1 FROM class_schedules cs
@@ -1695,7 +1695,7 @@ const uploadTeacherDocuments = async (req, res) => {
         `UPDATE teachers SET
           resume = COALESCE($1, resume),
           joining_letter = COALESCE($2, joining_letter),
-          modified_at = NOW()
+          updated_at = NOW()
         WHERE id = $3`,
         [newResumeRel, newLetterRel, teacherId]
       );
@@ -1710,7 +1710,7 @@ const uploadTeacherDocuments = async (req, res) => {
       if (letterFile && oldLetter && oldLetter !== newLetterRel) unlinkTeacherDocStored(oldLetter);
 
       const refreshed = await query(
-        `SELECT t.resume, t.joining_letter, t.modified_at AS updated_at FROM teachers t WHERE t.id = $1`,
+        `SELECT t.resume, t.joining_letter, t.updated_at AS updated_at FROM teachers t WHERE t.id = $1`,
         [teacherId]
       );
       return success(res, 200, 'Documents uploaded successfully', refreshed.rows[0] || {});

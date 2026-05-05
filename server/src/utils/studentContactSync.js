@@ -436,7 +436,7 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
       ins = await client.query(
         `INSERT INTO guardians (
           student_id, user_id, guardian_type, relation,
-          is_primary_contact, is_emergency_contact, is_active, created_at, modified_at
+          is_primary_contact, is_emergency_contact, is_active, created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
         RETURNING id`,
         [studentId, row.uid, row.type, row.rel, isPrimary, false]
@@ -484,7 +484,7 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
           student_id, user_id, guardian_type, relation,
           is_primary_contact, is_emergency_contact, is_active,
           first_name, last_name, phone, email, address, occupation,
-          created_at, modified_at
+          created_at, updated_at
         ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11, $12, NOW(), NOW())
         RETURNING id`,
         [
@@ -515,16 +515,16 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
 
   if (primaryId) {
     await client.query(
-      `UPDATE students SET guardian_id = $1, modified_at = NOW() WHERE id = $2`,
+      `UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2`,
       [primaryId, studentId]
     );
     await client.query(
-      `UPDATE guardians SET is_primary_contact = (id = $1), modified_at = NOW() WHERE student_id = $2`,
+      `UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2`,
       [primaryId, studentId]
     );
   } else {
     await client.query(
-      `UPDATE students SET guardian_id = NULL, modified_at = NOW() WHERE id = $1`,
+      `UPDATE students SET guardian_id = NULL, updated_at = NOW() WHERE id = $1`,
       [studentId]
     );
   }
