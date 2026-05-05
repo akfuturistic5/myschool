@@ -39,7 +39,7 @@ const searchParentPersons = async (req, res) => {
         `SELECT u.id,
                 TRIM(CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))) AS full_name,
                 u.phone, u.email, u.current_address AS address, u.occupation,
-                u.created_at, u.modified_at AS updated_at
+                u.created_at, u.updated_at AS updated_at
          FROM users u
          WHERE u.is_active = true
            AND u.role_id = ANY($1::int[])
@@ -57,7 +57,7 @@ const searchParentPersons = async (req, res) => {
         `SELECT u.id,
                 TRIM(CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))) AS full_name,
                 u.phone, u.email, u.current_address AS address, u.occupation,
-                u.created_at, u.modified_at AS updated_at
+                u.created_at, u.updated_at AS updated_at
          FROM users u
          WHERE u.is_active = true
            AND u.role_id = ANY($1::int[])
@@ -109,7 +109,7 @@ const getParentPersonById = async (req, res) => {
       `SELECT u.id,
               TRIM(CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))) AS full_name,
               u.phone, u.email, u.current_address AS address, u.occupation,
-              u.created_at, u.modified_at AS updated_at
+              u.created_at, u.updated_at AS updated_at
        FROM users u
        WHERE u.id = $1 AND u.is_active = true
          AND u.role_id IN ($2, $3)

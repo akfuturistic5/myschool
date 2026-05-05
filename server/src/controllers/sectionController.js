@@ -52,7 +52,7 @@ const baseSectionSelect = `
   cs.is_active,
   cs.created_at,
   cs.created_by,
-  cs.updated_at AS modified_at,
+  cs.updated_at AS updated_at,
   (SELECT COUNT(*)::int
    FROM students st
    LEFT JOIN LATERAL (
@@ -62,7 +62,7 @@ const baseSectionSelect = `
      ORDER BY l.event_date DESC NULLS LAST, l.id DESC
      LIMIT 1
    ) le ON true
-   WHERE st.deleted_at IS NULL AND COALESCE(st.is_active, true) = true
+   WHERE st.deleted_at IS NULL AND st.status = \'Active\'
      AND le.to_class_id = cs.class_id
      AND le.to_section_id = sec.id
      AND le.to_academic_year_id = cs.academic_year_id
@@ -92,23 +92,16 @@ const fromClassSectionsJoin = `
 
 const getAllSections = async (req, res) => {
   try {
-    const academicYearId = await resolveAcademicYearId(req.query?.academic_year_id);
-    const params = [];
-    let where = 'WHERE cs.deleted_at IS NULL';
-    if (academicYearId) {
-      params.push(academicYearId);
-      where += ` AND cs.academic_year_id = $1`;
-    }
     const result = await query(
-      `SELECT ${baseSectionSelect} ${fromClassSectionsJoin}
-       ${where}
-       ORDER BY c.class_name ASC, sec.section_name ASC`,
-      params
+      `SELECT id, section_name, created_at, updated_at
+       FROM sections
+       WHERE deleted_at IS NULL
+       ORDER BY section_name ASC`
     );
     return success(res, 200, 'Sections fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching sections:', error);
-    return errorResponse(res, 500, 'Failed to fetch sections');
+    return errorResponse(res, 500, 'Failed to fetch sections', error.message);
   }
 };
 
@@ -116,8 +109,9 @@ const getSectionById = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query(
-      `SELECT ${baseSectionSelect} ${fromClassSectionsJoin}
-       WHERE cs.id = $1 AND cs.deleted_at IS NULL`,
+      `SELECT id, section_name, is_active, created_at, updated_at
+       FROM sections
+       WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
 
@@ -164,155 +158,58 @@ const getSectionsByClass = async (req, res) => {
 
 const createSection = async (req, res) => {
   try {
-    const {
-      section_name, class_id, section_teacher_id, max_students, room_number,
-      description, is_active, academic_year_id: bodyAy,
-    } = req.body;
+    const { section_name, is_active } = req.body;
 
     const nameNorm = normalizeSectionName(section_name);
-    const roomNorm = normalizeRoomNumber(room_number);
-    const descNorm = normalizeDescription(description);
-    const academicYearId = await resolveAcademicYearId(bodyAy);
-    if (!academicYearId) {
-      return errorResponse(res, 400, 'academic_year_id is required (or set a current academic year)');
-    }
-
-    let maxNorm = 30;
-    if (max_students !== undefined && max_students !== null) {
-      const p = parseOptionalInt(max_students);
-      maxNorm = p != null ? p : 30;
-    }
+    if (!nameNorm) return errorResponse(res, 400, 'section_name is required');
 
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
     const createdByArg = Number.isInteger(createdBy) ? createdBy : null;
-    const classExists = await query('SELECT id FROM classes WHERE id = $1 AND deleted_at IS NULL LIMIT 1', [class_id]);
-    if (!classExists.rows.length) return errorResponse(res, 400, 'Invalid class');
 
     const secRow = await query(
-      `INSERT INTO sections (section_name, description, created_by) VALUES ($1, $2, $3) RETURNING id`,
-      [nameNorm, descNorm, createdByArg]
+      `INSERT INTO sections (section_name, created_by) VALUES ($1, $2) RETURNING *`,
+      [nameNorm, createdByArg]
     );
-    const sectionMasterId = secRow.rows[0].id;
 
-    const cs = await query(
-      `INSERT INTO class_sections (
-         class_id, section_id, academic_year_id, max_students, room_number, is_active, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING *`,
-      [class_id, sectionMasterId, academicYearId, maxNorm, roomNorm, normalizeBool(is_active, true), createdByArg]
-    );
-    const row = cs.rows[0];
-
-    const tid =
-      section_teacher_id != null && section_teacher_id !== ''
-        ? parseInt(section_teacher_id, 10)
-        : null;
-    if (Number.isInteger(tid) && tid > 0) {
-      await query(
-        `INSERT INTO class_teachers (class_id, class_section_id, staff_id, academic_year_id, role, valid_period)
-         VALUES ($1, $2, $3, $4, 'primary', daterange(CURRENT_DATE, '9999-12-31', '[]'))`,
-        [class_id, row.id, tid, academicYearId]
-      ).catch(() => {});
-    }
-
-    const enriched = await query(
-      `SELECT ${baseSectionSelect} ${fromClassSectionsJoin}
-       WHERE cs.id = $1`,
-      [row.id]
-    );
-    return success(res, 201, 'Section created successfully', enriched.rows[0] || row);
+    return success(res, 201, 'Section created successfully', secRow.rows[0]);
   } catch (error) {
     console.error('Error creating section:', error);
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid class or teacher');
     if (error.code === '23505') return errorResponse(res, 409, 'Section already exists');
-    return errorResponse(res, 500, 'Failed to create section');
+    return errorResponse(res, 500, 'Failed to create section', error.message);
   }
 };
 
 const updateSection = async (req, res) => {
   try {
     const { id } = req.params;
-    const payload = req.body;
-    const current = await query(
-      `SELECT cs.*, sec.section_name AS sec_name, sec.description AS sec_desc
-       FROM class_sections cs
-       INNER JOIN sections sec ON sec.id = cs.section_id
-       WHERE cs.id = $1 AND cs.deleted_at IS NULL`,
-      [id]
-    );
+    const { section_name, is_active } = req.body;
+    
+    const current = await query(`SELECT * FROM sections WHERE id = $1 AND deleted_at IS NULL`, [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Section not found');
     const cur = current.rows[0];
-    const sectionTeacherId = Object.prototype.hasOwnProperty.call(payload, 'section_teacher_id')
-      ? payload.section_teacher_id
-      : null;
 
-    const sectionName = Object.prototype.hasOwnProperty.call(payload, 'section_name')
-      ? normalizeSectionName(payload.section_name)
-      : cur.sec_name;
-
-    let maxStudents = cur.max_students;
-    if (Object.prototype.hasOwnProperty.call(payload, 'max_students')) {
-      if (payload.max_students === null || payload.max_students === undefined) {
-        maxStudents = 30;
-      } else {
-        const p = parseOptionalInt(payload.max_students);
-        maxStudents = p != null ? p : cur.max_students;
-      }
-    }
-
-    const roomNumber = Object.prototype.hasOwnProperty.call(payload, 'room_number')
-      ? normalizeRoomNumber(payload.room_number)
-      : cur.room_number;
-
-    const description = Object.prototype.hasOwnProperty.call(payload, 'description')
-      ? normalizeDescription(payload.description)
-      : cur.sec_desc;
-
-    const isActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
-      ? normalizeBool(payload.is_active, cur.is_active)
-      : cur.is_active;
-
-    await query(
-      `UPDATE sections SET section_name = $1, description = $2, updated_by = $3 WHERE id = $4`,
-      [
-        sectionName,
-        description,
-        req.user?.id != null ? parseInt(req.user.id, 10) : null,
-        cur.section_id,
-      ]
-    );
+    const sectionName = section_name !== undefined ? normalizeSectionName(section_name) : cur.section_name;
+    const isActive = is_active !== undefined ? normalizeBool(is_active, cur.is_active) : cur.is_active;
 
     const result = await query(
-      `UPDATE class_sections SET
-         max_students = $1,
-         room_number = $2,
-         is_active = $3,
+      `UPDATE sections SET
+         section_name = $1,
+         is_active = $2,
+         updated_by = $3,
          updated_at = NOW()
        WHERE id = $4
        RETURNING *`,
-      [maxStudents, roomNumber, isActive, id]
+      [
+        sectionName,
+        isActive,
+        req.user?.id != null ? parseInt(req.user.id, 10) : null,
+        id,
+      ]
     );
-
-    if (sectionTeacherId !== undefined && sectionTeacherId !== null && sectionTeacherId !== '') {
-      const tid = parseInt(sectionTeacherId, 10);
-      if (Number.isInteger(tid) && tid > 0) {
-        await query(
-          `UPDATE class_teachers SET deleted_at = NOW(), updated_at = NOW()
-           WHERE class_section_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL`,
-          [id, cur.academic_year_id]
-        ).catch(() => {});
-        await query(
-          `INSERT INTO class_teachers (class_id, class_section_id, staff_id, academic_year_id, role, valid_period)
-           VALUES ($1, $2, $3, $4, 'primary', daterange(CURRENT_DATE, '9999-12-31', '[]'))`,
-          [cur.class_id, id, tid, cur.academic_year_id]
-        ).catch(() => {});
-      }
-    }
-
     return success(res, 200, 'Section updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating section:', error);
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid teacher reference');
+    if (error.code === '23505') return errorResponse(res, 409, 'Section name already exists');
     return errorResponse(res, 500, 'Failed to update section');
   }
 };
@@ -320,17 +217,19 @@ const updateSection = async (req, res) => {
 const deleteSection = async (req, res) => {
   try {
     const { id } = req.params;
+    // Note: If a section is referenced by class_sections, deleting it might fail due to foreign keys,
+    // or we can soft-delete. Let's soft-delete it.
     const result = await query(
-      `UPDATE class_sections SET deleted_at = NOW(), updated_at = NOW()
+      `UPDATE sections SET deleted_at = NOW(), deleted_by = $2, updated_at = NOW()
        WHERE id = $1 AND deleted_at IS NULL
        RETURNING id`,
-      [id]
+      [id, req.user?.id != null ? parseInt(req.user.id, 10) : null]
     );
     if (!result.rows.length) return errorResponse(res, 404, 'Section not found');
     return success(res, 200, 'Section deleted successfully', { id: result.rows[0].id });
   } catch (error) {
     console.error('Error deleting section:', error);
-    if (error.code === '23503') return errorResponse(res, 409, 'Section is referenced by related records');
+    if (error.code === '23503') return errorResponse(res, 409, 'Section is referenced by related classes');
     return errorResponse(res, 500, 'Failed to delete section');
   }
 };

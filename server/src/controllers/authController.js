@@ -176,7 +176,7 @@ const login = async (req, res) => {
                   END AS match_kind
            FROM users u
            LEFT JOIN user_roles ur ON u.role_id = ur.id
-           LEFT JOIN staff st ON u.id = st.user_id AND u.is_active = true
+           LEFT JOIN staff st ON u.id = st.user_id AND (st.deleted_at IS NULL AND LOWER(st.status) = 'active')
            WHERE u.is_active = true AND u.deleted_at IS NULL
             AND (
               LOWER(COALESCE(u.username, '')) = LOWER($1)
@@ -209,7 +209,7 @@ const login = async (req, res) => {
                     END AS match_kind
              FROM users u
              LEFT JOIN user_roles ur ON u.role_id = ur.id
-             LEFT JOIN staff st ON u.id = st.user_id AND u.is_active = true
+             LEFT JOIN staff st ON u.id = st.user_id AND (st.deleted_at IS NULL AND LOWER(st.status) = 'active')
              WHERE u.is_active = true AND u.deleted_at IS NULL
                AND (
                  LOWER(COALESCE(u.username, '')) = LOWER($1)
@@ -276,7 +276,7 @@ const login = async (req, res) => {
             const upgradedHash = await bcrypt.hash(enteredPassword, 12);
             await query(
               `UPDATE users
-               SET password_hash = $1, modified_at = NOW()
+               SET password_hash = $1, updated_at = NOW()
                WHERE id = $2 AND is_active = true AND deleted_at IS NULL`,
               [upgradedHash, candidate.id]
             );
@@ -348,7 +348,7 @@ const login = async (req, res) => {
       let accountDisabled = false;
       try {
         const accCheck = await query(
-          `SELECT s.id AS student_id, u.is_active AS student_is_active, st.id AS staff_id, u.is_active AS staff_is_active
+          `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
            FROM users u
            LEFT JOIN students s ON u.id = s.user_id
            LEFT JOIN staff st ON u.id = st.user_id
@@ -460,7 +460,7 @@ const login = async (req, res) => {
         st.id AS staff_id,
         u.first_name AS staff_first_name,
         u.last_name AS staff_last_name,
-        st.is_active AS staff_is_active,
+        (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active,
         d.designation_name,
         ur.role_name
       FROM users u
@@ -760,7 +760,7 @@ const updateMe = async (req, res) => {
             st.id AS staff_id,
             u.first_name AS staff_first_name,
             u.last_name AS staff_last_name,
-            st.is_active AS staff_is_active,
+            (st.deleted_at IS NULL AND st.status = 'Active') AS staff_is_active,
             d.designation_name,
             ur.role_name,
             addr.address_id,
@@ -797,7 +797,7 @@ const updateMe = async (req, res) => {
             st.id AS staff_id,
             u.first_name AS staff_first_name,
             u.last_name AS staff_last_name,
-            st.is_active AS staff_is_active,
+            (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active,
             d.designation_name,
             ur.role_name
           FROM users u

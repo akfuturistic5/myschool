@@ -28,6 +28,7 @@ type EditRow = {
   max_students?: number | null;
   class_fee?: number | string | null;
   class_description?: string | null;
+  section_ids?: number[];
 };
 
 const Classes = () => {
@@ -48,10 +49,10 @@ const Classes = () => {
     className: "",
     classCode: "",
     maxStudents: "",
-    classFee: "",
     description: "",
     isActive: true,
-    classTeacherStaffId: "Select",
+    includeSections: false,
+    sectionIds: [] as number[],
   });
   const [filterClass, setFilterClass] = useState("Select");
   const [filterStatus, setFilterStatus] = useState("Select");
@@ -60,12 +61,30 @@ const Classes = () => {
     className: "",
     sectionName: "",
     isActive: true,
-    teacherStaffId: "Select",
     classCode: "",
     maxStudents: "",
-    classFee: "",
     description: "",
+    includeSections: false,
+    sectionIds: [] as number[],
   });
+
+  const [availableSections, setAvailableSections] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchSecs = async () => {
+      try {
+        const res = await apiService.getSections();
+        if (res?.data) {
+          setAvailableSections(res.data);
+        } else if (Array.isArray(res)) {
+          setAvailableSections(res);
+        }
+      } catch (e) {
+        console.error("Failed to fetch sections", e);
+      }
+    };
+    fetchSecs();
+  }, []);
 
   const teacherSelectOptions = useMemo(
     () => [
@@ -84,18 +103,12 @@ const Classes = () => {
         className: editingRow.className,
         sectionName: editingRow.sectionName,
         isActive: editingRow.status === "Active",
-        teacherStaffId:
-          editingRow.sectionId != null
-            ? editingRow.section_teacher_id != null
-              ? String(editingRow.section_teacher_id)
-              : "Select"
-            : editingRow.class_teacher_id != null
-              ? String(editingRow.class_teacher_id)
-              : "Select",
+
         classCode: editingRow.class_code || "",
         maxStudents: editingRow.max_students != null ? String(editingRow.max_students) : "",
-        classFee: editingRow.class_fee != null ? String(editingRow.class_fee) : "",
         description: editingRow.class_description || "",
+        includeSections: Array.isArray(editingRow.section_ids) && editingRow.section_ids.length > 0,
+        sectionIds: Array.isArray(editingRow.section_ids) ? editingRow.section_ids : [],
       });
     }
   }, [editingRow]);
@@ -162,53 +175,34 @@ const Classes = () => {
       return;
     }
     setSaving(true);
+    const parseNum = (s: string) => {
+      const t = s.trim();
+      if (t === "") return null;
+      const n = Number(t);
+      return Number.isNaN(n) ? null : n;
+    };
     try {
-      let staffId: number | null = null;
-      if (editForm.teacherStaffId && editForm.teacherStaffId !== "Select") {
-        const n = parseInt(String(editForm.teacherStaffId), 10);
-        staffId = Number.isNaN(n) ? null : n;
-      }
       if (editingRow.sectionId) {
-        // Update Section
+        // Update Section status only
         await apiService.updateSection(editingRow.sectionId, {
           section_name: editForm.sectionName,
           is_active: editForm.isActive,
-          section_teacher_id: staffId,
-        });
-        
-        // Also Update Class-level fields
-        const parseNum = (s: string) => {
-          const t = s.trim();
-          if (t === "") return null;
-          const n = Number(t);
-          return Number.isNaN(n) ? null : n;
-        };
-        await apiService.updateClass(editingRow.classId, {
-          class_name: editForm.className.trim(),
-          class_code: editForm.classCode.trim() || null,
-          max_students: parseNum(editForm.maxStudents),
-          class_fee: parseNum(editForm.classFee),
-          description: editForm.description.trim() || null,
-          is_active: editForm.isActive, // Note: this updates class status too
-          class_teacher_id: editingRow.class_teacher_id, // Keep class teacher same
-        });
-      } else {
-        const parseNum = (s: string) => {
-          const t = s.trim();
-          if (t === "") return null;
-          const n = Number(t);
-          return Number.isNaN(n) ? null : n;
-        };
-        await apiService.updateClass(editingRow.classId, {
-          class_name: editForm.className.trim(),
-          class_code: editForm.classCode.trim() || null,
-          max_students: parseNum(editForm.maxStudents),
-          class_fee: parseNum(editForm.classFee),
-          description: editForm.description.trim() || null,
-          is_active: editForm.isActive,
-          class_teacher_id: staffId,
         });
       }
+      // Always update class-level fields
+      const payload: Record<string, any> = {
+        class_name: editForm.className.trim(),
+        class_code: editForm.classCode.trim() || null,
+        max_students: parseNum(editForm.maxStudents),
+        description: editForm.description.trim() || null,
+        is_active: editForm.isActive,
+      };
+      if (editForm.includeSections) {
+        payload.section_ids = editForm.sectionIds;
+      } else {
+        payload.section_ids = [];
+      }
+      await apiService.updateClass(editingRow.classId, payload);
       await refetch();
       showNotification("Updated successfully", "success");
       closeEditModalAndCleanup();
@@ -225,36 +219,28 @@ const Classes = () => {
     if (!addForm.className.trim()) return;
     setAdding(true);
     try {
-      let classTeacherStaffId: number | null = null;
-      if (addForm.classTeacherStaffId && addForm.classTeacherStaffId !== "Select") {
-        const n = parseInt(String(addForm.classTeacherStaffId), 10);
-        classTeacherStaffId = Number.isNaN(n) ? null : n;
-      }
+
       const parseOptInt = (s: string) => {
         const t = s.trim();
         if (t === "") return undefined;
         const n = parseInt(t, 10);
         return Number.isNaN(n) ? undefined : n;
       };
-      const parseOptFee = (s: string) => {
-        const t = s.trim();
-        if (t === "") return undefined;
-        const n = Number(t);
-        return Number.isNaN(n) ? undefined : n;
-      };
+
       const payload: Record<string, unknown> = {
         class_name: addForm.className.trim(),
         is_active: addForm.isActive,
-        class_teacher_id: classTeacherStaffId,
       };
       const code = addForm.classCode.trim();
       if (code) payload.class_code = code;
       const maxS = parseOptInt(addForm.maxStudents);
       if (maxS !== undefined) payload.max_students = maxS;
-      const fee = parseOptFee(addForm.classFee);
-      if (fee !== undefined) payload.class_fee = fee;
       const desc = addForm.description.trim();
       if (desc) payload.description = desc;
+
+      if (addForm.includeSections && addForm.sectionIds.length > 0) {
+        payload.section_ids = addForm.sectionIds;
+      }
 
       const createRes = (await apiService.createClass(payload)) as {
         status?: string;
@@ -280,10 +266,10 @@ const Classes = () => {
         className: "",
         classCode: "",
         maxStudents: "",
-        classFee: "",
         description: "",
         isActive: true,
-        classTeacherStaffId: "Select",
+        includeSections: false,
+        sectionIds: [],
       });
       showNotification("Class created successfully", "success");
     } catch (err: unknown) {
@@ -362,6 +348,7 @@ const Classes = () => {
           max_students: item.maxStudents ?? null,
           class_fee: item.classFee ?? null,
           class_description: item.classDescription ?? null,
+          section_ids: item.section_ids || [],
           classTeacherName: item.classTeacherName || "",
           hasClassTotalStudents: classTotalStudents != null,
         });
@@ -426,24 +413,6 @@ const Classes = () => {
       dataIndex: "classCode",
       sorter: (a: any, b: any) =>
         String(a.classCode || "").localeCompare(String(b.classCode || "")),
-    },
-    {
-      title: "Class teacher",
-      dataIndex: "teacher",
-      sorter: (a: TableData, b: TableData) =>
-        String(a.teacher || "").localeCompare(String(b.teacher || "")),
-    },
-    {
-      title: "No of Student",
-      dataIndex: "noOfStudents",
-      sorter: (a: TableData, b: TableData) =>
-        a.noOfStudents - b.noOfStudents,
-    },
-    {
-      title: "No of Subjects",
-      dataIndex: "noOfSubjects",
-      sorter: (a: TableData, b: TableData) =>
-        a.noOfSubjects - b.noOfSubjects,
     },
     {
       title: "Status",
@@ -741,38 +710,56 @@ const Classes = () => {
                         <input type="number" className="form-control" min={1} max={10000} placeholder="Default 30 if empty" value={addForm.maxStudents} onChange={(e) => setAddForm((f) => ({ ...f, maxStudents: e.target.value }))} />
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
-                        <label className="form-label">Class fee</label>
-                        <input type="number" className="form-control" min={0} step="0.01" placeholder="Optional" value={addForm.classFee} onChange={(e) => setAddForm((f) => ({ ...f, classFee: e.target.value }))} />
-                      </div>
-                    </div>
+
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Description</label>
                         <textarea className="form-control" rows={2} maxLength={5000} placeholder="Optional" value={addForm.description} onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))} />
                       </div>
                     </div>
+
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Sections</label>
-                        <input type="text" className="form-control bg-light" value="Add sections from Academic → Sections after creating the class" readOnly />
+                        <div className="form-check mb-2">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id="include-sections-add"
+                            checked={addForm.includeSections}
+                            onChange={(e) => setAddForm((f) => ({ ...f, includeSections: e.target.checked, sectionIds: e.target.checked ? f.sectionIds : [] }))}
+                          />
+                          <label className="form-check-label fw-bold" htmlFor="include-sections-add">
+                            Include sections
+                          </label>
+                        </div>
+                        {addForm.includeSections && (
+                          <div className="d-flex flex-wrap gap-3 mt-2 p-3 bg-light rounded">
+                            {availableSections.map((sec) => (
+                              <div className="form-check" key={sec.id}>
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id={`sec-add-${sec.id}`}
+                                  checked={addForm.sectionIds.includes(sec.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setAddForm((f) => ({ ...f, sectionIds: [...f.sectionIds, sec.id] }));
+                                    } else {
+                                      setAddForm((f) => ({ ...f, sectionIds: f.sectionIds.filter((id) => id !== sec.id) }));
+                                    }
+                                  }}
+                                />
+                                <label className="form-check-label" htmlFor={`sec-add-${sec.id}`}>
+                                  {sec.section_name}
+                                </label>
+                              </div>
+                            ))}
+                            {availableSections.length === 0 && <span className="text-muted small">No sections available.</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
-                        <label className="form-label">Class teacher (optional)</label>
-                        <CommonSelect
-                          className="select"
-                          options={teacherSelectOptions}
-                          defaultValue={teacherSelectOptions[0]}
-                          onChange={(v) => setAddForm((f) => ({ ...f, classTeacherStaffId: v || "Select" }))}
-                        />
-                      </div>
-                    </div>
-                    <div className="col-12">
-                      <p className="text-muted small mb-2">Subject count is derived from the Class Subject module when subjects are linked to this class.</p>
-                    </div>
+
                     <div className="col-md-12">
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">
@@ -860,19 +847,7 @@ const Classes = () => {
                         />
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
-                        <label className="form-label">Class fee</label>
-                        <input
-                          type="number"
-                          className="form-control"
-                          min={0}
-                          step="0.01"
-                          value={editForm.classFee}
-                          onChange={(e) => setEditForm((f) => ({ ...f, classFee: e.target.value }))}
-                        />
-                      </div>
-                    </div>
+
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Description</label>
@@ -885,19 +860,49 @@ const Classes = () => {
                         />
                       </div>
                     </div>
+
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">
-                          {editingRow?.sectionId != null ? "Section teacher" : "Class teacher"}
-                        </label>
-                        <CommonSelect
-                          className="select"
-                          options={teacherSelectOptions}
-                          value={editForm.teacherStaffId}
-                          onChange={(v) => setEditForm((f) => ({ ...f, teacherStaffId: v || "Select" }))}
-                        />
+                        <div className="form-check mb-2">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            id="include-sections-edit"
+                            checked={editForm.includeSections}
+                            onChange={(e) => setEditForm((f) => ({ ...f, includeSections: e.target.checked, sectionIds: e.target.checked ? f.sectionIds : [] }))}
+                          />
+                          <label className="form-check-label fw-bold" htmlFor="include-sections-edit">
+                            Include sections
+                          </label>
+                        </div>
+                        {editForm.includeSections && (
+                          <div className="d-flex flex-wrap gap-3 mt-2 p-3 bg-light rounded">
+                            {availableSections.map((sec) => (
+                              <div className="form-check" key={sec.id}>
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  id={`sec-edit-${sec.id}`}
+                                  checked={editForm.sectionIds.includes(sec.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setEditForm((f) => ({ ...f, sectionIds: [...f.sectionIds, sec.id] }));
+                                    } else {
+                                      setEditForm((f) => ({ ...f, sectionIds: f.sectionIds.filter((id) => id !== sec.id) }));
+                                    }
+                                  }}
+                                />
+                                <label className="form-check-label" htmlFor={`sec-edit-${sec.id}`}>
+                                  {sec.section_name}
+                                </label>
+                              </div>
+                            ))}
+                            {availableSections.length === 0 && <span className="text-muted small">No sections available.</span>}
+                          </div>
+                        )}
                       </div>
                     </div>
+
                     <div className="col-md-12">
                       <div className="d-flex align-items-center justify-content-between">
                         <div className="status-title">

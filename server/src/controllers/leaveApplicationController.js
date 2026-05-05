@@ -422,7 +422,7 @@ const updateLeaveApplicationStatus = async (req, res) => {
         const leaveTypeRes = await query(
           `SELECT max_days
            FROM leave_types
-           WHERE id = $1 AND is_active = true
+           WHERE id = $1 AND status = \'Active\'
            LIMIT 1`,
           [leaveTypeId]
         );
@@ -468,7 +468,7 @@ const updateLeaveApplicationStatus = async (req, res) => {
            approved_by = $2,
            approved_date = CURRENT_DATE,
            rejection_reason = CASE WHEN $5::text = 'rejected' THEN $3 ELSE NULL END,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE la.id = $4
          AND LOWER(TRIM(COALESCE(la.status, ''))) = 'pending'
        RETURNING *`,
@@ -573,7 +573,7 @@ const getMyLeaveApplications = async (req, res) => {
     // Staff/administrative/teacher accounts must never use the student email/phone fallback below,
     // or they can incorrectly see another student's leaves when contact details match.
     const staffLinkCheck = await query(
-      'SELECT 1 FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+      'SELECT 1 FROM staff WHERE user_id = $1 AND status = \'Active\' LIMIT 1',
       [userId]
     );
     const isLinkedStaffAccount = staffLinkCheck.rows.length > 0;
@@ -584,7 +584,7 @@ const getMyLeaveApplications = async (req, res) => {
       `SELECT id
        FROM students
        WHERE user_id = $1
-         AND is_active = true`,
+         AND status = 'Active'`,
       [userId]
     );
     const baseStudentIds = (userStudents.rows || [])
@@ -626,7 +626,7 @@ const getMyLeaveApplications = async (req, res) => {
     // Skip for staff-linked logins so office users never inherit a student's leave list by contact match.
     if (result.rows.length === 0 && !isLinkedStaffAccount) {
       const userRow = await query(
-        'SELECT email, phone FROM users WHERE id = $1 AND is_active = true',
+        'SELECT email, phone FROM users WHERE id = $1 AND status = \'Active\'',
         [userId]
       );
       if (userRow.rows.length > 0) {
@@ -639,7 +639,7 @@ const getMyLeaveApplications = async (req, res) => {
               st.first_name AS applicant_first_name, st.last_name AS applicant_last_name,
               st.photo_url AS applicant_photo_url, 'Student' AS applicant_role
              FROM leave_applications la
-             INNER JOIN students st ON la.student_id = st.id AND st.is_active = true
+             INNER JOIN students st ON la.student_id = st.id AND st.status = \'Active\'
              LEFT JOIN leave_types lt ON la.leave_type_id = lt.id
              WHERE la.student_id IS NOT NULL
                AND (st.user_id IS NULL OR st.user_id != $1)
@@ -649,7 +649,7 @@ const getMyLeaveApplications = async (req, res) => {
                  OR EXISTS (
                    SELECT 1 FROM guardians gx
                    INNER JOIN users ux ON ux.id = gx.user_id
-                   WHERE gx.student_id = st.id AND gx.is_active = true
+                   WHERE gx.student_id = st.id AND gx.status = \'Active\'
                      AND (
                        (LOWER(TRIM(COALESCE(ux.email, ''))) = $2 AND $2 != '')
                        OR (TRIM(COALESCE(ux.phone, '')) = $3 AND $3 != '')
@@ -798,15 +798,15 @@ const getGuardianWardLeaves = async (req, res) => {
     }
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
 
-    const userResult = await query('SELECT id FROM users WHERE id = $1 AND is_active = true', [userId]);
+    const userResult = await query('SELECT id FROM users WHERE id = $1 AND status = \'Active\'', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(200).json({ status: 'SUCCESS', message: 'Leave applications fetched successfully', data: [], count: 0 });
     }
     const guardianResult = await query(
       `SELECT g.student_id
        FROM guardians g
-       INNER JOIN students s ON s.id = g.student_id AND s.is_active = true
-       WHERE g.user_id = $1 AND g.is_active = true`,
+       INNER JOIN students s ON s.id = g.student_id AND s.status = \'Active\'
+       WHERE g.user_id = $1 AND g.status = 'Active'`,
       [userId]
     );
     const studentIds = guardianResult.rows.map(r => r.student_id).filter(Boolean);
@@ -909,7 +909,7 @@ const cancelLeaveApplication = async (req, res) => {
     const updated = await query(
       `UPDATE leave_applications
        SET status = 'cancelled',
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [leaveId]

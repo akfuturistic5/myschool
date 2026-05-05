@@ -61,7 +61,7 @@ const listBooks = async (req, res) => {
       `SELECT b.id, b.academic_year_id, b.book_title, b.book_code, b.author, b.isbn, b.publisher, b.publication_year,
               b.category_id, c.category_name,
               b.total_copies, b.available_copies, b.book_price, b.book_location, b.description,
-              b.is_active, b.created_at, b.modified_at
+              b.is_active, b.created_at, b.updated_at
        FROM library_books b
        LEFT JOIN library_categories c ON c.id = b.category_id
        ${where}
@@ -150,7 +150,7 @@ const createBook = async (req, res) => {
         book_title, book_code, author, isbn, publisher, publication_year, category_id,
         total_copies, available_copies, book_price, book_location, description,
         academic_year_id,
-        is_active, created_by, created_at, modified_at
+        is_active, created_by, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
@@ -270,7 +270,7 @@ const updateBook = async (req, res) => {
          description = $13,
          is_active = $14,
          academic_year_id = $15,
-         modified_at = CURRENT_TIMESTAMP
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [
@@ -315,7 +315,7 @@ const deleteBook = async (req, res) => {
       });
     }
     const r = await query(
-      `UPDATE library_books SET is_active = false, modified_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id`,
+      `UPDATE library_books SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id`,
       [id]
     );
     if (r.rows.length === 0) {
@@ -455,7 +455,7 @@ const importBooks = async (req, res) => {
             book_title, book_code, author, isbn, publisher, publication_year, category_id,
             total_copies, available_copies, book_price, book_location, description,
             academic_year_id,
-            is_active, created_by, created_at, modified_at
+            is_active, created_by, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12,

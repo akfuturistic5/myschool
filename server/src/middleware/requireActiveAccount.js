@@ -16,8 +16,8 @@ const requireActiveAccount = async (req, res, next) => {
   }
   try {
     const result = await query(
-      `SELECT s.id AS student_id, s.is_active AS student_is_active,
-              st.id AS staff_id, s.is_active AS staff_is_active
+      `SELECT s.id AS student_id, (s.deleted_at IS NULL AND s.status = 'Active') AS student_is_active,
+              st.id AS staff_id, (st.deleted_at IS NULL AND st.status = 'Active') AS staff_is_active
        FROM users u
        LEFT JOIN students s ON u.id = s.user_id
        LEFT JOIN staff st ON u.id = st.user_id

@@ -61,7 +61,7 @@ const listMembers = async (req, res) => {
          to_char(m.date_joined::date, 'YYYY-MM-DD') AS date_joined,
          m.is_active,
          m.created_at,
-         m.modified_at,
+         m.updated_at,
          CASE WHEN m.member_type = 'student' THEN TRIM(CONCAT(s.first_name, ' ', s.last_name)) ELSE TRIM(CONCAT(st.first_name, ' ', st.last_name)) END AS member_name,
          CASE WHEN m.member_type = 'student' THEN s.email ELSE st.email END AS email,
          CASE WHEN m.member_type = 'student' THEN s.phone ELSE st.phone END AS phone,
@@ -107,7 +107,7 @@ const getMember = async (req, res) => {
     const r = await query(
       `SELECT m.id, m.academic_year_id, m.member_type, m.student_id, m.staff_id, m.card_number,
               to_char(m.date_joined::date, 'YYYY-MM-DD') AS date_joined,
-              m.is_active, m.created_at, m.created_by, m.modified_at,
+              m.is_active, m.created_at, m.created_by, m.updated_at,
          CASE WHEN m.member_type = 'student' THEN TRIM(CONCAT(s.first_name, ' ', s.last_name)) ELSE TRIM(CONCAT(st.first_name, ' ', st.last_name)) END AS member_name,
          CASE WHEN m.member_type = 'student' THEN s.email ELSE st.email END AS email,
          CASE WHEN m.member_type = 'student' THEN s.phone ELSE st.phone END AS phone
@@ -161,7 +161,7 @@ const createMember = async (req, res) => {
     }
 
     const r = await query(
-      `INSERT INTO library_members (member_type, student_id, staff_id, card_number, date_joined, academic_year_id, is_active, created_by, created_at, modified_at)
+      `INSERT INTO library_members (member_type, student_id, staff_id, card_number, date_joined, academic_year_id, is_active, created_by, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5::date, $6, true, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
       [mt, sid, tid, card, dj, ay, userId]
@@ -227,7 +227,7 @@ const updateMember = async (req, res) => {
          date_joined = $3::date,
          is_active = $4,
          academic_year_id = $5,
-         modified_at = CURRENT_TIMESTAMP
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [id, card_number, date_joined, is_active, academic_year_id]

@@ -78,7 +78,7 @@ const getAllRoutes = async (req, res) => {
     }
 
     if (status !== 'all') {
-      const isActive = status === 'active';
+      const isActive = status === 'active' || status === 'true' || status === true;
       params.push(isActive);
       sqlFilters += ` AND r.is_active = $${params.length}`;
     }

@@ -199,7 +199,7 @@ const updateUserRole = async (req, res) => {
       UPDATE user_roles
       SET role_name = $2,
           description = NULLIF($3, ''),
-          modified_at = CURRENT_TIMESTAMP
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
         AND is_active = true
       RETURNING *
@@ -265,7 +265,7 @@ const deleteUserRole = async (req, res) => {
       `
       UPDATE user_roles
       SET is_active = false,
-          modified_at = CURRENT_TIMESTAMP
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
         AND is_active = true
       RETURNING id

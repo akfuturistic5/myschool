@@ -131,21 +131,18 @@ const getAcademicYearSummary = async (req, res) => {
     const statsRes = await query(
       `
       SELECT
-        (SELECT COUNT(*)::int FROM classes c WHERE c.academic_year_id = $1) AS classes_count,
-        (SELECT COUNT(*)::int FROM sections s
-          INNER JOIN classes c ON s.class_id = c.id
-          WHERE c.academic_year_id = $1) AS sections_count,
-        (SELECT COUNT(*)::int FROM students st
-          WHERE st.academic_year_id = $1 AND COALESCE(st.is_active, true) = true) AS students_count,
-        (SELECT COUNT(*)::int FROM class_schedules cs WHERE cs.academic_year_id = $1) AS class_schedules_count,
-        (SELECT COUNT(*)::int FROM fee_structures fs WHERE fs.academic_year_id = $1) AS fee_structures_count,
-        (SELECT COUNT(*)::int FROM exams e WHERE e.academic_year_id = $1) AS exams_count,
-        (SELECT COUNT(*)::int FROM school_holidays h WHERE h.academic_year_id = $1) AS holidays_count,
-        (SELECT COUNT(*)::int FROM class_syllabus csy WHERE csy.academic_year_id = $1) AS class_syllabus_count,
-        (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.to_academic_year_id = $1) AS promotions_into_count,
-        (SELECT COUNT(*)::int FROM student_promotions sp WHERE sp.from_academic_year_id = $1) AS promotions_from_count,
-        (SELECT COUNT(*)::int FROM attendance a WHERE a.academic_year_id = $1) AS attendance_records_count,
-        (SELECT COUNT(*)::int FROM teacher_routines tr WHERE tr.academic_year_id = $1) AS teacher_routines_count
+        (SELECT COUNT(DISTINCT class_id)::int FROM class_sections WHERE academic_year_id = $1) AS classes_count,
+        (SELECT COUNT(*)::int FROM class_sections WHERE academic_year_id = $1) AS sections_count,
+        (SELECT COUNT(DISTINCT student_id)::int FROM student_lifecycle_ledger 
+          WHERE to_academic_year_id = $1 AND event_type IN ('ADMISSION', 'PROMOTION', 'RE_ADMISSION')) AS students_count,
+        (SELECT COUNT(*)::int FROM class_schedules WHERE academic_year_id = $1) AS class_schedules_count,
+        (SELECT COUNT(*)::int FROM fees WHERE academic_year_id = $1) AS fees_count,
+        (SELECT COUNT(*)::int FROM exams WHERE academic_year_id = $1) AS exams_count,
+        (SELECT COUNT(*)::int FROM school_holidays WHERE academic_year_id = $1) AS holidays_count,
+        (SELECT COUNT(*)::int FROM student_lifecycle_ledger WHERE to_academic_year_id = $1) AS promotions_into_count,
+        (SELECT COUNT(*)::int FROM student_lifecycle_ledger WHERE from_academic_year_id = $1) AS promotions_from_count,
+        (SELECT COUNT(*)::int FROM student_attendance WHERE academic_year_id = $1) AS attendance_records_count,
+        (SELECT COUNT(*)::int FROM subject_teacher_assignments WHERE academic_year_id = $1) AS teacher_assignments_count
       `,
       [id]
     );
@@ -163,6 +160,7 @@ const getAcademicYearSummary = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to fetch academic year summary',
+      error: error.message,
     });
   }
 };
@@ -197,6 +195,20 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
+    if (!start_date) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Start date is required',
+      });
+    }
+
+    if (!end_date) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'End date is required',
+      });
+    }
+
     if (copyFromYearRaw != null && copyFromYearRaw !== '' && !copyFromYearId) {
       return res.status(400).json({
         status: 'ERROR',
@@ -205,16 +217,14 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
-    if (end_date && compareIsoDates(end_date, start_date) < 0) {
+    if (compareIsoDates(end_date, start_date) < 0) {
       return res.status(400).json({
         status: 'ERROR',
         message: 'End date cannot be before start date',
       });
     }
 
-    // End date is intentionally nullable at creation time and should be filled
-    // later when the academic year closes.
-    const endInsert = end_date || null;
+    const endInsert = end_date;
 
     const created_by = await resolveStaffIdForUser(req.user?.id);
     const is_current = isCurrent === true;
@@ -412,7 +422,7 @@ const updateAcademicYear = async (req, res) => {
         return again.rows[0];
       }
 
-      fields.push('modified_at = CURRENT_TIMESTAMP');
+      fields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(id);
 
       const sql = `UPDATE academic_years SET ${fields.join(', ')} WHERE id = $${p} RETURNING *`;

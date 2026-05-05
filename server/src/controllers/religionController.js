@@ -96,7 +96,7 @@ const createReligion = async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO religions (religion_name, description, is_active, created_by, modified_at)
+      `INSERT INTO religions (religion_name, description, is_active, created_by, updated_at)
        VALUES ($1, $2, $3, $4, NOW())
        RETURNING id, religion_name, description, is_active, created_at`,
       [religionName, description || null, isActive, req.user?.id || null]
@@ -138,7 +138,7 @@ const updateReligion = async (req, res) => {
        SET religion_name = $1,
            description = $2,
            is_active = $3,
-           modified_at = NOW()
+           updated_at = NOW()
        WHERE id = $4
        RETURNING id, religion_name, description, is_active, created_at`,
       [religionName, description || null, isActive, id]
@@ -163,7 +163,7 @@ const toggleReligionStatus = async (req, res) => {
     const result = await query(
       `UPDATE religions
        SET is_active = NOT is_active,
-           modified_at = NOW()
+           updated_at = NOW()
        WHERE id = $1
        RETURNING id, religion_name, description, is_active, created_at`,
       [id]

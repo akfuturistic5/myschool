@@ -35,7 +35,7 @@ const serializeHolidayRow = (row) => {
     academic_year_id: row.academic_year_id ?? null,
     created_by: row.created_by ?? null,
     created_at: row.created_at || null,
-    updated_at: row.updated_at || row.modified_at || row.created_at || null,
+    updated_at: row.updated_at || row.updated_at || row.created_at || null,
   };
 };
 
@@ -131,7 +131,7 @@ const createHoliday = async (req, res) => {
          (CASE WHEN upper_inf(holiday_period) THEN lower(holiday_period)::text
           ELSE ((upper(holiday_period)::date - interval '1 day')::date)::text
          END) AS end_date,
-         holiday_type, academic_year_id, created_by, created_at, updated_at AS modified_at`,
+         holiday_type, academic_year_id, created_by, created_at, updated_at AS updated_at`,
       [academicYearId, title, description, startDate, endDate, dbHolidayType, createdBy]
     );
     return success(res, 201, 'Holiday created successfully', serializeHolidayRow(result.rows[0]));
@@ -258,7 +258,7 @@ const updateHoliday = async (req, res) => {
          (CASE WHEN upper_inf(holiday_period) THEN lower(holiday_period)::text
           ELSE ((upper(holiday_period)::date - interval '1 day')::date)::text
          END) AS end_date,
-         holiday_type, academic_year_id, created_by, created_at, updated_at AS modified_at`,
+         holiday_type, academic_year_id, created_by, created_at, updated_at AS updated_at`,
       [id, title, description, startDate, endDate, dbHolidayType, academicYearId]
     );
     if (!updated.rows.length) return errorResponse(res, 404, 'Holiday not found', 'HOLIDAY_NOT_FOUND');

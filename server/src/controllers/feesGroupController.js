@@ -62,7 +62,7 @@ const updateFeesGroup = async (req, res) => {
         const { name, description, status } = req.body;
 
         const result = await query(
-            'UPDATE fees_groups SET name = $1, description = $2, status = $3, modified_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING *',
+            'UPDATE fees_groups SET name = $1, description = $2, status = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING *',
             [name, description, status || 'Active', id]
         );
 

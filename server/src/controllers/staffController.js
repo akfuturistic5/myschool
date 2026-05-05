@@ -63,7 +63,7 @@ async function getSupportStaffDepartmentId(client) {
   const r = await client.query(
     `SELECT id FROM departments
      WHERE LOWER(TRIM(department_name)) = 'support staff'
-       AND (is_active IS NOT FALSE OR is_active IS NULL)
+       AND (status = \'Active\' OR status IS NULL)
      ORDER BY id ASC LIMIT 1`
   );
   return r.rows[0]?.id ?? null;
@@ -88,7 +88,7 @@ async function syncStaffUserRole(client, userId, { isDriver }) {
   if (!targetRoleId) return;
   await client.query(
     `UPDATE users
-     SET role_id = $1, modified_at = NOW()
+     SET role_id = $1, updated_at = NOW()
      WHERE id = $2`,
     [targetRoleId, userId]
   );
@@ -148,7 +148,7 @@ async function upsertDriverForStaff(client, payload) {
         joining_date = $9,
         salary = $10,
         is_active = $11,
-        modified_at = NOW()
+        updated_at = NOW()
       WHERE staff_id = $12`,
       params
     );
@@ -157,7 +157,7 @@ async function upsertDriverForStaff(client, payload) {
       `INSERT INTO drivers (
         driver_name, employee_code, phone, email, license_number, license_expiry,
         address, emergency_contact, joining_date, salary, is_active, staff_id,
-        created_at, created_by, modified_at
+        created_at, created_by, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
         NOW(), $13, NOW()
@@ -169,7 +169,7 @@ async function upsertDriverForStaff(client, payload) {
 
 async function unlinkDriverStaff(client, staffId) {
   await client.query(
-    `UPDATE drivers SET staff_id = NULL, modified_at = NOW() WHERE staff_id = $1`,
+    `UPDATE drivers SET staff_id = NULL, updated_at = NOW() WHERE staff_id = $1`,
     [staffId]
   );
 }
@@ -331,7 +331,7 @@ async function backfillLegacyTeacherStaffAssignments() {
       FROM users u
       LEFT JOIN user_roles ur ON ur.id = u.role_id
      WHERE s.user_id = u.id
-       AND s.is_active = true
+       AND s.status = \'Active\'
        AND LOWER(TRIM(COALESCE(ur.role_name, ''))) = 'teacher'
        AND (
          (s.designation_id IS NULL AND $1::int IS NOT NULL) OR
@@ -372,7 +372,7 @@ const getStaffById = async (req, res) => {
     const staffSelect = await getStaffSelectSql();
     const result = await query(
       `${staffSelect}
-      WHERE s.id = $1 AND s.is_active = true`,
+      WHERE s.id = $1 AND s.status = 'Active'`,
       [id]
     );
 
@@ -464,8 +464,8 @@ const createStaff = async (req, res) => {
       return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
     }
 
-    let isActiveBoolean = true;
-    if (is_active === false || is_active === 'false' || is_active === 0) isActiveBoolean = false;
+    let statusValue = 'Active';
+    if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') statusValue = 'Inactive';
 
     const genderNorm = normalizeGender(gender);
     const dob = parseDateOrNull(date_of_birth);
@@ -533,7 +533,7 @@ const createStaff = async (req, res) => {
           user_id, employee_code, first_name, last_name, gender, date_of_birth, blood_group_id,
           phone, email, address, emergency_contact_name, emergency_contact_phone,
           designation_id, department_id, joining_date, salary, qualification, experience_years,
-          photo_url, is_active, created_by, created_at, modified_at
+          photo_url, status, created_by, created_at, updated_at
         ) VALUES (
           NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW()
         ) RETURNING id`,
@@ -556,7 +556,7 @@ const createStaff = async (req, res) => {
           qualification || null,
           expYears != null && !Number.isNaN(expYears) ? expYears : null,
           (photo_url || '').toString().trim().slice(0, 500) || null,
-          isActiveBoolean,
+          statusValue,
           createdBy && !Number.isNaN(createdBy) ? createdBy : null,
         ]
       );
@@ -592,7 +592,7 @@ const createStaff = async (req, res) => {
         err.statusCode = 500;
         throw err;
       }
-      await client.query(`UPDATE staff SET user_id = $1, modified_at = NOW() WHERE id = $2`, [userId, staffId]);
+      await client.query(`UPDATE staff SET user_id = $1, updated_at = NOW() WHERE id = $2`, [userId, staffId]);
       await syncStaffUserRole(client, userId, { isDriver: Boolean(isDriverRole) });
 
       if (isDriverRole) {
@@ -611,7 +611,7 @@ const createStaff = async (req, res) => {
           emergencyContactPhone: emergency_contact_phone || null,
           joiningDate: joinD,
           salary: salaryNum != null && !Number.isNaN(salaryNum) ? salaryNum : null,
-          isActive: isActiveBoolean,
+          isActive: statusValue === 'Active',
           createdBy,
         });
       }
@@ -795,13 +795,12 @@ const updateStaff = async (req, res) => {
       if (photo_url !== undefined) {
         add('photo_url', (photo_url || '').toString().trim().slice(0, 500) || null);
       }
-      let nextIsActive = prev.is_active;
+      let nextStatus = prev.status || 'Active';
       if (is_active !== undefined) {
-        const active = !(is_active === false || is_active === 'false' || is_active === 0);
-        nextIsActive = active;
-        add('is_active', active);
+        nextStatus = (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') ? 'Inactive' : 'Active';
+        add('status', nextStatus);
       }
-      staffUpdates.push('modified_at = NOW()');
+      staffUpdates.push('updated_at = NOW()');
 
       if (staffUpdates.length >= 1) {
         staffParams.push(staffIdNum);
@@ -813,10 +812,10 @@ const updateStaff = async (req, res) => {
       }
 
       if (is_active !== undefined && prev.user_id && nextIsActive === false) {
-        await client.query('UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1', [prev.user_id]);
+        await client.query('UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1', [prev.user_id]);
       }
       if (is_active !== undefined && prev.user_id && nextIsActive === true) {
-        await client.query('UPDATE users SET is_active = true, modified_at = NOW() WHERE id = $1', [prev.user_id]);
+        await client.query('UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1', [prev.user_id]);
       }
 
       if (prev.user_id && (first_name !== undefined || last_name !== undefined || email !== undefined || phone !== undefined)) {
@@ -834,7 +833,7 @@ const updateStaff = async (req, res) => {
         uadd('last_name', last_name !== undefined ? (last_name || '').toString().trim() : undefined);
         uadd('email', email !== undefined ? (email || '').toString().trim() : undefined);
         uadd('phone', phone !== undefined ? (phone || '').toString().trim() : undefined);
-        uUp.push('modified_at = NOW()');
+        uUp.push('updated_at = NOW()');
         if (uUp.length > 1) {
           uPa.push(prev.user_id);
           await client.query(`UPDATE users SET ${uUp.join(', ')} WHERE id = $${ui}`, uPa);
@@ -844,7 +843,7 @@ const updateStaff = async (req, res) => {
       if (pwdIn && prev.user_id) {
         const passwordHash = await bcrypt.hash(pwdIn, 12);
         await client.query(
-          `UPDATE users SET password_hash = $1, modified_at = NOW() WHERE id = $2`,
+          `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
           [passwordHash, prev.user_id]
         );
       }
@@ -865,7 +864,7 @@ const updateStaff = async (req, res) => {
       if (isDrv) {
         const supId = await getSupportStaffDepartmentId(client);
         if (supId && cur.department_id !== supId) {
-          await client.query(`UPDATE staff SET department_id = $1, modified_at = NOW() WHERE id = $2`, [
+          await client.query(`UPDATE staff SET department_id = $1, updated_at = NOW() WHERE id = $2`, [
             supId,
             staffIdNum,
           ]);
@@ -931,13 +930,13 @@ const updateStaff = async (req, res) => {
           const currentRid = uCur.rows[0]?.role_id;
           if (isDrv) {
             if (Number(currentRid) !== Number(driverRid)) {
-              await client.query(`UPDATE users SET role_id = $1, modified_at = NOW() WHERE id = $2`, [
+              await client.query(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, [
                 driverRid,
                 prev.user_id,
               ]);
             }
           } else if (currentRid != null && Number(currentRid) === Number(driverRid)) {
-            await client.query(`UPDATE users SET role_id = $1, modified_at = NOW() WHERE id = $2`, [
+            await client.query(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, [
               ROLES.ADMINISTRATIVE,
               prev.user_id,
             ]);
@@ -981,7 +980,7 @@ const deleteStaff = async (req, res) => {
     }
 
     const result = await query(
-      `UPDATE staff SET is_active = false, modified_at = NOW() WHERE id = $1 AND is_active = true RETURNING id`,
+      `UPDATE staff SET is_active = false, updated_at = NOW() WHERE id = $1 AND is_active = true RETURNING id`,
       [staffIdNum]
     );
     if (result.rows.length === 0) {
@@ -989,14 +988,14 @@ const deleteStaff = async (req, res) => {
     }
 
     await query(
-      `UPDATE drivers SET is_active = false, modified_at = NOW() WHERE staff_id = $1`,
+      `UPDATE drivers SET is_active = false, updated_at = NOW() WHERE staff_id = $1`,
       [staffIdNum]
     );
 
     const staffRow = await query('SELECT user_id FROM staff WHERE id = $1', [staffIdNum]);
     const uid = staffRow.rows[0]?.user_id;
     if (uid) {
-      await query('UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1', [uid]);
+      await query('UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1', [uid]);
     }
 
     return success(res, 200, 'Staff deactivated successfully', { id: staffIdNum });

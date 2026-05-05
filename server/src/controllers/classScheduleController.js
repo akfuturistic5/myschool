@@ -601,7 +601,7 @@ async function syncTeacherRoutineLink(client, row) {
     await qexec(client, 'DELETE FROM teacher_routines WHERE class_schedule_id = $1', [row.id]);
     await qexec(
       client,
-      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, modified_at)
+      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, updated_at)
        VALUES ($1, $2, $3, true, NOW(), NOW())`,
       [row.teacher_id, row.id, row.academic_year_id]
     );
@@ -997,7 +997,7 @@ const updateClassSchedule = async (req, res) => {
       const result = await client.query(
       `UPDATE class_schedules SET
         teacher_id = $1, class_id = $2, section_id = $3, subject_id = $4, time_slot_id = $5,
-        day_of_week = $6, room_number = $7, class_room_id = $8, academic_year_id = $9, modified_at = NOW()
+        day_of_week = $6, room_number = $7, class_room_id = $8, academic_year_id = $9, updated_at = NOW()
       WHERE id = $10 RETURNING *`,
       [
         teacherId,

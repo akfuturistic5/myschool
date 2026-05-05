@@ -189,7 +189,7 @@ const createSchedule = async (req, res) => {
   }
 };
 
-// Update schedule - use modified_at (not updated_at)
+// Update schedule - use updated_at (not updated_at)
 const updateSchedule = async (req, res) => {
   try {
     const { id } = req.params;
@@ -315,9 +315,9 @@ const updateSchedule = async (req, res) => {
       values.push(isActiveBoolean);
     }
 
-    // modified_at (not updated_at)
-    if (hasCol('modified_at')) {
-      updates.push('modified_at = NOW()');
+    // updated_at (not updated_at)
+    if (hasCol('updated_at')) {
+      updates.push('updated_at = NOW()');
     }
 
     if (updates.length === 0) {

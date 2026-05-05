@@ -711,6 +711,20 @@ async function createTenantDatabase(dbName, schoolName = null) {
       const seedSql = getTenantSeedSql();
       await executeTemplateStatements(tenantPool, seedSql);
       await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1) ON CONFLICT DO NOTHING', ['tenant_seed.sql']);
+
+      // 3. Run Incremental Migrations from migrations/tenant folder
+      const migrationsDir = path.resolve(SERVER_APP_ROOT, 'migrations/tenant');
+      if (fs.existsSync(migrationsDir)) {
+        const migrationFiles = fs.readdirSync(migrationsDir)
+          .filter(f => f.toLowerCase().endsWith('.sql') && f.toLowerCase() !== 'schema.sql')
+          .sort();
+        
+        for (const file of migrationFiles) {
+          const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+          await executeTemplateStatements(tenantPool, sql);
+          await tenantPool.query('INSERT INTO migration_history (migration_name) VALUES ($1) ON CONFLICT DO NOTHING', [file]);
+        }
+      }
     } else {
       getTemplateSql();
     }
