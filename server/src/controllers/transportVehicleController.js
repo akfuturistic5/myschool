@@ -50,7 +50,6 @@ function mapVehicleRow(row) {
 const getAllVehicles = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
-    const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const hasTransportAssignments = await hasTable('transport_assignments');
     const hasVehicleRouteAssignments = await hasTable('vehicle_route_assignments');
@@ -65,7 +64,6 @@ const getAllVehicles = async (req, res) => {
     } = req.query;
 
     const offset = (page - 1) * limit;
-    let whereClause = `WHERE ${hasDeletedAt ? 'v.deleted_at IS NULL' : '1=1'}`;
     let whereClause = `WHERE ${hasDeletedAt ? 'v.deleted_at IS NULL' : '1=1'}`;
     const queryParams = [];
 
@@ -109,8 +107,8 @@ const getAllVehicles = async (req, res) => {
     const allowedSortFields = ['id', 'vehicle_number', 'vehicle_type', 'brand', 'model', 'vehicle_model', 'made_of_year', 'is_active', 'created_at', 'driver_name', 'route_name', 'point_name'];
     let finalSortField = 'v.id';
     if (allowedSortFields.includes(sortField)) {
-        if (sortField === 'route_name') finalSortField = 'r.route_name';
-        else finalSortField = `v.${sortField}`;
+      if (sortField === 'route_name') finalSortField = 'r.route_name';
+      else finalSortField = `v.${sortField}`;
     }
     const finalSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
@@ -142,14 +140,14 @@ const getAllVehicles = async (req, res) => {
     const dataResult = await query(
       `SELECT v.*, r.route_name,
        (${hasRouteStops
-          ? `SELECT string_agg(pp_sub.point_name, ', ')
+        ? `SELECT string_agg(pp_sub.point_name, ', ')
              FROM route_stops rs_sub
              JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
              WHERE rs_sub.route_id = r.id`
-          : `SELECT string_agg(pp_sub.point_name, ', ')
+        : `SELECT string_agg(pp_sub.point_name, ', ')
              FROM pickup_points pp_sub
              WHERE pp_sub.route_id = r.id`
-        }) as point_name
+      }) as point_name
        FROM transport_vehicles v
        ${assignmentsJoin}
        LEFT JOIN routes r ON ta.route_id = r.id AND r.deleted_at IS NULL
@@ -160,7 +158,6 @@ const getAllVehicles = async (req, res) => {
       [...queryParams, limit, offset]
     );
 
-    const data = dataResult.rows.map((row) => mapVehicleRow(row));
     const data = dataResult.rows.map((row) => mapVehicleRow(row));
 
     return success(res, 200, 'Vehicles fetched successfully', data, {
@@ -178,7 +175,6 @@ const getAllVehicles = async (req, res) => {
 const getVehicleById = async (req, res) => {
   try {
     const { id } = req.params;
-    const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const hasTransportAssignments = await hasTable('transport_assignments');
@@ -227,20 +223,20 @@ const getVehicleById = async (req, res) => {
 
 const createVehicle = async (req, res) => {
   try {
-    const { 
-      vehicle_number, 
+    const {
+      vehicle_number,
       vehicle_type,
       brand,
-      vehicle_model, 
-      made_of_year, 
-      registration_number, 
-      chassis_number, 
-      seat_capacity, 
-      gps_device_id, 
+      vehicle_model,
+      made_of_year,
+      registration_number,
+      chassis_number,
+      seat_capacity,
+      gps_device_id,
       insurance_expiry,
       fitness_expiry,
       permit_expiry,
-      is_active 
+      is_active
     } = req.body;
 
     if (!vehicle_number) {
@@ -282,7 +278,7 @@ const createVehicle = async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
-      vehicle_number, 
+      vehicle_number,
       parsedVehicleType,
       brand ? String(brand).trim() : null,
       model || '',
@@ -307,7 +303,6 @@ const createVehicle = async (req, res) => {
 const updateVehicle = async (req, res) => {
   try {
     const { id } = req.params;
-    const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const numericId = parseInt(id);
 
@@ -437,22 +432,21 @@ const deleteVehicle = async (req, res) => {
   try {
     const { id } = req.params;
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
-    const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const numericId = parseInt(id);
-    
+
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid vehicle ID');
     }
 
     const result = hasDeletedAt
       ? await query(
-          'UPDATE transport_vehicles SET deleted_at = NOW(), updated_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-          [numericId]
-        )
+        'UPDATE transport_vehicles SET deleted_at = NOW(), updated_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+        [numericId]
+      )
       : await query(
-          'UPDATE transport_vehicles SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
-          [numericId]
-        );
+        'UPDATE transport_vehicles SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+        [numericId]
+      );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Vehicle not found or already deleted');

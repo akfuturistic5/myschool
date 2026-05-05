@@ -221,8 +221,8 @@ const getAllPickupPoints = async (req, res) => {
       [...params, parseInt(limit), offset]
     );
 
-    const data = result.rows.map((row) => mapPickupRow(row, flags));
-    const totalCount = parseInt(countResult.rows[0].count);
+    // const data = result.rows.map((row) => mapPickupRow(row, flags));
+    // const totalCount = parseInt(countResult.rows[0].count);
 
     return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
@@ -292,8 +292,7 @@ const createPickupPoint = async (req, res) => {
     const hasDeletedAt = flags.hasDeletedAt;
     const { 
       route_id,
-      point_name, 
-      route_id,
+      point_name,
       address,
       landmark,
       pickup_time,
@@ -308,20 +307,20 @@ const createPickupPoint = async (req, res) => {
     }
 
     // Check for duplicate name
-    const duplicateParams = [point_name];
-    let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
+    // const duplicateParams = [point_name];
+    // let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
     if (flags.hasRouteId && route_id != null && String(route_id).trim() !== '') {
       duplicateParams.push(Number(route_id));
       duplicateSql += ` AND route_id = $2`;
     }
-    const existing = await query(
-      duplicateSql,
-      duplicateParams
-    );
-    if (existing.rows.length > 0) {
-      return errorResponse(res, 400, 'A pickup point with this name already exists');
-      sequence_order
-    } = req.body;
+    // const existing = await query(
+    //   duplicateSql,
+    //   duplicateParams
+    // );
+    // if (existing.rows.length > 0) {
+    //   return errorResponse(res, 400, 'A pickup point with this name already exists');
+    //   sequence_order
+    // } = req.body;
 
     if (!point_name) {
       return errorResponse(res, 400, 'Pickup point name is required');
@@ -342,76 +341,76 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'A pickup point with this name already exists');
     }
 
-    const payloadValues = [point_name];
-    const columns = ['point_name'];
-    const placeholders = ['$1'];
+    // const payloadValues = [point_name];
+    // const columns = ['point_name'];
+    // const placeholders = ['$1'];
 
-    if (flags.hasRouteId && (route_id === undefined || route_id === null || String(route_id).trim() === '')) {
-      return errorResponse(res, 400, 'Route is required for pickup point');
-    }
+    // if (flags.hasRouteId && (route_id === undefined || route_id === null || String(route_id).trim() === '')) {
+    //   return errorResponse(res, 400, 'Route is required for pickup point');
+    // }
 
-    if (flags.hasRouteId && route_id !== undefined) {
-      const routeIdValue = route_id === null || route_id === '' ? null : Number(route_id);
-      if (routeIdValue !== null && !Number.isInteger(routeIdValue)) {
-        return errorResponse(res, 400, 'Route ID must be a valid integer');
-      }
-      columns.push('route_id');
-      payloadValues.push(routeIdValue);
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasAddress && address !== undefined) {
-      columns.push('address');
-      payloadValues.push(normalizeNullableText(address));
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasLandmark && landmark !== undefined) {
-      columns.push('landmark');
-      payloadValues.push(normalizeNullableText(landmark));
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasPickupTime && pickup_time !== undefined) {
-      const t = normalizeNullableTime(pickup_time);
-      if (pickup_time != null && String(pickup_time).trim() !== '' && t === null) {
-        return errorResponse(res, 400, 'Invalid pickup time format. Use HH:mm');
-      }
-      columns.push('pickup_time');
-      payloadValues.push(t);
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasDropTime && drop_time !== undefined) {
-      const t = normalizeNullableTime(drop_time);
-      if (drop_time != null && String(drop_time).trim() !== '' && t === null) {
-        return errorResponse(res, 400, 'Invalid drop time format. Use HH:mm');
-      }
-      columns.push('drop_time');
-      payloadValues.push(t);
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasDistanceFromSchool && distance_from_school !== undefined) {
-      const distance = normalizeNullableNumber(distance_from_school);
-      if (Number.isNaN(distance)) {
-        return errorResponse(res, 400, 'Distance from school must be a valid number');
-      }
-      columns.push('distance_from_school');
-      payloadValues.push(distance);
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasSequenceOrder) {
-      const sequence = sequence_order === undefined || sequence_order === null || sequence_order === ''
-        ? 0
-        : Number(sequence_order);
-      if (!Number.isInteger(sequence) || sequence < 0) {
-        return errorResponse(res, 400, 'Sequence order must be a non-negative integer');
-      }
-      columns.push('sequence_order');
-      payloadValues.push(sequence);
-      placeholders.push(`$${payloadValues.length}`);
-    }
-    if (flags.hasIsActive) {
-      columns.push('is_active');
-      payloadValues.push(is_active !== false);
-      placeholders.push(`$${payloadValues.length}`);
-    }
+    // if (flags.hasRouteId && route_id !== undefined) {
+    //   const routeIdValue = route_id === null || route_id === '' ? null : Number(route_id);
+    //   if (routeIdValue !== null && !Number.isInteger(routeIdValue)) {
+    //     return errorResponse(res, 400, 'Route ID must be a valid integer');
+    //   }
+    //   columns.push('route_id');
+    //   payloadValues.push(routeIdValue);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasAddress && address !== undefined) {
+    //   columns.push('address');
+    //   payloadValues.push(normalizeNullableText(address));
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasLandmark && landmark !== undefined) {
+    //   columns.push('landmark');
+    //   payloadValues.push(normalizeNullableText(landmark));
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasPickupTime && pickup_time !== undefined) {
+    //   const t = normalizeNullableTime(pickup_time);
+    //   if (pickup_time != null && String(pickup_time).trim() !== '' && t === null) {
+    //     return errorResponse(res, 400, 'Invalid pickup time format. Use HH:mm');
+    //   }
+    //   columns.push('pickup_time');
+    //   payloadValues.push(t);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasDropTime && drop_time !== undefined) {
+    //   const t = normalizeNullableTime(drop_time);
+    //   if (drop_time != null && String(drop_time).trim() !== '' && t === null) {
+    //     return errorResponse(res, 400, 'Invalid drop time format. Use HH:mm');
+    //   }
+    //   columns.push('drop_time');
+    //   payloadValues.push(t);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasDistanceFromSchool && distance_from_school !== undefined) {
+    //   const distance = normalizeNullableNumber(distance_from_school);
+    //   if (Number.isNaN(distance)) {
+    //     return errorResponse(res, 400, 'Distance from school must be a valid number');
+    //   }
+    //   columns.push('distance_from_school');
+    //   payloadValues.push(distance);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasSequenceOrder) {
+    //   const sequence = sequence_order === undefined || sequence_order === null || sequence_order === ''
+    //     ? 0
+    //     : Number(sequence_order);
+    //   if (!Number.isInteger(sequence) || sequence < 0) {
+    //     return errorResponse(res, 400, 'Sequence order must be a non-negative integer');
+    //   }
+    //   columns.push('sequence_order');
+    //   payloadValues.push(sequence);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasIsActive) {
+    //   columns.push('is_active');
+    //   payloadValues.push(is_active !== false);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
 
     const payloadValues = [point_name];
     const columns = ['point_name'];
@@ -510,8 +509,7 @@ const updatePickupPoint = async (req, res) => {
 
     const { 
       route_id,
-      point_name, 
-      route_id,
+      point_name,
       address,
       landmark,
       pickup_time,

@@ -139,6 +139,8 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   const phone = (opts.phone || '').toString().trim() || null;
   const firstName = (opts.first_name || opts.firstName || '').toString().trim() || null;
   const lastName = (opts.last_name || opts.lastName || '').toString().trim() || null;
+  const gender = (opts.gender || '').toString().trim() || null;
+  const dateOfBirth = opts.date_of_birth || opts.dateOfBirth || null;
   const rawPassword = (opts.password || opts.phone || '123456').toString().trim();
 
   let passwordHash;
@@ -152,10 +154,10 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   let r;
   try {
     r = await client.query(
-      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, current_address, permanent_address, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, 'Not Provided', 'Not Provided', NOW(), NOW())
+      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, gender, date_of_birth, is_active, current_address, permanent_address, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, 'Not Provided', 'Not Provided', NOW(), NOW())
        RETURNING id`,
-      [username, email, phone, passwordHash, roleId, firstName, lastName]
+      [username, email, phone, passwordHash, roleId, firstName, lastName, gender, dateOfBirth]
     );
   } catch (e) {
     if (
@@ -177,7 +179,7 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
 /**
  * Create user for student — users.username = unique first.last; login via users.email or phone; password = phone (else admission fallback).
  */
-async function createStudentUser(client, { admission_number, first_name, last_name, phone, email }) {
+async function createStudentUser(client, { admission_number, first_name, last_name, phone, email, gender, date_of_birth }) {
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
   const firstName = (first_name || '').toString().trim();
@@ -217,6 +219,8 @@ async function createStudentUser(client, { admission_number, first_name, last_na
           phone: phoneTrim || null,
           first_name: firstName || null,
           last_name: lastName || null,
+          gender: gender || null,
+          date_of_birth: date_of_birth || null,
           password: phoneTrim || admission || '123456',
         },
         { reuseUsernameOnConflict: false }

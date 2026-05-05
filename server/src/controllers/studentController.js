@@ -68,6 +68,28 @@ const generateNextGrNumber = async (client) => {
   return formatGrNumber(maxSeq + 1);
 };
 
+const generateNextAdmissionNumber = async (client) => {
+  const maxRes = await client.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(TRIM(admission_number) FROM '([0-9]+)$') AS INTEGER)), 0) AS max_seq
+     FROM students
+     WHERE TRIM(COALESCE(admission_number, '')) ~ '^[A-Za-z]*[0-9]+$'`
+  );
+  const maxSeq = Number(maxRes.rows?.[0]?.max_seq || 0);
+  // Default format is just the number, or we could add a prefix if desired.
+  // If no prefix is found in existing numbers, we return just the number string.
+  return String(maxSeq + 1);
+};
+
+const getNextAdmissionNumber = async (req, res) => {
+  try {
+    const nextNum = await generateNextAdmissionNumber({ query });
+    return res.status(200).json({ status: 'SUCCESS', data: nextNum });
+  } catch (error) {
+    console.error('Error getting next admission number:', error);
+    return res.status(500).json({ status: 'ERROR', message: 'Failed to generate admission number' });
+  }
+};
+
 const MAX_UNIQUE_STUDENT_ID_LEN = 50;
 
 /**
@@ -134,10 +156,9 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
     await client.query(
       `UPDATE transport_allocations
        SET status = 'Inactive',
-           end_date = COALESCE(end_date, CURRENT_DATE),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = $1
-         AND LOWER(COALESCE(user_type, '')) = 'student'
+           end_date = CURRENT_DATE,
+           updated_at = NOW()
+       WHERE student_id = $1
          AND LOWER(COALESCE(status, '')) = 'active'
          AND end_date IS NULL`,
       [studentId]
@@ -172,10 +193,8 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
     }
   }
   const active = await client.query(
-    `SELECT id
-     FROM transport_allocations
-     WHERE user_id = $1
-       AND LOWER(COALESCE(user_type, '')) = 'student'
+    `SELECT id FROM transport_allocations
+     WHERE student_id = $1
        AND LOWER(COALESCE(status, '')) = 'active'
        AND end_date IS NULL
      ORDER BY id DESC
@@ -188,11 +207,11 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
        SET route_id = $1,
            pickup_point_id = $2,
            vehicle_id = $3,
-           assigned_fee_id = $4,
-           assigned_fee_amount = $5,
+           fee_master_id = $4,
+           assigned_amount = $5,
            is_free = $6,
            academic_year_id = COALESCE($7, academic_year_id),
-           updated_at = CURRENT_TIMESTAMP
+           updated_at = NOW()
        WHERE id = $8`,
       [
         routeId,
@@ -209,9 +228,9 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
   }
   await client.query(
     `INSERT INTO transport_allocations
-      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, updated_at)
+      (student_id, route_id, pickup_point_id, vehicle_id, fee_master_id, assigned_amount, is_free, academic_year_id, status, start_date, created_at, updated_at)
      VALUES
-      ($1, 'student', $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', CURRENT_DATE, NOW(), NOW())`,
     [
       studentId,
       routeId,
@@ -275,6 +294,7 @@ const createStudent = async (req, res) => {
     } = req.body;
 
     const tenantSchoolId = getSchoolIdFromRequest(req);
+    const createdBy = req.user?.id || null;
     const medDocPath = normalizeStudentDocumentPath(tenantSchoolId, medical_document_path);
     const tcDocPath = normalizeStudentDocumentPath(tenantSchoolId, transfer_certificate_path);
     const photoUrlPath = normalizeStudentPhotoPath(tenantSchoolId, photo_url);
@@ -405,117 +425,99 @@ const createStudent = async (req, res) => {
       const aadharNorm = await allocateAadharNo(client, aadhaar_no, admission_number);
 
       let result;
+      // 1. Create student user first (to get user_id for students table NOT NULL constraint)
+      const stuPhone = (phone || '').toString().trim();
+      const stuEmail = (email || '').toString().trim();
+      let studentUserId = null;
+
+      try {
+        studentUserId = await createStudentUser(client, {
+          admission_number,
+          first_name,
+          last_name,
+          gender,
+          date_of_birth,
+          avatar: photoUrlPath || null,
+          phone: stuPhone || null,
+          email: stuEmail || null
+        });
+      } catch (e) {
+        console.error('createStudent: could not create student user:', e.message);
+        if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
+          throw new Error(buildEmailInUseWarning('email', 'Student'));
+        }
+        throw e;
+      }
+
+      if (!studentUserId) {
+        throw new Error('Failed to create student user record');
+      }
+
+      // 2. Insert into students table with user_id
       await client.query('SAVEPOINT student_insert');
       try {
-        // Primary path: for schemas using correct "religion_id" column and new address columns
+        // Primary path: for schemas using correct "religion_id" column
         result = await client.query(`
           INSERT INTO students (
-            academic_year_id, admission_number, admission_date, roll_number,
-            first_name, last_name, class_id, section_id, gender, date_of_birth,
-            blood_group_id, house_id, religion_id, cast_id, phone, email,
+            user_id,
+            admission_number, admission_date, roll_number,
+            blood_group_id, house_id, religion_id, cast_id,
             mother_tongue_id, is_active,
-            address, current_address, permanent_address,
-            previous_school, previous_school_address,
-            is_transport_required,
-            is_hostel_required,
-            bank_name, branch, ifsc,
-            known_allergies, medications, medical_condition, other_information,
+            previous_school_name, previous_school_address,
+            bank_name, branch, ifsc_code,
             unique_student_ids, pen_number, aadhar_no, gr_number,
-            medical_document_path, transfer_certificate_path, photo_url,
+            transfer_certificate_path,
             created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
           RETURNING *
         `, [
-          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-          first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
-          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          studentUserId,
+          admission_number, admission_date || null, roll_number || null,
+          blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal || 'Not Provided',
-          current_address || addrVal || 'Not Provided',
-          permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
-          is_transport_required === true || is_transport_required === 'true',
-          is_hostel_required === true || is_hostel_required === 'true',
           bank_name || null, branch || null, ifsc || null,
-          knownAllergiesVal, medicationsVal,
-          medical_condition || null, other_information || null,
           uniqueStudentIdsNorm, penNumberNorm, aadharNorm,
           grNormCreate,
-          medDocPath,
           tcDocPath,
-          photoUrlPath,
         ]);
       } catch (e) {
         await client.query('ROLLBACK TO SAVEPOINT student_insert');
-        // Fallback path: handle legacy schemas that use "reigion_id" and/or lack new address columns
+        // Fallback path: handle legacy schemas that use "reigion_id"
         const hasReligionError = e.message && (e.message.includes('religion_id') || e.message.includes('reigion'));
         const useLegacyReligion = hasReligionError;
         const religionColumn = useLegacyReligion ? 'reigion_id' : 'religion_id';
 
         result = await client.query(`
           INSERT INTO students (
-            academic_year_id, admission_number, admission_date, roll_number,
-            first_name, last_name, class_id, section_id, gender, date_of_birth,
-            blood_group_id, house_id, ${religionColumn}, cast_id, phone, email,
+            user_id,
+            admission_number, admission_date, roll_number,
+            blood_group_id, house_id, ${religionColumn}, cast_id,
             mother_tongue_id, is_active,
-            address, previous_school, previous_school_address,
-            is_transport_required,
-            is_hostel_required,
-            bank_name, branch, ifsc,
-            known_allergies, medications, medical_condition, other_information,
+            previous_school_name, previous_school_address,
+            bank_name, branch, ifsc_code,
             unique_student_ids, pen_number, aadhar_no, gr_number,
-            medical_document_path, transfer_certificate_path, photo_url,
+            transfer_certificate_path,
             created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
           RETURNING *
         `, [
-          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-          first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
-          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          studentUserId,
+          admission_number, admission_date || null, roll_number || null,
+          blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal || 'Not Provided',
           previous_school || null, previous_school_address || null,
-          is_transport_required === true || is_transport_required === 'true',
-          is_hostel_required === true || is_hostel_required === 'true',
           bank_name || null, branch || null, ifsc || null,
-          knownAllergiesVal, medicationsVal,
-          medical_condition || null, other_information || null,
           uniqueStudentIdsNorm, penNumberNorm, aadharNorm,
           grNormCreate,
-          medDocPath,
           tcDocPath,
-          photoUrlPath,
         ]);
       }
 
       const studentRow = result.rows[0];
-
-      // Create student user and link (phone/email for login)
-      const stuPhone = (phone || '').toString().trim();
-      const stuEmail = (email || '').toString().trim();
-      if (stuPhone || stuEmail || admission_number) {
-        try {
-          const studentUserId = await createStudentUser(client, {
-            admission_number,
-            first_name,
-            last_name,
-            phone: stuPhone || null,
-            email: stuEmail || null
-          });
-          if (studentUserId) {
-            await client.query('UPDATE students SET user_id = $1, updated_at = NOW() WHERE id = $2', [studentUserId, studentRow.id]);
-            studentRow.user_id = studentUserId;
-          } else if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
-            creationWarnings.push(buildEmailInUseWarning('email', 'Student'));
-          }
-        } catch (e) {
-          console.warn('createStudent: could not create student user:', e.message);
-        }
-      }
+      studentRow.user_id = studentUserId;
 
       if (hasParentInfo || hasGuardianInfo) {
         const sync = await syncStudentGuardians(
@@ -570,11 +572,10 @@ const createStudent = async (req, res) => {
           if (!sib.name && !sib.admission_number) continue;
           await client.query(
             `INSERT INTO student_siblings (
-              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              student_id, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
             [
               studentRow.id,
-              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
               sib.name || null,
               sib.class_name || null,
               sib.section_name || null,
@@ -585,42 +586,23 @@ const createStudent = async (req, res) => {
         }
       }
 
-      // Sync current & permanent address into addresses table (per-user address book)
-      // so that Student Details and Edit Student form stay in sync.
-      if ((current_address || permanent_address || addrVal) && studentRow.user_id) {
-        const currentAddrVal = current_address || addrVal || null;
-        const permanentAddrVal = permanent_address || null;
-
-        const existingAddr = await client.query(
-          'SELECT id FROM addresses WHERE user_id = $1 AND role_id = $2 LIMIT 1',
-          [studentRow.user_id, ROLES.STUDENT]
-        );
-
-        if (existingAddr.rows.length > 0) {
+      // 3. Sync current & permanent address into users table
+      if (studentRow.user_id && (current_address || permanent_address || addrVal)) {
+        try {
           await client.query(
-            `
-            UPDATE addresses SET
-              current_address = $1,
-              permanent_address = $2,
-              person_id = $3
-            WHERE id = $4
-          `,
-            [currentAddrVal, permanentAddrVal, studentRow.id, existingAddr.rows[0].id]
+            `UPDATE users SET
+              current_address = COALESCE($1, current_address),
+              permanent_address = COALESCE($2, permanent_address),
+              updated_at = NOW()
+            WHERE id = $3`,
+            [
+              current_address || addrVal || null,
+              permanent_address || null,
+              studentRow.user_id
+            ]
           );
-        } else if (currentAddrVal || permanentAddrVal) {
-          await client.query(
-            `
-            INSERT INTO addresses (
-              current_address,
-              permanent_address,
-              user_id,
-              role_id,
-              person_id,
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5, NOW())
-          `,
-            [currentAddrVal, permanentAddrVal, studentRow.user_id, ROLES.STUDENT, studentRow.id]
-          );
+        } catch (ae) {
+          console.warn('createStudent: could not sync user address fields:', ae.message);
         }
       }
 
@@ -632,6 +614,40 @@ const createStudent = async (req, res) => {
         assigned_fee_id,
         is_free,
       });
+
+      // Sync medical record
+      if (medical_condition || medicationsVal || knownAllergiesVal || other_information || medDocPath) {
+        await client.query(`
+          INSERT INTO student_medical_records (
+            student_id, record_type, condition_name, medications, notes, medical_document_path
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          studentRow.id,
+          'General',
+          medical_condition || 'General Medical Record',
+          medicationsVal,
+          (knownAllergiesVal ? `Allergies: ${knownAllergiesVal}. ` : '') + (other_information || ''),
+          medDocPath
+        ]);
+      }
+
+      // Record Admission in Lifecycle Ledger (Source of Truth for enrollment history)
+      if (academic_year_id && class_id) {
+        await client.query(`
+          INSERT INTO student_lifecycle_ledger (
+            student_id, event_type, to_academic_year_id, to_class_id, to_section_id, 
+            event_date, created_by
+          ) VALUES ($1, 'ADMISSION', $2, $3, $4, $5, $6)
+        `, [
+          studentRow.id,
+          academic_year_id,
+          class_id,
+          section_id || null,
+          admission_date || new Date(),
+          createdBy
+        ]);
+      }
+
       return { studentRow, warnings: creationWarnings };
     });
 
@@ -973,69 +989,38 @@ const updateStudent = async (req, res) => {
         // Primary path: for schemas using correct "religion_id" column
         result = await client.query(`
           UPDATE students SET
-            academic_year_id = $1,
-            admission_number = $2,
-            admission_date = $3,
-            roll_number = $4,
-            first_name = $5,
-            last_name = $6,
-            class_id = $7,
-            section_id = $8,
-            gender = $9,
-            date_of_birth = $10,
-            blood_group_id = $11,
-            house_id = $12,
-            religion_id = $13,
-            cast_id = $14,
-            phone = $15,
-            email = $16,
-            mother_tongue_id = $17,
-            is_active = $18,
-            address = $19,
-            current_address = $20,
-            permanent_address = $21,
-            previous_school = $22,
-            previous_school_address = $23,
-            is_transport_required = $24,
-            is_hostel_required = $25,
-            bank_name = $26,
-            branch = $27,
-            ifsc = $28,
-            known_allergies = $29,
-            medications = $30,
-            medical_condition = $31,
-            other_information = $32,
-            unique_student_ids = $33,
-            pen_number = $34,
-            aadhar_no = $35,
-            gr_number = $36,
-            medical_document_path = $37,
-            transfer_certificate_path = $38,
-            photo_url = $39,
+            admission_number = $1,
+            admission_date = $2,
+            roll_number = $3,
+            blood_group_id = $4,
+            house_id = $5,
+            religion_id = $6,
+            cast_id = $7,
+            mother_tongue_id = $8,
+            is_active = $9,
+            previous_school_name = $10,
+            previous_school_address = $11,
+            bank_name = $12,
+            branch = $13,
+            ifsc_code = $14,
+            unique_student_ids = $15,
+            pen_number = $16,
+            aadhar_no = $17,
+            gr_number = $18,
+            transfer_certificate_path = $19,
             updated_at = NOW()
-          WHERE id = $40
+          WHERE id = $20
           RETURNING *
         `, [
-          academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-          first_name, last_name, class_id || null, section_id || null,
-          (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
-          date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-          cast_id || null, phone || null, email || null, mother_tongue_id || null,
+          admission_number, admission_date || null, roll_number || null,
+          blood_group_id || null, house_id || null, religion_id || null,
+          cast_id || null, mother_tongue_id || null,
           status === 'Active' ? true : false,
-          addrVal || 'Not Provided',
-          current_address || addrVal || 'Not Provided',
-          permanent_address || 'Not Provided',
           previous_school || null, previous_school_address || null,
-          is_transport_required === true || is_transport_required === 'true',
-          is_hostel_required === true || is_hostel_required === 'true',
           bank_name || null, branch || null, ifsc || null,
-          knownAllergiesVal, medicationsVal,
-          medical_condition || null, other_information || null,
           uniqueStudentIdsNormUpdate, penNumberNormUpdate, aadharNormUpdate,
           grNormUpdate,
-          medDocPathFinal,
           tcDocPathFinal,
-          photoUrlPathFinal,
           id
         ]);
         await client.query('RELEASE SAVEPOINT sp_student_update');
@@ -1056,134 +1041,67 @@ const updateStudent = async (req, res) => {
           try {
             result = await client.query(`
               UPDATE students SET
-                academic_year_id = $1,
-                admission_number = $2,
-                admission_date = $3,
-                roll_number = $4,
-                first_name = $5,
-                last_name = $6,
-                class_id = $7,
-                section_id = $8,
-                gender = $9,
-                date_of_birth = $10,
-                blood_group_id = $11,
-                house_id = $12,
-                religion_id = $13,
-                cast_id = $14,
-                phone = $15,
-                email = $16,
-                mother_tongue_id = $17,
-                is_active = $18,
-                address = $19,
-                previous_school = $20,
-                previous_school_address = $21,
-                is_transport_required = $22,
-                is_hostel_required = $23,
-                bank_name = $24,
-                branch = $25,
-                ifsc = $26,
-                known_allergies = $27,
-                medications = $28,
-                medical_condition = $29,
-                other_information = $30,
-                unique_student_ids = $31,
-                pen_number = $32,
-                aadhar_no = $33,
-                gr_number = $34,
-                medical_document_path = $35,
-                transfer_certificate_path = $36,
+                admission_number = $1,
+                admission_date = $2,
+                roll_number = $3,
+                blood_group_id = $4,
+                house_id = $5,
+                religion_id = $6,
+                cast_id = $7,
+                mother_tongue_id = $8,
+                is_active = $9,
+                previous_school_name = $10,
+                previous_school_address = $11,
+                bank_name = $12,
+                branch = $13,
+                ifsc_code = $14,
+                unique_student_ids = $15,
+                pen_number = $16,
+                aadhar_no = $17,
+                gr_number = $18,
+                transfer_certificate_path = $19,
                 updated_at = NOW()
-              WHERE id = $37
+              WHERE id = $20
               RETURNING *
             `, [
-              academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-              first_name, last_name, class_id || null, section_id || null,
-              (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
-              date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-              cast_id || null, phone || null, email || null, mother_tongue_id || null,
+              admission_number, admission_date || null, roll_number || null,
+              blood_group_id || null, house_id || null, religion_id || null,
+              cast_id || null, mother_tongue_id || null,
               status === 'Active' ? true : false,
-              addrVal || 'Not Provided',
               previous_school || null, previous_school_address || null,
-              is_transport_required === true || is_transport_required === 'true',
-              is_hostel_required === true || is_hostel_required === 'true',
               bank_name || null, branch || null, ifsc || null,
-              knownAllergiesVal, medicationsVal,
-              medical_condition || null, other_information || null,
               uniqueStudentIdsNormUpdate, penNumberNormUpdate, aadharNormUpdate,
               grNormUpdate,
-              medDocPathFinal,
               tcDocPathFinal,
               id
             ]);
           } catch (e2) {
             throw e;
           }
-        } else if (e.message && (e.message.includes('religion_id') || e.message.includes('reigion'))) {
-          result = await client.query(`
-            UPDATE students SET
-              academic_year_id = $1,
-              admission_number = $2,
-              admission_date = $3,
-              roll_number = $4,
-              first_name = $5,
-              last_name = $6,
-              class_id = $7,
-              section_id = $8,
-              gender = $9,
-              date_of_birth = $10,
-              blood_group_id = $11,
-              house_id = $12,
-              religion_id = $13,
-              cast_id = $14,
-              phone = $15,
-              email = $16,
-              mother_tongue_id = $17,
-              is_active = $18,
-              address = $19,
-              current_address = $20,
-              permanent_address = $21,
-              previous_school = $22,
-              previous_school_address = $23,
-              is_transport_required = $24,
-              is_hostel_required = $25,
-              bank_name = $26,
-              branch = $27,
-              ifsc = $28,
-              known_allergies = $29,
-              medications = $30,
-              medical_condition = $31,
-              other_information = $32,
-              unique_student_ids = $33,
-              pen_number = $34,
-              aadhar_no = $35,
-              gr_number = $36,
-              medical_document_path = $37,
-              transfer_certificate_path = $38,
-              updated_at = NOW()
-            WHERE id = $39
-            RETURNING *
-          `, [
-            academic_year_id || null, admission_number, admission_date || null, roll_number || null,
-            first_name, last_name, class_id || null, section_id || null,
-            (gender && typeof gender === 'string' && ['male', 'female', 'other'].includes(gender.trim().toLowerCase()) ? gender.trim().toLowerCase() : null),
-            date_of_birth || null, blood_group_id || null, house_id || null, religion_id || null,
-            cast_id || null, phone || null, email || null, mother_tongue_id || null,
-            status === 'Active' ? true : false,
-            addrVal || 'Not Provided',
-            current_address || addrVal || 'Not Provided',
-            permanent_address || 'Not Provided',
-            previous_school || null, previous_school_address || null,
-            is_transport_required === true || is_transport_required === 'true',
-            is_hostel_required === true || is_hostel_required === 'true',
-            bank_name || null, branch || null, ifsc || null,
-            knownAllergiesVal, medicationsVal,
-            medical_condition || null, other_information || null,
-            uniqueStudentIdsNormUpdate, penNumberNormUpdate, aadharNormUpdate,
-            grNormUpdate,
-            medDocPathFinal,
-            tcDocPathFinal,
-            id
-          ]);
+        // Update student user demographic fields as well
+        if (studentRow.user_id) {
+          try {
+            await client.query(`
+              UPDATE users SET
+                first_name = $1,
+                last_name = $2,
+                gender = $3,
+                date_of_birth = $4,
+                avatar = $5,
+                updated_at = NOW()
+              WHERE id = $6
+            `, [
+              first_name,
+              last_name,
+              gender,
+              date_of_birth || null,
+              photoUrlPathFinal || null,
+              studentRow.user_id
+            ]);
+          } catch (ue) {
+            console.warn('updateStudent: could not sync user demographics:', ue.message);
+          }
+        }
         } else {
           throw e;
         }
@@ -1206,6 +1124,8 @@ const updateStudent = async (req, res) => {
             admission_number,
             first_name,
             last_name,
+            gender,
+            date_of_birth,
             phone: stuPhoneUp || null,
             email: stuEmailUp || null,
           });
@@ -1221,6 +1141,16 @@ const updateStudent = async (req, res) => {
         } catch (e) {
           console.warn('updateStudent: could not create student user:', e.message);
         }
+      } else if (studentRow.user_id) {
+        // Update existing user details
+        await client.query(
+          `UPDATE users SET 
+            first_name = $1, last_name = $2, gender = $3, date_of_birth = $4,
+            email = COALESCE($5, email), phone = COALESCE($6, phone),
+            updated_at = NOW() 
+           WHERE id = $7`,
+          [first_name, last_name, gender, date_of_birth, stuEmailUp || null, stuPhoneUp || null, studentRow.user_id]
+        );
       }
 
       if (hasParentInfo || hasGuardianInfo) {
@@ -1283,43 +1213,41 @@ const updateStudent = async (req, res) => {
         }
       }
 
-      // Sync current & permanent address into addresses table so that
-      // Student Details and Edit Student form stay consistent with the DB.
-      if ((current_address || permanent_address || addrVal) && studentRow.user_id) {
-        const currentAddrVal = current_address || addrVal || 'Not Provided';
-        const permanentAddrVal = permanent_address || 'Not Provided';
-
-        const existingAddr = await client.query(
-          'SELECT id FROM addresses WHERE user_id = $1 AND role_id = $2 LIMIT 1',
-          [studentRow.user_id, ROLES.STUDENT]
-        );
-
-        if (existingAddr.rows.length > 0) {
+      // Sync current & permanent address into users table
+      if (studentRow.user_id && (current_address || permanent_address || addrVal)) {
+        try {
           await client.query(
-            `
-            UPDATE addresses SET
-              current_address = $1,
-              permanent_address = $2,
-              person_id = $3
-            WHERE id = $4
-          `,
-            [currentAddrVal, permanentAddrVal, studentRow.id, existingAddr.rows[0].id]
+            `UPDATE users SET
+              current_address = COALESCE($1, current_address),
+              permanent_address = COALESCE($2, permanent_address),
+              updated_at = NOW()
+            WHERE id = $3`,
+            [
+              current_address || addrVal || null,
+              permanent_address || null,
+              studentRow.user_id
+            ]
           );
-        } else if (currentAddrVal || permanentAddrVal) {
-          await client.query(
-            `
-            INSERT INTO addresses (
-              current_address,
-              permanent_address,
-              user_id,
-              role_id,
-              person_id,
-              created_at
-            ) VALUES ($1, $2, $3, $4, $5, NOW())
-          `,
-            [currentAddrVal, permanentAddrVal, studentRow.user_id, ROLES.STUDENT, studentRow.id]
-          );
+        } catch (ae) {
+          console.warn('updateStudent: could not sync user address fields:', ae.message);
         }
+      }
+
+      // Sync medical record: Clear existing and re-insert
+      await client.query('DELETE FROM student_medical_records WHERE student_id = $1', [id]);
+      if (medical_condition || medicationsVal || knownAllergiesVal || other_information || medDocPathFinal) {
+        await client.query(`
+          INSERT INTO student_medical_records (
+            student_id, record_type, condition_name, medications, notes, medical_document_path
+          ) VALUES ($1, $2, $3, $4, $5, $6)
+        `, [
+          id,
+          'General',
+          medical_condition || 'General Medical Record',
+          medicationsVal,
+          (knownAllergiesVal ? `Allergies: ${knownAllergiesVal}. ` : '') + (other_information || ''),
+          medDocPathFinal
+        ]);
       }
 
       // Handle Siblings Update: Clear existing and re-insert
@@ -1329,11 +1257,10 @@ const updateStudent = async (req, res) => {
           if (!sib.name && !sib.admission_number) continue;
           await client.query(
             `INSERT INTO student_siblings (
-              student_id, is_in_same_school, name, class_name, section_name, roll_number, admission_number
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              student_id, name, class_name, section_name, roll_number, admission_number
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
             [
               id,
-              sib.is_in_same_school === true || sib.is_in_same_school === 'true',
               sib.name || null,
               sib.class_name || null,
               sib.section_name || null,
@@ -1352,6 +1279,25 @@ const updateStudent = async (req, res) => {
         assigned_fee_id,
         is_free,
       });
+      // Sync Lifecycle Ledger for corrections (Source of Truth)
+      // Only update the ADMISSION record if it is the latest one for this student
+      if (studentRow.academic_year_id && studentRow.class_id) {
+        await client.query(`
+          UPDATE student_lifecycle_ledger 
+          SET to_academic_year_id = $1, to_class_id = $2, to_section_id = $3, updated_at = NOW()
+          WHERE id = (
+            SELECT id FROM student_lifecycle_ledger 
+            WHERE student_id = $4 AND event_type = 'ADMISSION' 
+            ORDER BY event_date DESC, id DESC LIMIT 1
+          )
+        `, [
+          studentRow.academic_year_id,
+          studentRow.class_id,
+          studentRow.section_id || null,
+          studentRow.id
+        ]);
+      }
+
       return { studentRow, warnings: updateWarnings };
     });
 
@@ -3052,30 +2998,48 @@ const getStudentById = async (req, res) => {
     }
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information FROM students WHERE id = $1',
+        `SELECT bank_name, branch, ifsc, previous_school_address FROM students WHERE id = $1`,
         [sid]
       );
       if (extra.rows.length > 0) {
         Object.assign(studentData, extra.rows[0]);
-      } else {
-        studentData.bank_name = studentData.bank_name ?? null;
-        studentData.branch = studentData.branch ?? null;
-        studentData.ifsc = studentData.ifsc ?? null;
-        studentData.known_allergies = studentData.known_allergies ?? null;
-        studentData.medications = studentData.medications ?? null;
-        studentData.previous_school_address = studentData.previous_school_address ?? null;
-        studentData.medical_condition = studentData.medical_condition ?? null;
-        studentData.other_information = studentData.other_information ?? null;
       }
     } catch (e) {
-      studentData.bank_name = studentData.bank_name ?? null;
-      studentData.branch = studentData.branch ?? null;
-      studentData.ifsc = studentData.ifsc ?? null;
-      studentData.known_allergies = studentData.known_allergies ?? null;
-      studentData.medications = studentData.medications ?? null;
-      studentData.previous_school_address = studentData.previous_school_address ?? null;
-      studentData.medical_condition = studentData.medical_condition ?? null;
-      studentData.other_information = studentData.other_information ?? null;
+      console.warn('getStudentById: could not fetch extra fields:', e.message);
+    }
+    // Fetch medical records from dedicated table
+    try {
+      const medRes = await query(
+        `SELECT medications, notes, medical_condition, medical_document_path, condition_name
+         FROM student_medical_records
+         WHERE student_id = $1
+         LIMIT 1`,
+        [sid]
+      );
+      if (medRes.rows.length > 0) {
+        const m = medRes.rows[0];
+        studentData.medications = m.medications;
+        studentData.medical_condition = m.medical_condition || m.condition_name;
+        studentData.medical_document_path = m.medical_document_path;
+        // Parse notes back to other_information and known_allergies (best effort)
+        const notes = m.notes || '';
+        if (notes.startsWith('Allergies: ')) {
+          const split = notes.split('. ');
+          studentData.known_allergies = split[0].replace('Allergies: ', '');
+          studentData.other_information = split.slice(1).join('. ');
+        } else {
+          studentData.other_information = notes;
+          studentData.known_allergies = null;
+        }
+      } else {
+        studentData.medications = null;
+        studentData.medical_condition = null;
+        studentData.medical_document_path = null;
+        studentData.known_allergies = null;
+        studentData.other_information = null;
+      }
+    } catch (e) {
+      console.warn('getStudentById: could not fetch medical records:', e.message);
     }
     // Dedicated fetch for unique_student_ids, pen_number, aadhaar_no (handles alternate column names)
     try {
@@ -3586,21 +3550,47 @@ const getCurrentStudent = async (req, res) => {
 
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, known_allergies, medications, previous_school_address, medical_condition, other_information FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc, previous_school_address FROM students WHERE id = $1',
         [studentId]
       );
       if (extra.rows.length > 0) {
         Object.assign(studentData, extra.rows[0]);
       }
     } catch (e) {
-      studentData.bank_name = studentData.bank_name ?? null;
-      studentData.branch = studentData.branch ?? null;
-      studentData.ifsc = studentData.ifsc ?? null;
-      studentData.known_allergies = studentData.known_allergies ?? null;
-      studentData.medications = studentData.medications ?? null;
-      studentData.previous_school_address = studentData.previous_school_address ?? null;
-      studentData.medical_condition = studentData.medical_condition ?? null;
-      studentData.other_information = studentData.other_information ?? null;
+      console.warn('getCurrentStudent: could not fetch extra fields:', e.message);
+    }
+    // Fetch medical records from dedicated table
+    try {
+      const medRes = await query(
+        `SELECT medications, notes, medical_condition, medical_document_path, condition_name
+         FROM student_medical_records
+         WHERE student_id = $1
+         LIMIT 1`,
+        [studentId]
+      );
+      if (medRes.rows.length > 0) {
+        const m = medRes.rows[0];
+        studentData.medications = m.medications;
+        studentData.medical_condition = m.medical_condition || m.condition_name;
+        studentData.medical_document_path = m.medical_document_path;
+        const notes = m.notes || '';
+        if (notes.startsWith('Allergies: ')) {
+          const split = notes.split('. ');
+          studentData.known_allergies = split[0].replace('Allergies: ', '');
+          studentData.other_information = split.slice(1).join('. ');
+        } else {
+          studentData.other_information = notes;
+          studentData.known_allergies = null;
+        }
+      } else {
+        studentData.medications = null;
+        studentData.medical_condition = null;
+        studentData.medical_document_path = null;
+        studentData.known_allergies = null;
+        studentData.other_information = null;
+      }
+    } catch (e) {
+      console.warn('getCurrentStudent: could not fetch medical records:', e.message);
     }
     // Fallback: if phone/email still empty, fetch from users table
     if (studentData.user_id && (!studentData.phone || !studentData.email)) {
@@ -5196,4 +5186,5 @@ module.exports = {
   checkAdmissionNumberUnique,
   searchStudents,
   deleteStudent,
+  getNextAdmissionNumber,
 };

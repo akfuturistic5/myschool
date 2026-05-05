@@ -25,13 +25,8 @@ import { useMotherTongues } from "../../../../core/hooks/useMotherTongues";
 import { useHouses } from "../../../../core/hooks/useHouses";
 import { apiService } from "../../../../core/services/apiService";
 import Swal from "sweetalert2";
-import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
-import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportAssignments } from "../../../../core/hooks/useTransportAssignments";
 import { useHostels } from "../../../../core/hooks/useHostels";
 import { useHostelRooms } from "../../../../core/hooks/useHostelRooms";
-import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
-import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import {
   focusAddStudentField,
   formControlInvalidClass,
@@ -111,6 +106,7 @@ const AddStudent = () => {
   const [loadingStudent, setLoadingStudent] = useState<boolean>(false);
   const fetchedStudentIdRef = useRef<string | null>(null); // Track which student ID we've fetched
 
+
   // Form state for Personal Information section
   const [formData, setFormData] = useState<{
     academic_year_id: string | null;
@@ -167,18 +163,10 @@ const AddStudent = () => {
       is_in_same_school: boolean;
       name: string;
       class_name: string;
+      section_name: string;
       roll_number: string;
       admission_number: string;
     }[];
-    // Transport
-    is_transport_required: boolean;
-    route_id: string | null;
-    pickup_point_id: string | null;
-    vehicle_id: string | null;
-    assigned_fee_id: string | null;
-    is_free: boolean;
-    route_name: string;
-    pickup_point_name: string;
     // Hostel
     is_hostel_required: boolean;
     hostel_name: string;
@@ -246,16 +234,8 @@ const AddStudent = () => {
     guardian_matched_from_legacy: false,
     guardian_image_url: '',
     siblings: [
-      { is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }
+      { is_in_same_school: true, name: '', class_name: '', section_name: '', roll_number: '', admission_number: '' }
     ],
-    is_transport_required: false,
-    route_id: null,
-    pickup_point_id: null,
-    vehicle_id: null,
-    assigned_fee_id: null,
-    is_free: false,
-    route_name: '',
-    pickup_point_name: '',
     is_hostel_required: false,
     hostel_name: '',
     hostel_room_number: '',
@@ -345,10 +325,6 @@ const AddStudent = () => {
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   // Fetch transport and hostel options from API (for dropdowns with real IDs)
-  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({ academic_year_id: academicYearId });
-  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({ academic_year_id: academicYearId });
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportAssignments({ status: 'active', limit: 1000 });
-  const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined });
   const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
   const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
 
@@ -370,53 +346,6 @@ const AddStudent = () => {
   const religionsList = (religions || []) as ReligionItem[];
   const castsList = (casts || []) as CastItem[];
   const motherTonguesList = (motherTongues || []) as MotherTongueItem[];
-
-  const routeOptionsRaw = (transportRoutes || []).map((r: any) => ({
-    value: String((r.originalData?.id ?? r.id) ?? ""),
-    label: r.routes ?? r.originalData?.route_name ?? "N/A",
-    original: r,
-  })).filter((o: { value: string }) => o.value);
-
-  const pickupPointOptions = (pickupPoints || []).map((p: any) => ({
-    value: String((p.originalData?.id ?? p.id) ?? ""),
-    label: p.pickupPoint ?? p.originalData?.address ?? "N/A",
-    original: p,
-  })).filter((o: { value: string }) => o.value);
-
-  const vehicleOptionsRaw = (vehicles || [])
-    .filter((v: any) =>
-      formData.route_id ? String(v.originalData?.route_id ?? "") === String(formData.route_id) : true
-    )
-    .map((v: any) => {
-      const vehicleId = String(v.originalData?.id ?? v.id ?? "");
-    const vehicleNo = v.vehicle ?? v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
-      return {
-        value: vehicleId,
-        label: vehicleNo,
-        original: v,
-      };
-    })
-    .filter((o: { value: string }) => o.value);
-
-  const routeOptions = useMemo(() => {
-    if (!formData.pickup_point_id) return routeOptionsRaw;
-    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(formData.pickup_point_id));
-    const selectedRouteId = String(selectedPickup?.original?.route_id ?? "");
-    if (!selectedRouteId) return routeOptionsRaw;
-    return routeOptionsRaw.filter((r: any) => String(r.value) === selectedRouteId);
-  }, [routeOptionsRaw, pickupPointOptions, formData.pickup_point_id]);
-
-  const vehicleOptions = vehicleOptionsRaw;
-  const feeOptions = (transportFees || [])
-    .filter((f: any) => String(f.pickup_point_id ?? f.originalData?.pickup_point_id ?? "") === String(formData.pickup_point_id ?? ""))
-    .map((f: any) => {
-      const row = f.originalData ?? f;
-      return {
-        value: String(row.id ?? ""),
-        label: `${row.plan_name ?? row.planName ?? "Plan"} - ${row.amount ?? 0}`,
-      };
-    })
-    .filter((o: { value: string }) => o.value);
 
   // Parse comma-separated or single string into array of non-empty trimmed strings
   const parseTagList = (val: unknown): string[] => {
@@ -445,53 +374,53 @@ const AddStudent = () => {
         unique_student_ids: String(raw.unique_student_ids ?? raw.uniqueStudentIds ?? ''),
         pen_number: String(raw.pen_number ?? raw.penNumber ?? ''),
         aadhaar_no: String(raw.aadhaar_no ?? raw.aadhar_no ?? raw.aadhaarNo ?? ''),
-        admission_number: raw.admission_number || '',
+        admission_number: String(raw.admission_number ?? ''),
         gr_number: String(raw.gr_number ?? raw.grNumber ?? ''),
-        admission_date: raw.admission_date ? dayjs(raw.admission_date) : null,
-        roll_number: raw.roll_number || '',
+        admission_date: raw.admission_date ? dayjs(raw.admission_date as any) : null,
+        roll_number: String(raw.roll_number ?? ''),
         status: raw.is_active ? 'Active' : 'Inactive',
-        first_name: raw.first_name || '',
-        last_name: raw.last_name || '',
+        first_name: String(raw.first_name ?? ''),
+        last_name: String(raw.last_name ?? ''),
         class_id: raw.class_id ? raw.class_id.toString() : null,
         section_id: raw.section_id ? raw.section_id.toString() : null,
-        gender: raw.gender || '',
-        date_of_birth: raw.date_of_birth ? dayjs(raw.date_of_birth) : null,
+        gender: String(raw.gender ?? ''),
+        date_of_birth: raw.date_of_birth ? dayjs(raw.date_of_birth as any) : null,
         blood_group_id: raw.blood_group_id ? raw.blood_group_id.toString() : null,
         house_id: raw.house_id ? raw.house_id.toString() : null,
         religion_id: raw.religion_id ? raw.religion_id.toString() : null,
         cast_id: raw.cast_id ? raw.cast_id.toString() : null,
-        phone: raw.phone || '',
-        email: raw.email || '',
+        phone: String(raw.phone ?? ''),
+        email: String(raw.email ?? ''),
         mother_tongue_id: raw.mother_tongue_id ? raw.mother_tongue_id.toString() : null,
-        current_address: (raw.current_address === 'Not Provided') ? '' : (raw.current_address || raw.address || ''),
-        permanent_address: (raw.permanent_address === 'Not Provided') ? '' : (raw.permanent_address || ''),
-        father_name: raw.father_name || '',
-        father_email: raw.father_email || '',
-        father_phone: raw.father_phone || '',
-        father_occupation: raw.father_occupation || '',
-        father_image_url: raw.father_image_url || '',
+        current_address: (raw.current_address === 'Not Provided') ? '' : String(raw.current_address || raw.address || ''),
+        permanent_address: (raw.permanent_address === 'Not Provided') ? '' : String(raw.permanent_address ?? ''),
+        father_name: String(raw.father_name ?? ''),
+        father_email: String(raw.father_email ?? ''),
+        father_phone: String(raw.father_phone ?? ''),
+        father_occupation: String(raw.father_occupation ?? ''),
+        father_image_url: String(raw.father_image_url ?? ''),
         father_person_id:
           raw.father_person_id != null ? Number(raw.father_person_id) : null,
         father_matched_from_legacy: false,
-        mother_name: raw.mother_name || '',
-        mother_email: raw.mother_email || '',
-        mother_phone: raw.mother_phone || '',
-        mother_occupation: raw.mother_occupation || '',
-        mother_image_url: raw.mother_image_url || '',
+        mother_name: String(raw.mother_name ?? ''),
+        mother_email: String(raw.mother_email ?? ''),
+        mother_phone: String(raw.mother_phone ?? ''),
+        mother_occupation: String(raw.mother_occupation ?? ''),
+        mother_image_url: String(raw.mother_image_url ?? ''),
         mother_person_id:
           raw.mother_person_id != null ? Number(raw.mother_person_id) : null,
         mother_matched_from_legacy: false,
-        guardian_first_name: raw.guardian_first_name || '',
-        guardian_last_name: raw.guardian_last_name || '',
-        guardian_relation: raw.guardian_relation || '',
-        guardian_phone: raw.guardian_phone || '',
-        guardian_email: raw.guardian_email || '',
-        guardian_occupation: raw.guardian_occupation || '',
-        guardian_address: (raw.guardian_address === 'Not Provided') ? '' : (raw.guardian_address || ''),
+        guardian_first_name: String(raw.guardian_first_name ?? ''),
+        guardian_last_name: String(raw.guardian_last_name ?? ''),
+        guardian_relation: String(raw.guardian_relation ?? ''),
+        guardian_phone: String(raw.guardian_phone ?? ''),
+        guardian_email: String(raw.guardian_email ?? ''),
+        guardian_occupation: String(raw.guardian_occupation ?? ''),
+        guardian_address: (raw.guardian_address === 'Not Provided') ? '' : String(raw.guardian_address ?? ''),
         guardian_person_id:
           raw.guardian_person_id != null ? Number(raw.guardian_person_id) : null,
         guardian_matched_from_legacy: false,
-        guardian_image_url: raw.guardian_image_url || '',
+        guardian_image_url: String(raw.guardian_image_url ?? ''),
         siblings: Array.isArray(raw.siblings) && raw.siblings.length > 0 
           ? raw.siblings.map((s: any) => ({
               is_in_same_school: !!s.is_in_same_school,
@@ -501,25 +430,17 @@ const AddStudent = () => {
               roll_number: s.roll_number || '',
               admission_number: s.admission_number || '',
             }))
-          : [{ is_in_same_school: true, name: '', class_name: '', section_name: '', roll_number: '', admission_number: '' }],
-        is_transport_required: !!raw.is_transport_required,
-        route_id: raw.route_id != null ? raw.route_id.toString() : null,
-        pickup_point_id: raw.pickup_point_id != null ? raw.pickup_point_id.toString() : null,
-        vehicle_id: raw.vehicle_id != null ? raw.vehicle_id.toString() : null,
-        assigned_fee_id: raw.transport_assigned_fee_id != null ? String(raw.transport_assigned_fee_id) : null,
-        is_free: !!raw.transport_is_free,
-        route_name: raw.route_name || '',
-        pickup_point_name: raw.pickup_point_name || '',
+            : [{ is_in_same_school: true, name: '', class_name: '', section_name: '', roll_number: '', admission_number: '' }],
         is_hostel_required: !!raw.is_hostel_required,
-        hostel_name: raw.hostel_name || '',
+        hostel_name: String(raw.hostel_name ?? ''),
         hostel_room_number: raw.hostel_room_number != null ? String(raw.hostel_room_number) : '',
-        medical_condition: raw.medical_condition || 'Good',
-        previous_school: raw.previous_school || '',
-        previous_school_address: raw.previous_school_address || '',
-        bank_name: raw.bank_name || raw.bankName || '',
-        branch: raw.branch || raw.branchName || '',
-        ifsc: raw.ifsc || raw.ifscCode || '',
-        other_information: raw.other_information || '',
+        medical_condition: String(raw.medical_condition ?? 'Good'),
+        previous_school: String(raw.previous_school ?? ''),
+        previous_school_address: String(raw.previous_school_address ?? ''),
+        bank_name: String(raw.bank_name || raw.bankName || ''),
+        branch: String(raw.branch || raw.branchName || ''),
+        ifsc: String(raw.ifsc || raw.ifscCode || ''),
+        other_information: String(raw.other_information ?? ''),
         medical_document_path: (() => {
           const v = raw.medical_document_path ?? raw.medicalDocumentPath;
           if (v == null || String(v).trim() === "") return null;
@@ -583,28 +504,6 @@ const AddStudent = () => {
     }
   }, [studentData, bloodGroups.length, religions.length, casts.length, motherTongues.length, houses.length, isEdit]);
 
-  useEffect(() => {
-    if (!formData.pickup_point_id) return;
-    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(formData.pickup_point_id));
-    const selectedRouteId = selectedPickup?.original?.route_id != null ? String(selectedPickup.original.route_id) : null;
-    if (selectedRouteId && formData.route_id !== selectedRouteId) {
-      setFormData((prev) => ({ ...prev, route_id: selectedRouteId, vehicle_id: null }));
-    }
-  }, [formData.pickup_point_id, pickupPointOptions]); 
-
-  useEffect(() => {
-    if (!formData.is_transport_required) {
-      setFormData((prev) => ({
-        ...prev,
-        route_id: null,
-        pickup_point_id: null,
-        vehicle_id: null,
-        assigned_fee_id: null,
-        is_free: false,
-      }));
-    }
-  }, [formData.is_transport_required]);
-  
   // Sync academic_year_id from dashboard selection (add mode only; non-editable)
   useEffect(() => {
     if (!isEdit && academicYearsList.length > 0) {
@@ -635,7 +534,7 @@ const AddStudent = () => {
       ...prev,
       siblings: [
         ...prev.siblings,
-        { is_in_same_school: true, name: '', class_name: '', roll_number: '', admission_number: '' }
+        { is_in_same_school: true, name: '', class_name: '', section_name: '', roll_number: '', admission_number: '' }
       ]
     }));
   };
@@ -701,6 +600,18 @@ const AddStudent = () => {
     clearFieldErrorSmart(field);
   };
 
+  const handleAutoGenerateAdmission = async () => {
+    try {
+      const res = await apiService.getNextAdmissionNumber();
+      if (res.status === "SUCCESS") {
+        handleInputChange("admission_number", res.data);
+      }
+    } catch (err) {
+      console.error("Failed to generate admission number", err);
+    }
+  };
+
+
   const openStudentDocument = async (relativePath: string | null) => {
     if (!relativePath) return;
     const apiPath = apiPathFromStudentDocRelativePath(relativePath);
@@ -758,7 +669,7 @@ const AddStudent = () => {
     setPhotoUploadStatus("uploading");
     try {
       const userId = isEdit && id ? parseInt(id, 10) : null;
-      const res = await apiService.uploadStudentPhoto(file, userId);
+      const res = await apiService.uploadStudentPhoto(file, userId as any);
       const payload = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
       const rel = (payload as { relativePath?: string })?.relativePath;
       if (!rel || typeof rel !== "string") {
@@ -794,7 +705,7 @@ const AddStudent = () => {
     setStatus("uploading");
     try {
       // Reusing student photo endpoint but specifying the contact's userId if they exist
-      const res = await apiService.uploadStudentPhoto(file, userId); 
+      const res = await apiService.uploadStudentPhoto(file, userId as any); 
       const payload = (res as { data?: { relativePath?: string; url?: string } })?.data ?? res;
       const rel = (payload as { relativePath?: string })?.relativePath;
       if (!rel || typeof rel !== "string") {
@@ -951,12 +862,6 @@ const AddStudent = () => {
           roll_number: s.roll_number || null,
           admission_number: s.admission_number || null,
         })),
-        is_transport_required: formData.is_transport_required || false,
-        route_id: formData.route_id ? (typeof formData.route_id === 'string' ? parseInt(formData.route_id) : formData.route_id) : null,
-        pickup_point_id: formData.pickup_point_id ? (typeof formData.pickup_point_id === 'string' ? parseInt(formData.pickup_point_id) : formData.pickup_point_id) : null,
-        vehicle_id: formData.vehicle_id ? (typeof formData.vehicle_id === 'string' ? parseInt(formData.vehicle_id) : formData.vehicle_id) : null,
-        assigned_fee_id: formData.assigned_fee_id ? (typeof formData.assigned_fee_id === 'string' ? parseInt(formData.assigned_fee_id) : formData.assigned_fee_id) : null,
-        is_free: formData.is_transport_required ? !!formData.is_free : false,
         is_hostel_required: formData.is_hostel_required || false,
         bank_name: formData.bank_name || null,
         branch: formData.branch || null,
@@ -1227,26 +1132,31 @@ const AddStudent = () => {
                               htmlFor="student-admission_number"
                             />
                             <div className="position-relative">
-                              <input
-                                id="student-admission_number"
-                                type="text"
-                                data-add-student-field="admission_number"
-                                className={`form-control pe-4 ${formControlInvalidClass(
-                                  !!(fieldErrors.admission_number || admissionUniqueness.duplicateMessage)
-                                )}`}
-                                value={formData.admission_number}
-                                onChange={(e) => handleInputChange('admission_number', e.target.value)}
-                                onBlur={() => {
-                                  validateOnBlur('admission_number', formData);
-                                  admissionUniqueness.flushOnBlur();
-                                }}
-                                autoComplete="off"
-                                aria-busy={admissionUniqueness.checking}
-                              />
+                              <div className="input-group">
+                                <input
+                                  id="student-admission_number"
+                                  type="text"
+                                  data-add-student-field="admission_number"
+                                  className={`form-control ${formControlInvalidClass(
+                                    !!(fieldErrors.admission_number || admissionUniqueness.duplicateMessage)
+                                  )}`}
+                                  value={formData.admission_number}
+                                  onChange={(e) => handleInputChange('admission_number', e.target.value)}
+                                  onBlur={() => {
+                                    validateOnBlur('admission_number', formData);
+                                    admissionUniqueness.flushOnBlur();
+                                  }}
+                                  autoComplete="off"
+                                  aria-busy={admissionUniqueness.checking}
+                                />
+                                <button type="button" className="btn btn-outline-primary" onClick={handleAutoGenerateAdmission} title="Auto-generate next number">
+                                  <i className="ti ti-refresh" />
+                                </button>
+                              </div>
                               {admissionUniqueness.checking && (
                                 <span
-                                  className="position-absolute top-50 end-0 translate-middle-y pe-2 text-primary"
-                                  style={{ pointerEvents: 'none' }}
+                                  className="position-absolute top-50 end-0 translate-middle-y pe-5 text-primary"
+                                  style={{ pointerEvents: 'none', zIndex: 10 }}
                                   aria-hidden
                                 >
                                   <i className="ti ti-loader ti-spin" />
@@ -1409,7 +1319,7 @@ const AddStudent = () => {
                                 <CommonSelect
                                   className="select"
                                   options={sectionsList.map(section => ({
-                                    value: String((section as SectionItem).id),
+                                    value: String((section as any).section_id || (section as SectionItem).id),
                                     label: (section as SectionItem).section_name ?? (section as Record<string, unknown>).sectionName ?? ''
                                   }))}
                                   value={formData.section_id}
@@ -2027,56 +1937,6 @@ const AddStudent = () => {
                             />
                           </div>
                           <div className="col-md-12">
-                            <div className="mb-2">
-                              <div className="d-flex align-items-center flex-wrap">
-                                <label className="form-label text-dark fw-normal me-2">
-                                  If Guardian Is
-                                </label>
-                                <div className="form-check me-3 mb-2">
-                                  <input
-                                    className="form-check-input"
-                                    type="radio"
-                                    name="guardian"
-                                    id="parents"
-                                    defaultChecked
-                                  />
-                                  <label
-                                    className="form-check-label"
-                                    htmlFor="parents"
-                                  >
-                                    Parents
-                                  </label>
-                                </div>
-                                <div className="form-check me-3 mb-2">
-                                  <input
-                                    className="form-check-input"
-                                    type="radio"
-                                    name="guardian"
-                                    id="guardian"
-                                  />
-                                  <label
-                                    className="form-check-label"
-                                    htmlFor="guardian"
-                                  >
-                                    Guardian
-                                  </label>
-                                </div>
-                                <div className="form-check mb-2">
-                                  <input
-                                    className="form-check-input"
-                                    type="radio"
-                                    name="guardian"
-                                    id="other"
-                                  />
-                                  <label
-                                    className="form-check-label"
-                                    htmlFor="other"
-                                  >
-                                    Others
-                                  </label>
-                                </div>
-                              </div>
-                            </div>
                             <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
                               <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
                                 {guardianPhotoPreview ? (
@@ -2130,6 +1990,7 @@ const AddStudent = () => {
                                     guardian_last_name: idx >= 0 ? v.slice(idx + 1).trim() : ''
                                   }));
                                 }}
+                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>
@@ -2143,6 +2004,7 @@ const AddStudent = () => {
                                 className="form-control"
                                 value={formData.guardian_relation || ''}
                                 onChange={(e) => handleInputChange('guardian_relation', e.target.value)}
+                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>
@@ -2164,6 +2026,7 @@ const AddStudent = () => {
                                 onChange={(e) => handleInputChange('guardian_phone', e.target.value)}
                                 onBlur={() => validateOnBlur('guardian_phone', formData)}
                                 autoComplete="off"
+                                readOnly={formData.guardian_person_id != null}
                               />
                               <FieldError message={fieldErrors.guardian_phone} />
                             </div>
@@ -2185,6 +2048,7 @@ const AddStudent = () => {
                                 onChange={(e) => handleInputChange('guardian_email', e.target.value)}
                                 onBlur={() => validateOnBlur('guardian_email', formData)}
                                 autoComplete="off"
+                                readOnly={formData.guardian_person_id != null}
                               />
                               <FieldError message={fieldErrors.guardian_email} />
                             </div>
@@ -2197,6 +2061,7 @@ const AddStudent = () => {
                                 className="form-control"
                                 value={formData.guardian_occupation || ''}
                                 onChange={(e) => handleInputChange('guardian_occupation', e.target.value)}
+                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>
@@ -2208,6 +2073,7 @@ const AddStudent = () => {
                                 className="form-control"
                                 value={formData.guardian_address || ''}
                                 onChange={(e) => handleInputChange('guardian_address', e.target.value)}
+                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>
@@ -2477,131 +2343,6 @@ const AddStudent = () => {
                     </div>
                   </div>
                   {/* /Address */}
-                  {/* Transport Information */}
-                  <div className="card">
-                    <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                      <div className="d-flex align-items-center">
-                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                          <i className="ti ti-bus-stop fs-16" />
-                        </span>
-                        <h4 className="text-dark">Transport Information</h4>
-                      </div>
-                      <div className="form-check form-switch">
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          role="switch"
-                          checked={formData.is_transport_required}
-                          onChange={(e) => handleInputChange('is_transport_required', e.target.checked)}
-                        />
-                      </div>
-                    </div>
-                    <div className="card-body pb-1">
-                      <div className="row">
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Pickup Point</label>
-                            {pickupLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading pickup points...
-                              </div>
-                            ) : pickupError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {pickupError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={pickupPointOptions.map(p => ({ value: p.value, label: p.label }))}
-                                value={formData.pickup_point_id}
-                                onChange={(v) => {
-                                  handleInputChange('pickup_point_id', v || null);
-                                  handleInputChange('route_id', null);
-                                  handleInputChange('vehicle_id', null);
-                                  handleInputChange('assigned_fee_id', null);
-                                }}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Route</label>
-                            {routesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading routes...
-                              </div>
-                            ) : routesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {routesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={routeOptions.map(r => ({ value: r.value, label: r.label }))}
-                                value={formData.route_id}
-                                onChange={(v) => {
-                                  handleInputChange('route_id', v || null);
-                                  handleInputChange('vehicle_id', null);
-                                }}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Vehicle</label>
-                            {vehiclesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading vehicles...
-                              </div>
-                            ) : vehiclesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {vehiclesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={vehicleOptions.map(v => ({ value: v.value, label: v.label }))}
-                                value={formData.vehicle_id || null}
-                                onChange={(v) => handleInputChange('vehicle_id', v || null)}
-                              />
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-lg-4 col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Transport Plan</label>
-                            {feesLoading ? (
-                              <div className="form-control">
-                                <i className="ti ti-loader ti-spin me-2"></i>
-                                Loading plans...
-                              </div>
-                            ) : feesError ? (
-                              <div className="form-control text-danger">
-                                <i className="ti ti-alert-circle me-2"></i>
-                                Error: {feesError}
-                              </div>
-                            ) : (
-                              <CommonSelect
-                                className="select"
-                                options={feeOptions}
-                                value={formData.assigned_fee_id || null}
-                                onChange={(v) => handleInputChange('assigned_fee_id', v || null)}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* /Transport Information */}
                   {/* Hostel Information - temporarily disabled until hostel workflow redesign */}
                   {/* <div className="card">
                     <div className="card-header bg-light d-flex align-items-center justify-content-between">

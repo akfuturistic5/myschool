@@ -1,14 +1,13 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Table from "../../../core/common/dataTable/index";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
 import type { TableData } from "../../../core/data/interface";
 import { Link } from "react-router-dom";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { all_routes } from "../../router/all_routes";
+import { useClassSubjects } from "../../../core/hooks/useClassSubjects";
 import { useSubjects } from "../../../core/hooks/useSubjects";
 import { useClasses } from "../../../core/hooks/useClasses";
-import { useTeachers } from "../../../core/hooks/useTeachers";
 import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
@@ -16,805 +15,455 @@ import Swal from "sweetalert2";
 const ClassSubject = () => {
   const routes = all_routes;
   const [classFilterId, setClassFilterId] = useState<string>("");
-  const [codeFilter, setCodeFilter] = useState<string>("");
   const { classes = [] } = useClasses();
-  const { teachers = [] } = useTeachers();
-  const { subjects, loading, error, refetch } = useSubjects(
-    classFilterId ? Number(classFilterId) : null
-  );
-  const [selectedSubject, setSelectedSubject] = useState<any>(null);
-  const [addMessage, setAddMessage] = useState("");
-  const [editMessage, setEditMessage] = useState("");
-  const [deleteMessage, setDeleteMessage] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [form, setForm] = useState({
-    subject_name: "",
-    subject_code: "",
-    class_id: "",
-    teacher_id: "",
-    type: "Theory",
-    is_active: true,
-  });
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const formatClassLabel = (c: any) => {
-    const className = String(c?.class_name ?? "").trim();
-    const classCode = String(c?.class_code ?? "").trim();
-    if (className && classCode) return `${className} (${classCode})`;
-    return className || classCode || `Class #${String(c?.id ?? "")}`;
-  };
-  const classOptions = useMemo(
-    () => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
-    [classes]
-  );
-  const classOptionsForForm = useMemo(
-    () => [{ value: "", label: "Select class" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
-    [classes]
-  );
-  const teacherOptionsForForm = useMemo(
-    () => [
-      { value: "", label: "Select teacher" },
-      ...teachers.map((t: any) => {
-        const first = String(t?.first_name ?? "").trim();
-        const last = String(t?.last_name ?? "").trim();
-        const fullName = `${first} ${last}`.trim();
-        const staffId = Number(t?.staff_id);
-        const teacherId = Number(t?.id);
-        const valueId =
-          Number.isFinite(staffId) && staffId > 0
-            ? staffId
-            : Number.isFinite(teacherId) && teacherId > 0
-              ? teacherId
-              : "";
-        return { value: String(valueId), label: fullName || String(t.id) };
-      }),
-    ],
-    [teachers]
-  );
-  const codeOptions = useMemo(() => {
-    const codes = Array.from(
-      new Set(
-        (subjects ?? [])
-          .map((s: any) => {
-            const c = s.subject_code;
-            return c != null && String(c).trim() !== "" ? String(c).trim() : null;
-          })
-          .filter(Boolean) as string[]
-      )
-    ).sort();
-    return [{ value: "", label: "All Codes" }, ...codes.map((c) => ({ value: c, label: c }))];
-  }, [subjects]);
-  const classById = useMemo(() => {
-    const map = new Map<number, any>();
-    for (const c of classes || []) {
-      const id = Number((c as any)?.id);
-      if (Number.isFinite(id) && id > 0) map.set(id, c);
-    }
-    return map;
-  }, [classes]);
-  const teacherById = useMemo(() => {
-    const map = new Map<number, any>();
-    for (const t of teachers || []) {
-      const teacherId = Number((t as any)?.id);
-      const staffId = Number((t as any)?.staff_id);
-      if (Number.isFinite(teacherId) && teacherId > 0) map.set(teacherId, t);
-      if (Number.isFinite(staffId) && staffId > 0) map.set(staffId, t);
-    }
-    return map;
-  }, [teachers]);
-  const data = (subjects ?? [])
-    .map((s: any, index: number) => {
-      const cid = Number(s.class_id);
-      const classLabel =
-        Number.isFinite(cid) && cid > 0
-          ? (classById.get(cid) ? formatClassLabel(classById.get(cid)) : `Class #${cid}`)
-          : "N/A";
-      const tid = Number(s.teacher_id);
-      const teacherLabel = (() => {
-        if (!Number.isFinite(tid) || tid <= 0) return "N/A";
-        const t = teacherById.get(tid);
-        if (!t) return `Teacher #${tid}`;
-        const first = String(t?.first_name ?? "").trim();
-        const last = String(t?.last_name ?? "").trim();
-        return `${first} ${last}`.trim() || `Teacher #${tid}`;
-      })();
+  const { subjects: masterSubjects = [] } = useSubjects(null);
+  const [electiveGroups, setElectiveGroups] = useState<any[]>([]);
+  
+  // Use current academic year from session or context (defaulting to a fallback for now)
+  const academicYearId = 1; 
 
-      return {
-        key: String(s.id ?? index),
-        id: s.id,
-        class: classLabel,
-        teacher: teacherLabel,
-        name: s.subject_name || "N/A",
-        code: s.subject_code || "N/A",
-        type: (s.practical_hours || 0) > 0 ? "Practical" : "Theory",
-        status: s.is_active ? "Active" : "Inactive",
-        originalData: s,
-      };
-    })
-    .filter((row) => !codeFilter || String(row.code) === codeFilter);
-  const exportColumns = useMemo(
-    () => [
-      { title: "ID", dataKey: "id" },
-      { title: "Name", dataKey: "name" },
-      { title: "Class", dataKey: "class" },
-      { title: "Teacher", dataKey: "teacher" },
-      { title: "Code", dataKey: "code" },
-      { title: "Type", dataKey: "type" },
-      { title: "Status", dataKey: "status" },
-    ],
-    []
-  );
-  const showNoRowsForExport = useCallback(() => {
-    void Swal.fire({
-      icon: "info",
-      title: "Nothing to export",
-      text: "There are no subject rows in the current view.",
-      timer: 2200,
-      showConfirmButton: false,
-    });
+  const { classSubjects, loading, error, refetch } = useClassSubjects({
+    class_id: classFilterId,
+    academic_year_id: academicYearId
+  });
+
+  const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [form, setForm] = useState({
+    class_id: "",
+    subject_id: "",
+    is_elective: false,
+    elective_group_id: "",
+  });
+
+  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchGroups = useCallback(async (classId: string) => {
+    if (!classId) {
+      setElectiveGroups([]);
+      return;
+    }
+    try {
+      const res = await apiService.getElectiveGroups(classId);
+      if (res.status === 'SUCCESS') setElectiveGroups(res.data);
+    } catch (err) {
+      console.error("Failed to fetch elective groups", err);
+    }
   }, []);
-  const handleExportExcel = useCallback(() => {
-    if (!data.length) {
-      showNoRowsForExport();
-      return;
-    }
-    exportToExcel(data, "subjects", "Subjects");
-  }, [data, showNoRowsForExport]);
-  const handleExportPdf = useCallback(() => {
-    if (!data.length) {
-      showNoRowsForExport();
-      return;
-    }
-    exportToPDF(data, "Subjects", "subjects", exportColumns);
-  }, [data, exportColumns, showNoRowsForExport]);
-  const handlePrint = useCallback(() => {
-    if (!data.length) {
-      showNoRowsForExport();
-      return;
-    }
-    printData("Subjects", exportColumns, data);
-  }, [data, exportColumns, showNoRowsForExport]);
-  const handleToolbarRefresh = useCallback(() => {
-    void refetch();
-  }, [refetch]);
-  const handleApplyClick = () => dropdownMenuRef.current?.classList.remove("show");
+
+  // Sync groups when class_id changes in the form
+  useEffect(() => {
+    fetchGroups(form.class_id);
+  }, [form.class_id, fetchGroups]);
+
+  const resetForm = () => {
+    setForm({
+      class_id: "",
+      subject_id: "",
+      is_elective: false,
+      elective_group_id: "",
+    });
+    setSelectedAssignment(null);
+  };
+
+  const classOptions = useMemo(
+    () => [{ value: "", label: "All Classes" }, ...classes.map((c: any) => ({ value: String(c.id), label: `${c.class_name} (${c.class_code})` }))],
+    [classes]
+  );
+
+  const masterSubjectOptions = useMemo(
+    () => [{ value: "", label: "Select Master Subject" }, ...masterSubjects.map((s: any) => ({ value: String(s.id), label: `${s.subject_name} [${s.subject_code}]` }))],
+    [masterSubjects]
+  );
+
+  const groupOptions = useMemo(
+    () => [{ value: "", label: "Select Elective Group (Optional)" }, ...electiveGroups.map((g: any) => ({ value: String(g.id), label: g.group_name }))],
+    [electiveGroups]
+  );
+
+  const data = useMemo(() => {
+    return (classSubjects ?? []).map((cs: any, index: number) => ({
+      key: String(cs.id ?? index),
+      id: cs.id,
+      name: cs.subject_name || "N/A",
+      class: cs.class_name || "N/A",
+      teacher: "Not Assigned", 
+      code: cs.subject_code || "N/A",
+      type: cs.subject_type || "Theory",
+      category: cs.is_elective ? `Elective${cs.elective_group_name ? ` (${cs.elective_group_name})` : ''}` : "Core",
+      originalData: cs,
+    }));
+  }, [classSubjects]);
+
   const columns = [
     {
       title: "ID",
       dataIndex: "id",
-      render: (text: any, record: any) => (
-        <>
-          <Link to="#" className="link-primary">
-            {text || record.id || 'N/A'}
-          </Link>
-        </>
-      ),
-      sorter: (a: TableData, b: TableData) => String(a.id || "").localeCompare(String(b.id || "")),
+      width: 80,
+      sorter: (a: TableData, b: TableData) => Number(a.id) - Number(b.id),
     },
-
     {
-      title: "Name",
+      title: "Subject Name",
       dataIndex: "name",
-      sorter: (a: TableData, b: TableData) => String(a.name || "").localeCompare(String(b.name || "")),
+      sorter: (a: TableData, b: TableData) => String(a.name).localeCompare(String(b.name)),
+      render: (text: string) => <span className="fw-bold text-dark">{text}</span>
     },
     {
       title: "Class",
       dataIndex: "class",
-      sorter: (a: TableData, b: TableData) => String((a as any).class || "").localeCompare(String((b as any).class || "")),
+      sorter: (a: TableData, b: TableData) => String(a.class).localeCompare(String(b.class)),
     },
     {
       title: "Teacher",
       dataIndex: "teacher",
-      sorter: (a: TableData, b: TableData) => String((a as any).teacher || "").localeCompare(String((b as any).teacher || "")),
+      render: (text: string) => <span className="text-muted">{text}</span>
     },
     {
       title: "Code",
       dataIndex: "code",
-      sorter: (a: TableData, b: TableData) => String(a.code || "").localeCompare(String(b.code || "")),
+      render: (text: string) => <span className="badge badge-soft-info">{text}</span>
     },
     {
       title: "Type",
       dataIndex: "type",
-      sorter: (a: TableData, b: TableData) => String(a.type || "").localeCompare(String(b.type || "")),
+      render: (text: string) => (
+        <span className={`badge ${text === "Theory" ? "bg-info" : "bg-secondary"}`}>
+          {text}
+        </span>
+      )
     },
     {
-      title: "Status",
-      dataIndex: "status",
+      title: "Category",
+      dataIndex: "category",
       render: (text: string) => (
-        <>
-          {text === "Active" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          )}
-        </>
+        <span className={`badge ${text.startsWith("Core") ? "badge-soft-primary" : "badge-soft-warning"}`}>
+          {text}
+        </span>
       ),
-      sorter: (a: TableData, b: TableData) => String(a.status || "").localeCompare(String(b.status || "")),
     },
-
     {
       title: "Action",
       dataIndex: "action",
-      render: (text: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
-              <Link
-                to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                aria-expanded="false"
-              >
-                <i className="ti ti-dots-vertical fs-14" />
-              </Link>
-              <ul className="dropdown-menu dropdown-menu-end p-2">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setEditMessage("");
-                      setSelectedSubject(record);
-                      setForm({
-                        subject_name: record.originalData?.subject_name || "",
-                        subject_code: record.originalData?.subject_code || "",
-                        class_id: String(record.originalData?.class_id || ""),
-                        teacher_id: String(record.originalData?.teacher_id || ""),
-                        type: record.type,
-                        is_active: record.status === "Active",
-                      });
-                      (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("edit_subject"))?.show();
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => { e.preventDefault(); setDeleteMessage(""); setSelectedSubject(record); (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show(); }}
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
+      width: 100,
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center justify-content-center">
+          <div className="dropdown">
+            <Link
+              to="#"
+              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+              data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
+              aria-expanded="false"
+            >
+              <i className="ti ti-dots-vertical fs-14" />
+            </Link>
+            <ul className="dropdown-menu dropdown-menu-end p-2 shadow-sm">
+              <li>
+                <Link
+                  className="dropdown-item rounded-1"
+                  to="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setSelectedAssignment(record);
+                    setForm({
+                      class_id: String(record.originalData?.class_id),
+                      subject_id: String(record.originalData?.subject_id),
+                      is_elective: !!record.originalData?.is_elective,
+                      elective_group_id: String(record.originalData?.elective_group_id || ""),
+                    });
+                    (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("edit_assignment"))?.show();
+                  }}
+                >
+                  <i className="ti ti-edit-circle me-2" />
+                  Edit
+                </Link>
+              </li>
+              <li>
+                <Link
+                  className="dropdown-item rounded-1 text-danger"
+                  to="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleDelete(record.id);
+                  }}
+                >
+                  <i className="ti ti-trash-x me-2" />
+                  Remove
+                </Link>
+              </li>
+            </ul>
           </div>
-        </>
+        </div>
       ),
     },
   ];
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.class_id || !form.subject_id) {
+      Swal.fire("Error", "Please select both Class and Subject", "error");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await apiService.assignSubjectToClass({
+        class_id: Number(form.class_id),
+        subject_id: Number(form.subject_id),
+        academic_year_id: academicYearId,
+        is_elective: form.is_elective,
+        elective_group_id: form.is_elective && form.elective_group_id ? Number(form.elective_group_id) : null,
+      });
+      await refetch();
+      (window as any).bootstrap?.Modal?.getInstance(document.getElementById("add_assignment"))?.hide();
+      resetForm();
+      Swal.fire("Success", "Subject assigned to class successfully", "success");
+    } catch (err: any) {
+      Swal.fire("Error", err.message || "Failed to assign subject", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAssignment?.id) return;
+    setIsSaving(true);
+    try {
+      await apiService.updateClassSubject(selectedAssignment.id, {
+        is_elective: form.is_elective,
+        elective_group_id: form.is_elective && form.elective_group_id ? Number(form.elective_group_id) : null,
+      });
+      await refetch();
+      (window as any).bootstrap?.Modal?.getInstance(document.getElementById("edit_assignment"))?.hide();
+      resetForm();
+      Swal.fire("Success", "Assignment updated successfully", "success");
+    } catch (err: any) {
+      Swal.fire("Error", err.message || "Failed to update assignment", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim() || !form.class_id) return;
+    try {
+      const res = await apiService.createElectiveGroup({ 
+        group_name: newGroupName.trim(),
+        class_id: Number(form.class_id)
+      });
+      if (res.status === 'SUCCESS') {
+        await fetchGroups(form.class_id);
+        setForm({ ...form, elective_group_id: String(res.data.id) });
+        setNewGroupName("");
+        (window as any).bootstrap?.Collapse?.getOrCreateInstance(document.getElementById("newGroupCollapse"))?.hide();
+      }
+    } catch (err) {
+      Swal.fire("Error", "Failed to create group", "error");
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    Swal.fire({
+      title: "Are you sure?",
+      text: "This will remove the subject from this class's curriculum.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, remove it!"
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          await apiService.removeClassSubject(id);
+          await refetch();
+          Swal.fire("Removed!", "Subject removed from class.", "success");
+        } catch (err: any) {
+          Swal.fire("Error", err.message || "Failed to remove subject", "error");
+        }
+      }
+    });
+  };
+
   return (
-    <div>
-      <>
-        {/* Page Wrapper */}
-        <div className="page-wrapper">
-          <div className="content">
-            {/* Page Header */}
-            <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
-              <div className="my-auto mb-2">
-                <h3 className="page-title mb-1">Subjects</h3>
-                <nav>
-                  <ol className="breadcrumb mb-0">
-                    <li className="breadcrumb-item">
-                      <Link to={routes.adminDashboard}>Dashboard</Link>
-                    </li>
-                    <li className="breadcrumb-item">
-                      <Link to="#">Academic </Link>
-                    </li>
-                    <li className="breadcrumb-item active" aria-current="page">
-                      Subjects
-                    </li>
-                  </ol>
-                </nav>
-              </div>
-              <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption
-                onRefresh={handleToolbarRefresh}
-                onPrint={handlePrint}
-                onExportPdf={handleExportPdf}
-                onExportExcel={handleExportExcel}
-              />
-                <div className="mb-2">
-                  <Link
-                    to="#"
-                    className="btn btn-primary"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_subject"
-                    onClick={() => setAddMessage("")}
-                  >
-                    <i className="ti ti-square-rounded-plus-filled me-2" />
-                    Add Subject
-                  </Link>
-                </div>
+    <div className="page-wrapper">
+      <div className="content">
+        <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
+          <div className="my-auto mb-2">
+            <h3 className="page-title mb-1">Class Subjects</h3>
+            <nav>
+              <ol className="breadcrumb mb-0">
+                <li className="breadcrumb-item"><Link to={routes.adminDashboard}>Dashboard</Link></li>
+                <li className="breadcrumb-item active">Curriculum</li>
+              </ol>
+            </nav>
+          </div>
+          <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+            <TooltipOption
+              onRefresh={() => refetch()}
+              onPrint={() => printData("Class Subjects", [{ title: "Name", dataKey: "name" }, { title: "Class", dataKey: "class" }, { title: "Type", dataKey: "type" }], data)}
+            />
+            <div className="mb-2">
+              <button className="btn btn-primary d-flex align-items-center" data-bs-toggle="modal" data-bs-target="#add_assignment" onClick={resetForm}>
+                <i className="ti ti-square-rounded-plus-filled me-2"></i>
+                Assign Subject
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
+            <h4 className="mb-3">Curriculum Roster</h4>
+            <div className="d-flex align-items-center flex-wrap">
+              <div className="mb-3 me-2" style={{ minWidth: '200px' }}>
+                <CommonSelect
+                  className="select"
+                  options={classOptions}
+                  defaultValue={classOptions[0]}
+                  onChange={(v) => setClassFilterId(v || "")}
+                />
               </div>
             </div>
-            {/* /Page Header */}
-            <div className="card">
-              <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                <h4 className="mb-3">Class Subject</h4>
-                <div className="d-flex align-items-center flex-wrap">
-                  <div className="input-icon-start mb-3 me-2 position-relative">
-                  <PredefinedDateRanges />
+          </div>
+          <div className="card-body p-0 py-3" style={{ minHeight: '400px' }}>
+            {loading ? (
+              <div className="text-center p-5"><div className="spinner-border text-primary" role="status"></div></div>
+            ) : error ? (
+              <div className="alert alert-danger m-3">{error}</div>
+            ) : (
+              <Table columns={columns} dataSource={data} Selection={false} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Assign Modal */}
+      <div className="modal fade" id="add_assignment">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Assign Subject to Class</h4>
+              <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form onSubmit={handleSave}>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Class <span className="text-danger">*</span></label>
+                  <CommonSelect
+                    key={`add-class-${form.class_id || 'empty'}`}
+                    className="select"
+                    options={classOptions.filter(o => o.value !== "")}
+                    value={form.class_id}
+                    onChange={(v) => setForm({...form, class_id: v || ""})}
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Subject <span className="text-danger">*</span></label>
+                  <CommonSelect
+                    key={`add-subject-${form.subject_id || 'empty'}`}
+                    className="select"
+                    options={masterSubjectOptions.filter(o => o.value !== "")}
+                    value={form.subject_id}
+                    onChange={(v) => setForm({...form, subject_id: v || ""})}
+                  />
+                </div>
+                
+                <div className="d-flex align-items-center justify-content-between border p-3 rounded bg-light mb-3">
+                  <div>
+                    <h5 className="mb-0">Elective Subject?</h5>
+                    <p className="text-muted small mb-0">Check if this is an optional/elective subject</p>
                   </div>
-                  <div className="dropdown mb-3 me-2">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                      data-bs-auto-close="outside"
-                    >
-                      <i className="ti ti-filter me-2" />
-                      Filter
-                    </Link>
-                    <div className="dropdown-menu drop-width"  ref={dropdownMenuRef}>
-                      <form>
-                        <div className="d-flex align-items-center border-bottom p-3">
-                          <h4>Filter</h4>
-                        </div>
-                        <div className="p-3 border-bottom pb-0">
-                          <div className="row">
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Class</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={classOptions}
-                                  defaultValue={classOptions[0]}
-                                  onChange={(v) => setClassFilterId(v || "")}
-                                />
-                              </div>
-                            </div>
-                            <div className="col-md-12">
-                              <div className="mb-3">
-                                <label className="form-label">Code</label>
-                                <CommonSelect
-                                  className="select"
-                                  options={codeOptions}
-                                  defaultValue={codeOptions[0]}
-                                  onChange={(v) => setCodeFilter(v || "")}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="p-3 d-flex align-items-center justify-content-end">
-                          <Link
-                            to="#"
-                            className="btn btn-light me-3"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setClassFilterId("");
-                              setCodeFilter("");
-                            }}
-                          >
-                            Reset
-                          </Link>
-                          <Link
-                            to="#"
-                            className="btn btn-primary"
-                            onClick={handleApplyClick}
-                          >
-                            Apply
-                          </Link>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                  <div className="dropdown mb-3">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                    >
-                      <i className="ti ti-sort-ascending-2 me-2" />
-                      Sort by A-Z
-                    </Link>
-                    <ul className="dropdown-menu p-3">
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1 active"
-                        >
-                          Ascending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1"
-                        >
-                          Descending
-                        </Link>
-                      </li>
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1"
-                        >
-                          Recently Viewed
-                        </Link>
-                      </li>
-                      <li>
-                        <Link
-                          to="#"
-                          className="dropdown-item rounded-1"
-                        >
-                          Recently Added
-                        </Link>
-                      </li>
-                    </ul>
+                  <div className="form-check form-switch">
+                    <input className="form-check-input" type="checkbox" checked={form.is_elective} onChange={e => setForm({...form, is_elective: e.target.checked})} />
                   </div>
                 </div>
-              </div>
-              <div className="card-body p-0 py-3">
-                {/* Loading State */}
-                {loading && (
-                  <div className="text-center p-4">
-                    <div className="spinner-border text-primary" role="status">
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <p className="mt-2">Loading subjects data...</p>
-                  </div>
-                )}
 
-                {/* Error State */}
-                {error && (
-                  <div className="text-center p-4">
-                    <div className="alert alert-danger" role="alert">
-                      <i className="ti ti-alert-circle me-2"></i>
-                      {error}
-                      <button 
-                        className="btn btn-sm btn-outline-danger ms-3" 
-                        onClick={refetch}
-                      >
-                        Retry
+                {form.is_elective && (
+                  <div className="border p-3 rounded mb-3 bg-soft-warning">
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <label className="form-label mb-0">Elective Group</label>
+                      <button type="button" className="btn btn-xs btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#newGroupCollapse" disabled={!form.class_id}>
+                        + New Group
                       </button>
                     </div>
+                    <CommonSelect
+                      key={`add-group-${form.class_id}-${form.elective_group_id || 'empty'}`}
+                      className="select"
+                      options={groupOptions}
+                      value={form.elective_group_id}
+                      onChange={(v) => setForm({...form, elective_group_id: v || ""})}
+                      placeholder={form.class_id ? "Select Group" : "Select Class first"}
+                      isDisabled={!form.class_id}
+                    />
+                    
+                    <div className="collapse mt-2" id="newGroupCollapse">
+                      <div className="input-group">
+                        <input type="text" className="form-control form-control-sm" placeholder="Group Name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
+                        <button className="btn btn-sm btn-primary" type="button" onClick={handleCreateGroup}>Create</button>
+                      </div>
+                    </div>
                   </div>
                 )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? "Assigning..." : "Assign Subject"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
 
-                {/* Subjects List */}
-                {!loading && !error && (
-                  <Table columns={columns} dataSource={data} Selection={true} />
+      {/* Edit Modal */}
+      <div className="modal fade" id="edit_assignment">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Edit Assignment</h4>
+              <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form onSubmit={handleUpdate}>
+              <div className="modal-body">
+                <div className="mb-3">
+                  <label className="form-label">Class</label>
+                  <input type="text" className="form-control" value={selectedAssignment?.class || ""} disabled />
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Subject</label>
+                  <input type="text" className="form-control" value={selectedAssignment?.name || ""} disabled />
+                </div>
+                <div className="d-flex align-items-center justify-content-between border p-3 rounded bg-light mb-3">
+                  <div>
+                    <h5 className="mb-0">Elective Subject?</h5>
+                  </div>
+                  <div className="form-check form-switch">
+                    <input className="form-check-input" type="checkbox" checked={form.is_elective} onChange={e => setForm({...form, is_elective: e.target.checked})} />
+                  </div>
+                </div>
+
+                {form.is_elective && (
+                  <div className="border p-3 rounded mb-3 bg-soft-warning">
+                    <label className="form-label">Elective Group</label>
+                    <CommonSelect
+                      key={`edit-group-${form.class_id}-${form.elective_group_id || 'empty'}`}
+                      className="select"
+                      options={groupOptions}
+                      value={form.elective_group_id}
+                      onChange={(v) => setForm({...form, elective_group_id: v || ""})}
+                    />
+                  </div>
                 )}
-                
-                {/* /Subjects List */}
               </div>
-            </div>
-            {/* /Guardians List */}
-          </div>
-        </div>
-        {/* /Page Wrapper */}
-      </>
-      <div>
-        {/* Add Subject */}
-        <div className="modal fade" id="add_subject">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add Subject</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? "Updating..." : "Save Changes"}</button>
               </div>
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                setAddMessage("");
-                if (!form.subject_name.trim()) return;
-                if (!form.class_id) {
-                  setAddMessage("Please select a class");
-                  return;
-                }
-                if (!form.teacher_id) {
-                  setAddMessage("Please select a teacher");
-                  return;
-                }
-                setIsSaving(true);
-                try {
-                  await apiService.createSubject({
-                    subject_name: form.subject_name.trim(),
-                    subject_code: form.subject_code || null,
-                    class_id: form.class_id ? Number(form.class_id) : null,
-                    teacher_id: form.teacher_id ? Number(form.teacher_id) : null,
-                    practical_hours: form.type === "Practical" ? 1 : 0,
-                    theory_hours: form.type === "Theory" ? 1 : 0,
-                    is_active: form.is_active,
-                  });
-                  await refetch();
-                  setAddMessage("Subject created successfully");
-                  setForm({
-                    subject_name: "",
-                    subject_code: "",
-                    class_id: "",
-                    teacher_id: "",
-                    type: "Theory",
-                    is_active: true,
-                  });
-                  (window as any).bootstrap?.Modal?.getInstance(document.getElementById("add_subject"))?.hide();
-                } catch (err: any) {
-                  const msg = err instanceof Error ? err.message : "Failed to create subject";
-                  setAddMessage(msg);
-                } finally { setIsSaving(false); }
-              }}>
-                <div className="modal-body">
-                  {addMessage ? <div className="alert alert-info">{addMessage}</div> : null}
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Name</label>
-                        <input type="text" className="form-control" value={form.subject_name} onChange={(e) => setForm((f) => ({ ...f, subject_name: e.target.value }))} />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Code</label>
-                        <input type="text" className="form-control" value={form.subject_code} onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))} />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Type</label>
-                        <CommonSelect
-                          className="select"
-                          options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]}
-                          value={form.type}
-                          onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Class</label>
-                        <CommonSelect
-                          className="select"
-                          options={classOptionsForForm}
-                          value={form.class_id}
-                          onChange={(v) => setForm((f) => ({ ...f, class_id: v || "" }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Teacher</label>
-                        <CommonSelect
-                          className="select"
-                          options={teacherOptionsForForm}
-                          value={form.teacher_id}
-                          onChange={(v) => setForm((f) => ({ ...f, teacher_id: v || "" }))}
-                        />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm"
-                            checked={form.is_active}
-                            onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? "Saving..." : "Add Subject"}</button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
         </div>
-        {/* /Add Subject */}
-        {/* Edit Subject */}
-        <div className="modal fade" id="edit_subject">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit Subject</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form onSubmit={(e) => e.preventDefault()}>
-                <div className="modal-body">
-                  {editMessage ? <div className="alert alert-info">{editMessage}</div> : null}
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Name</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Name"
-                          value={form.subject_name}
-                          onChange={(e) => setForm((f) => ({ ...f, subject_name: e.target.value }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Code</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          value={form.subject_code}
-                          onChange={(e) => setForm((f) => ({ ...f, subject_code: e.target.value }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Type</label>
-                        <CommonSelect
-                          className="select"
-                          options={[{ value: "Theory", label: "Theory" }, { value: "Practical", label: "Practical" }]}
-                          value={form.type}
-                          onChange={(v) => setForm((f) => ({ ...f, type: v || "Theory" }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Class</label>
-                        <CommonSelect
-                          className="select"
-                          options={classOptionsForForm}
-                          value={form.class_id}
-                          onChange={(v) => setForm((f) => ({ ...f, class_id: v || "" }))}
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Teacher</label>
-                        <CommonSelect
-                          className="select"
-                          options={teacherOptionsForForm}
-                          value={form.teacher_id}
-                          onChange={(v) => setForm((f) => ({ ...f, teacher_id: v || "" }))}
-                        />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm2"
-                            checked={form.is_active}
-                            onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link
-                    to="#"
-                    className="btn btn-primary"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      setEditMessage("");
-                      const id = selectedSubject?.originalData?.id || selectedSubject?.id;
-                      if (!id || isSaving || !form.subject_name.trim()) return;
-                      if (!form.class_id) {
-                        setEditMessage("Please select a class");
-                        return;
-                      }
-                      if (!form.teacher_id) {
-                        setEditMessage("Please select a teacher");
-                        return;
-                      }
-                      setIsSaving(true);
-                      try {
-                        await apiService.updateSubject(id, {
-                          subject_name: form.subject_name.trim(),
-                          subject_code: form.subject_code || null,
-                          class_id: form.class_id ? Number(form.class_id) : null,
-                          teacher_id: form.teacher_id ? Number(form.teacher_id) : null,
-                          practical_hours: form.type === "Practical" ? 1 : 0,
-                          theory_hours: form.type === "Theory" ? 1 : 0,
-                          is_active: form.is_active,
-                        });
-                        await refetch();
-                        setEditMessage("Subject updated successfully");
-                        (window as any).bootstrap?.Modal?.getInstance(document.getElementById("edit_subject"))?.hide();
-                      } catch (err: any) {
-                        const msg = err instanceof Error ? err.message : "Failed to update subject";
-                        setEditMessage(msg);
-                      } finally {
-                        setIsSaving(false);
-                      }
-                    }}
-                  >
-                    {isSaving ? "Updating..." : "Save Changes"}
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Edit Subject */}
-        {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form >
-                <div className="modal-body text-center">
-                  {deleteMessage ? <div className="alert alert-info text-start">{deleteMessage}</div> : null}
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <button type="button" className="btn btn-danger" disabled={isSaving} onClick={async () => {
-                      const id = selectedSubject?.originalData?.id || selectedSubject?.id;
-                      if (!id) return;
-                      setIsSaving(true);
-                      try {
-                        await apiService.deleteSubject(id);
-                        await refetch();
-                        setDeleteMessage("Subject deleted successfully");
-                        (window as any).bootstrap?.Modal?.getInstance(document.getElementById("delete-modal"))?.hide();
-                      } catch (err: any) {
-                        const msg = err instanceof Error ? err.message : "Failed to delete subject";
-                        setDeleteMessage(msg);
-                      } finally { setIsSaving(false); }
-                    }}>{isSaving ? "Deleting..." : "Yes, Delete"}</button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Delete Modal */}
       </div>
     </div>
   );
 };
 
 export default ClassSubject;
-
-
-
-
-

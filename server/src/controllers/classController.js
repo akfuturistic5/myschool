@@ -43,7 +43,6 @@ const getAllClasses = async (req, res) => {
     let p = 0;
     const ayCondSubjects = academicYearId ? 'AND csj.academic_year_id = $1' : '';
     const ayCondTeacher = academicYearId ? 'AND ct.academic_year_id = $1' : '';
-    const ayCondSections = academicYearId ? 'AND csx.academic_year_id = $1' : '';
     if (academicYearId) {
       p += 1;
       params.push(academicYearId);
@@ -60,15 +59,6 @@ const getAllClasses = async (req, res) => {
         NULL::numeric AS class_fee,
         c.description,
         c.is_active,
-        EXISTS (
-          SELECT 1 FROM class_sections csx
-          WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
-        ) AS has_sections,
-        (SELECT COALESCE(json_agg(csx.section_id), '[]'::json)
-         FROM class_sections csx
-         WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
-           ${ayCondSections}
-        ) AS section_ids,
         c.created_at,
         (SELECT COUNT(*)::int
          FROM students st
@@ -122,7 +112,6 @@ const getClassById = async (req, res) => {
     const params = [id];
     const ayCondSubjects = academicYearId ? 'AND csj.academic_year_id = $2' : '';
     const ayCondTeacher = academicYearId ? 'AND ct.academic_year_id = $2' : '';
-    const ayCondSections = academicYearId ? 'AND csx.academic_year_id = $2' : '';
     if (academicYearId) params.push(academicYearId);
 
     const result = await query(
@@ -136,15 +125,6 @@ const getClassById = async (req, res) => {
         NULL::numeric AS class_fee,
         c.description,
         c.is_active,
-        EXISTS (
-          SELECT 1 FROM class_sections csx
-          WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
-        ) AS has_sections,
-        (SELECT COALESCE(json_agg(csx.section_id), '[]'::json)
-         FROM class_sections csx
-         WHERE csx.class_id = c.id AND csx.deleted_at IS NULL
-           ${ayCondSections}
-        ) AS section_ids,
         c.created_at,
         (SELECT COUNT(*)::int
          FROM students st
@@ -204,9 +184,7 @@ const createClass = async (req, res) => {
       class_fee: _classFee,
       description,
       is_active,
-      has_sections: _hasSections,
       academic_year_id,
-      section_ids,
     } = req.body;
 
     const codeNorm = normalizeClassCode(class_code);
@@ -233,23 +211,6 @@ const createClass = async (req, res) => {
       ]
     ).then(r => r.rows[0]);
     const classId = row.id;
-    const ay = await resolveAcademicYearId(req.body?.academic_year_id);
-
-    if (ay) {
-      if (Array.isArray(section_ids) && section_ids.length > 0) {
-        for (const sectionId of section_ids) {
-          const sid = parseInt(sectionId, 10);
-          if (Number.isInteger(sid) && sid > 0) {
-            await query(
-              `INSERT INTO class_sections (class_id, section_id, academic_year_id, max_students, is_active, created_by)
-               VALUES ($1, $2, $3, 30, true, $4)
-               ON CONFLICT (class_id, section_id, academic_year_id) DO UPDATE SET deleted_at = NULL, updated_at = NOW()`,
-              [classId, sid, ay, createdByArg]
-            ).catch(e => console.error('Error assigning section to class:', e));
-          }
-        }
-      }
-    }
 
     return success(res, 201, 'Class created successfully', row);
   } catch (error) {
@@ -303,38 +264,6 @@ const updateClass = async (req, res) => {
     ).then(r => r.rows[0]);
 
     const ay = await resolveAcademicYearId(payload?.academic_year_id);
-
-    if (ay && Object.prototype.hasOwnProperty.call(payload, 'section_ids') && Array.isArray(payload.section_ids)) {
-      const validSectionIds = payload.section_ids
-        .map(id => parseInt(id, 10))
-        .filter(id => Number.isInteger(id) && id > 0);
-
-      // Soft delete sections not in the new list
-      if (validSectionIds.length > 0) {
-        await query(
-          `UPDATE class_sections SET deleted_at = NOW()
-           WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL AND section_id != ALL($3::int[])`,
-          [id, ay, validSectionIds]
-        );
-      } else {
-        await query(
-          `UPDATE class_sections SET deleted_at = NOW()
-           WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL`,
-          [id, ay]
-        );
-      }
-
-      // Upsert new sections
-      for (const sid of validSectionIds) {
-        await query(
-          `INSERT INTO class_sections (class_id, section_id, academic_year_id, max_students, is_active, created_by)
-           VALUES ($1, $2, $3, 30, true, $4)
-           ON CONFLICT (class_id, section_id, academic_year_id)
-           DO UPDATE SET deleted_at = NULL, updated_at = NOW()`,
-          [id, sid, ay, req.user?.id || null]
-        ).catch(e => console.error('Error assigning section to class:', e));
-      }
-    }
 
     if (classTeacherId !== undefined && classTeacherId !== null && classTeacherId !== '') {
       const tid = parseInt(classTeacherId, 10);
