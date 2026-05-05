@@ -1,5 +1,6 @@
 const { query, executeTransaction } = require('../config/database');
 const bcrypt = require('bcryptjs');
+const { clearSchemaInspectorCache } = require('../utils/schemaInspector');
 const {
   normalizeCopyOptions,
   anyCopySelected,
@@ -34,12 +35,163 @@ function formatPgDateOnly(d) {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/**
+ * When the client omits end_date but the DB column is NOT NULL, use a provisional
+ * ~12-month window: the day before the same calendar date one year ahead.
+ * Staff can edit the real end date on the year detail page when the session closes.
+ */
+function computeProvisionalAcademicYearEnd(startDateOnly) {
+  const s = normalizeDateString(startDateOnly);
+  if (!s || s.length < 10 || !/^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10))) return null;
+  const iso = s.slice(0, 10);
+  const [yy, mm, dd] = iso.split('-').map((x) => parseInt(x, 10));
+  if (!Number.isFinite(yy) || !Number.isFinite(mm) || !Number.isFinite(dd)) return null;
+  const dt = new Date(yy, mm - 1, dd, 12, 0, 0, 0);
+  if (Number.isNaN(dt.getTime())) return null;
+  dt.setFullYear(dt.getFullYear() + 1);
+  dt.setDate(dt.getDate() - 1);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function makeHttpError(status, code, message, data) {
   const err = new Error(message);
   err.status = status;
   err.code = code;
   if (data !== undefined) err.data = data;
   return err;
+}
+
+/** True when PostgreSQL rejects a query because a table/column is missing. */
+function isMissingSchemaObjectError(err) {
+  const c = err && err.code;
+  if (c === '42703' || c === '42P01') return true;
+  return /\bdoes not exist\b/i.test(String(err && err.message));
+}
+
+/**
+ * Run the first SQL variant that succeeds. Avoids relying on information_schema (and its cache),
+ * which can disagree with the live DB and still reference non-existent columns.
+ */
+async function execStatFirstMatch(sqlVariants, params) {
+  let lastErr;
+  for (const sql of sqlVariants) {
+    try {
+      const r = await query(sql, params);
+      const row = r.rows?.[0] || {};
+      const v = row.v ?? row.count ?? Object.values(row)[0];
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    } catch (e) {
+      lastErr = e;
+      if (isMissingSchemaObjectError(e)) {
+        clearSchemaInspectorCache();
+        continue;
+      }
+      console.warn('[academicYearSummary] stat query error:', e.code, e.message);
+      return 0;
+    }
+  }
+  if (lastErr) {
+    console.warn('[academicYearSummary] all stat variants failed:', lastErr.code, lastErr.message);
+  }
+  return 0;
+}
+
+/** Build summary statistics for one academic year id — safe across legacy vs tenant layouts. */
+async function collectAcademicYearSummaryStatistics(yearId) {
+  const p = [yearId];
+
+  const [
+    classes_count,
+    sections_count,
+    students_count,
+    class_schedules_count,
+    fee_structures_count,
+    exams_count,
+    holidays_count,
+    class_syllabus_count,
+    promotions_into_count,
+    promotions_from_count,
+    attendance_records_count,
+    teacher_routines_count,
+  ] = await Promise.all([
+    execStatFirstMatch(
+      [
+        `SELECT COUNT(*)::int AS v FROM classes c WHERE c.academic_year_id = $1`,
+        `SELECT COUNT(DISTINCT cs.class_id)::int AS v FROM class_sections cs WHERE cs.academic_year_id = $1 AND cs.deleted_at IS NULL`,
+        `SELECT COUNT(DISTINCT cs.class_id)::int AS v FROM class_sections cs WHERE cs.academic_year_id = $1`,
+        `SELECT COUNT(DISTINCT s.class_id)::int AS v FROM sections s WHERE s.academic_year_id = $1`,
+      ],
+      p
+    ),
+    execStatFirstMatch(
+      [
+        `SELECT COUNT(*)::int AS v FROM sections s INNER JOIN classes c ON s.class_id = c.id WHERE c.academic_year_id = $1`,
+        `SELECT COUNT(*)::int AS v FROM class_sections cs WHERE cs.academic_year_id = $1 AND cs.deleted_at IS NULL`,
+        `SELECT COUNT(*)::int AS v FROM class_sections cs WHERE cs.academic_year_id = $1`,
+        `SELECT COUNT(*)::int AS v FROM sections s WHERE s.academic_year_id = $1`,
+      ],
+      p
+    ),
+    execStatFirstMatch(
+      [
+        `SELECT COUNT(*)::int AS v FROM students st WHERE st.academic_year_id = $1 AND COALESCE(st.is_active, true) = true`,
+        `SELECT COUNT(DISTINCT l.student_id)::int AS v FROM student_lifecycle_ledger l
+          INNER JOIN students st ON st.id = l.student_id AND COALESCE(st.is_active, true) = true
+          WHERE l.to_academic_year_id = $1`,
+        `SELECT COUNT(DISTINCT l.student_id)::int AS v FROM student_lifecycle_ledger l WHERE l.to_academic_year_id = $1`,
+      ],
+      p
+    ),
+    execStatFirstMatch([`SELECT COUNT(*)::int AS v FROM class_schedules cs WHERE cs.academic_year_id = $1`], p),
+    execStatFirstMatch(
+      [
+        `SELECT COUNT(*)::int AS v FROM fee_structures fs WHERE fs.academic_year_id = $1`,
+        `SELECT COUNT(*)::int AS v FROM fees f WHERE f.academic_year_id = $1`,
+      ],
+      p
+    ),
+    execStatFirstMatch([`SELECT COUNT(*)::int AS v FROM exams e WHERE e.academic_year_id = $1`], p),
+    execStatFirstMatch(
+      [
+        `SELECT COUNT(*)::int AS v FROM school_holidays h WHERE h.academic_year_id = $1`,
+        `SELECT COUNT(*)::int AS v FROM holidays h WHERE h.academic_year_id = $1`,
+      ],
+      p
+    ),
+    execStatFirstMatch([`SELECT COUNT(*)::int AS v FROM class_syllabus csy WHERE csy.academic_year_id = $1`], p),
+    execStatFirstMatch(
+      [`SELECT COUNT(*)::int AS v FROM student_promotions sp WHERE sp.to_academic_year_id = $1`],
+      p
+    ),
+    execStatFirstMatch(
+      [`SELECT COUNT(*)::int AS v FROM student_promotions sp WHERE sp.from_academic_year_id = $1`],
+      p
+    ),
+    execStatFirstMatch([`SELECT COUNT(*)::int AS v FROM attendance a WHERE a.academic_year_id = $1`], p),
+    execStatFirstMatch(
+      [`SELECT COUNT(*)::int AS v FROM teacher_routines tr WHERE tr.academic_year_id = $1`],
+      p
+    ),
+  ]);
+
+  return {
+    classes_count,
+    sections_count,
+    students_count,
+    class_schedules_count,
+    fee_structures_count,
+    exams_count,
+    holidays_count,
+    class_syllabus_count,
+    promotions_into_count,
+    promotions_from_count,
+    attendance_records_count,
+    teacher_routines_count,
+  };
 }
 
 // Active years only — header dropdowns and general use
@@ -152,7 +304,7 @@ const getAcademicYearSummary = async (req, res) => {
       message: 'Academic year summary fetched successfully',
       data: {
         academic_year: yearRes.rows[0],
-        statistics: statsRes.rows[0] || {},
+        statistics,
       },
     });
   } catch (error) {
@@ -331,7 +483,7 @@ const createAcademicYear = async (req, res) => {
       return res.status(500).json({
         status: 'ERROR',
         message:
-          'Database schema does not allow empty end date. Please run migration 008 (academic_years_end_date_nullable) and retry.',
+          'Database rejected this record — a required column was missing or invalid. Verify year name, dates, and try again.',
       });
     }
     console.error('Error creating academic year:', error?.code, error?.message, error);
@@ -443,10 +595,26 @@ const updateAcademicYear = async (req, res) => {
         message: 'An academic year with this name already exists',
       });
     }
+    if (error && error.code === '23P01') {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DATES_OVERLAP',
+        message:
+          'These start/end dates overlap another academic session. Adjust dates so school years do not overlap on the timeline.',
+      });
+    }
+    if (error && error.code === '23514') {
+      return res.status(400).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DATE_RULE',
+        message: 'End date must be on or after start date.',
+      });
+    }
     console.error('Error updating academic year:', error);
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to update academic year',
+      ...(process.env.NODE_ENV !== 'production' && error?.message ? { detail: String(error.message) } : {}),
     });
   }
 };
