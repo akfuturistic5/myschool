@@ -348,8 +348,8 @@ const getAllStaff = async (req, res) => {
     const staffSelect = await getStaffSelectSql();
     const result = await query(`
       ${staffSelect}
-      WHERE s.status = \'Active\'
-      ORDER BY s.first_name ASC, s.last_name ASC
+      WHERE s.is_active = true
+      ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);
 
     return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });
