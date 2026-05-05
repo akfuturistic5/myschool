@@ -21,6 +21,8 @@ Backend API for the PreSkool School Management System built with Express.js and 
 
 ## Database Setup
 
+For architecture, migrations, and how tenant tables relate to each other, see [docs/DATABASE.md](docs/DATABASE.md).
+
 Make sure you have PostgreSQL installed and running. Configure your database credentials in `.env` (see `.env.example`).
 
 ### Super Admin login (platform-level access)
