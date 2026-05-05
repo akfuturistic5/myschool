@@ -3,20 +3,152 @@ const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId, getScopedRouteIdsForDriver } = require('../utils/driverTransportAccess');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
-function mapPickupRow(row) {
+function normalizeNullableText(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeNullableNumber(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function normalizeNullableTime(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return /^\d{2}:\d{2}(:\d{2})?$/.test(trimmed) ? trimmed : null;
+}
+
+function buildPickupContextFlags(flags) {
+  return {
+    hasAddress: !!flags.hasAddress,
+    hasLandmark: !!flags.hasLandmark,
+    hasPickupTime: !!flags.hasPickupTime,
+    hasDropTime: !!flags.hasDropTime,
+    hasDistanceFromSchool: !!flags.hasDistanceFromSchool,
+    hasRouteId: !!flags.hasRouteId,
+    hasSequenceOrder: !!flags.hasSequenceOrder,
+    hasIsActive: !!flags.hasIsActive,
+    hasDeletedAt: !!flags.hasDeletedAt,
+    hasUpdatedAt: !!flags.hasUpdatedAt,
+    hasModifiedAt: !!flags.hasModifiedAt,
+  };
+}
+
+async function getPickupContextFlags() {
+  const [
+    hasAddress,
+    hasLandmark,
+    hasPickupTime,
+    hasDropTime,
+    hasDistanceFromSchool,
+    hasRouteId,
+    hasSequenceOrder,
+    hasIsActive,
+    hasDeletedAt,
+    hasUpdatedAt,
+    hasModifiedAt,
+  ] = await Promise.all([
+    hasColumn('pickup_points', 'address'),
+    hasColumn('pickup_points', 'landmark'),
+    hasColumn('pickup_points', 'pickup_time'),
+    hasColumn('pickup_points', 'drop_time'),
+    hasColumn('pickup_points', 'distance_from_school'),
+    hasColumn('pickup_points', 'route_id'),
+    hasColumn('pickup_points', 'sequence_order'),
+    hasColumn('pickup_points', 'is_active'),
+    hasColumn('pickup_points', 'deleted_at'),
+    hasColumn('pickup_points', 'updated_at'),
+    hasColumn('pickup_points', 'modified_at'),
+  ]);
+
+  return buildPickupContextFlags({
+    hasAddress,
+    hasLandmark,
+    hasPickupTime,
+    hasDropTime,
+    hasDistanceFromSchool,
+    hasRouteId,
+    hasSequenceOrder,
+    hasIsActive,
+    hasDeletedAt,
+    hasUpdatedAt,
+    hasModifiedAt,
+  });
+}
+
+function mapPickupRow(row, flags) {
+  const isActive = flags.hasIsActive
+    ? row.is_active !== false && row.is_active !== 'f'
+    : true;
+  const updatedAt = flags.hasUpdatedAt
+    ? row.updated_at
+    : (flags.hasModifiedAt ? row.modified_at : null);
+
   return {
     id: row.id,
     point_name: row.point_name || '',
-    is_active: row.is_active !== false && row.is_active !== 'f',
+    route_id: flags.hasRouteId ? row.route_id ?? null : null,
+    route_name: row.route_name || null,
+    address: flags.hasAddress ? (row.address || '') : '',
+    landmark: flags.hasLandmark ? (row.landmark || '') : '',
+    pickup_time: flags.hasPickupTime ? (row.pickup_time || null) : null,
+    drop_time: flags.hasDropTime ? (row.drop_time || null) : null,
+    distance_from_school: flags.hasDistanceFromSchool ? row.distance_from_school : null,
+    sequence_order: flags.hasSequenceOrder ? row.sequence_order : null,
+    is_active: isActive,
     created_at: row.created_at,
-    updated_at: row.updated_at
+    updated_at: updatedAt
   };
 }
 
 const getAllPickupPoints = async (req, res) => {
   try {
-    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
-    
+    const flags = await getPickupContextFlags();
+    const hasDeletedAt = flags.hasDeletedAt;
+    const hasRouteStops = await hasTable('route_stops');
+    const scopedDriverId = await getScopedDriverId(req);
+    const selectRouteName = flags.hasRouteId ? 'LEFT JOIN routes r ON r.id = pp.route_id' : '';
+    const routeNameField = flags.hasRouteId ? ', r.route_name' : ', NULL::text AS route_name';
+    if (scopedDriverId != null) {
+      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
+      if (routeIds.length === 0) {
+        return success(res, 200, 'Pickup points fetched successfully', [], { total: 0, page: 1, limit: 0 });
+      }
+      const result = hasRouteStops
+        ? await query(
+            `SELECT DISTINCT pp.* ${routeNameField}
+             FROM pickup_points pp
+             ${selectRouteName}
+             JOIN route_stops rs ON rs.pickup_point_id = pp.id
+             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
+               AND rs.route_id = ANY($1::int[])
+             ORDER BY pp.point_name ASC`,
+            [routeIds]
+          )
+        : await query(
+            `SELECT DISTINCT pp.* ${routeNameField}
+             FROM pickup_points pp
+             ${selectRouteName}
+             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
+               ${flags.hasRouteId ? 'AND pp.route_id = ANY($1::int[])' : ''}
+             ORDER BY pp.point_name ASC`,
+            flags.hasRouteId ? [routeIds] : []
+          );
+      const data = result.rows.map((row) => mapPickupRow(row, flags));
+      return success(res, 200, 'Pickup points fetched successfully', data, {
+        total: data.length,
+        page: 1,
+        limit: data.length,
+      });
+    }
+
     const { 
       page = 1, 
       limit = 10, 
@@ -27,7 +159,13 @@ const getAllPickupPoints = async (req, res) => {
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const validSortFields = ['point_name', 'id', 'created_at', 'sequence_order'];
+    const validSortFields = ['point_name', 'id', 'created_at']
+      .concat(flags.hasRouteId ? ['route_name'] : [])
+      .concat(flags.hasIsActive ? ['is_active'] : [])
+      .concat(flags.hasRouteId ? ['route_id'] : [])
+      .concat(flags.hasPickupTime ? ['pickup_time'] : [])
+      .concat(flags.hasDropTime ? ['drop_time'] : [])
+      .concat(flags.hasDistanceFromSchool ? ['distance_from_school'] : []);
     
     const actualSortField = validSortFields.includes(sortField) ? sortField : 'point_name';
     const actualSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
@@ -67,7 +205,8 @@ const getAllPickupPoints = async (req, res) => {
       [...params, parseInt(limit), offset]
     );
 
-    const data = dataResult.rows.map(mapPickupRow);
+    const data = result.rows.map((row) => mapPickupRow(row, flags));
+    const totalCount = parseInt(countResult.rows[0].count);
 
     return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
@@ -84,13 +223,15 @@ const getAllPickupPoints = async (req, res) => {
 const getPickupPointById = async (req, res) => {
   try {
     const { id } = req.params;
-    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
+    const flags = await getPickupContextFlags();
+    const hasDeletedAt = flags.hasDeletedAt;
     const hasRouteStops = await hasTable('route_stops');
     const scopedDriverId = await getScopedDriverId(req);
     const result = await query(`
-      SELECT *
-      FROM pickup_points
-      WHERE id = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
+      SELECT pp.*, ${flags.hasRouteId ? 'r.route_name' : 'NULL::text AS route_name'}
+      FROM pickup_points pp
+      ${flags.hasRouteId ? 'LEFT JOIN routes r ON r.id = pp.route_id' : ''}
+      WHERE pp.id = $1 AND ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
     `, [id]);
 
     if (result.rows.length === 0) {
@@ -122,7 +263,7 @@ const getPickupPointById = async (req, res) => {
         return errorResponse(res, 403, 'Access denied');
       }
     }
-    return success(res, 200, 'Pickup point fetched successfully', mapPickupRow(result.rows[0]));
+    return success(res, 200, 'Pickup point fetched successfully', mapPickupRow(result.rows[0], flags));
   } catch (error) {
     console.error('Error fetching pickup point:', error);
     return errorResponse(res, 500, 'Failed to fetch pickup point');
@@ -131,6 +272,8 @@ const getPickupPointById = async (req, res) => {
 
 const createPickupPoint = async (req, res) => {
   try {
+    const flags = await getPickupContextFlags();
+    const hasDeletedAt = flags.hasDeletedAt;
     const { 
       route_id,
       point_name, 
@@ -139,11 +282,103 @@ const createPickupPoint = async (req, res) => {
       pickup_time,
       drop_time,
       distance_from_school,
+      sequence_order,
+      is_active 
+    } = req.body;
+
+    if (!point_name) {
+      return errorResponse(res, 400, 'Pickup point name is required');
+    }
+
+    // Check for duplicate name
+    const duplicateParams = [point_name];
+    let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
+    if (flags.hasRouteId && route_id != null && String(route_id).trim() !== '') {
+      duplicateParams.push(Number(route_id));
+      duplicateSql += ` AND route_id = $2`;
+    }
+    const existing = await query(
+      duplicateSql,
+      duplicateParams
+    );
+    if (existing.rows.length > 0) {
+      return errorResponse(res, 400, 'A pickup point with this name already exists');
       sequence_order
     } = req.body;
 
     if (!route_id || !point_name || sequence_order === undefined) {
       return errorResponse(res, 400, 'Route, point name and sequence order are required');
+    }
+
+    const payloadValues = [point_name];
+    const columns = ['point_name'];
+    const placeholders = ['$1'];
+
+    if (flags.hasRouteId && (route_id === undefined || route_id === null || String(route_id).trim() === '')) {
+      return errorResponse(res, 400, 'Route is required for pickup point');
+    }
+
+    if (flags.hasRouteId && route_id !== undefined) {
+      const routeIdValue = route_id === null || route_id === '' ? null : Number(route_id);
+      if (routeIdValue !== null && !Number.isInteger(routeIdValue)) {
+        return errorResponse(res, 400, 'Route ID must be a valid integer');
+      }
+      columns.push('route_id');
+      payloadValues.push(routeIdValue);
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasAddress && address !== undefined) {
+      columns.push('address');
+      payloadValues.push(normalizeNullableText(address));
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasLandmark && landmark !== undefined) {
+      columns.push('landmark');
+      payloadValues.push(normalizeNullableText(landmark));
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasPickupTime && pickup_time !== undefined) {
+      const t = normalizeNullableTime(pickup_time);
+      if (pickup_time != null && String(pickup_time).trim() !== '' && t === null) {
+        return errorResponse(res, 400, 'Invalid pickup time format. Use HH:mm');
+      }
+      columns.push('pickup_time');
+      payloadValues.push(t);
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasDropTime && drop_time !== undefined) {
+      const t = normalizeNullableTime(drop_time);
+      if (drop_time != null && String(drop_time).trim() !== '' && t === null) {
+        return errorResponse(res, 400, 'Invalid drop time format. Use HH:mm');
+      }
+      columns.push('drop_time');
+      payloadValues.push(t);
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasDistanceFromSchool && distance_from_school !== undefined) {
+      const distance = normalizeNullableNumber(distance_from_school);
+      if (Number.isNaN(distance)) {
+        return errorResponse(res, 400, 'Distance from school must be a valid number');
+      }
+      columns.push('distance_from_school');
+      payloadValues.push(distance);
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasSequenceOrder) {
+      const sequence = sequence_order === undefined || sequence_order === null || sequence_order === ''
+        ? 0
+        : Number(sequence_order);
+      if (!Number.isInteger(sequence) || sequence < 0) {
+        return errorResponse(res, 400, 'Sequence order must be a non-negative integer');
+      }
+      columns.push('sequence_order');
+      payloadValues.push(sequence);
+      placeholders.push(`$${payloadValues.length}`);
+    }
+    if (flags.hasIsActive) {
+      columns.push('is_active');
+      payloadValues.push(is_active !== false);
+      placeholders.push(`$${payloadValues.length}`);
     }
 
     const result = await query(
@@ -165,7 +400,7 @@ const createPickupPoint = async (req, res) => {
       ]
     );
 
-    return success(res, 201, 'Pickup point created successfully', mapPickupRow(result.rows[0]));
+    return success(res, 201, 'Pickup point created successfully', mapPickupRow(result.rows[0], flags));
   } catch (error) {
     console.error('Error creating pickup point:', error);
     return errorResponse(res, 500, 'Failed to create pickup point');
@@ -249,7 +484,7 @@ const updatePickupPoint = async (req, res) => {
       return errorResponse(res, 404, 'Pickup point not found');
     }
 
-    return success(res, 200, 'Pickup point updated successfully', mapPickupRow(result.rows[0]));
+    return success(res, 200, 'Pickup point updated successfully', mapPickupRow(result.rows[0], flags));
   } catch (error) {
     console.error('Error updating pickup point:', error);
     return errorResponse(res, 500, error.message || 'Failed to update pickup point');

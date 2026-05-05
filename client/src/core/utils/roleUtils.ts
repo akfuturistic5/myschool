@@ -59,10 +59,17 @@ type RoleScope = 'headmaster' | 'administrative' | 'teacher' | 'student' | 'pare
 
 function getRoleParts(role: RoleInput, explicitRoleId?: number | null): { roleName: string; roleId: number | null } {
   if (role && typeof role === 'object') {
-    const roleId = Number(role.user_role_id ?? role.role_id);
+    const rawId = role.user_role_id ?? role.role_id;
+    const roleId = Number(rawId);
+    const safeId = Number.isFinite(roleId) && roleId > 0 ? roleId : null;
+    const o = role as { role_name?: string; role?: string };
+    const fromDb = o.role_name != null && String(o.role_name).trim() !== '' ? String(o.role_name) : '';
+    const fromCanonical = o.role != null && String(o.role).trim() !== '' ? String(o.role) : '';
+    /** Prefer DB `role_name` from /auth/me over UI `role` — normalized `role` can be "User" if name/id were briefly out of sync. */
+    const roleNameSource = fromDb || fromCanonical;
     return {
-      roleName: String(role.role ?? '').trim().toLowerCase(),
-      roleId: Number.isFinite(roleId) ? roleId : null,
+      roleName: roleNameSource.trim().toLowerCase(),
+      roleId: safeId,
     };
   }
 
@@ -300,6 +307,11 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
     academicYearsBase &&
     (path === academicYearsBase || path.startsWith(`${academicYearsBase}/`))
   ) {
+    return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
+  }
+
+  /** Master data settings (houses, blood groups, mother tongues, casts). */
+  if (path.startsWith("/settings/")) {
     return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
   }
 

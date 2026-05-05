@@ -212,7 +212,7 @@ async function cloneDepartments(client, createdByStaffId, targetYearId) {
   return { map, inserted: insertedCount };
 }
 
-async function cloneDesignations(client, departmentMap, createdByStaffId, targetYearId) {
+async function cloneDesignations(client, departmentMap, createdByStaffId, _targetYearId) {
   const map = new Map();
   let insertedCount = 0;
   const rowsRes = await client.query(
@@ -275,7 +275,7 @@ async function cloneDesignations(client, departmentMap, createdByStaffId, target
         row.description || null,
         normalizeBool(row.is_active, true),
         createdByStaffId || null,
-        targetYearId || null,
+        createdByStaffId || null,
       ]
     );
     map.set(Number(row.id), Number(ins.rows[0].id));

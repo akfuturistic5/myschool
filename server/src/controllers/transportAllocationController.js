@@ -8,6 +8,36 @@ function normalizeStatus(status) {
   return status.trim().toLowerCase() === 'inactive' ? 'Inactive' : 'Active';
 }
 
+function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+  }
+  return Boolean(value);
+}
+
+function parseIsoDateOnly(value, { fieldName, allowNull = true } = {}) {
+  if (value === undefined || value === null || value === '') {
+    if (allowNull) return null;
+    throw new Error(`${fieldName || 'DATE'}_REQUIRED`);
+  }
+  const rawValue = value instanceof Date ? value.toISOString().slice(0, 10) : String(value).trim();
+  const isoMatch = rawValue.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!isoMatch) {
+    throw new Error(`${fieldName || 'DATE'}_INVALID`);
+  }
+  const stringValue = isoMatch[1];
+  const parsed = new Date(`${stringValue}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${fieldName || 'DATE'}_INVALID`);
+  }
+  return stringValue;
+}
+
 async function resolveAllocationSubjectId(client, rawId, userType) {
   if (!Number.isFinite(Number(rawId))) {
     throw new Error('INVALID_NUMERIC_INPUT');
@@ -358,8 +388,10 @@ const createTransportAllocation = async (req, res) => {
     }
 
     const result = await executeTransaction(async (client) => {
-      const startDate = start_date || new Date().toISOString().slice(0, 10);
-      const normalizedIsFree = Boolean(is_free);
+      const startDate = start_date
+        ? parseIsoDateOnly(start_date, { fieldName: 'START_DATE', allowNull: false })
+        : new Date().toISOString().slice(0, 10);
+      const normalizedIsFree = parseBoolean(is_free, false);
       const scopedAcademicYearId = hasAcademicYearId
         ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
         : null;
@@ -371,7 +403,10 @@ const createTransportAllocation = async (req, res) => {
         user_type: normalizedUserType,
       });
       await validateRoutePickupMapping(client, parsedRouteId, parsedPickupPointId);
-      const effectiveEndDateInput = end_date || null;
+      const effectiveEndDateInput = parseIsoDateOnly(end_date, { fieldName: 'END_DATE', allowNull: true });
+      if (effectiveEndDateInput && effectiveEndDateInput < startDate) {
+        throw new Error('INVALID_DATE_RANGE');
+      }
       await enforceVehicleCapacity(client, parsedVehicleId, startDate, effectiveEndDateInput);
 
       const fee = await resolveAssignedFee(
@@ -448,6 +483,9 @@ const createTransportAllocation = async (req, res) => {
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
     if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');
     if (err.message === 'FEE_PLAN_INACTIVE') return errorResponse(res, 400, 'Selected fee plan is inactive');
+    if (err.message === 'START_DATE_INVALID') return errorResponse(res, 400, 'start_date must be in YYYY-MM-DD format');
+    if (err.message === 'END_DATE_INVALID') return errorResponse(res, 400, 'end_date must be in YYYY-MM-DD format');
+    if (err.message === 'INVALID_DATE_RANGE') return errorResponse(res, 400, 'end_date cannot be before start_date');
     if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
     if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
     if (err.message === 'VEHICLE_CAPACITY_EXCEEDED') {
@@ -522,8 +560,10 @@ const createBulkTransportAllocations = async (req, res) => {
     }
 
     const result = await executeTransaction(async (client) => {
-      const startDate = start_date || new Date().toISOString().slice(0, 10);
-      const normalizedIsFree = Boolean(is_free);
+      const startDate = start_date
+        ? parseIsoDateOnly(start_date, { fieldName: 'START_DATE', allowNull: false })
+        : new Date().toISOString().slice(0, 10);
+      const normalizedIsFree = parseBoolean(is_free, false);
       const scopedAcademicYearId = hasAcademicYearId
         ? await resolveAcademicYearId(academic_year_id || req.query?.academic_year_id)
         : null;
@@ -537,7 +577,11 @@ const createBulkTransportAllocations = async (req, res) => {
         normalizedUserType,
         startDate
       );
-      const finalEndDate = fee.computedEndDate || (end_date || null);
+      const requestedEndDate = parseIsoDateOnly(end_date, { fieldName: 'END_DATE', allowNull: true });
+      if (requestedEndDate && requestedEndDate < startDate) {
+        throw new Error('INVALID_DATE_RANGE');
+      }
+      const finalEndDate = fee.computedEndDate || requestedEndDate;
 
       const resolvedIds = [];
       for (const rawId of user_ids) {
@@ -626,6 +670,9 @@ const createBulkTransportAllocations = async (req, res) => {
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');
     if (err.message === 'FEE_PLAN_PICKUP_MISMATCH') return errorResponse(res, 400, 'Selected fee plan is not valid for the pickup point');
     if (err.message === 'FEE_PLAN_INACTIVE') return errorResponse(res, 400, 'Selected fee plan is inactive');
+    if (err.message === 'START_DATE_INVALID') return errorResponse(res, 400, 'start_date must be in YYYY-MM-DD format');
+    if (err.message === 'END_DATE_INVALID') return errorResponse(res, 400, 'end_date must be in YYYY-MM-DD format');
+    if (err.message === 'INVALID_DATE_RANGE') return errorResponse(res, 400, 'end_date cannot be before start_date');
     if (err.message === 'VEHICLE_NOT_FOUND') return errorResponse(res, 400, 'Selected vehicle does not exist');
     if (err.message === 'INVALID_VEHICLE_CAPACITY') return errorResponse(res, 400, 'Selected vehicle has invalid seat capacity');
     if (err.message === 'BULK_VEHICLE_CAPACITY_EXCEEDED') {
@@ -674,9 +721,13 @@ const updateTransportAllocation = async (req, res) => {
       const routeId = payload.route_id !== undefined ? Number(payload.route_id) : Number(current.route_id);
       const pickupPointId = payload.pickup_point_id !== undefined ? Number(payload.pickup_point_id) : Number(current.pickup_point_id);
       const vehicleId = payload.vehicle_id !== undefined ? Number(payload.vehicle_id) : Number(current.vehicle_id);
-      const isFree = payload.is_free !== undefined ? Boolean(payload.is_free) : Boolean(current.is_free);
-      const startDate = payload.start_date !== undefined ? payload.start_date : current.start_date;
-      const endDate = payload.end_date !== undefined ? payload.end_date : current.end_date;
+      const isFree = payload.is_free !== undefined ? parseBoolean(payload.is_free, Boolean(current.is_free)) : Boolean(current.is_free);
+      const startDate = payload.start_date !== undefined
+        ? parseIsoDateOnly(payload.start_date, { fieldName: 'START_DATE', allowNull: false })
+        : parseIsoDateOnly(current.start_date, { fieldName: 'START_DATE', allowNull: false });
+      const endDate = payload.end_date !== undefined
+        ? parseIsoDateOnly(payload.end_date, { fieldName: 'END_DATE', allowNull: true })
+        : parseIsoDateOnly(current.end_date, { fieldName: 'END_DATE', allowNull: true });
       const status = payload.status !== undefined ? payload.status : current.status;
       const academicYearId =
         hasAcademicYearId && payload.academic_year_id !== undefined
@@ -693,6 +744,9 @@ const updateTransportAllocation = async (req, res) => {
       }
       if (!['student', 'staff'].includes(userType)) {
         throw new Error('INVALID_USER_TYPE');
+      }
+      if (endDate && endDate < startDate) {
+        throw new Error('INVALID_DATE_RANGE');
       }
 
       const requestedFeeId =
@@ -795,6 +849,9 @@ const updateTransportAllocation = async (req, res) => {
     if (err.message === 'INVALID_STAFF_USER') return errorResponse(res, 400, 'Selected user is not a valid staff member');
     if (err.message === 'INVALID_USER_TYPE') return errorResponse(res, 400, 'user_type must be student or staff');
     if (err.message === 'INVALID_NUMERIC_INPUT') return errorResponse(res, 400, 'student_id/staff_id, route_id, pickup_point_id and vehicle_id must be valid numbers');
+    if (err.message === 'START_DATE_INVALID') return errorResponse(res, 400, 'start_date must be in YYYY-MM-DD format');
+    if (err.message === 'END_DATE_INVALID') return errorResponse(res, 400, 'end_date must be in YYYY-MM-DD format');
+    if (err.message === 'INVALID_DATE_RANGE') return errorResponse(res, 400, 'end_date cannot be before start_date');
     if (err.message === 'PICKUP_NOT_IN_ROUTE') return errorResponse(res, 400, 'Selected pickup point is not mapped to selected route');
     if (err.message === 'FEE_PLAN_REQUIRED') return errorResponse(res, 400, 'assigned_fee_id is required unless is_free is true');
     if (err.message === 'FEE_PLAN_NOT_FOUND') return errorResponse(res, 400, 'Selected fee plan does not exist');

@@ -116,7 +116,7 @@ function buildDependencyGraph(tables, constraintsByTable) {
     }
   }
 
-  // Kahn's algorithm for topological sort
+  // Kahn's algorithm for topological sortschool_db
   const inDegree = {};
   tables.forEach((t) => (inDegree[t] = 0));
   for (const [t, set] of Object.entries(deps)) {

@@ -19,7 +19,7 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const sourceDbName = process.env.DB_NAME || 'school_db';
+const sourceDbName = process.env.DB_NAME || 'school_school';
 const tenants = ['millat_db', 'iqra_db'];
 
 const adminPool = new Pool({

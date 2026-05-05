@@ -179,11 +179,13 @@ const STAFF_SELECT_BASE = `
       SELECT
         s.*,
         s.user_id,
-        bg.blood_group AS blood_group_label,
+        bg.blood_group_name AS blood_group_label,
         d.department_name AS department_name,
         d.department_name AS department,
         des.designation_name AS designation_name,
         des.designation_name AS designation,
+        u.first_name AS user_first_name,
+        u.last_name AS user_last_name,
         NULL::character varying(50) AS driver_license_number,
         NULL::date AS driver_license_expiry,
         u.role_id AS user_role_id,
@@ -201,11 +203,13 @@ const STAFF_SELECT_WITH_DRIVERS = `
       SELECT
         s.*,
         s.user_id,
-        bg.blood_group AS blood_group_label,
+        bg.blood_group_name AS blood_group_label,
         d.department_name AS department_name,
         d.department_name AS department,
         des.designation_name AS designation_name,
         des.designation_name AS designation,
+        u.first_name AS user_first_name,
+        u.last_name AS user_last_name,
         dr.license_number AS driver_license_number,
         dr.license_expiry AS driver_license_expiry,
         u.role_id AS user_role_id,
@@ -224,11 +228,13 @@ const STAFF_SELECT_WITH_DRIVERS_NO_LICENSE_EXPIRY = `
       SELECT
         s.*,
         s.user_id,
-        bg.blood_group AS blood_group_label,
+        bg.blood_group_name AS blood_group_label,
         d.department_name AS department_name,
         d.department_name AS department,
         des.designation_name AS designation_name,
         des.designation_name AS designation,
+        u.first_name AS user_first_name,
+        u.last_name AS user_last_name,
         dr.license_number AS driver_license_number,
         NULL::date AS driver_license_expiry,
         u.role_id AS user_role_id,
@@ -342,8 +348,8 @@ const getAllStaff = async (req, res) => {
     const staffSelect = await getStaffSelectSql();
     const result = await query(`
       ${staffSelect}
-      WHERE s.status = \'Active\'
-      ORDER BY s.first_name ASC, s.last_name ASC
+      WHERE s.is_active = true
+      ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);
 
     return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });

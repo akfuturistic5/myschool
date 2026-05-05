@@ -89,7 +89,11 @@ const TransportModal = ({
 }: TransportModalProps) => {
   // State for Add/Edit Route
   const [routeName, setRouteName] = useState("");
+  const [routeCode, setRouteCode] = useState("");
+  const [startPoint, setStartPoint] = useState("");
+  const [endPoint, setEndPoint] = useState("");
   const [distanceKm, setDistanceKm] = useState<string | number>("");
+  const [estimatedTime, setEstimatedTime] = useState<string | number>("");
   const [routeStatus, setRouteStatus] = useState(true);
   const [stops, setStops] = useState<any[]>([{ pickup_point_id: "", pickup_time: "", drop_time: "", order_index: 0 }]);
 
@@ -108,17 +112,20 @@ const TransportModal = ({
   // Fetch initial data for dropdowns
   useEffect(() => {
     const fetchSelectData = async () => {
-      try {
-        const [pickups, vehicles, routes] = await Promise.all([
-          apiService.getTransportPickupPoints({ status: 'active', limit: 1000 }),
-          apiService.getTransportVehicles({ status: 'active', limit: 1000 }),
-          apiService.getTransportRoutes({ limit: 1000 })
-        ]);
-        if (pickups.status === "SUCCESS") setPickupsData(pickups.data);
-        if (vehicles.status === "SUCCESS") setVehiclesData(vehicles.data);
-        if (routes.status === "SUCCESS") setRoutesData(routes.data);
-      } catch (err) {
-        console.error("Failed to fetch select data:", err);
+      const [pickupsResult, vehiclesResult, routesResult] = await Promise.allSettled([
+        apiService.getTransportPickupPoints({ status: 'active', limit: 1000 }),
+        apiService.getTransportVehicles({ status: 'active', limit: 1000 }),
+        apiService.getTransportRoutes({ limit: 1000 })
+      ]);
+
+      if (pickupsResult.status === "fulfilled" && pickupsResult.value.status === "SUCCESS") {
+        setPickupsData(pickupsResult.value.data);
+      }
+      if (vehiclesResult.status === "fulfilled" && vehiclesResult.value.status === "SUCCESS") {
+        setVehiclesData(vehiclesResult.value.data);
+      }
+      if (routesResult.status === "fulfilled" && routesResult.value.status === "SUCCESS") {
+        setRoutesData(routesResult.value.data);
       }
     };
     fetchSelectData();
@@ -129,7 +136,11 @@ const TransportModal = ({
     if (selectedRoute) {
       const route = selectedRoute.originalData || selectedRoute;
       setRouteName(route.route_name || "");
-      setDistanceKm(route.distance_km || "");
+      setRouteCode(route.route_code || "");
+      setStartPoint(route.start_point || "");
+      setEndPoint(route.end_point || "");
+      setDistanceKm(route.distance_km ?? route.total_distance ?? "");
+      setEstimatedTime(route.estimated_time ?? "");
       setRouteStatus(route.is_active === 1 || route.is_active === true || route.status === "Active");
 
       if (route.stops && Array.isArray(route.stops)) {
@@ -145,7 +156,11 @@ const TransportModal = ({
       }
     } else {
       setRouteName("");
+      setRouteCode("");
+      setStartPoint("");
+      setEndPoint("");
       setDistanceKm("");
+      setEstimatedTime("");
       setRouteStatus(true);
       setStops([{ pickup_point_id: "", pickup_time: "", drop_time: "", order_index: 0 }]);
     }
@@ -210,8 +225,13 @@ const TransportModal = ({
     setLoading(true);
     try {
       const payload = {
-        route_name: routeName,
-        distance_km: distanceKm,
+        route_name: routeName.trim(),
+        route_code: routeCode.trim() || null,
+        start_point: startPoint.trim() || null,
+        end_point: endPoint.trim() || null,
+        distance_km: distanceKm === '' ? null : Number(distanceKm),
+        total_distance: distanceKm === '' ? null : Number(distanceKm),
+        estimated_time: estimatedTime === '' ? null : Number(estimatedTime),
         is_active: !!routeStatus,
         stops: stops.filter(s => s.pickup_point_id) // Only send stops with a selected point
       };
@@ -321,15 +341,36 @@ const TransportModal = ({
 
   // State for Pickup Points
   const [pointName, setPointName] = useState("");
+  const [pointRouteId, setPointRouteId] = useState("");
+  const [pointAddress, setPointAddress] = useState("");
+  const [pointLandmark, setPointLandmark] = useState("");
+  const [pointPickupTime, setPointPickupTime] = useState("");
+  const [pointDropTime, setPointDropTime] = useState("");
+  const [pointDistanceFromSchool, setPointDistanceFromSchool] = useState<string | number>("");
+  const [pointSequenceOrder, setPointSequenceOrder] = useState<string | number>("");
   const [pointStatus, setPointStatus] = useState(true);
 
   useEffect(() => {
     if (selectedPickupPoint) {
       const p = selectedPickupPoint.originalData || selectedPickupPoint;
       setPointName(p.point_name || "");
+      setPointRouteId(p.route_id != null ? String(p.route_id) : "");
+      setPointAddress(p.address || "");
+      setPointLandmark(p.landmark || "");
+      setPointPickupTime(p.pickup_time ? String(p.pickup_time).slice(0, 5) : "");
+      setPointDropTime(p.drop_time ? String(p.drop_time).slice(0, 5) : "");
+      setPointDistanceFromSchool(p.distance_from_school ?? "");
+      setPointSequenceOrder(p.sequence_order ?? "");
       setPointStatus(p.is_active === 1 || p.is_active === true || p.status === "Active");
     } else {
       setPointName("");
+      setPointRouteId("");
+      setPointAddress("");
+      setPointLandmark("");
+      setPointPickupTime("");
+      setPointDropTime("");
+      setPointDistanceFromSchool("");
+      setPointSequenceOrder("");
       setPointStatus(true);
     }
   }, [selectedPickupPoint]);
@@ -360,6 +401,13 @@ const TransportModal = ({
 
       const payload = {
         point_name: pointName.trim(),
+        route_id: pointRouteId ? Number(pointRouteId) : null,
+        address: pointAddress.trim() || null,
+        landmark: pointLandmark.trim() || null,
+        pickup_time: pointPickupTime || null,
+        drop_time: pointDropTime || null,
+        distance_from_school: pointDistanceFromSchool === '' ? null : Number(pointDistanceFromSchool),
+        sequence_order: pointSequenceOrder === '' ? null : Number(pointSequenceOrder),
         is_active: !!pointStatus
       };
 
@@ -510,32 +558,53 @@ const TransportModal = ({
 
   // State for Vehicles
   const [vehicleNo, setVehicleNo] = useState("");
+  const [vehicleType, setVehicleType] = useState("");
+  const [brand, setBrand] = useState("");
   const [vehicleModel, setVehicleModel] = useState("");
   const [chassisNo, setChassisNo] = useState("");
   const [registrationNo, setRegistrationNo] = useState("");
   const [seatCapacity, setSeatCapacity] = useState("");
   const [gpsTrackingId, setGpsTrackingId] = useState("");
+  const [insuranceExpiry, setInsuranceExpiry] = useState("");
+  const [fitnessExpiry, setFitnessExpiry] = useState("");
+  const [permitExpiry, setPermitExpiry] = useState("");
   const [madeOfYear, setMadeOfYear] = useState<any>(null);
   const [vehicleStatus, setVehicleStatusState] = useState(true);
+
+  const formatDateForPayload = (value: string) => {
+    if (!value) return null;
+    const parsed = dayjs(value);
+    return parsed.isValid() ? parsed.format('YYYY-MM-DD') : null;
+  };
 
   useEffect(() => {
     if (selectedVehicle) {
       const v = selectedVehicle.originalData || selectedVehicle;
       setVehicleNo(v.vehicle_number || "");
+      setVehicleType(v.vehicle_type || "");
+      setBrand(v.brand || "");
       setVehicleModel(v.vehicle_model || v.model || "");
       setChassisNo(v.chassis_number || "");
       setRegistrationNo(v.registration_number || "");
       setSeatCapacity(v.seat_capacity || v.seating_capacity || "");
       setGpsTrackingId(v.gps_device_id || v.gps_tracking_id || "");
+      setInsuranceExpiry(v.insurance_expiry ? dayjs(v.insurance_expiry).format('YYYY-MM-DD') : "");
+      setFitnessExpiry(v.fitness_expiry ? dayjs(v.fitness_expiry).format('YYYY-MM-DD') : "");
+      setPermitExpiry(v.permit_expiry ? dayjs(v.permit_expiry).format('YYYY-MM-DD') : "");
       setMadeOfYear(v.made_of_year ? dayjs(`01-01-${v.made_of_year}`) : null);
       setVehicleStatusState(v.is_active === 1 || v.is_active === true || v.status === "Active");
     } else {
       setVehicleNo("");
+      setVehicleType("");
+      setBrand("");
       setVehicleModel("");
       setChassisNo("");
       setRegistrationNo("");
       setSeatCapacity("");
       setGpsTrackingId("");
+      setInsuranceExpiry("");
+      setFitnessExpiry("");
+      setPermitExpiry("");
       setMadeOfYear(null);
       setVehicleStatusState(true);
     }
@@ -547,11 +616,16 @@ const TransportModal = ({
     try {
       const payload = {
         vehicle_number: vehicleNo,
+        vehicle_type: vehicleType || null,
+        brand: brand || null,
         vehicle_model: vehicleModel,
         chassis_number: chassisNo,
         registration_number: registrationNo,
         seat_capacity: seatCapacity,
         gps_device_id: gpsTrackingId,
+        insurance_expiry: formatDateForPayload(insuranceExpiry),
+        fitness_expiry: formatDateForPayload(fitnessExpiry),
+        permit_expiry: formatDateForPayload(permitExpiry),
         made_of_year: madeOfYear ? madeOfYear.year() : null,
         is_active: !!vehicleStatus
       };
@@ -736,6 +810,45 @@ const TransportModal = ({
                         />
                       </div>
                       <div className="mb-3">
+                        <label className="form-label">Route Code</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. RT-001"
+                          value={routeCode}
+                          onChange={(e) => setRouteCode(e.target.value)}
+                          maxLength={20}
+                        />
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Start Point</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="Enter Start Point"
+                              value={startPoint}
+                              onChange={(e) => setStartPoint(e.target.value)}
+                              maxLength={200}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">End Point</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="Enter End Point"
+                              value={endPoint}
+                              onChange={(e) => setEndPoint(e.target.value)}
+                              maxLength={200}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mb-3">
                         <label className="form-label">Distance (KM)</label>
                         <input
                           type="number"
@@ -744,6 +857,17 @@ const TransportModal = ({
                           placeholder="Enter Distance"
                           value={distanceKm}
                           onChange={(e) => setDistanceKm(e.target.value)}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Estimated Time (Minutes)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="form-control"
+                          placeholder="Enter Estimated Time"
+                          value={estimatedTime}
+                          onChange={(e) => setEstimatedTime(e.target.value)}
                         />
                       </div>
 
@@ -876,6 +1000,45 @@ const TransportModal = ({
                         />
                       </div>
                       <div className="mb-3">
+                        <label className="form-label">Route Code</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Enter Route Code"
+                          value={routeCode}
+                          onChange={(e) => setRouteCode(e.target.value)}
+                          maxLength={20}
+                        />
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Start Point</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="Enter Start Point"
+                              value={startPoint}
+                              onChange={(e) => setStartPoint(e.target.value)}
+                              maxLength={200}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">End Point</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="Enter End Point"
+                              value={endPoint}
+                              onChange={(e) => setEndPoint(e.target.value)}
+                              maxLength={200}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mb-3">
                         <div className="d-flex align-items-center justify-content-between mb-2">
                           <label className="form-label mb-0">Route Stops</label>
                           <button type="button" className="btn btn-primary btn-sm" onClick={handleAddStop}>
@@ -940,6 +1103,17 @@ const TransportModal = ({
                           placeholder="Enter Distance"
                           value={distanceKm}
                           onChange={(e) => setDistanceKm(e.target.value)}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Estimated Time (Minutes)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="form-control"
+                          placeholder="Enter Estimated Time"
+                          value={estimatedTime}
+                          onChange={(e) => setEstimatedTime(e.target.value)}
                         />
                       </div>
                       <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
@@ -1210,6 +1384,15 @@ const TransportModal = ({
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
+                        <label className="form-label">Route</label>
+                        <CommonSelect
+                          className="select"
+                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({ value: String(r.id), label: r.route_name }))]}
+                          value={pointRouteId}
+                          onChange={(v: string | null) => setPointRouteId(v || "")}
+                        />
+                      </div>
+                      <div className="mb-3">
                         <label className="form-label">Pickup Point Name</label>
                         <input
                           type="text"
@@ -1219,6 +1402,77 @@ const TransportModal = ({
                           onChange={(e) => setPointName(e.target.value)}
                           required
                         />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Address</label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          placeholder="Enter full address"
+                          value={pointAddress}
+                          onChange={(e) => setPointAddress(e.target.value)}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Landmark</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Near ..."
+                          value={pointLandmark}
+                          onChange={(e) => setPointLandmark(e.target.value)}
+                        />
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Pickup Time</label>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={pointPickupTime}
+                              onChange={(e) => setPointPickupTime(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Drop Time</label>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={pointDropTime}
+                              onChange={(e) => setPointDropTime(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Distance from School (KM)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="form-control"
+                              value={pointDistanceFromSchool}
+                              onChange={(e) => setPointDistanceFromSchool(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Sequence Order</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className="form-control"
+                              value={pointSequenceOrder}
+                              onChange={(e) => setPointSequenceOrder(e.target.value)}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
@@ -1280,6 +1534,15 @@ const TransportModal = ({
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
+                        <label className="form-label">Route</label>
+                        <CommonSelect
+                          className="select"
+                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({ value: String(r.id), label: r.route_name }))]}
+                          value={pointRouteId}
+                          onChange={(v: string | null) => setPointRouteId(v || "")}
+                        />
+                      </div>
+                      <div className="mb-3">
                         <label className="form-label">Pickup Point Name</label>
                         <input
                           type="text"
@@ -1289,6 +1552,77 @@ const TransportModal = ({
                           onChange={(e) => setPointName(e.target.value)}
                           required
                         />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Address</label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          placeholder="Enter full address"
+                          value={pointAddress}
+                          onChange={(e) => setPointAddress(e.target.value)}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Landmark</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Near ..."
+                          value={pointLandmark}
+                          onChange={(e) => setPointLandmark(e.target.value)}
+                        />
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Pickup Time</label>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={pointPickupTime}
+                              onChange={(e) => setPointPickupTime(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Drop Time</label>
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={pointDropTime}
+                              onChange={(e) => setPointDropTime(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="row">
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Distance from School (KM)</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              className="form-control"
+                              value={pointDistanceFromSchool}
+                              onChange={(e) => setPointDistanceFromSchool(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="col-md-6">
+                          <div className="mb-3">
+                            <label className="form-label">Sequence Order</label>
+                            <input
+                              type="number"
+                              min="0"
+                              className="form-control"
+                              value={pointSequenceOrder}
+                              onChange={(e) => setPointSequenceOrder(e.target.value)}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
@@ -1615,6 +1949,34 @@ const TransportModal = ({
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
+                        <label className="form-label">Vehicle Type</label>
+                        <CommonSelect
+                          className="select"
+                          options={[
+                            { value: "", label: "Select Vehicle Type" },
+                            { value: "Bus", label: "Bus" },
+                            { value: "Van", label: "Van" },
+                            { value: "Car", label: "Car" }
+                          ]}
+                          value={vehicleType}
+                          onChange={(v: string | null) => setVehicleType(v || "")}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Brand</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Tata, Ashok Leyland"
+                          value={brand}
+                          onChange={(e) => setBrand(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
                         <label className="form-label">Made of Year</label>
                         <div className="date-pic">
                           <DatePicker
@@ -1681,6 +2043,39 @@ const TransportModal = ({
                           placeholder="Enter GPS Tracking ID"
                           value={gpsTrackingId}
                           onChange={(e) => setGpsTrackingId(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Insurance Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={insuranceExpiry}
+                          onChange={(e) => setInsuranceExpiry(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Fitness Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={fitnessExpiry}
+                          onChange={(e) => setFitnessExpiry(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Permit Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={permitExpiry}
+                          onChange={(e) => setPermitExpiry(e.target.value)}
                         />
                       </div>
                     </div>
@@ -1770,6 +2165,34 @@ const TransportModal = ({
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
+                        <label className="form-label">Vehicle Type</label>
+                        <CommonSelect
+                          className="select"
+                          options={[
+                            { value: "", label: "Select Vehicle Type" },
+                            { value: "Bus", label: "Bus" },
+                            { value: "Van", label: "Van" },
+                            { value: "Car", label: "Car" }
+                          ]}
+                          value={vehicleType}
+                          onChange={(v: string | null) => setVehicleType(v || "")}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Brand</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Tata, Ashok Leyland"
+                          value={brand}
+                          onChange={(e) => setBrand(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
                         <label className="form-label">Made of Year</label>
                         <div className="date-pic">
                           <DatePicker
@@ -1832,6 +2255,39 @@ const TransportModal = ({
                           className="form-control"
                           value={gpsTrackingId}
                           onChange={(e) => setGpsTrackingId(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Insurance Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={insuranceExpiry}
+                          onChange={(e) => setInsuranceExpiry(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Fitness Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={fitnessExpiry}
+                          onChange={(e) => setFitnessExpiry(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-4">
+                      <div className="mb-3">
+                        <label className="form-label">Permit Expiry</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={permitExpiry}
+                          onChange={(e) => setPermitExpiry(e.target.value)}
                         />
                       </div>
                     </div>

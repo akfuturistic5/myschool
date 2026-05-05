@@ -808,12 +808,42 @@ class ApiService {
   }
 
   // Blood Groups
-  async getBloodGroups() {
-    return this.makeRequest('/blood-groups');
+  async getBloodGroups(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/blood-groups${qs ? `?${qs}` : ''}`);
   }
 
   async getBloodGroupById(id) {
     return this.makeRequest(`/blood-groups/${id}`);
+  }
+
+  async createBloodGroup(payload) {
+    return this.makeRequest('/blood-groups', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateBloodGroup(id, payload) {
+    return this.makeRequest(`/blood-groups/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleBloodGroupStatus(id) {
+    return this.makeRequest(`/blood-groups/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteBloodGroup(id) {
+    return this.makeRequest(`/blood-groups/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Religions
@@ -856,30 +886,120 @@ class ApiService {
   }
 
   // Casts
-  async getCasts() {
-    return this.makeRequest('/casts');
+  async getCasts(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/casts${qs ? `?${qs}` : ''}`);
   }
 
   async getCastById(id) {
     return this.makeRequest(`/casts/${id}`);
   }
 
+  async createCast(payload) {
+    return this.makeRequest('/casts', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateCast(id, payload) {
+    return this.makeRequest(`/casts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleCastStatus(id) {
+    return this.makeRequest(`/casts/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteCast(id) {
+    return this.makeRequest(`/casts/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Mother Tongues
-  async getMotherTongues() {
-    return this.makeRequest('/mother-tongues');
+  async getMotherTongues(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/mother-tongues${qs ? `?${qs}` : ''}`);
   }
 
   async getMotherTongueById(id) {
     return this.makeRequest(`/mother-tongues/${id}`);
   }
 
+  async createMotherTongue(payload) {
+    return this.makeRequest('/mother-tongues', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateMotherTongue(id, payload) {
+    return this.makeRequest(`/mother-tongues/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleMotherTongueStatus(id) {
+    return this.makeRequest(`/mother-tongues/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteMotherTongue(id) {
+    return this.makeRequest(`/mother-tongues/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Houses
-  async getHouses() {
-    return this.makeRequest('/houses');
+  async getHouses(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/houses${qs ? `?${qs}` : ''}`);
   }
 
   async getHouseById(id) {
     return this.makeRequest(`/houses/${id}`);
+  }
+
+  async createHouse(payload) {
+    return this.makeRequest('/houses', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateHouse(id, payload) {
+    return this.makeRequest(`/houses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleHouseStatus(id) {
+    return this.makeRequest(`/houses/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteHouse(id) {
+    return this.makeRequest(`/houses/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Parents
@@ -1192,6 +1312,13 @@ class ApiService {
   async updateDesignation(id, designationData) {
     return this.makeRequest(`/designations/${id}`, {
       method: 'PUT',
+      body: JSON.stringify(designationData),
+    });
+  }
+
+  async createDesignation(designationData) {
+    return this.makeRequest('/designations', {
+      method: 'POST',
       body: JSON.stringify(designationData),
     });
   }

@@ -15,15 +15,26 @@ export const useDepartments = () => {
 
       if (response.status === 'SUCCESS') {
         const transformedData = response.data.map((dept, index) => {
-          const id =
-            dept.department_code ||
-            (dept.id != null ? `D${dept.id}` : `D${index + 1}`);
+          const numericId =
+            dept.id != null ? String(dept.id) : String(index + 1);
 
           const departmentName =
             dept.department_name ||
             dept.department ||
             dept.name ||
             'N/A';
+
+          const codeRaw = dept.department_code;
+          const departmentCode =
+            codeRaw != null && String(codeRaw).trim() !== ''
+              ? String(codeRaw).trim()
+              : '—';
+
+          const hodRaw = dept.head_of_department_name;
+          const headOfDepartment =
+            hodRaw != null && String(hodRaw).trim() !== ''
+              ? String(hodRaw).trim()
+              : '—';
 
           const status =
             dept.is_active === true
@@ -36,8 +47,10 @@ export const useDepartments = () => {
 
           return {
             key: dept.id != null ? String(dept.id) : String(index + 1),
-            id,
+            id: numericId,
             department: departmentName,
+            departmentCode,
+            headOfDepartment,
             status,
             originalData: dept, // Store original data for edit modal
           };

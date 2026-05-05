@@ -1,36 +1,49 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
-function getDriverDisplayName(driverRow) {
-  if (!driverRow) return null;
-  return driverRow.driver_name ?? driverRow.name ?? null;
+const VEHICLE_TYPE_VALUES = ['Bus', 'Van', 'Car'];
+
+function normalizeVehicleType(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null || String(raw).trim() === '') return null;
+  const normalized = String(raw).trim();
+  const match = VEHICLE_TYPE_VALUES.find((value) => value.toLowerCase() === normalized.toLowerCase());
+  return match || null;
 }
 
-function mapVehicleRow(row, driverMap = {}) {
-  const driver = driverMap[row.driver_id];
+function parseDateOnly(raw) {
+  if (raw === undefined) return undefined;
+  if (raw === null || String(raw).trim() === '') return null;
+  const value = String(raw).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  return value;
+}
+
+function mapVehicleRow(row) {
   return {
     id: row.id,
     vehicle_code: row.vehicle_code ?? `VEH-${String(row.id).padStart(4, '0')}`,
     vehicle_number: row.vehicle_number ?? '',
-    vehicle_model: row.vehicle_model ?? row.model ?? '',
+    vehicle_type: row.vehicle_type ?? null,
+    brand: row.brand ?? null,
+    vehicle_model: row.model ?? '',
     made_of_year: row.made_of_year ?? '',
     registration_number: row.registration_number ?? '',
     chassis_number: row.chassis_number ?? '',
-    seat_capacity: row.seat_capacity ?? row.seating_capacity ?? '',
+    seat_capacity: row.seating_capacity ?? '',
     gps_device_id: row.gps_device_id ?? '',
-    driver_id: row.driver_id ?? null,
-    route_id: row.route_id ?? null,
+    insurance_expiry: row.insurance_expiry ?? null,
+    fitness_expiry: row.fitness_expiry ?? null,
+    permit_expiry: row.permit_expiry ?? null,
     is_active: row.is_active !== false && row.is_active !== 'f',
     photo_url: row.photo_url || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    // Joined details for listing/view
-    driver_name: driver ? getDriverDisplayName(driver) : (row.driver_name || 'N/A'),
-    driver_phone: driver ? (driver.phone ?? 'N/A') : (row.driver_phone || 'N/A'),
+    driver_name: row.driver_name || 'N/A',
+    driver_phone: row.driver_phone || 'N/A',
     route_name: row.route_name || 'N/A',
-    point_name: row.point_name || 'N/A'
+    point_name: row.point_name || 'N/A',
   };
 }
 
@@ -38,7 +51,8 @@ const getAllVehicles = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
-    const scopedDriverId = await getScopedDriverId(req);
+    const hasTransportAssignments = await hasTable('transport_assignments');
+    const hasVehicleRouteAssignments = await hasTable('vehicle_route_assignments');
     const {
       page = 1,
       limit = 10,
@@ -287,6 +301,7 @@ const updateVehicle = async (req, res) => {
       return errorResponse(res, 400, 'No fields to update');
     }
 
+    updates.push(`updated_at = NOW()`);
     values.push(numericId);
     const result = await query(`
       UPDATE transport_vehicles
