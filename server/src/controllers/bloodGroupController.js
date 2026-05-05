@@ -27,7 +27,7 @@ const getAllBloodGroups = async (req, res) => {
       `
       SELECT
         bg.id,
-        bg.blood_group_name as blood_group,
+        bg.blood_group_name AS blood_group,
         bg.description,
         bg.is_active,
         bg.created_at,
@@ -56,7 +56,7 @@ const getBloodGroupById = async (req, res) => {
       `
       SELECT
         bg.id,
-        bg.blood_group_name as blood_group,
+        bg.blood_group_name AS blood_group,
         bg.description,
         bg.is_active,
         bg.created_at,
