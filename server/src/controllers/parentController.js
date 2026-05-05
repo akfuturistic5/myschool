@@ -94,7 +94,7 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       s.id AS student_id,
       ${STUDENT_CONTACT_LATERAL_SELECT},
       s.created_at,
-      s.modified_at AS updated_at,
+      s.updated_at AS updated_at,
       s.first_name AS student_first_name,
       s.last_name AS student_last_name,
       NULLIF(TRIM(s.photo_url), '') AS student_image_url,
@@ -106,7 +106,7 @@ async function fetchParentRowByStudentId(studentId, client = null) {
     LEFT JOIN classes c ON s.class_id = c.id
     LEFT JOIN sections sec ON s.section_id = sec.id
     ${STUDENT_CONTACT_LATERAL_JOINS}
-    WHERE s.id = $1 AND s.is_active = true
+    WHERE s.id = $1 AND s.status = \'Active\'
     LIMIT 1`;
   const r = await q(sql, [studentId]);
   const baseRow = r.rows[0] || null;
@@ -136,7 +136,7 @@ const createParent = async (req, res) => {
         err.statusCode = 503;
         throw err;
       }
-      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND is_active = true LIMIT 1', [student_id]);
+      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND status = \'Active\' LIMIT 1', [student_id]);
       if (chk.rows.length === 0) {
         const err = new Error('Student not found');
         err.statusCode = 400;
@@ -227,7 +227,7 @@ const updateParent = async (req, res) => {
         err.statusCode = 503;
         throw err;
       }
-      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND is_active = true LIMIT 1', [studentId]);
+      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND s.status = \'Active\' LIMIT 1', [studentId]);
       if (chk.rows.length === 0) {
         const err = new Error('Student not found');
         err.statusCode = 404;
@@ -287,7 +287,7 @@ const updateParent = async (req, res) => {
         const { first_name: fFirst, last_name: fLast } = parseFullName(father_name || "");
         await client.query(
           `UPDATE users SET 
-            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, updated_at = NOW()
            WHERE id = $6`,
           [fFirst || null, fLast || null, father_email || null, father_phone || null, father_occupation || null, fatherUserId]
         );
@@ -298,7 +298,7 @@ const updateParent = async (req, res) => {
         const { first_name: mFirst, last_name: mLast } = parseFullName(mother_name || "");
         await client.query(
           `UPDATE users SET 
-            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, modified_at = NOW()
+            first_name = $1, last_name = $2, email = $3, phone = $4, occupation = $5, updated_at = NOW()
            WHERE id = $6`,
           [mFirst || null, mLast || null, mother_email || null, mother_phone || null, mother_occupation || null, motherUserId]
         );
@@ -306,13 +306,13 @@ const updateParent = async (req, res) => {
 
       // Handle avatar updates (allow clearing)
       if (fatherUserId && father_image_url !== undefined) {
-        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+        await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
           father_image_url || "",
           fatherUserId,
         ]);
       }
       if (motherUserId && mother_image_url !== undefined) {
-        await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+        await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
           mother_image_url || "",
           motherUserId,
         ]);
@@ -380,7 +380,7 @@ const parentListSelectSql = `
         s.id AS student_id,
         ${STUDENT_CONTACT_LATERAL_SELECT},
         s.created_at,
-        s.modified_at AS updated_at,
+        s.updated_at AS updated_at,
         s.first_name AS student_first_name,
         s.last_name AS student_last_name,
         NULLIF(TRIM(s.photo_url), '') AS student_image_url,
@@ -390,7 +390,7 @@ const parentListSelectSql = `
         sec.section_name,
         (SELECT g.user_id FROM guardians g
           LEFT JOIN users u ON u.id = g.user_id
-          WHERE g.student_id = s.id AND g.is_active = true
+          WHERE g.student_id = s.id AND g.status = \'Active\'
             AND (
               LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
               OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
@@ -432,7 +432,7 @@ const getAllParents = async (req, res) => {
         `SELECT t.id, t.staff_id
          FROM teachers t
          INNER JOIN staff st ON t.staff_id = st.id
-         WHERE st.user_id = $1 AND st.is_active = true`,
+         WHERE st.user_id = $1 AND st.status = 'Active'`,
         [ctx.userId]
       );
 
@@ -459,8 +459,8 @@ const getAllParents = async (req, res) => {
       const result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
-        WHERE s.is_active = true
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)
+        WHERE s.status = \'Active\'
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')
           AND (
             EXISTS (
               SELECT 1 FROM class_schedules cs
@@ -515,15 +515,15 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
+        WHERE s.status = \'Active\'
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
         countParams
       );
       result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
-        WHERE s.is_active = true
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
+        WHERE s.status = \'Active\'
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
@@ -533,8 +533,8 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
-        WHERE s.is_active = true
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}`,
+        WHERE s.status = \'Active\'
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
         countParams
       );
       result = await query(
@@ -543,7 +543,7 @@ const getAllParents = async (req, res) => {
           s.id AS student_id,
           ${STUDENT_CONTACT_LATERAL_SELECT},
           s.created_at,
-          s.modified_at AS updated_at,
+          s.updated_at AS updated_at,
           s.first_name AS student_first_name,
           s.last_name AS student_last_name,
           NULLIF(TRIM(s.photo_url), '') AS student_image_url,
@@ -553,7 +553,7 @@ const getAllParents = async (req, res) => {
           NULL::text AS section_name,
           (SELECT g.user_id FROM guardians g
             LEFT JOIN users u ON u.id = g.user_id
-            WHERE g.student_id = s.id AND g.is_active = true
+            WHERE g.student_id = s.id AND g.status = \'Active\'
               AND (
                 LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
                 OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
@@ -570,8 +570,8 @@ const getAllParents = async (req, res) => {
             LIMIT 1) AS father_user_id
         FROM students s
         ${STUDENT_CONTACT_LATERAL_JOINS}
-        WHERE s.is_active = true
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.is_active = true)${yearWhere}
+        WHERE s.status = \'Active\'
+          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
@@ -778,7 +778,7 @@ const createParentWithChild = async (req, res) => {
           err.statusCode = 400;
           throw err;
         }
-        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND is_active = true LIMIT 1', [sid]);
+        const chk = await client.query('SELECT id, first_name, last_name FROM students WHERE id = $1 AND status = \'Active\' LIMIT 1', [sid]);
         if (chk.rows.length === 0) {
           const err = new Error('Student not found');
           err.statusCode = 400;
@@ -823,7 +823,7 @@ const createParentWithChild = async (req, res) => {
         if (mother_image_url && motherLinked.mother_person_id) {
           const mAvatarPath = normalizeTenantProfilePath(schoolId, mother_image_url);
           if (mAvatarPath) {
-            await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+            await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
               mAvatarPath,
               motherLinked.mother_person_id,
             ]);

@@ -16,95 +16,64 @@ function mapPickupRow(row) {
 const getAllPickupPoints = async (req, res) => {
   try {
     const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
-    const hasRouteStops = await hasTable('route_stops');
-    const scopedDriverId = await getScopedDriverId(req);
-    if (scopedDriverId != null) {
-      const routeIds = await getScopedRouteIdsForDriver(scopedDriverId);
-      if (routeIds.length === 0) {
-        return success(res, 200, 'Pickup points fetched successfully', [], { total: 0, page: 1, limit: 0 });
-      }
-      const result = hasRouteStops
-        ? await query(
-            `SELECT DISTINCT pp.*
-             FROM pickup_points pp
-             JOIN route_stops rs ON rs.pickup_point_id = pp.id
-             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
-               AND rs.route_id = ANY($1::int[])
-             ORDER BY pp.point_name ASC`,
-            [routeIds]
-          )
-        : await query(
-            `SELECT DISTINCT pp.*
-             FROM pickup_points pp
-             WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}
-               AND pp.route_id = ANY($1::int[])
-             ORDER BY pp.point_name ASC`,
-            [routeIds]
-          );
-      const data = result.rows.map(mapPickupRow);
-      return success(res, 200, 'Pickup points fetched successfully', data, {
-        total: data.length,
-        page: 1,
-        limit: data.length,
-      });
-    }
-
+    
     const { 
       page = 1, 
       limit = 10, 
       search = '', 
-      status = 'all', 
+      route_id,
       sortField = 'point_name', 
       sortOrder = 'ASC' 
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const validSortFields = ['point_name', 'id', 'created_at', 'is_active'];
+    const validSortFields = ['point_name', 'id', 'created_at', 'sequence_order'];
     
     const actualSortField = validSortFields.includes(sortField) ? sortField : 'point_name';
     const actualSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
-    let baseSql = `
-      FROM pickup_points
-      WHERE ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
-    `;
-    
+    let whereClause = `WHERE ${hasDeletedAt ? 'pp.deleted_at IS NULL' : '1=1'}`;
     const params = [];
-    let sqlFilters = '';
 
     if (search) {
       params.push(`%${search}%`);
-      sqlFilters += ` AND point_name ILIKE $${params.length}`;
+      whereClause += ` AND pp.point_name ILIKE $${params.length}`;
     }
 
-    if (status !== 'all') {
-      params.push(status === 'active');
-      sqlFilters += ` AND is_active = $${params.length}`;
+    if (route_id && route_id !== 'all') {
+      params.push(Number(route_id));
+      whereClause += ` AND pp.route_id = $${params.length}`;
     }
 
-    const countSql = `SELECT COUNT(*) ${baseSql} ${sqlFilters}`;
-    const dataSql = `
-      SELECT *
-      ${baseSql} 
-      ${sqlFilters} 
-      ORDER BY ${actualSortField} ${actualSortOrder} 
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-    `;
+    if (req.query.status && req.query.status !== 'all') {
+      const isActive = req.query.status === 'active' || req.query.status === 'true' || req.query.status === true;
+      params.push(isActive);
+      whereClause += ` AND pp.is_active = $${params.length}`;
+    }
 
-    const queryParams = [...params, parseInt(limit), offset];
-
-    const [result, countResult] = await Promise.all([
-      query(dataSql, queryParams),
-      query(countSql, params)
-    ]);
-
-    const data = result.rows.map(mapPickupRow);
+    const countResult = await query(
+      `SELECT COUNT(*) FROM pickup_points pp ${whereClause}`,
+      params
+    );
     const totalCount = parseInt(countResult.rows[0].count);
+
+    const dataResult = await query(
+      `SELECT pp.*, r.route_name
+       FROM pickup_points pp
+       LEFT JOIN routes r ON pp.route_id = r.id
+       ${whereClause} 
+       ORDER BY pp.${actualSortField} ${actualSortOrder} 
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, parseInt(limit), offset]
+    );
+
+    const data = dataResult.rows.map(mapPickupRow);
 
     return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
       page: parseInt(page),
-      limit: parseInt(limit)
+      limit: parseInt(limit),
+      totalPages: Math.ceil(totalCount / parseInt(limit))
     });
   } catch (error) {
     console.error('Error fetching pickup points:', error);
@@ -162,29 +131,38 @@ const getPickupPointById = async (req, res) => {
 
 const createPickupPoint = async (req, res) => {
   try {
-    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { 
+      route_id,
       point_name, 
-      is_active 
+      address,
+      landmark,
+      pickup_time,
+      drop_time,
+      distance_from_school,
+      sequence_order
     } = req.body;
 
-    if (!point_name) {
-      return errorResponse(res, 400, 'Pickup point name is required');
-    }
-
-    // Check for duplicate name
-    const existing = await query(
-      `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
-      [point_name]
-    );
-    if (existing.rows.length > 0) {
-      return errorResponse(res, 400, 'A pickup point with this name already exists');
+    if (!route_id || !point_name || sequence_order === undefined) {
+      return errorResponse(res, 400, 'Route, point name and sequence order are required');
     }
 
     const result = await query(
-      `INSERT INTO pickup_points (point_name, is_active) VALUES ($1, $2)
+      `INSERT INTO pickup_points (
+        route_id, point_name, address, landmark, 
+        pickup_time, drop_time, distance_from_school, sequence_order, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [point_name, is_active !== false]
+      [
+        Number(route_id), 
+        String(point_name).trim(), 
+        address || null,
+        landmark || null,
+        pickup_time || null,
+        drop_time || null,
+        distance_from_school || 0,
+        Number(sequence_order),
+        req.body.is_active !== false
+      ]
     );
 
     return success(res, 201, 'Pickup point created successfully', mapPickupRow(result.rows[0]));
@@ -196,7 +174,6 @@ const createPickupPoint = async (req, res) => {
 
 const updatePickupPoint = async (req, res) => {
   try {
-    const hasDeletedAt = await hasColumn('pickup_points', 'deleted_at');
     const { id } = req.params;
     const numericId = parseInt(id);
 
@@ -205,35 +182,55 @@ const updatePickupPoint = async (req, res) => {
     }
 
     const { 
+      route_id,
       point_name, 
-      is_active 
+      address,
+      landmark,
+      pickup_time,
+      drop_time,
+      distance_from_school,
+      sequence_order
     } = req.body;
-
-    // Check for duplicate name if provided (excluding current ID)
-    if (point_name !== undefined) {
-      if (!point_name) {
-        return errorResponse(res, 400, 'Pickup point name cannot be empty');
-      }
-      const existing = await query(
-        `SELECT id FROM pickup_points WHERE point_name = $1 AND id != $2 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`,
-        [point_name, numericId]
-      );
-      if (existing.rows.length > 0) {
-        return errorResponse(res, 400, 'Another pickup point with this name already exists');
-      }
-    }
 
     const updates = [];
     const values = [];
     let i = 1;
 
+    if (route_id !== undefined) {
+      updates.push(`route_id = $${i++}`);
+      values.push(Number(route_id));
+    }
     if (point_name !== undefined) {
       updates.push(`point_name = $${i++}`);
-      values.push(point_name);
+      values.push(String(point_name).trim());
     }
-    if (is_active !== undefined) {
+    if (address !== undefined) {
+      updates.push(`address = $${i++}`);
+      values.push(address);
+    }
+    if (landmark !== undefined) {
+      updates.push(`landmark = $${i++}`);
+      values.push(landmark);
+    }
+    if (pickup_time !== undefined) {
+      updates.push(`pickup_time = $${i++}`);
+      values.push(pickup_time);
+    }
+    if (drop_time !== undefined) {
+      updates.push(`drop_time = $${i++}`);
+      values.push(drop_time);
+    }
+    if (distance_from_school !== undefined) {
+      updates.push(`distance_from_school = $${i++}`);
+      values.push(distance_from_school);
+    }
+    if (sequence_order !== undefined) {
+      updates.push(`sequence_order = $${i++}`);
+      values.push(Number(sequence_order));
+    }
+    if (req.body.is_active !== undefined) {
       updates.push(`is_active = $${i++}`);
-      values.push(is_active !== false);
+      values.push(req.body.is_active !== false);
     }
 
     if (updates.length === 0) {
@@ -244,7 +241,7 @@ const updatePickupPoint = async (req, res) => {
     const result = await query(`
       UPDATE pickup_points
       SET ${updates.join(', ')}
-      WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}
+      WHERE id = $${i} AND deleted_at IS NULL
       RETURNING *
     `, values);
 

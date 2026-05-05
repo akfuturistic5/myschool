@@ -26,7 +26,7 @@ function mapIncomeRow(row) {
     payment_method: row.payment_method,
     academic_year_id: row.academic_year_id,
     created_at: row.created_at,
-    modified_at: row.modified_at,
+    updated_at: row.updated_at,
   };
 }
 
@@ -144,7 +144,7 @@ const createIncome = async (req, res) => {
       const ins = await client.query(
         `INSERT INTO accounts_income (
            academic_year_id, income_name, description, source, income_date,
-           amount, invoice_no, payment_method, created_at, modified_at
+           amount, invoice_no, payment_method, created_at, updated_at
          ) VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING *`,
         [
@@ -162,7 +162,7 @@ const createIncome = async (req, res) => {
       await client.query(
         `INSERT INTO accounts_transactions (
            academic_year_id, description, transaction_date, amount, payment_method,
-           transaction_type, status, income_id, expense_id, created_at, modified_at
+           transaction_type, status, income_id, expense_id, created_at, updated_at
          ) VALUES ($1, $2, $3::date, $4, $5, 'Income', 'Completed', $6, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [income.academic_year_id, income.income_name, income.income_date, income.amount, income.payment_method, income.id]
       );
@@ -230,7 +230,7 @@ const updateIncome = async (req, res) => {
            invoice_no = $6,
            payment_method = $7,
            academic_year_id = $8,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE id = $9`,
         [income_name, description, source, income_date, amount, invoice_no, payment_method, academic_year_id, id]
       );
@@ -242,7 +242,7 @@ const updateIncome = async (req, res) => {
            amount = $3,
            payment_method = $4,
            academic_year_id = $5,
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
          WHERE income_id = $6`,
         [income_name, income_date, amount, payment_method, academic_year_id, id]
       );

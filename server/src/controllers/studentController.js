@@ -135,7 +135,7 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
       `UPDATE transport_allocations
        SET status = 'Inactive',
            end_date = COALESCE(end_date, CURRENT_DATE),
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $1
          AND LOWER(COALESCE(user_type, '')) = 'student'
          AND LOWER(COALESCE(status, '')) = 'active'
@@ -192,7 +192,7 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
            assigned_fee_amount = $5,
            is_free = $6,
            academic_year_id = COALESCE($7, academic_year_id),
-           modified_at = CURRENT_TIMESTAMP
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $8`,
       [
         routeId,
@@ -209,7 +209,7 @@ async function upsertStudentTransportAllocation(client, studentId, studentAcadem
   }
   await client.query(
     `INSERT INTO transport_allocations
-      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, modified_at)
+      (user_id, user_type, route_id, pickup_point_id, vehicle_id, assigned_fee_id, assigned_fee_amount, is_free, start_date, status, academic_year_id, created_at, updated_at)
      VALUES
       ($1, 'student', $2, $3, $4, $5, $6, $7, CURRENT_DATE, 'Active', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [
@@ -368,7 +368,7 @@ const createStudent = async (req, res) => {
       );
 
       const existingStudent = await client.query(
-        'SELECT id FROM students WHERE admission_number = $1 AND is_active = true',
+        'SELECT id FROM students WHERE admission_number = $1 AND status = \'Active\'',
         [admission_number]
       );
 
@@ -422,7 +422,7 @@ const createStudent = async (req, res) => {
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path, photo_url,
-            created_at, modified_at
+            created_at, updated_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, NOW(), NOW())
           RETURNING *
         `, [
@@ -467,7 +467,7 @@ const createStudent = async (req, res) => {
             known_allergies, medications, medical_condition, other_information,
             unique_student_ids, pen_number, aadhar_no, gr_number,
             medical_document_path, transfer_certificate_path, photo_url,
-            created_at, modified_at
+            created_at, updated_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW(), NOW())
           RETURNING *
         `, [
@@ -507,7 +507,7 @@ const createStudent = async (req, res) => {
             email: stuEmail || null
           });
           if (studentUserId) {
-            await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [studentUserId, studentRow.id]);
+            await client.query('UPDATE students SET user_id = $1, updated_at = NOW() WHERE id = $2', [studentUserId, studentRow.id]);
             studentRow.user_id = studentUserId;
           } else if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
             creationWarnings.push(buildEmailInUseWarning('email', 'Student'));
@@ -802,7 +802,7 @@ const updateStudent = async (req, res) => {
       );
 
       const existingStudent = await client.query(
-        'SELECT id FROM students WHERE admission_number = $1 AND id != $2 AND is_active = true',
+        'SELECT id FROM students WHERE admission_number = $1 AND id != $2 AND status = \'Active\'',
         [admission_number, id]
       );
 
@@ -1012,7 +1012,7 @@ const updateStudent = async (req, res) => {
             medical_document_path = $37,
             transfer_certificate_path = $38,
             photo_url = $39,
-            modified_at = NOW()
+            updated_at = NOW()
           WHERE id = $40
           RETURNING *
         `, [
@@ -1092,7 +1092,7 @@ const updateStudent = async (req, res) => {
                 gr_number = $34,
                 medical_document_path = $35,
                 transfer_certificate_path = $36,
-                modified_at = NOW()
+                updated_at = NOW()
               WHERE id = $37
               RETURNING *
             `, [
@@ -1159,7 +1159,7 @@ const updateStudent = async (req, res) => {
               gr_number = $36,
               medical_document_path = $37,
               transfer_certificate_path = $38,
-              modified_at = NOW()
+              updated_at = NOW()
             WHERE id = $39
             RETURNING *
           `, [
@@ -1210,7 +1210,7 @@ const updateStudent = async (req, res) => {
             email: stuEmailUp || null,
           });
           if (studentUserId) {
-            await client.query('UPDATE students SET user_id = $1, modified_at = NOW() WHERE id = $2', [
+            await client.query('UPDATE students SET user_id = $1, updated_at = NOW() WHERE id = $2', [
               studentUserId,
               studentRow.id,
             ]);
@@ -1253,7 +1253,7 @@ const updateStudent = async (req, res) => {
 
         if (father_image_url !== undefined && sync.fatherUserId) {
           const newFatherAvatar = (father_image_url || '').toString().trim() || '';
-          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
             newFatherAvatar,
             sync.fatherUserId,
           ]);
@@ -1263,7 +1263,7 @@ const updateStudent = async (req, res) => {
         }
         if (mother_image_url !== undefined && sync.motherUserId) {
           const newMotherAvatar = (mother_image_url || '').toString().trim() || '';
-          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
             newMotherAvatar,
             sync.motherUserId,
           ]);
@@ -1273,7 +1273,7 @@ const updateStudent = async (req, res) => {
         }
         if (guardian_image_url !== undefined && sync.guardianUserId) {
           const newGuardianAvatar = (guardian_image_url || '').toString().trim() || '';
-          await client.query(`UPDATE users SET avatar = $1, modified_at = NOW() WHERE id = $2`, [
+          await client.query(`UPDATE users SET avatar = $1, updated_at = NOW() WHERE id = $2`, [
             newGuardianAvatar,
             sync.guardianUserId,
           ]);
@@ -1439,13 +1439,13 @@ const computeLastClassResult = async (client, studentId, classId, academicYearId
     }
     const scopedSql = scoped.length > 0 ? `AND ${scoped.join(' AND ')}` : '';
     const examRes = await client.query(
-      `SELECT er.exam_id, COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date
+      `SELECT er.exam_id, COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date
        FROM exam_results er
        LEFT JOIN exams e ON e.id = er.exam_id
        WHERE er.student_id = $1
          AND er.exam_id IS NOT NULL
          ${scopedSql}
-       ORDER BY COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST, er.exam_id DESC
+       ORDER BY COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST, er.exam_id DESC
        LIMIT 1`,
       params
     );
@@ -1475,7 +1475,7 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
   // Deactivate student login
   if (studentRow.user_id != null) {
     await client.query(
-      'UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1',
+      'UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1',
       [studentRow.user_id]
     );
   }
@@ -1485,16 +1485,16 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
     [studentRow.id]
   );
   for (const link of links.rows) {
-    await client.query(`UPDATE guardians SET is_active = false, modified_at = NOW() WHERE id = $1`, [link.id]);
+    await client.query(`UPDATE guardians SET is_active = false, updated_at = NOW() WHERE id = $1`, [link.id]);
     const uid = link.user_id;
     const stillUsed = await client.query(
       `SELECT 1 FROM guardians g
        INNER JOIN students s ON s.id = g.student_id
-       WHERE g.user_id = $1 AND s.is_active = true AND g.student_id <> $2 LIMIT 1`,
+       WHERE g.user_id = $1 AND s.status = 'Active' AND g.student_id <> $2 LIMIT 1`,
       [uid, studentRow.id]
     );
     if (stillUsed.rows.length === 0) {
-      await client.query(`UPDATE users SET is_active = false, modified_at = NOW() WHERE id = $1`, [uid]);
+      await client.query(`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`, [uid]);
     }
   }
 };
@@ -1504,7 +1504,7 @@ const reactivateLinkedAccountsForRejoinedStudent = async (client, studentRow) =>
 
   if (studentRow.user_id != null) {
     await client.query(
-      'UPDATE users SET is_active = true, modified_at = NOW() WHERE id = $1',
+      'UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1',
       [studentRow.user_id]
     );
   }
@@ -1514,9 +1514,9 @@ const reactivateLinkedAccountsForRejoinedStudent = async (client, studentRow) =>
     [studentRow.id]
   );
   for (const link of links.rows) {
-    await client.query(`UPDATE guardians SET is_active = true, modified_at = NOW() WHERE id = $1`, [link.id]);
+    await client.query(`UPDATE guardians SET is_active = true, updated_at = NOW() WHERE id = $1`, [link.id]);
     if (link.user_id != null) {
-      await client.query(`UPDATE users SET is_active = true, modified_at = NOW() WHERE id = $1`, [link.user_id]);
+      await client.query(`UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1`, [link.user_id]);
     }
   }
 };
@@ -1573,7 +1573,7 @@ const promoteStudents = async (req, res) => {
     let promotedByStaffId = null;
     if (userId) {
       const staffRes = await query(
-        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        'SELECT id FROM staff WHERE user_id = $1 AND status = \'Active\' LIMIT 1',
         [userId]
       );
       if (staffRes.rows.length > 0) {
@@ -1660,7 +1660,7 @@ const promoteStudents = async (req, res) => {
             academic_year_id = $1,
             class_id = $2,
             section_id = $3,
-            modified_at = NOW()
+            updated_at = NOW()
            WHERE id = $4`,
           [toAcademicYearId, toClassId, toSectionId, sid]
         );
@@ -1707,7 +1707,7 @@ const promoteStudents = async (req, res) => {
         await client.query(
           `UPDATE classes c
            SET no_of_students = COALESCE(s.cnt, 0),
-               modified_at = NOW()
+               updated_at = NOW()
            FROM (
              SELECT class_id, COUNT(*)::int AS cnt
              FROM students
@@ -1720,7 +1720,7 @@ const promoteStudents = async (req, res) => {
         await client.query(
           `UPDATE classes
            SET no_of_students = 0,
-               modified_at = NOW()
+               updated_at = NOW()
            WHERE id = ANY($1::int[])
              AND id NOT IN (
                SELECT class_id
@@ -1735,7 +1735,7 @@ const promoteStudents = async (req, res) => {
         await client.query(
           `UPDATE sections sct
            SET no_of_students = COALESCE(s.cnt, 0),
-               modified_at = NOW()
+               updated_at = NOW()
            FROM (
              SELECT section_id, COUNT(*)::int AS cnt
              FROM students
@@ -1748,7 +1748,7 @@ const promoteStudents = async (req, res) => {
         await client.query(
           `UPDATE sections
            SET no_of_students = 0,
-               modified_at = NOW()
+               updated_at = NOW()
            WHERE id = ANY($1::int[])
              AND id NOT IN (
                SELECT section_id
@@ -1802,7 +1802,7 @@ const leaveStudents = async (req, res) => {
 
     if (userId) {
       const staffRes = await query(
-        'SELECT id FROM staff WHERE user_id = $1 AND is_active = true LIMIT 1',
+        'SELECT id FROM staff WHERE user_id = $1 AND status = \'Active\' LIMIT 1',
         [userId]
       );
       if (staffRes.rows.length > 0) leftByStaffId = staffRes.rows[0].id;
@@ -1920,14 +1920,14 @@ const leaveStudents = async (req, res) => {
                      THEN 'Inactive'
                    ELSE status
                  END,
-                 modified_at = NOW()
+                 updated_at = NOW()
              WHERE id = $1`,
             [sid]
           );
         } else {
           await client.query(
             `UPDATE students
-             SET is_active = false, modified_at = NOW()
+             SET is_active = false, updated_at = NOW()
              WHERE id = $1`,
             [sid]
           );
@@ -2104,7 +2104,7 @@ const rejoinStudent = async (req, res) => {
              academic_year_id = $1,
              class_id = $2,
              section_id = $3,
-             modified_at = NOW()
+             updated_at = NOW()
          WHERE id = $4`,
         [toAcademicYearId, toClassId, toSectionId, studentId]
       );
@@ -2165,7 +2165,7 @@ const rejoinStudent = async (req, res) => {
                WHEN remarks IS NULL OR TRIM(remarks) = '' THEN $1
                ELSE remarks || E'\n' || $1
              END,
-             modified_at = NOW()
+             updated_at = NOW()
          WHERE id = $2`,
         [stampedRemark, activeLeaving.id]
       );
@@ -2184,7 +2184,7 @@ const rejoinStudent = async (req, res) => {
         await client.query(
           `UPDATE classes c
            SET no_of_students = COALESCE(s.cnt, 0),
-               modified_at = NOW()
+               updated_at = NOW()
            FROM (
              SELECT class_id, COUNT(*)::int AS cnt
              FROM students
@@ -2197,7 +2197,7 @@ const rejoinStudent = async (req, res) => {
         await client.query(
           `UPDATE classes
            SET no_of_students = 0,
-               modified_at = NOW()
+               updated_at = NOW()
            WHERE id = ANY($1::int[])
              AND id NOT IN (
                SELECT class_id
@@ -2212,7 +2212,7 @@ const rejoinStudent = async (req, res) => {
         await client.query(
           `UPDATE sections sct
            SET no_of_students = COALESCE(s.cnt, 0),
-               modified_at = NOW()
+               updated_at = NOW()
            FROM (
              SELECT section_id, COUNT(*)::int AS cnt
              FROM students
@@ -2225,7 +2225,7 @@ const rejoinStudent = async (req, res) => {
         await client.query(
           `UPDATE sections
            SET no_of_students = 0,
-               modified_at = NOW()
+               updated_at = NOW()
            WHERE id = ANY($1::int[])
              AND id NOT IN (
                SELECT section_id
@@ -2358,7 +2358,7 @@ const getStudentPromotions = async (req, res) => {
           sp.remarks,
           sp.promoted_by,
           sp.created_at,
-          sp.modified_at,
+          sp.updated_at,
           s.admission_number,
           s.roll_number,
           u.first_name,
@@ -2405,7 +2405,7 @@ const getStudentPromotions = async (req, res) => {
           l.remarks,
           l.processed_by AS promoted_by,
           l.created_at,
-          l.updated_at AS modified_at,
+          l.updated_at AS updated_at,
           s.admission_number,
           s.roll_number,
           u.first_name,
@@ -2482,7 +2482,7 @@ const getLeavingStudents = async (req, res) => {
            ls.left_by,
            COALESCE(ls.is_active, true) AS is_active,
            ls.created_at,
-           ls.modified_at,
+           ls.updated_at,
            jc.class_name AS joining_class_name,
            js.section_name AS joining_section_name,
            jay.year_name AS joining_academic_year_name,
@@ -2526,7 +2526,7 @@ const getLeavingStudents = async (req, res) => {
            l.processed_by AS left_by,
            true AS is_active,
            l.created_at,
-           l.updated_at AS modified_at,
+           l.updated_at AS updated_at,
            jc.class_name AS joining_class_name,
            js.section_name AS joining_section_name,
            jay.year_name AS joining_academic_year_name,
@@ -2611,7 +2611,7 @@ const getStudentRejoins = async (req, res) => {
          sr.remarks,
          sr.rejoined_by,
          sr.created_at,
-         sr.modified_at,
+         sr.updated_at,
          fc.class_name AS from_class_name,
          fs.section_name AS from_section_name,
          fay.year_name AS from_academic_year_name,
@@ -2841,7 +2841,7 @@ const getTeacherStudents = async (req, res) => {
       `SELECT t.id, t.staff_id
        FROM teachers t 
        INNER JOIN staff st ON t.staff_id = st.id 
-       WHERE st.user_id = $1 AND st.is_active = true`,
+       WHERE st.user_id = $1 AND st.status = 'Active'`,
       [userId]
     );
 
@@ -2870,7 +2870,7 @@ const getTeacherStudents = async (req, res) => {
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
-       WHERE s.is_active = true AND s.deleted_at IS NULL AND (
+       WHERE s.status = \'Active\' AND s.deleted_at IS NULL AND (
          EXISTS (
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = ANY($1::int[])
@@ -3295,7 +3295,7 @@ const getStudentLoginDetails = async (req, res) => {
        LEFT JOIN classes c ON s.class_id = c.id
        LEFT JOIN sections sec ON s.section_id = sec.id
        LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true AND u.deleted_at IS NULL
-       WHERE s.id = $1 AND s.is_active = true AND s.deleted_at IS NULL
+       WHERE s.id = $1 AND s.status = \'Active\' AND s.deleted_at IS NULL
        LIMIT 1`,
       [id]
     );
@@ -3503,7 +3503,7 @@ const getCurrentStudent = async (req, res) => {
               `SELECT ${baseSelect}, s.religion_id, r.religion_name as religion_name
                ${fromAndJoins}
                LEFT JOIN religions r ON s.religion_id = r.id
-               WHERE s.is_active = true AND (s.user_id IS NULL OR s.user_id != $1)
+               WHERE s.status = \'Active\' AND (s.user_id IS NULL OR s.user_id != $1)
                  AND (
                    (LOWER(TRIM(COALESCE(s.email, ''))) = $2 AND $2 != '')
                    OR (TRIM(COALESCE(s.phone, '')) = $3 AND $3 != '')
@@ -3539,7 +3539,7 @@ const getCurrentStudent = async (req, res) => {
                 `SELECT ${safeBaseSelectFallback}, ${relCol}, ${relName}
                  ${fromAndJoins}
                  ${relJoin}
-                 WHERE s.is_active = true AND (s.user_id IS NULL OR s.user_id != $1)
+                 WHERE s.status = \'Active\' AND (s.user_id IS NULL OR s.user_id != $1)
                    AND (
                      (LOWER(TRIM(COALESCE(s.email, ''))) = $2 AND $2 != '')
                      OR (TRIM(COALESCE(s.phone, '')) = $3 AND $3 != '')
@@ -3787,7 +3787,7 @@ const getStudentsByClass = async (req, res) => {
       LEFT JOIN classes c ON s.class_id = c.id
       LEFT JOIN sections sec ON s.section_id = sec.id
       ${STUDENT_CONTACT_LATERAL_JOINS}
-      WHERE s.class_id = $1 AND s.is_active = true
+      WHERE s.class_id = $1 AND s.status = \'Active\'
       ORDER BY s.first_name ASC, s.last_name ASC
     `, [classId]);
 
@@ -4003,7 +4003,7 @@ const loadExamSchemaCapabilities = async () => {
 
 // Get exam results for a student (from exams & exam_results tables)
 // This endpoint is read-only and designed to be schema-tolerant:
-// - Uses modified_at (not updated_at) when available
+// - Uses updated_at (not updated_at) when available
 // - Falls back gracefully to empty data if expected columns/tables are missing
 const getStudentExamResults = async (req, res) => {
   try {
@@ -4120,7 +4120,7 @@ const getStudentExamResults = async (req, res) => {
            er.exam_id,
            e.exam_name,
            e.exam_type,
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
            er.subject_id,
            s.subject_name,
            s.subject_code,
@@ -4140,7 +4140,7 @@ const getStudentExamResults = async (req, res) => {
          WHERE er.student_id = $1
            AND er.exam_id IS NOT NULL
          ORDER BY
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST,
+           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
            er.exam_id DESC,
            s.subject_name ASC`,
         [studentId]
@@ -4368,7 +4368,7 @@ const getStudentsLatestExamSummary = async (req, res) => {
              SELECT
                er.student_id,
                er.exam_id,
-               COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date,
+               COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
                COALESCE(e.exam_name, 'Exam') AS exam_name,
                COALESCE(e.exam_type, '') AS exam_type
              FROM exam_results er
@@ -4467,7 +4467,7 @@ const getGradeReport = async (req, res) => {
          FROM teachers t
          INNER JOIN staff st ON st.id = t.staff_id
          WHERE st.user_id = $1
-           AND st.is_active = true`,
+           AND st.status = 'Active'`,
         [req.user?.id]
       );
       teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
@@ -4527,12 +4527,12 @@ const getGradeReport = async (req, res) => {
          er.exam_id AS exam_id,
          COALESCE(e.exam_name, 'Exam') AS exam_name,
          COALESCE(e.exam_type, '') AS exam_type,
-         COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) AS exam_date
+         COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date
        FROM exam_results er
        INNER JOIN scoped_students ss ON ss.id = er.student_id
        LEFT JOIN exams e ON er.exam_id = e.id
        WHERE er.exam_id IS NOT NULL
-       ORDER BY COALESCE(e.start_date, e.end_date, e.modified_at, e.created_at) DESC NULLS LAST, COALESCE(e.exam_name, 'Exam') ASC`,
+       ORDER BY COALESCE(e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST, COALESCE(e.exam_name, 'Exam') ASC`,
       scopedStudentsParams
     );
 
@@ -4726,7 +4726,7 @@ const getAttendanceReport = async (req, res) => {
          FROM teachers t
          INNER JOIN staff st ON st.id = t.staff_id
          WHERE st.user_id = $1
-           AND st.is_active = true`,
+           AND st.status = 'Active'`,
         [req.user?.id]
       );
       teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
@@ -5091,7 +5091,7 @@ const searchStudents = async (req, res) => {
         ) AS "guardianName"
        FROM students s
        LEFT JOIN classes c ON s.class_id = c.id
-       WHERE s.is_active = true
+       WHERE s.status = \'Active\'
          AND (
            LOWER(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')))) LIKE LOWER($1)
            OR LOWER(TRIM(COALESCE(s.admission_number, ''))) LIKE LOWER($1)
@@ -5133,7 +5133,7 @@ const deleteStudent = async (req, res) => {
       // 1. Mark student as deleted
       const stuUpdate = await client.query(
         `UPDATE students 
-         SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+         SET is_active = false, deleted_at = NOW(), updated_at = NOW() 
          WHERE id = $1 AND deleted_at IS NULL 
          RETURNING id, user_id`,
         [sid]
@@ -5151,7 +5151,7 @@ const deleteStudent = async (req, res) => {
       if (user_id) {
         await client.query(
           `UPDATE users 
-           SET is_active = false, deleted_at = NOW(), modified_at = NOW() 
+           SET is_active = false, deleted_at = NOW(), updated_at = NOW() 
            WHERE id = $1 AND deleted_at IS NULL`,
           [user_id]
         );

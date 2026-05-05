@@ -12,7 +12,7 @@ const getAllClassRooms = async (req, res) => {
         floor,
         building,
         created_at,
-        modified_at
+        updated_at
       FROM class_rooms
       ORDER BY room_no ASC
     `);
@@ -45,7 +45,7 @@ const getClassRoomById = async (req, res) => {
         floor,
         building,
         created_at,
-        modified_at
+        updated_at
       FROM class_rooms
       WHERE id = $1
     `, [id]);
@@ -154,7 +154,7 @@ const updateClassRoom = async (req, res) => {
       });
     }
 
-    updates.push(`modified_at = NOW()`);
+    updates.push(`updated_at = NOW()`);
     params.push(id);
 
     const result = await query(`

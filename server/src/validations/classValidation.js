@@ -8,6 +8,9 @@ const classCreateSchema = Joi.object({
   class_fee: Joi.number().min(0).max(99999999.99).optional().allow(null),
   description: Joi.string().trim().max(5000).optional().allow(null, ''),
   is_active: Joi.boolean().optional(),
+  has_sections: Joi.boolean().optional(),
+  academic_year_id: Joi.number().integer().positive().optional().allow(null),
+  section_ids: Joi.array().items(Joi.number().integer().positive()).optional().allow(null),
   no_of_students: Joi.number().integer().min(0).max(100000).optional(),
 }).unknown(false);
 
@@ -19,6 +22,9 @@ const classUpdateSchema = Joi.object({
   class_fee: Joi.number().min(0).max(99999999.99).optional().allow(null),
   description: Joi.string().trim().max(5000).optional().allow(null, ''),
   is_active: Joi.boolean().optional(),
+  has_sections: Joi.boolean().optional(),
+  academic_year_id: Joi.number().integer().positive().optional().allow(null),
+  section_ids: Joi.array().items(Joi.number().integer().positive()).optional().allow(null),
   no_of_students: Joi.number().integer().min(0).max(100000).optional(),
 }).min(1).unknown(false);
 

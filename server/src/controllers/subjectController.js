@@ -39,8 +39,6 @@ const getAllSubjects = async (req, res) => {
         s.id,
         s.subject_name,
         s.subject_code,
-        s.class_id,
-        s.teacher_id,
         s.theory_hours,
         s.practical_hours,
         s.total_marks,
@@ -55,7 +53,7 @@ const getAllSubjects = async (req, res) => {
     return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects:', error);
-    return errorResponse(res, 500, 'Failed to fetch subjects');
+    return errorResponse(res, 500, 'Failed to fetch subjects', error.message);
   }
 };
 
@@ -69,8 +67,6 @@ const getSubjectById = async (req, res) => {
         s.id,
         s.subject_name,
         s.subject_code,
-        s.class_id,
-        s.teacher_id,
         s.theory_hours,
         s.practical_hours,
         s.total_marks,
@@ -89,7 +85,7 @@ const getSubjectById = async (req, res) => {
     return success(res, 200, 'Subject fetched successfully', result.rows[0]);
   } catch (error) {
     console.error('Error fetching subject:', error);
-    return errorResponse(res, 500, 'Failed to fetch subject');
+    return errorResponse(res, 500, 'Failed to fetch subject', error.message);
   }
 };
 
@@ -103,36 +99,47 @@ const getSubjectsByClass = async (req, res) => {
       return errorResponse(res, access.status || 403, access.message || 'Access denied');
     }
 
-    const result = await query(`
+    const { academic_year_id } = req.query;
+
+    const params = [classId];
+    let sql = `
       SELECT
         s.id,
         s.subject_name,
         s.subject_code,
-        s.class_id,
-        s.teacher_id,
-        s.theory_hours,
-        s.practical_hours,
-        s.total_marks,
-        s.passing_marks,
+        cs.id as class_subject_id,
+        cs.is_elective,
+        COALESCE(cs.theory_hours, s.theory_hours) as theory_hours,
+        COALESCE(cs.practical_hours, s.practical_hours) as practical_hours,
+        COALESCE(cs.total_marks, s.total_marks) as total_marks,
+        COALESCE(cs.passing_marks, s.passing_marks) as passing_marks,
         s.description,
         s.is_active,
         s.created_at,
         CASE
-          WHEN COALESCE(s.theory_hours, 0) > 0 AND COALESCE(s.practical_hours, 0) > 0 THEN 'Theory & Practical'
-          WHEN COALESCE(s.practical_hours, 0) > 0 THEN 'Practical'
-          WHEN COALESCE(s.theory_hours, 0) > 0 THEN 'Theory'
+          WHEN COALESCE(cs.theory_hours, s.theory_hours, 0) > 0 AND COALESCE(cs.practical_hours, s.practical_hours, 0) > 0 THEN 'Theory & Practical'
+          WHEN COALESCE(cs.practical_hours, s.practical_hours, 0) > 0 THEN 'Practical'
+          WHEN COALESCE(cs.theory_hours, s.theory_hours, 0) > 0 THEN 'Theory'
           ELSE NULL
         END AS subject_mode
-      FROM subjects s
-      WHERE s.class_id = $1
-        AND (s.is_active IS DISTINCT FROM false)
-      ORDER BY s.subject_name ASC, s.id ASC
-    `, [classId]);
+      FROM class_subjects cs
+      JOIN subjects s ON cs.subject_id = s.id
+      WHERE cs.class_id = $1
+    `;
+
+    if (academic_year_id) {
+      params.push(academic_year_id);
+      sql += ` AND cs.academic_year_id = $${params.length}`;
+    }
+
+    sql += ` ORDER BY s.subject_name ASC, s.id ASC`;
+
+    const result = await query(sql, params);
     
     return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching subjects by class:', error);
-    return errorResponse(res, 500, 'Failed to fetch subjects');
+    return errorResponse(res, 500, 'Failed to fetch subjects', error.message);
   }
 };
 
@@ -192,7 +199,7 @@ const updateSubject = async (req, res) => {
           passing_marks = $8,
           description = $9,
           is_active = $10,
-          modified_at = NOW()
+          updated_at = NOW()
       WHERE id = $11
       RETURNING *
     `, [

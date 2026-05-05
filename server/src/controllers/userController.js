@@ -84,7 +84,7 @@ const getAllUsers = async (req, res) => {
         LEFT JOIN classes c ON c.id = s.class_id
         LEFT JOIN sections sec ON sec.id = s.section_id
         WHERE s.user_id = u.id
-          AND s.is_active = true
+          AND s.status = \'Active\'
         ORDER BY s.id DESC
         LIMIT 1
       ) AS stu_ctx ON TRUE
@@ -110,7 +110,7 @@ const getAllUsers = async (req, res) => {
           LIMIT 1
         ) AS sched_sec ON TRUE
         WHERE st.user_id = u.id
-          AND st.is_active = true
+          AND st.status = \'Active\'
         ORDER BY t.id DESC
         LIMIT 1
       ) AS teacher_ctx ON TRUE
@@ -121,14 +121,14 @@ const getAllUsers = async (req, res) => {
         FROM (
           SELECT s.class_id, s.section_id
           FROM parents p
-          INNER JOIN students s ON s.id = p.student_id AND s.is_active = true
+          INNER JOIN students s ON s.id = p.student_id AND s.status = \'Active\'
           WHERE ${parentUserPredicate}
           UNION
           SELECT s2.class_id, s2.section_id
           FROM guardians g
-          INNER JOIN students s2 ON s2.id = g.student_id AND s2.is_active = true
+          INNER JOIN students s2 ON s2.id = g.student_id AND s2.status = \'Active\'
           WHERE g.user_id = u.id
-            AND g.is_active = true
+            AND g.status = \'Active\'
         ) AS rel
         LEFT JOIN classes c ON c.id = rel.class_id
         LEFT JOIN sections sec ON sec.id = rel.section_id
@@ -136,11 +136,11 @@ const getAllUsers = async (req, res) => {
       LEFT JOIN LATERAL (
         SELECT c.class_name, sec.section_name
         FROM guardians g
-        INNER JOIN students s ON s.id = g.student_id AND s.is_active = true
+        INNER JOIN students s ON s.id = g.student_id AND s.status = \'Active\'
         LEFT JOIN classes c ON c.id = s.class_id
         LEFT JOIN sections sec ON sec.id = s.section_id
         WHERE g.user_id = u.id
-          AND g.is_active = true
+          AND g.status = \'Active\'
         ORDER BY s.id DESC
         LIMIT 1
       ) AS guardian_ctx ON TRUE
@@ -162,7 +162,7 @@ const getAllUsers = async (req, res) => {
             c.class_name, sec.section_name
           FROM users u
           LEFT JOIN user_roles ur ON u.role_id = ur.id
-          LEFT JOIN students s ON u.id = s.user_id AND s.is_active = true
+          LEFT JOIN students s ON u.id = s.user_id AND s.status = \'Active\'
           LEFT JOIN classes c ON s.class_id = c.id
           LEFT JOIN sections sec ON s.section_id = sec.id
           WHERE u.is_active = true AND u.role_id = $1
@@ -181,7 +181,7 @@ const getAllUsers = async (req, res) => {
             c.class_name, sub.subject_name, d.designation_name
           FROM users u
           LEFT JOIN user_roles ur ON u.role_id = ur.id
-          LEFT JOIN staff st ON u.id = st.user_id AND st.is_active = true
+          LEFT JOIN staff st ON u.id = st.user_id AND st.status = \'Active\'
           LEFT JOIN teachers t ON st.id = t.staff_id
           LEFT JOIN classes c ON t.class_id = c.id
           LEFT JOIN subjects sub ON t.subject_id = sub.id

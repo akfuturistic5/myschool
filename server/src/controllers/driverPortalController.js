@@ -28,7 +28,7 @@ const getMyDriverPortal = async (req, res) => {
           dr.staff_id,
           dr.created_at,
           dr.created_by,
-          dr.modified_at,
+          dr.updated_at,
           s.id AS staff_record_id,
           s.first_name AS staff_first_name,
           s.last_name AS staff_last_name,
@@ -125,7 +125,7 @@ const getMyDriverPortal = async (req, res) => {
       staff_id: row.staff_id,
       created_at: row.created_at,
       created_by: row.created_by,
-      modified_at: row.modified_at,
+      updated_at: row.updated_at,
     };
 
     return success(res, 200, 'Driver portal data', {

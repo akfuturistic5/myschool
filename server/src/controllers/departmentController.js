@@ -121,7 +121,7 @@ const updateDepartment = async (req, res) => {
       SET
         department_name = COALESCE($1, department_name),
         is_active = COALESCE($2, is_active),
-        modified_at = NOW()
+        updated_at = NOW()
       WHERE id = $3
       RETURNING *
     `,
@@ -179,7 +179,7 @@ const createDepartment = async (req, res) => {
 
     const result = await query(
       `
-      INSERT INTO departments (department_name, is_active, created_by, modified_at)
+      INSERT INTO departments (department_name, is_active, created_by, updated_at)
       VALUES ($1, $2, $3, NOW())
       RETURNING *
     `,

@@ -184,7 +184,7 @@ const updateHostel = async (req, res) => {
       return errorResponse(res, 400, 'No fields to update');
     }
 
-    updates.push('modified_at = NOW()');
+    updates.push('updated_at = NOW()');
     params.push(id);
 
     const result = await query(
@@ -234,14 +234,14 @@ const deleteHostel = async (req, res) => {
     }
 
     await query(
-      `UPDATE hostel_rooms SET is_active = false, modified_at = NOW() WHERE hostel_id = $1`,
+      `UPDATE hostel_rooms SET is_active = false, updated_at = NOW() WHERE hostel_id = $1`,
       [id]
     );
 
     const result = await query(
       `
       UPDATE hostels
-      SET is_active = false, modified_at = NOW()
+      SET is_active = false, updated_at = NOW()
       WHERE id = $1 AND is_active = true
       RETURNING id
     `,

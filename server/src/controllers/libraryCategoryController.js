@@ -3,7 +3,7 @@ const { query } = require('../config/database');
 const listCategories = async (req, res) => {
   try {
     const r = await query(
-      `SELECT id, category_name, description, is_active, created_at, modified_at
+      `SELECT id, category_name, description, is_active, created_at, updated_at
        FROM library_categories
        WHERE COALESCE(is_active, true) = true
        ORDER BY category_name ASC`
@@ -24,7 +24,7 @@ const getCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const r = await query(
-      `SELECT id, category_name, description, is_active, created_at, modified_at
+      `SELECT id, category_name, description, is_active, created_at, updated_at
        FROM library_categories WHERE id = $1`,
       [id]
     );
@@ -43,7 +43,7 @@ const createCategory = async (req, res) => {
     const userId = req.user?.id || null;
     const { category_name, description } = req.body;
     const r = await query(
-      `INSERT INTO library_categories (category_name, description, is_active, created_by, created_at, modified_at)
+      `INSERT INTO library_categories (category_name, description, is_active, created_by, created_at, updated_at)
        VALUES ($1, $2, true, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
       [String(category_name).trim(), description != null ? String(description).trim() : null, userId]
@@ -82,7 +82,7 @@ const updateCategory = async (req, res) => {
          category_name = $2,
          description = $3,
          is_active = $4,
-         modified_at = CURRENT_TIMESTAMP
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [id, category_name, description, is_active]

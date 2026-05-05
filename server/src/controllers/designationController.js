@@ -69,7 +69,7 @@ const updateDesignation = async (req, res) => {
       UPDATE designations
       SET designation_name = $1,
           is_active = $2,
-          modified_at = NOW()
+          updated_at = NOW()
       WHERE id = $3
       RETURNING *
     `,

@@ -152,7 +152,7 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   let r;
   try {
     r = await client.query(
-      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, current_address, permanent_address, created_at, modified_at)
+      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, is_active, current_address, permanent_address, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, true, 'Not Provided', 'Not Provided', NOW(), NOW())
        RETURNING id`,
       [username, email, phone, passwordHash, roleId, firstName, lastName]

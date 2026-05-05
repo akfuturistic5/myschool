@@ -119,7 +119,7 @@ const updateRoomType = async (req, res) => {
       return errorResponse(res, 400, 'No fields to update');
     }
 
-    updates.push('modified_at = NOW()');
+    updates.push('updated_at = NOW()');
     params.push(id);
 
     const result = await query(
@@ -164,7 +164,7 @@ const deleteRoomType = async (req, res) => {
     const result = await query(
       `
       UPDATE room_types
-      SET is_active = false, modified_at = NOW()
+      SET is_active = false, updated_at = NOW()
       WHERE id = $1 AND is_active = true
       RETURNING id
     `,

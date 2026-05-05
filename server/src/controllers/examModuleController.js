@@ -169,7 +169,7 @@ const createGradeScale = async (req, res) => {
            max_precentage AS max_percentage,
            is_active,
            created_at,
-           modified_at`,
+           updated_at`,
         [
           value.grade,
           Number(value.min_percentage),
@@ -238,7 +238,7 @@ const updateGradeScale = async (req, res) => {
              min_precentage = $2,
              max_precentage = $3,
              is_active = $4,
-             modified_at = NOW()
+             updated_at = NOW()
          WHERE id = $5
          RETURNING
            id,
@@ -247,7 +247,7 @@ const updateGradeScale = async (req, res) => {
            max_precentage AS max_percentage,
            is_active,
            created_at,
-           modified_at`,
+           updated_at`,
         [
           value.grade,
           Number(value.min_percentage),
@@ -419,7 +419,7 @@ async function getExamResultsSchemaFlags() {
        FROM information_schema.columns
        WHERE table_schema = 'public'
          AND table_name = 'exam_results'
-         AND column_name IN ('created_by', 'modified_at', 'exam_component')`
+         AND column_name IN ('created_by', 'updated_at', 'exam_component')`
     ),
     query(
       `SELECT pg_get_constraintdef(c.oid) AS def
@@ -442,7 +442,7 @@ async function getExamResultsSchemaFlags() {
   );
   return {
     hasCreatedByColumn: cols.has('created_by'),
-    hasModifiedAtColumn: cols.has('modified_at'),
+    hasModifiedAtColumn: cols.has('updated_at'),
     hasExamComponentColumn: cols.has('exam_component'),
     hasUniqueExamStudentSubject,
     hasUniqueExamStudentSubjectComponent,
@@ -513,7 +513,7 @@ async function listExams(req, res) {
         `SELECT t.id AS teacher_id, t.staff_id
          FROM teachers t
          INNER JOIN staff st ON st.id = t.staff_id
-         WHERE st.user_id = $1 AND st.is_active = true`,
+         WHERE st.user_id = $1 AND st.status = 'Active'`,
         [ctx.userId]
       );
       if (!teacherMap.rows.length) return success(res, 200, 'Exams loaded', []);
@@ -604,7 +604,7 @@ async function getTeacherMaps(userId) {
     `SELECT t.id AS teacher_id, t.staff_id
      FROM teachers t
      INNER JOIN staff st ON st.id = t.staff_id
-     WHERE st.user_id = $1 AND st.is_active = true`,
+     WHERE st.user_id = $1 AND st.status = 'Active'`,
     [userId]
   );
   return {
@@ -900,7 +900,7 @@ async function resolveStudentScopeByUser(ctx) {
        SELECT s2.id AS student_id
        FROM base b
        INNER JOIN students s2
-         ON COALESCE(s2.is_active, true) = true
+         ON s2.status = 'Active'
         AND (
           (b.user_id IS NOT NULL AND s2.user_id = b.user_id)
           OR (COALESCE(NULLIF(TRIM(b.admission_number), ''), '') <> '' AND s2.admission_number = b.admission_number)
@@ -982,7 +982,7 @@ async function resolveStudentScopeByUser(ctx) {
     let s = await query(
       `SELECT id AS student_id, class_id, section_id
        FROM students
-       WHERE user_id = $1 AND COALESCE(is_active, true) = true
+       WHERE user_id = $1 AND status = 'Active'
        ORDER BY id DESC
        LIMIT 1`,
       [ctx.userId]
@@ -996,7 +996,7 @@ async function resolveStudentScopeByUser(ctx) {
        FROM parents p
        INNER JOIN students s ON s.id = p.student_id
        WHERE p.user_id = $1
-         AND COALESCE(s.is_active, true) = true
+         AND s.status = 'Active'
        ORDER BY s.id DESC
        LIMIT 1`,
       [ctx.userId]
@@ -1010,7 +1010,7 @@ async function resolveStudentScopeByUser(ctx) {
           `SELECT id AS student_id, class_id, section_id
            FROM students
            WHERE id = $1
-             AND COALESCE(is_active, true) = true
+             AND status = 'Active'
            LIMIT 1`,
           [sid]
         );
@@ -1024,7 +1024,7 @@ async function resolveStudentScopeByUser(ctx) {
        FROM guardians g
        INNER JOIN students s ON s.id = g.student_id
        WHERE g.user_id = $1
-         AND COALESCE(s.is_active, true) = true
+         AND s.status = 'Active'
        ORDER BY s.id DESC
        LIMIT 1`,
       [ctx.userId]
@@ -1037,7 +1037,7 @@ async function resolveStudentScopeByUser(ctx) {
           `SELECT id AS student_id, class_id, section_id
            FROM students
            WHERE id = $1
-             AND COALESCE(is_active, true) = true
+             AND status = 'Active'
            LIMIT 1`,
           [sid]
         );
@@ -1379,7 +1379,7 @@ async function viewExamTopPerformers(req, res) {
            ON er.exam_id = $${examParamIdx}
           AND er.student_id = st.id
           AND er.subject_id = sp.subject_id
-         WHERE COALESCE(st.is_active, true) = true
+         WHERE st.status = 'Active'
          GROUP BY st.id, st.first_name, st.last_name, st.photo_url, st.class_id, st.section_id
        )
        SELECT
@@ -1619,7 +1619,7 @@ async function saveExamSubjectSetup(req, res) {
                exam_date = EXCLUDED.exam_date,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
-               modified_at = NOW()`,
+               updated_at = NOW()`,
             [
               value.exam_id,
               value.class_id,
@@ -1645,7 +1645,7 @@ async function saveExamSubjectSetup(req, res) {
                exam_date = EXCLUDED.exam_date,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
-               modified_at = NOW()`,
+               updated_at = NOW()`,
             [
               value.exam_id,
               value.class_id,
@@ -1720,7 +1720,7 @@ async function saveExamSubjects(req, res) {
                exam_date = EXCLUDED.exam_date,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
-               modified_at = NOW()`,
+               updated_at = NOW()`,
             [
               value.exam_id,
               value.class_id,
@@ -1746,7 +1746,7 @@ async function saveExamSubjects(req, res) {
                exam_date = EXCLUDED.exam_date,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
-               modified_at = NOW()`,
+               updated_at = NOW()`,
             [
               value.exam_id,
               value.class_id,
@@ -1947,7 +1947,7 @@ async function saveExamMarks(req, res) {
           'is_absent = EXCLUDED.is_absent',
         ];
         if (examResultsSchema.hasModifiedAtColumn) {
-          updateSet.push('modified_at = NOW()');
+          updateSet.push('updated_at = NOW()');
         }
         await client.query(
           `INSERT INTO exam_results
