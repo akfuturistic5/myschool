@@ -754,6 +754,19 @@ class ApiService {
     });
   }
 
+  async updateEnquiry(id, payload) {
+    return this.makeRequest(`/enquiries/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteEnquiry(id) {
+    return this.makeRequest(`/enquiries/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async saveAttendance(payload) {
     return this.makeRequest('/attendance', {
       method: 'POST',
