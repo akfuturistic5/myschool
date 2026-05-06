@@ -10,6 +10,7 @@ import TooltipOption from "../../core/common/tooltipOption";
 import { useNoticeBoard } from "../../core/hooks/useNoticeBoard";
 import { useUserRoles } from "../../core/hooks/useUserRoles";
 import { useCurrentUser } from "../../core/hooks/useCurrentUser";
+import { exportToExcel, exportToPDF, printData } from "../../core/utils/exportUtils";
 
 const splitTargets = (value: string | null | undefined) =>
   String(value || "")
@@ -23,12 +24,17 @@ const toDayjs = (value: string | null | undefined) => {
   return parsed.isValid() ? parsed : null;
 };
 
+const normalizeText = (value: string | null | undefined, fallback = "N/A") => {
+  const text = String(value || "").trim();
+  return text || fallback;
+};
+
 const getInitialForm = () => ({
   title: "",
   content: "",
   messageTargets: [] as string[],
-  noticeDate: null as Dayjs | null,
-  publishOn: null as Dayjs | null,
+  noticeStartDate: null as Dayjs | null,
+  noticeEndDate: null as Dayjs | null,
 });
 
 const NoticeBoard = () => {
@@ -39,19 +45,23 @@ const NoticeBoard = () => {
     const roleId = Number(user?.role_id);
     return roleId === 1 || roleId === 6;
   }, [user?.role_id]);
-  /** Latest notice only for viewers; headmaster/administrative need full list to edit/delete. */
-  const noticeFetchLimit = canManageNotices ? 100 : 1;
-  const { notices, loading, error, saving, createNotice, updateNotice, deleteNotice } = useNoticeBoard({
+  /** Notice board page should show complete list for every role. */
+  const noticeFetchLimit = 100;
+  const { notices, loading, error, saving, refetch, createNotice, updateNotice, deleteNotice } = useNoticeBoard({
     limit: noticeFetchLimit,
+    includeExpired: true,
   });
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
   const [createForm, setCreateForm] = useState(getInitialForm());
   const [editForm, setEditForm] = useState(getInitialForm());
+  const [searchText, setSearchText] = useState("");
   const targetOptions = useMemo(
-    () =>
-      userRoles
+    () => {
+      const dynamicRoles = userRoles
         .map((role) => String(role?.roleName || "").trim())
-        .filter(Boolean),
+        .filter(Boolean);
+      return ["All", ...dynamicRoles.filter((name) => name.toLowerCase() !== "all")];
+    },
     [userRoles]
   );
 
@@ -62,8 +72,8 @@ const NoticeBoard = () => {
       title: selectedNotice.title || "",
       content: selectedNotice.content || "",
       messageTargets: targets,
-      noticeDate: toDayjs(selectedNotice.notice_date),
-      publishOn: toDayjs(selectedNotice.publish_on),
+      noticeStartDate: toDayjs(selectedNotice.notice_start_date),
+      noticeEndDate: toDayjs(selectedNotice.notice_end_date),
     });
   }, [selectedNotice]);
 
@@ -77,10 +87,18 @@ const NoticeBoard = () => {
     formState: { messageTargets: string[] },
     setFormState: (updater: any) => void
   ) => {
+    if (target === "All") {
+      setFormState((prev: any) => ({
+        ...prev,
+        messageTargets: prev.messageTargets.includes("All") ? [] : ["All"],
+      }));
+      return;
+    }
     const hasTarget = formState.messageTargets.includes(target);
+    const baseTargets = formState.messageTargets.filter((item) => item !== "All");
     const nextTargets = hasTarget
-      ? formState.messageTargets.filter((item) => item !== target)
-      : [...formState.messageTargets, target];
+      ? baseTargets.filter((item) => item !== target)
+      : [...baseTargets, target];
 
     setFormState((prev: any) => ({
       ...prev,
@@ -111,11 +129,11 @@ const NoticeBoard = () => {
       return;
     }
     if (
-      createForm.noticeDate &&
-      createForm.publishOn &&
-      createForm.noticeDate.isBefore(createForm.publishOn, "day")
+      createForm.noticeStartDate &&
+      createForm.noticeEndDate &&
+      createForm.noticeEndDate.isBefore(createForm.noticeStartDate, "day")
     ) {
-      message.error("Notice Date cannot be earlier than Publish On");
+      message.error("End Date cannot be earlier than Start Date");
       return;
     }
 
@@ -124,11 +142,21 @@ const NoticeBoard = () => {
         title,
         content,
         message_to,
-        notice_date: createForm.noticeDate ? createForm.noticeDate.format("YYYY-MM-DD") : null,
-        publish_on: createForm.publishOn ? createForm.publishOn.format("YYYY-MM-DD") : null,
+        notice_start_date: createForm.noticeStartDate
+          ? createForm.noticeStartDate.format("YYYY-MM-DD")
+          : null,
+        notice_end_date: createForm.noticeEndDate
+          ? createForm.noticeEndDate.format("YYYY-MM-DD")
+          : null,
       });
       message.success("Notice created successfully");
       setCreateForm(getInitialForm());
+      const modalEl = document.getElementById("add_message");
+      const bootstrapModal = (window as any)?.bootstrap?.Modal;
+      if (modalEl && bootstrapModal) {
+        const instance = bootstrapModal.getOrCreateInstance(modalEl);
+        instance.hide();
+      }
     } catch (submitError: any) {
       message.error(submitError?.message || "Failed to create notice");
     }
@@ -159,11 +187,11 @@ const NoticeBoard = () => {
       return;
     }
     if (
-      editForm.noticeDate &&
-      editForm.publishOn &&
-      editForm.noticeDate.isBefore(editForm.publishOn, "day")
+      editForm.noticeStartDate &&
+      editForm.noticeEndDate &&
+      editForm.noticeEndDate.isBefore(editForm.noticeStartDate, "day")
     ) {
-      message.error("Notice Date cannot be earlier than Publish On");
+      message.error("End Date cannot be earlier than Start Date");
       return;
     }
 
@@ -172,8 +200,12 @@ const NoticeBoard = () => {
         title,
         content,
         message_to,
-        notice_date: editForm.noticeDate ? editForm.noticeDate.format("YYYY-MM-DD") : null,
-        publish_on: editForm.publishOn ? editForm.publishOn.format("YYYY-MM-DD") : null,
+        notice_start_date: editForm.noticeStartDate
+          ? editForm.noticeStartDate.format("YYYY-MM-DD")
+          : null,
+        notice_end_date: editForm.noticeEndDate
+          ? editForm.noticeEndDate.format("YYYY-MM-DD")
+          : null,
       });
       message.success("Notice updated successfully");
     } catch (submitError: any) {
@@ -192,9 +224,86 @@ const NoticeBoard = () => {
       await deleteNotice(selectedNotice.id);
       message.success("Notice deleted successfully");
       setSelectedNotice(null);
+      const modalEl = document.getElementById("delete-modal");
+      const bootstrapModal = (window as any)?.bootstrap?.Modal;
+      if (modalEl && bootstrapModal) {
+        const instance = bootstrapModal.getOrCreateInstance(modalEl);
+        instance.hide();
+      }
     } catch (deleteError: any) {
       message.error(deleteError?.message || "Failed to delete notice");
     }
+  };
+
+  const exportColumns = useMemo(
+    () => {
+      const cols = [
+        { title: "Title", dataKey: "title" },
+        { title: "Description", dataKey: "description" },
+        { title: "Publish On", dataKey: "publishOn" },
+        { title: "Notice Till", dataKey: "noticeTill" },
+      ];
+      if (canManageNotices) {
+        cols.push({ title: "Message To", dataKey: "messageTo" });
+      }
+      return cols;
+    },
+    [canManageNotices]
+  );
+
+  const filteredNotices = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return notices;
+    return notices.filter((notice) =>
+      [notice.title, notice.content, notice.messageTo, notice.publishOn, notice.noticeEndDate]
+        .map((val) => String(val || "").toLowerCase())
+        .some((val) => val.includes(keyword))
+    );
+  }, [notices, searchText]);
+
+  const exportRows = useMemo(
+    () =>
+      filteredNotices.map((notice) => ({
+        title: normalizeText(notice.title),
+        description: normalizeText(notice.content),
+        publishOn: normalizeText(notice.publishOn || notice.addedOn),
+        noticeTill: normalizeText(notice.noticeEndDate, "N/A"),
+        messageTo: normalizeText(notice.messageTo, "All"),
+      })),
+    [filteredNotices]
+  );
+
+  const handlePrint = () => {
+    if (!exportRows.length) {
+      message.info("No notices available to print");
+      return;
+    }
+    printData("Notice Board", exportColumns, exportRows);
+  };
+
+  const handleExportPdf = () => {
+    if (!exportRows.length) {
+      message.info("No notices available to export");
+      return;
+    }
+    exportToPDF(
+      exportRows,
+      "Notice Board",
+      `notice-board_${new Date().toISOString().split("T")[0]}`,
+      exportColumns
+    );
+  };
+
+  const handleExportExcel = () => {
+    if (!exportRows.length) {
+      message.info("No notices available to export");
+      return;
+    }
+    exportToExcel(
+      exportRows,
+      `notice-board_${new Date().toISOString().split("T")[0]}`,
+      "Notices"
+    );
   };
 
   return (
@@ -217,7 +326,12 @@ const NoticeBoard = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={refetch}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
               {canManageNotices && (
                 <div className="mb-2">
                   <Link
@@ -235,11 +349,21 @@ const NoticeBoard = () => {
           </div>
 
           <div className="d-flex align-items-center justify-content-end flex-wrap mb-2">
-            <div className="form-check me-2 mb-3">
-              <input className="form-check-input" type="checkbox" disabled />
-              <span className="checkmarks">Mark &amp; Delete All</span>
-            </div>
             <div className="d-flex align-items-center flex-wrap">
+              <div className="mb-3 me-2">
+                <div className="input-icon-start position-relative">
+                  <span className="input-icon-addon">
+                    <i className="ti ti-search" />
+                  </span>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search notices..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                  />
+                </div>
+              </div>
               <div className="input-icon-start mb-3 me-2 position-relative">
                 <PredefinedDateRanges />
               </div>
@@ -283,16 +407,19 @@ const NoticeBoard = () => {
           {loading && <p className="mb-3 text-muted">Loading notices...</p>}
           {!loading && error && <p className="mb-3 text-danger">{error}</p>}
           {!loading && !error && notices.length === 0 && <p className="mb-3 text-muted">No notices available.</p>}
+          {!loading && !error && notices.length > 0 && filteredNotices.length === 0 && (
+            <p className="mb-3 text-muted">No notices match your search.</p>
+          )}
           {!loading &&
             !error &&
-            notices.map((notice) => (
+            filteredNotices.map((notice) => (
               <div key={notice.id} className="card board-hover mb-3">
-                <div className="card-body d-md-flex align-items-center justify-content-between pb-1">
-                  <div className="d-flex align-items-center mb-3">
-                    <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0">
+                <div className="card-body d-md-flex align-items-start justify-content-between">
+                  <div className="d-flex align-items-start mb-3 me-3 flex-grow-1">
+                    <span className="bg-soft-primary text-primary avatar avatar-md me-2 br-5 flex-shrink-0 mt-1">
                       <i className="ti ti-notification fs-16" />
                     </span>
-                    <div>
+                    <div className="w-100">
                       <h6 className="mb-1 fw-semibold">
                         <Link
                           to="#"
@@ -303,10 +430,24 @@ const NoticeBoard = () => {
                           {notice.title}
                         </Link>
                       </h6>
-                      <p>
-                        <i className="ti ti-calendar me-1" />
-                        {notice.modified_at ? `Modified on: ${notice.modifiedOn}` : `Added on: ${notice.addedOn}`}
+                      <p className="mb-2 text-muted" style={{ whiteSpace: "pre-wrap" }}>
+                        {notice.content || "No description provided."}
                       </p>
+                      <p className="mb-1">
+                        <i className="ti ti-calendar me-1" />
+                        {`Publish On: ${notice.publishOn || notice.addedOn || "N/A"}`}
+                      </p>
+                      <p className="mb-0">
+                        <i className="ti ti-calendar-time me-1" />
+                        {`Notice Till: ${notice.noticeEndDate || "N/A"}`}
+                      </p>
+                      {canManageNotices && (
+                        <div className="mt-2">
+                          <span className="badge bg-light text-dark border">
+                            {`Message To: ${notice.messageTo || "All"}`}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {canManageNotices && (
@@ -359,35 +500,35 @@ const NoticeBoard = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Publish On</label>
+                  <label className="form-label">Notice Start Date</label>
                   <DatePicker
                     className="form-control datetimepicker"
                     placeholder="Select Date"
-                    value={createForm.publishOn}
+                    value={createForm.noticeStartDate}
                     onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        publishOn: value ? dayjs(value) : null,
+                        noticeStartDate: value ? dayjs(value) : null,
                       }))
                     }
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Notice Date</label>
+                  <label className="form-label">Notice End Date</label>
                   <DatePicker
                     className="form-control datetimepicker"
                     placeholder="Select Date"
-                    value={createForm.noticeDate}
+                    value={createForm.noticeEndDate}
                     onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        noticeDate: value ? dayjs(value) : null,
+                        noticeEndDate: value ? dayjs(value) : null,
                       }))
                     }
                     disabledDate={(current) =>
-                      !!createForm.publishOn &&
+                      !!createForm.noticeStartDate &&
                       !!current &&
-                      current.startOf("day").isBefore(createForm.publishOn.startOf("day"))
+                      current.startOf("day").isBefore(createForm.noticeStartDate.startOf("day"))
                     }
                   />
                 </div>
@@ -458,35 +599,35 @@ const NoticeBoard = () => {
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Publish On</label>
+                  <label className="form-label">Notice Start Date</label>
                   <DatePicker
                     className="form-control datetimepicker"
                     placeholder="Select Date"
-                    value={editForm.publishOn}
+                    value={editForm.noticeStartDate}
                     onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        publishOn: value ? dayjs(value) : null,
+                        noticeStartDate: value ? dayjs(value) : null,
                       }))
                     }
                   />
                 </div>
                 <div className="mb-3">
-                  <label className="form-label">Notice Date</label>
+                  <label className="form-label">Notice End Date</label>
                   <DatePicker
                     className="form-control datetimepicker"
                     placeholder="Select Date"
-                    value={editForm.noticeDate}
+                    value={editForm.noticeEndDate}
                     onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        noticeDate: value ? dayjs(value) : null,
+                        noticeEndDate: value ? dayjs(value) : null,
                       }))
                     }
                     disabledDate={(current) =>
-                      !!editForm.publishOn &&
+                      !!editForm.noticeStartDate &&
                       !!current &&
-                      current.startOf("day").isBefore(editForm.publishOn.startOf("day"))
+                      current.startOf("day").isBefore(editForm.noticeStartDate.startOf("day"))
                     }
                   />
                 </div>
@@ -559,14 +700,14 @@ const NoticeBoard = () => {
               <div className="row">
                 <div className="col-md-6">
                   <div className="mb-3">
-                    <label className="form-label">Notice Date</label>
-                    <p>{selectedNotice?.noticeDate || "N/A"}</p>
+                    <label className="form-label">Notice Start Date</label>
+                    <p>{selectedNotice?.noticeStartDate || "N/A"}</p>
                   </div>
                 </div>
                 <div className="col-md-6">
                   <div className="mb-3">
-                    <label className="form-label">Publish On</label>
-                    <p>{selectedNotice?.publishOn || "N/A"}</p>
+                    <label className="form-label">Notice End Date</label>
+                    <p>{selectedNotice?.noticeEndDate || "N/A"}</p>
                   </div>
                 </div>
               </div>

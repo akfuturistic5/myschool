@@ -175,6 +175,7 @@ const Events = () => {
   const routes = all_routes;
   const { user } = useCurrentUser();
   const canManage = canManageSchoolEvents(user);
+  const isAdmin = Number((user as { role_id?: number | string } | null)?.role_id) === 1;
   const [filterCategory, setFilterCategory] = useState<string | "all">("all");
   const [filterAudience, setFilterAudience] = useState<
     "all" | "students" | "staff" | "parents" | "guardians"
@@ -650,13 +651,13 @@ const Events = () => {
     () => ({
       start: "title",
       center: "dayGridMonth,dayGridWeek,dayGridDay",
-      end: canManage ? "custombtn" : "",
+      end: canManage ? "custombtn" : undefined,
     }),
     [canManage]
   );
 
-  const customButtons = useMemo(() => {
-    if (!canManage) return {};
+  const customButtons = useMemo<Record<string, { text: string; click: () => void }>>(() => {
+    if (!canManage) return {} as Record<string, { text: string; click: () => void }>;
     return {
       custombtn: {
         text: "Add New Event",
@@ -670,15 +671,17 @@ const Events = () => {
     "All categories";
 
   const targetSummary = (ev: SchoolEvent) => {
-    const audienceTokens = parseEventForList(ev.event_for);
-    if (!audienceTokens.length || audienceTokens.includes("all")) return "All users";
+    const audienceTokens = parseEventForList(ev.event_for).filter(
+      (t): t is "students" | "staff" | "parents" | "guardians" => t !== "all"
+    );
+    if (!audienceTokens.length) return "All users";
     if (audienceTokens.length > 1) {
       return audienceTokens
         .map((v) => v.charAt(0).toUpperCase() + v.slice(1))
         .join(", ");
     }
     const forValue = audienceTokens[0];
-    if (forValue === "staff" || forValue === "staffs" || forValue === "teachers") {
+    if (forValue === "staff") {
       const depCount = Array.isArray(ev.target_department_ids)
         ? ev.target_department_ids.length
         : 0;
@@ -959,29 +962,31 @@ const Events = () => {
                           format="DD/MM/YYYY"
                         />
                       </div>
-                      <div className="col-md-2">
-                        <label className="form-label mb-1">Audience</label>
-                        <select
-                          className="form-select"
-                          value={filterAudience}
-                          onChange={(e) =>
-                            setFilterAudience(
-                              e.target.value as
-                                | "all"
-                                | "students"
-                                | "staff"
-                                | "parents"
-                                | "guardians"
-                            )
-                          }
-                        >
-                          {AUDIENCE_FILTER_OPTIONS.map((o) => (
-                            <option key={o.key} value={o.key}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {isAdmin && (
+                        <div className="col-md-2">
+                          <label className="form-label mb-1">Audience</label>
+                          <select
+                            className="form-select"
+                            value={filterAudience}
+                            onChange={(e) =>
+                              setFilterAudience(
+                                e.target.value as
+                                  | "all"
+                                  | "students"
+                                  | "staff"
+                                  | "parents"
+                                  | "guardians"
+                              )
+                            }
+                          >
+                            {AUDIENCE_FILTER_OPTIONS.map((o) => (
+                              <option key={o.key} value={o.key}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div className="col-md-2 d-flex align-items-end">
                         <button
                           type="button"
@@ -1171,6 +1176,25 @@ const Events = () => {
               <div className="col-md-6 mb-3">
                 <label className="form-label">Event audience</label>
                 <div className="border rounded p-2 bg-light">
+                  <div className="form-check form-check-inline me-3">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="event-audience-all"
+                      checked={eventForList.length === 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          // "All" is stored as event_for = "all" (empty list on UI)
+                          // to avoid exceeding existing varchar(20) storage.
+                          setEventForList([]);
+                        }
+                      }}
+                      disabled={!canManage}
+                    />
+                    <label className="form-check-label" htmlFor="event-audience-all">
+                      All
+                    </label>
+                  </div>
                   {EVENT_AUDIENCE_OPTIONS.map((aud) => {
                     const checked = eventForList.includes(aud.key);
                     return (
@@ -1199,7 +1223,7 @@ const Events = () => {
                   })}
                 </div>
                 <p className="text-muted small mb-0 mt-1">
-                  Leave all unchecked to publish for all audiences.
+                  Select "All" to publish for everyone, or pick one/more audiences.
                 </p>
               </div>
               <div className="col-md-6 mb-3">

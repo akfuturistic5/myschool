@@ -1684,6 +1684,7 @@ class ApiService {
   async getNoticeBoard(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.include_expired != null) searchParams.set('include_expired', params.include_expired);
     const qs = searchParams.toString();
     return this.makeRequest(`/notice-board${qs ? `?${qs}` : ''}`);
   }

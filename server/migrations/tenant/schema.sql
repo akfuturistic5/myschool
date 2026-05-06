@@ -2030,6 +2030,8 @@ CREATE TABLE IF NOT EXISTS public.notice_board (
     title character varying(255) NOT NULL,
     content text,
     message_to character varying(100) DEFAULT 'All', -- All, Staff, Student
+    notice_start_date date,
+    notice_end_date date,
     created_by integer REFERENCES public.users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),

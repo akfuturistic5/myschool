@@ -57,6 +57,9 @@ async function normalizeAndValidateTargets(rawValue) {
   if (targets.length === 0) {
     return { ok: false, error: 'At least one role must be selected' };
   }
+  if (targets.some((target) => String(target).toLowerCase() === 'all')) {
+    return { ok: true, value: 'All' };
+  }
 
   const roleSet = await getActiveRoleNameSet();
   const invalid = targets.filter((target) => !roleSet.has(target.toLowerCase()));
@@ -96,11 +99,12 @@ function isNoticeManager(req) {
 const getAllNotices = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
+    const includeExpired = String(req.query.include_expired || '').toLowerCase() === 'true';
     let result;
 
     if (isNoticeManager(req)) {
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_start_date, nb.notice_end_date, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
@@ -110,24 +114,44 @@ const getAllNotices = async (req, res) => {
       );
     } else {
       const roleName = await resolveCurrentRoleName(req);
-      result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
-                u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
-         FROM notice_board nb
-         LEFT JOIN users u ON u.id = nb.created_by
-         WHERE (publish_on IS NULL OR publish_on <= CURRENT_DATE)
-           AND (
-             COALESCE(NULLIF(TRIM(message_to), ''), 'All') = 'All'
+      if (includeExpired) {
+        result = await query(
+          `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_start_date, nb.notice_end_date, nb.created_by, nb.created_at, nb.updated_at,
+                  u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
+           FROM notice_board nb
+           LEFT JOIN users u ON u.id = nb.created_by
+           WHERE (
+             LOWER(COALESCE(NULLIF(TRIM(message_to), ''), 'All')) = 'all'
             OR EXISTS (
                  SELECT 1
                  FROM unnest(string_to_array(COALESCE(message_to, ''), ',')) AS token
                  WHERE LOWER(TRIM(token)) = LOWER($1)
                )
            )
-         ORDER BY COALESCE(nb.updated_at, nb.created_at) DESC
-         LIMIT $2`,
-        [roleName, limit]
-      );
+           ORDER BY COALESCE(nb.updated_at, nb.created_at) DESC
+           LIMIT $2`,
+          [roleName, limit]
+        );
+      } else {
+        result = await query(
+          `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_start_date, nb.notice_end_date, nb.created_by, nb.created_at, nb.updated_at,
+                  u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
+           FROM notice_board nb
+           LEFT JOIN users u ON u.id = nb.created_by
+           WHERE (nb.notice_end_date IS NULL OR nb.notice_end_date >= CURRENT_DATE)
+             AND (
+               LOWER(COALESCE(NULLIF(TRIM(message_to), ''), 'All')) = 'all'
+              OR EXISTS (
+                   SELECT 1
+                   FROM unnest(string_to_array(COALESCE(message_to, ''), ',')) AS token
+                   WHERE LOWER(TRIM(token)) = LOWER($1)
+                 )
+             )
+           ORDER BY COALESCE(nb.updated_at, nb.created_at) DESC
+           LIMIT $2`,
+          [roleName, limit]
+        );
+      }
     }
     const data = result.rows.map((r) => ({
       id: r.id,
@@ -138,10 +162,11 @@ const getAllNotices = async (req, res) => {
         sanitizeNoticeTitle(
           `${String(r.created_by_first_name || '').trim()} ${String(r.created_by_last_name || '').trim()}`.trim()
         ) || sanitizeNoticeTitle(r.created_by_username || '') || 'System',
-      notice_date: r.notice_date,
-      publish_on: r.publish_on,
-      noticeDate: formatDate(r.notice_date),
-      publishOn: formatDate(r.publish_on),
+      notice_start_date: r.notice_start_date,
+      notice_end_date: r.notice_end_date,
+      noticeStartDate: formatDate(r.notice_start_date),
+      noticeEndDate: formatDate(r.notice_end_date),
+      publishOn: formatDate(r.created_at),
       createdBy: r.created_by,
       created_at: r.created_at,
       updated_at: r.updated_at,
@@ -169,7 +194,7 @@ const getNoticeById = async (req, res) => {
     let result;
     if (isNoticeManager(req)) {
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_start_date, nb.notice_end_date, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
@@ -179,14 +204,14 @@ const getNoticeById = async (req, res) => {
     } else {
       const roleName = await resolveCurrentRoleName(req);
       result = await query(
-        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_date, nb.publish_on, nb.created_by, nb.created_at, nb.updated_at,
+        `SELECT nb.id, nb.title, nb.content, nb.message_to, nb.notice_start_date, nb.notice_end_date, nb.created_by, nb.created_at, nb.updated_at,
                 u.first_name AS created_by_first_name, u.last_name AS created_by_last_name, u.username AS created_by_username
          FROM notice_board nb
          LEFT JOIN users u ON u.id = nb.created_by
          WHERE nb.id = $1
-           AND (publish_on IS NULL OR publish_on <= CURRENT_DATE)
+           AND (nb.notice_end_date IS NULL OR nb.notice_end_date >= CURRENT_DATE)
            AND (
-             COALESCE(NULLIF(TRIM(message_to), ''), 'All') = 'All'
+             LOWER(COALESCE(NULLIF(TRIM(message_to), ''), 'All')) = 'all'
              OR EXISTS (
                SELECT 1
                FROM unnest(string_to_array(COALESCE(message_to, ''), ',')) AS token
@@ -215,10 +240,11 @@ const getNoticeById = async (req, res) => {
           sanitizeNoticeTitle(
             `${String(r.created_by_first_name || '').trim()} ${String(r.created_by_last_name || '').trim()}`.trim()
           ) || sanitizeNoticeTitle(r.created_by_username || '') || 'System',
-        notice_date: r.notice_date,
-        publish_on: r.publish_on,
-        noticeDate: formatDate(r.notice_date),
-        publishOn: formatDate(r.publish_on),
+        notice_start_date: r.notice_start_date,
+        notice_end_date: r.notice_end_date,
+        noticeStartDate: formatDate(r.notice_start_date),
+        noticeEndDate: formatDate(r.notice_end_date),
+        publishOn: formatDate(r.created_at),
         createdBy: r.created_by,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -244,7 +270,7 @@ const createNotice = async (req, res) => {
         message: 'Authenticated user is required to create notice',
       });
     }
-    const { title, content, message_to, notice_date, publish_on } = req.body;
+    const { title, content, message_to, notice_start_date, notice_end_date } = req.body;
     if (!title || !title.trim()) {
       return res.status(400).json({
         status: 'ERROR',
@@ -262,28 +288,28 @@ const createNotice = async (req, res) => {
     }
 
     const safeTo = sanitizeNoticeTitle(targetValidation.value);
-    const safeNoticeDate = toIsoDateOrNull(notice_date);
-    const safePublishOn = toIsoDateOrNull(publish_on);
-    if (notice_date !== undefined && notice_date !== null && !safeNoticeDate) {
-      return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_date' });
+    const safeStartDate = toIsoDateOrNull(notice_start_date);
+    const safeEndDate = toIsoDateOrNull(notice_end_date);
+    if (notice_start_date !== undefined && notice_start_date !== null && !safeStartDate) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_start_date' });
     }
-    if (publish_on !== undefined && publish_on !== null && !safePublishOn) {
-      return res.status(400).json({ status: 'ERROR', message: 'Invalid publish_on' });
+    if (notice_end_date !== undefined && notice_end_date !== null && !safeEndDate) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_end_date' });
     }
-    if (safeNoticeDate && safePublishOn && safeNoticeDate < safePublishOn) {
+    if (safeStartDate && safeEndDate && safeEndDate < safeStartDate) {
       return res.status(400).json({
         status: 'ERROR',
-        message: 'Notice Date cannot be earlier than Publish On',
+        message: 'Notice End Date cannot be earlier than Notice Start Date',
       });
     }
     if (!safeTitle) {
       return res.status(400).json({ status: 'ERROR', message: 'Title is required' });
     }
     const result = await query(
-      `INSERT INTO notice_board (title, content, message_to, notice_date, publish_on, created_by, created_at, updated_at)
+      `INSERT INTO notice_board (title, content, message_to, notice_start_date, notice_end_date, created_by, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
-      [safeTitle, safeContent || null, safeTo, safeNoticeDate, safePublishOn, userId]
+      [safeTitle, safeContent || null, safeTo, safeStartDate, safeEndDate, userId]
     );
     const r = result.rows[0];
     res.status(201).json({
@@ -294,10 +320,11 @@ const createNotice = async (req, res) => {
         title: sanitizeNoticeTitle(r.title || ''),
         content: sanitizeNoticeContent(r.content || ''),
         messageTo: sanitizeNoticeTitle(r.message_to || 'All'),
-        notice_date: r.notice_date,
-        publish_on: r.publish_on,
-        noticeDate: formatDate(r.notice_date),
-        publishOn: formatDate(r.publish_on),
+        notice_start_date: r.notice_start_date,
+        notice_end_date: r.notice_end_date,
+        noticeStartDate: formatDate(r.notice_start_date),
+        noticeEndDate: formatDate(r.notice_end_date),
+        publishOn: formatDate(r.created_at),
         created_at: r.created_at,
         updated_at: r.updated_at,
       },
@@ -314,11 +341,11 @@ const createNotice = async (req, res) => {
 const updateNotice = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, content, message_to, notice_date, publish_on } = req.body;
+    const { title, content, message_to, notice_start_date, notice_end_date } = req.body;
     let existingNotice = null;
-    if (notice_date !== undefined || publish_on !== undefined) {
+    if (notice_start_date !== undefined || notice_end_date !== undefined) {
       const existingResult = await query(
-        `SELECT id, notice_date, publish_on
+        `SELECT id, notice_start_date, notice_end_date
          FROM notice_board
          WHERE id = $1
          LIMIT 1`,
@@ -354,45 +381,39 @@ const updateNotice = async (req, res) => {
       updates.push(`message_to = $${i++}`);
       values.push(sanitizeNoticeTitle(targetValidation.value));
     }
-    if (notice_date !== undefined) {
-      const safeNoticeDate = toIsoDateOrNull(notice_date);
-      if (notice_date !== null && !safeNoticeDate) {
-        return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_date' });
+    if (notice_start_date !== undefined) {
+      const safeStartDate = toIsoDateOrNull(notice_start_date);
+      if (notice_start_date !== null && !safeStartDate) {
+        return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_start_date' });
       }
-      updates.push(`notice_date = $${i++}`);
-      values.push(safeNoticeDate);
+      updates.push(`notice_start_date = $${i++}`);
+      values.push(safeStartDate);
     }
-    if (publish_on !== undefined) {
-      const safePublishOn = toIsoDateOrNull(publish_on);
-      if (publish_on !== null && !safePublishOn) {
-        return res.status(400).json({ status: 'ERROR', message: 'Invalid publish_on' });
+    if (notice_end_date !== undefined) {
+      const safeEndDate = toIsoDateOrNull(notice_end_date);
+      if (notice_end_date !== null && !safeEndDate) {
+        return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_end_date' });
       }
-      updates.push(`publish_on = $${i++}`);
-      values.push(safePublishOn);
+      updates.push(`notice_end_date = $${i++}`);
+      values.push(safeEndDate);
     }
 
-    const effectiveNoticeDate =
-      notice_date !== undefined
-        ? toIsoDateOrNull(notice_date)
-        : toIsoDateOrNull(existingNotice?.notice_date);
-    const effectivePublishOn =
-      publish_on !== undefined
-        ? toIsoDateOrNull(publish_on)
-        : toIsoDateOrNull(existingNotice?.publish_on);
-    if (notice_date !== undefined && notice_date !== null && !toIsoDateOrNull(notice_date)) {
-      return res.status(400).json({ status: 'ERROR', message: 'Invalid notice_date' });
-    }
-    if (publish_on !== undefined && publish_on !== null && !toIsoDateOrNull(publish_on)) {
-      return res.status(400).json({ status: 'ERROR', message: 'Invalid publish_on' });
-    }
+    const effectiveStartDate =
+      notice_start_date !== undefined
+        ? toIsoDateOrNull(notice_start_date)
+        : toIsoDateOrNull(existingNotice?.notice_start_date);
+    const effectiveEndDate =
+      notice_end_date !== undefined
+        ? toIsoDateOrNull(notice_end_date)
+        : toIsoDateOrNull(existingNotice?.notice_end_date);
     if (
-      effectiveNoticeDate &&
-      effectivePublishOn &&
-      effectiveNoticeDate < effectivePublishOn
+      effectiveStartDate &&
+      effectiveEndDate &&
+      effectiveEndDate < effectiveStartDate
     ) {
       return res.status(400).json({
         status: 'ERROR',
-        message: 'Notice Date cannot be earlier than Publish On',
+        message: 'Notice End Date cannot be earlier than Notice Start Date',
       });
     }
     if (updates.length === 0) {
@@ -424,8 +445,11 @@ const updateNotice = async (req, res) => {
         content: sanitizeNoticeContent(ur.content || ''),
         message_to: sanitizeNoticeTitle(ur.message_to || 'All'),
         messageTo: sanitizeNoticeTitle(ur.message_to || 'All'),
-        noticeDate: formatDate(ur.notice_date),
-        publishOn: formatDate(ur.publish_on),
+        notice_start_date: ur.notice_start_date,
+        notice_end_date: ur.notice_end_date,
+        noticeStartDate: formatDate(ur.notice_start_date),
+        noticeEndDate: formatDate(ur.notice_end_date),
+        publishOn: formatDate(ur.created_at),
       },
     });
   } catch (error) {

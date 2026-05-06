@@ -38,16 +38,18 @@ async function listHolidaysInRange(startDate, endDate, academicYearId = null) {
   const result = await query(
     `SELECT
        h.id,
-       COALESCE(NULLIF(TRIM(to_jsonb(h)->>'title'), ''), NULLIF(TRIM(to_jsonb(h)->>'holiday_name'), ''), 'Holiday') AS title,
+       COALESCE(NULLIF(TRIM(h.holiday_name), ''), 'Holiday') AS title,
        h.description,
-       h.start_date::text AS start_date,
-       h.end_date::text AS end_date,
+       lower(h.holiday_period)::text AS start_date,
+       (CASE
+         WHEN upper_inf(h.holiday_period) THEN lower(h.holiday_period)::text
+         ELSE ((upper(h.holiday_period)::date - interval '1 day')::date)::text
+       END) AS end_date,
        h.holiday_type
-     FROM holidays h
-     WHERE start_date <= $2::date
-       AND end_date >= $1::date
+     FROM school_holidays h
+     WHERE h.holiday_period && daterange($1::date, $2::date, '[]')
        ${hasAcademicYear ? 'AND (h.academic_year_id = $3 OR h.academic_year_id IS NULL)' : ''}
-     ORDER BY start_date ASC, id ASC`,
+     ORDER BY lower(h.holiday_period) ASC, h.id ASC`,
     hasAcademicYear ? [start, end, yearId] : [start, end]
   );
   return result.rows || [];
@@ -67,16 +69,18 @@ async function getHolidayForDate(date, academicYearId = null) {
   const result = await query(
     `SELECT
        h.id,
-       COALESCE(NULLIF(TRIM(to_jsonb(h)->>'title'), ''), NULLIF(TRIM(to_jsonb(h)->>'holiday_name'), ''), 'Holiday') AS title,
+       COALESCE(NULLIF(TRIM(h.holiday_name), ''), 'Holiday') AS title,
        h.description,
-       h.start_date::text AS start_date,
-       h.end_date::text AS end_date,
+       lower(h.holiday_period)::text AS start_date,
+       (CASE
+         WHEN upper_inf(h.holiday_period) THEN lower(h.holiday_period)::text
+         ELSE ((upper(h.holiday_period)::date - interval '1 day')::date)::text
+       END) AS end_date,
        h.holiday_type
-     FROM holidays h
-     WHERE start_date <= $1::date
-       AND end_date >= $1::date
+     FROM school_holidays h
+     WHERE h.holiday_period @> $1::date
        ${hasAcademicYear ? 'AND (h.academic_year_id = $2 OR h.academic_year_id IS NULL)' : ''}
-     ORDER BY start_date ASC, id ASC
+     ORDER BY lower(h.holiday_period) ASC, h.id ASC
      LIMIT 1`,
     hasAcademicYear ? [normalized, yearId] : [normalized]
   );
