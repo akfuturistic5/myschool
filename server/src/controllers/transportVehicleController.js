@@ -63,9 +63,7 @@ const getAllVehicles = async (req, res) => {
       sortOrder = 'ASC'
     } = req.query;
 
-    const pageNumber = Math.max(Number.parseInt(page, 10) || 1, 1);
-    const pageLimit = Math.max(Number.parseInt(limit, 10) || 10, 1);
-    const offset = (pageNumber - 1) * pageLimit;
+    const offset = (page - 1) * limit;
     let whereClause = `WHERE ${hasDeletedAt ? 'v.deleted_at IS NULL' : '1=1'}`;
     const queryParams = [];
 
@@ -110,21 +108,12 @@ const getAllVehicles = async (req, res) => {
     }
 
     // Sorting
-    const sortMap = {
-      id: 'v.id',
-      vehicle_number: 'v.vehicle_number',
-      vehicle_type: 'v.vehicle_type',
-      brand: 'v.brand',
-      model: 'v.model',
-      vehicle_model: 'v.model',
-      made_of_year: 'v.made_of_year',
-      is_active: 'v.is_active',
-      created_at: 'v.created_at',
-      route_name: 'r.route_name',
-      point_name: 'point_name',
-    };
-    const allowedSortFields = Object.keys(sortMap);
-    const finalSortField = allowedSortFields.includes(sortField) ? sortMap[sortField] : 'v.id';
+    const allowedSortFields = ['id', 'vehicle_number', 'vehicle_type', 'brand', 'model', 'vehicle_model', 'made_of_year', 'is_active', 'created_at', 'driver_name', 'route_name', 'point_name'];
+    let finalSortField = 'v.id';
+    if (allowedSortFields.includes(sortField)) {
+      if (sortField === 'route_name') finalSortField = 'r.route_name';
+      else finalSortField = `v.${sortField}`;
+    }
     const finalSortOrder = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
     const assignmentsJoin = hasTransportAssignments
@@ -155,14 +144,14 @@ const getAllVehicles = async (req, res) => {
     const dataResult = await query(
       `SELECT v.*, r.route_name,
        (${hasRouteStops
-          ? `SELECT string_agg(pp_sub.point_name, ', ')
+        ? `SELECT string_agg(pp_sub.point_name, ', ')
              FROM route_stops rs_sub
              JOIN pickup_points pp_sub ON rs_sub.pickup_point_id = pp_sub.id
              WHERE rs_sub.route_id = r.id`
-          : `SELECT string_agg(pp_sub.point_name, ', ')
+        : `SELECT string_agg(pp_sub.point_name, ', ')
              FROM pickup_points pp_sub
              WHERE pp_sub.route_id = r.id`
-        }) as point_name
+      }) as point_name
        FROM transport_vehicles v
        ${assignmentsJoin}
        LEFT JOIN routes r ON ta.route_id = r.id AND r.deleted_at IS NULL
@@ -238,20 +227,20 @@ const getVehicleById = async (req, res) => {
 
 const createVehicle = async (req, res) => {
   try {
-    const { 
-      vehicle_number, 
+    const {
+      vehicle_number,
       vehicle_type,
       brand,
-      vehicle_model, 
-      made_of_year, 
-      registration_number, 
-      chassis_number, 
-      seat_capacity, 
-      gps_device_id, 
+      vehicle_model,
+      made_of_year,
+      registration_number,
+      chassis_number,
+      seat_capacity,
+      gps_device_id,
       insurance_expiry,
       fitness_expiry,
       permit_expiry,
-      is_active 
+      is_active
     } = req.body;
 
     if (!vehicle_number) {
@@ -292,7 +281,7 @@ const createVehicle = async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
-      vehicle_number, 
+      vehicle_number,
       parsedVehicleType,
       brand ? String(brand).trim() : null,
       model || '',
@@ -441,20 +430,20 @@ const deleteVehicle = async (req, res) => {
     const { id } = req.params;
     const hasDeletedAt = await hasColumn('transport_vehicles', 'deleted_at');
     const numericId = parseInt(id);
-    
+
     if (isNaN(numericId)) {
       return errorResponse(res, 400, 'Invalid vehicle ID');
     }
 
     const result = hasDeletedAt
       ? await query(
-          'UPDATE transport_vehicles SET deleted_at = NOW(), updated_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
-          [numericId]
-        )
+        'UPDATE transport_vehicles SET deleted_at = NOW(), updated_at = NOW(), is_active = false WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+        [numericId]
+      )
       : await query(
-          'UPDATE transport_vehicles SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
-          [numericId]
-        );
+        'UPDATE transport_vehicles SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+        [numericId]
+      );
 
     if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Vehicle not found or already deleted');

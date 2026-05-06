@@ -1,10 +1,11 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useHostels = () => {
-  const [hostels, setHostels] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+export const useHostels = (academicYearId?: number | string | null) => {
+  const [hostels, setHostels] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchHostels = useCallback(async () => {
     try {
@@ -15,7 +16,7 @@ export const useHostels = () => {
       const rawData = response?.data ?? (Array.isArray(response) ? response : null);
       const dataArray = Array.isArray(rawData) ? rawData : [];
 
-      const transformedData = dataArray.map((hostel, index) => {
+      const transformedData = dataArray.map((hostel: any, index: number) => {
         const intakeValue =
           hostel.intake_capacity != null && hostel.intake_capacity !== ''
             ? hostel.intake_capacity
@@ -54,7 +55,7 @@ export const useHostels = () => {
       });
 
       setHostels(transformedData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching hostels:', err);
       setError(err.message || 'Failed to fetch hostels data');
       setHostels([]);
@@ -65,7 +66,7 @@ export const useHostels = () => {
 
   useEffect(() => {
     fetchHostels();
-  }, [fetchHostels]);
+  }, [fetchHostels, academicYearId]);
 
   return {
     hostels,

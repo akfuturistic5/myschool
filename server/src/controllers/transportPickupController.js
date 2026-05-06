@@ -239,7 +239,19 @@ const getAllPickupPoints = async (req, res) => {
     const totalCount = Number.parseInt(countResult.rows[0]?.count || '0', 10);
     const data = result.rows.map((row) => mapPickupRow(row, flags));
 
-    return success(res, 200, 'Pickup points fetched successfully', data, {
+    const dataResult = await query(
+      `SELECT pp.*, r.route_name
+       FROM pickup_points pp
+       LEFT JOIN routes r ON pp.route_id = r.id
+       ${whereClause} 
+       ORDER BY pp.${actualSortField} ${actualSortOrder} 
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, parseInt(limit), offset]
+    );
+
+    const data = dataResult.rows.map((row) => mapPickupRow(row, flags));
+
+    return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
       page: pageNumber,
       limit: pageLimit,
@@ -308,7 +320,8 @@ const getPickupPointById = async (req, res) => {
 const createPickupPoint = async (req, res) => {
   try {
     const flags = await getPickupContextFlags();
-    const {
+    const hasDeletedAt = flags.hasDeletedAt;
+    const { 
       route_id,
       point_name,
       address,
@@ -323,12 +336,24 @@ const createPickupPoint = async (req, res) => {
     const safePointName = normalizeNullableText(point_name);
     if (!safePointName) return errorResponse(res, 400, 'Pickup point name is required');
 
-    const routeIdValue = route_id === undefined ? undefined : (route_id === null || route_id === '' ? null : Number(route_id));
-    if (flags.hasRouteId && (routeIdValue === undefined || routeIdValue === null)) {
-      return errorResponse(res, 400, 'Route is required for pickup point');
+    // Check for duplicate name
+    // const duplicateParams = [point_name];
+    // let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
+    if (flags.hasRouteId && route_id != null && String(route_id).trim() !== '') {
+      duplicateParams.push(Number(route_id));
+      duplicateSql += ` AND route_id = $2`;
     }
-    if (routeIdValue !== undefined && routeIdValue !== null && !Number.isInteger(routeIdValue)) {
-      return errorResponse(res, 400, 'Route ID must be a valid integer');
+    // const existing = await query(
+    //   duplicateSql,
+    //   duplicateParams
+    // );
+    // if (existing.rows.length > 0) {
+    //   return errorResponse(res, 400, 'A pickup point with this name already exists');
+    //   sequence_order
+    // } = req.body;
+
+    if (!point_name) {
+      return errorResponse(res, 400, 'Pickup point name is required');
     }
 
     const duplicateParams = [safePointName];
@@ -342,6 +367,82 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'A pickup point with this name already exists');
     }
 
+    if (!route_id || !point_name || sequence_order === undefined) {
+      return errorResponse(res, 400, 'Route, point name and sequence order are required');
+    }
+
+    // const payloadValues = [point_name];
+    // const columns = ['point_name'];
+    // const placeholders = ['$1'];
+
+    // if (flags.hasRouteId && (route_id === undefined || route_id === null || String(route_id).trim() === '')) {
+    //   return errorResponse(res, 400, 'Route is required for pickup point');
+    // }
+
+    // if (flags.hasRouteId && route_id !== undefined) {
+    //   const routeIdValue = route_id === null || route_id === '' ? null : Number(route_id);
+    //   if (routeIdValue !== null && !Number.isInteger(routeIdValue)) {
+    //     return errorResponse(res, 400, 'Route ID must be a valid integer');
+    //   }
+    //   columns.push('route_id');
+    //   payloadValues.push(routeIdValue);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasAddress && address !== undefined) {
+    //   columns.push('address');
+    //   payloadValues.push(normalizeNullableText(address));
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasLandmark && landmark !== undefined) {
+    //   columns.push('landmark');
+    //   payloadValues.push(normalizeNullableText(landmark));
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasPickupTime && pickup_time !== undefined) {
+    //   const t = normalizeNullableTime(pickup_time);
+    //   if (pickup_time != null && String(pickup_time).trim() !== '' && t === null) {
+    //     return errorResponse(res, 400, 'Invalid pickup time format. Use HH:mm');
+    //   }
+    //   columns.push('pickup_time');
+    //   payloadValues.push(t);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasDropTime && drop_time !== undefined) {
+    //   const t = normalizeNullableTime(drop_time);
+    //   if (drop_time != null && String(drop_time).trim() !== '' && t === null) {
+    //     return errorResponse(res, 400, 'Invalid drop time format. Use HH:mm');
+    //   }
+    //   columns.push('drop_time');
+    //   payloadValues.push(t);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasDistanceFromSchool && distance_from_school !== undefined) {
+    //   const distance = normalizeNullableNumber(distance_from_school);
+    //   if (Number.isNaN(distance)) {
+    //     return errorResponse(res, 400, 'Distance from school must be a valid number');
+    //   }
+    //   columns.push('distance_from_school');
+    //   payloadValues.push(distance);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasSequenceOrder) {
+    //   const sequence = sequence_order === undefined || sequence_order === null || sequence_order === ''
+    //     ? 0
+    //     : Number(sequence_order);
+    //   if (!Number.isInteger(sequence) || sequence < 0) {
+    //     return errorResponse(res, 400, 'Sequence order must be a non-negative integer');
+    //   }
+    //   columns.push('sequence_order');
+    //   payloadValues.push(sequence);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+    // if (flags.hasIsActive) {
+    //   columns.push('is_active');
+    //   payloadValues.push(is_active !== false);
+    //   placeholders.push(`$${payloadValues.length}`);
+    // }
+
+    const payloadValues = [point_name];
     const columns = ['point_name'];
     const values = [safePointName];
     const placeholders = ['$1'];
@@ -434,8 +535,7 @@ const updatePickupPoint = async (req, res) => {
     );
     if (!existingResult.rows.length) return errorResponse(res, 404, 'Pickup point not found');
 
-    const existing = existingResult.rows[0];
-    const {
+    const { 
       route_id,
       point_name,
       address,

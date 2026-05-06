@@ -48,6 +48,8 @@ import ClassHomeWork from "../academic/class-home-work";
 import ClassRoom from "../academic/class-room";
 import ClassSection from "../academic/class-section";
 import ClassSubject from "../academic/class-subject";
+import SubjectList from "../academic/subjects";
+import ClassSectionsAssignment from "../academic/class-sections";
 import ClassSyllabus from "../academic/class-syllabus";
 import ClassTimetable from "../academic/class-timetable";
 import SectionRoutine from "../academic/section-routine";
@@ -848,6 +850,16 @@ export const publicRoutes = [
   {
     path: routes.classSubject,
     element: <ClassSubject />,
+    route: Route,
+  },
+  {
+    path: routes.subjects,
+    element: <SubjectList />,
+    route: Route,
+  },
+  {
+    path: routes.classSections,
+    element: <ClassSectionsAssignment />,
     route: Route,
   },
   {
