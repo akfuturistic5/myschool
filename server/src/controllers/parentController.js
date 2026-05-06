@@ -21,6 +21,7 @@ const {
   STUDENT_CONTACT_LATERAL_SELECT,
   STUDENT_CONTACT_LATERAL_JOINS,
 } = require('../utils/studentContactSync');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 function isBlankValue(value) {
   return value == null || (typeof value === 'string' && value.trim() === '');
@@ -95,16 +96,18 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       ${STUDENT_CONTACT_LATERAL_SELECT},
       s.created_at,
       s.updated_at AS updated_at,
-      s.first_name AS student_first_name,
-      s.last_name AS student_last_name,
-      NULLIF(TRIM(s.photo_url), '') AS student_image_url,
+      u.first_name AS student_first_name,
+      u.last_name AS student_last_name,
+      NULLIF(TRIM(u.avatar), '') AS student_image_url,
       s.admission_number,
       s.roll_number,
       c.class_name,
       sec.section_name
     FROM students s
-    LEFT JOIN classes c ON s.class_id = c.id
-    LEFT JOIN sections sec ON s.section_id = sec.id
+    LEFT JOIN users u ON s.user_id = u.id
+    ${lateralCurrentEnrollment('s.id')}
+    LEFT JOIN classes c ON enr.class_id = c.id
+    LEFT JOIN sections sec ON enr.section_id = sec.id
     ${STUDENT_CONTACT_LATERAL_JOINS}
     WHERE s.id = $1 AND s.status = \'Active\'
     LIMIT 1`;
@@ -227,7 +230,7 @@ const updateParent = async (req, res) => {
         err.statusCode = 503;
         throw err;
       }
-      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND s.status = \'Active\' LIMIT 1', [studentId]);
+      const chk = await client.query('SELECT id FROM students s WHERE s.id = $1 AND s.status = \'Active\' LIMIT 1', [studentId]);
       if (chk.rows.length === 0) {
         const err = new Error('Student not found');
         err.statusCode = 404;
@@ -343,6 +346,7 @@ const updateParent = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to update parent',
+      error: error.message,
     });
   }
 };
@@ -381,26 +385,25 @@ const parentListSelectSql = `
         ${STUDENT_CONTACT_LATERAL_SELECT},
         s.created_at,
         s.updated_at AS updated_at,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
-        NULLIF(TRIM(s.photo_url), '') AS student_image_url,
+        u.first_name AS student_first_name,
+        u.last_name AS student_last_name,
+        NULLIF(TRIM(u.avatar), '') AS student_image_url,
         s.admission_number,
         s.roll_number,
         c.class_name,
         sec.section_name,
-        (SELECT g.user_id FROM guardians g
-          LEFT JOIN users u ON u.id = g.user_id
-          WHERE g.student_id = s.id AND g.status = \'Active\'
+        (SELECT g.user_id FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          LEFT JOIN users u2 ON u2.id = g.user_id
+          WHERE sgl.student_id = s.id AND g.is_active = true
             AND (
-              LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-              OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-              OR u.role_id = ${ROLES.PARENT}
+              LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+              OR u2.role_id = ${ROLES.PARENT}
             )
           ORDER BY
             CASE
-              WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
-              WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
-              WHEN u.role_id = ${ROLES.PARENT} THEN 2
+              WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
+              WHEN u2.role_id = ${ROLES.PARENT} THEN 2
               ELSE 9
             END,
             g.id ASC
@@ -408,8 +411,10 @@ const parentListSelectSql = `
 
 const parentListJoins = `
         FROM students s
-        LEFT JOIN classes c ON s.class_id = c.id
-        LEFT JOIN sections sec ON s.section_id = sec.id
+        LEFT JOIN users u ON s.user_id = u.id
+        ${lateralCurrentEnrollment('s.id')}
+        LEFT JOIN classes c ON enr.class_id = c.id
+        LEFT JOIN sections sec ON enr.section_id = sec.id
         ${STUDENT_CONTACT_LATERAL_JOINS}`;
 
 const getAllParents = async (req, res) => {
@@ -453,37 +458,37 @@ const getAllParents = async (req, res) => {
       }
 
       const teacherParams = [teacherIds, teacherStaffIds];
-      const academicYearClause = hasYearFilter ? ` AND s.academic_year_id = $${teacherParams.length + 1}` : '';
+      const academicYearClause = hasYearFilter ? ` AND enr.academic_year_id = $${teacherParams.length + 1}` : '';
       if (hasYearFilter) teacherParams.push(academicYearId);
 
       const result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
         WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')
+          AND EXISTS (SELECT 1 FROM student_guardian_links sgl2 WHERE sgl2.student_id = s.id)
           AND (
             EXISTS (
               SELECT 1 FROM class_schedules cs
               WHERE cs.teacher_id = ANY($1::int[])
-                AND cs.class_id = s.class_id
-                AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+                AND cs.class_id = enr.class_id
+                AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
             )
             OR EXISTS (
               SELECT 1 FROM teachers t
-              WHERE t.id = ANY($1::int[]) AND t.class_id = s.class_id
+              WHERE t.id = ANY($1::int[]) AND t.class_id = enr.class_id
             )
             OR EXISTS (
               SELECT 1 FROM sections sec_map
-              WHERE sec_map.id = s.section_id
+              WHERE sec_map.id = enr.section_id
                 AND sec_map.section_teacher_id = ANY($2::int[])
             )
             OR EXISTS (
               SELECT 1 FROM classes c_map
-              WHERE c_map.id = s.class_id
+              WHERE c_map.id = enr.class_id
                 AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
             )
           )${academicYearClause}
-        ORDER BY s.first_name ASC, s.last_name ASC`,
+        ORDER BY u.first_name ASC, u.last_name ASC`,
         teacherParams
       );
 
@@ -504,7 +509,7 @@ const getAllParents = async (req, res) => {
       });
     }
 
-    const yearWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
+    const yearWhere = hasYearFilter ? ' AND enr.academic_year_id = $1' : '';
     const countParams = hasYearFilter ? [academicYearId] : [];
     const listParams = hasYearFilter ? [academicYearId, limit, offset] : [limit, offset];
     const limitOffsetPlaceholders = hasYearFilter ? 'LIMIT $2 OFFSET $3' : 'LIMIT $1 OFFSET $2';
@@ -515,16 +520,17 @@ const getAllParents = async (req, res) => {
       countResult = await query(
         `SELECT COUNT(*)::int as total
         FROM students s
+        ${lateralCurrentEnrollment('s.id')}
         WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
+          AND EXISTS (SELECT 1 FROM student_guardian_links sgl2 WHERE sgl2.student_id = s.id)${yearWhere}`,
         countParams
       );
       result = await query(
         `SELECT ${parentListSelectSql}
         ${parentListJoins}
         WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
-        ORDER BY s.first_name ASC, s.last_name ASC
+          AND EXISTS (SELECT 1 FROM student_guardian_links sgl2 WHERE sgl2.student_id = s.id)${yearWhere}
+        ORDER BY u.first_name ASC, u.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams
       );

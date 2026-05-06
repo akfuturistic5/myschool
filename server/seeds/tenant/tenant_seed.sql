@@ -21,7 +21,9 @@ INSERT INTO public.user_roles (role_name, description) VALUES
 ('Administrative', 'Staff managing enquiries and front-desk tasks'),       -- ID: 6
 ('Accountant', 'Financial staff managing fees and payroll'),
 ('Librarian', 'Staff managing library assets and circulation'),
-('Receptionist', 'Staff managing enquiries and front-desk tasks')
+('Receptionist', 'Staff managing enquiries and front-desk tasks'),
+('Driver', 'Staff responsible for vehicle operation and student transport'),
+('Conductor', 'Staff assisting with student transport and vehicle supervision')
 ON CONFLICT (role_name) DO NOTHING;
 
 -- 3. Blood Groups

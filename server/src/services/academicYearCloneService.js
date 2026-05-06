@@ -1725,11 +1725,21 @@ async function collectExpectedCountsTenant(client, sourceYearId, options) {
     counts.subjects_expected = r.rows[0]?.count || 0;
   }
   if (options.teacherAssignments) {
-    const r = await client.query(
+    const staRes = await client.query(
       `SELECT COUNT(*)::int AS count FROM subject_teacher_assignments WHERE academic_year_id = $1 ${staAlive}`,
       [sourceYearId]
     );
-    counts.teacher_assignments_expected = r.rows[0]?.count || 0;
+    const ctAlive = (await tableExists(client, 'class_teachers')) && (await columnExists(client, 'class_teachers', 'deleted_at'))
+      ? ' AND deleted_at IS NULL'
+      : '';
+    const ctRes = (await tableExists(client, 'class_teachers'))
+      ? await client.query(
+          `SELECT COUNT(*)::int AS count FROM class_teachers WHERE academic_year_id = $1 ${ctAlive}`,
+          [sourceYearId]
+        )
+      : { rows: [{ count: 0 }] };
+
+    counts.teacher_assignments_expected = (staRes.rows[0]?.count || 0) + (ctRes.rows[0]?.count || 0);
   }
   if (options.timetable) {
     const r = await client.query(
@@ -1894,7 +1904,7 @@ async function cloneClassSubjectsTenant(client, sourceYearId, targetYearId, crea
   return { map: classSubjectMap, inserted: insertedCount };
 }
 
-async function cloneSubjectTeacherAssignmentsTenant(
+async function cloneTeacherAssignmentsTenant(
   client,
   sourceYearId,
   targetYearId,
@@ -1902,48 +1912,86 @@ async function cloneSubjectTeacherAssignmentsTenant(
   classSubjectMap,
   createdByStaffId
 ) {
-  if (!(await tableExists(client, 'subject_teacher_assignments'))) return 0;
-  const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND deleted_at IS NULL' : '';
-  const rowsRes = await client.query(
-    `SELECT id, class_id, class_section_id, class_subject_id, staff_id, valid_period
-     FROM subject_teacher_assignments
-     WHERE academic_year_id = $1 ${staAlive}
-     ORDER BY id ASC`,
-    [sourceYearId]
-  );
   let inserted = 0;
   const createdBy = createdByStaffId || null;
-  for (const row of rowsRes.rows) {
-    const oldCs = toPositiveInt(row.class_section_id);
-    const newCs = oldCs ? classSectionMap.get(oldCs) ?? null : null;
-    if (oldCs && newCs == null) {
-      throw makeCloneError(
-        400,
-        'ACADEMIC_YEAR_CLONE_STA_SECTION_MAPPING_MISSING',
-        `Cannot copy subject teacher assignment ${row.id}: class_section mapping is missing.`
-      );
-    }
-    const oldCsub = toPositiveInt(row.class_subject_id);
-    const newCsub = oldCsub ? classSubjectMap.get(oldCsub) ?? null : null;
-    if (!newCsub) {
-      throw makeCloneError(
-        400,
-        'ACADEMIC_YEAR_CLONE_STA_SUBJECT_MAPPING_MISSING',
-        `Cannot copy subject teacher assignment ${row.id}: class_subject mapping is missing.`
-      );
-    }
-    const staffId = toPositiveInt(row.staff_id);
-    if (!staffId) {
-      throw makeCloneError(400, 'ACADEMIC_YEAR_CLONE_STA_STAFF_INVALID', `Assignment ${row.id} has invalid staff_id.`);
-    }
-    await client.query(
-      `INSERT INTO subject_teacher_assignments (
-        class_id, class_section_id, class_subject_id, staff_id, academic_year_id, valid_period, created_by
-      ) VALUES ($1,$2,$3,$4,$5, COALESCE($6::daterange, daterange(CURRENT_DATE, '9999-12-31'::date, '[]')), $7)`,
-      [row.class_id, newCs, newCsub, staffId, targetYearId, row.valid_period ?? null, createdBy]
+
+  // 1. Subject Teacher Assignments
+  if (await tableExists(client, 'subject_teacher_assignments')) {
+    const staAlive = (await tenantSoftDeleteSta(client)) ? ' AND deleted_at IS NULL' : '';
+    const rowsRes = await client.query(
+      `SELECT id, class_id, class_section_id, class_subject_id, staff_id, valid_period
+       FROM subject_teacher_assignments
+       WHERE academic_year_id = $1 ${staAlive}
+       ORDER BY id ASC`,
+      [sourceYearId]
     );
-    inserted += 1;
+    for (const row of rowsRes.rows) {
+      const oldCs = toPositiveInt(row.class_section_id);
+      const newCs = oldCs ? classSectionMap.get(oldCs) ?? null : null;
+      if (oldCs && newCs == null) {
+        throw makeCloneError(
+          400,
+          'ACADEMIC_YEAR_CLONE_STA_SECTION_MAPPING_MISSING',
+          `Cannot copy subject teacher assignment ${row.id}: class_section mapping is missing.`
+        );
+      }
+      const oldCsub = toPositiveInt(row.class_subject_id);
+      const newCsub = oldCsub ? classSubjectMap.get(oldCsub) ?? null : null;
+      if (!newCsub) {
+        throw makeCloneError(
+          400,
+          'ACADEMIC_YEAR_CLONE_STA_SUBJECT_MAPPING_MISSING',
+          `Cannot copy subject teacher assignment ${row.id}: class_subject mapping is missing.`
+        );
+      }
+      const staffId = toPositiveInt(row.staff_id);
+      if (!staffId) {
+        throw makeCloneError(400, 'ACADEMIC_YEAR_CLONE_STA_STAFF_INVALID', `Assignment ${row.id} has invalid staff_id.`);
+      }
+      await client.query(
+        `INSERT INTO subject_teacher_assignments (
+          class_id, class_section_id, class_subject_id, staff_id, academic_year_id, valid_period, created_by
+        ) VALUES ($1,$2,$3,$4,$5, COALESCE($6::daterange, daterange(CURRENT_DATE, '9999-12-31'::date, '[]')), $7)`,
+        [row.class_id, newCs, newCsub, staffId, targetYearId, row.valid_period ?? null, createdBy]
+      );
+      inserted += 1;
+    }
   }
+
+  // 2. Class Teacher Assignments
+  if (await tableExists(client, 'class_teachers')) {
+    const ctAlive = (await columnExists(client, 'class_teachers', 'deleted_at')) ? ' AND deleted_at IS NULL' : '';
+    const rowsRes = await client.query(
+      `SELECT id, class_id, class_section_id, staff_id, role, valid_period
+       FROM class_teachers
+       WHERE academic_year_id = $1 ${ctAlive}
+       ORDER BY id ASC`,
+      [sourceYearId]
+    );
+    for (const row of rowsRes.rows) {
+      const oldCs = toPositiveInt(row.class_section_id);
+      const newCs = oldCs ? classSectionMap.get(oldCs) ?? null : null;
+      if (oldCs && newCs == null) {
+        throw makeCloneError(
+          400,
+          'ACADEMIC_YEAR_CLONE_CT_SECTION_MAPPING_MISSING',
+          `Cannot copy class teacher assignment ${row.id}: class_section mapping is missing.`
+        );
+      }
+      const staffId = toPositiveInt(row.staff_id);
+      if (!staffId) {
+        throw makeCloneError(400, 'ACADEMIC_YEAR_CLONE_CT_STAFF_INVALID', `Class teacher assignment ${row.id} has invalid staff_id.`);
+      }
+      await client.query(
+        `INSERT INTO class_teachers (
+          class_id, class_section_id, staff_id, academic_year_id, role, valid_period, created_by
+        ) VALUES ($1,$2,$3,$4,$5, COALESCE($6::daterange, daterange(CURRENT_DATE, '9999-12-31'::date, '[]')), $7)`,
+        [row.class_id, newCs, staffId, targetYearId, row.role || 'primary', row.valid_period ?? null, createdBy]
+      );
+      inserted += 1;
+    }
+  }
+
   return inserted;
 }
 
@@ -2574,7 +2622,7 @@ async function cloneAcademicYearData(client, { sourceYearId, targetYearId, optio
     }
 
     if (normalizedOptions.teacherAssignments) {
-      summary.assignments_cloned = await cloneSubjectTeacherAssignmentsTenant(
+      summary.assignments_cloned = await cloneTeacherAssignmentsTenant(
         client,
         src,
         target,

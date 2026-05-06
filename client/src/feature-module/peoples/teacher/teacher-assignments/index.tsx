@@ -13,20 +13,32 @@ import { useTeachers } from "../../../../core/hooks/useTeachers";
 type AssignmentMeta = {
   classId: number;
   className?: string;
-  hasSections: boolean;
   activeSectionCount: number;
   assignmentRequiresSection: boolean;
 };
 
-type AssignmentRow = {
+type SubjectAssignmentRow = {
   id: number;
   teacherId: number;
   classId: number;
-  sectionId: number | null;
+  classSectionId: number | null;
   subjectId: number;
   className?: string;
   sectionName?: string | null;
   subjectName?: string;
+  subjectType?: string;
+  teacherFirstName?: string;
+  teacherLastName?: string;
+};
+
+type ClassAssignmentRow = {
+  id: number;
+  teacherId: number;
+  classId: number;
+  classSectionId: number | null;
+  role: string;
+  className?: string;
+  sectionName?: string | null;
   teacherFirstName?: string;
   teacherLastName?: string;
 };
@@ -35,48 +47,60 @@ const TeacherAssignments = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { classes, loading: classesLoading } = useClasses(academicYearId);
-  const { subjects, loading: subjectsLoading } = useSubjects(null, { academicYearId });
+  const { teachers, loading: teachersLoading } = useTeachers();
 
+  const [activeTab, setActiveTab] = useState<"class" | "subject">("class");
+
+  // Form State
   const [teacherId, setTeacherId] = useState<string | null>(null);
   const [classId, setClassId] = useState<string | null>(null);
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [subjectId, setSubjectId] = useState<string | null>(null);
+  const [role, setRole] = useState<string>("primary");
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // Meta & Hooks
   const [meta, setMeta] = useState<AssignmentMeta | null>(null);
   const [metaLoading, setMetaLoading] = useState(false);
+  const { sections, loading: sectionsLoading } = useSections(classId ? Number(classId) : null, { academicYearId });
+  const { subjects, loading: subjectsLoading } = useSubjects(classId ? Number(classId) : null, { academicYearId });
 
-  const { sections, loading: sectionsLoading } = useSections(classId ? Number(classId) : null);
-  const { teachers, loading: teachersLoading } = useTeachers();
-
-  const [rows, setRows] = useState<AssignmentRow[]>([]);
+  // List State
+  const [classRows, setClassRows] = useState<ClassAssignmentRow[]>([]);
+  const [subjectRows, setSubjectRows] = useState<SubjectAssignmentRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
     setListError(null);
     try {
-      const res = await apiService.getTeacherAssignments(
-        academicYearId ? { academicYearId } : {}
-      );
-      const raw = res?.data ?? [];
-      setRows(Array.isArray(raw) ? raw : []);
+      if (activeTab === "class") {
+        const res = await apiService.getClassTeacherAssignments(
+          academicYearId ? { academicYearId } : {}
+        );
+        setClassRows(Array.isArray(res?.data) ? res.data : []);
+      } else {
+        const res = await apiService.getSubjectTeacherAssignments(
+          academicYearId ? { academicYearId } : {}
+        );
+        setSubjectRows(Array.isArray(res?.data) ? res.data : []);
+      }
     } catch (e) {
       setListError(e instanceof Error ? e.message : "Failed to load assignments");
-      setRows([]);
     } finally {
       setListLoading(false);
     }
-  }, [academicYearId]);
+  }, [academicYearId, activeTab]);
 
   useEffect(() => {
     loadList();
   }, [loadList]);
 
   useEffect(() => {
-    if (!classId) {
+    if (!classId || !academicYearId) {
       setMeta(null);
       setSectionId(null);
       return;
@@ -85,7 +109,7 @@ const TeacherAssignments = () => {
     (async () => {
       setMetaLoading(true);
       try {
-        const res = await apiService.getTeacherAssignmentClassMeta(Number(classId));
+        const res = await apiService.getTeacherAssignmentClassMeta(Number(classId), academicYearId);
         const d = res?.data;
         if (!cancelled && d) setMeta(d as AssignmentMeta);
       } catch {
@@ -97,9 +121,10 @@ const TeacherAssignments = () => {
     return () => {
       cancelled = true;
     };
-  }, [classId]);
+  }, [classId, academicYearId]);
 
   const showSectionField = Boolean(meta?.assignmentRequiresSection);
+  
   const sectionOptions = useMemo(
     () =>
       (sections || []).map((s: { id: number; section_name?: string }) => ({
@@ -112,13 +137,9 @@ const TeacherAssignments = () => {
   const subjectOptions = useMemo(() => {
     if (!classId) return [];
     return (subjects || [])
-      .filter(
-        (s: { class_id?: number | null }) =>
-          s.class_id == null || String(s.class_id) === String(classId)
-      )
-      .map((s: { id: number; subject_name?: string }) => ({
-        value: String(s.id),
-        label: s.subject_name ?? String(s.id),
+      .map((s: { id: number; subject_name?: string; subject_type?: string; master_subject_id?: number }) => ({
+        value: String(s.master_subject_id || s.id),
+        label: `${s.subject_name ?? String(s.id)} ${s.subject_type ? `(${s.subject_type})` : ""}`.trim(),
       }));
   }, [subjects, classId]);
 
@@ -140,30 +161,40 @@ const TeacherAssignments = () => {
     [classes]
   );
 
+  const roleOptions = [
+    { value: "primary", label: "Primary" },
+    { value: "assistant", label: "Assistant" },
+  ];
+
   const resetForm = () => {
     setTeacherId(null);
     setClassId(null);
     setSectionId(null);
     setSubjectId(null);
+    setRole("primary");
     setMeta(null);
     setEditingId(null);
     setFormError(null);
   };
 
-  const onEdit = (row: AssignmentRow) => {
+  const onEdit = (row: any) => {
     setEditingId(row.id);
     setTeacherId(String(row.teacherId));
     setClassId(String(row.classId));
-    setSectionId(row.sectionId != null ? String(row.sectionId) : null);
-    setSubjectId(String(row.subjectId));
+    setSectionId(row.classSectionId != null ? String(row.classSectionId) : null);
+    if (activeTab === "subject") {
+      setSubjectId(String(row.subjectId));
+    } else {
+      setRole(row.role || "primary");
+    }
     setFormError(null);
   };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    if (!teacherId || !classId || !subjectId) {
-      setFormError("Teacher, class, and subject are required.");
+    if (!teacherId || !classId || (activeTab === "subject" && !subjectId)) {
+      setFormError(`Teacher, class${activeTab === "subject" ? ", and subject" : ""} are required.`);
       return;
     }
     if (showSectionField && !sectionId) {
@@ -172,16 +203,27 @@ const TeacherAssignments = () => {
     }
     setSaving(true);
     try {
-      const body = {
+      const commonBody = {
         teacherId: Number(teacherId),
         classId: Number(classId),
-        subjectId: Number(subjectId),
-        sectionId: showSectionField && sectionId ? Number(sectionId) : null,
+        classSectionId: showSectionField && sectionId ? Number(sectionId) : null,
+        academicYearId,
       };
-      if (editingId != null) {
-        await apiService.updateTeacherAssignment(editingId, body);
+
+      if (activeTab === "class") {
+        const body = { ...commonBody, role };
+        if (editingId != null) {
+          await apiService.updateClassTeacherAssignment(editingId, body);
+        } else {
+          await apiService.createClassTeacherAssignment(body);
+        }
       } else {
-        await apiService.createTeacherAssignment(body);
+        const body = { ...commonBody, subjectId: Number(subjectId) };
+        if (editingId != null) {
+          await apiService.updateSubjectTeacherAssignment(editingId, body);
+        } else {
+          await apiService.createSubjectTeacherAssignment(body);
+        }
       }
       resetForm();
       await loadList();
@@ -195,12 +237,20 @@ const TeacherAssignments = () => {
   const onDelete = async (id: number) => {
     if (!window.confirm("Remove this assignment?")) return;
     try {
-      await apiService.deleteTeacherAssignment(id);
+      if (activeTab === "class") {
+        await apiService.deleteClassTeacherAssignment(id);
+      } else {
+        await apiService.deleteSubjectTeacherAssignment(id);
+      }
       await loadList();
     } catch (err) {
       setListError(err instanceof Error ? err.message : "Delete failed");
     }
   };
+
+  useEffect(() => {
+    resetForm();
+  }, [activeTab]);
 
   return (
     <div className="page-wrapper">
@@ -216,20 +266,46 @@ const TeacherAssignments = () => {
             </Link>
             <h3 className="mb-1">Teacher assignments</h3>
             <p className="text-muted mb-0 small">
-              Assign teachers to class and subject. Sections appear only when the class uses sections.
+              Assign teachers to classes or specific subjects.
             </p>
           </div>
         </div>
 
         <div className="card mb-4">
+          <div className="card-body p-0">
+            <ul className="nav nav-tabs nav-tabs-bottom">
+              <li className="nav-item">
+                <button
+                  className={`nav-link ${activeTab === "class" ? "active" : ""}`}
+                  onClick={() => setActiveTab("class")}
+                >
+                  Class Teacher Assignments
+                </button>
+              </li>
+              <li className="nav-item">
+                <button
+                  className={`nav-link ${activeTab === "subject" ? "active" : ""}`}
+                  onClick={() => setActiveTab("subject")}
+                >
+                  Subject Teacher Assignments
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="card mb-4" key={`${activeTab}-${editingId}`}>
           <div className="card-header bg-light">
-            <h4 className="text-dark mb-0">{editingId ? "Edit assignment" : "Add assignment"}</h4>
+            <h4 className="text-dark mb-0">
+              {editingId ? "Edit " : "Add "}
+              {activeTab === "class" ? "Class Teacher" : "Subject Teacher"} Assignment
+            </h4>
           </div>
           <div className="card-body">
             <form onSubmit={onSubmit}>
               {formError && <div className="alert alert-danger py-2">{formError}</div>}
               <div className="row g-3">
-                <div className="col-md-6 col-lg-4">
+                <div className="col-md-6 col-lg-3">
                   <label className="form-label">Teacher</label>
                   <CommonSelect
                     className="select"
@@ -238,7 +314,7 @@ const TeacherAssignments = () => {
                     onChange={(v) => setTeacherId(v)}
                   />
                 </div>
-                <div className="col-md-6 col-lg-4">
+                <div className="col-md-6 col-lg-3">
                   <label className="form-label">Class</label>
                   <CommonSelect
                     className="select"
@@ -253,7 +329,7 @@ const TeacherAssignments = () => {
                   {classesLoading && <span className="small text-muted">Loading classes…</span>}
                 </div>
                 {showSectionField && (
-                  <div className="col-md-6 col-lg-4">
+                  <div className="col-md-6 col-lg-3">
                     <label className="form-label">
                       Section <span className="text-danger">*</span>
                     </label>
@@ -264,35 +340,31 @@ const TeacherAssignments = () => {
                       onChange={(v) => setSectionId(v)}
                     />
                     {sectionsLoading && <span className="small text-muted">Loading sections…</span>}
-                    {!sectionsLoading && sectionOptions.length === 0 && (
-                      <div className="small text-warning mt-1">
-                        No active sections for this class. Add sections under Academic → Class sections, or turn
-                        off class sections in the class record.
-                      </div>
-                    )}
                   </div>
                 )}
-                <div className="col-md-6 col-lg-4">
-                  <label className="form-label">Subject</label>
-                  <CommonSelect
-                    className="select"
-                    options={subjectOptions}
-                    value={subjectId}
-                    onChange={(v) => setSubjectId(v)}
-                  />
-                  {subjectsLoading && <span className="small text-muted">Loading subjects…</span>}
-                </div>
+                {activeTab === "subject" ? (
+                  <div className="col-md-6 col-lg-3">
+                    <label className="form-label">Subject</label>
+                    <CommonSelect
+                      className="select"
+                      options={subjectOptions}
+                      value={subjectId}
+                      onChange={(v) => setSubjectId(v)}
+                    />
+                    {subjectsLoading && <span className="small text-muted">Loading subjects…</span>}
+                  </div>
+                ) : (
+                  <div className="col-md-6 col-lg-3">
+                    <label className="form-label">Role</label>
+                    <CommonSelect
+                      className="select"
+                      options={roleOptions}
+                      value={role}
+                      onChange={(v) => setRole(v || "primary")}
+                    />
+                  </div>
+                )}
               </div>
-              {classId && metaLoading && (
-                <p className="small text-muted mt-2 mb-0">Checking class rules…</p>
-              )}
-              {classId && meta && !metaLoading && (
-                <p className="small text-muted mt-2 mb-0">
-                  {meta.assignmentRequiresSection
-                    ? "This class has sections — pick a section."
-                    : "This class is class-only — no section is stored."}
-                </p>
-              )}
               <div className="mt-3">
                 <button type="submit" className="btn btn-primary me-2" disabled={saving}>
                   {saving ? "Saving…" : editingId ? "Update" : "Add"}
@@ -309,7 +381,7 @@ const TeacherAssignments = () => {
 
         <div className="card">
           <div className="card-header bg-light">
-            <h4 className="text-dark mb-0">Current assignments</h4>
+            <h4 className="text-dark mb-0">Current {activeTab === "class" ? "Class" : "Subject"} Assignments</h4>
           </div>
           <div className="card-body p-0">
             {listError && <div className="alert alert-danger m-3 mb-0">{listError}</div>}
@@ -323,44 +395,69 @@ const TeacherAssignments = () => {
                       <th>Teacher</th>
                       <th>Class</th>
                       <th>Section</th>
-                      <th>Subject</th>
+                      {activeTab === "subject" ? (
+                        <>
+                          <th>Subject</th>
+                          <th>Type</th>
+                        </>
+                      ) : (
+                        <th>Role</th>
+                      )}
                       <th className="text-end">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center text-muted py-4">
-                          No assignments yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((r) => (
-                        <tr key={r.id}>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn-link p-0 text-start"
-                              onClick={() => onEdit(r)}
-                            >
-                              {`${r.teacherFirstName ?? ""} ${r.teacherLastName ?? ""}`.trim() ||
-                                `#${r.teacherId}`}
-                            </button>
-                          </td>
-                          <td>{r.className ?? r.classId}</td>
-                          <td>{r.sectionName ?? (r.sectionId == null ? "—" : r.sectionId)}</td>
-                          <td>{r.subjectName ?? r.subjectId}</td>
-                          <td className="text-end">
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() => onDelete(r.id)}
-                            >
-                              Remove
-                            </button>
-                          </td>
+                    {activeTab === "class" ? (
+                      classRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center text-muted py-4">No class teacher assignments yet.</td>
                         </tr>
-                      ))
+                      ) : (
+                        classRows.map((r) => (
+                          <tr key={r.id}>
+                            <td>
+                              <button type="button" className="btn btn-link p-0 text-start" onClick={() => onEdit(r)}>
+                                {`${r.teacherFirstName ?? ""} ${r.teacherLastName ?? ""}`.trim() || `#${r.teacherId}`}
+                              </button>
+                            </td>
+                            <td>{r.className}</td>
+                            <td>{r.sectionName || "—"}</td>
+                            <td><span className={`badge ${r.role === "primary" ? "bg-primary" : "bg-secondary"}`}>{r.role}</span></td>
+                            <td className="text-end">
+                              <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onDelete(r.id)}>Remove</button>
+                            </td>
+                          </tr>
+                        ))
+                      )
+                    ) : (
+                      subjectRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center text-muted py-4">No subject teacher assignments yet.</td>
+                        </tr>
+                      ) : (
+                        subjectRows.map((r) => (
+                          <tr key={r.id}>
+                            <td>
+                              <button type="button" className="btn btn-link p-0 text-start" onClick={() => onEdit(r)}>
+                                {`${r.teacherFirstName ?? ""} ${r.teacherLastName ?? ""}`.trim() || `#${r.teacherId}`}
+                              </button>
+                            </td>
+                            <td>{r.className}</td>
+                            <td>{r.sectionName || "—"}</td>
+                            <td>{r.subjectName}</td>
+                            <td>
+                              {r.subjectType && (
+                                <span className={`badge ${r.subjectType === "Practical" ? "bg-info" : "bg-warning-light text-warning"}`}>
+                                  {r.subjectType}
+                                </span>
+                              )}
+                            </td>
+                            <td className="text-end">
+                              <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onDelete(r.id)}>Remove</button>
+                            </td>
+                          </tr>
+                        ))
+                      )
                     )}
                   </tbody>
                 </table>

@@ -2,32 +2,36 @@ const { query, executeTransaction } = require('../config/database');
 const { createGuardianUser } = require('../utils/createPersonUser');
 const { guardiansIsSlimSchema } = require('../utils/studentContactSync');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 const guardianSelectBase = `
         g.id,
-        g.student_id,
+        sgl.student_id,
         g.user_id,
-        g.guardian_type,
+        sgl.relation AS guardian_type,
         u.first_name,
         u.last_name,
-        g.relation,
+        sgl.relation,
         u.occupation,
         u.phone,
         u.email,
         u.avatar,
-        s.first_name as student_first_name,
-        s.last_name as student_last_name,
+        student_u.first_name as student_first_name,
+        student_u.last_name as student_last_name,
         s.admission_number,
         s.roll_number,
         c.class_name,
         sec.section_name`;
 
 const guardianJoins = `
-      FROM guardians g
+      FROM student_guardian_links sgl
+      JOIN guardians g ON g.id = sgl.guardian_id
       INNER JOIN users u ON u.id = g.user_id
-      LEFT JOIN students s ON g.student_id = s.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id`;
+      LEFT JOIN students s ON sgl.student_id = s.id
+      LEFT JOIN users student_u ON s.user_id = student_u.id
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON enr.class_id = c.id
+      LEFT JOIN sections sec ON enr.section_id = sec.id`;
 
 const createGuardian = async (req, res) => {
   try {
@@ -72,9 +76,10 @@ const createGuardian = async (req, res) => {
       const phoneNorm = (phone || '').toString().trim();
       if (emailNorm || phoneNorm) {
         const dupCheck = await client.query(
-          `SELECT g.id FROM guardians g
+          `SELECT sgl.id FROM student_guardian_links sgl
+           JOIN guardians g ON g.id = sgl.guardian_id
            INNER JOIN users u ON u.id = g.user_id
-           WHERE g.student_id = $1
+           WHERE sgl.student_id = $1
              AND (
                ($2 <> '' AND COALESCE(LOWER(TRIM(u.email)), '') = LOWER(TRIM($2)))
                OR
@@ -115,28 +120,36 @@ const createGuardian = async (req, res) => {
 
       const result = await client.query(
         `INSERT INTO guardians (
-          student_id, user_id, guardian_type, relation,
-          is_primary_contact, is_emergency_contact,
+          user_id, relation,
           is_active, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+        ) VALUES ($1, $2, true, NOW(), NOW())
         RETURNING *`,
         [
-          student_id,
           guardianUserId,
-          guardian_type || null,
+          relation || null,
+        ]
+      );
+      const row = result.rows[0];
+
+      await client.query(
+        `INSERT INTO student_guardian_links (
+          student_id, guardian_id, relation, is_primary_contact, is_emergency_contact, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
+        [
+          student_id,
+          row.id,
           relation || null,
           is_primary_contact === true || is_primary_contact === 'true',
           is_emergency_contact === true || is_emergency_contact === 'true',
         ]
       );
-      const row = result.rows[0];
 
       await client.query('UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2', [
         row.id,
         student_id,
       ]);
       await client.query(
-        'UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2',
+        'UPDATE student_guardian_links SET is_primary_contact = (guardian_id = $1), updated_at = NOW() WHERE student_id = $2',
         [row.id, student_id]
       );
 
@@ -194,7 +207,7 @@ const updateGuardian = async (req, res) => {
       }
 
       const existingRes = await client.query(
-        'SELECT g.id, g.student_id, g.user_id, u.avatar FROM guardians g INNER JOIN users u ON u.id = g.user_id WHERE g.id = $1 LIMIT 1',
+        'SELECT g.id, sgl.student_id, g.user_id, u.avatar FROM student_guardian_links sgl JOIN guardians g ON g.id = sgl.guardian_id INNER JOIN users u ON u.id = g.user_id WHERE g.id = $1 LIMIT 1',
         [id]
       );
       if (existingRes.rows.length === 0) {
@@ -215,9 +228,10 @@ const updateGuardian = async (req, res) => {
       const phoneNorm = (phone || '').toString().trim();
       if (emailNorm || phoneNorm) {
         const dupCheck = await client.query(
-          `SELECT g.id FROM guardians g
+          `SELECT sgl.id FROM student_guardian_links sgl
+           JOIN guardians g ON g.id = sgl.guardian_id
            INNER JOIN users u ON u.id = g.user_id
-           WHERE g.student_id = $1 AND g.id <> $2
+           WHERE sgl.student_id = $1 AND g.id <> $2
              AND (
                ($3 <> '' AND COALESCE(LOWER(TRIM(u.email)), '') = LOWER(TRIM($3)))
                OR
@@ -256,18 +270,16 @@ const updateGuardian = async (req, res) => {
       );
 
       const updated = await client.query(
-        `UPDATE guardians SET
+        `UPDATE student_guardian_links SET
           student_id = COALESCE($1, student_id),
-          guardian_type = $2,
-          relation = $3,
-          is_primary_contact = $4,
-          is_emergency_contact = $5,
+          relation = COALESCE($2, relation),
+          is_primary_contact = $3,
+          is_emergency_contact = $4,
           updated_at = NOW()
-        WHERE id = $6
+        WHERE guardian_id = $5
         RETURNING *`,
         [
           student_id || null,
-          guardian_type || null,
           relation || null,
           is_primary_contact === true || is_primary_contact === 'true',
           is_emergency_contact === true || is_emergency_contact === 'true',
@@ -276,14 +288,12 @@ const updateGuardian = async (req, res) => {
       );
 
       const row = updated.rows[0];
-      await client.query('UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2', [
-        row.id,
-        row.student_id,
-      ]);
-      await client.query(
-        'UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2',
-        [row.id, row.student_id]
-      );
+      if (row.is_primary_contact) {
+        await client.query(
+          'UPDATE student_guardian_links SET is_primary_contact = false, updated_at = NOW() WHERE student_id = $1 AND guardian_id <> $2',
+          [row.student_id, row.guardian_id]
+        );
+      }
 
       const full = await client.query(
         `SELECT ${guardianSelectBase} ${guardianJoins} WHERE g.id = $1`,
@@ -327,15 +337,15 @@ const getAllGuardians = async (req, res) => {
   try {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
+    const yearWhere = hasYearFilter ? ' AND enr.academic_year_id = $1' : '';
     const params = hasYearFilter ? [academicYearId] : [];
 
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
       WHERE s.is_active = true${yearWhere}
-        AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
-      ORDER BY s.first_name ASC, s.last_name ASC`,
+        AND LOWER(COALESCE(sgl.relation::text, '')) NOT IN ('father', 'mother')
+      ORDER BY student_u.first_name ASC, student_u.last_name ASC`,
       params
     );
 
@@ -421,7 +431,7 @@ const getCurrentGuardian = async (req, res) => {
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
       WHERE g.user_id = $1 AND (s.is_active IS NULL OR s.is_active = true)
-      ORDER BY g.is_primary_contact DESC, s.first_name ASC NULLS LAST, s.last_name ASC NULLS LAST`,
+      ORDER BY sgl.is_primary_contact DESC, student_u.first_name ASC NULLS LAST, student_u.last_name ASC NULLS LAST`,
       [userId]
     );
 
@@ -456,8 +466,8 @@ const getGuardianByStudentId = async (req, res) => {
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE g.student_id = $1 AND s.is_active = true
-      ORDER BY g.is_primary_contact DESC, g.updated_at DESC, g.id DESC`,
+      WHERE sgl.student_id = $1 AND s.is_active = true
+      ORDER BY sgl.is_primary_contact DESC, g.updated_at DESC, g.id DESC`,
       [studentId]
     );
 
@@ -472,15 +482,14 @@ const getGuardianByStudentId = async (req, res) => {
     let primaryGuardian = rows[0];
     if (rows.length > 1) {
       const primary = await query(
-        `SELECT g.id
-         FROM students s
-         INNER JOIN guardians g ON g.id = s.guardian_id
-         WHERE s.id = $1
+        `SELECT guardian_id
+         FROM students 
+         WHERE id = $1
          LIMIT 1`,
         [studentId]
       );
       if (primary.rows.length > 0) {
-        const byId = rows.find((r) => Number(r.id) === Number(primary.rows[0].id));
+        const byId = rows.find((r) => Number(r.id) === Number(primary.rows[0].guardian_id));
         if (byId) primaryGuardian = byId;
       }
     }

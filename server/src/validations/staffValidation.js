@@ -25,6 +25,30 @@ const staffCreateSchema = Joi.object({
   license_expiry: Joi.alternatives()
     .try(Joi.date().iso(), Joi.string().trim().allow(null, ''))
     .optional(),
+  // Normalized Schema Fields
+  current_address: Joi.string().trim().max(10000).optional().allow(null, ''),
+  permanent_address: Joi.string().trim().max(10000).optional().allow(null, ''),
+  marital_status: Joi.string().trim().valid('Single', 'Married', 'Divorced', 'Widowed', '').optional().allow(null),
+  father_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  mother_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  id_number: Joi.string().trim().max(50).optional().allow(null, ''),
+  languages_known: Joi.alternatives().try(Joi.array().items(Joi.string()), Joi.string().allow(null, '')).optional(),
+  other_info: Joi.string().trim().max(5000).optional().allow(null, ''),
+  epf_no: Joi.string().trim().max(50).optional().allow(null, ''),
+  pan_number: Joi.string().trim().max(10).optional().allow(null, ''),
+  bank_name: Joi.string().trim().max(255).optional().allow(null, ''),
+  account_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  account_number: Joi.string().trim().max(50).optional().allow(null, ''),
+  branch: Joi.string().trim().max(255).optional().allow(null, ''),
+  ifsc: Joi.string().trim().max(50).optional().allow(null, ''),
+  contract_type: Joi.string().trim().max(100).optional().allow(null, ''),
+  shift: Joi.string().trim().max(100).optional().allow(null, ''),
+  work_location: Joi.string().trim().max(255).optional().allow(null, ''),
+  facebook: Joi.string().trim().max(255).optional().allow(null, ''),
+  twitter: Joi.string().trim().max(255).optional().allow(null, ''),
+  linkedin: Joi.string().trim().max(255).optional().allow(null, ''),
+  youtube: Joi.string().trim().max(255).optional().allow(null, ''),
+  instagram: Joi.string().trim().max(255).optional().allow(null, ''),
 }).unknown(false);
 
 const staffUpdateSchema = Joi.object({
@@ -52,6 +76,30 @@ const staffUpdateSchema = Joi.object({
   license_expiry: Joi.alternatives()
     .try(Joi.date().iso(), Joi.string().trim().allow(null, ''))
     .optional(),
+  // Normalized Schema Fields
+  current_address: Joi.string().trim().max(10000).optional().allow(null, ''),
+  permanent_address: Joi.string().trim().max(10000).optional().allow(null, ''),
+  marital_status: Joi.string().trim().valid('Single', 'Married', 'Divorced', 'Widowed', '').optional().allow(null),
+  father_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  mother_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  id_number: Joi.string().trim().max(50).optional().allow(null, ''),
+  languages_known: Joi.alternatives().try(Joi.array().items(Joi.string()), Joi.string().allow(null, '')).optional(),
+  other_info: Joi.string().trim().max(5000).optional().allow(null, ''),
+  epf_no: Joi.string().trim().max(50).optional().allow(null, ''),
+  pan_number: Joi.string().trim().max(10).optional().allow(null, ''),
+  bank_name: Joi.string().trim().max(255).optional().allow(null, ''),
+  account_name: Joi.string().trim().max(100).optional().allow(null, ''),
+  account_number: Joi.string().trim().max(50).optional().allow(null, ''),
+  branch: Joi.string().trim().max(255).optional().allow(null, ''),
+  ifsc: Joi.string().trim().max(50).optional().allow(null, ''),
+  contract_type: Joi.string().trim().max(100).optional().allow(null, ''),
+  shift: Joi.string().trim().max(100).optional().allow(null, ''),
+  work_location: Joi.string().trim().max(255).optional().allow(null, ''),
+  facebook: Joi.string().trim().max(255).optional().allow(null, ''),
+  twitter: Joi.string().trim().max(255).optional().allow(null, ''),
+  linkedin: Joi.string().trim().max(255).optional().allow(null, ''),
+  youtube: Joi.string().trim().max(255).optional().allow(null, ''),
+  instagram: Joi.string().trim().max(255).optional().allow(null, ''),
 }).min(1).unknown(false);
 
 module.exports = {
