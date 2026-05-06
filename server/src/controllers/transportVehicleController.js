@@ -79,7 +79,11 @@ const getAllVehicles = async (req, res) => {
     }
 
     if (route_id && route_id !== 'all') {
-      queryParams.push(parseInt(route_id));
+      const routeId = Number.parseInt(route_id, 10);
+      if (!Number.isInteger(routeId) || routeId <= 0) {
+        return errorResponse(res, 400, 'Invalid route ID');
+      }
+      queryParams.push(routeId);
       const routeFilterIndex = queryParams.length;
       const routeFilters = [];
       if (hasTransportAssignments) {
@@ -155,16 +159,16 @@ const getAllVehicles = async (req, res) => {
        ${whereClause} 
        ORDER BY ${finalSortField} ${finalSortOrder} 
        LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`,
-      [...queryParams, limit, offset]
+      [...queryParams, pageLimit, offset]
     );
 
     const data = dataResult.rows.map((row) => mapVehicleRow(row));
 
     return success(res, 200, 'Vehicles fetched successfully', data, {
       totalCount,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(totalCount / limit)
+      page: pageNumber,
+      limit: pageLimit,
+      totalPages: Math.ceil(totalCount / pageLimit)
     });
   } catch (error) {
     console.error('Error fetching vehicles:', error);
@@ -275,7 +279,6 @@ const createVehicle = async (req, res) => {
         chassis_number, seating_capacity, gps_device_id, insurance_expiry, fitness_expiry, permit_expiry, is_active
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *
     `, [
       vehicle_number,
@@ -354,25 +357,25 @@ const updateVehicle = async (req, res) => {
       updates.push(`seating_capacity = $${i++}`);
       values.push(seating_capacity ? parseInt(seating_capacity) : null);
     }
-    if (req.body.is_active !== undefined) {
+    if (is_active !== undefined) {
       updates.push(`is_active = $${i++}`);
-      values.push(req.body.is_active !== false);
+      values.push(is_active === true || is_active === 1 || is_active === 'true' || is_active === '1' || is_active === 'Active');
     }
-    if (req.body.made_of_year !== undefined) {
+    if (made_of_year !== undefined) {
       updates.push(`made_of_year = $${i++}`);
-      values.push(req.body.made_of_year ? parseInt(req.body.made_of_year) : null);
+      values.push(made_of_year ? parseInt(made_of_year, 10) : null);
     }
-    if (req.body.registration_number !== undefined) {
+    if (registration_number !== undefined) {
       updates.push(`registration_number = $${i++}`);
-      values.push(req.body.registration_number);
+      values.push(registration_number);
     }
-    if (req.body.chassis_number !== undefined) {
+    if (chassis_number !== undefined) {
       updates.push(`chassis_number = $${i++}`);
-      values.push(req.body.chassis_number);
+      values.push(chassis_number);
     }
-    if (req.body.gps_device_id !== undefined) {
+    if (gps_device_id !== undefined) {
       updates.push(`gps_device_id = $${i++}`);
-      values.push(req.body.gps_device_id);
+      values.push(gps_device_id);
     }
     if (insurance_expiry !== undefined) {
       const parsedInsuranceExpiry = parseDateOnly(insurance_expiry);
@@ -398,11 +401,6 @@ const updateVehicle = async (req, res) => {
       updates.push(`permit_expiry = $${i++}`);
       values.push(parsedPermitExpiry);
     }
-    if (permit_expiry !== undefined) {
-      updates.push(`permit_expiry = $${i++}`);
-      values.push(permit_expiry);
-    }
-
     if (updates.length === 0) {
       return errorResponse(res, 400, 'No fields to update');
     }
@@ -410,7 +408,6 @@ const updateVehicle = async (req, res) => {
     updates.push(`updated_at = NOW()`);
     values.push(numericId);
     const result = await query(`
-      UPDATE transport_vehicles
       UPDATE transport_vehicles
       SET ${updates.join(', ')}
       WHERE id = $${i} AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}

@@ -386,42 +386,6 @@ export const SidebarData = [
     ],
   },
   {
-    label: "Settings",
-    submenuOpen: true,
-    showSubRoute: false,
-    submenuHdr: "Settings",
-    submenuItems: [
-      {
-        label: "Houses",
-        icon: "ti ti-home",
-        link: routes.settingsHouses,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Blood Groups",
-        icon: "ti ti-droplet",
-        link: routes.settingsBloodGroups,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Mother Tongues",
-        icon: "ti ti-language",
-        link: routes.settingsMotherTongues,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Casts",
-        icon: "ti ti-users-group",
-        link: routes.settingsCasts,
-        submenu: false,
-        showSubRoute: false,
-      },
-    ],
-  },
-  {
     label: "Finance & Accounts",
     submenuOpen: true,
     submenuHdr: "Finance & Accounts",
@@ -591,6 +555,42 @@ export const SidebarData = [
       },
     ],
   }, */
+  {
+    label: "Settings",
+    submenuOpen: true,
+    showSubRoute: false,
+    submenuHdr: "Settings",
+    submenuItems: [
+      {
+        label: "Houses",
+        icon: "ti ti-home",
+        link: routes.settingsHouses,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Blood Groups",
+        icon: "ti ti-droplet",
+        link: routes.settingsBloodGroups,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Mother Tongues",
+        icon: "ti ti-language",
+        link: routes.settingsMotherTongues,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Casts",
+        icon: "ti ti-users-group",
+        link: routes.settingsCasts,
+        submenu: false,
+        showSubRoute: false,
+      },
+    ],
+  },
   {
     label: "REMOVE",
     submenuOpen: false,

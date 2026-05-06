@@ -16,6 +16,48 @@ const EVENT_FOR_ALLOWED = new Set([
   'guardians',
 ]);
 
+function normalizeAudienceToken(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'staffs' || raw === 'teachers') return 'staff';
+  return raw;
+}
+
+function parseAudienceInput(value) {
+  if (value === undefined || value === null || value === '') return ['all'];
+  const source = Array.isArray(value) ? value : String(value).split(',');
+  const tokens = Array.from(
+    new Set(
+      source
+        .map(normalizeAudienceToken)
+        .filter((t) => EVENT_FOR_ALLOWED.has(t))
+    )
+  );
+  if (!tokens.length) return 'INVALID';
+  if (tokens.includes('all')) return ['all'];
+  return tokens;
+}
+
+function eventForStorageValue(value) {
+  const tokens = parseAudienceInput(value);
+  if (tokens === 'INVALID') return 'INVALID';
+  const combined = tokens.join(',');
+  // Keep compatibility with existing varchar(20) without schema changes.
+  if (combined.length > 20) return 'TOO_LONG';
+  return combined;
+}
+
+function addAudienceWhere(where, params, paramCount, alias, audiences) {
+  where.push(
+    `EXISTS (
+      SELECT 1
+      FROM unnest(string_to_array(replace(lower(COALESCE(${alias}.event_for, 'all')), ' ', ''), ',')) aud
+      WHERE aud = ANY($${paramCount}::text[])
+    )`
+  );
+  params.push(audiences);
+  return paramCount + 1;
+}
+
 function normalizeNullableText(value) {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
@@ -105,7 +147,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     const sectionId = studentRes.rows[0]?.section_id || null;
     const classIds = classId ? [String(classId)] : [];
     const sectionIds = sectionId ? [String(sectionId)] : [];
-    where.push(`LOWER(COALESCE(e.event_for, 'all')) IN ('all','students')`);
+    paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'students']);
     where.push(
       `(e.target_class_ids IS NULL OR jsonb_typeof(e.target_class_ids) <> 'array' OR jsonb_array_length(e.target_class_ids) = 0 OR EXISTS (
          SELECT 1 FROM jsonb_array_elements_text(e.target_class_ids) cls
@@ -125,7 +167,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     return paramCount;
   }
   if (roleId === ROLES.PARENT) {
-    where.push(`LOWER(COALESCE(e.event_for, 'all')) IN ('all','parents')`);
+    paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'parents']);
     let linkedRes;
     try {
       linkedRes = await query(
@@ -183,7 +225,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     return paramCount;
   }
   if (roleId === ROLES.GUARDIAN) {
-    where.push(`LOWER(COALESCE(e.event_for, 'all')) IN ('all','guardians')`);
+    paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'guardians']);
     const linkedRes = await query(
       `SELECT s.class_id, s.section_id
        FROM guardians g
@@ -225,7 +267,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     paramCount += 1;
     return paramCount;
   }
-  where.push(`LOWER(COALESCE(e.event_for, 'all')) = 'all'`);
+  paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all']);
   return paramCount;
 }
 
@@ -265,13 +307,12 @@ const getAllEvents = async (req, res) => {
       paramCount += 1;
     }
     if (event_for) {
-      const ef = String(event_for).trim().toLowerCase();
-      if (ef === 'staff') {
-        where.push(`LOWER(COALESCE(e.event_for, 'all')) IN ('staff','staffs','teachers')`);
-      } else {
-        where.push(`LOWER(COALESCE(e.event_for, 'all')) = LOWER($${paramCount})`);
-        params.push(ef);
-        paramCount += 1;
+      const parsed = parseAudienceInput(event_for);
+      if (parsed !== 'INVALID') {
+        const audiences = parsed.includes('staff')
+          ? ['staff', 'staffs', 'teachers']
+          : parsed;
+        paramCount = addAudienceWhere(where, params, paramCount, 'e', audiences);
       }
     }
     if (q) {
@@ -385,8 +426,12 @@ const createEvent = async (req, res) => {
     if (isInvalidDateOrder(start_date, end_date)) {
       return errorResponse(res, 400, 'End date/time must be after start date/time');
     }
-    if (event_for !== undefined && !EVENT_FOR_ALLOWED.has(String(event_for).trim().toLowerCase())) {
+    const normalizedEventFor = eventForStorageValue(event_for);
+    if (normalizedEventFor === 'INVALID') {
       return errorResponse(res, 400, 'Invalid event_for value');
+    }
+    if (normalizedEventFor === 'TOO_LONG') {
+      return errorResponse(res, 400, 'Selected audiences are too many for current setup');
     }
     if (!isSafeFileOrLinkUrl(attachment_url)) {
       return errorResponse(res, 400, 'Invalid attachment URL');
@@ -424,7 +469,7 @@ const createEvent = async (req, res) => {
         is_all_day,
         normalizeNullableText(location),
         normalizeNullableText(event_category),
-        String(event_for || 'all').trim().toLowerCase(),
+        normalizedEventFor,
         normalizedClassIds ? JSON.stringify(normalizedClassIds) : null,
         normalizedSectionIds ? JSON.stringify(normalizedSectionIds) : null,
         normalizedDepartmentIds ? JSON.stringify(normalizedDepartmentIds) : null,
@@ -466,8 +511,12 @@ const updateEvent = async (req, res) => {
     if (isInvalidDateOrder(start_date, end_date)) {
       return errorResponse(res, 400, 'End date/time must be after start date/time');
     }
-    if (event_for !== undefined && !EVENT_FOR_ALLOWED.has(String(event_for).trim().toLowerCase())) {
+    const normalizedEventFor = event_for !== undefined ? eventForStorageValue(event_for) : undefined;
+    if (normalizedEventFor === 'INVALID') {
       return errorResponse(res, 400, 'Invalid event_for value');
+    }
+    if (normalizedEventFor === 'TOO_LONG') {
+      return errorResponse(res, 400, 'Selected audiences are too many for current setup');
     }
     if (!isSafeFileOrLinkUrl(attachment_url)) {
       return errorResponse(res, 400, 'Invalid attachment URL');
@@ -533,7 +582,7 @@ const updateEvent = async (req, res) => {
     }
     if (event_for !== undefined) {
       updates.push(`event_for = $${paramCount++}`);
-      values.push(String(event_for).trim().toLowerCase());
+      values.push(normalizedEventFor);
     }
     if (target_class_ids !== undefined) {
       updates.push(`target_class_ids = $${paramCount++}`);

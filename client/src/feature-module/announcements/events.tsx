@@ -15,8 +15,6 @@ import { DatePicker, TimePicker } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
 import { all_routes } from "../router/all_routes";
-import CommonSelect from "../../core/common/commonSelect";
-import { eventCategory } from "../../core/common/selectoption/selectoption";
 import { useEvents } from "../../core/hooks/useEvents";
 import { useCurrentUser } from "../../core/hooks/useCurrentUser";
 import { apiService } from "../../core/services/apiService";
@@ -78,6 +76,28 @@ const AUDIENCE_FILTER_OPTIONS = [
   { key: "parents" as const, label: "Parents" },
   { key: "guardians" as const, label: "Guardians" },
 ];
+
+const EVENT_AUDIENCE_OPTIONS: Array<{
+  key: "students" | "staff" | "parents" | "guardians";
+  label: string;
+}> = [
+  { key: "students", label: "Students" },
+  { key: "staff", label: "Staff" },
+  { key: "parents", label: "Parents" },
+  { key: "guardians", label: "Guardians" },
+];
+
+function parseEventForList(value?: string | null) {
+  const tokens = String(value || "all")
+    .split(",")
+    .map((v) => String(v || "").trim().toLowerCase())
+    .map((v) => (v === "staffs" || v === "teachers" ? "staff" : v))
+    .filter(
+      (v): v is "all" | "students" | "staff" | "parents" | "guardians" =>
+        v === "all" || v === "students" || v === "staff" || v === "parents" || v === "guardians"
+    );
+  return Array.from(new Set(tokens));
+}
 
 function formatDateShort(iso?: string | null) {
   if (!iso) return "—";
@@ -217,15 +237,15 @@ const Events = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [categoryValue, setCategoryValue] = useState<string | null>(null);
+  const [categoryValue, setCategoryValue] = useState("");
   const [startDate, setStartDate] = useState<Dayjs | null>(null);
   const [endDate, setEndDate] = useState<Dayjs | null>(null);
   const [startTime, setStartTime] = useState<Dayjs | null>(null);
   const [endTime, setEndTime] = useState<Dayjs | null>(null);
   const [location, setLocation] = useState("");
-  const [eventFor, setEventFor] = useState<
-    "all" | "students" | "staff" | "parents" | "guardians"
-  >("all");
+  const [eventForList, setEventForList] = useState<
+    Array<"students" | "staff" | "parents" | "guardians">
+  >([]);
   const [targetClassIds, setTargetClassIds] = useState<number[]>([]);
   const [targetSectionIds, setTargetSectionIds] = useState<number[]>([]);
   const [targetDepartmentIds, setTargetDepartmentIds] = useState<number[]>([]);
@@ -254,13 +274,13 @@ const Events = () => {
     setEditingId(null);
     setTitle("");
     setDescription("");
-    setCategoryValue(null);
+    setCategoryValue("");
     setStartDate(null);
     setEndDate(null);
     setStartTime(null);
     setEndTime(null);
     setLocation("");
-    setEventFor("all");
+    setEventForList([]);
     setTargetClassIds([]);
     setTargetSectionIds([]);
     setTargetDepartmentIds([]);
@@ -284,28 +304,16 @@ const Events = () => {
     setEditingId(ev.id);
     setTitle(ev.title);
     setDescription(ev.description || "");
-    setCategoryValue(
-      ev.event_category && ev.event_category !== ""
-        ? ev.event_category
-        : null
-    );
+    setCategoryValue(ev.event_category || "");
     const sd = dayjs(ev.start_date);
     const ed = ev.end_date ? dayjs(ev.end_date) : sd;
     setStartDate(sd);
     setEndDate(ed);
     setLocation(ev.location || "");
-    const normalizedEventFor = String(ev.event_for || "all").toLowerCase();
-    if (normalizedEventFor === "students") {
-      setEventFor("students");
-    } else if (normalizedEventFor === "staff" || normalizedEventFor === "staffs" || normalizedEventFor === "teachers") {
-      setEventFor("staff");
-    } else if (normalizedEventFor === "parents") {
-      setEventFor("parents");
-    } else if (normalizedEventFor === "guardians") {
-      setEventFor("guardians");
-    } else {
-      setEventFor("all");
-    }
+    const audience = parseEventForList(ev.event_for).filter(
+      (a): a is "students" | "staff" | "parents" | "guardians" => a !== "all"
+    );
+    setEventForList(audience);
     setTargetClassIds(Array.isArray(ev.target_class_ids) ? ev.target_class_ids : []);
     setTargetSectionIds(Array.isArray(ev.target_section_ids) ? ev.target_section_ids : []);
     setTargetDepartmentIds(
@@ -389,8 +397,7 @@ const Events = () => {
       startIso = toLocalApiDateTime(startDt);
       endIso = toLocalApiDateTime(endDt);
     }
-    const catLabel =
-      categoryValue && categoryValue !== "Select" ? categoryValue : null;
+    const catLabel = categoryValue.trim() || null;
     const eventColor = catLabel
       ? categoryToColor[catLabel] || "bg-primary"
       : "bg-primary";
@@ -406,27 +413,27 @@ const Events = () => {
       is_all_day: isAllDay,
       location: location.trim() || null,
       event_category: catLabel,
-      event_for: eventFor,
+      event_for: eventForList.length ? eventForList.join(",") : "all",
       target_class_ids:
-        (eventFor === "students" ||
-          eventFor === "parents" ||
-          eventFor === "guardians") &&
+        (eventForList.includes("students") ||
+          eventForList.includes("parents") ||
+          eventForList.includes("guardians")) &&
         targetClassIds.length
           ? targetClassIds
           : null,
       target_section_ids:
-        (eventFor === "students" ||
-          eventFor === "parents" ||
-          eventFor === "guardians") &&
+        (eventForList.includes("students") ||
+          eventForList.includes("parents") ||
+          eventForList.includes("guardians")) &&
         targetSectionIds.length
           ? targetSectionIds
           : null,
       target_department_ids:
-        eventFor === "staff" && targetDepartmentIds.length
+        eventForList.includes("staff") && targetDepartmentIds.length
           ? targetDepartmentIds
           : null,
       target_designation_ids:
-        eventFor === "staff" && targetDesignationIds.length
+        eventForList.includes("staff") && targetDesignationIds.length
           ? targetDesignationIds
           : null,
       attachment_url: normalizedAttachment || null,
@@ -440,7 +447,7 @@ const Events = () => {
     endTime,
     categoryValue,
     location,
-    eventFor,
+    eventForList,
     targetClassIds,
     targetSectionIds,
     targetDepartmentIds,
@@ -663,8 +670,14 @@ const Events = () => {
     "All categories";
 
   const targetSummary = (ev: SchoolEvent) => {
-    const forValue = String(ev.event_for || "all").toLowerCase();
-    if (forValue === "all") return "All users";
+    const audienceTokens = parseEventForList(ev.event_for);
+    if (!audienceTokens.length || audienceTokens.includes("all")) return "All users";
+    if (audienceTokens.length > 1) {
+      return audienceTokens
+        .map((v) => v.charAt(0).toUpperCase() + v.slice(1))
+        .join(", ");
+    }
+    const forValue = audienceTokens[0];
     if (forValue === "staff" || forValue === "staffs" || forValue === "teachers") {
       const depCount = Array.isArray(ev.target_department_ids)
         ? ev.target_department_ids.length
@@ -1146,39 +1159,48 @@ const Events = () => {
               </div>
               <div className="col-md-12 mb-3">
                 <label className="form-label">Category</label>
-                <CommonSelect
-                  className="select"
-                  options={eventCategory.filter((o) => o.value !== "Select")}
-                  value={categoryValue ?? undefined}
-                  onChange={(v) => setCategoryValue(v)}
+                <input
+                  type="text"
+                  className="form-control"
+                  value={categoryValue}
+                  onChange={(e) => setCategoryValue(e.target.value)}
+                  placeholder="Type event category"
+                  disabled={!canManage}
                 />
-                <p className="text-muted small mt-1 mb-0">
-                  Leave empty for default styling. Times empty = all-day event.
-                </p>
               </div>
               <div className="col-md-6 mb-3">
                 <label className="form-label">Event audience</label>
-                <select
-                  className="form-select"
-                  value={eventFor}
-                  onChange={(e) =>
-                    setEventFor(
-                      e.target.value as
-                        | "all"
-                        | "students"
-                        | "staff"
-                        | "parents"
-                        | "guardians"
-                    )
-                  }
-                  disabled={!canManage}
-                >
-                  <option value="all">All</option>
-                  <option value="students">Students</option>
-                  <option value="staff">Staff</option>
-                  <option value="parents">Parents</option>
-                  <option value="guardians">Guardians</option>
-                </select>
+                <div className="border rounded p-2 bg-light">
+                  {EVENT_AUDIENCE_OPTIONS.map((aud) => {
+                    const checked = eventForList.includes(aud.key);
+                    return (
+                      <div className="form-check form-check-inline me-3" key={aud.key}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id={`event-audience-${aud.key}`}
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEventForList((prev) =>
+                                prev.includes(aud.key) ? prev : [...prev, aud.key]
+                              );
+                            } else {
+                              setEventForList((prev) => prev.filter((x) => x !== aud.key));
+                            }
+                          }}
+                          disabled={!canManage}
+                        />
+                        <label className="form-check-label" htmlFor={`event-audience-${aud.key}`}>
+                          {aud.label}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-muted small mb-0 mt-1">
+                  Leave all unchecked to publish for all audiences.
+                </p>
               </div>
               <div className="col-md-6 mb-3">
                 <label className="form-label">Location (optional)</label>
@@ -1190,9 +1212,9 @@ const Events = () => {
                   disabled={!canManage}
                 />
               </div>
-              {eventFor === "students" ||
-              eventFor === "parents" ||
-              eventFor === "guardians" ? (
+              {eventForList.includes("students") ||
+              eventForList.includes("parents") ||
+              eventForList.includes("guardians") ? (
                 <>
                   <div className="col-md-6 mb-3">
                     <div className="d-flex align-items-center justify-content-between">
@@ -1312,7 +1334,7 @@ const Events = () => {
                   </div>
                 </>
               ) : null}
-              {eventFor === "staff" ? (
+              {eventForList.includes("staff") ? (
                 <>
                   <div className="col-md-6 mb-3">
                     <div className="d-flex align-items-center justify-content-between">

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Swal from "sweetalert2";
 import Table from "../../../../core/common/dataTable/index";
 import { apiService } from "../../../../core/services/apiService";
 import { all_routes } from "../../../router/all_routes";
 import TooltipOption from "../../../../core/common/tooltipOption";
+import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 type GradeRow = {
   id: number;
@@ -13,12 +14,14 @@ type GradeRow = {
   max_percentage: number;
   percentage_label?: string;
   status: string;
+  is_active?: boolean;
 };
 
 type GradeForm = {
   grade: string;
   min_percentage: string;
   max_percentage: string;
+  is_active: boolean;
 };
 
 const Grade = () => {
@@ -33,11 +36,13 @@ const Grade = () => {
     grade: "",
     min_percentage: "",
     max_percentage: "",
+    is_active: true,
   });
   const [editForm, setEditForm] = useState<GradeForm>({
     grade: "",
     min_percentage: "",
     max_percentage: "",
+    is_active: true,
   });
 
   const extractErrorMessage = (err: any, fallback: string) => {
@@ -61,6 +66,7 @@ const Grade = () => {
       grade: "",
       min_percentage: "",
       max_percentage: "",
+      is_active: true,
     });
   };
 
@@ -71,6 +77,7 @@ const Grade = () => {
       grade: "",
       min_percentage: "",
       max_percentage: "",
+      is_active: true,
     });
   };
 
@@ -107,6 +114,7 @@ const Grade = () => {
       grade: String((row as any)?.grade || ""),
       min_percentage: String((row as any)?.min_percentage ?? ""),
       max_percentage: String((row as any)?.max_percentage ?? ""),
+      is_active: (row as any)?.is_active !== false && String((row as any)?.status || "").toLowerCase() !== "inactive",
     });
     setIsEditModalOpen(true);
     setMessage(null);
@@ -142,7 +150,7 @@ const Grade = () => {
       grade: addForm.grade.trim(),
       min_percentage: Number(addForm.min_percentage),
       max_percentage: Number(addForm.max_percentage),
-      is_active: true,
+      is_active: addForm.is_active,
     };
     setSaving(true);
     setMessage(null);
@@ -165,7 +173,7 @@ const Grade = () => {
       grade: editForm.grade.trim(),
       min_percentage: Number(editForm.min_percentage),
       max_percentage: Number(editForm.max_percentage),
-      is_active: true,
+      is_active: editForm.is_active,
     };
     setSaving(true);
     setMessage(null);
@@ -187,11 +195,72 @@ const Grade = () => {
         id: Number(r.id),
         grade: String(r.grade || "-"),
         percentage: String(r.percentage_label || `${r.min_percentage ?? 0}% - ${Math.floor(Number(r.max_percentage ?? 0))}%`),
-        status: String(r.status || "Active"),
+        status: r.is_active === false ? "Inactive" : String(r.status || "Active"),
         raw: r,
       })),
     [rows]
   );
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Grade", dataKey: "grade" },
+      { title: "Percentage", dataKey: "percentage" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      tableData.map((row) => ({
+        id: row.id,
+        grade: row.grade,
+        percentage: row.percentage,
+        status: row.status,
+      })),
+    [tableData]
+  );
+
+  const showNothingToExport = useCallback(() => {
+    void Swal.fire({
+      icon: "info",
+      title: "Nothing to export",
+      text: "Grade list is empty.",
+      timer: 2200,
+      showConfirmButton: false,
+    });
+  }, []);
+
+  const handleRefresh = useCallback(() => {
+    void loadGrades();
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) {
+      showNothingToExport();
+      return;
+    }
+    printData("Grade List", exportColumns, exportRows);
+  }, [exportColumns, exportRows, showNothingToExport]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) {
+      showNothingToExport();
+      return;
+    }
+    const stamp = new Date().toISOString().split("T")[0];
+    exportToPDF(exportRows, "Grade List", `grade-list_${stamp}`, exportColumns);
+  }, [exportColumns, exportRows, showNothingToExport]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) {
+      showNothingToExport();
+      return;
+    }
+    const stamp = new Date().toISOString().split("T")[0];
+    exportToExcel(exportRows, `grade-list_${stamp}`, "Grade List");
+  }, [exportRows, showNothingToExport]);
 
   const columns = [
     {
@@ -221,7 +290,7 @@ const Grade = () => {
       dataIndex: "status",
       render: (value: any) => (
         <>
-          <span className="badge badge-soft-success d-inline-flex align-items-center">
+          <span className={`badge ${String(value).toLowerCase() === "inactive" ? "badge-soft-danger" : "badge-soft-success"} d-inline-flex align-items-center`}>
             <i className="ti ti-circle-filled fs-5 me-1"></i>{value || "Active"}
           </span>
         </>
@@ -281,7 +350,12 @@ const Grade = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
+            <TooltipOption
+              onRefresh={handleRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
             </div>
           </div>
           {/* /Page Header */}
@@ -328,6 +402,20 @@ const Grade = () => {
                       onChange={(e) => setAddForm((prev) => ({ ...prev, max_percentage: e.target.value }))}
                       required
                     />
+                  </div>
+                  <div className="col-md-3 d-flex align-items-end">
+                    <div className="form-check mb-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="add-grade-active"
+                        checked={addForm.is_active}
+                        onChange={(e) => setAddForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+                      />
+                      <label className="form-check-label" htmlFor="add-grade-active">
+                        Is Active
+                      </label>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 d-flex gap-2">
@@ -394,6 +482,20 @@ const Grade = () => {
                               onChange={(e) => setEditForm((prev) => ({ ...prev, max_percentage: e.target.value }))}
                               required
                             />
+                          </div>
+                          <div className="col-12">
+                            <div className="form-check">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                id="edit-grade-active"
+                                checked={editForm.is_active}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+                              />
+                              <label className="form-check-label" htmlFor="edit-grade-active">
+                                Is Active
+                              </label>
+                            </div>
                           </div>
                         </div>
                         <div className="mt-3 d-flex gap-2">

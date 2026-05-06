@@ -7,6 +7,7 @@ const { getParentsForUser } = require('../utils/parentUserMatch');
 const {
   DEFAULT_GRADE_SCALE,
   loadActiveGradeScale,
+  resolveGradeScaleTable,
   getGradeFromScale,
   isMissingTableError,
 } = require('../utils/gradeScaleService');
@@ -91,17 +92,45 @@ const saveExamMarksSchema = Joi.object({
 
 const getGradeScale = async (_req, res) => {
   try {
-    const scaleRows = await loadActiveGradeScale();
+    const tableName = await resolveGradeScaleTable();
+    if (!tableName) {
+      const rows = DEFAULT_GRADE_SCALE.map((item) => ({
+        id: item.id,
+        grade: item.grade,
+        min_percentage: Number(item.min_percentage),
+        max_percentage: Number(item.max_percentage),
+        percentage_label: `${Number(item.min_percentage)}% - ${Math.floor(Number(item.max_percentage))}%`,
+        is_active: item.is_active !== false,
+        status: item.is_active === false ? 'Inactive' : 'Active',
+      }));
+      return success(res, 200, 'Grade scale fetched', rows, { count: rows.length });
+    }
+    const sql = gradeScaleQueries(tableName);
+    const gradeRes = await query(sql.listOrdered);
+    const scaleRows = gradeRes.rows || [];
     const rows = scaleRows.map((item, idx) => ({
       id: item.id ?? idx + 1,
       grade: item.grade,
       min_percentage: Number(item.min_percentage),
       max_percentage: Number(item.max_percentage),
       percentage_label: `${Number(item.min_percentage)}% - ${Math.floor(Number(item.max_percentage))}%`,
+      is_active: item.is_active !== false,
       status: item.is_active === false ? 'Inactive' : 'Active',
     }));
     return success(res, 200, 'Grade scale fetched', rows, { count: rows.length });
   } catch (e) {
+    if (isMissingTableError(e)) {
+      const rows = DEFAULT_GRADE_SCALE.map((item) => ({
+        id: item.id,
+        grade: item.grade,
+        min_percentage: Number(item.min_percentage),
+        max_percentage: Number(item.max_percentage),
+        percentage_label: `${Number(item.min_percentage)}% - ${Math.floor(Number(item.max_percentage))}%`,
+        is_active: item.is_active !== false,
+        status: item.is_active === false ? 'Inactive' : 'Active',
+      }));
+      return success(res, 200, 'Grade scale fetched', rows, { count: rows.length });
+    }
     console.error('getGradeScale', e);
     return error(res, 500, 'Failed to fetch grade scale');
   }
@@ -114,20 +143,82 @@ const upsertGradeScaleSchema = Joi.object({
   is_active: Joi.boolean().default(true),
 });
 
+function gradeScaleQueries(tableName) {
+  if (tableName === 'exam_grades') {
+    return {
+      listAll: `SELECT id, grade_name AS grade, min_percentage AS min_percentage, max_percentage AS max_percentage, is_active FROM exam_grades`,
+      listOrdered: `SELECT id, grade_name AS grade, min_percentage AS min_percentage, max_percentage AS max_percentage, is_active FROM exam_grades ORDER BY min_percentage DESC, id ASC`,
+      existsById: 'SELECT id FROM exam_grades WHERE id = $1 LIMIT 1',
+      insert: `INSERT INTO exam_grades (grade_name, min_percentage, max_percentage, is_active)
+               VALUES ($1, $2, $3, $4)
+               RETURNING id, grade_name AS grade, min_percentage AS min_percentage, max_percentage AS max_percentage, is_active, created_at, updated_at`,
+      update: `UPDATE exam_grades
+               SET grade_name = $1,
+                   min_percentage = $2,
+                   max_percentage = $3,
+                   is_active = $4,
+                   updated_at = NOW()
+               WHERE id = $5
+               RETURNING id, grade_name AS grade, min_percentage AS min_percentage, max_percentage AS max_percentage, is_active, created_at, updated_at`,
+      deleteById: 'DELETE FROM exam_grades WHERE id = $1 RETURNING id',
+      countActive: 'SELECT COUNT(*)::int AS c FROM exam_grades WHERE is_active = true',
+      restoreDefault: `INSERT INTO exam_grades (grade_name, min_percentage, max_percentage, is_active)
+                       VALUES ($1, $2, $3, true)
+                       ON CONFLICT DO NOTHING`,
+    };
+  }
+  return {
+    listAll: `SELECT id, grad AS grade, min_precentage AS min_percentage, max_precentage AS max_percentage, is_active FROM exam_grade`,
+    listOrdered: `SELECT id, grad AS grade, min_precentage AS min_percentage, max_precentage AS max_percentage, is_active FROM exam_grade ORDER BY min_precentage DESC, id ASC`,
+    existsById: 'SELECT id FROM exam_grade WHERE id = $1 LIMIT 1',
+    insert: `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, grad AS grade, min_precentage AS min_percentage, max_precentage AS max_percentage, is_active, created_at, updated_at`,
+    update: `UPDATE exam_grade
+             SET grad = $1,
+                 min_precentage = $2,
+                 max_precentage = $3,
+                 is_active = $4,
+                 updated_at = NOW()
+             WHERE id = $5
+             RETURNING id, grad AS grade, min_precentage AS min_percentage, max_precentage AS max_percentage, is_active, created_at, updated_at`,
+    deleteById: 'DELETE FROM exam_grade WHERE id = $1 RETURNING id',
+    countActive: 'SELECT COUNT(*)::int AS c FROM exam_grade WHERE is_active = true',
+    restoreDefault: `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
+                     VALUES ($1, $2, $3, true)
+                     ON CONFLICT DO NOTHING`,
+  };
+}
+
 function validateNoGradeOverlap(rows, currentId = null) {
-  const activeRows = (rows || []).filter((r) => r.is_active !== false && Number(r.id) !== Number(currentId));
-  for (let i = 0; i < activeRows.length; i += 1) {
-    const a = activeRows[i];
+  const candidateRows = (rows || []).filter((r) => Number(r.id) !== Number(currentId));
+  for (let i = 0; i < candidateRows.length; i += 1) {
+    const a = candidateRows[i];
     const aMin = Number(a.min_percentage);
     const aMax = Number(a.max_percentage);
-    for (let j = i + 1; j < activeRows.length; j += 1) {
-      const b = activeRows[j];
+    for (let j = i + 1; j < candidateRows.length; j += 1) {
+      const b = candidateRows[j];
       const bMin = Number(b.min_percentage);
       const bMax = Number(b.max_percentage);
       if (aMin <= bMax && bMin <= aMax) {
-        return `Grade ranges overlap between "${a.grade}" and "${b.grade}"`;
+        return `Grade range overlap: "${a.grade}" (${aMin}% - ${aMax}%) conflicts with "${b.grade}" (${bMin}% - ${bMax}%).`;
       }
     }
+  }
+  return null;
+}
+
+function validateDuplicateGradeName(rows, currentId = null) {
+  const seen = new Map();
+  for (const row of rows || []) {
+    if (Number(row.id) === Number(currentId)) continue;
+    const normalized = String(row.grade || '').trim().toLowerCase();
+    if (!normalized) continue;
+    if (seen.has(normalized)) {
+      const first = seen.get(normalized);
+      return `Grade name "${String(row.grade || '').trim()}" already exists (conflicts with "${String(first.grade || '').trim()}").`;
+    }
+    seen.set(normalized, row);
   }
   return null;
 }
@@ -140,43 +231,39 @@ const createGradeScale = async (req, res) => {
       return error(res, 400, 'min_percentage cannot be greater than max_percentage');
     }
     const created = await executeTransaction(async (client) => {
-      const allRowsRes = await client.query(
-        `SELECT
-           id,
-           grad AS grade,
-           min_precentage AS min_percentage,
-           max_precentage AS max_percentage,
-           is_active
-         FROM exam_grade`
-      );
+      const tableName = await resolveGradeScaleTable();
+      if (!tableName) {
+        const missingErr = new Error('Grade table not found');
+        missingErr.statusCode = 503;
+        throw missingErr;
+      }
+      const sql = gradeScaleQueries(tableName);
+      const allRowsRes = await client.query(sql.listAll);
       const allRows = allRowsRes.rows || [];
+      const duplicateNameError = validateDuplicateGradeName(
+        [...allRows, { ...value, id: -1 }],
+        null
+      );
+      if (duplicateNameError) {
+        const errObj = new Error(duplicateNameError);
+        errObj.statusCode = 409;
+        throw errObj;
+      }
       const conflict = validateNoGradeOverlap(
         [...allRows, { ...value, id: -1 }],
         null
       );
-      if (value.is_active !== false && conflict) {
+      if (conflict) {
         const errObj = new Error(conflict);
         errObj.statusCode = 409;
         throw errObj;
       }
-      const ins = await client.query(
-        `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
-         VALUES ($1, $2, $3, $4)
-         RETURNING
-           id,
-           grad AS grade,
-           min_precentage AS min_percentage,
-           max_precentage AS max_percentage,
-           is_active,
-           created_at,
-           updated_at`,
-        [
-          value.grade,
-          Number(value.min_percentage),
-          Number(value.max_percentage),
-          value.is_active !== false,
-        ]
-      );
+      const ins = await client.query(sql.insert, [
+        value.grade,
+        Number(value.min_percentage),
+        Number(value.max_percentage),
+        value.is_active !== false,
+      ]);
       return ins.rows[0];
     });
     return success(res, 201, 'Grade scale created', created);
@@ -200,21 +287,20 @@ const updateGradeScale = async (req, res) => {
       return error(res, 400, 'min_percentage cannot be greater than max_percentage');
     }
     const updated = await executeTransaction(async (client) => {
-      const exists = await client.query('SELECT id FROM exam_grade WHERE id = $1 LIMIT 1', [gradeId]);
+      const tableName = await resolveGradeScaleTable();
+      if (!tableName) {
+        const missingErr = new Error('Grade table not found');
+        missingErr.statusCode = 503;
+        throw missingErr;
+      }
+      const sql = gradeScaleQueries(tableName);
+      const exists = await client.query(sql.existsById, [gradeId]);
       if (!exists.rows.length) {
         const errObj = new Error('Grade scale not found');
         errObj.statusCode = 404;
         throw errObj;
       }
-      const allRowsRes = await client.query(
-        `SELECT
-           id,
-           grad AS grade,
-           min_precentage AS min_percentage,
-           max_precentage AS max_percentage,
-           is_active
-         FROM exam_grade`
-      );
+      const allRowsRes = await client.query(sql.listAll);
       const allRows = (allRowsRes.rows || []).map((r) =>
         Number(r.id) === Number(gradeId)
           ? {
@@ -226,36 +312,25 @@ const updateGradeScale = async (req, res) => {
             }
           : r
       );
+      const duplicateNameError = validateDuplicateGradeName(allRows, gradeId);
+      if (duplicateNameError) {
+        const errObj = new Error(duplicateNameError);
+        errObj.statusCode = 409;
+        throw errObj;
+      }
       const conflict = validateNoGradeOverlap(allRows, gradeId);
-      if (value.is_active !== false && conflict) {
+      if (conflict) {
         const errObj = new Error(conflict);
         errObj.statusCode = 409;
         throw errObj;
       }
-      const upd = await client.query(
-        `UPDATE exam_grade
-         SET grad = $1,
-             min_precentage = $2,
-             max_precentage = $3,
-             is_active = $4,
-             updated_at = NOW()
-         WHERE id = $5
-         RETURNING
-           id,
-           grad AS grade,
-           min_precentage AS min_percentage,
-           max_precentage AS max_percentage,
-           is_active,
-           created_at,
-           updated_at`,
-        [
-          value.grade,
-          Number(value.min_percentage),
-          Number(value.max_percentage),
-          value.is_active !== false,
-          gradeId,
-        ]
-      );
+      const upd = await client.query(sql.update, [
+        value.grade,
+        Number(value.min_percentage),
+        Number(value.max_percentage),
+        value.is_active !== false,
+        gradeId,
+      ]);
       return upd.rows[0];
     });
     return success(res, 200, 'Grade scale updated', updated);
@@ -273,21 +348,18 @@ const deleteGradeScale = async (req, res) => {
   try {
     const gradeId = parseId(req.params.id);
     if (!gradeId) return error(res, 400, 'Invalid grade id');
-    const del = await query(
-      `DELETE FROM exam_grade WHERE id = $1 RETURNING id`,
-      [gradeId]
-    );
+    const tableName = await resolveGradeScaleTable();
+    if (!tableName) {
+      return error(res, 503, 'Grade table not found. Run migration 032_exam_grade_scale.sql');
+    }
+    const sql = gradeScaleQueries(tableName);
+    const del = await query(sql.deleteById, [gradeId]);
     if (!del.rows.length) return error(res, 404, 'Grade scale not found');
-    const remaining = await query(`SELECT COUNT(*)::int AS c FROM exam_grade WHERE is_active = true`);
+    const remaining = await query(sql.countActive);
     if (Number(remaining.rows?.[0]?.c || 0) === 0) {
       // Never allow all active rows to be deleted; restore defaults for safe grading.
       for (const item of DEFAULT_GRADE_SCALE) {
-        await query(
-          `INSERT INTO exam_grade (grad, min_precentage, max_precentage, is_active)
-           VALUES ($1, $2, $3, true)
-           ON CONFLICT DO NOTHING`,
-          [item.grade, item.min_percentage, item.max_percentage]
-        );
+        await query(sql.restoreDefault, [item.grade, item.min_percentage, item.max_percentage]);
       }
     }
     return success(res, 200, 'Grade scale deleted', { id: gradeId });

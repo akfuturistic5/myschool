@@ -1,7 +1,4 @@
-import { Link } from "react-router-dom";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { all_routes } from "../../router/all_routes";
-import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { apiService } from "../../../core/services/apiService";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
@@ -14,7 +11,6 @@ type ReligionItem = {
 };
 
 const Religion = () => {
-  const route = all_routes;
   const { user } = useCurrentUser();
   const isAdmin = useMemo(
     () => isHeadmasterRole(user) || isAdministrativeRole(user),
@@ -163,74 +159,26 @@ const Religion = () => {
     <div>
       <div className="page-wrapper">
         <div className="content bg-white">
-          <div className="d-md-flex d-block align-items-center justify-content-between border-bottom pb-3">
-            <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Academic Settings</h3>
-              <nav>
-                <ol className="breadcrumb mb-0">
-                  <li className="breadcrumb-item">
-                    <Link to={route.adminDashboard}>Dashboard</Link>
-                  </li>
-                  <li className="breadcrumb-item">
-                    <Link to="#">Settings</Link>
-                  </li>
-                  <li className="breadcrumb-item active" aria-current="page">
-                    Academic Settings
-                  </li>
-                </ol>
-              </nav>
-            </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <div className="pe-1 mb-2">
-                <OverlayTrigger
-                  placement="top"
-                  overlay={<Tooltip id="tooltip-top">Refresh</Tooltip>}
+          <form onSubmit={handleAdd}>
+            <div className="d-flex align-items-center justify-content-between flex-wrap border-bottom pt-3 mb-3">
+              <div className="mb-3">
+                <h5 className="mb-1">Religion</h5>
+                <p>Manage active and inactive religions</p>
+              </div>
+              <div className="mb-3">
+                <button
+                  className="btn btn-light me-2"
+                  type="button"
+                  onClick={() => loadReligions()}
+                  disabled={saving || loading}
                 >
-                  <button
-                    type="button"
-                    className="btn btn-outline-light bg-white btn-icon me-1"
-                    onClick={() => loadReligions()}
-                    disabled={saving || loading}
-                  >
-                    <i className="ti ti-refresh" />
-                  </button>
-                </OverlayTrigger>
+                  Refresh
+                </button>
+                <button className="btn btn-primary" type="submit" disabled={!isAdmin || saving || loading}>
+                  Add Religion
+                </button>
               </div>
             </div>
-          </div>
-          <div className="row">
-            <div className="col-xxl-2 col-xl-3">
-              <div className="pt-3 d-flex flex-column list-group mb-4">
-                <Link
-                  to={route.religion}
-                  className="d-block rounded active p-2"
-                >
-                  Religion
-                </Link>
-              </div>
-            </div>
-            <div className="col-xxl-10 col-xl-9">
-              <div className="border-start ps-3">
-                <form onSubmit={handleAdd}>
-                  <div className="d-flex align-items-center justify-content-between flex-wrap border-bottom pt-3 mb-3">
-                    <div className="mb-3">
-                      <h5 className="mb-1">Religion</h5>
-                      <p>Manage active and inactive religions</p>
-                    </div>
-                    <div className="mb-3">
-                      <button
-                        className="btn btn-light me-2"
-                        type="button"
-                        onClick={() => loadReligions()}
-                        disabled={saving || loading}
-                      >
-                        Refresh
-                      </button>
-                      <button className="btn btn-primary" type="submit" disabled={!isAdmin || saving || loading}>
-                        Add Religion
-                      </button>
-                    </div>
-                  </div>
                   {loading && <div className="alert alert-info">Loading religions...</div>}
                   {!!message && <div className="alert alert-success">{message}</div>}
                   {!!error && <div className="alert alert-danger">{error}</div>}
@@ -336,70 +284,67 @@ const Religion = () => {
                       ))}
                     </div>
                   </div>
-                </form>
-                {editingId != null && (
-                  <form className="border rounded p-3 mt-3" onSubmit={handleEdit}>
-                    <div className="d-flex align-items-center justify-content-between mb-3">
-                      <h6 className="mb-0">Edit Religion</h6>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-light"
-                        onClick={() => setEditingId(null)}
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="row">
-                      <div className="col-md-5">
-                        <div className="mb-3">
-                          <label className="form-label">Religion Name</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={editName}
-                            maxLength={50}
-                            onChange={(e) => setEditName(e.target.value)}
-                            disabled={saving || loading}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-5">
-                        <div className="mb-3">
-                          <label className="form-label">Description</label>
-                          <input
-                            type="text"
-                            className="form-control"
-                            value={editDescription}
-                            maxLength={200}
-                            onChange={(e) => setEditDescription(e.target.value)}
-                            disabled={saving || loading}
-                          />
-                        </div>
-                      </div>
-                      <div className="col-md-2 d-flex align-items-center">
-                        <div className="form-check mt-2">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            id="edit-religion-active"
-                            checked={editIsActive}
-                            onChange={(e) => setEditIsActive(e.target.checked)}
-                            disabled={saving || loading}
-                          />
-                          <label className="form-check-label" htmlFor="edit-religion-active">
-                            Active
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                    <button type="submit" className="btn btn-primary" disabled={!isAdmin || saving || loading}>
-                      Save Changes
-                    </button>
-                  </form>
-                )}
+          </form>
+          {editingId != null && (
+            <form className="border rounded p-3 mt-3" onSubmit={handleEdit}>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <h6 className="mb-0">Edit Religion</h6>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-light"
+                  onClick={() => setEditingId(null)}
+                >
+                  Close
+                </button>
               </div>
-            </div>
-          </div>
+              <div className="row">
+                <div className="col-md-5">
+                  <div className="mb-3">
+                    <label className="form-label">Religion Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editName}
+                      maxLength={50}
+                      onChange={(e) => setEditName(e.target.value)}
+                      disabled={saving || loading}
+                    />
+                  </div>
+                </div>
+                <div className="col-md-5">
+                  <div className="mb-3">
+                    <label className="form-label">Description</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={editDescription}
+                      maxLength={200}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      disabled={saving || loading}
+                    />
+                  </div>
+                </div>
+                <div className="col-md-2 d-flex align-items-center">
+                  <div className="form-check mt-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="edit-religion-active"
+                      checked={editIsActive}
+                      onChange={(e) => setEditIsActive(e.target.checked)}
+                      disabled={saving || loading}
+                    />
+                    <label className="form-check-label" htmlFor="edit-religion-active">
+                      Active
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={!isAdmin || saving || loading}>
+                Save Changes
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
