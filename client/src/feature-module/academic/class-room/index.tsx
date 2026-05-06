@@ -24,17 +24,19 @@ const ClassRoom = () => {
     deleteClassRoom,
   } = useClassRooms();
 
-  const [addForm, setAddForm] = useState({ roomNo: "", capacity: "50", status: true });
-  const [editForm, setEditForm] = useState<{ id: number; roomNo: string; capacity: string; status: boolean } | null>(null);
+  const [addForm, setAddForm] = useState({ roomNo: "", capacity: "50", buildingName: "", floor: "", status: true });
+  const [editForm, setEditForm] = useState<{ id: number; roomNo: string; capacity: string; buildingName: string; floor: string; status: boolean } | null>(null);
   const [roomToDelete, setRoomToDelete] = useState<{ id: number; room_no: string } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const data = (classRooms || []).map((r: any) => ({
     id: r.id,
-    roomNo: r.room_no ?? r.roomNo ?? "",
+    roomNo: r.room_number ?? r.room_no ?? r.roomNo ?? "",
     capacity: String(r.capacity ?? ""),
-    status: r.status ?? "Active",
+    buildingName: r.building_name ?? r.buildingName ?? "",
+    floor: String(r.floor ?? ""),
+    is_active: r.is_active ?? (String(r.status ?? "").toLowerCase() === "active"),
     key: r.id,
   }));
 
@@ -51,11 +53,13 @@ const ClassRoom = () => {
     setSubmitting(true);
     try {
       await createClassRoom({
-        room_no: addForm.roomNo.trim(),
+        room_number: addForm.roomNo.trim(),
         capacity: parseInt(addForm.capacity, 10) || 50,
-        status: addForm.status ? "Active" : "Inactive",
+        building: addForm.buildingName.trim(),
+        floor: addForm.floor !== "" ? parseInt(addForm.floor, 10) : null,
+        is_active: addForm.status,
       });
-      setAddForm({ roomNo: "", capacity: "50", status: true });
+      setAddForm({ roomNo: "", capacity: "50", buildingName: "", floor: "", status: true });
       hideModal("add_class_room");
     } catch (err: any) {
       setSubmitError(err?.message || "Failed to add class room");
@@ -71,9 +75,11 @@ const ClassRoom = () => {
     setSubmitting(true);
     try {
       await updateClassRoom(editForm.id, {
-        room_no: editForm.roomNo.trim(),
+        room_number: editForm.roomNo.trim(),
         capacity: parseInt(editForm.capacity, 10) || 50,
-        status: editForm.status ? "Active" : "Inactive",
+        building: editForm.buildingName.trim(),
+        floor: editForm.floor !== "" ? parseInt(editForm.floor, 10) : null,
+        is_active: editForm.status,
       });
       setEditForm(null);
       hideModal("edit_class_room");
@@ -103,7 +109,9 @@ const ClassRoom = () => {
       id: record.id,
       roomNo: record.roomNo ?? "",
       capacity: record.capacity ?? "50",
-      status: String(record.status ?? "Active").toLowerCase() === "active",
+      buildingName: record.buildingName ?? "",
+      floor: record.floor ?? "",
+      status: !!record.is_active,
     });
     setSubmitError(null);
     const el = document.getElementById("edit_class_room");
@@ -145,20 +153,30 @@ const ClassRoom = () => {
       sorter: (a: TableData, b: TableData) => Number(a.capacity) - Number(b.capacity),
     },
     {
+      title: "Building",
+      dataIndex: "buildingName",
+      sorter: (a: TableData, b: TableData) => String(a.buildingName).localeCompare(String(b.buildingName)),
+    },
+    {
+      title: "Floor",
+      dataIndex: "floor",
+      sorter: (a: TableData, b: TableData) => Number(a.floor) - Number(b.floor),
+    },
+    {
       title: "Status",
-      dataIndex: "status",
+      dataIndex: "is_active",
       render: (_: any, record: any) => {
-        const isActive = (record.status ?? "Active").toLowerCase() === "active";
+        const isActive = !!record.is_active;
         return (
           <span
             className={`badge d-inline-flex align-items-center ${isActive ? "badge-soft-success" : "badge-soft-danger"}`}
           >
             <i className={`ti ti-circle-filled fs-5 me-1`}></i>
-            {record.status ?? "Active"}
+            {isActive ? "Active" : "Inactive"}
           </span>
         );
       },
-      sorter: (a: any, b: any) => String(a.status).localeCompare(String(b.status)),
+      sorter: (a: any, b: any) => Number(a.is_active) - Number(b.is_active),
     },
     {
       title: "Action",
@@ -391,6 +409,24 @@ const ClassRoom = () => {
                         min={1}
                       />
                     </div>
+                    <div className="mb-3">
+                      <label className="form-label">Building Name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={addForm.buildingName}
+                        onChange={(e) => setAddForm((p) => ({ ...p, buildingName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Floor</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={addForm.floor}
+                        onChange={(e) => setAddForm((p) => ({ ...p, floor: e.target.value }))}
+                      />
+                    </div>
                     <div className="d-flex align-items-center justify-content-between">
                       <div className="status-title">
                         <h5>Status</h5>
@@ -457,6 +493,24 @@ const ClassRoom = () => {
                           value={editForm.capacity}
                           onChange={(e) => setEditForm((p) => (p ? { ...p, capacity: e.target.value } : null))}
                           min={1}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Building Name</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={editForm.buildingName}
+                          onChange={(e) => setEditForm((p) => (p ? { ...p, buildingName: e.target.value } : null))}
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Floor</label>
+                        <input
+                          type="number"
+                          className="form-control"
+                          value={editForm.floor}
+                          onChange={(e) => setEditForm((p) => (p ? { ...p, floor: e.target.value } : null))}
                         />
                       </div>
                       <div className="d-flex align-items-center justify-content-between">

@@ -167,7 +167,22 @@ export const SidebarData = [
         submenu: true,
         showSubRoute: false,
 
-        submenuItems: [{ label: "All Classes", link: routes.classes }],
+        submenuItems: [
+          { label: "Class Room", link: routes.classRoom },
+          { label: "Section", link: routes.classSection },
+          { label: "Classes", link: routes.classes },
+          { label: "Class Sections", link: routes.classSections },
+        ],
+      },
+      {
+        label: "Subjects",
+        icon: "ti ti-book",
+        submenu: true,
+        showSubRoute: false,
+        submenuItems: [
+          { label: "Subject List", link: routes.subjects },
+          { label: "Class Subjects", link: routes.classSubject },
+        ],
       },
       {
         label: "Timetable",
@@ -180,34 +195,13 @@ export const SidebarData = [
           { label: "Section routine", link: routes.sectionRoutine },
         ],
       },
-      {
-        label: "Class Room",
-        link: routes.classRoom,
-        icon: "ti ti-building",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Section",
-        link: routes.classSection,
-        icon: "ti ti-square-rotated-forbid-2",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Subject",
-        link: routes.classSubject,
-        icon: "ti ti-book",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Syllabus",
-        link: routes.classSyllabus,
-        icon: "ti ti-book-upload",
-        showSubRoute: false,
-        submenu: false,
-      },
+      // {
+      //   label: "Syllabus",
+      //   link: routes.classSyllabus,
+      //   icon: "ti ti-book-upload",
+      //   showSubRoute: false,
+      //   submenu: false,
+      // },
       {
         label: "Home Work",
         link: routes.classHomeWork,

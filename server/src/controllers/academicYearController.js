@@ -280,24 +280,7 @@ const getAcademicYearSummary = async (req, res) => {
       return res.status(404).json({ status: 'ERROR', message: 'Academic year not found' });
     }
 
-    const statsRes = await query(
-      `
-      SELECT
-        (SELECT COUNT(DISTINCT class_id)::int FROM class_sections WHERE academic_year_id = $1) AS classes_count,
-        (SELECT COUNT(*)::int FROM class_sections WHERE academic_year_id = $1) AS sections_count,
-        (SELECT COUNT(DISTINCT student_id)::int FROM student_lifecycle_ledger 
-          WHERE to_academic_year_id = $1 AND event_type IN ('ADMISSION', 'PROMOTION', 'RE_ADMISSION')) AS students_count,
-        (SELECT COUNT(*)::int FROM class_schedules WHERE academic_year_id = $1) AS class_schedules_count,
-        (SELECT COUNT(*)::int FROM fees WHERE academic_year_id = $1) AS fees_count,
-        (SELECT COUNT(*)::int FROM exams WHERE academic_year_id = $1) AS exams_count,
-        (SELECT COUNT(*)::int FROM school_holidays WHERE academic_year_id = $1) AS holidays_count,
-        (SELECT COUNT(*)::int FROM student_lifecycle_ledger WHERE to_academic_year_id = $1) AS promotions_into_count,
-        (SELECT COUNT(*)::int FROM student_lifecycle_ledger WHERE from_academic_year_id = $1) AS promotions_from_count,
-        (SELECT COUNT(*)::int FROM student_attendance WHERE academic_year_id = $1) AS attendance_records_count,
-        (SELECT COUNT(*)::int FROM subject_teacher_assignments WHERE academic_year_id = $1) AS teacher_assignments_count
-      `,
-      [id]
-    );
+    const statistics = await collectAcademicYearSummaryStatistics(id);
 
     res.status(200).json({
       status: 'SUCCESS',
@@ -354,13 +337,6 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
-    if (!end_date) {
-      return res.status(400).json({
-        status: 'ERROR',
-        message: 'End date is required',
-      });
-    }
-
     if (copyFromYearRaw != null && copyFromYearRaw !== '' && !copyFromYearId) {
       return res.status(400).json({
         status: 'ERROR',
@@ -376,7 +352,17 @@ const createAcademicYear = async (req, res) => {
       });
     }
 
-    const endInsert = end_date;
+    // UI allows omitting end_date; DB may still enforce NOT NULL. Use a provisional
+    // ~1-year span so inserts succeed — users set the official end date on the detail page.
+    const endInsert =
+      end_date ||
+      computeProvisionalAcademicYearEnd(start_date);
+    if (!endInsert) {
+      return res.status(400).json({
+        status: 'ERROR',
+        message: 'Invalid start date — could not derive an end date for this session.',
+      });
+    }
 
     const created_by = await resolveStaffIdForUser(req.user?.id);
     const is_current = isCurrent === true;
@@ -574,6 +560,7 @@ const updateAcademicYear = async (req, res) => {
         return again.rows[0];
       }
 
+      fields.push('updated_at = CURRENT_TIMESTAMP');
       fields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(id);
 

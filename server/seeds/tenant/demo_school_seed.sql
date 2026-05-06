@@ -150,8 +150,7 @@ BEGIN
     INSERT INTO public.exam_results (exam_schedule_id, student_id, marks_obtained) VALUES (v_exam_sched_id, v_student_1_id, 42);
 
     -- [13] INFRASTRUCTURE & TIMETABLE
-    INSERT INTO public.room_types (room_type) VALUES ('Classroom') RETURNING id INTO v_room_id;
-    INSERT INTO public.class_rooms (room_name, room_type_id) VALUES ('101-A', v_room_id);
+    INSERT INTO public.class_rooms (room_number) VALUES ('101-A');
     INSERT INTO public.timetable_time_slots (slot_name, start_time, end_time) VALUES ('Period 1', '08:00:00', '08:45:00') RETURNING id INTO v_slot_id;
     INSERT INTO public.class_schedules (academic_year_id, class_id, class_section_id, class_subject_id, teacher_id, class_room_id, time_slot_id, day_of_week, valid_from) 
     VALUES (v_year_id, v_class_10_id, v_cs_10a_id, v_csub_math_id, v_staff_1_id, 1, v_slot_id, 1, '2024-04-01');

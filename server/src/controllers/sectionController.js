@@ -39,56 +39,7 @@ const parseOptionalInt = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
-const baseSectionSelect = `
-  cs.id,
-  sec.id AS section_master_id,
-  sec.section_name,
-  cs.class_id,
-  cs.academic_year_id,
-  te.staff_id AS section_teacher_id,
-  cs.max_students,
-  cs.room_number,
-  sec.description,
-  cs.is_active,
-  cs.created_at,
-  cs.created_by,
-  cs.updated_at AS updated_at,
-  (SELECT COUNT(*)::int
-   FROM students st
-   LEFT JOIN LATERAL (
-     SELECT l.to_class_id, l.to_section_id, l.to_academic_year_id
-     FROM student_lifecycle_ledger l
-     WHERE l.student_id = st.id
-     ORDER BY l.event_date DESC NULLS LAST, l.id DESC
-     LIMIT 1
-   ) le ON true
-   WHERE st.deleted_at IS NULL AND st.status = \'Active\'
-     AND le.to_class_id = cs.class_id
-     AND le.to_section_id = sec.id
-     AND le.to_academic_year_id = cs.academic_year_id
-  ) AS no_of_students,
-  c.class_name,
-  c.class_code,
-  u_t.first_name AS teacher_first_name,
-  u_t.last_name AS teacher_last_name
-`;
 
-const fromClassSectionsJoin = `
-  FROM class_sections cs
-  INNER JOIN sections sec ON sec.id = cs.section_id
-  INNER JOIN classes c ON c.id = cs.class_id
-  LEFT JOIN LATERAL (
-    SELECT staff_id
-    FROM class_teachers ct
-    WHERE ct.class_section_id = cs.id
-      AND ct.academic_year_id = cs.academic_year_id
-      AND ct.deleted_at IS NULL
-    ORDER BY (ct.role = 'primary') DESC, ct.id DESC
-    LIMIT 1
-  ) te ON true
-  LEFT JOIN staff stf ON stf.id = te.staff_id
-  LEFT JOIN users u_t ON u_t.id = stf.user_id
-`;
 
 const getAllSections = async (req, res) => {
   try {
@@ -126,35 +77,7 @@ const getSectionById = async (req, res) => {
   }
 };
 
-const getSectionsByClass = async (req, res) => {
-  try {
-    const { classId } = req.params;
-    const access = await canAccessClass(req, classId);
-    if (!access.ok) {
-      return errorResponse(res, access.status || 403, access.message || 'Access denied');
-    }
-    const academicYearId = await resolveAcademicYearId(req.query?.academic_year_id);
-    const params = [classId];
-    let where = 'WHERE cs.class_id = $1 AND cs.deleted_at IS NULL';
-    if (academicYearId) {
-      params.push(academicYearId);
-      where += ' AND cs.academic_year_id = $2';
-    }
-    if (!academicYearId) {
-      where += ' AND cs.is_active = true';
-    }
-    const result = await query(
-      `SELECT ${baseSectionSelect} ${fromClassSectionsJoin}
-       ${where}
-       ORDER BY sec.section_name ASC`,
-      params
-    );
-    return success(res, 200, 'Sections fetched successfully', result.rows, { count: result.rows.length });
-  } catch (error) {
-    console.error('Error fetching sections by class:', error);
-    return errorResponse(res, 500, 'Failed to fetch sections');
-  }
-};
+
 
 const createSection = async (req, res) => {
   try {
@@ -237,7 +160,6 @@ const deleteSection = async (req, res) => {
 module.exports = {
   getAllSections,
   getSectionById,
-  getSectionsByClass,
   createSection,
   updateSection,
   deleteSection,

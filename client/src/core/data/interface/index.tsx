@@ -106,6 +106,8 @@ export interface TableData {
   noOfSubjects: any;
   noOfStudents: any;
   capacity: string;
+  buildingName: string;
+  floor: string;
   reason: string;
   role: string;
   examName: string;

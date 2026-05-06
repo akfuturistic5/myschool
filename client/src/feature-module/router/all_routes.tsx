@@ -263,8 +263,10 @@ export const all_routes = {
   //Academic module
   AcademicReason: "/academic/academic-reason",
   classSyllabus: "/academic/class-syllabus",
+  subjects: "/academic/subjects",
   classSubject: "/academic/class-subject",
   classSection: "/academic/class-section",
+  classSections: "/academic/class-sections",
   classRoom: "/academic/class-room",
   classRoutine: "/academic/class-routine",
   sheduleClasses: "/academic/timetable/time-slots",
