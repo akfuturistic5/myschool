@@ -1990,7 +1990,6 @@ const AddStudent = () => {
                                     guardian_last_name: idx >= 0 ? v.slice(idx + 1).trim() : ''
                                   }));
                                 }}
-                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>
