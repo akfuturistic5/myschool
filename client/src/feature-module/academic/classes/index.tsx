@@ -28,7 +28,6 @@ type EditRow = {
   max_students?: number | null;
   class_fee?: number | string | null;
   class_description?: string | null;
-  section_ids?: number[];
 };
 
 const Classes = () => {
@@ -51,8 +50,6 @@ const Classes = () => {
     maxStudents: "",
     description: "",
     isActive: true,
-    includeSections: false,
-    sectionIds: [] as number[],
   });
   const [filterClass, setFilterClass] = useState("Select");
   const [filterStatus, setFilterStatus] = useState("Select");
@@ -64,27 +61,9 @@ const Classes = () => {
     classCode: "",
     maxStudents: "",
     description: "",
-    includeSections: false,
-    sectionIds: [] as number[],
   });
 
-  const [availableSections, setAvailableSections] = useState<any[]>([]);
 
-  useEffect(() => {
-    const fetchSecs = async () => {
-      try {
-        const res = await apiService.getSections();
-        if (res?.data) {
-          setAvailableSections(res.data);
-        } else if (Array.isArray(res)) {
-          setAvailableSections(res);
-        }
-      } catch (e) {
-        console.error("Failed to fetch sections", e);
-      }
-    };
-    fetchSecs();
-  }, []);
 
   const teacherSelectOptions = useMemo(
     () => [
@@ -107,8 +86,6 @@ const Classes = () => {
         classCode: editingRow.class_code || "",
         maxStudents: editingRow.max_students != null ? String(editingRow.max_students) : "",
         description: editingRow.class_description || "",
-        includeSections: Array.isArray(editingRow.section_ids) && editingRow.section_ids.length > 0,
-        sectionIds: Array.isArray(editingRow.section_ids) ? editingRow.section_ids : [],
       });
     }
   }, [editingRow]);
@@ -197,11 +174,6 @@ const Classes = () => {
         description: editForm.description.trim() || null,
         is_active: editForm.isActive,
       };
-      if (editForm.includeSections) {
-        payload.section_ids = editForm.sectionIds;
-      } else {
-        payload.section_ids = [];
-      }
       await apiService.updateClass(editingRow.classId, payload);
       await refetch();
       showNotification("Updated successfully", "success");
@@ -238,10 +210,6 @@ const Classes = () => {
       const desc = addForm.description.trim();
       if (desc) payload.description = desc;
 
-      if (addForm.includeSections && addForm.sectionIds.length > 0) {
-        payload.section_ids = addForm.sectionIds;
-      }
-
       const createRes = (await apiService.createClass(payload)) as {
         status?: string;
         message?: string;
@@ -251,7 +219,7 @@ const Classes = () => {
         throw new Error(createRes?.message || "Class was not created");
       }
       await refetch();
-      
+
       // Close modal first
       const addEl = document.getElementById("add_class");
       if (addEl) {
@@ -268,8 +236,6 @@ const Classes = () => {
         maxStudents: "",
         description: "",
         isActive: true,
-        includeSections: false,
-        sectionIds: [],
       });
       showNotification("Class created successfully", "success");
     } catch (err: unknown) {
@@ -315,7 +281,7 @@ const Classes = () => {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
-  
+
   const route = all_routes;
 
   // Transform section-joined data to one row per class.
@@ -544,7 +510,7 @@ const Classes = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
+              <TooltipOption />
               <div className="mb-2">
                 <Link
                   to="#"
@@ -583,7 +549,7 @@ const Classes = () => {
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div className="dropdown-menu drop-width"  ref={dropdownMenuRef}>
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form >
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -694,69 +660,66 @@ const Classes = () => {
                   <div className="row">
                     <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">Class name <span className="text-danger">*</span></label>
-                        <input type="text" className="form-control" maxLength={50} value={addForm.className} onChange={(e) => setAddForm((f) => ({ ...f, className: e.target.value }))} required />
+                        <label className="form-label">
+                          Class name <span className="text-danger">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          maxLength={50}
+                          value={addForm.className}
+                          onChange={(e) =>
+                            setAddForm((f) => ({ ...f, className: e.target.value }))
+                          }
+                          required
+                        />
                       </div>
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
                         <label className="form-label">Class code</label>
-                        <input type="text" className="form-control" maxLength={10} placeholder="e.g. C10" value={addForm.classCode} onChange={(e) => setAddForm((f) => ({ ...f, classCode: e.target.value }))} />
+                        <input
+                          type="text"
+                          className="form-control"
+                          maxLength={10}
+                          placeholder="e.g. C10"
+                          value={addForm.classCode}
+                          onChange={(e) =>
+                            setAddForm((f) => ({ ...f, classCode: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
                         <label className="form-label">Max students</label>
-                        <input type="number" className="form-control" min={1} max={10000} placeholder="Default 30 if empty" value={addForm.maxStudents} onChange={(e) => setAddForm((f) => ({ ...f, maxStudents: e.target.value }))} />
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={1}
+                          max={10000}
+                          placeholder="Default 30 if empty"
+                          value={addForm.maxStudents}
+                          onChange={(e) =>
+                            setAddForm((f) => ({ ...f, maxStudents: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
 
                     <div className="col-md-12">
                       <div className="mb-3">
                         <label className="form-label">Description</label>
-                        <textarea className="form-control" rows={2} maxLength={5000} placeholder="Optional" value={addForm.description} onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))} />
-                      </div>
-                    </div>
-
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <div className="form-check mb-2">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            id="include-sections-add"
-                            checked={addForm.includeSections}
-                            onChange={(e) => setAddForm((f) => ({ ...f, includeSections: e.target.checked, sectionIds: e.target.checked ? f.sectionIds : [] }))}
-                          />
-                          <label className="form-check-label fw-bold" htmlFor="include-sections-add">
-                            Include sections
-                          </label>
-                        </div>
-                        {addForm.includeSections && (
-                          <div className="d-flex flex-wrap gap-3 mt-2 p-3 bg-light rounded">
-                            {availableSections.map((sec) => (
-                              <div className="form-check" key={sec.id}>
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id={`sec-add-${sec.id}`}
-                                  checked={addForm.sectionIds.includes(sec.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setAddForm((f) => ({ ...f, sectionIds: [...f.sectionIds, sec.id] }));
-                                    } else {
-                                      setAddForm((f) => ({ ...f, sectionIds: f.sectionIds.filter((id) => id !== sec.id) }));
-                                    }
-                                  }}
-                                />
-                                <label className="form-check-label" htmlFor={`sec-add-${sec.id}`}>
-                                  {sec.section_name}
-                                </label>
-                              </div>
-                            ))}
-                            {availableSections.length === 0 && <span className="text-muted small">No sections available.</span>}
-                          </div>
-                        )}
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          maxLength={5000}
+                          placeholder="Optional"
+                          value={addForm.description}
+                          onChange={(e) =>
+                            setAddForm((f) => ({ ...f, description: e.target.value }))
+                          }
+                        />
                       </div>
                     </div>
 
@@ -767,7 +730,16 @@ const Classes = () => {
                           <p>Change the Status by toggle </p>
                         </div>
                         <div className="form-check form-switch">
-                          <input className="form-check-input" type="checkbox" role="switch" id="switch-sm" checked={addForm.isActive} onChange={(e) => setAddForm((f) => ({ ...f, isActive: e.target.checked }))} />
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            role="switch"
+                            id="switch-sm"
+                            checked={addForm.isActive}
+                            onChange={(e) =>
+                              setAddForm((f) => ({ ...f, isActive: e.target.checked }))
+                            }
+                          />
                         </div>
                       </div>
                     </div>
@@ -781,13 +753,16 @@ const Classes = () => {
                   >
                     Cancel
                   </Link>
-                  <button type="submit" className="btn btn-primary" disabled={adding}>{adding ? "Adding..." : "Add Class"}</button>
+                  <button type="submit" className="btn btn-primary" disabled={adding}>
+                    {adding ? "Adding..." : "Add Class"}
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         </div>
         {/* /Add Classes */}
+
         {/* Edit Classes */}
         <div className="modal fade" id="edit_class" ref={editModalRef}>
           <div className="modal-dialog modal-dialog-centered modal-lg">
@@ -814,13 +789,14 @@ const Classes = () => {
                           className="form-control"
                           placeholder="Enter Class Name"
                           value={editForm.className}
-                          onChange={(e) => setEditForm((f) => ({ ...f, className: e.target.value }))}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, className: e.target.value }))
+                          }
                           required
                           maxLength={50}
                         />
                       </div>
                     </div>
-                    {/* Class-level fields - Always visible */}
                     <div className="col-md-6">
                       <div className="mb-3">
                         <label className="form-label">Class code</label>
@@ -829,7 +805,9 @@ const Classes = () => {
                           className="form-control"
                           maxLength={10}
                           value={editForm.classCode}
-                          onChange={(e) => setEditForm((f) => ({ ...f, classCode: e.target.value }))}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, classCode: e.target.value }))
+                          }
                         />
                       </div>
                     </div>
@@ -843,7 +821,9 @@ const Classes = () => {
                           max={10000}
                           placeholder="Empty clears (optional)"
                           value={editForm.maxStudents}
-                          onChange={(e) => setEditForm((f) => ({ ...f, maxStudents: e.target.value }))}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, maxStudents: e.target.value }))
+                          }
                         />
                       </div>
                     </div>
@@ -856,50 +836,10 @@ const Classes = () => {
                           rows={2}
                           maxLength={5000}
                           value={editForm.description}
-                          onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                          onChange={(e) =>
+                            setEditForm((f) => ({ ...f, description: e.target.value }))
+                          }
                         />
-                      </div>
-                    </div>
-
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <div className="form-check mb-2">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            id="include-sections-edit"
-                            checked={editForm.includeSections}
-                            onChange={(e) => setEditForm((f) => ({ ...f, includeSections: e.target.checked, sectionIds: e.target.checked ? f.sectionIds : [] }))}
-                          />
-                          <label className="form-check-label fw-bold" htmlFor="include-sections-edit">
-                            Include sections
-                          </label>
-                        </div>
-                        {editForm.includeSections && (
-                          <div className="d-flex flex-wrap gap-3 mt-2 p-3 bg-light rounded">
-                            {availableSections.map((sec) => (
-                              <div className="form-check" key={sec.id}>
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id={`sec-edit-${sec.id}`}
-                                  checked={editForm.sectionIds.includes(sec.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setEditForm((f) => ({ ...f, sectionIds: [...f.sectionIds, sec.id] }));
-                                    } else {
-                                      setEditForm((f) => ({ ...f, sectionIds: f.sectionIds.filter((id) => id !== sec.id) }));
-                                    }
-                                  }}
-                                />
-                                <label className="form-check-label" htmlFor={`sec-edit-${sec.id}`}>
-                                  {sec.section_name}
-                                </label>
-                              </div>
-                            ))}
-                            {availableSections.length === 0 && <span className="text-muted small">No sections available.</span>}
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -916,7 +856,9 @@ const Classes = () => {
                             role="switch"
                             id="switch-sm2"
                             checked={editForm.isActive}
-                            onChange={(e) => setEditForm((f) => ({ ...f, isActive: e.target.checked }))}
+                            onChange={(e) =>
+                              setEditForm((f) => ({ ...f, isActive: e.target.checked }))
+                            }
                           />
                         </div>
                       </div>
@@ -945,38 +887,43 @@ const Classes = () => {
           </div>
         </div>
         {/* /Edit Classes */}
+
         {/* Delete Modal */}
         <div className="modal fade" id="delete-modal">
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content">
-              <form >
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <button type="button" className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
-                      {deleting ? "Deleting..." : "Yes, Delete"}
-                    </button>
-                  </div>
+              <div className="modal-body text-center">
+                <span className="delete-icon">
+                  <i className="ti ti-trash-x" />
+                </span>
+                <h4>Confirm Deletion</h4>
+                <p>
+                  You want to delete all the marked items, this cant be undone
+                  once you delete.
+                </p>
+                <div className="d-flex justify-content-center">
+                  <Link
+                    to="#"
+                    className="btn btn-light me-3"
+                    data-bs-dismiss="modal"
+                  >
+                    Cancel
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? "Deleting..." : "Yes, Delete"}
+                  </button>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         </div>
         {/* /Delete Modal */}
+
         {/* View Classes */}
         <div className="modal fade" id="view_class">
           <div className="modal-dialog modal-dialog-centered">
@@ -998,36 +945,34 @@ const Classes = () => {
                   <i className="ti ti-x" />
                 </button>
               </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-6">
-                      <div className="class-detail-info">
-                        <p>Class Name</p>
-                        <span>III</span>
-                      </div>
+              <div className="modal-body">
+                <div className="row">
+                  <div className="col-md-6">
+                    <div className="class-detail-info">
+                      <p>Class Name</p>
+                      <span>{editingRow?.className || "N/A"}</span>
                     </div>
-                    <div className="col-md-6">
-                      <div className="class-detail-info">
-                        <p>Section</p>
-                        <span>A</span>
-                      </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="class-detail-info">
+                      <p>Class Code</p>
+                      <span>{editingRow?.class_code || "N/A"}</span>
                     </div>
-                    <div className="col-md-6">
-                      <div className="class-detail-info">
-                        <p>No of Subjects</p>
-                        <span>05</span>
-                      </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="class-detail-info">
+                      <p>Max Students</p>
+                      <span>{editingRow?.max_students || "N/A"}</span>
                     </div>
-                    <div className="col-md-6">
-                      <div className="class-detail-info">
-                        <p>No of Students</p>
-                        <span>25</span>
-                      </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="class-detail-info">
+                      <p>No of Students</p>
+                      <span>{editingRow?.noOfStudents || 0}</span>
                     </div>
                   </div>
                 </div>
-              </form>
+              </div>
             </div>
           </div>
         </div>

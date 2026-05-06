@@ -5,16 +5,15 @@ const getAllClassRooms = async (req, res) => {
     const result = await query(`
       SELECT
         id,
-        room_no,
+        room_number,
         capacity,
-        status,
-        description,
+        is_active,
         floor,
-        building,
+        building_name,
         created_at,
         updated_at
       FROM class_rooms
-      ORDER BY room_no ASC
+      ORDER BY room_number ASC
     `);
 
     res.status(200).json({
@@ -27,7 +26,7 @@ const getAllClassRooms = async (req, res) => {
     console.error('Error fetching class rooms:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: 'Failed to fetch class rooms'
+      message: 'Failed to fetch class rooms',
     });
   }
 };
@@ -38,12 +37,11 @@ const getClassRoomById = async (req, res) => {
     const result = await query(`
       SELECT
         id,
-        room_no,
+        room_number,
         capacity,
-        status,
-        description,
+        is_active,
         floor,
-        building,
+        building_name,
         created_at,
         updated_at
       FROM class_rooms
@@ -73,9 +71,9 @@ const getClassRoomById = async (req, res) => {
 
 const createClassRoom = async (req, res) => {
   try {
-    const { room_no, capacity, status, description, floor, building } = req.body;
+    const { room_number, capacity, is_active, floor, building } = req.body;
 
-    if (!room_no) {
+    if (!room_number) {
       return res.status(400).json({
         status: 'ERROR',
         message: 'Room number is required'
@@ -83,13 +81,14 @@ const createClassRoom = async (req, res) => {
     }
 
     const cap = capacity != null ? parseInt(capacity, 10) : 50;
-    const stat = (status && String(status).toLowerCase() === 'active') ? 'Active' : 'Inactive';
+    const active = is_active !== undefined ? !!is_active : true;
+    const floorNum = (floor !== undefined && floor !== null && floor !== '') ? parseInt(floor, 10) : null;
 
     const result = await query(`
-      INSERT INTO class_rooms (room_no, capacity, status, description, floor, building)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO class_rooms (room_number, capacity, is_active, floor, building_name)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [room_no, isNaN(cap) ? 50 : cap, stat, description || null, floor || null, building || null]);
+    `, [room_number, isNaN(cap) ? 50 : cap, active, isNaN(floorNum) ? null : floorNum, building || null]);
 
     res.status(201).json({
       status: 'SUCCESS',
@@ -114,36 +113,35 @@ const createClassRoom = async (req, res) => {
 const updateClassRoom = async (req, res) => {
   try {
     const { id } = req.params;
-    const { room_no, capacity, status, description, floor, building } = req.body;
+    const { room_number, capacity, is_active, floor, building } = req.body;
 
     const updates = [];
     const params = [];
     let idx = 1;
 
-    if (room_no !== undefined) {
-      updates.push(`room_no = $${idx++}`);
-      params.push(room_no);
+    if (room_number !== undefined) {
+      updates.push(`room_number = $${idx++}`);
+      params.push(room_number);
     }
     if (capacity !== undefined) {
       const cap = parseInt(capacity, 10);
       updates.push(`capacity = $${idx++}`);
       params.push(isNaN(cap) ? 50 : cap);
     }
-    if (status !== undefined) {
-      const stat = (status && String(status).toLowerCase() === 'active') ? 'Active' : 'Inactive';
-      updates.push(`status = $${idx++}`);
-      params.push(stat);
+    if (is_active !== undefined) {
+      updates.push(`is_active = $${idx++}`);
+      params.push(!!is_active);
     }
-    if (description !== undefined) {
-      updates.push(`description = $${idx++}`);
-      params.push(description || null);
-    }
-    if (floor !== undefined) {
+    if (floor !== undefined && floor !== null && floor !== '') {
+      const fl = parseInt(floor, 10);
       updates.push(`floor = $${idx++}`);
-      params.push(floor || null);
+      params.push(isNaN(fl) ? null : fl);
+    } else if (floor === null || floor === '') {
+      updates.push(`floor = $${idx++}`);
+      params.push(null);
     }
     if (building !== undefined) {
-      updates.push(`building = $${idx++}`);
+      updates.push(`building_name = $${idx++}`);
       params.push(building || null);
     }
 

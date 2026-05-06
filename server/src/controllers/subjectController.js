@@ -1,53 +1,26 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { canAccessClass } = require('../utils/accessControl');
-
-const parseOptionalInt = (v) => {
-  if (v === undefined || v === null || v === '') return null;
-  const n = parseInt(v, 10);
-  return Number.isNaN(n) ? null : n;
-};
 
 /**
- * subjects.teacher_id references staff.id.
- * Accept either staff.id (preferred) or teachers.id and normalize to staff.id.
+ * Master Subject Controller
+ * Handles only global subject definitions (Name, Code, Description, Type)
  */
-const resolveTeacherStaffId = async (teacherIdRaw) => {
-  if (teacherIdRaw === undefined || teacherIdRaw === null || teacherIdRaw === '') {
-    return { ok: true, value: null };
-  }
-  const teacherId = parseOptionalInt(teacherIdRaw);
-  if (!teacherId || teacherId < 1) {
-    return { ok: false, message: 'Invalid teacher id' };
-  }
 
-  const staffDirect = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
-  if (staffDirect.rows.length) return { ok: true, value: teacherId };
-
-  const teacherRow = await query('SELECT staff_id FROM teachers WHERE id = $1 LIMIT 1', [teacherId]);
-  const staffId = teacherRow.rows?.[0]?.staff_id ?? null;
-  if (staffId) return { ok: true, value: Number(staffId) };
-
-  return { ok: false, message: 'Invalid teacher id' };
-};
-
-// Get all subjects
+// Get all master subjects
 const getAllSubjects = async (req, res) => {
   try {
     const result = await query(`
       SELECT
-        s.id,
-        s.subject_name,
-        s.subject_code,
-        s.theory_hours,
-        s.practical_hours,
-        s.total_marks,
-        s.passing_marks,
-        s.description,
-        s.is_active,
-        s.created_at
-      FROM subjects s
-      ORDER BY s.subject_name ASC
+        id,
+        subject_name,
+        subject_code,
+        subject_type,
+        description,
+        is_active,
+        created_at
+      FROM subjects
+      WHERE deleted_at IS NULL
+      ORDER BY subject_name ASC
     `);
     
     return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
@@ -64,18 +37,15 @@ const getSubjectById = async (req, res) => {
     
     const result = await query(`
       SELECT
-        s.id,
-        s.subject_name,
-        s.subject_code,
-        s.theory_hours,
-        s.practical_hours,
-        s.total_marks,
-        s.passing_marks,
-        s.description,
-        s.is_active,
-        s.created_at
-      FROM subjects s
-      WHERE s.id = $1
+        id,
+        subject_name,
+        subject_code,
+        subject_type,
+        description,
+        is_active,
+        created_at
+      FROM subjects
+      WHERE id = $1 AND deleted_at IS NULL
     `, [id]);
     
     if (result.rows.length === 0) {
@@ -89,149 +59,99 @@ const getSubjectById = async (req, res) => {
   }
 };
 
-// Get subjects by class
-const getSubjectsByClass = async (req, res) => {
-  try {
-    const { classId } = req.params;
-
-    const access = await canAccessClass(req, classId);
-    if (!access.ok) {
-      return errorResponse(res, access.status || 403, access.message || 'Access denied');
-    }
-
-    const { academic_year_id } = req.query;
-
-    const params = [classId];
-    let sql = `
-      SELECT
-        s.id,
-        s.subject_name,
-        s.subject_code,
-        cs.id as class_subject_id,
-        cs.is_elective,
-        COALESCE(cs.theory_hours, s.theory_hours) as theory_hours,
-        COALESCE(cs.practical_hours, s.practical_hours) as practical_hours,
-        COALESCE(cs.total_marks, s.total_marks) as total_marks,
-        COALESCE(cs.passing_marks, s.passing_marks) as passing_marks,
-        s.description,
-        s.is_active,
-        s.created_at,
-        CASE
-          WHEN COALESCE(cs.theory_hours, s.theory_hours, 0) > 0 AND COALESCE(cs.practical_hours, s.practical_hours, 0) > 0 THEN 'Theory & Practical'
-          WHEN COALESCE(cs.practical_hours, s.practical_hours, 0) > 0 THEN 'Practical'
-          WHEN COALESCE(cs.theory_hours, s.theory_hours, 0) > 0 THEN 'Theory'
-          ELSE NULL
-        END AS subject_mode
-      FROM class_subjects cs
-      JOIN subjects s ON cs.subject_id = s.id
-      WHERE cs.class_id = $1
-    `;
-
-    if (academic_year_id) {
-      params.push(academic_year_id);
-      sql += ` AND cs.academic_year_id = $${params.length}`;
-    }
-
-    sql += ` ORDER BY s.subject_name ASC, s.id ASC`;
-
-    const result = await query(sql, params);
-    
-    return success(res, 200, 'Subjects fetched successfully', result.rows, { count: result.rows.length });
-  } catch (error) {
-    console.error('Error fetching subjects by class:', error);
-    return errorResponse(res, 500, 'Failed to fetch subjects', error.message);
-  }
-};
-
+// Create new master subject
 const createSubject = async (req, res) => {
   try {
     const {
-      subject_name, subject_code, class_id, teacher_id, theory_hours,
-      practical_hours, total_marks, passing_marks, description, is_active
+      subject_name, subject_code, subject_type, description, is_active
     } = req.body;
-    const teacherResolved = await resolveTeacherStaffId(teacher_id);
-    if (!teacherResolved.ok) return errorResponse(res, 400, teacherResolved.message);
+
+    if (!subject_name || subject_name.trim() === '') {
+      return errorResponse(res, 400, 'Subject name is required');
+    }
+
+    const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
     const result = await query(
       `INSERT INTO subjects (
-        subject_name, subject_code, class_id, teacher_id, theory_hours, practical_hours,
-        total_marks, passing_marks, description, is_active
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        subject_name, subject_code, subject_type, description, is_active, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
-        subject_name.trim(), subject_code || null, class_id || null, teacherResolved.value,
-        theory_hours || 0, practical_hours || 0, total_marks || 0, passing_marks || 0,
-        description || null, is_active !== false
+        subject_name.trim(), 
+        subject_code ? subject_code.trim().toUpperCase() : null,
+        subject_type || 'Theory',
+        description || null, 
+        is_active !== false,
+        userId
       ]
     );
     return success(res, 201, 'Subject created successfully', result.rows[0]);
   } catch (error) {
     console.error('Error creating subject:', error);
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid class or teacher');
-    if (error.code === '23505') return errorResponse(res, 409, 'Subject already exists');
+    if (error.code === '23505') return errorResponse(res, 409, 'Subject with this code already exists');
     return errorResponse(res, 500, 'Failed to create subject');
   }
 };
 
-// Update subject
+// Update master subject
 const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const payload = req.body;
-    const current = await query('SELECT * FROM subjects WHERE id = $1', [id]);
+    const { subject_name, subject_code, subject_type, description, is_active } = req.body;
+    
+    const current = await query('SELECT * FROM subjects WHERE id = $1 AND deleted_at IS NULL', [id]);
     if (!current.rows.length) return errorResponse(res, 404, 'Subject not found');
+    
     const cur = current.rows[0];
-    let teacherIdToSave = cur.teacher_id;
-    if (Object.prototype.hasOwnProperty.call(payload, 'teacher_id')) {
-      const teacherResolved = await resolveTeacherStaffId(payload.teacher_id);
-      if (!teacherResolved.ok) return errorResponse(res, 400, teacherResolved.message);
-      teacherIdToSave = teacherResolved.value;
-    }
+    const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
     const result = await query(`
       UPDATE subjects
       SET subject_name = $1,
           subject_code = $2,
-          class_id = $3,
-          teacher_id = $4,
-          theory_hours = $5,
-          practical_hours = $6,
-          total_marks = $7,
-          passing_marks = $8,
-          description = $9,
-          is_active = $10,
-          updated_at = NOW()
-      WHERE id = $11
+          subject_type = $3,
+          description = $4,
+          is_active = $5,
+          updated_at = NOW(),
+          updated_by = $6
+      WHERE id = $7
       RETURNING *
     `, [
-      payload.subject_name ?? cur.subject_name,
-      payload.subject_code ?? cur.subject_code,
-      payload.class_id ?? cur.class_id,
-      teacherIdToSave,
-      payload.theory_hours ?? cur.theory_hours,
-      payload.practical_hours ?? cur.practical_hours,
-      payload.total_marks ?? cur.total_marks,
-      payload.passing_marks ?? cur.passing_marks,
-      payload.description ?? cur.description,
-      payload.is_active !== undefined ? payload.is_active : cur.is_active,
+      subject_name !== undefined ? subject_name.trim() : cur.subject_name,
+      subject_code !== undefined ? (subject_code ? subject_code.trim().toUpperCase() : null) : cur.subject_code,
+      subject_type !== undefined ? subject_type : cur.subject_type,
+      description !== undefined ? description : cur.description,
+      is_active !== undefined ? !!is_active : cur.is_active,
+      userId,
       id
     ]);
 
     return success(res, 200, 'Subject updated successfully', result.rows[0]);
   } catch (error) {
     console.error('Error updating subject:', error);
+    if (error.code === '23505') return errorResponse(res, 409, 'Subject with this code already exists');
     return errorResponse(res, 500, 'Failed to update subject');
   }
 };
 
+// Soft delete master subject
 const deleteSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM subjects WHERE id = $1 RETURNING id', [id]);
-    if (!result.rows.length) return errorResponse(res, 404, 'Subject not found');
+    const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+
+    const result = await query(
+      'UPDATE subjects SET deleted_at = NOW(), updated_by = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id', 
+      [userId, id]
+    );
+
+    if (!result.rows.length) {
+      return errorResponse(res, 404, 'Subject not found');
+    }
     return success(res, 200, 'Subject deleted successfully', { id: result.rows[0].id });
   } catch (error) {
     console.error('Error deleting subject:', error);
-    if (error.code === '23503') return errorResponse(res, 409, 'Subject is referenced by related records');
+    if (error.code === '23503') return errorResponse(res, 409, 'Subject is referenced by curriculum records and cannot be deleted');
     return errorResponse(res, 500, 'Failed to delete subject');
   }
 };
@@ -239,7 +159,6 @@ const deleteSubject = async (req, res) => {
 module.exports = {
   getAllSubjects,
   getSubjectById,
-  getSubjectsByClass,
   createSubject,
   updateSubject,
   deleteSubject,

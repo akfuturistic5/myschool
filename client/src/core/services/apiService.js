@@ -284,10 +284,6 @@ class ApiService {
     return this.makeRequest(`/sections/${id}`);
   }
 
-  async getSectionsByClass(classId) {
-    return this.makeRequest(`/sections/class/${classId}`);
-  }
-
   async updateSection(id, sectionData) {
     return this.makeRequest(`/sections/${id}`, {
       method: 'PUT',
@@ -299,6 +295,37 @@ class ApiService {
   }
   async deleteSection(id) {
     return this.makeRequest(`/sections/${id}`, { method: 'DELETE' });
+  }
+
+  // Class Section Assignments
+  async getClassSectionsSummary(academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-sections/summary${qs}`);
+  }
+
+  async getClassSections(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-sections/class/${classId}${qs}`);
+  }
+
+  async assignSectionsToClass(data) {
+    return this.makeRequest('/class-sections/assign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateClassSectionAssignment(id, data) {
+    return this.makeRequest(`/class-sections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeSectionFromClass(id) {
+    return this.makeRequest(`/class-sections/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Class Rooms
@@ -2055,6 +2082,39 @@ class ApiService {
       body: JSON.stringify(subjectData),
     });
   }
+  async getElectiveGroups(classId = "") {
+    const qs = classId ? `?class_id=${classId}` : '';
+    return this.makeRequest(`/elective-groups${qs}`);
+  }
+  async createElectiveGroup(data) {
+    return this.makeRequest('/elective-groups', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateElectiveGroup(id, data) {
+    return this.makeRequest(`/elective-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteElectiveGroup(id) {
+    return this.makeRequest(`/elective-groups/${id}`, { method: 'DELETE' });
+  }
+  async getClassSubjects(params = {}) {
+    const search = new URLSearchParams();
+    if (params.class_id) search.set('class_id', params.class_id);
+    if (params.academic_year_id) search.set('academic_year_id', params.academic_year_id);
+    const qs = search.toString();
+    return this.makeRequest(`/class-subjects${qs ? `?${qs}` : ''}`);
+  }
+  async getSubjectsByClass(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-subjects/class/${classId}${qs}`);
+  }
+  async assignSubjectToClass(data) {
+    return this.makeRequest('/class-subjects', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateClassSubject(id, data) {
+    return this.makeRequest(`/class-subjects/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async removeClassSubject(id) {
+    return this.makeRequest(`/class-subjects/${id}`, { method: 'DELETE' });
+  }
   async createSubject(subjectData) {
     return this.makeRequest('/subjects', { method: 'POST', body: JSON.stringify(subjectData) });
   }
@@ -3114,6 +3174,9 @@ class ApiService {
     if (params.excludeId != null) search.set('excludeId', String(params.excludeId));
     const qs = search.toString();
     return this.makeRequest(`/users/check-unique?${qs}`);
+  }
+  async getNextAdmissionNumber() {
+    return this.makeRequest('/students/next-admission-number');
   }
 }
 

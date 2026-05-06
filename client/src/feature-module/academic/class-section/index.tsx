@@ -1,8 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useTeachers } from "../../../core/hooks/useTeachers";
-import { useClasses } from "../../../core/hooks/useClasses";
 import { useSections } from "../../../core/hooks/useSections";
-import { useClassRooms } from "../../../core/hooks/useClassRooms";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import {
@@ -79,8 +77,6 @@ const ClassSection = () => {
   const routes = all_routes;
   const { sections, loading, error, refetch } = useSections();
   const { teachers = [] } = useTeachers();
-  const { classes = [] } = useClasses();
-  const { classRooms = [] } = useClassRooms();
   const [selectedSection, setSelectedSection] = useState<any>(null);
   const [editSectionName, setEditSectionName] = useState<string>('');
   const [editSectionStatus, setEditSectionStatus] = useState<boolean>(true);
@@ -104,10 +100,7 @@ const ClassSection = () => {
     }
   };
 
-  const classOptions = useMemo(
-    () => [{ value: "Select", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: c.class_name }))],
-    [classes]
-  );
+
   const sectionOptions = useMemo(
     () => [
       { value: "Select", label: "Select" },

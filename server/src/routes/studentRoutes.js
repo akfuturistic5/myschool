@@ -22,6 +22,7 @@ const {
   getGradeReport,
   getAttendanceReport,
   checkAdmissionNumberUnique,
+  getNextAdmissionNumber,
   searchStudents,
   deleteStudent,
 } = require('../controllers/studentController');
@@ -76,6 +77,7 @@ router.get('/me', requireRole(ALL_AUTHENTICATED_ROLES), getCurrentStudent);
 
 // Uniqueness checks for forms (must be before /:id)
 router.get('/check-admission-number', requireRole(PEOPLE_MANAGER_ROLES), checkAdmissionNumberUnique);
+router.get('/next-admission-number', requireRole(PEOPLE_MANAGER_ROLES), getNextAdmissionNumber);
 
 // Typeahead student search (must be before /:id)
 router.get('/search', requireRole(PEOPLE_MANAGER_ROLES), searchStudents);
