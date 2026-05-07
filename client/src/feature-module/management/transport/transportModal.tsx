@@ -8,6 +8,8 @@ import dayjs from "dayjs";
 import { DatePicker } from "antd";
 
 import { apiService } from "../../../core/services/apiService";
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import Swal from "sweetalert2";
 
 interface TransportModalProps {
@@ -87,6 +89,7 @@ const TransportModal = ({
   onSuccess,
   deleteId
 }: TransportModalProps) => {
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   // State for Add/Edit Route
   const [routeName, setRouteName] = useState("");
   const [routeCode, setRouteCode] = useState("");
@@ -101,7 +104,6 @@ const TransportModal = ({
   const [assignRouteId, setAssignRouteId] = useState("");
   const [assignVehicleId, setAssignVehicleId] = useState("");
   const [assignDriverId, setAssignDriverId] = useState("");
-  const [assignStatus, setAssignStatus] = useState(true);
 
   // Lists for dropdowns
   const [pickupsData, setPickupsData] = useState<any[]>([]);
@@ -137,8 +139,8 @@ const TransportModal = ({
       const route = selectedRoute.originalData || selectedRoute;
       setRouteName(route.route_name || "");
       setRouteCode(route.route_code || "");
-      setStartPoint(route.start_point || "");
-      setEndPoint(route.end_point || "");
+      setStartPoint(route.start_time || "");
+      setEndPoint(route.end_time || "");
       setDistanceKm(route.distance_km ?? route.total_distance ?? "");
       setEstimatedTime(route.estimated_time ?? "");
       setRouteStatus(route.is_active === 1 || route.is_active === true || route.status === "Active");
@@ -173,12 +175,10 @@ const TransportModal = ({
       setAssignRouteId(String(assign.route_id || ""));
       setAssignVehicleId(String(assign.vehicle_id || ""));
       setAssignDriverId(String(assign.driver_id || ""));
-      setAssignStatus(assign.is_active === 1 || assign.is_active === true || assign.status === "Active");
     } else {
       setAssignRouteId("");
       setAssignVehicleId("");
       setAssignDriverId("");
-      setAssignStatus(true);
     }
   }, [selectedAssignment]);
 
@@ -227,8 +227,8 @@ const TransportModal = ({
       const payload = {
         route_name: routeName.trim(),
         route_code: routeCode.trim() || null,
-        start_point: startPoint.trim() || null,
-        end_point: endPoint.trim() || null,
+        start_time: startPoint.trim() || null,
+        end_time: endPoint.trim() || null,
         distance_km: distanceKm === '' ? null : Number(distanceKm),
         total_distance: distanceKm === '' ? null : Number(distanceKm),
         estimated_time: estimatedTime === '' ? null : Number(estimatedTime),
@@ -297,7 +297,7 @@ const TransportModal = ({
         vehicle_id: Number(assignVehicleId),
         route_id: Number(assignRouteId),
         driver_id: Number(assignDriverId),
-        is_active: !!assignStatus
+        academic_year_id: academicYearId ?? undefined,
       };
 
       let res;
@@ -341,11 +341,8 @@ const TransportModal = ({
 
   // State for Pickup Points
   const [pointName, setPointName] = useState("");
-  const [pointRouteId, setPointRouteId] = useState("");
   const [pointAddress, setPointAddress] = useState("");
   const [pointLandmark, setPointLandmark] = useState("");
-  const [pointPickupTime, setPointPickupTime] = useState("");
-  const [pointDropTime, setPointDropTime] = useState("");
   const [pointDistanceFromSchool, setPointDistanceFromSchool] = useState<string | number>("");
   const [pointSequenceOrder, setPointSequenceOrder] = useState<string | number>("");
   const [pointStatus, setPointStatus] = useState(true);
@@ -354,21 +351,15 @@ const TransportModal = ({
     if (selectedPickupPoint) {
       const p = selectedPickupPoint.originalData || selectedPickupPoint;
       setPointName(p.point_name || "");
-      setPointRouteId(p.route_id != null ? String(p.route_id) : "");
       setPointAddress(p.address || "");
       setPointLandmark(p.landmark || "");
-      setPointPickupTime(p.pickup_time ? String(p.pickup_time).slice(0, 5) : "");
-      setPointDropTime(p.drop_time ? String(p.drop_time).slice(0, 5) : "");
       setPointDistanceFromSchool(p.distance_from_school ?? "");
       setPointSequenceOrder(p.sequence_order ?? "");
       setPointStatus(p.is_active === 1 || p.is_active === true || p.status === "Active");
     } else {
       setPointName("");
-      setPointRouteId("");
       setPointAddress("");
       setPointLandmark("");
-      setPointPickupTime("");
-      setPointDropTime("");
       setPointDistanceFromSchool("");
       setPointSequenceOrder("");
       setPointStatus(true);
@@ -401,11 +392,8 @@ const TransportModal = ({
 
       const payload = {
         point_name: pointName.trim(),
-        route_id: pointRouteId ? Number(pointRouteId) : null,
         address: pointAddress.trim() || null,
         landmark: pointLandmark.trim() || null,
-        pickup_time: pointPickupTime || null,
-        drop_time: pointDropTime || null,
         distance_from_school: pointDistanceFromSchool === '' ? null : Number(pointDistanceFromSchool),
         sequence_order: pointSequenceOrder === '' ? null : Number(pointSequenceOrder),
         is_active: !!pointStatus
@@ -562,7 +550,6 @@ const TransportModal = ({
   const [brand, setBrand] = useState("");
   const [vehicleModel, setVehicleModel] = useState("");
   const [chassisNo, setChassisNo] = useState("");
-  const [registrationNo, setRegistrationNo] = useState("");
   const [seatCapacity, setSeatCapacity] = useState("");
   const [gpsTrackingId, setGpsTrackingId] = useState("");
   const [insuranceExpiry, setInsuranceExpiry] = useState("");
@@ -585,9 +572,8 @@ const TransportModal = ({
       setBrand(v.brand || "");
       setVehicleModel(v.vehicle_model || v.model || "");
       setChassisNo(v.chassis_number || "");
-      setRegistrationNo(v.registration_number || "");
       setSeatCapacity(v.seat_capacity || v.seating_capacity || "");
-      setGpsTrackingId(v.gps_device_id || v.gps_tracking_id || "");
+      setGpsTrackingId(v.gps_device_id || "");
       setInsuranceExpiry(v.insurance_expiry ? dayjs(v.insurance_expiry).format('YYYY-MM-DD') : "");
       setFitnessExpiry(v.fitness_expiry ? dayjs(v.fitness_expiry).format('YYYY-MM-DD') : "");
       setPermitExpiry(v.permit_expiry ? dayjs(v.permit_expiry).format('YYYY-MM-DD') : "");
@@ -599,7 +585,6 @@ const TransportModal = ({
       setBrand("");
       setVehicleModel("");
       setChassisNo("");
-      setRegistrationNo("");
       setSeatCapacity("");
       setGpsTrackingId("");
       setInsuranceExpiry("");
@@ -620,7 +605,6 @@ const TransportModal = ({
         brand: brand || null,
         vehicle_model: vehicleModel,
         chassis_number: chassisNo,
-        registration_number: registrationNo,
         seat_capacity: seatCapacity,
         gps_device_id: gpsTrackingId,
         insurance_expiry: formatDateForPayload(insuranceExpiry),
@@ -823,11 +807,11 @@ const TransportModal = ({
                       <div className="row">
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Start Point</label>
+                            <label className="form-label">Start Time</label>
                             <input
                               type="text"
                               className="form-control"
-                              placeholder="Enter Start Point"
+                              placeholder="Enter Start Time"
                               value={startPoint}
                               onChange={(e) => setStartPoint(e.target.value)}
                               maxLength={200}
@@ -836,11 +820,11 @@ const TransportModal = ({
                         </div>
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">End Point</label>
+                            <label className="form-label">End Time</label>
                             <input
                               type="text"
                               className="form-control"
-                              placeholder="Enter End Point"
+                              placeholder="Enter End Time"
                               value={endPoint}
                               onChange={(e) => setEndPoint(e.target.value)}
                               maxLength={200}
@@ -1013,11 +997,11 @@ const TransportModal = ({
                       <div className="row">
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">Start Point</label>
+                            <label className="form-label">Start Time</label>
                             <input
                               type="text"
                               className="form-control"
-                              placeholder="Enter Start Point"
+                              placeholder="Enter Start Time"
                               value={startPoint}
                               onChange={(e) => setStartPoint(e.target.value)}
                               maxLength={200}
@@ -1026,11 +1010,11 @@ const TransportModal = ({
                         </div>
                         <div className="col-md-6">
                           <div className="mb-3">
-                            <label className="form-label">End Point</label>
+                            <label className="form-label">End Time</label>
                             <input
                               type="text"
                               className="form-control"
-                              placeholder="Enter End Point"
+                              placeholder="Enter End Time"
                               value={endPoint}
                               onChange={(e) => setEndPoint(e.target.value)}
                               maxLength={200}
@@ -1212,23 +1196,6 @@ const TransportModal = ({
                         />
                       </div>
                     </div>
-                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <label className="form-label mb-0" htmlFor="add_assign_status">
-                            {assignStatus ? "Active" : "Inactive"}
-                          </label>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            id="add_assign_status"
-                            className="form-check-input"
-                            type="checkbox"
-                            checked={assignStatus}
-                            onChange={(e) => setAssignStatus(e.target.checked)}
-                          />
-                        </div>
-                      </div>
                   </div>
                 </div>
                 <div className="modal-footer">
@@ -1321,23 +1288,6 @@ const TransportModal = ({
                           </div>
                         </div>
                       </div>
-                      <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <label className="form-label mb-0" htmlFor="edit_assign_status">
-                            {assignStatus ? "Active" : "Inactive"}
-                          </label>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            id="edit_assign_status"
-                            className="form-check-input"
-                            type="checkbox"
-                            checked={assignStatus}
-                            onChange={(e) => setAssignStatus(e.target.checked)}
-                          />
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1384,15 +1334,6 @@ const TransportModal = ({
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Route</label>
-                        <CommonSelect
-                          className="select"
-                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({ value: String(r.id), label: r.route_name }))]}
-                          value={pointRouteId}
-                          onChange={(v: string | null) => setPointRouteId(v || "")}
-                        />
-                      </div>
-                      <div className="mb-3">
                         <label className="form-label">Pickup Point Name</label>
                         <input
                           type="text"
@@ -1422,30 +1363,6 @@ const TransportModal = ({
                           value={pointLandmark}
                           onChange={(e) => setPointLandmark(e.target.value)}
                         />
-                      </div>
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Pickup Time</label>
-                            <input
-                              type="time"
-                              className="form-control"
-                              value={pointPickupTime}
-                              onChange={(e) => setPointPickupTime(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Drop Time</label>
-                            <input
-                              type="time"
-                              className="form-control"
-                              value={pointDropTime}
-                              onChange={(e) => setPointDropTime(e.target.value)}
-                            />
-                          </div>
-                        </div>
                       </div>
                       <div className="row">
                         <div className="col-md-6">
@@ -1534,15 +1451,6 @@ const TransportModal = ({
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Route</label>
-                        <CommonSelect
-                          className="select"
-                          options={[{ value: "", label: "Select Route" }, ...routesData.map(r => ({ value: String(r.id), label: r.route_name }))]}
-                          value={pointRouteId}
-                          onChange={(v: string | null) => setPointRouteId(v || "")}
-                        />
-                      </div>
-                      <div className="mb-3">
                         <label className="form-label">Pickup Point Name</label>
                         <input
                           type="text"
@@ -1572,30 +1480,6 @@ const TransportModal = ({
                           value={pointLandmark}
                           onChange={(e) => setPointLandmark(e.target.value)}
                         />
-                      </div>
-                      <div className="row">
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Pickup Time</label>
-                            <input
-                              type="time"
-                              className="form-control"
-                              value={pointPickupTime}
-                              onChange={(e) => setPointPickupTime(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-6">
-                          <div className="mb-3">
-                            <label className="form-label">Drop Time</label>
-                            <input
-                              type="time"
-                              className="form-control"
-                              value={pointDropTime}
-                              onChange={(e) => setPointDropTime(e.target.value)}
-                            />
-                          </div>
-                        </div>
                       </div>
                       <div className="row">
                         <div className="col-md-6">
@@ -1996,19 +1880,6 @@ const TransportModal = ({
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">Registration No</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Registration No"
-                          value={registrationNo}
-                          onChange={(e) => setRegistrationNo(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
                         <label className="form-label">Chassis No</label>
                         <input
                           type="text"
@@ -2034,7 +1905,7 @@ const TransportModal = ({
                         />
                       </div>
                     </div>
-                    <div className="col-md-12">
+                    <div className="col-md-6">
                       <div className="mb-3">
                         <label className="form-label">GPS Tracking ID</label>
                         <input
@@ -2049,34 +1920,55 @@ const TransportModal = ({
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Insurance Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={insuranceExpiry}
-                          onChange={(e) => setInsuranceExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer}
+                            value={insuranceExpiry ? dayjs(insuranceExpiry) : null}
+                            onChange={(date) => setInsuranceExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Insurance Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Fitness Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={fitnessExpiry}
-                          onChange={(e) => setFitnessExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer}
+                            value={fitnessExpiry ? dayjs(fitnessExpiry) : null}
+                            onChange={(date) => setFitnessExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Fitness Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Permit Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={permitExpiry}
-                          onChange={(e) => setPermitExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer}
+                            value={permitExpiry ? dayjs(permitExpiry) : null}
+                            onChange={(date) => setPermitExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Permit Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
@@ -2212,18 +2104,6 @@ const TransportModal = ({
                     </div>
                     <div className="col-md-6">
                       <div className="mb-3">
-                        <label className="form-label">Registration No</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          value={registrationNo}
-                          onChange={(e) => setRegistrationNo(e.target.value)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="mb-3">
                         <label className="form-label">Chassis No</label>
                         <input
                           type="text"
@@ -2247,7 +2127,7 @@ const TransportModal = ({
                         />
                       </div>
                     </div>
-                    <div className="col-md-12">
+                    <div className="col-md-6">
                       <div className="mb-3">
                         <label className="form-label">GPS Tracking ID</label>
                         <input
@@ -2261,34 +2141,55 @@ const TransportModal = ({
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Insurance Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={insuranceExpiry}
-                          onChange={(e) => setInsuranceExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer2}
+                            value={insuranceExpiry ? dayjs(insuranceExpiry) : null}
+                            onChange={(date) => setInsuranceExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Insurance Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Fitness Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={fitnessExpiry}
-                          onChange={(e) => setFitnessExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer2}
+                            value={fitnessExpiry ? dayjs(fitnessExpiry) : null}
+                            onChange={(date) => setFitnessExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Fitness Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="col-md-4">
                       <div className="mb-3">
                         <label className="form-label">Permit Expiry</label>
-                        <input
-                          type="date"
-                          className="form-control"
-                          value={permitExpiry}
-                          onChange={(e) => setPermitExpiry(e.target.value)}
-                        />
+                        <div className="date-pic">
+                          <DatePicker
+                            className="form-control datetimepicker"
+                            format="YYYY-MM-DD"
+                            getPopupContainer={getModalContainer2}
+                            value={permitExpiry ? dayjs(permitExpiry) : null}
+                            onChange={(date) => setPermitExpiry(date ? date.format('YYYY-MM-DD') : "")}
+                            placeholder="Select Permit Expiry"
+                          />
+                          <span className="cal-icon">
+                            <i className="ti ti-calendar" />
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">

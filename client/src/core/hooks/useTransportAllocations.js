@@ -42,7 +42,7 @@ export const useTransportAllocations = (params = EMPTY_PARAMS) => {
           vehicleNumber: row.vehicle_number || 'N/A',
           feePlan: row.assigned_fee_plan_name || 'N/A',
           planDays: row.assigned_fee_duration_days || null,
-          feeAmount: Number(row.assigned_fee_amount || 0),
+          feeAmount: Number(row.assigned_amount ?? row.assigned_fee_amount ?? 0),
           isFree: Boolean(row.is_free),
           startDate: formatDate(row.start_date),
           endDate: formatDate(row.end_date),

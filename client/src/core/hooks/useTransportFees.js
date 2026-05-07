@@ -32,7 +32,7 @@ export const useTransportFees = (params = EMPTY_PARAMS) => {
           pickupPointName: row.point_name || 'N/A',
           planName: row.plan_name || 'N/A',
           durationDays: row.duration_days ?? '-',
-          studentAmount: Number(row.amount || 0),
+          studentAmount: Number(row.student_amount || 0),
           staffAmount: Number(row.staff_amount || 0),
           status: row.status || 'Active',
           originalData: row,

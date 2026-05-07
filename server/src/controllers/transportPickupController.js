@@ -35,6 +35,8 @@ function parseBoolean(value, fallback = true) {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'number') return value === 1;
   const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'active') return true;
+  if (normalized === 'inactive') return false;
   if (normalized === 'true' || normalized === '1') return true;
   if (normalized === 'false' || normalized === '0') return false;
   return fallback;
@@ -324,29 +326,10 @@ const createPickupPoint = async (req, res) => {
     const safePointName = normalizeNullableText(point_name);
     if (!safePointName) return errorResponse(res, 400, 'Pickup point name is required');
 
-    // Check for duplicate name
-    // const duplicateParams = [point_name];
-    // let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
-    if (flags.hasRouteId && route_id != null && String(route_id).trim() !== '') {
-      duplicateParams.push(Number(route_id));
-      duplicateSql += ` AND route_id = $2`;
-    }
-    // const existing = await query(
-    //   duplicateSql,
-    //   duplicateParams
-    // );
-    // if (existing.rows.length > 0) {
-    //   return errorResponse(res, 400, 'A pickup point with this name already exists');
-    //   sequence_order
-    // } = req.body;
-
-    if (!point_name) {
-      return errorResponse(res, 400, 'Pickup point name is required');
-    }
-
     const duplicateParams = [safePointName];
     let duplicateSql = `SELECT id FROM pickup_points WHERE point_name = $1 AND ${flags.hasDeletedAt ? 'deleted_at IS NULL' : '1=1'}`;
-    if (flags.hasRouteId && routeIdValue !== undefined) {
+    const routeIdValue = route_id === undefined || route_id === null || route_id === '' ? undefined : Number(route_id);
+    if (flags.hasRouteId && routeIdValue !== undefined && Number.isInteger(routeIdValue)) {
       duplicateParams.push(routeIdValue);
       duplicateSql += ` AND route_id = $2`;
     }
@@ -355,8 +338,8 @@ const createPickupPoint = async (req, res) => {
       return errorResponse(res, 400, 'A pickup point with this name already exists');
     }
 
-    if (!route_id || !point_name || sequence_order === undefined) {
-      return errorResponse(res, 400, 'Route, point name and sequence order are required');
+    if (!point_name || sequence_order === undefined) {
+      return errorResponse(res, 400, 'Point name and sequence order are required');
     }
 
     // const payloadValues = [point_name];
@@ -430,7 +413,6 @@ const createPickupPoint = async (req, res) => {
     //   placeholders.push(`$${payloadValues.length}`);
     // }
 
-    const payloadValues = [point_name];
     const columns = ['point_name'];
     const values = [safePointName];
     const placeholders = ['$1'];
@@ -539,6 +521,7 @@ const updatePickupPoint = async (req, res) => {
     const values = [];
     let i = 1;
 
+    const existing = existingResult.rows[0];
     let effectiveRouteId = flags.hasRouteId ? existing.route_id : null;
     if (route_id !== undefined && flags.hasRouteId) {
       const routeIdValue = route_id === null || route_id === '' ? null : Number(route_id);

@@ -2,6 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { apiService } from '../services/apiService';
 
 const defaultImg = 'assets/img/parents/parent-01.jpg';
+const formatDate = (value) => {
+  if (!value) return 'N/A';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 
 export const useTransportVehicles = (initialParams = {}) => {
   const [data, setData] = useState([]);
@@ -41,10 +47,12 @@ export const useTransportVehicles = (initialParams = {}) => {
           vehicleModel: row.vehicle_model || row.model || '-',
           img: (row.photo_url ? await apiService.resolveAvatarUrl(row.photo_url) : '') || defaultImg,
           madeofYear: row.made_of_year || 'N/A',
-          registrationNo: row.registration_number || 'N/A',
           chassisNo: row.chassis_number || 'N/A',
           gps: row.gps_device_id || 'N/A',
           seatCapacity: row.seat_capacity ?? row.seating_capacity ?? '-',
+          insuranceExpiry: formatDate(row.insurance_expiry),
+          fitnessExpiry: formatDate(row.fitness_expiry),
+          permitExpiry: formatDate(row.permit_expiry),
           name: row.driver_name || 'N/A',
           phone: row.driver_phone || 'N/A',
           status: row.is_active ? 'Active' : 'Inactive',

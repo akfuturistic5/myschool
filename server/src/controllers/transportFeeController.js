@@ -16,6 +16,7 @@ const getAllTransportFees = async (req, res) => {
       page = 1,
       limit = 10,
       search = '',
+      status = 'all',
       pickup_point_id,
       academic_year_id,
       sortField = 'id',
@@ -40,8 +41,8 @@ const getAllTransportFees = async (req, res) => {
       whereClause += ` AND tfm.pickup_point_id = $${params.length}`;
     }
     if (status && status !== 'all') {
-      params.push(status);
-      whereClause += ` AND tfm.status = $${params.length}`;
+      params.push(String(status).trim().toLowerCase());
+      whereClause += ` AND LOWER(COALESCE(tfm.status, 'active')) = $${params.length}`;
     }
     if (hasAcademicYearId && scopedAcademicYearId) {
       params.push(scopedAcademicYearId);

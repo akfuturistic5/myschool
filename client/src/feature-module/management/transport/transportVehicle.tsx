@@ -19,7 +19,7 @@ const TransportVehicle = () => {
     page: 1,
     limit: 10,
     search: "",
-    status: "",
+    status: "all",
     sortField: "id",
     sortOrder: "ASC"
   });
@@ -30,9 +30,11 @@ const TransportVehicle = () => {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [draftStatus, setDraftStatus] = useState("all");
 
-  const handleApplyClick = (e: any) => {
+  const handleApplyClick = async (e: any) => {
     e.preventDefault();
-    setParams(prev => ({ ...prev, status: draftStatus, page: 1 }));
+    const nextParams = { ...params, status: draftStatus, page: 1 };
+    setParams(nextParams);
+    await refetch(nextParams);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
@@ -68,9 +70,11 @@ const TransportVehicle = () => {
       Model: item.vehicleModel,
       "Seat Capacity": item.seatCapacity,
       "Made of Year": item.madeofYear,
-      "Registration No": item.registrationNo,
       "Chassis No": item.chassisNo,
       "GPS Device ID": item.gps,
+      "Insurance Expiry": item.insuranceExpiry,
+      "Fitness Expiry": item.fitnessExpiry,
+      "Permit Expiry": item.permitExpiry,
       Status: item.status
     }));
     exportToExcel(exportData, `Transport_Vehicles_${new Date().toISOString().split('T')[0]}`);
@@ -83,9 +87,11 @@ const TransportVehicle = () => {
       { title: "Model", dataKey: "vehicleModel" },
       { title: "Seat Capacity", dataKey: "seatCapacity" },
       { title: "Made of Year", dataKey: "madeofYear" },
-      { title: "Registration No", dataKey: "registrationNo" },
       { title: "Chassis No", dataKey: "chassisNo" },
       { title: "GPS Device ID", dataKey: "gps" },
+      { title: "Insurance Expiry", dataKey: "insuranceExpiry" },
+      { title: "Fitness Expiry", dataKey: "fitnessExpiry" },
+      { title: "Permit Expiry", dataKey: "permitExpiry" },
       { title: "Status", dataKey: "status" },
     ];
     exportToPDF(data, "Transport Vehicles List", `Transport_Vehicles_${new Date().toISOString().split('T')[0]}`, cols);
@@ -98,9 +104,11 @@ const TransportVehicle = () => {
       { title: "Model", dataKey: "vehicleModel" },
       { title: "Seat Capacity", dataKey: "seatCapacity" },
       { title: "Made of Year", dataKey: "madeofYear" },
-      { title: "Registration No", dataKey: "registrationNo" },
       { title: "Chassis No", dataKey: "chassisNo" },
       { title: "GPS Device ID", dataKey: "gps" },
+      { title: "Insurance Expiry", dataKey: "insuranceExpiry" },
+      { title: "Fitness Expiry", dataKey: "fitnessExpiry" },
+      { title: "Permit Expiry", dataKey: "permitExpiry" },
       { title: "Status", dataKey: "status" },
     ];
     printData("Transport Vehicles List", cols, data);
@@ -138,11 +146,6 @@ const TransportVehicle = () => {
       sorter: true,
     },
     {
-      title: "Registration No",
-      dataIndex: "registrationNo",
-      sorter: true,
-    },
-    {
       title: "Chassis No",
       dataIndex: "chassisNo",
       render: (text: string) => (
@@ -153,6 +156,21 @@ const TransportVehicle = () => {
     {
       title: "GPS Device ID",
       dataIndex: "gps",
+      sorter: true,
+    },
+    {
+      title: "Insurance Expiry",
+      dataIndex: "insuranceExpiry",
+      sorter: true,
+    },
+    {
+      title: "Fitness Expiry",
+      dataIndex: "fitnessExpiry",
+      sorter: true,
+    },
+    {
+      title: "Permit Expiry",
+      dataIndex: "permitExpiry",
       sorter: true,
     },
     {
@@ -302,9 +320,11 @@ const TransportVehicle = () => {
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
-                        <Link to="#" className="btn btn-light me-3" onClick={() => {
+                        <Link to="#" className="btn btn-light me-3" onClick={async () => {
                           setDraftStatus("all");
-                          setParams({ ...params, status: "all", page: 1 });
+                          const nextParams = { ...params, status: "all", page: 1 };
+                          setParams(nextParams);
+                          await refetch(nextParams);
                         }}>
                           Reset
                         </Link>
