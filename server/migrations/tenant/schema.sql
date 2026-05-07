@@ -497,23 +497,7 @@ CREATE TABLE IF NOT EXISTS public.student_medical_records (
     updated_by integer
 );
 
--- 36. Student Transport Assignments (Logistics Layer)
-CREATE TABLE IF NOT EXISTS public.student_transport_assignments (
-    id SERIAL PRIMARY KEY,
-    student_id integer NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-    academic_year_id integer NOT NULL REFERENCES public.academic_years(id) ON DELETE RESTRICT,
-    route_id integer,
-    pickup_point_id integer,
-    valid_from date DEFAULT CURRENT_DATE,
-    valid_to date,
-    is_active boolean DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    created_by integer,
-    updated_by integer
-);
-
--- 37. Student Hostel Assignments (Logistics Layer)
+-- 36. Student Hostel Assignments (Logistics Layer)
 CREATE TABLE IF NOT EXISTS public.student_hostel_assignments (
     id SERIAL PRIMARY KEY,
     student_id integer NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,

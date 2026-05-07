@@ -15,6 +15,7 @@ const getAllSubjects = async (req, res) => {
         subject_name,
         subject_code,
         subject_type,
+        subject_type as subject_mode,
         description,
         is_active,
         created_at
@@ -41,6 +42,7 @@ const getSubjectById = async (req, res) => {
         subject_name,
         subject_code,
         subject_type,
+        subject_type as subject_mode,
         description,
         is_active,
         created_at

@@ -14,6 +14,7 @@ import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { httpErrorMessage } from "../utils/httpErrorMessage";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
+import { useClassRooms } from "../../../core/hooks/useClassRooms";
 
 const WEEK_DAYS: { label: string; dow: number }[] = [
   { label: "Monday", dow: 1 },
@@ -93,6 +94,18 @@ function formatClassLabel(c: Record<string, unknown>): string {
   return name || code || `Class #${String(c.id ?? "")}`;
 }
 
+const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => {
+  const seenIds = new Set<string>();
+  const deduped = arr.filter((x: any) => {
+    const id = String(x?.[valueKey] ?? "").trim();
+    if (!id) return false;
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+  return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) }))];
+};
+
 type CellProps = {
   dayLabel: string;
   dayNum: number;
@@ -103,6 +116,7 @@ type CellProps = {
   busy: boolean;
   subjectOptions: Opt[];
   teacherOptions: Opt[];
+  subjectToTeachersMap: Record<string, string[]>;
   subjectTeacherMap: Record<string, string>;
   sectionRoomLabel: string;
   onSubjectChange: (value: string | null) => void;
@@ -110,6 +124,9 @@ type CellProps = {
   onSave: () => void;
   onDelete: () => void;
   canDelete: boolean;
+  roomId: string;
+  roomOptions: Opt[];
+  onRoomChange: (value: string | null) => void;
 };
 
 function TimetableCell({
@@ -121,6 +138,7 @@ function TimetableCell({
   busy,
   subjectOptions,
   teacherOptions,
+  subjectToTeachersMap,
   subjectTeacherMap,
   sectionRoomLabel,
   onSubjectChange,
@@ -128,7 +146,17 @@ function TimetableCell({
   onSave,
   onDelete,
   canDelete,
+  roomId,
+  roomOptions,
+  onRoomChange,
 }: CellProps) {
+  const filteredTeacherOptions = useMemo(() => {
+    if (!subjectId) return teacherOptions;
+    const allowed = subjectToTeachersMap[subjectId] || [];
+    // Strict filtering: if no teachers are assigned, the list will be empty
+    return teacherOptions.filter((opt) => !opt.value || allowed.includes(opt.value));
+  }, [subjectId, teacherOptions, subjectToTeachersMap]);
+
   const handleSubjectChange = (v: string | null) => {
     const nextSubjectId = v || "";
     onSubjectChange(nextSubjectId);
@@ -165,15 +193,20 @@ function TimetableCell({
       <div className="mb-1">
         <CommonSelect
           className="select select-sm"
-          options={teacherOptions}
+          options={filteredTeacherOptions}
           value={teacherId || null}
           placeholder="Teacher"
           onChange={(v) => onTeacherChange(v || "")}
         />
       </div>
-      <div className="mb-1 small">
-        <span className="text-muted">Room: </span>
-        <span>{sectionRoomLabel || "—"}</span>
+      <div className="mb-1">
+        <CommonSelect
+          className="select select-sm"
+          options={roomOptions}
+          value={roomId || null}
+          placeholder="Room"
+          onChange={(v) => onRoomChange(v || "")}
+        />
       </div>
       {dirty ? <div className="small text-warning mb-1">Unsaved change</div> : null}
       <div className="d-flex flex-wrap gap-1">
@@ -198,6 +231,7 @@ type CellDraft = {
   slotLabel: string;
   subjectId: string;
   teacherId: string;
+  roomId: string;
   dirty: boolean;
 };
 
@@ -207,15 +241,39 @@ const ClassTimetable = () => {
   const [filterClassId, setFilterClassId] = useState("");
   const [filterSectionId, setFilterSectionId] = useState("");
 
+  // Copy Routine state
+  const [copySourceClassId, setCopySourceClassId] = useState("");
+  const [copySourceSectionId, setCopySourceSectionId] = useState("");
+  const [subjectTeacherAssignments, setSubjectTeacherAssignments] = useState<any[]>([]);
+
   const { classes = [] } = useClasses();
-  const { sections = [] } = useSections(filterClassId || null, {
+  const { sections = [], loading: sectionsLoading } = useSections(filterClassId || null, {
     fetchAllWhenNoClass: false,
     academicYearId: academicYearId ?? null,
   });
-  const { subjects = [] } = useSubjects(filterClassId ? Number(filterClassId) : null, { fetchAllWhenNoClass: false });
-  const { teachers = [] } = useTeachers();
 
-  const selectionReady = Boolean(filterClassId && filterSectionId && academicYearId);
+  // For Copy Modal
+  const { sections: copySections = [] } = useSections(copySourceClassId || null, {
+    fetchAllWhenNoClass: false,
+    academicYearId: academicYearId ?? null,
+  });
+
+  const { subjects = [] } = useSubjects(filterClassId ? Number(filterClassId) : null, {
+    fetchAllWhenNoClass: false,
+    academicYearId: academicYearId ?? null
+  });
+  const { teachers = [] } = useTeachers();
+  const { classRooms = [] } = useClassRooms();
+
+  const roomOptions: Opt[] = useMemo(() => {
+    return options(classRooms, "id", "room_number");
+  }, [classRooms]);
+
+  const selectionReady = Boolean(
+    filterClassId && 
+    academicYearId && 
+    (filterSectionId || (!sectionsLoading && sections.length === 0))
+  );
 
   const sectionRoomLabel = useMemo(() => {
     const sec = sections.find((x: { id?: unknown }) => String(x.id) === String(filterSectionId));
@@ -226,38 +284,47 @@ const ClassTimetable = () => {
   const { data: routineData, slots: apiSlots, loading, error, refetch } = useClassSchedules({
     academicYearId: academicYearId ?? null,
     classId: filterClassId ? Number(filterClassId) : null,
-    sectionId: filterSectionId ? Number(filterSectionId) : null,
+    sectionId: filterSectionId ? Number(filterSectionId) : 0,
     skip: !selectionReady,
   });
 
-  const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => {
-    const seenIds = new Set<string>();
-    const deduped = arr.filter((x: any) => {
-      const id = String(x?.[valueKey] ?? "").trim();
-      if (!id) return false;
-      if (seenIds.has(id)) return false;
-      seenIds.add(id);
-      return true;
-    });
-    return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) }))];
-  };
+  useEffect(() => {
+    if (selectionReady) {
+      apiService
+        .getSubjectTeacherAssignments({ classId: filterClassId, academicYearId })
+        .then((res: any) => {
+          if (res.status === "SUCCESS") {
+            setSubjectTeacherAssignments(res.data || []);
+          }
+        })
+        .catch(() => { });
+    }
+  }, [filterClassId, academicYearId, selectionReady]);
+
+
 
   const classOptions: Opt[] = useMemo(
     () => [{ value: "", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
     [classes]
   );
   const sectionOptions = options(sections, "id", "section_name");
+  const copySectionOptions = options(copySections, "id", "section_name");
+
   const subjectOptions: Opt[] = useMemo(() => {
     const classIdNum = Number(filterClassId);
     const rows = Array.isArray(subjects) ? subjects : [];
     const seen = new Set<string>();
     const filtered = rows.filter((s: Record<string, unknown>) => {
-      const sid = String(s.id ?? "").trim();
-      if (!sid || seen.has(sid)) return false;
+      // Dedup by actual subject and mode, not just mapping ID
+      const mode = String(s.subject_mode ?? "").trim();
+      const masterId = String(s.subject_id ?? s.master_subject_id ?? s.id ?? "");
+      const dedupKey = `${masterId}-${mode}`;
+
+      if (!masterId || seen.has(dedupKey)) return false;
       const sClass = Number(s.class_id);
       if (!Number.isFinite(classIdNum) || classIdNum <= 0) return false;
       if (!Number.isFinite(sClass) || sClass !== classIdNum) return false;
-      seen.add(sid);
+      seen.add(dedupKey);
       return true;
     });
     return [
@@ -268,6 +335,7 @@ const ClassTimetable = () => {
       })),
     ];
   }, [subjects, filterClassId]);
+
   const teacherOptions: Opt[] = [
     { value: "", label: "Select" },
     ...teachers.map((t: any) => {
@@ -276,18 +344,29 @@ const ClassTimetable = () => {
       return { value: sid, label: name };
     }),
   ];
-  const subjectTeacherMap = useMemo(() => {
+
+  const subjectToTeachersMap = useMemo(() => {
     const validTeacherIds = new Set(teacherOptions.map((opt) => String(opt.value)));
-    const rows = Array.isArray(subjects) ? subjects : [];
-    return rows.reduce((acc: Record<string, string>, s: Record<string, unknown>) => {
-      const sid = String(s.id ?? "").trim();
-      const tid = String(s.teacher_id ?? "").trim();
-      if (!sid || !tid) return acc;
-      if (!validTeacherIds.has(tid)) return acc;
-      acc[sid] = tid;
-      return acc;
-    }, {});
-  }, [subjects, teacherOptions]);
+    const map: Record<string, string[]> = {};
+    subjectTeacherAssignments.forEach((a) => {
+      const sid = String(a.classSubjectId || a.class_subject_id || a.subject_id || "");
+      const tid = String(a.teacherId || a.teacher_id || a.staff_id || "");
+      if (sid && tid && validTeacherIds.has(tid)) {
+        if (!map[sid]) map[sid] = [];
+        if (!map[sid].includes(tid)) map[sid].push(tid);
+      }
+    });
+    return map;
+  }, [subjectTeacherAssignments, teacherOptions]);
+
+  const subjectTeacherMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    Object.entries(subjectToTeachersMap).forEach(([sid, tids]) => {
+      if (tids.length > 0) map[sid] = tids[0];
+    });
+    return map;
+  }, [subjectToTeachersMap]);
+
   const periodColumns: PeriodCol[] = useMemo(() => {
     const raw = Array.isArray(apiSlots) ? apiSlots : [];
     const seenIds = new Set<number>();
@@ -424,8 +503,9 @@ const ClassTimetable = () => {
           dayNum: dow,
           slotId: col.id,
           slotLabel: col.label,
-          subjectId: od.subject_id != null ? String(od.subject_id) : "",
-          teacherId: od.teacher_id != null ? String(od.teacher_id) : "",
+          subjectId: String(od.class_subject_id || od.subject_id || ""),
+          teacherId: String(od.teacher_id || od.staff_id || ""),
+          roomId: String(od.class_room_id || od.room_id || ""),
           dirty: false,
         };
       });
@@ -441,97 +521,139 @@ const ClassTimetable = () => {
         if (!current) return prev;
         const next = { ...current, ...patch };
         const base = initialCellDrafts[key];
-        const dirty = !!base && (next.subjectId !== base.subjectId || next.teacherId !== base.teacherId);
+        const dirty = !!base && (next.subjectId !== base.subjectId || next.teacherId !== base.teacherId || next.roomId !== base.roomId);
         return { ...prev, [key]: { ...next, dirty } };
       });
     },
     [initialCellDrafts]
   );
 
-  const persistCell = useCallback(
-    async (key: string, opts?: { skipRefetch?: boolean }) => {
-      const draft = cellDrafts[key];
-      if (!draft) return { ok: false, message: "Missing cell data." };
-      if (!draft.teacherId) {
+  const handleBulkSave = useCallback(async () => {
+    const dirtyKeys = Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty);
+    if (!dirtyKeys.length) return;
+
+    for (const key of dirtyKeys) {
+      const d = cellDrafts[key];
+      if (!d.subjectId) {
+        void Swal.fire({
+          icon: "warning",
+          title: "Incomplete assignment",
+          text: `Please select a subject for ${d.dayLabel} (${d.slotLabel}).`,
+        });
+        return;
+      }
+      if (!d.teacherId) {
+        void Swal.fire({
+          icon: "warning",
+          title: "Incomplete assignment",
+          text: `Please select a teacher for ${d.dayLabel} (${d.slotLabel}).`,
+        });
+        return;
+      }
+    }
+
+    setBulkSaving(true);
+    try {
+      const assignments = dirtyKeys.map((key) => {
+        const d = cellDrafts[key];
         return {
-          ok: false,
-          message: `${draft.dayLabel} - ${draft.slotLabel}: Please select a teacher before saving.`,
+          id: d.existingId,
+          subject_id: d.subjectId ? Number(d.subjectId) : null,
+          teacher_id: Number(d.teacherId),
+          room_id: d.roomId ? Number(d.roomId) : null,
+          day_of_week: d.dayNum,
+          time_slot_id: d.slotId,
         };
+      });
+
+      const res = await apiService.bulkUpdateClassSchedules({
+        academic_year_id: academicYearId,
+        class_id: Number(filterClassId),
+        section_id: filterSectionId ? Number(filterSectionId) : null,
+        room_id: null, // Global room override not used when selecting per period
+        assignments,
+      });
+
+      if (res.success === false) {
+        void Swal.fire({
+          icon: "warning",
+          title: "Scheduling Conflict",
+          text: res.message || "A conflict was detected in your routine.",
+        });
+        return;
+      }
+
+      await refetch();
+      void Swal.fire({
+        icon: "success",
+        title: "Saved successfully",
+        text: `Updated ${assignments.length} timetable entries.`,
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    } catch (e: any) {
+      void Swal.fire({
+        icon: "error",
+        title: "Save failed",
+        text: httpErrorMessage(e, "Could not save timetable."),
+      });
+    } finally {
+      setBulkSaving(false);
+    }
+  }, [cellDrafts, academicYearId, filterClassId, filterSectionId, refetch]);
+
+  const handleSingleSave = useCallback(
+    async (key: string) => {
+      const draft = cellDrafts[key];
+      if (!draft) return;
+      if (!draft.subjectId) {
+        void Swal.fire({ icon: "warning", title: "Subject required", text: "Select a subject before saving." });
+        return;
+      }
+      if (!draft.teacherId) {
+        void Swal.fire({ icon: "warning", title: "Teacher required", text: "Select a teacher before saving." });
+        return;
       }
       setSavingByKey((prev) => ({ ...prev, [key]: true }));
       try {
         const payload = {
           class_id: Number(filterClassId),
-          section_id: Number(filterSectionId),
-          subject_id: draft.subjectId ? Number(draft.subjectId) : null,
+          section_id: filterSectionId ? Number(filterSectionId) : null,
+          subject_id: Number(draft.subjectId),
           teacher_id: Number(draft.teacherId),
+          room_id: draft.roomId ? Number(draft.roomId) : null,
           day_of_week: draft.dayNum,
           time_slot_id: draft.slotId,
           academic_year_id: academicYearId,
         };
+        let res;
         if (draft.existingId) {
-          await apiService.updateClassSchedule(draft.existingId, payload);
+          res = await apiService.updateClassSchedule(draft.existingId, payload);
         } else {
-          await apiService.createClassSchedule(payload);
+          res = await apiService.createClassSchedule(payload);
         }
-        if (!opts?.skipRefetch) {
-          await refetch();
+
+        if (res && res.success === false) {
+          void Swal.fire({
+            icon: "warning",
+            title: "Conflict",
+            text: res.message || "This slot is already occupied.",
+          });
+          return;
         }
-        return { ok: true, message: "" };
-      } catch (e) {
-        return { ok: false, message: httpErrorMessage(e, "Could not save this slot.") };
+
+        await refetch();
+      } catch (e: any) {
+        void Swal.fire({
+          icon: "error",
+          title: "Save failed",
+          text: httpErrorMessage(e, "Could not save timetable."),
+        });
       } finally {
         setSavingByKey((prev) => ({ ...prev, [key]: false }));
       }
     },
     [cellDrafts, filterClassId, filterSectionId, academicYearId, refetch]
-  );
-
-  const pendingKeys = useMemo(
-    () => Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty),
-    [cellDrafts]
-  );
-
-  const handleBulkSave = useCallback(async () => {
-    if (!pendingKeys.length) return;
-    setBulkSaving(true);
-    try {
-      const failures: string[] = [];
-      for (const key of pendingKeys) {
-        const result = await persistCell(key, { skipRefetch: true });
-        if (!result.ok) failures.push(result.message);
-      }
-      await refetch();
-      if (failures.length === 0) {
-        void Swal.fire({
-          icon: "success",
-          title: "Bulk save completed",
-          text: `${pendingKeys.length} timetable changes saved successfully.`,
-        });
-      } else {
-        void Swal.fire({
-          icon: "warning",
-          title: "Bulk save completed with issues",
-          text: failures.slice(0, 3).join(" | "),
-        });
-      }
-    } finally {
-      setBulkSaving(false);
-    }
-  }, [pendingKeys, persistCell, refetch]);
-
-  const handleSingleSave = useCallback(
-    async (key: string) => {
-      const result = await persistCell(key);
-      if (!result.ok) {
-        void Swal.fire({
-          icon: "error",
-          title: "Could not save",
-          text: result.message,
-        });
-      }
-    },
-    [persistCell]
   );
 
   const handleDelete = useCallback(
@@ -554,13 +676,77 @@ const ClassTimetable = () => {
         await refetch();
         void Swal.fire({ icon: "success", title: "Removed", timer: 1600, showConfirmButton: false });
       } catch (e) {
-        const msg = httpErrorMessage(e, "Could not delete.");
-        void Swal.fire({ icon: "error", title: "Delete failed", text: msg });
+        void Swal.fire({ icon: "error", title: "Delete failed", text: httpErrorMessage(e, "Could not delete.") });
       } finally {
         setSavingByKey((prev) => ({ ...prev, [key]: false }));
       }
     },
     [cellDrafts, refetch]
+  );
+
+  const handleResetRoutine = async () => {
+    if (!selectionReady) return;
+    const confirm = await Swal.fire({
+      title: "Reset Timetable?",
+      text: "This will permanently delete ALL entries for this class and section routine.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, reset all",
+      confirmButtonColor: "#dc3545",
+    });
+    if (!confirm.isConfirmed) return;
+
+    setBulkSaving(true);
+    try {
+      await apiService.resetClassSchedule({
+        class_id: Number(filterClassId),
+        section_id: Number(filterSectionId),
+        academic_year_id: academicYearId,
+      });
+      await refetch();
+      void Swal.fire({ icon: "success", title: "Timetable reset", timer: 1600, showConfirmButton: false });
+    } catch (e) {
+      void Swal.fire({ icon: "error", title: "Reset failed", text: httpErrorMessage(e, "Failed to reset.") });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const handleCopyRoutine = async () => {
+    if (!copySourceClassId || !academicYearId) return;
+    setBulkSaving(true);
+    try {
+      const res = await apiService.copyClassSchedule({
+        source_class_id: Number(copySourceClassId),
+        source_section_id: copySourceSectionId ? Number(copySourceSectionId) : null,
+        target_class_id: Number(filterClassId),
+        target_section_id: Number(filterSectionId),
+        academic_year_id: academicYearId,
+      });
+
+      // Close modal manually via Bootstrap
+      const el = document.getElementById("copy_routine_modal");
+      if (el) {
+        const inst = (window as any).bootstrap?.Modal?.getInstance(el);
+        inst?.hide();
+      }
+
+      await refetch();
+      void Swal.fire({
+        icon: "success",
+        title: "Copy completed",
+        text: `Copied ${res.data?.copiedCount || 0} entries. Skipped ${res.data?.skipCount || 0} due to conflicts.`,
+      });
+    } catch (e) {
+      void Swal.fire({ icon: "error", title: "Copy failed", text: httpErrorMessage(e, "Failed to copy routine.") });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const pendingKeys = useMemo(
+    () => Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty),
+    [cellDrafts]
   );
 
   return (
@@ -584,6 +770,23 @@ const ClassTimetable = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
+              <button
+                className="btn btn-outline-primary d-flex align-items-center"
+                data-bs-toggle="modal"
+                data-bs-target="#copy_routine_modal"
+                disabled={!selectionReady || loading}
+              >
+                <i className="ti ti-copy me-2" />
+                Copy Routine
+              </button>
+              <button
+                className="btn btn-outline-danger d-flex align-items-center"
+                onClick={handleResetRoutine}
+                disabled={!selectionReady || loading || bulkSaving}
+              >
+                <i className="ti ti-refresh me-2" />
+                Reset Routine
+              </button>
               <TooltipOption
                 onRefresh={() => void refetch()}
                 onPrint={handlePrint}
@@ -629,6 +832,14 @@ const ClassTimetable = () => {
                     onChange={(v) => setFilterSectionId(v || "")}
                   />
                 </div>
+                {filterClassId && !sectionsLoading && sections.length === 0 && (
+                  <div className="col-12 mt-0">
+                    <div className="alert alert-soft-info py-2 fs-12 mb-0 border-info-subtle">
+                      <i className="ti ti-info-circle me-1"></i>
+                      No sections defined for this class. Scheduling for the <strong>Entire Class</strong>.
+                    </div>
+                  </div>
+                )}
                 <div className="col-md-12 col-lg-4 d-flex align-items-end justify-content-lg-end">
                   <button
                     type="button"
@@ -636,7 +847,7 @@ const ClassTimetable = () => {
                     onClick={() => void handleBulkSave()}
                     disabled={!selectionReady || loading || bulkSaving || pendingKeys.length === 0}
                   >
-                    {bulkSaving ? "Saving..." : "Save"}
+                    {bulkSaving ? "Saving..." : "Save Assignments"}
                   </button>
                 </div>
               </div>
@@ -692,10 +903,14 @@ const ClassTimetable = () => {
                                 busy={Boolean(savingByKey[key]) || bulkSaving}
                                 subjectOptions={subjectOptions}
                                 teacherOptions={teacherOptions}
+                                roomId={draft?.roomId ?? ""}
+                                roomOptions={roomOptions}
+                                subjectToTeachersMap={subjectToTeachersMap}
                                 subjectTeacherMap={subjectTeacherMap}
                                 sectionRoomLabel={sectionRoomLabel}
                                 onSubjectChange={(v) => updateCellDraft(key, { subjectId: v || "" })}
                                 onTeacherChange={(v) => updateCellDraft(key, { teacherId: v || "" })}
+                                onRoomChange={(v) => updateCellDraft(key, { roomId: v || "" })}
                                 onSave={() => void handleSingleSave(key)}
                                 onDelete={() => void handleDelete(key)}
                                 canDelete={Boolean(draft?.existingId)}
@@ -712,6 +927,53 @@ const ClassTimetable = () => {
               {!selectionReady && academicYearId ? (
                 <div className="alert alert-light border">Select <strong>class</strong> and <strong>section</strong> to edit the weekly timetable.</div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Copy Routine Modal */}
+      <div className="modal fade" id="copy_routine_modal" tabIndex={-1} aria-hidden="true">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title">Copy Routine From</h5>
+              <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div className="modal-body">
+              <p className="small text-muted mb-3">Pick a source class and section to clone its timetable into the current view. Existing entries in the target will NOT be deleted, but conflicts will be skipped.</p>
+              <div className="mb-3">
+                <label className="form-label">Source Class</label>
+                <CommonSelect
+                  options={classOptions}
+                  value={copySourceClassId || null}
+                  placeholder="Select source class"
+                  onChange={(v) => {
+                    setCopySourceClassId(v || "");
+                    setCopySourceSectionId("");
+                  }}
+                />
+              </div>
+              <div className="mb-3">
+                <label className="form-label">Source Section (Optional)</label>
+                <CommonSelect
+                  options={copySectionOptions}
+                  value={copySourceSectionId || null}
+                  placeholder={copySourceClassId ? "Select source section" : "Select class first"}
+                  onChange={(v) => setCopySourceSectionId(v || "")}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleCopyRoutine}
+                disabled={!copySourceClassId || bulkSaving}
+              >
+                {bulkSaving ? "Copying..." : "Start Copy"}
+              </button>
             </div>
           </div>
         </div>

@@ -404,6 +404,24 @@ class ApiService {
   async deleteClassSchedule(id) {
     return this.makeRequest(`/class-schedules/${id}`, { method: 'DELETE' });
   }
+  async bulkUpdateClassSchedules(payload) {
+    return this.makeRequest('/class-schedules/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async copyClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/copy', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async resetClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/reset', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
 
   // Schedules (time_slots / schedule table - ID, Type, Start Time, End Time, Status)
   async getSchedules() {
@@ -425,6 +443,12 @@ class ApiService {
   }
   async deleteSchedule(id) {
     return this.makeRequest(`/schedules/${id}`, { method: 'DELETE' });
+  }
+  async bulkDeleteSchedules(ids) {
+    return this.makeRequest('/schedules/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+  }
+  async generateSchedules(data) {
+    return this.makeRequest('/schedules/generate', { method: 'POST', body: JSON.stringify(data) });
   }
 
   // Students
@@ -1238,6 +1262,10 @@ class ApiService {
     return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, { method: 'DELETE' });
   }
 
+  /**
+   * @param {number|string} classId
+   * @param {number|null} [academicYearId]
+   */
   async getTeacherAssignmentClassMeta(classId, academicYearId = null) {
     const qs = academicYearId ? `?academicYearId=${academicYearId}` : '';
     return this.makeRequest(`/teacher-assignments/class/${classId}/meta${qs}`);
@@ -2226,6 +2254,15 @@ class ApiService {
   }
   async assignSubjectToClass(data) {
     return this.makeRequest('/class-subjects', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async getSubjectTeacherAssignments(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.classId) params.append('classId', filters.classId);
+    if (filters.academicYearId) params.append('academicYearId', filters.academicYearId);
+    if (filters.teacherId) params.append('teacherId', filters.teacherId);
+    const qs = params.toString();
+    return this.makeRequest(`/teacher-assignments/subject-teachers${qs ? `?${qs}` : ''}`);
   }
   async updateClassSubject(id, data) {
     return this.makeRequest(`/class-subjects/${id}`, { method: 'PUT', body: JSON.stringify(data) });

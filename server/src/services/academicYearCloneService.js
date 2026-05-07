@@ -1160,7 +1160,7 @@ async function cloneTimetable(client, sourceYearId, targetYearId, classMap, sect
       );
     }
 
-    const slotExists = await client.query('SELECT id FROM time_slots WHERE id = $1 LIMIT 1', [timeSlotId]);
+    const slotExists = await client.query('SELECT id FROM timetable_time_slots WHERE id = $1 LIMIT 1', [timeSlotId]);
     if (!slotExists.rows.length) {
       throw makeCloneError(
         400,
@@ -1771,8 +1771,7 @@ async function validateSourceDataConsistencyTenant(client, sourceYearId, options
   }
 
   if (options.timetable) {
-    const hasTts = await tableExists(client, 'timetable_time_slots');
-    const slotJoin = hasTts ? 'timetable_time_slots' : 'time_slots';
+    const slotJoin = 'timetable_time_slots';
     const missingSlots = await client.query(
       `SELECT COUNT(*)::int AS count
        FROM class_schedules cs
@@ -2420,7 +2419,7 @@ async function validateSourceDataConsistency(client, sourceYearId, options) {
     const missingSlots = await client.query(
       `SELECT COUNT(*)::int AS count
        FROM class_schedules cs
-       LEFT JOIN time_slots ts ON ts.id = cs.time_slot_id
+       LEFT JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
        WHERE cs.academic_year_id = $1 AND ts.id IS NULL`,
       [sourceYearId]
     );
@@ -2486,7 +2485,7 @@ async function validateStrictIntegrity(client, targetYearId, options, summary) {
        LEFT JOIN classes c ON c.id = cs.class_id
        LEFT JOIN sections sec ON sec.id = cs.section_id
        LEFT JOIN subjects s ON s.id = cs.subject_id
-       LEFT JOIN time_slots ts ON ts.id = cs.time_slot_id
+       LEFT JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
        WHERE cs.academic_year_id = $1
          AND (
            c.id IS NULL

@@ -20,6 +20,7 @@ export const useSchedules = () => {
           startTime: row.startTime ?? 'N/A',
           endTime: row.endTime ?? 'N/A',
           duration: row.duration != null && row.duration !== '' ? Number(row.duration) : null,
+          isBreak: Boolean(row.isBreak ?? row.is_break),
           status: row.status ?? 'Active',
           originalData: row
         }));

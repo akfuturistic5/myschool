@@ -48,11 +48,24 @@ function resolveUserIdForCreatedBy(req) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function timeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return 0;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function minutesToTime(totalMins) {
+  const h = Math.floor(totalMins / 60) % 24;
+  const m = totalMins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 /** Find another time_slots row whose range overlaps the given range (optional exclude id for updates). */
 async function findOverlappingTimeSlot(newStart, newEnd, excludeId = null) {
   if (excludeId != null && excludeId !== '') {
     const r = await query(
-      `SELECT id, slot_name, start_time, end_time FROM time_slots
+      `SELECT id, slot_name, start_time, end_time FROM timetable_time_slots
        WHERE id <> $3::int AND ($1::time < end_time AND start_time < $2::time)
        LIMIT 1`,
       [newStart, newEnd, excludeId]
@@ -60,7 +73,7 @@ async function findOverlappingTimeSlot(newStart, newEnd, excludeId = null) {
     return r.rows[0] || null;
   }
   const r = await query(
-    `SELECT id, slot_name, start_time, end_time FROM time_slots
+    `SELECT id, slot_name, start_time, end_time FROM timetable_time_slots
      WHERE ($1::time < end_time AND start_time < $2::time)
      LIMIT 1`,
     [newStart, newEnd]
@@ -78,6 +91,7 @@ function mapScheduleRow(row) {
     startTime: formatTimeDisplay(row.start_time ?? row.start) ?? formatTime(row.start_time ?? row.start),
     endTime: formatTimeDisplay(row.end_time ?? row.end) ?? formatTime(row.end_time ?? row.end),
     duration: Number.isFinite(dur) ? dur : null,
+    isBreak: Boolean(row.is_break),
     status: statusVal === 'Active' || statusVal === 'active' || statusVal === true ? 'Active' : 'Inactive',
     key: row.id,
     originalData: row
@@ -87,24 +101,8 @@ function mapScheduleRow(row) {
 // Get all schedules (time_slots) - NO status filter, return both active and inactive
 const getAllSchedules = async (req, res) => {
   try {
-    let rows = [];
-    try {
-      const result = await query('SELECT * FROM time_slots ORDER BY id ASC');
-      rows = result.rows;
-    } catch (e) {
-      try {
-        const result = await query('SELECT * FROM schedule ORDER BY id ASC');
-        rows = result.rows;
-      } catch (e2) {
-        try {
-          const result = await query('SELECT * FROM schedules ORDER BY id ASC');
-          rows = result.rows;
-        } catch (e3) {
-          throw e;
-        }
-      }
-    }
-    const data = rows.map((row) => mapScheduleRow(row));
+    const result = await query('SELECT * FROM timetable_time_slots ORDER BY start_time ASC, id ASC');
+    const data = result.rows.map((row) => mapScheduleRow(row));
     return success(res, 200, 'Time slots fetched successfully', data, { count: data.length });
   } catch (error) {
     console.error('Error fetching schedules:', error);
@@ -115,27 +113,11 @@ const getAllSchedules = async (req, res) => {
 const getScheduleById = async (req, res) => {
   try {
     const { id } = req.params;
-    let row = null;
-    try {
-      const result = await query('SELECT * FROM time_slots WHERE id = $1', [id]);
-      if (result.rows.length > 0) row = result.rows[0];
-    } catch (e) {
-      try {
-        const result = await query('SELECT * FROM schedule WHERE id = $1', [id]);
-        if (result.rows.length > 0) row = result.rows[0];
-      } catch (e2) {
-        try {
-          const result = await query('SELECT * FROM schedules WHERE id = $1', [id]);
-          if (result.rows.length > 0) row = result.rows[0];
-        } catch (e3) {
-          throw e;
-        }
-      }
-    }
-    if (!row) {
+    const result = await query('SELECT * FROM timetable_time_slots WHERE id = $1', [id]);
+    if (result.rows.length === 0) {
       return errorResponse(res, 404, 'Time slot not found');
     }
-    const data = mapScheduleRow(row);
+    const data = mapScheduleRow(result.rows[0]);
     return success(res, 200, 'Time slot fetched successfully', data);
   } catch (error) {
     console.error('Error fetching schedule:', error);
@@ -164,7 +146,7 @@ const createSchedule = async (req, res) => {
     }
     const createdBy = resolveUserIdForCreatedBy(req);
     const result = await query(
-      `INSERT INTO time_slots (slot_name, start_time, end_time, duration, is_break, is_active, created_by)
+      `INSERT INTO timetable_time_slots (slot_name, start_time, end_time, duration, is_break, is_active, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [
         slot_name.trim(),
@@ -185,7 +167,7 @@ const createSchedule = async (req, res) => {
     if (error.code === '22001') {
       return errorResponse(res, 400, 'Slot name is too long. Use at most 100 characters.');
     }
-    return errorResponse(res, 500, 'Failed to add time slot');
+    return errorResponse(res, 500, 'Failed to add time slot', error.message);
   }
 };
 
@@ -203,51 +185,34 @@ const updateSchedule = async (req, res) => {
       isActiveBoolean = is_active === true || is_active === 'true' || is_active === 1;
     }
 
-    let tableName = null;
-    try {
-      const r = await query('SELECT id FROM time_slots WHERE id = $1', [id]);
-      if (r.rows.length > 0) tableName = 'time_slots';
-    } catch (e) {}
-    if (!tableName) {
-      try {
-        const r = await query('SELECT id FROM schedule WHERE id = $1', [id]);
-        if (r.rows.length > 0) tableName = 'schedule';
-      } catch (e2) {}
-    }
-    if (!tableName) {
-      try {
-        const r = await query('SELECT id FROM schedules WHERE id = $1', [id]);
-        if (r.rows.length > 0) tableName = 'schedules';
-      } catch (e3) {}
-    }
-    if (!tableName) {
+    let tableName = 'timetable_time_slots';
+    const r = await query('SELECT id FROM timetable_time_slots WHERE id = $1', [id]);
+    if (r.rows.length === 0) {
       return errorResponse(res, 404, 'Time slot not found');
     }
 
     let slotMergedStart = null;
     let slotMergedEnd = null;
-    if (tableName === 'time_slots') {
-      const existingRow = await query('SELECT start_time, end_time FROM time_slots WHERE id = $1', [id]);
-      if (!existingRow.rows.length) {
-        return errorResponse(res, 404, 'Time slot not found');
-      }
-      const cur = existingRow.rows[0];
-      const mergedStart = start_time !== undefined ? start_time : cur.start_time;
-      const mergedEnd = end_time !== undefined ? end_time : cur.end_time;
-      slotMergedStart = mergedStart;
-      slotMergedEnd = mergedEnd;
-      const rangeErr = await assertStartBeforeEnd(mergedStart, mergedEnd);
-      if (rangeErr) return errorResponse(res, 400, rangeErr);
-      const overlap = await findOverlappingTimeSlot(mergedStart, mergedEnd, id);
-      if (overlap) {
-        const label = overlap.slot_name || `slot #${overlap.id}`;
-        const ex = `${formatTime(overlap.start_time)}–${formatTime(overlap.end_time)}`;
-        return errorResponse(
-          res,
-          409,
-          `This time overlaps with "${label}" (${ex}). Use a different time range.`
-        );
-      }
+    const existingRow = await query('SELECT start_time, end_time FROM timetable_time_slots WHERE id = $1', [id]);
+    if (!existingRow.rows.length) {
+      return errorResponse(res, 404, 'Time slot not found');
+    }
+    const cur = existingRow.rows[0];
+    const mergedStart = start_time !== undefined ? start_time : cur.start_time;
+    const mergedEnd = end_time !== undefined ? end_time : cur.end_time;
+    slotMergedStart = mergedStart;
+    slotMergedEnd = mergedEnd;
+    const rangeErr = await assertStartBeforeEnd(mergedStart, mergedEnd);
+    if (rangeErr) return errorResponse(res, 400, rangeErr);
+    const overlap = await findOverlappingTimeSlot(mergedStart, mergedEnd, id);
+    if (overlap) {
+      const label = overlap.slot_name || `slot #${overlap.id}`;
+      const ex = `${formatTime(overlap.start_time)}–${formatTime(overlap.end_time)}`;
+      return errorResponse(
+        res,
+        409,
+        `This time overlaps with "${label}" (${ex}). Use a different time range.`
+      );
     }
 
     // Get existing columns to avoid updating non-existent columns
@@ -293,7 +258,6 @@ const updateSchedule = async (req, res) => {
     }
 
     if (
-      tableName === 'time_slots' &&
       hasCol('duration') &&
       (start_time !== undefined || end_time !== undefined) &&
       slotMergedStart &&
@@ -304,6 +268,11 @@ const updateSchedule = async (req, res) => {
         updates.push(`duration = $${paramCount++}`);
         values.push(dm);
       }
+    }
+
+    if (req.body.is_break !== undefined && hasCol('is_break')) {
+      updates.push(`is_break = $${paramCount++}`);
+      values.push(Boolean(req.body.is_break));
     }
 
     // status/is_active column
@@ -350,7 +319,7 @@ const updateSchedule = async (req, res) => {
 const deleteSchedule = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query('DELETE FROM time_slots WHERE id = $1 RETURNING id', [id]);
+    const result = await query('DELETE FROM timetable_time_slots WHERE id = $1 RETURNING id', [id]);
     if (!result.rows.length) return errorResponse(res, 404, 'Time slot not found');
     return success(res, 200, 'Time slot deleted successfully', { id: result.rows[0].id });
   } catch (error) {
@@ -362,4 +331,147 @@ const deleteSchedule = async (req, res) => {
   }
 };
 
-module.exports = { getAllSchedules, getScheduleById, createSchedule, updateSchedule, deleteSchedule };
+const bulkGenerateSchedules = async (req, res) => {
+  try {
+    const { 
+      startTime, 
+      endTime, 
+      duration, 
+      prefix = "Period", 
+      startNumber = 1,
+      includeBreaks = false,
+      breaks = [] // Array of { afterPeriod: number, duration: number }
+    } = req.body;
+    
+    if (!startTime || !endTime || !duration || duration < 1) {
+      return errorResponse(res, 400, 'startTime, endTime, and duration (>0) are required.');
+    }
+
+    const startMins = timeToMinutes(startTime);
+    const endMins = timeToMinutes(endTime);
+    
+    if (endMins <= startMins) {
+      return errorResponse(res, 400, 'End time must be after start time.');
+    }
+
+    const createdBy = resolveUserIdForCreatedBy(req);
+    const generated = [];
+    let currentStart = startMins;
+    let periodCount = startNumber;
+    let breakCount = 1;
+
+    // Helper to find a break rule for the current period count
+    const findBreakRule = (pCount) => {
+      if (!includeBreaks || !Array.isArray(breaks)) return null;
+      // pCount is the absolute period number. We might want relative to startNumber.
+      // Usually users think "after 2nd period of THIS generation".
+      const relativeCount = pCount - startNumber + 1;
+      return breaks.find(b => b.afterPeriod === relativeCount);
+    };
+
+    while (currentStart < endMins) {
+      // 1. Generate regular period
+      if (currentStart + duration <= endMins) {
+        const sStr = minutesToTime(currentStart);
+        const eStr = minutesToTime(currentStart + duration);
+        
+        const overlap = await findOverlappingTimeSlot(sStr, eStr);
+        if (!overlap) {
+          generated.push({
+            slot_name: `${prefix} ${periodCount}`,
+            start_time: sStr,
+            end_time: eStr,
+            duration: duration,
+            is_active: true,
+            is_break: false,
+            created_by: createdBy
+          });
+        }
+        
+        currentStart += duration;
+        
+        // 2. Check if we should insert a break AFTER this period
+        const breakRule = findBreakRule(periodCount);
+        if (breakRule && (currentStart + breakRule.duration <= endMins)) {
+          const bsStr = minutesToTime(currentStart);
+          const beStr = minutesToTime(currentStart + breakRule.duration);
+          
+          const bOverlap = await findOverlappingTimeSlot(bsStr, beStr);
+          if (!bOverlap) {
+            generated.push({
+              slot_name: `Break ${breakCount}`,
+              start_time: bsStr,
+              end_time: beStr,
+              duration: breakRule.duration,
+              is_active: true,
+              is_break: true,
+              created_by: createdBy
+            });
+            breakCount++;
+          }
+          currentStart += breakRule.duration;
+        }
+        
+        periodCount++;
+      } else {
+        break;
+      }
+    }
+
+    if (generated.length === 0) {
+      return errorResponse(res, 409, 'No slots could be generated (either range is too small or all slots overlap with existing ones).');
+    }
+
+    // Insert all
+    const inserted = [];
+    for (const slot of generated) {
+      const resInsert = await query(
+        `INSERT INTO timetable_time_slots (slot_name, start_time, end_time, duration, is_active, is_break, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [slot.slot_name, slot.start_time, slot.end_time, slot.duration, slot.is_active, slot.is_break, slot.created_by]
+      );
+      inserted.push(mapScheduleRow(resInsert.rows[0]));
+    }
+
+    return success(res, 201, `Successfully generated ${inserted.length} time slots.`, inserted);
+  } catch (error) {
+    console.error('Error generating schedules:', error);
+    return errorResponse(res, 500, 'Failed to generate time slots', error.message);
+  }
+};
+
+const bulkDeleteSchedules = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, 400, 'ids array is required for bulk delete');
+    }
+
+    // Use a transaction or single IN query
+    const result = await query(
+      'DELETE FROM timetable_time_slots WHERE id = ANY($1::int[]) RETURNING id',
+      [ids]
+    );
+
+    return success(res, 200, `Successfully deleted ${result.rowCount} time slots`, {
+      deletedCount: result.rowCount,
+      requestedCount: ids.length
+    });
+  } catch (error) {
+    console.error('Error bulk deleting schedules:', error);
+    if (error.code === '23503') {
+      return errorResponse(res, 409, 'One or more time slots are in use and cannot be deleted');
+    }
+    return errorResponse(res, 500, 'Failed to bulk delete time slots');
+  }
+};
+
+module.exports = {
+  getAllSchedules,
+  getScheduleById,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
+  bulkGenerateSchedules,
+  bulkDeleteSchedules
+};

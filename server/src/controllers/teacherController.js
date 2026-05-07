@@ -681,15 +681,14 @@ const getTeachersByClass = async (req, res) => {
 const getTeacherRoutine = async (req, res) => {
   try {
     const { id } = req.params;
+    const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
+    
+    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
+      return errorResponse(res, 400, 'academic_year_id query parameter is required');
+    }
 
-    // First verify teacher exists (class_schedules.teacher_id references staff.id)
     const teacherCheck = await query(
-      `
-      SELECT t.id, t.staff_id
-      FROM teachers t
-      WHERE t.id = $1
-        AND (t.status IS NULL OR LOWER(TRIM(t.status)) = 'active')
-    `,
+      `SELECT id FROM staff WHERE id = $1 AND (status IS NULL OR LOWER(TRIM(status)) = 'active')`,
       [id]
     );
 
@@ -697,278 +696,66 @@ const getTeacherRoutine = async (req, res) => {
       return errorResponse(res, 404, 'Teacher not found');
     }
 
-    const staffId = parseId(teacherCheck.rows[0].staff_id);
+    const staffId = parseId(teacherCheck.rows[0].id);
     if (!staffId) {
-      return success(res, 200, 'Teacher routine fetched successfully', {
-        routine: [],
-        breaks: [],
-        count: 0,
-      });
+      return success(res, 200, 'Teacher routine fetched successfully', { routine: [], slots: [] });
     }
 
     const ctx = getAuthContext(req);
     if (!isAdmin(ctx)) {
       const myTeacherId = await resolveTeacherIdForUser(ctx.userId);
-      const requestedTeacherId = parseId(id);
-      if (!myTeacherId || !requestedTeacherId || myTeacherId !== requestedTeacherId) {
+      if (!myTeacherId || myTeacherId !== parseId(id)) {
         return errorResponse(res, 403, 'You can only view your own routine');
       }
     }
 
-    const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
-    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
-      return errorResponse(res, 400, 'academic_year_id query parameter is required');
-    }
-    const scheduleParams = [staffId, academicYearId];
+    const slotsRes = await query(
+      "SELECT id, slot_name, start_time, end_time, duration, is_break FROM timetable_time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC"
+    );
+    const slots = slotsRes.rows;
 
-    // Get class schedules for this teacher
-    // Handle both 'slots' and 'time_slots' table names
-    let schedulesQuery = `
+    const routineRes = await query(`
       SELECT 
-        cs.id,
-        cs.class_id,
-        cs.section_id,
-        cs.subject_id,
-        cs.time_slot_id,
-        cs.day_of_week,
-        cs.room_number,
-        cs.teacher_id,
-        cs.academic_year_id,
-        c.class_name,
-        sec.section_name,
-        sub.subject_name,
-        ts.slot_name,
-        ts.start_time,
-        ts.end_time,
-        ts.duration,
-        ts.is_break,
-        ts.is_active
+        cs.id, cs.class_id, cs.class_section_id, cs.class_subject_id, cs.time_slot_id, cs.day_of_week, cs.class_room_id,
+        c.class_name, sec.section_name, sub.subject_name, r.room_number,
+        ts.slot_name, ts.start_time, ts.end_time, ts.is_break
       FROM class_schedules cs
-      LEFT JOIN classes c ON cs.class_id = c.id
-      LEFT JOIN sections sec ON cs.section_id = sec.id
-      LEFT JOIN subjects sub ON cs.subject_id = sub.id
-      LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-      WHERE cs.teacher_id = $1
-        AND cs.academic_year_id = $2
-      ORDER BY 
-        CASE LOWER(TRIM(cs.day_of_week::text))
-          WHEN '0' THEN 1
-          WHEN '1' THEN 2
-          WHEN '2' THEN 3
-          WHEN '3' THEN 4
-          WHEN '4' THEN 5
-          WHEN '5' THEN 6
-          WHEN '6' THEN 7
-          WHEN 'sunday' THEN 1
-          WHEN 'monday' THEN 2
-          WHEN 'tuesday' THEN 3
-          WHEN 'wednesday' THEN 4
-          WHEN 'thursday' THEN 5
-          WHEN 'friday' THEN 6
-          WHEN 'saturday' THEN 7
-          ELSE 8
-        END,
-        ts.start_time ASC
-    `;
+      INNER JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
+      LEFT JOIN classes c ON c.id = cs.class_id
+      LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+      LEFT JOIN sections sec ON sec.id = csec.section_id
+      LEFT JOIN class_subjects csub ON csub.id = cs.class_subject_id
+      LEFT JOIN subjects sub ON sub.id = csub.subject_id
+      LEFT JOIN class_rooms r ON r.id = cs.class_room_id
+      WHERE cs.teacher_id = $1 AND cs.academic_year_id = $2
+    `, [staffId, academicYearId]);
 
-    let schedulesResult;
-    try {
-      schedulesResult = await query(schedulesQuery, scheduleParams);
-    } catch (e) {
-      console.error('Error with slots table:', e.message);
-      const isSlotsError = e.message.includes('slots') || e.message.includes('does not exist') ||
-        e.message.includes('relation') || e.message.includes('invalid input syntax');
-      if (isSlotsError) {
-        schedulesQuery = `
-          SELECT 
-            cs.id,
-            cs.class_id,
-            cs.section_id,
-            cs.subject_id,
-            cs.time_slot_id,
-            cs.day_of_week,
-            cs.room_number,
-            cs.teacher_id,
-            cs.academic_year_id,
-            c.class_name,
-            sec.section_name,
-            sub.subject_name,
-            ts.slot_name,
-            ts.start_time,
-            ts.end_time,
-            ts.duration,
-            ts.is_break,
-            ts.is_active
-          FROM class_schedules cs
-          LEFT JOIN classes c ON cs.class_id = c.id
-          LEFT JOIN sections sec ON cs.section_id = sec.id
-          LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-          WHERE cs.teacher_id = $1
-            AND cs.academic_year_id = $2
-          ORDER BY 
-            CASE LOWER(TRIM(cs.day_of_week::text))
-              WHEN '0' THEN 1
-              WHEN '1' THEN 2
-              WHEN '2' THEN 3
-              WHEN '3' THEN 4
-              WHEN '4' THEN 5
-              WHEN '5' THEN 6
-              WHEN '6' THEN 7
-              WHEN 'sunday' THEN 1
-              WHEN 'monday' THEN 2
-              WHEN 'tuesday' THEN 3
-              WHEN 'wednesday' THEN 4
-              WHEN 'thursday' THEN 5
-              WHEN 'friday' THEN 6
-              WHEN 'saturday' THEN 7
-              ELSE 8
-            END,
-            ts.start_time ASC
-        `;
-        schedulesResult = await query(schedulesQuery, scheduleParams);
-      } else {
-        // If error is not about slots table, try without slot join
-        schedulesQuery = `
-          SELECT 
-            cs.*,
-            c.class_name,
-            sec.section_name,
-            sub.subject_name
-          FROM class_schedules cs
-          LEFT JOIN classes c ON cs.class_id = c.id
-          LEFT JOIN sections sec ON cs.section_id = sec.id
-          LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          WHERE cs.teacher_id = $1
-            AND cs.academic_year_id = $2
-        `;
-        schedulesResult = await query(schedulesQuery, scheduleParams);
-      }
-    }
-
-    // Get break/lunch times from slots table
-    let breaksQuery = `
-      SELECT 
-        slot_name,
-        start_time,
-        end_time,
-        duration,
-        is_break,
-        is_active
-      FROM slots
-      WHERE is_break = true AND is_active = true
-      ORDER BY start_time ASC
-    `;
-
-    let breaksResult;
-    try {
-      breaksResult = await query(breaksQuery);
-    } catch (e) {
-      // Try with time_slots table if slots doesn't exist
-      if (e.message.includes('slots') || e.message.includes('does not exist')) {
-        breaksQuery = `
-          SELECT 
-            slot_name,
-            start_time,
-            end_time,
-            duration,
-            is_break,
-            is_active
-          FROM time_slots
-          WHERE is_break = true AND is_active = true
-          ORDER BY start_time ASC
-        `;
-        breaksResult = await query(breaksQuery);
-      } else {
-        breaksResult = { rows: [] };
-      }
-    }
-
-    // Helper function to convert day to text
-    const getDayName = (day) => {
-      if (!day && day !== 0) return 'Monday';
-      const iso = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      if (typeof day === 'number') {
-        if (day >= 1 && day <= 7) return iso[day];
-        return dayNames[day] || 'Monday';
-      }
-      if (typeof day === 'string') {
-        const dayLower = day.toLowerCase();
-        if (dayLower.includes('monday')) return 'Monday';
-        if (dayLower.includes('tuesday')) return 'Tuesday';
-        if (dayLower.includes('wednesday')) return 'Wednesday';
-        if (dayLower.includes('thursday')) return 'Thursday';
-        if (dayLower.includes('friday')) return 'Friday';
-        if (dayLower.includes('saturday')) return 'Saturday';
-        if (dayLower.includes('sunday')) return 'Sunday';
-        return day; // Return as is if already formatted
-      }
-      return 'Monday';
-    };
-
-    // Format the response
-    const routine = schedulesResult.rows.map(row => {
-      // Get day value from any possible column name
-      const dayValue = row.day_of_week || row.day || row.weekday ||
-        row['day of week'] || row['dayOfWeek'];
-
-      // Get time from slot join or from class_schedules directly
-      const startTime = row.start_time || row.startTime || row.period_start;
-      const endTime = row.end_time || row.endTime || row.period_end;
-
-      return {
-        id: row.id,
-        classId: row.class_id,
-        className: row.class_name || row.className || 'N/A',
-        sectionId: row.section_id,
-        sectionName: row.section_name || row.sectionName || 'N/A',
-        subjectId: row.subject_id,
-        subjectName: row.subject_name || row.subjectName || 'N/A',
-        timeSlotId: row.time_slot_id || row.time_slot || row.timeSlotId,
-        slotName: row.slot_name || row.slotName || '',
-        dayOfWeek: getDayName(dayValue),
-        roomNumber: row.room_number || row.roomNumber || row.room_number || 'N/A',
-        startTime: startTime,
-        endTime: endTime,
-        duration: row.duration || '',
-        isBreak: row.is_break || false,
-        academicYearId: row.academic_year_id || row.academicYearId
-      };
-    });
-
-    const breaks = breaksResult.rows.map(row => ({
+    const routine = routineRes.rows.map(row => ({
+      id: row.id,
+      classId: row.class_id,
+      className: row.class_name || '',
+      sectionId: row.class_section_id,
+      sectionName: row.section_name || '',
+      subjectId: row.class_subject_id,
+      subjectName: row.subject_name || '',
+      timeSlotId: row.time_slot_id,
       slotName: row.slot_name,
+      dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][row.day_of_week - 1] || 'Unknown',
+      roomNumber: row.room_number || '—',
       startTime: row.start_time,
       endTime: row.end_time,
-      duration: row.duration
+      isBreak: row.is_break,
+      academicYearId: academicYearId
     }));
-
-    let slots = [];
-    try {
-      const sr = await query(
-        'SELECT id, slot_name, start_time, end_time, duration, is_break, is_active FROM time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC'
-      );
-      slots = sr.rows || [];
-    } catch (e) {
-      slots = [];
-    }
 
     return success(res, 200, 'Teacher routine fetched successfully', {
       routine,
-      breaks,
       slots,
-      count: routine.length,
+      count: routine.length
     });
   } catch (error) {
     console.error('Error fetching teacher routine:', error);
-    return errorResponse(
-      res,
-      500,
-      process.env.NODE_ENV === 'production'
-        ? 'Failed to fetch teacher routine'
-        : (error.message || 'Failed to fetch teacher routine')
-    );
+    return errorResponse(res, 500, 'Failed to fetch teacher routine', error.message);
   }
 };
 
