@@ -12,12 +12,14 @@ function isDriverRoleRequest(req) {
 async function getScopedDriverId(req) {
   if (!isDriverRoleRequest(req) || req.user?.id == null) return null;
   const r = await query(
-    `SELECT d.id
-     FROM drivers d
-     INNER JOIN staff s ON s.id = d.staff_id
-     WHERE s.user_id = $1
-       AND (d.is_active IS NOT FALSE OR d.is_active IS NULL)
-       AND (s.is_active IS NOT FALSE OR s.is_active IS NULL)
+    `SELECT s.id
+     FROM staff s
+     INNER JOIN users u ON u.id = s.user_id
+     INNER JOIN user_roles ur ON ur.id = u.role_id
+     WHERE u.id = $1
+       AND LOWER(TRIM(ur.role_name)) = 'driver'
+       AND s.deleted_at IS NULL
+       AND s.status = 'Active'
      LIMIT 1`,
     [req.user.id]
   );

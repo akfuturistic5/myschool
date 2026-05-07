@@ -1,9 +1,12 @@
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
-const { query, executeTransaction } = require('../config/database');
+const { query, executeTransaction, runWithTenant } = require('../config/database');
 const { ADMIN_ROLE_IDS, ROLES } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { createAdministrativeStaffUser, isUserEmailTaken } = require('../utils/createPersonUser');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
+const { ensureTenantStaffDocDir, resolveStaffDocumentPath, sanitizeTenant } = require('../utils/staffDocumentStorage');
+const { ensureTenantStaffProfileDir, resolveStaffProfilePath } = require('../utils/staffProfileStorage');
 
 const TEACHER_EMAIL_MAX_LEN = 100;
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -42,7 +45,7 @@ const mapUniqueConstraintToMessage = (constraint) => {
   if (c.includes('username')) return 'This login name is already in use';
   if (c.includes('employee_code')) return 'This employee code is already in use';
   if (c.includes('phone')) return 'This phone number is already in use';
-  if (c.includes('drivers_license')) return 'This driving licence number is already in use';
+  if (c.includes('license_number')) return 'This driving licence number is already in use';
   return 'This record conflicts with an existing one';
 };
 
@@ -63,7 +66,7 @@ async function getSupportStaffDepartmentId(client) {
   const r = await client.query(
     `SELECT id FROM departments
      WHERE LOWER(TRIM(department_name)) = 'support staff'
-       AND (status = \'Active\' OR status IS NULL)
+       AND (is_active IS NOT FALSE)
      ORDER BY id ASC LIMIT 1`
   );
   return r.rows[0]?.id ?? null;
@@ -94,198 +97,54 @@ async function syncStaffUserRole(client, userId, { isDriver }) {
   );
 }
 
-async function upsertDriverForStaff(client, payload) {
-  const {
-    staffId,
-    driverName,
-    employeeCode,
-    phone,
-    email,
-    licenseNumber,
-    licenseExpiry,
-    address,
-    emergencyContactPhone,
-    joiningDate,
-    salary,
-    isActive,
-    createdBy,
-  } = payload;
 
-  const lic = (licenseNumber || '').toString().trim().slice(0, 50);
-  if (!lic) {
-    const err = new Error('Driving licence number is required for driver designation');
-    err.staffInputError = { status: 400, code: 'LICENSE_REQUIRED' };
-    throw err;
-  }
 
-  const existing = await client.query('SELECT id FROM drivers WHERE staff_id = $1', [staffId]);
-  const params = [
-    driverName,
-    employeeCode,
-    phone,
-    email,
-    lic,
-    licenseExpiry || null,
-    address || null,
-    emergencyContactPhone || null,
-    joiningDate || null,
-    salary != null && !Number.isNaN(salary) ? salary : null,
-    isActive !== false,
-    staffId,
-  ];
 
-  if (existing.rows.length > 0) {
-    await client.query(
-      `UPDATE drivers SET
-        driver_name = $1,
-        employee_code = $2,
-        phone = $3,
-        email = $4,
-        license_number = $5,
-        license_expiry = $6,
-        address = $7,
-        emergency_contact = $8,
-        joining_date = $9,
-        salary = $10,
-        is_active = $11,
-        updated_at = NOW()
-      WHERE staff_id = $12`,
-      params
-    );
-  } else {
-    await client.query(
-      `INSERT INTO drivers (
-        driver_name, employee_code, phone, email, license_number, license_expiry,
-        address, emergency_contact, joining_date, salary, is_active, staff_id,
-        created_at, created_by, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-        NOW(), $13, NOW()
-      )`,
-      [...params.slice(0, 12), createdBy && !Number.isNaN(createdBy) ? createdBy : null]
-    );
-  }
-}
-
-async function unlinkDriverStaff(client, staffId) {
-  await client.query(
-    `UPDATE drivers SET staff_id = NULL, updated_at = NOW() WHERE staff_id = $1`,
-    [staffId]
-  );
-}
-
-/** Base staff list/detail query (works when drivers.staff_id does not exist yet). */
-const STAFF_SELECT_BASE = `
+/** Normalized staff SELECT — sources personal fields from users, payroll from staff_salary_assignments. */
+const STAFF_SELECT_NORMALIZED = `
       SELECT
-        s.*,
-        s.user_id,
+        s.id, s.user_id, s.employee_code, s.marital_status, s.father_name, s.mother_name,
+        s.id_number, s.emergency_contact_name, s.emergency_contact_phone,
+        s.license_number, s.license_expiry, s.license_photo_url,
+        s.license_number AS driver_license_number,
+        s.license_expiry AS driver_license_expiry,
+        s.designation_id, s.department_id, s.joining_date,
+        s.qualification, s.experience_years, s.languages_known,
+        s.other_info, s.photo_url, s.status, s.is_active,
+        s.resume, s.joining_letter, s.created_at, s.updated_at, s.deleted_at,
+        u.first_name, u.last_name, u.email, u.phone, u.gender, u.date_of_birth,
+        u.blood_group_id, u.current_address, u.permanent_address,
+        u.current_address AS address,
+        u.facebook, u.twitter, u.linkedin, u.youtube, u.instagram,
+        u.is_active AS user_is_active, u.role_id,
         bg.blood_group_name AS blood_group_label,
-        d.department_name AS department_name,
-        d.department_name AS department,
-        des.designation_name AS designation_name,
-        des.designation_name AS designation,
-        u.first_name AS user_first_name,
-        u.last_name AS user_last_name,
-        NULL::character varying(50) AS driver_license_number,
-        NULL::date AS driver_license_expiry,
-        u.role_id AS user_role_id,
-        ur_u.role_name AS user_role_name
+        d.department_name, d.department_name AS department,
+        des.designation_name, des.designation_name AS designation,
+        ur.role_name AS user_role_name,
+        sal.basic_salary AS salary, sal.epf_no, sal.pan_number,
+        sal.bank_name, sal.account_name, sal.account_no AS account_number,
+        sal.branch, sal.ifsc_code AS ifsc, sal.contract_type, sal.shift, sal.work_location
       FROM staff s
-      LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
-      LEFT JOIN departments d ON s.department_id = d.id
-      LEFT JOIN designations des ON s.designation_id = des.id
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
+      INNER JOIN users u ON u.id = s.user_id
+      LEFT JOIN blood_groups bg ON bg.id = u.blood_group_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN designations des ON des.id = s.designation_id
+      LEFT JOIN user_roles ur ON ur.id = u.role_id
+      LEFT JOIN LATERAL (
+        SELECT * FROM staff_salary_assignments
+        WHERE staff_id = s.id ORDER BY valid_period DESC LIMIT 1
+      ) sal ON TRUE
 `;
-
-/** After migrations/012_driver_designation_and_drivers_staff_id.sql — join driver licence onto staff. */
-const STAFF_SELECT_WITH_DRIVERS = `
-      SELECT
-        s.*,
-        s.user_id,
-        bg.blood_group_name AS blood_group_label,
-        d.department_name AS department_name,
-        d.department_name AS department,
-        des.designation_name AS designation_name,
-        des.designation_name AS designation,
-        u.first_name AS user_first_name,
-        u.last_name AS user_last_name,
-        dr.license_number AS driver_license_number,
-        dr.license_expiry AS driver_license_expiry,
-        u.role_id AS user_role_id,
-        ur_u.role_name AS user_role_name
-      FROM staff s
-      LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
-      LEFT JOIN departments d ON s.department_id = d.id
-      LEFT JOIN designations des ON s.designation_id = des.id
-      LEFT JOIN drivers dr ON dr.staff_id = s.id
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
-`;
-
-/** Same as WITH_DRIVERS but older DBs may have staff_id without license_expiry column. */
-const STAFF_SELECT_WITH_DRIVERS_NO_LICENSE_EXPIRY = `
-      SELECT
-        s.*,
-        s.user_id,
-        bg.blood_group_name AS blood_group_label,
-        d.department_name AS department_name,
-        d.department_name AS department,
-        des.designation_name AS designation_name,
-        des.designation_name AS designation,
-        u.first_name AS user_first_name,
-        u.last_name AS user_last_name,
-        dr.license_number AS driver_license_number,
-        NULL::date AS driver_license_expiry,
-        u.role_id AS user_role_id,
-        ur_u.role_name AS user_role_name
-      FROM staff s
-      LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
-      LEFT JOIN departments d ON s.department_id = d.id
-      LEFT JOIN designations des ON s.designation_id = des.id
-      LEFT JOIN drivers dr ON dr.staff_id = s.id
-      LEFT JOIN users u ON u.id = s.user_id
-      LEFT JOIN user_roles ur_u ON ur_u.id = u.role_id
-`;
-
-let cachedStaffSelectSql = null;
-
-/** Pick query shape once per process: drivers.staff_id is required for the driver JOIN. */
-async function getStaffSelectSql() {
-  if (cachedStaffSelectSql !== null) {
-    return cachedStaffSelectSql;
-  }
-  try {
-    const r = await query(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'drivers'
-         AND column_name IN ('staff_id', 'license_expiry')`
-    );
-    const driverCols = new Set((r.rows || []).map((row) => row.column_name));
-    const hasStaffId = driverCols.has('staff_id');
-    const hasLicenseExpiry = driverCols.has('license_expiry');
-    if (hasStaffId && hasLicenseExpiry) {
-      cachedStaffSelectSql = STAFF_SELECT_WITH_DRIVERS;
-    } else if (hasStaffId) {
-      cachedStaffSelectSql = STAFF_SELECT_WITH_DRIVERS_NO_LICENSE_EXPIRY;
-    } else {
-      cachedStaffSelectSql = STAFF_SELECT_BASE;
-    }
-  } catch {
-    cachedStaffSelectSql = STAFF_SELECT_BASE;
-  }
-  return cachedStaffSelectSql;
-}
 
 async function fetchStaffRowById(staffId) {
-  const staffSelect = await getStaffSelectSql();
   const result = await query(
-    `${staffSelect}
-      WHERE s.id = $1`,
+    `${STAFF_SELECT_NORMALIZED} WHERE s.id = $1`,
     [staffId]
   );
   return result.rows[0] || null;
 }
+
+
 
 /**
  * Backfill legacy teacher-linked staff rows that were created without department/designation.
@@ -345,17 +204,16 @@ async function backfillLegacyTeacherStaffAssignments() {
 const getAllStaff = async (req, res) => {
   try {
     await backfillLegacyTeacherStaffAssignments();
-    const staffSelect = await getStaffSelectSql();
     const result = await query(`
-      ${staffSelect}
-      WHERE s.is_active = true
+      ${STAFF_SELECT_NORMALIZED}
+      WHERE s.deleted_at IS NULL AND s.status = 'Active'
       ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);
 
     return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching staff:', error?.message || error);
-    return errorResponse(res, 500, 'Failed to fetch staff');
+    return errorResponse(res, 500, 'Failed to fetch staff', error.message);
   }
 };
 
@@ -369,10 +227,8 @@ const getStaffById = async (req, res) => {
       return errorResponse(res, 401, 'Not authenticated');
     }
 
-    const staffSelect = await getStaffSelectSql();
     const result = await query(
-      `${staffSelect}
-      WHERE s.id = $1 AND s.status = 'Active'`,
+      `${STAFF_SELECT_NORMALIZED} WHERE s.id = $1`,
       [id]
     );
 
@@ -408,27 +264,19 @@ const createStaff = async (req, res) => {
     const body = req.body || {};
     const {
       employee_code: clientEmployeeCode,
-      first_name,
-      last_name,
-      email,
-      phone,
-      password,
-      gender,
-      date_of_birth,
-      blood_group_id,
-      designation_id,
-      department_id,
-      joining_date,
-      salary,
-      qualification,
-      experience_years,
-      address,
-      emergency_contact_name,
-      emergency_contact_phone,
-      photo_url,
-      is_active,
-      license_number,
-      license_expiry,
+      first_name, last_name, email, phone, password,
+      gender, date_of_birth, blood_group_id,
+      designation_id, department_id, joining_date,
+      salary, qualification, experience_years,
+      address, current_address, permanent_address,
+      emergency_contact_name, emergency_contact_phone,
+      marital_status, father_name, mother_name, id_number,
+      languages_known, other_info, photo_url, is_active,
+      license_number, license_expiry,
+      epf_no, pan_number, bank_name, account_name, account_number,
+      branch, ifsc, contract_type, shift, work_location,
+      facebook, twitter, linkedin, youtube, instagram,
+      resume, joining_letter,
     } = body;
 
     const fn = (first_name || '').toString().trim();
@@ -436,125 +284,104 @@ const createStaff = async (req, res) => {
     const em = (email || '').toString().trim();
     const ph = (phone || '').toString().trim();
 
-    if (!fn || !ln) {
-      return errorResponse(res, 400, 'First name and last name are required', 'VALIDATION_ERROR');
-    }
-    if (!isValidEmail(em)) {
-      return errorResponse(res, 400, 'Valid email is required', 'VALIDATION_ERROR');
-    }
-    if (!isValidPhone(ph)) {
-      return errorResponse(res, 400, 'Phone must contain 7–15 digits', 'VALIDATION_ERROR');
-    }
+    if (!fn || !ln) return errorResponse(res, 400, 'First name and last name are required', 'VALIDATION_ERROR');
+    if (!isValidEmail(em)) return errorResponse(res, 400, 'Valid email is required', 'VALIDATION_ERROR');
+    if (!isValidPhone(ph)) return errorResponse(res, 400, 'Phone must contain 7–15 digits', 'VALIDATION_ERROR');
 
     const pwdIn = password != null ? String(password).trim() : '';
-    if (pwdIn && pwdIn.length < 6) {
-      return errorResponse(res, 400, 'Password must be at least 6 characters', 'VALIDATION_ERROR');
-    }
+    if (pwdIn && pwdIn.length < 6) return errorResponse(res, 400, 'Password must be at least 6 characters', 'VALIDATION_ERROR');
 
     const desigParsed = parsePositiveIntOrNull(designation_id);
     const deptParsed = parsePositiveIntOrNull(department_id);
     const bgParsed = parsePositiveIntOrNull(blood_group_id);
-    if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) {
-      return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
-    }
-    if (department_id != null && department_id !== '' && Number.isNaN(deptParsed)) {
-      return errorResponse(res, 400, 'Invalid department', 'VALIDATION_ERROR');
-    }
-    if (blood_group_id != null && blood_group_id !== '' && Number.isNaN(bgParsed)) {
-      return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
-    }
+    if (designation_id != null && designation_id !== '' && Number.isNaN(desigParsed)) return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
+    if (department_id != null && department_id !== '' && Number.isNaN(deptParsed)) return errorResponse(res, 400, 'Invalid department', 'VALIDATION_ERROR');
+    if (blood_group_id != null && blood_group_id !== '' && Number.isNaN(bgParsed)) return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
 
     let statusValue = 'Active';
     if (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') statusValue = 'Inactive';
 
     const genderNorm = normalizeGender(gender);
-    const dob = parseDateOrNull(date_of_birth);
     const joinD = parseDateOrNull(joining_date);
     const expYears = experience_years != null && experience_years !== '' ? parseInt(experience_years, 10) : null;
     const salaryNum = salary != null && salary !== '' ? parseFloat(salary) : null;
-    const addr = (address || '').toString().trim() || null;
+    const currAddr = (current_address || address || '').toString().trim() || null;
+    const permAddr = (permanent_address || '').toString().trim() || null;
     const createdBy = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+    const languagesArr = Array.isArray(languages_known)
+      ? languages_known
+      : (typeof languages_known === 'string' ? languages_known.split(',').map((s) => s.trim()).filter(Boolean) : null);
 
     const customCode = (clientEmployeeCode || '').toString().trim().slice(0, 20);
-    let employeeCode = customCode;
-    if (!employeeCode) {
-      employeeCode = `TMP${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 20);
-    }
+    let employeeCode = customCode || `TMP${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 20);
 
     const row = await executeTransaction(async (client) => {
       const emailTaken = await isUserEmailTaken(client, em);
       if (emailTaken) {
-        const err = new Error('Email is already registered');
-        err.staffInputError = { status: 409, code: 'EMAIL_IN_USE' };
-        throw err;
+        const err = new Error('Email is already registered'); err.staffInputError = { status: 409, code: 'EMAIL_IN_USE' }; throw err;
       }
 
       if (deptParsed) {
         const dOk = await client.query('SELECT 1 FROM departments WHERE id = $1 LIMIT 1', [deptParsed]);
-        if (!dOk.rows.length) {
-          const err = new Error('Invalid department');
-          err.staffInputError = { status: 400, code: 'INVALID_DEPARTMENT' };
-          throw err;
-        }
+        if (!dOk.rows.length) { const err = new Error('Invalid department'); err.staffInputError = { status: 400, code: 'INVALID_DEPARTMENT' }; throw err; }
       }
       if (desigParsed) {
         const gOk = await client.query('SELECT 1 FROM designations WHERE id = $1 LIMIT 1', [desigParsed]);
-        if (!gOk.rows.length) {
-          const err = new Error('Invalid designation');
-          err.staffInputError = { status: 400, code: 'INVALID_DESIGNATION' };
-          throw err;
-        }
-      }
-      if (bgParsed) {
-        const bOk = await client.query('SELECT 1 FROM blood_groups WHERE id = $1 LIMIT 1', [bgParsed]);
-        if (!bOk.rows.length) {
-          const err = new Error('Invalid blood group');
-          err.staffInputError = { status: 400, code: 'INVALID_BLOOD_GROUP' };
-          throw err;
-        }
+        if (!gOk.rows.length) { const err = new Error('Invalid designation'); err.staffInputError = { status: 400, code: 'INVALID_DESIGNATION' }; throw err; }
       }
 
       let deptForInsert = deptParsed && !Number.isNaN(deptParsed) ? deptParsed : null;
-      const isDriverRole =
-        desigParsed && !Number.isNaN(desigParsed) && (await isDriverDesignationById(client, desigParsed));
+      const isDriverRole = desigParsed && !Number.isNaN(desigParsed) && (await isDriverDesignationById(client, desigParsed));
       if (isDriverRole) {
         const supId = await getSupportStaffDepartmentId(client);
         if (supId) deptForInsert = supId;
         const licTrim = (license_number || '').toString().trim();
-        if (!licTrim) {
-          const err = new Error('Driving licence number is required for driver designation');
-          err.staffInputError = { status: 400, code: 'LICENSE_REQUIRED' };
-          throw err;
-        }
+        if (!licTrim) { const err = new Error('Driving licence number is required for driver designation'); err.staffInputError = { status: 400, code: 'LICENSE_REQUIRED' }; throw err; }
       }
 
+      let resolvedStaffRoleId = ROLES.ADMINISTRATIVE;
+      if (isDriverRole) {
+        const drRole = await client.query(`SELECT id FROM user_roles WHERE LOWER(TRIM(role_name)) = 'driver' LIMIT 1`);
+        if (!drRole.rows[0]) { const err = new Error('Driver role is not configured in user_roles.'); err.staffInputError = { status: 500, code: 'DRIVER_ROLE_MISSING' }; throw err; }
+        resolvedStaffRoleId = drRole.rows[0].id;
+      }
+
+      // 1. Create users row first
+      const userId = await createAdministrativeStaffUser(client, {
+        email: em, phone: ph, first_name: fn, last_name: ln,
+        gender: genderNorm, date_of_birth: date_of_birth || null,
+        blood_group_id: bgParsed && !Number.isNaN(bgParsed) ? bgParsed : null,
+        current_address: currAddr, permanent_address: permAddr,
+        facebook: facebook || null, twitter: twitter || null,
+        linkedin: linkedin || null, youtube: youtube || null, instagram: instagram || null,
+        password: pwdIn || undefined, roleId: resolvedStaffRoleId,
+      });
+      if (!userId) { const err = new Error('Failed to create login account for staff'); err.statusCode = 500; throw err; }
+
+      // 2. Insert staff (employment fields only)
       const staffIns = await client.query(
         `INSERT INTO staff (
-          user_id, employee_code, first_name, last_name, gender, date_of_birth, blood_group_id,
-          phone, email, address, emergency_contact_name, emergency_contact_phone,
-          designation_id, department_id, joining_date, salary, qualification, experience_years,
-          photo_url, status, created_by, created_at, updated_at
+          user_id, employee_code, marital_status, father_name, mother_name, id_number,
+          emergency_contact_name, emergency_contact_phone,
+          license_number, license_expiry,
+          resume, joining_letter,
+          designation_id, department_id, joining_date, qualification, experience_years,
+          languages_known, other_info, photo_url, status, created_by, created_at, updated_at
         ) VALUES (
-          NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW(), NOW()
         ) RETURNING id`,
         [
-          employeeCode,
-          fn,
-          ln,
-          genderNorm,
-          dob,
-          bgParsed && !Number.isNaN(bgParsed) ? bgParsed : null,
-          ph,
-          em,
-          addr,
-          emergency_contact_name || null,
-          emergency_contact_phone || null,
+          userId, employeeCode,
+          marital_status || null, father_name || null, mother_name || null, id_number || null,
+          emergency_contact_name || null, emergency_contact_phone || null,
+          isDriverRole ? (license_number || '').toString().trim() || null : null,
+          isDriverRole ? parseDateOrNull(license_expiry) : null,
+          resume || null, joining_letter || null,
           desigParsed && !Number.isNaN(desigParsed) ? desigParsed : null,
-          deptForInsert,
-          joinD,
-          salaryNum != null && !Number.isNaN(salaryNum) ? salaryNum : null,
+          deptForInsert, joinD,
           qualification || null,
           expYears != null && !Number.isNaN(expYears) ? expYears : null,
+          languagesArr, other_info || null,
           (photo_url || '').toString().trim().slice(0, 500) || null,
           statusValue,
           createdBy && !Number.isNaN(createdBy) ? createdBy : null,
@@ -562,59 +389,29 @@ const createStaff = async (req, res) => {
       );
       const staffId = staffIns.rows[0].id;
       if (!customCode) {
-        const finalCode = (`STF${staffId}`).slice(0, 20);
-        await client.query(`UPDATE staff SET employee_code = $1 WHERE id = $2`, [finalCode, staffId]);
+        await client.query(`UPDATE staff SET employee_code = $1 WHERE id = $2`, [`STF${staffId}`.slice(0, 20), staffId]);
+        employeeCode = `STF${staffId}`.slice(0, 20);
       }
 
-      let resolvedStaffRoleId = ROLES.ADMINISTRATIVE;
-      if (isDriverRole) {
-        const drRole = await client.query(
-          `SELECT id FROM user_roles WHERE LOWER(TRIM(role_name)) = 'driver' LIMIT 1`
+      // 3. Insert salary assignment if payroll fields provided
+      if (salaryNum != null || epf_no || pan_number || bank_name || account_name || account_number || branch || ifsc || contract_type || shift || work_location) {
+        const panVal = (pan_number || '').toString().trim().toUpperCase().slice(0, 10) || null;
+        await client.query(
+          `INSERT INTO staff_salary_assignments (
+            staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no,
+            branch, ifsc_code, contract_type, shift, work_location, valid_period, created_at, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW())`,
+          [
+            staffId, salaryNum ?? 0, epf_no || null, panVal,
+            bank_name || null, account_name || null, account_number || null,
+            branch || null, ifsc || null, contract_type || null, shift || null, work_location || null,
+          ]
         );
-        if (!drRole.rows[0]) {
-          const err = new Error('Driver role is not configured in user_roles. Run migration 013_user_role_driver.sql.');
-          err.staffInputError = { status: 500, code: 'DRIVER_ROLE_MISSING' };
-          throw err;
-        }
-        resolvedStaffRoleId = drRole.rows[0].id;
       }
 
-      const userId = await createAdministrativeStaffUser(client, {
-        email: em,
-        phone: ph,
-        first_name: fn,
-        last_name: ln,
-        password: pwdIn || undefined,
-        roleId: resolvedStaffRoleId,
-      });
-      if (!userId) {
-        const err = new Error('Failed to create login account for staff');
-        err.statusCode = 500;
-        throw err;
-      }
-      await client.query(`UPDATE staff SET user_id = $1, updated_at = NOW() WHERE id = $2`, [userId, staffId]);
       await syncStaffUserRole(client, userId, { isDriver: Boolean(isDriverRole) });
 
-      if (isDriverRole) {
-        const ecRow = await client.query('SELECT employee_code FROM staff WHERE id = $1', [staffId]);
-        const empCodeFinal = ecRow.rows[0]?.employee_code || employeeCode;
-        const licExpiry = parseDateOrNull(license_expiry);
-        await upsertDriverForStaff(client, {
-          staffId,
-          driverName: `${fn} ${ln}`.trim(),
-          employeeCode: empCodeFinal,
-          phone: ph,
-          email: em,
-          licenseNumber: license_number,
-          licenseExpiry: licExpiry,
-          address: addr,
-          emergencyContactPhone: emergency_contact_phone || null,
-          joiningDate: joinD,
-          salary: salaryNum != null && !Number.isNaN(salaryNum) ? salaryNum : null,
-          isActive: statusValue === 'Active',
-          createdBy,
-        });
-      }
+
 
       return staffId;
     });
@@ -622,325 +419,195 @@ const createStaff = async (req, res) => {
     const full = await fetchStaffRowById(row);
     return success(res, 201, 'Staff created successfully', full);
   } catch (error) {
-    if (error.staffInputError) {
-      return errorResponse(res, error.staffInputError.status, error.message, error.staffInputError.code);
-    }
+    if (error.staffInputError) return errorResponse(res, error.staffInputError.status, error.message, error.staffInputError.code);
     console.error('Error creating staff:', error);
-    if (error.code === '23505') {
-      return errorResponse(res, 409, mapUniqueConstraintToMessage(error.constraint), 'CONFLICT');
-    }
-    if (error.code === '23503') {
-      return errorResponse(res, 400, 'Invalid reference data', 'FK_VIOLATION');
-    }
-    return errorResponse(res, 500, 'Failed to create staff', 'INTERNAL_ERROR');
+    if (error.code === '23505') return errorResponse(res, 409, mapUniqueConstraintToMessage(error.constraint), 'CONFLICT');
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid reference data', 'FK_VIOLATION');
+    return errorResponse(res, 500, `Failed to create staff: ${error.message}`, 'INTERNAL_ERROR');
   }
 };
+
+
 
 const updateStaff = async (req, res) => {
   try {
     const staffIdNum = parseInt(req.params.id, 10);
-    if (!staffIdNum || Number.isNaN(staffIdNum)) {
-      return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
-    }
+    if (!staffIdNum || Number.isNaN(staffIdNum)) return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
 
-    const existing = await query('SELECT * FROM staff WHERE id = $1', [staffIdNum]);
-    if (existing.rows.length === 0) {
-      return errorResponse(res, 404, 'Staff not found');
-    }
+    const existing = await query('SELECT s.*, u.id AS uid FROM staff s LEFT JOIN users u ON u.id = s.user_id WHERE s.id = $1', [staffIdNum]);
+    if (existing.rows.length === 0) return errorResponse(res, 404, 'Staff not found');
     const prev = existing.rows[0];
+    const userId = prev.uid;
 
     const body = req.body || {};
     const {
-      employee_code,
-      first_name,
-      last_name,
-      email,
-      phone,
-      password,
-      gender,
-      date_of_birth,
-      blood_group_id,
-      designation_id,
-      department_id,
-      joining_date,
-      salary,
-      qualification,
-      experience_years,
-      address,
-      emergency_contact_name,
-      emergency_contact_phone,
-      photo_url,
-      is_active,
-      license_number,
-      license_expiry,
+      employee_code, first_name, last_name, email, phone, password,
+      gender, date_of_birth, blood_group_id,
+      designation_id, department_id, joining_date,
+      salary, qualification, experience_years,
+      address, current_address, permanent_address,
+      emergency_contact_name, emergency_contact_phone,
+      marital_status, father_name, mother_name, id_number,
+      languages_known, other_info, photo_url, is_active,
+      license_number, license_expiry,
+      epf_no, pan_number, bank_name, account_name, account_number,
+      branch, ifsc, contract_type, shift, work_location,
+      facebook, twitter, linkedin, youtube, instagram,
+      resume, joining_letter,
     } = body;
 
     if (email !== undefined && email !== null && String(email).trim() !== '') {
-      const eTrim = String(email).trim();
-      if (!isValidEmail(eTrim)) {
-        return errorResponse(res, 400, 'Invalid email format', 'VALIDATION_ERROR');
-      }
+      if (!isValidEmail(String(email).trim())) return errorResponse(res, 400, 'Invalid email format', 'VALIDATION_ERROR');
     }
     if (phone !== undefined && phone !== null && String(phone).trim() !== '') {
-      const pTrim = String(phone).trim();
-      if (!isValidPhone(pTrim)) {
-        return errorResponse(res, 400, 'Invalid phone number', 'VALIDATION_ERROR');
-      }
+      if (!isValidPhone(String(phone).trim())) return errorResponse(res, 400, 'Invalid phone number', 'VALIDATION_ERROR');
     }
-
     const pwdIn = password != null ? String(password).trim() : '';
-    if (pwdIn && pwdIn.length < 6) {
-      return errorResponse(res, 400, 'Password must be at least 6 characters', 'VALIDATION_ERROR');
-    }
+    if (pwdIn && pwdIn.length < 6) return errorResponse(res, 400, 'Password must be at least 6 characters', 'VALIDATION_ERROR');
 
     const desigParsed = designation_id !== undefined ? parsePositiveIntOrNull(designation_id) : undefined;
     const deptParsed = department_id !== undefined ? parsePositiveIntOrNull(department_id) : undefined;
     const bgParsed = blood_group_id !== undefined ? parsePositiveIntOrNull(blood_group_id) : undefined;
-    if (designation_id !== undefined && designation_id !== null && designation_id !== '' && Number.isNaN(desigParsed)) {
-      return errorResponse(res, 400, 'Invalid designation', 'VALIDATION_ERROR');
-    }
-    if (department_id !== undefined && department_id !== null && department_id !== '' && Number.isNaN(deptParsed)) {
-      return errorResponse(res, 400, 'Invalid department', 'VALIDATION_ERROR');
-    }
-    if (blood_group_id !== undefined && blood_group_id !== null && blood_group_id !== '' && Number.isNaN(bgParsed)) {
-      return errorResponse(res, 400, 'Invalid blood group', 'VALIDATION_ERROR');
-    }
 
     await executeTransaction(async (client) => {
       if (email !== undefined && email !== null) {
         const eTrim = String(email).trim();
         const dup = await client.query(
-          `SELECT id FROM users WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1))
-           AND id IS DISTINCT FROM $2 LIMIT 1`,
-          [eTrim, prev.user_id || 0]
+          `SELECT id FROM users WHERE email IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM($1)) AND id IS DISTINCT FROM $2 LIMIT 1`,
+          [eTrim, userId || 0]
         );
-        if (dup.rows.length > 0) {
-          const err = new Error('Email is already registered to another account');
-          err.staffInputError = { status: 409, code: 'EMAIL_IN_USE' };
-          throw err;
+        if (dup.rows.length > 0) { const err = new Error('Email is already registered to another account'); err.staffInputError = { status: 409, code: 'EMAIL_IN_USE' }; throw err; }
+      }
+
+      // ── Block A: Update users (personal / login fields) ──
+      if (userId) {
+        const uUp = []; const uPa = []; let ui = 1;
+        const uadd = (col, val) => { if (val !== undefined) { uUp.push(`${col} = $${ui}`); uPa.push(val); ui++; } };
+        uadd('first_name', first_name !== undefined ? (first_name || '').toString().trim() || null : undefined);
+        uadd('last_name', last_name !== undefined ? (last_name || '').toString().trim() || null : undefined);
+        uadd('email', email !== undefined ? (email || '').toString().trim() || null : undefined);
+        uadd('phone', phone !== undefined ? (phone || '').toString().trim() || null : undefined);
+        if (gender !== undefined) uadd('gender', normalizeGender(gender));
+        if (date_of_birth !== undefined) uadd('date_of_birth', parseDateOrNull(date_of_birth));
+        if (blood_group_id !== undefined) uadd('blood_group_id', bgParsed && !Number.isNaN(bgParsed) ? bgParsed : null);
+        uadd('current_address', current_address !== undefined ? ((current_address || address || '').toString().trim() || null) : (address !== undefined ? ((address || '').toString().trim() || null) : undefined));
+        if (permanent_address !== undefined) uadd('permanent_address', (permanent_address || '').toString().trim() || null);
+        if (facebook !== undefined) uadd('facebook', facebook || null);
+        if (twitter !== undefined) uadd('twitter', twitter || null);
+        if (linkedin !== undefined) uadd('linkedin', linkedin || null);
+        if (youtube !== undefined) uadd('youtube', youtube || null);
+        if (instagram !== undefined) uadd('instagram', instagram || null);
+
+        let nextStatus = prev.status || 'Active';
+        if (is_active !== undefined) {
+          nextStatus = (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') ? 'Inactive' : 'Active';
+          uadd('is_active', nextStatus === 'Active');
         }
-      }
 
-      if (deptParsed) {
-        const dOk = await client.query('SELECT 1 FROM departments WHERE id = $1 LIMIT 1', [deptParsed]);
-        if (!dOk.rows.length) {
-          const err = new Error('Invalid department');
-          err.staffInputError = { status: 400, code: 'INVALID_DEPARTMENT' };
-          throw err;
-        }
-      }
-      if (desigParsed) {
-        const gOk = await client.query('SELECT 1 FROM designations WHERE id = $1 LIMIT 1', [desigParsed]);
-        if (!gOk.rows.length) {
-          const err = new Error('Invalid designation');
-          err.staffInputError = { status: 400, code: 'INVALID_DESIGNATION' };
-          throw err;
-        }
-      }
-      if (bgParsed) {
-        const bOk = await client.query('SELECT 1 FROM blood_groups WHERE id = $1 LIMIT 1', [bgParsed]);
-        if (!bOk.rows.length) {
-          const err = new Error('Invalid blood group');
-          err.staffInputError = { status: 400, code: 'INVALID_BLOOD_GROUP' };
-          throw err;
-        }
-      }
-
-      const staffUpdates = [];
-      const staffParams = [];
-      let idx = 1;
-      const add = (col, val) => {
-        if (val !== undefined) {
-          staffUpdates.push(`${col} = $${idx}`);
-          staffParams.push(val);
-          idx += 1;
-        }
-      };
-
-      if (employee_code !== undefined) {
-        const code = (employee_code || '').toString().trim().slice(0, 20);
-        if (code) add('employee_code', code);
-      }
-      add('first_name', first_name !== undefined ? (first_name || '').toString().trim() : undefined);
-      add('last_name', last_name !== undefined ? (last_name || '').toString().trim() : undefined);
-      add('email', email !== undefined ? (email || '').toString().trim() : undefined);
-      add('phone', phone !== undefined ? (phone || '').toString().trim() : undefined);
-      if (gender !== undefined) {
-        const gn = normalizeGender(gender);
-        add('gender', gn);
-      }
-      if (date_of_birth !== undefined) add('date_of_birth', parseDateOrNull(date_of_birth));
-      if (blood_group_id !== undefined) {
-        add('blood_group_id', bgParsed && !Number.isNaN(bgParsed) ? bgParsed : null);
-      }
-      if (designation_id !== undefined) {
-        add('designation_id', desigParsed && !Number.isNaN(desigParsed) ? desigParsed : null);
-      }
-      if (department_id !== undefined) {
-        add('department_id', deptParsed && !Number.isNaN(deptParsed) ? deptParsed : null);
-      }
-      if (joining_date !== undefined) add('joining_date', parseDateOrNull(joining_date));
-      if (salary !== undefined) {
-        const salaryNum = salary != null && salary !== '' ? parseFloat(salary) : null;
-        add('salary', salaryNum != null && !Number.isNaN(salaryNum) ? salaryNum : null);
-      }
-      add('qualification', qualification !== undefined ? qualification : undefined);
-      if (experience_years !== undefined) {
-        const ey = experience_years != null && experience_years !== '' ? parseInt(experience_years, 10) : null;
-        add('experience_years', ey != null && !Number.isNaN(ey) ? ey : null);
-      }
-      add('address', address !== undefined ? ((address || '').toString().trim() || null) : undefined);
-      add('emergency_contact_name', emergency_contact_name !== undefined ? emergency_contact_name : undefined);
-      add('emergency_contact_phone', emergency_contact_phone !== undefined ? emergency_contact_phone : undefined);
-      if (photo_url !== undefined) {
-        add('photo_url', (photo_url || '').toString().trim().slice(0, 500) || null);
-      }
-      let nextStatus = prev.status || 'Active';
-      if (is_active !== undefined) {
-        nextStatus = (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') ? 'Inactive' : 'Active';
-        add('status', nextStatus);
-      }
-      staffUpdates.push('updated_at = NOW()');
-
-      if (staffUpdates.length >= 1) {
-        staffParams.push(staffIdNum);
-        await client.query(`UPDATE staff SET ${staffUpdates.join(', ')} WHERE id = $${idx}`, staffParams);
-
-        if (photo_url !== undefined && prev.photo_url && prev.photo_url !== photo_url) {
-          await deleteFileIfExist(prev.photo_url);
-        }
-      }
-
-      if (is_active !== undefined && prev.user_id && nextIsActive === false) {
-        await client.query('UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1', [prev.user_id]);
-      }
-      if (is_active !== undefined && prev.user_id && nextIsActive === true) {
-        await client.query('UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1', [prev.user_id]);
-      }
-
-      if (prev.user_id && (first_name !== undefined || last_name !== undefined || email !== undefined || phone !== undefined)) {
-        const uUp = [];
-        const uPa = [];
-        let ui = 1;
-        const uadd = (col, val) => {
-          if (val !== undefined) {
-            uUp.push(`${col} = $${ui}`);
-            uPa.push(val);
-            ui += 1;
-          }
-        };
-        uadd('first_name', first_name !== undefined ? (first_name || '').toString().trim() : undefined);
-        uadd('last_name', last_name !== undefined ? (last_name || '').toString().trim() : undefined);
-        uadd('email', email !== undefined ? (email || '').toString().trim() : undefined);
-        uadd('phone', phone !== undefined ? (phone || '').toString().trim() : undefined);
         uUp.push('updated_at = NOW()');
         if (uUp.length > 1) {
-          uPa.push(prev.user_id);
+          uPa.push(userId);
           await client.query(`UPDATE users SET ${uUp.join(', ')} WHERE id = $${ui}`, uPa);
+        }
+
+        if (pwdIn) {
+          const passwordHash = await bcrypt.hash(pwdIn, 12);
+          await client.query(`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, [passwordHash, userId]);
         }
       }
 
-      if (pwdIn && prev.user_id) {
-        const passwordHash = await bcrypt.hash(pwdIn, 12);
-        await client.query(
-          `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
-          [passwordHash, prev.user_id]
-        );
+      // ── Block B: Update staff (employment fields — NOT is_active, it's generated) ──
+      {
+        const sUp = []; const sPa = []; let si = 1;
+        const sadd = (col, val) => { if (val !== undefined) { sUp.push(`${col} = $${si}`); sPa.push(val); si++; } };
+        if (employee_code !== undefined) { const code = (employee_code || '').toString().trim().slice(0, 20); if (code) sadd('employee_code', code); }
+        if (designation_id !== undefined) sadd('designation_id', desigParsed && !Number.isNaN(desigParsed) ? desigParsed : null);
+        if (department_id !== undefined) sadd('department_id', deptParsed && !Number.isNaN(deptParsed) ? deptParsed : null);
+        if (joining_date !== undefined) sadd('joining_date', parseDateOrNull(joining_date));
+        if (qualification !== undefined) sadd('qualification', qualification || null);
+        if (experience_years !== undefined) { const ey = experience_years != null && experience_years !== '' ? parseInt(experience_years, 10) : null; sadd('experience_years', ey != null && !Number.isNaN(ey) ? ey : null); }
+        if (emergency_contact_name !== undefined) sadd('emergency_contact_name', emergency_contact_name || null);
+        if (emergency_contact_phone !== undefined) sadd('emergency_contact_phone', emergency_contact_phone || null);
+        if (marital_status !== undefined) sadd('marital_status', marital_status || null);
+        if (father_name !== undefined) sadd('father_name', father_name || null);
+        if (mother_name !== undefined) sadd('mother_name', mother_name || null);
+        if (id_number !== undefined) sadd('id_number', id_number || null);
+        if (other_info !== undefined) sadd('other_info', other_info || null);
+        if (languages_known !== undefined) {
+          const la = Array.isArray(languages_known) ? languages_known : (typeof languages_known === 'string' ? languages_known.split(',').map((s) => s.trim()).filter(Boolean) : null);
+          sadd('languages_known', la);
+        }
+        if (photo_url !== undefined) sadd('photo_url', (photo_url || '').toString().trim().slice(0, 500) || null);
+        if (license_number !== undefined) sadd('license_number', (license_number || '').toString().trim() || null);
+        if (license_expiry !== undefined) sadd('license_expiry', parseDateOrNull(license_expiry));
+        if (resume !== undefined) sadd('resume', (resume || '').toString().trim() || null);
+        if (joining_letter !== undefined) sadd('joining_letter', (joining_letter || '').toString().trim() || null);
+        if (is_active !== undefined) {
+          const nextStatus = (is_active === false || is_active === 'false' || is_active === 0 || is_active === 'Inactive') ? 'Inactive' : 'Active';
+          sadd('status', nextStatus);
+        }
+        sUp.push('updated_at = NOW()');
+        if (sUp.length > 1) {
+          sPa.push(staffIdNum);
+          await client.query(`UPDATE staff SET ${sUp.join(', ')} WHERE id = $${si}`, sPa);
+          if (photo_url !== undefined && prev.photo_url && prev.photo_url !== photo_url) await deleteFileIfExist(prev.photo_url);
+        }
       }
 
+      // ── Block C: Upsert staff_salary_assignments ──
+      if (salary !== undefined || epf_no !== undefined || pan_number !== undefined || bank_name !== undefined ||
+          account_name !== undefined || account_number !== undefined || branch !== undefined || ifsc !== undefined ||
+          contract_type !== undefined || shift !== undefined || work_location !== undefined) {
+        const salaryNum = salary != null && salary !== '' ? parseFloat(salary) : null;
+        const panVal = (pan_number || '').toString().trim().toUpperCase().slice(0, 10) || null;
+        const existing_sal = await client.query(
+          `SELECT id FROM staff_salary_assignments WHERE staff_id = $1 AND valid_period @> CURRENT_DATE LIMIT 1`,
+          [staffIdNum]
+        );
+        if (existing_sal.rows.length > 0) {
+          const salId = existing_sal.rows[0].id;
+          const salUp = []; const salPa = []; let sali = 1;
+          const saladd = (col, val) => { if (val !== undefined) { salUp.push(`${col} = $${sali}`); salPa.push(val); sali++; } };
+          if (salary !== undefined) saladd('basic_salary', salaryNum != null && !Number.isNaN(salaryNum) ? salaryNum : null);
+          if (epf_no !== undefined) saladd('epf_no', epf_no || null);
+          if (pan_number !== undefined) saladd('pan_number', panVal);
+          if (bank_name !== undefined) saladd('bank_name', bank_name || null);
+          if (account_name !== undefined) saladd('account_name', account_name || null);
+          if (account_number !== undefined) saladd('account_no', account_number || null);
+          if (branch !== undefined) saladd('branch', branch || null);
+          if (ifsc !== undefined) saladd('ifsc_code', ifsc || null);
+          if (contract_type !== undefined) saladd('contract_type', contract_type || null);
+          if (shift !== undefined) saladd('shift', shift || null);
+          if (work_location !== undefined) saladd('work_location', work_location || null);
+          salUp.push('updated_at = NOW()');
+          if (salUp.length > 1) { salPa.push(salId); await client.query(`UPDATE staff_salary_assignments SET ${salUp.join(', ')} WHERE id = $${sali}`, salPa); }
+        } else {
+          await client.query(
+            `INSERT INTO staff_salary_assignments (staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no, branch, ifsc_code, contract_type, shift, work_location, valid_period, created_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW())`,
+            [staffIdNum, salaryNum ?? 0, epf_no || null, panVal, bank_name || null, account_name || null, account_number || null, branch || null, ifsc || null, contract_type || null, shift || null, work_location || null]
+          );
+        }
+      }
+
+      // ── Driver sync ──
       const staffNow = await client.query(
-        `SELECT s.*, LOWER(TRIM(des.designation_name)) AS desig_key
+        `SELECT s.*, u.first_name, u.last_name, u.email, u.phone, u.current_address,
+                LOWER(TRIM(des.designation_name)) AS desig_key
          FROM staff s
+         LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN designations des ON des.id = s.designation_id
          WHERE s.id = $1`,
         [staffIdNum]
       );
       const cur = staffNow.rows[0];
       const isDrv = cur?.desig_key && DRIVER_DESIGNATION_KEYS.has(cur.desig_key);
-      if (cur?.user_id) {
-        await syncStaffUserRole(client, cur.user_id, { isDriver: Boolean(isDrv) });
-      }
+      if (cur?.user_id) await syncStaffUserRole(client, cur.user_id, { isDriver: Boolean(isDrv) });
 
       if (isDrv) {
         const supId = await getSupportStaffDepartmentId(client);
         if (supId && cur.department_id !== supId) {
-          await client.query(`UPDATE staff SET department_id = $1, updated_at = NOW() WHERE id = $2`, [
-            supId,
-            staffIdNum,
-          ]);
-        }
-
-        const existingDrv = await client.query(
-          'SELECT license_number, license_expiry FROM drivers WHERE staff_id = $1',
-          [staffIdNum]
-        );
-        let effectiveLic;
-        if (license_number !== undefined) {
-          effectiveLic = (license_number || '').toString().trim() || null;
-        } else {
-          effectiveLic = existingDrv.rows[0]?.license_number || null;
-        }
-        if (!effectiveLic) {
-          const err = new Error(
-            'Driving licence number is required for driver designation (add licence or keep existing)'
-          );
-          err.staffInputError = { status: 400, code: 'LICENSE_REQUIRED' };
-          throw err;
-        }
-
-        let licExp = null;
-        if (license_expiry !== undefined) {
-          licExp = parseDateOrNull(license_expiry);
-        } else {
-          licExp = existingDrv.rows[0]?.license_expiry || null;
-        }
-
-        const fn = (cur.first_name || '').toString().trim();
-        const ln = (cur.last_name || '').toString().trim();
-        const ec = (cur.employee_code || '').toString().trim();
-        const nextActive = !(cur.is_active === false || cur.is_active === 'f');
-        const salNum = cur.salary != null && cur.salary !== '' ? parseFloat(String(cur.salary), 10) : null;
-
-        await upsertDriverForStaff(client, {
-          staffId: staffIdNum,
-          driverName: `${fn} ${ln}`.trim(),
-          employeeCode: ec,
-          phone: (cur.phone || '').toString().trim(),
-          email: (cur.email || '').toString().trim(),
-          licenseNumber: effectiveLic,
-          licenseExpiry: licExp,
-          address: cur.address || null,
-          emergencyContactPhone: cur.emergency_contact_phone || null,
-          joiningDate: cur.joining_date || null,
-          salary: salNum != null && !Number.isNaN(salNum) ? salNum : null,
-          isActive: nextActive,
-          createdBy: cur.created_by,
-        });
-      } else {
-        await unlinkDriverStaff(client, staffIdNum);
-      }
-
-      if (prev.user_id) {
-        const dRole = await client.query(
-          `SELECT id FROM user_roles WHERE LOWER(TRIM(role_name)) = 'driver' LIMIT 1`
-        );
-        const driverRid = dRole.rows[0]?.id;
-        if (driverRid) {
-          const uCur = await client.query('SELECT role_id FROM users WHERE id = $1', [prev.user_id]);
-          const currentRid = uCur.rows[0]?.role_id;
-          if (isDrv) {
-            if (Number(currentRid) !== Number(driverRid)) {
-              await client.query(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, [
-                driverRid,
-                prev.user_id,
-              ]);
-            }
-          } else if (currentRid != null && Number(currentRid) === Number(driverRid)) {
-            await client.query(`UPDATE users SET role_id = $1, updated_at = NOW() WHERE id = $2`, [
-              ROLES.ADMINISTRATIVE,
-              prev.user_id,
-            ]);
-          }
+          await client.query(`UPDATE staff SET department_id = $1, updated_at = NOW() WHERE id = $2`, [supId, staffIdNum]);
         }
       }
     });
@@ -948,52 +615,30 @@ const updateStaff = async (req, res) => {
     const full = await fetchStaffRowById(staffIdNum);
     return success(res, 200, 'Staff updated successfully', full);
   } catch (error) {
-    if (error.staffInputError) {
-      return errorResponse(res, error.staffInputError.status, error.message, error.staffInputError.code);
-    }
+    if (error.staffInputError) return errorResponse(res, error.staffInputError.status, error.message, error.staffInputError.code);
     console.error('Error updating staff:', error);
-    if (error.code === '23505') {
-      return errorResponse(res, 409, mapUniqueConstraintToMessage(error.constraint), 'CONFLICT');
-    }
-    if (error.code === '23503') {
-      return errorResponse(res, 400, 'Invalid reference data', 'FK_VIOLATION');
-    }
-    return errorResponse(res, 500, 'Failed to update staff', 'INTERNAL_ERROR');
+    if (error.code === '23505') return errorResponse(res, 409, mapUniqueConstraintToMessage(error.constraint), 'CONFLICT');
+    if (error.code === '23503') return errorResponse(res, 400, 'Invalid reference data', 'FK_VIOLATION');
+    return errorResponse(res, 500, `Failed to update staff: ${error.message}`, 'INTERNAL_ERROR');
   }
 };
 
 const deleteStaff = async (req, res) => {
   try {
     const staffIdNum = parseInt(req.params.id, 10);
-    if (!staffIdNum || Number.isNaN(staffIdNum)) {
-      return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
-    }
+    if (!staffIdNum || Number.isNaN(staffIdNum)) return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
 
-    const tCheck = await query('SELECT id FROM teachers WHERE staff_id = $1 LIMIT 1', [staffIdNum]);
-    if (tCheck.rows.length > 0) {
-      return errorResponse(
-        res,
-        409,
-        'This staff member is linked to a teaching profile. Deactivate or remove them from the Teachers module instead.',
-        'TEACHER_LINKED'
-      );
-    }
+    const staffRow = await query('SELECT user_id, status, deleted_at FROM staff WHERE id = $1', [staffIdNum]);
+    if (!staffRow.rows.length) return errorResponse(res, 404, 'Staff not found');
+    if (staffRow.rows[0].deleted_at) return errorResponse(res, 404, 'Staff not found or already deactivated');
 
-    const result = await query(
-      `UPDATE staff SET is_active = false, updated_at = NOW() WHERE id = $1 AND is_active = true RETURNING id`,
-      [staffIdNum]
-    );
-    if (result.rows.length === 0) {
-      return errorResponse(res, 404, 'Staff not found or already inactive');
-    }
+    const uid = staffRow.rows[0].user_id;
 
     await query(
-      `UPDATE drivers SET is_active = false, updated_at = NOW() WHERE staff_id = $1`,
+      `UPDATE staff SET status = 'Inactive', deleted_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [staffIdNum]
     );
 
-    const staffRow = await query('SELECT user_id FROM staff WHERE id = $1', [staffIdNum]);
-    const uid = staffRow.rows[0]?.user_id;
     if (uid) {
       await query('UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1', [uid]);
     }
@@ -1005,10 +650,225 @@ const deleteStaff = async (req, res) => {
   }
 };
 
+function unlinkStaffDocStored(relPath) {
+  const abs = resolveStaffDocumentPath(relPath);
+  if (!abs) return;
+  try {
+    if (fs.existsSync(abs)) fs.unlinkSync(abs);
+  } catch (e) {
+    console.error('unlinkStaffDocStored:', e);
+  }
+}
+
+function unlinkMulterTemp(file) {
+  if (!file?.path) return;
+  try {
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  } catch (e) {
+    console.error('unlinkMulterTemp:', e);
+  }
+}
+
+const uploadStaffDocuments = async (req, res) => {
+  try {
+    const staffId = parseInt(req.params.id, 10);
+    if (!staffId || Number.isNaN(staffId)) {
+      return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
+    }
+
+    const resumeArr = req.files?.resume;
+    const letterArr = req.files?.joining_letter;
+    const resumeFile = Array.isArray(resumeArr) && resumeArr[0] ? resumeArr[0] : null;
+    const letterFile = Array.isArray(letterArr) && letterArr[0] ? letterArr[0] : null;
+
+    if (!resumeFile && !letterFile) {
+      return errorResponse(res, 400, 'No files uploaded. Use multipart fields resume and/or joining_letter.', 'VALIDATION_ERROR');
+    }
+
+    const dbName = req.tenant?.db_name;
+    if (!dbName || !String(dbName).trim()) {
+      if (resumeFile) unlinkMulterTemp(resumeFile);
+      if (letterFile) unlinkMulterTemp(letterFile);
+      return errorResponse(res, 500, 'Tenant context missing', 'CONFIG_ERROR');
+    }
+
+    return await runWithTenant(dbName, async () => {
+      const tenant = sanitizeTenant(req.tenant?.db_name || dbName || 'default_tenant') || 'default_tenant';
+
+      const prev = await query('SELECT resume, joining_letter FROM staff WHERE id = $1', [staffId]);
+      if (!prev.rows.length) {
+        if (resumeFile) unlinkMulterTemp(resumeFile);
+        if (letterFile) unlinkMulterTemp(letterFile);
+        return errorResponse(res, 404, 'Staff not found', 'NOT_FOUND');
+      }
+
+      const oldResume = prev.rows[0].resume;
+      const oldLetter = prev.rows[0].joining_letter;
+
+      const newResumeRel = resumeFile ? `${tenant}/${resumeFile.filename}` : null;
+      const newLetterRel = letterFile ? `${tenant}/${letterFile.filename}` : null;
+
+      const upd = await query(
+        `UPDATE staff SET
+          resume = COALESCE($1, resume),
+          joining_letter = COALESCE($2, joining_letter),
+          updated_at = NOW()
+        WHERE id = $3`,
+        [newResumeRel, newLetterRel, staffId]
+      );
+
+      if (upd.rowCount < 1) {
+        if (resumeFile) unlinkMulterTemp(resumeFile);
+        if (letterFile) unlinkMulterTemp(letterFile);
+        return errorResponse(res, 404, 'Staff not found or could not update', 'NOT_FOUND');
+      }
+
+      if (resumeFile && oldResume && oldResume !== newResumeRel) unlinkStaffDocStored(oldResume);
+      if (letterFile && oldLetter && oldLetter !== newLetterRel) unlinkStaffDocStored(oldLetter);
+
+      const refreshed = await query(
+        `SELECT resume, joining_letter, updated_at FROM staff WHERE id = $1`,
+        [staffId]
+      );
+      return success(res, 200, 'Documents uploaded successfully', refreshed.rows[0] || {});
+    });
+  } catch (error) {
+    console.error('uploadStaffDocuments:', error);
+    return errorResponse(res, 500, 'Failed to upload documents', 'INTERNAL_ERROR');
+  }
+};
+
+const getStaffDocument = async (req, res) => {
+  try {
+    const staffId = parseInt(req.params.id, 10);
+    const docTypeRaw = String(req.params.docType || '').toLowerCase();
+    if (!staffId || Number.isNaN(staffId)) {
+      return errorResponse(res, 400, 'Invalid staff ID', 'VALIDATION_ERROR');
+    }
+    const column = docTypeRaw === 'joining-letter' ? 'joining_letter' : docTypeRaw === 'resume' ? 'resume' : null;
+    if (!column) {
+      return errorResponse(res, 400, 'Invalid document type', 'VALIDATION_ERROR');
+    }
+
+    const requester = req.user;
+    const roleId = requester?.role_id != null ? parseInt(requester.role_id, 10) : null;
+    if (!requester?.id || roleId == null) {
+      return errorResponse(res, 401, 'Not authenticated');
+    }
+
+    const dbName = req.tenant?.db_name;
+    if (!dbName || !String(dbName).trim()) {
+      return errorResponse(res, 500, 'Tenant context missing', 'CONFIG_ERROR');
+    }
+
+    return await runWithTenant(dbName, async () => {
+      const result = await query(
+        `SELECT s.${column} AS doc_path, s.user_id, s.id AS staff_id
+         FROM staff s
+         WHERE s.id = $1`,
+        [staffId]
+      );
+
+      if (!result.rows.length) {
+        return errorResponse(res, 404, 'Staff not found');
+      }
+
+      const row = result.rows[0];
+      const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
+      const isSelf = String(row.user_id) === String(requester.id);
+      const staffIdMatch = requester.staff_id != null && String(row.staff_id) === String(requester.staff_id);
+      if (!isAdmin && !isSelf && !staffIdMatch) {
+        return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
+      }
+
+      const rel = row.doc_path;
+      const abs = resolveStaffDocumentPath(rel);
+      if (!abs || !fs.existsSync(abs)) {
+        return errorResponse(res, 404, 'Document not found or file missing');
+      }
+
+      const downloadName = column === 'joining_letter' ? 'joining-letter.pdf' : 'resume.pdf';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${downloadName}"`);
+      return res.sendFile(abs);
+    });
+  } catch (error) {
+    console.error('getStaffDocument:', error);
+    return errorResponse(res, 500, 'Failed to load document', 'INTERNAL_ERROR');
+  }
+};
+
+
+const uploadStaffPhoto = async (req, res) => {
+  try {
+    const staffId = parseInt(req.params.id, 10);
+    if (!staffId || Number.isNaN(staffId)) return errorResponse(res, 400, 'Invalid staff ID');
+
+    if (!req.file) return errorResponse(res, 400, 'No image file uploaded');
+
+    const tenant = sanitizeTenant(req.tenant?.db_name || 'default_tenant') || 'default_tenant';
+    const relativePath = `${tenant}/${req.file.filename}`;
+
+    const existing = await query('SELECT photo_url FROM staff WHERE id = $1', [staffId]);
+    if (existing.rows.length === 0) {
+      if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      return errorResponse(res, 404, 'Staff not found');
+    }
+
+    await query('UPDATE staff SET photo_url = $1, updated_at = NOW() WHERE id = $2', [relativePath, staffId]);
+
+    const oldPath = resolveStaffProfilePath(existing.rows[0].photo_url);
+    if (oldPath && fs.existsSync(oldPath)) {
+      try { fs.unlinkSync(oldPath); } catch (e) { console.warn('Failed to delete old staff photo:', e.message); }
+    }
+
+    return success(res, 200, 'Profile photo uploaded successfully', { photo_url: relativePath });
+  } catch (err) {
+    console.error('Error uploading staff photo:', err);
+    return errorResponse(res, 500, 'Failed to upload photo');
+  }
+};
+
+const getStaffPhoto = async (req, res) => {
+  try {
+    const { id, filename } = req.params;
+    const staffId = parseInt(id, 10);
+    if (!staffId || Number.isNaN(staffId)) return errorResponse(res, 400, 'Invalid staff ID');
+
+    const requester = req.user;
+    const roleId = requester?.role_id != null ? parseInt(requester.role_id, 10) : null;
+    if (!requester?.id || roleId == null) return errorResponse(res, 401, 'Not authenticated');
+
+    const staffRes = await query('SELECT user_id, photo_url FROM staff WHERE id = $1', [staffId]);
+    if (staffRes.rows.length === 0) return errorResponse(res, 404, 'Staff not found');
+
+    const row = staffRes.rows[0];
+    const isAdmin = roleId != null && ADMIN_ROLE_IDS.includes(roleId);
+    const isSelf = String(row.user_id) === String(requester.id);
+
+    if (!isAdmin && !isSelf) return errorResponse(res, 403, 'Access denied');
+
+    const tenant = sanitizeTenant(req.tenant?.db_name || 'default_tenant') || 'default_tenant';
+    const fullPath = resolveStaffProfilePath(`${tenant}/${filename}`);
+
+    if (!fullPath || !fs.existsSync(fullPath)) return errorResponse(res, 404, 'Photo not found');
+
+    res.setHeader('Content-Type', 'image/jpeg'); // Basic assumption, browser handles most images
+    return res.sendFile(fullPath);
+  } catch (err) {
+    console.error('Error serving staff photo:', err);
+    return errorResponse(res, 500, 'Failed to retrieve photo');
+  }
+};
+
 module.exports = {
   getAllStaff,
   getStaffById,
   createStaff,
   updateStaff,
   deleteStaff,
+  uploadStaffDocuments,
+  getStaffDocument,
+  uploadStaffPhoto,
+  getStaffPhoto,
 };

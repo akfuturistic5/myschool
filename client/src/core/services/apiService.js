@@ -1183,35 +1183,64 @@ class ApiService {
   }
 
   /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
-  async getTeacherAssignments(params = {}) {
+  async getClassTeacherAssignments(params = {}) {
     const q = new URLSearchParams();
     if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
     if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
     if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
     const qs = q.toString();
-    return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
+    return this.makeRequest(`/teacher-assignments/class-teachers${qs ? `?${qs}` : ''}`);
   }
 
-  async getTeacherAssignmentClassMeta(classId) {
-    return this.makeRequest(`/teacher-assignments/class/${classId}/meta`);
-  }
-
-  async createTeacherAssignment(body) {
-    return this.makeRequest('/teacher-assignments', {
+  async createClassTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments/class-teachers', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   }
 
-  async updateTeacherAssignment(id, body) {
-    return this.makeRequest(`/teacher-assignments/${id}`, {
+  async updateClassTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/class-teachers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });
   }
 
-  async deleteTeacherAssignment(id) {
-    return this.makeRequest(`/teacher-assignments/${id}`, { method: 'DELETE' });
+  async deleteClassTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/class-teachers/${id}`, { method: 'DELETE' });
+  }
+
+  /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
+  async getSubjectTeacherAssignments(params = {}) {
+    const q = new URLSearchParams();
+    if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
+    if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
+    const qs = q.toString();
+    return this.makeRequest(`/teacher-assignments/subject-teachers${qs ? `?${qs}` : ''}`);
+  }
+
+  async createSubjectTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments/subject-teachers', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateSubjectTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteSubjectTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, { method: 'DELETE' });
+  }
+
+  async getTeacherAssignmentClassMeta(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academicYearId=${academicYearId}` : '';
+    return this.makeRequest(`/teacher-assignments/class/${classId}/meta${qs}`);
   }
 
   /**
@@ -1309,6 +1338,81 @@ class ApiService {
     return this.makeRequest(`/staff/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async uploadStaffDocuments(staffId, formData) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/documents`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload staff documents (${response.status}): ${errorText}`);
+    }
+    return response.json();
+  }
+
+  async fetchStaffDocumentBlob(staffId, docType) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/documents/${docType}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/pdf',
+      },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to load staff document (${response.status}): ${errorText}`);
+    }
+    return response.blob();
+  }
+
+  async uploadStaffPhoto(staffId, file) {
+    const fd = new FormData();
+    fd.append("photo", file);
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/photo`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: fd,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload staff photo (${response.status}): ${errorText}`);
+    }
+    return response.json();
+  }
+
+  async fetchStaffPhotoBlob(staffId, filename) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/photo/${filename}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to load staff photo (${response.status}): ${errorText}`);
+    }
+    return response.blob();
   }
 
   // Departments

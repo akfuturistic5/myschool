@@ -913,18 +913,21 @@ const updateStudent = async (req, res) => {
       );
 
       const existingDocRes = await client.query(
-        `SELECT s.medical_document_path, s.transfer_certificate_path, s.photo_url,
+        `SELECT s.transfer_certificate_path, u.avatar AS photo_url,
+                (SELECT medical_document_path FROM student_medical_records WHERE student_id = s.id ORDER BY id DESC LIMIT 1) AS medical_document_path,
                 father_u.avatar AS father_avatar, mother_u.avatar AS mother_avatar,
                 guardian_u.avatar AS guardian_avatar,
                 sync.father_user_id, sync.mother_user_id, sync.guardian_user_id
          FROM students s
+         LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN LATERAL (
            SELECT 
-             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) = 'father' THEN g.user_id END) AS father_user_id,
-             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) = 'mother' THEN g.user_id END) AS mother_user_id,
-             MAX(CASE WHEN LOWER(COALESCE(g.guardian_type::text,'')) NOT IN ('father', 'mother') THEN g.user_id END) AS guardian_user_id
-           FROM guardians g
-           WHERE g.student_id = s.id AND g.is_active = true
+             MAX(CASE WHEN LOWER(COALESCE(sgl.relation::text,'')) = 'father' THEN g.user_id END) AS father_user_id,
+             MAX(CASE WHEN LOWER(COALESCE(sgl.relation::text,'')) = 'mother' THEN g.user_id END) AS mother_user_id,
+             MAX(CASE WHEN LOWER(COALESCE(sgl.relation::text,'')) NOT IN ('father', 'mother') THEN g.user_id END) AS guardian_user_id
+           FROM student_guardian_links sgl
+           JOIN guardians g ON g.id = sgl.guardian_id
+           WHERE sgl.student_id = s.id AND g.is_active = true
          ) sync ON true
          LEFT JOIN users father_u ON father_u.id = sync.father_user_id
          LEFT JOIN users mother_u ON mother_u.id = sync.mother_user_id
@@ -984,6 +987,7 @@ const updateStudent = async (req, res) => {
       }
 
       let result;
+      let studentRow;
       await client.query('SAVEPOINT sp_student_update');
       try {
         // Primary path: for schemas using correct "religion_id" column
@@ -1023,6 +1027,7 @@ const updateStudent = async (req, res) => {
           tcDocPathFinal,
           id
         ]);
+        studentRow = result.rows[0];
         await client.query('RELEASE SAVEPOINT sp_student_update');
 
         if (medical_document_path !== undefined && existingMedDoc && existingMedDoc !== medDocPathFinal) {
@@ -1075,6 +1080,7 @@ const updateStudent = async (req, res) => {
               tcDocPathFinal,
               id
             ]);
+            studentRow = result.rows[0];
           } catch (e2) {
             throw e;
           }
@@ -1114,7 +1120,7 @@ const updateStudent = async (req, res) => {
         throw err;
       }
 
-      const studentRow = result.rows[0];
+      studentRow = result.rows[0];
 
       const stuPhoneUp = (phone || '').toString().trim();
       const stuEmailUp = (email || '').toString().trim();
@@ -1281,7 +1287,7 @@ const updateStudent = async (req, res) => {
       });
       // Sync Lifecycle Ledger for corrections (Source of Truth)
       // Only update the ADMISSION record if it is the latest one for this student
-      if (studentRow.academic_year_id && studentRow.class_id) {
+      if (academic_year_id && class_id) {
         await client.query(`
           UPDATE student_lifecycle_ledger 
           SET to_academic_year_id = $1, to_class_id = $2, to_section_id = $3, updated_at = NOW()
@@ -1291,10 +1297,10 @@ const updateStudent = async (req, res) => {
             ORDER BY event_date DESC, id DESC LIMIT 1
           )
         `, [
-          studentRow.academic_year_id,
-          studentRow.class_id,
-          studentRow.section_id || null,
-          studentRow.id
+          academic_year_id,
+          class_id,
+          section_id || null,
+          id
         ]);
       }
 
@@ -1427,16 +1433,20 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
   }
 
   const links = await client.query(
-    `SELECT id, user_id FROM guardians WHERE student_id = $1 AND user_id IS NOT NULL`,
+    `SELECT g.id, g.user_id 
+     FROM student_guardian_links sgl
+     JOIN guardians g ON g.id = sgl.guardian_id
+     WHERE sgl.student_id = $1 AND g.user_id IS NOT NULL`,
     [studentRow.id]
   );
   for (const link of links.rows) {
     await client.query(`UPDATE guardians SET is_active = false, updated_at = NOW() WHERE id = $1`, [link.id]);
     const uid = link.user_id;
     const stillUsed = await client.query(
-      `SELECT 1 FROM guardians g
-       INNER JOIN students s ON s.id = g.student_id
-       WHERE g.user_id = $1 AND s.status = 'Active' AND g.student_id <> $2 LIMIT 1`,
+      `SELECT 1 FROM student_guardian_links sgl
+       JOIN guardians g ON g.id = sgl.guardian_id
+       INNER JOIN students s ON s.id = sgl.student_id
+       WHERE g.user_id = $1 AND s.status = 'Active' AND sgl.student_id <> $2 LIMIT 1`,
       [uid, studentRow.id]
     );
     if (stillUsed.rows.length === 0) {
@@ -1456,7 +1466,10 @@ const reactivateLinkedAccountsForRejoinedStudent = async (client, studentRow) =>
   }
 
   const links = await client.query(
-    `SELECT id, user_id FROM guardians WHERE student_id = $1`,
+    `SELECT g.id, g.user_id 
+     FROM student_guardian_links sgl
+     JOIN guardians g ON g.id = sgl.guardian_id
+     WHERE sgl.student_id = $1`,
     [studentRow.id]
   );
   for (const link of links.rows) {
@@ -1765,9 +1778,10 @@ const leaveStudents = async (req, res) => {
         const sRes = await client.query(
           `SELECT
              s.id, s.user_id, s.guardian_id, s.is_active,
-             s.admission_number, s.first_name, s.last_name,
+             s.admission_number, u.first_name, u.last_name,
              s.class_id, s.section_id, s.academic_year_id, s.admission_date
            FROM students s
+           LEFT JOIN users u ON s.user_id = u.id
            WHERE s.id = $1
            LIMIT 1`,
           [sid]
@@ -2334,7 +2348,7 @@ const getStudentPromotions = async (req, res) => {
         params
       );
     } else {
-      whereParts.push(`l.event_type = 'PROMOTE'`);
+      whereParts.push(`l.event_type IN ('PROMOTE', 'ADMISSION')`);
       const whereLedger = `WHERE ${whereParts.join(' AND ')}`;
       result = await query(
         `SELECT
@@ -2804,42 +2818,44 @@ const getTeacherStudents = async (req, res) => {
     let academicYearClause = '';
     if (hasAcademicYearFilter) {
       params.push(academicYearId);
-      academicYearClause = ` AND s.academic_year_id = $${params.length}`;
+      academicYearClause = ` AND enr.academic_year_id = $${params.length}`;
     }
 
     const result = await query(
       `SELECT
-        s.id, s.admission_number, s.roll_number, s.first_name, s.last_name, s.gender,
-        s.date_of_birth, s.phone, s.email, s.class_id, s.section_id, s.photo_url,
+        s.id, s.admission_number, s.roll_number, u.first_name, u.last_name, u.gender,
+        u.date_of_birth, u.phone, u.email, enr.class_id, enr.section_id, u.avatar AS photo_url,
         COALESCE(s.is_active, true) AS is_active,
         c.class_name, sec.section_name
        FROM students s
-       LEFT JOIN classes c ON s.class_id = c.id
-       LEFT JOIN sections sec ON s.section_id = sec.id
-       WHERE s.status = \'Active\' AND s.deleted_at IS NULL AND (
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN classes c ON enr.class_id = c.id
+       LEFT JOIN sections sec ON enr.section_id = sec.id
+       WHERE s.status = 'Active' AND s.deleted_at IS NULL AND (
          EXISTS (
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = ANY($1::int[])
-             AND cs.class_id = s.class_id
-             AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-             AND (cs.academic_year_id = s.academic_year_id OR cs.academic_year_id IS NULL)
+             AND cs.class_id = enr.class_id
+             AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
+             AND (cs.academic_year_id = enr.academic_year_id OR cs.academic_year_id IS NULL)
          )
          OR EXISTS (
            SELECT 1 FROM teachers t
-            WHERE t.id = ANY($1::int[]) AND t.class_id = s.class_id
+            WHERE t.id = ANY($1::int[]) AND t.class_id = enr.class_id
          )
          OR EXISTS (
            SELECT 1 FROM sections sec_map
-           WHERE sec_map.id = s.section_id
+           WHERE sec_map.id = enr.section_id
              AND sec_map.section_teacher_id = ANY($2::int[])
          )
          OR EXISTS (
            SELECT 1 FROM classes c_map
-           WHERE c_map.id = s.class_id
+           WHERE c_map.id = enr.class_id
              AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
          )
        )${academicYearClause}
-       ORDER BY s.first_name ASC, s.last_name ASC`,
+       ORDER BY u.first_name ASC, u.last_name ASC`,
       params
     );
 
@@ -2889,16 +2905,17 @@ const getStudentById = async (req, res) => {
       COALESCE(s.is_active, true) AS is_active,
       s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no AS aadhaar_no,
-      s.medical_document_path, s.transfer_certificate_path,
+      s.transfer_certificate_path,
+      (SELECT medical_document_path FROM student_medical_records WHERE student_id = s.id ORDER BY id DESC LIMIT 1) AS medical_document_path,
       c.class_name, sec.section_name,
       ay.year_name AS academic_year_name,
-      NULL::integer AS section_teacher_id,
-      NULL::integer AS section_teacher_staff_id,
-      NULL::text AS section_teacher_first_name,
-      NULL::text AS section_teacher_last_name,
-      NULL::text AS section_teacher_phone,
-      NULL::text AS section_teacher_email,
-      NULL::text AS section_teacher_address,
+      sec_ct.staff_id AS section_teacher_id,
+      sec_staff.id AS section_teacher_staff_id,
+      sec_staff_u.first_name AS section_teacher_first_name,
+      sec_staff_u.last_name AS section_teacher_last_name,
+      sec_staff_u.phone AS section_teacher_phone,
+      sec_staff_u.email AS section_teacher_email,
+      COALESCE(sec_staff_u.current_address, sec_staff_u.permanent_address) AS section_teacher_address,
       NULL::integer AS class_teacher_id,
       cls_ct.staff_id AS class_teacher_staff_id,
       cls_staff_u.first_name AS class_teacher_first_name,
@@ -2931,6 +2948,18 @@ const getStudentById = async (req, res) => {
       ) cls_ct ON true
       LEFT JOIN staff cls_staff ON cls_staff.id = cls_ct.staff_id
       LEFT JOIN users cls_staff_u ON cls_staff_u.id = cls_staff.user_id
+      LEFT JOIN LATERAL (
+        SELECT ct.staff_id
+        FROM class_teachers ct
+        WHERE ct.class_id = enr.class_id
+          AND ct.class_section_id = enr.section_id
+          AND ct.academic_year_id = enr.academic_year_id
+          AND ct.deleted_at IS NULL
+        ORDER BY (ct.role = 'primary') DESC, ct.id DESC
+        LIMIT 1
+      ) sec_ct ON true
+      LEFT JOIN staff sec_staff ON sec_staff.id = sec_ct.staff_id
+      LEFT JOIN users sec_staff_u ON sec_staff_u.id = sec_staff.user_id
       LEFT JOIN blood_groups bg ON s.blood_group_id = bg.id
       LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
       LEFT JOIN mother_tongues mt ON s.mother_tongue_id = mt.id
@@ -2959,7 +2988,7 @@ const getStudentById = async (req, res) => {
         }
         if (isMissingColsError) {
           safeBaseSelect = safeBaseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
-          safeBaseSelect = safeBaseSelect.replace('s.medical_document_path, s.transfer_certificate_path,', '');
+          safeBaseSelect = safeBaseSelect.replace('s.transfer_certificate_path,', '');
         }
         const relCol = isReligionError ? 's.reigion_id as religion_id' : 's.religion_id';
         const relJoin = isReligionError ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
@@ -2998,11 +3027,15 @@ const getStudentById = async (req, res) => {
     }
     try {
       const extra = await query(
-        `SELECT bank_name, branch, ifsc, previous_school_address FROM students WHERE id = $1`,
+        `SELECT bank_name, branch, ifsc_code, previous_school_address FROM students WHERE id = $1`,
         [sid]
       );
       if (extra.rows.length > 0) {
-        Object.assign(studentData, extra.rows[0]);
+        const row = extra.rows[0];
+        studentData.bank_name = row.bank_name;
+        studentData.branch = row.branch;
+        studentData.ifsc = row.ifsc_code; // Map to ifsc for frontend compatibility
+        studentData.previous_school_address = row.previous_school_address;
       }
     } catch (e) {
       console.warn('getStudentById: could not fetch extra fields:', e.message);
@@ -3010,7 +3043,7 @@ const getStudentById = async (req, res) => {
     // Fetch medical records from dedicated table
     try {
       const medRes = await query(
-        `SELECT medications, notes, medical_condition, medical_document_path, condition_name
+        `SELECT medications, notes, medical_document_path, condition_name
          FROM student_medical_records
          WHERE student_id = $1
          LIMIT 1`,
@@ -3019,9 +3052,9 @@ const getStudentById = async (req, res) => {
       if (medRes.rows.length > 0) {
         const m = medRes.rows[0];
         studentData.medications = m.medications;
-        studentData.medical_condition = m.medical_condition || m.condition_name;
+        studentData.medical_condition = m.condition_name === 'General Medical Record' ? (m.notes ? null : m.condition_name) : m.condition_name;
         studentData.medical_document_path = m.medical_document_path;
-        // Parse notes back to other_information and known_allergies (best effort)
+        
         const notes = m.notes || '';
         if (notes.startsWith('Allergies: ')) {
           const split = notes.split('. ');
@@ -3029,7 +3062,7 @@ const getStudentById = async (req, res) => {
           studentData.other_information = split.slice(1).join('. ');
         } else {
           studentData.other_information = notes;
-          studentData.known_allergies = null;
+          studentData.known_allergies = (m.record_type === 'Allergy' || m.record_type === 'Medical Condition') ? m.condition_name : null;
         }
       } else {
         studentData.medications = null;
@@ -3043,41 +3076,21 @@ const getStudentById = async (req, res) => {
     }
     // Dedicated fetch for unique_student_ids, pen_number, aadhaar_no (handles alternate column names)
     try {
-      let idRow = null;
-      try {
-        const idRes = await query(
-          'SELECT unique_student_ids, pen_number, aadhar_no, gr_number FROM students WHERE id = $1',
-          [sid]
-        );
-        if (idRes.rows.length > 0) {
-          const r = idRes.rows[0];
-          idRow = {
-            unique_student_ids: r.unique_student_ids ?? null,
-            pen_number: r.pen_number ?? null,
-            aadhaar_no: r.aadhar_no ?? null,
-            gr_number: r.gr_number ?? null
-          };
-        }
-      } catch (e1) {
-        console.warn('getStudentById: could not fetch ID fields:', e1.message);
-      }
-      if (idRow) {
-        studentData.unique_student_ids = idRow.unique_student_ids ?? studentData.unique_student_ids ?? null;
-        studentData.pen_number = idRow.pen_number ?? studentData.pen_number ?? null;
-        studentData.aadhaar_no = idRow.aadhaar_no ?? studentData.aadhaar_no ?? null;
-        studentData.gr_number = idRow.gr_number ?? studentData.gr_number ?? null;
-      } else {
-        studentData.unique_student_ids = studentData.unique_student_ids ?? null;
-        studentData.pen_number = studentData.pen_number ?? null;
-        studentData.aadhaar_no = studentData.aadhaar_no ?? null;
-        studentData.gr_number = studentData.gr_number ?? null;
+      const idRes = await query(
+        'SELECT unique_student_ids, pen_number, aadhar_no, gr_number FROM students WHERE id = $1',
+        [sid]
+      );
+      if (idRes.rows.length > 0) {
+        const r = idRes.rows[0];
+        studentData.unique_student_ids = r.unique_student_ids ?? studentData.unique_student_ids;
+        studentData.pen_number = r.pen_number ?? studentData.pen_number;
+        studentData.aadhaar_no = r.aadhar_no ?? studentData.aadhaar_no;
+        studentData.gr_number = r.gr_number ?? studentData.gr_number;
       }
     } catch (e) {
-      studentData.unique_student_ids = studentData.unique_student_ids ?? null;
-      studentData.pen_number = studentData.pen_number ?? null;
-      studentData.aadhaar_no = studentData.aadhaar_no ?? null;
-      studentData.gr_number = studentData.gr_number ?? null;
+      console.warn('getStudentById: fallback ID columns fetch', e.message);
     }
+
     // Hostel details are intentionally paused for redevelopment.
     studentData.hostel_name = null;
     studentData.floor = null;
@@ -3198,7 +3211,7 @@ const getStudentById = async (req, res) => {
     // Fetch Siblings
     try {
       const sibsRes = await query(
-        `SELECT is_in_same_school, name, class_name, section_name, roll_number, admission_number 
+        `SELECT name, class_name, section_name, roll_number, admission_number 
          FROM student_siblings WHERE student_id = $1 ORDER BY id ASC`,
         [sid]
       );
@@ -3245,10 +3258,10 @@ const getStudentLoginDetails = async (req, res) => {
     const stuResult = await query(
       `SELECT
          s.id,
-         s.first_name,
-         s.last_name,
-         s.class_id,
-         s.section_id,
+         u.first_name,
+         u.last_name,
+         enr.class_id,
+         enr.section_id,
          s.user_id,
          c.class_name,
          sec.section_name,
@@ -3256,10 +3269,11 @@ const getStudentLoginDetails = async (req, res) => {
          u.phone       AS student_phone,
          u.email       AS student_email
        FROM students s
-       LEFT JOIN classes c ON s.class_id = c.id
-       LEFT JOIN sections sec ON s.section_id = sec.id
        LEFT JOIN users u ON s.user_id = u.id AND u.is_active = true AND u.deleted_at IS NULL
-       WHERE s.id = $1 AND s.status = \'Active\' AND s.deleted_at IS NULL
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN classes c ON enr.class_id = c.id
+       LEFT JOIN sections sec ON enr.section_id = sec.id
+       WHERE s.id = $1 AND s.status = 'Active' AND s.deleted_at IS NULL
        LIMIT 1`,
       [id]
     );
@@ -3279,9 +3293,10 @@ const getStudentLoginDetails = async (req, res) => {
     try {
       const parRes = await query(
         `SELECT DISTINCT u.id, u.username, u.email, u.phone
-         FROM guardians g
+         FROM student_guardian_links sgl
+         INNER JOIN guardians g ON g.id = sgl.guardian_id
          INNER JOIN users u ON u.id = g.user_id
-         WHERE g.student_id = $1
+         WHERE sgl.student_id = $1
            AND u.role_id = $2`,
         [id, ROLES.PARENT]
       );
@@ -3306,9 +3321,10 @@ const getStudentLoginDetails = async (req, res) => {
     try {
       const gRes = await query(
         `SELECT u.username, u.email, u.phone
-         FROM guardians g
+         FROM student_guardian_links sgl
+         JOIN guardians g ON g.id = sgl.guardian_id
          JOIN users u ON u.id = g.user_id
-         WHERE g.student_id = $1 AND g.user_id IS NOT NULL
+         WHERE sgl.student_id = $1 AND g.user_id IS NOT NULL
          LIMIT 1`,
         [id]
       );
@@ -3391,7 +3407,8 @@ const getCurrentStudent = async (req, res) => {
       COALESCE(s.is_active, true) AS is_active,
       s.created_at,
       s.unique_student_ids, s.pen_number, s.aadhar_no AS aadhaar_no,
-      s.medical_document_path, s.transfer_certificate_path,
+      s.transfer_certificate_path,
+      (SELECT medical_document_path FROM student_medical_records WHERE student_id = s.id ORDER BY id DESC LIMIT 1) AS medical_document_path,
       c.class_name, sec.section_name,
       bg.blood_group_name AS blood_group_name,
       cast_t.cast_name,
@@ -3433,7 +3450,7 @@ const getCurrentStudent = async (req, res) => {
         }
         if (isMissingColsError) {
           safeBaseSelect = safeBaseSelect.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
-          safeBaseSelect = safeBaseSelect.replace('s.medical_document_path, s.transfer_certificate_path,', '');
+          safeBaseSelect = safeBaseSelect.replace('s.transfer_certificate_path,', '');
         }
         const relCol = isReligionError ? 's.reigion_id as religion_id' : 's.religion_id';
         const relJoin = isReligionError ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
@@ -3493,7 +3510,7 @@ const getCurrentStudent = async (req, res) => {
               }
               if (isMissingColsErrorFallback) {
                 safeBaseSelectFallback = safeBaseSelectFallback.replace('s.unique_student_ids, s.pen_number, s.aadhar_no as aadhaar_no,', '');
-                safeBaseSelectFallback = safeBaseSelectFallback.replace('s.medical_document_path, s.transfer_certificate_path,', '');
+                safeBaseSelectFallback = safeBaseSelectFallback.replace('s.transfer_certificate_path,', '');
               }
               const relCol = isReligErrorFallback ? 's.reigion_id as religion_id' : 's.religion_id';
               const relJoin = isReligErrorFallback ? 'LEFT JOIN reigions re ON s.reigion_id = re.id' : 'LEFT JOIN religions r ON s.religion_id = r.id';
@@ -3537,7 +3554,7 @@ const getCurrentStudent = async (req, res) => {
     // Siblings are stored in dedicated table in current schema.
     try {
       const sibsRes = await query(
-        `SELECT is_in_same_school, name, class_name, section_name, roll_number, admission_number
+        `SELECT name, class_name, section_name, roll_number, admission_number
          FROM student_siblings
          WHERE student_id = $1
          ORDER BY id ASC`,
@@ -3550,11 +3567,15 @@ const getCurrentStudent = async (req, res) => {
 
     try {
       const extra = await query(
-        'SELECT bank_name, branch, ifsc, previous_school_address FROM students WHERE id = $1',
+        'SELECT bank_name, branch, ifsc_code, previous_school_address FROM students WHERE id = $1',
         [studentId]
       );
       if (extra.rows.length > 0) {
-        Object.assign(studentData, extra.rows[0]);
+        const row = extra.rows[0];
+        studentData.bank_name = row.bank_name;
+        studentData.branch = row.branch;
+        studentData.ifsc = row.ifsc_code; // Map to ifsc for frontend compatibility
+        studentData.previous_school_address = row.previous_school_address;
       }
     } catch (e) {
       console.warn('getCurrentStudent: could not fetch extra fields:', e.message);
@@ -3562,7 +3583,7 @@ const getCurrentStudent = async (req, res) => {
     // Fetch medical records from dedicated table
     try {
       const medRes = await query(
-        `SELECT medications, notes, medical_condition, medical_document_path, condition_name
+        `SELECT medications, notes, medical_document_path, condition_name
          FROM student_medical_records
          WHERE student_id = $1
          LIMIT 1`,
@@ -3571,7 +3592,7 @@ const getCurrentStudent = async (req, res) => {
       if (medRes.rows.length > 0) {
         const m = medRes.rows[0];
         studentData.medications = m.medications;
-        studentData.medical_condition = m.medical_condition || m.condition_name;
+        studentData.medical_condition = m.condition_name === 'General Medical Record' ? (m.notes ? null : m.condition_name) : m.condition_name;
         studentData.medical_document_path = m.medical_document_path;
         const notes = m.notes || '';
         if (notes.startsWith('Allergies: ')) {
@@ -3580,7 +3601,7 @@ const getCurrentStudent = async (req, res) => {
           studentData.other_information = split.slice(1).join('. ');
         } else {
           studentData.other_information = notes;
-          studentData.known_allergies = null;
+          studentData.known_allergies = (m.record_type === 'Allergy' || m.record_type === 'Medical Condition') ? m.condition_name : null;
         }
       } else {
         studentData.medications = null;
@@ -3741,30 +3762,27 @@ const getStudentsByClass = async (req, res) => {
         s.id,
         s.admission_number,
         s.roll_number,
-        s.first_name,
-        s.last_name,
-        s.gender,
-        s.date_of_birth,
+        u.first_name,
+        u.last_name,
+        u.gender,
+        u.date_of_birth,
         s.place_of_birth,
         s.blood_group_id,
         s.religion_id,
         s.cast_id,
         s.mother_tongue_id,
         s.nationality,
-        s.phone,
-        s.email,
-        s.address,
+        u.phone,
+        u.email,
+        u.current_address as address,
         s.user_id,
-        s.academic_year_id,
-        s.class_id,
-        s.section_id,
+        enr.academic_year_id,
+        enr.class_id,
+        enr.section_id,
         s.house_id,
         s.admission_date,
-        s.previous_school,
-        s.photo_url,
-        s.is_transport_required,
-        s.is_hostel_required,
-        s.guardian_id,
+        s.previous_school_name as previous_school,
+        u.avatar as photo_url,
         s.is_active,
         s.created_at,
         c.class_name,
@@ -3774,11 +3792,12 @@ const getStudentsByClass = async (req, res) => {
         u.permanent_address as permanent_address
       FROM students s
       LEFT JOIN users u ON s.user_id = u.id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      ${lateralCurrentEnrollment('s.id')}
+      LEFT JOIN classes c ON enr.class_id = c.id
+      LEFT JOIN sections sec ON enr.section_id = sec.id
       ${STUDENT_CONTACT_LATERAL_JOINS}
-      WHERE s.class_id = $1 AND s.status = \'Active\'
-      ORDER BY s.first_name ASC, s.last_name ASC
+      WHERE enr.class_id = $1 AND s.status = 'Active'
+      ORDER BY u.first_name ASC, u.last_name ASC
     `, [classId]);
 
     res.status(200).json({
@@ -4475,16 +4494,16 @@ const getGradeReport = async (req, res) => {
       }
     }
 
-    const scopedStudentsWhere = ['s.class_id = $1'];
+    const scopedStudentsWhere = ['enr.class_id = $1'];
     const scopedStudentsParams = [classId];
 
     if (sectionId) {
       scopedStudentsParams.push(sectionId);
-      scopedStudentsWhere.push(`s.section_id = $${scopedStudentsParams.length}`);
+      scopedStudentsWhere.push(`enr.section_id = $${scopedStudentsParams.length}`);
     }
     if (academicYearId) {
       scopedStudentsParams.push(academicYearId);
-      scopedStudentsWhere.push(`s.academic_year_id = $${scopedStudentsParams.length}`);
+      scopedStudentsWhere.push(`enr.academic_year_id = $${scopedStudentsParams.length}`);
     }
     if (isTeacher) {
       scopedStudentsParams.push(teacherIds);
@@ -4493,14 +4512,14 @@ const getGradeReport = async (req, res) => {
           SELECT 1
           FROM class_schedules cs
           WHERE cs.teacher_id = ANY($${scopedStudentsParams.length}::int[])
-            AND cs.class_id = s.class_id
-            AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+            AND cs.class_id = enr.class_id
+            AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
         )
         OR EXISTS (
           SELECT 1
           FROM teachers t
           WHERE t.id = ANY($${scopedStudentsParams.length}::int[])
-            AND t.class_id = s.class_id
+            AND t.class_id = enr.class_id
         )
       )`);
     }
@@ -4511,6 +4530,7 @@ const getGradeReport = async (req, res) => {
       `WITH scoped_students AS (
          SELECT s.id
          FROM students s
+         ${lateralCurrentEnrollment('s.id')}
          WHERE ${scopedWhereSql}
        )
        SELECT DISTINCT
@@ -4554,11 +4574,11 @@ const getGradeReport = async (req, res) => {
          s.id AS student_id,
          s.admission_number,
          s.roll_number,
-         s.first_name,
-         s.last_name,
-         s.photo_url,
-         s.gender,
-         s.section_id,
+         u.first_name,
+         u.last_name,
+         u.avatar AS photo_url,
+         u.gender,
+         enr.section_id,
          sec.section_name,
          er.id AS exam_result_id,
          er.exam_id,
@@ -4584,11 +4604,13 @@ const getGradeReport = async (req, res) => {
          er.is_absent,
          sub.subject_name
        FROM students s
-       LEFT JOIN sections sec ON s.section_id = sec.id
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN sections sec ON enr.section_id = sec.id
        LEFT JOIN exam_results er ON er.student_id = s.id AND er.exam_id = $${reportParams.length}
        LEFT JOIN subjects sub ON er.subject_id = sub.id
        WHERE ${scopedWhereSql}
-       ORDER BY s.first_name ASC, s.last_name ASC, sub.subject_name ASC NULLS LAST`,
+       ORDER BY u.first_name ASC, u.last_name ASC, sub.subject_name ASC NULLS LAST`,
       reportParams
     );
 
@@ -4752,16 +4774,16 @@ const getAttendanceReport = async (req, res) => {
 
     if (classId) {
       rosterParams.push(classId);
-      rosterWhere.push(`s.class_id = $${rosterParams.length}`);
+      rosterWhere.push(`enr.class_id = $${rosterParams.length}`);
     }
 
     if (sectionId) {
       rosterParams.push(sectionId);
-      rosterWhere.push(`s.section_id = $${rosterParams.length}`);
+      rosterWhere.push(`enr.section_id = $${rosterParams.length}`);
     }
     if (academicYearId) {
       rosterParams.push(academicYearId);
-      rosterWhere.push(`s.academic_year_id = $${rosterParams.length}`);
+      rosterWhere.push(`enr.academic_year_id = $${rosterParams.length}`);
     }
     if (isTeacher) {
       rosterParams.push(teacherIds);
@@ -4773,25 +4795,25 @@ const getAttendanceReport = async (req, res) => {
           SELECT 1
           FROM class_schedules cs
           WHERE cs.teacher_id = ANY(${teacherIdsParamRef}::int[])
-            AND cs.class_id = s.class_id
-            AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
+            AND cs.class_id = enr.class_id
+            AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
         )
         OR EXISTS (
           SELECT 1
           FROM teachers t
           WHERE t.id = ANY(${teacherIdsParamRef}::int[])
-            AND t.class_id = s.class_id
+            AND t.class_id = enr.class_id
         )
         OR EXISTS (
           SELECT 1
           FROM sections sec_map
-          WHERE sec_map.id = s.section_id
+          WHERE sec_map.id = enr.section_id
             AND sec_map.section_teacher_id = ANY(${staffIdsParamRef}::int[])
         )
         OR EXISTS (
           SELECT 1
           FROM classes c_map
-          WHERE c_map.id = s.class_id
+          WHERE c_map.id = enr.class_id
             AND (
               c_map.class_teacher_id = ANY(${teacherIdsParamRef}::int[])
               OR c_map.class_teacher_id = ANY(${staffIdsParamRef}::int[])
@@ -4805,16 +4827,18 @@ const getAttendanceReport = async (req, res) => {
          s.id,
          s.admission_number,
          s.roll_number,
-         s.first_name,
-         s.last_name,
-         s.photo_url,
-         s.gender,
-         s.section_id,
+         u.first_name,
+         u.last_name,
+         u.avatar AS photo_url,
+         u.gender,
+         enr.section_id,
          sec.section_name
        FROM students s
-       LEFT JOIN sections sec ON s.section_id = sec.id
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN sections sec ON enr.section_id = sec.id
        WHERE ${rosterWhere.join(' AND ')}
-       ORDER BY s.first_name ASC, s.last_name ASC`,
+       ORDER BY u.first_name ASC, u.last_name ASC`,
       rosterParams
     );
 
@@ -5048,45 +5072,51 @@ const searchStudents = async (req, res) => {
     const like = `%${q}%`;
     const result = await query(
       `SELECT s.id,
-        NULLIF(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, ''))), '') AS name,
+        NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
         s.admission_number AS "admissionNumber",
         COALESCE(c.class_name, '') AS "className",
         -- Check for parents (Father/Mother)
         EXISTS (
-          SELECT 1 FROM guardians g 
-          WHERE g.student_id = s.id AND g.is_active = true 
-            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+          SELECT 1 FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          WHERE sgl.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(sgl.relation::text, '')) IN ('father', 'mother')
         ) AS "hasParents",
         (
-          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
-          FROM guardians g
-          JOIN users u ON u.id = g.user_id
-          WHERE g.student_id = s.id AND g.is_active = true 
-            AND LOWER(COALESCE(g.guardian_type::text, '')) IN ('father', 'mother')
+          SELECT TRIM(CONCAT(COALESCE(u2.first_name, ''), ' ', COALESCE(u2.last_name, '')))
+          FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          JOIN users u2 ON u2.id = g.user_id
+          WHERE sgl.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(sgl.relation::text, '')) IN ('father', 'mother')
           ORDER BY g.id ASC LIMIT 1
         ) AS "parentName",
         -- Check for generic guardian
         EXISTS (
-          SELECT 1 FROM guardians g 
-          WHERE g.student_id = s.id AND g.is_active = true 
-            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+          SELECT 1 FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          WHERE sgl.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(sgl.relation::text, '')) NOT IN ('father', 'mother')
         ) AS "hasGuardian",
         (
-          SELECT TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))
-          FROM guardians g
-          JOIN users u ON u.id = g.user_id
-          WHERE g.student_id = s.id AND g.is_active = true 
-            AND LOWER(COALESCE(g.guardian_type::text, '')) NOT IN ('father', 'mother')
+          SELECT TRIM(CONCAT(COALESCE(u3.first_name, ''), ' ', COALESCE(u3.last_name, '')))
+          FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          JOIN users u3 ON u3.id = g.user_id
+          WHERE sgl.student_id = s.id AND g.is_active = true 
+            AND LOWER(COALESCE(sgl.relation::text, '')) NOT IN ('father', 'mother')
           ORDER BY g.id ASC LIMIT 1
         ) AS "guardianName"
        FROM students s
-       LEFT JOIN classes c ON s.class_id = c.id
-       WHERE s.status = \'Active\'
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN classes c ON enr.class_id = c.id
+       WHERE s.status = 'Active'
          AND (
-           LOWER(TRIM(CONCAT(COALESCE(s.first_name, ''), ' ', COALESCE(s.last_name, '')))) LIKE LOWER($1)
+           LOWER(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')))) LIKE LOWER($1)
            OR LOWER(TRIM(COALESCE(s.admission_number, ''))) LIKE LOWER($1)
          )
-       ORDER BY s.first_name ASC, s.last_name ASC
+       ORDER BY u.first_name ASC, u.last_name ASC
        LIMIT 25`,
       [like]
     );

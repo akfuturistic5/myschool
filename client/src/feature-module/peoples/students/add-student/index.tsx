@@ -149,7 +149,7 @@ const AddStudent = () => {
     mother_matched_from_legacy: boolean;
     // Guardian
     guardian_first_name: string;
-    guardian_last_name: string;
+    guardian_last_name: string | null;
     guardian_relation: string;
     guardian_phone: string;
     guardian_email: string;
@@ -224,7 +224,7 @@ const AddStudent = () => {
     mother_person_id: null,
     mother_matched_from_legacy: false,
     guardian_first_name: '',
-    guardian_last_name: '',
+    guardian_last_name: null,
     guardian_relation: '',
     guardian_phone: '',
     guardian_email: '',
@@ -1289,7 +1289,7 @@ const AddStudent = () => {
                                   className="select"
                                   options={classesList.map(cls => ({
                                     value: String((cls as ClassItem).id),
-                                    label: (cls as ClassItem).class_name ?? (cls as Record<string, unknown>).className ?? ''
+                                    label: String((cls as ClassItem).class_name ?? (cls as any).className ?? '')
                                   }))}
                                   value={formData.class_id}
                                   onChange={(value) => handleInputChange('class_id', value)}
@@ -1320,7 +1320,7 @@ const AddStudent = () => {
                                   className="select"
                                   options={sectionsList.map(section => ({
                                     value: String((section as any).section_id || (section as SectionItem).id),
-                                    label: (section as SectionItem).section_name ?? (section as Record<string, unknown>).sectionName ?? ''
+                                    label: String((section as SectionItem).section_name ?? (section as any).sectionName ?? '')
                                   }))}
                                   value={formData.section_id}
                                   onChange={(value) => handleInputChange('section_id', value)}
@@ -1980,17 +1980,18 @@ const AddStudent = () => {
                                 type="text"
                                 className="form-control"
                                 readOnly={formData.guardian_person_id != null}
-                                value={[formData.guardian_first_name, formData.guardian_last_name].filter(Boolean).join(' ')}
+                                value={formData.guardian_last_name !== null ? `${formData.guardian_first_name} ${formData.guardian_last_name}` : formData.guardian_first_name}
                                 onChange={(e) => {
                                   const v = e.target.value;
-                                  const idx = v.trim().indexOf(' ');
+                                  const idx = v.indexOf(' ');
                                   setFormData(prev => ({
                                     ...prev,
-                                    guardian_first_name: idx >= 0 ? v.slice(0, idx).trim() : v.trim(),
-                                    guardian_last_name: idx >= 0 ? v.slice(idx + 1).trim() : ''
+                                    guardian_first_name: idx >= 0 ? v.slice(0, idx) : v,
+                                    guardian_last_name: idx >= 0 ? v.slice(idx + 1) : null,
+                                    guardian_matched_from_legacy: false,
+                                    guardian_person_id: null
                                   }));
                                 }}
-                                readOnly={formData.guardian_person_id != null}
                               />
                             </div>
                           </div>

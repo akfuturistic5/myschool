@@ -34,9 +34,10 @@ export const useParents = (options = {}) => {
             const resolvedName = parent.father_name || '';
             const resolvedEmail = parent.father_email || '';
             const resolvedPhone = parent.father_phone || '';
-            const [resolvedImage, resolvedChildImage] = await Promise.all([
+            const [resolvedImage, resolvedChildImage, resolvedMotherImage] = await Promise.all([
               parent.father_image_url ? apiService.resolveAvatarUrl(parent.father_image_url) : Promise.resolve(''),
               parent.student_image_url ? apiService.resolveAvatarUrl(parent.student_image_url) : Promise.resolve(''),
+              parent.mother_image_url ? apiService.resolveAvatarUrl(parent.mother_image_url) : Promise.resolve(''),
             ]);
             let addedon = 'N/A';
             try {
@@ -56,6 +57,7 @@ export const useParents = (options = {}) => {
               phone: resolvedPhone,
               email: resolvedEmail,
               ParentImage: resolvedImage || "assets/img/profiles/avatar-27.jpg",
+              MotherImage: resolvedMotherImage || "assets/img/profiles/avatar-27.jpg",
               ChildImage: resolvedChildImage || "assets/img/profiles/avatar-27.jpg",
               student_admission_number: parent.admission_number,
               student_roll_number: parent.roll_number,

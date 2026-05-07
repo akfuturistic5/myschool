@@ -12,16 +12,17 @@ import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 
+import { useSelector } from "react-redux";
+import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+
 const ClassSubject = () => {
   const routes = all_routes;
   const [classFilterId, setClassFilterId] = useState<string>("");
-  const { classes = [] } = useClasses();
-  const { subjects: masterSubjects = [] } = useSubjects(null);
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const { classes = [] } = useClasses(academicYearId);
+  const { subjects: masterSubjects = [] } = useSubjects(null, { academicYearId });
   const [electiveGroups, setElectiveGroups] = useState<any[]>([]);
   
-  // Use current academic year from session or context (defaulting to a fallback for now)
-  const academicYearId = 1; 
-
   const { classSubjects, loading, error, refetch } = useClassSubjects({
     class_id: classFilterId,
     academic_year_id: academicYearId

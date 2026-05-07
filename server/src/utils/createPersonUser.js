@@ -139,8 +139,16 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   const phone = (opts.phone || '').toString().trim() || null;
   const firstName = (opts.first_name || opts.firstName || '').toString().trim() || null;
   const lastName = (opts.last_name || opts.lastName || '').toString().trim() || null;
-  const gender = (opts.gender || '').toString().trim() || null;
-  const dateOfBirth = opts.date_of_birth || opts.dateOfBirth || null;
+  const gender = (opts.gender || opts.sex || '').toString().trim() || null;
+  const dateOfBirth = opts.date_of_birth || opts.dateOfBirth || opts.dob || null;
+  const currentAddress = (opts.current_address || opts.address || 'Not Provided').toString().trim();
+  const permanentAddress = (opts.permanent_address || opts.permanentAddress || 'Not Provided').toString().trim();
+  const bloodGroupId = opts.blood_group_id != null ? parseInt(opts.blood_group_id, 10) : null;
+  const facebook = opts.facebook || null;
+  const twitter = opts.twitter || null;
+  const linkedin = opts.linkedin || null;
+  const youtube = opts.youtube || null;
+  const instagram = opts.instagram || null;
   const rawPassword = (opts.password || opts.phone || '123456').toString().trim();
 
   let passwordHash;
@@ -154,10 +162,17 @@ async function createPersonUser(client, roleId, opts, insertOptions = {}) {
   let r;
   try {
     r = await client.query(
-      `INSERT INTO users (username, email, phone, password_hash, role_id, first_name, last_name, gender, date_of_birth, is_active, current_address, permanent_address, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, 'Not Provided', 'Not Provided', NOW(), NOW())
+      `INSERT INTO users (
+        username, email, phone, password_hash, role_id, first_name, last_name, gender, date_of_birth,
+        blood_group_id, current_address, permanent_address, facebook, twitter, linkedin, youtube, instagram,
+        is_active, created_at, updated_at
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, true, NOW(), NOW())
        RETURNING id`,
-      [username, email, phone, passwordHash, roleId, firstName, lastName, gender, dateOfBirth]
+      [
+        username, email, phone, passwordHash, roleId, firstName, lastName, gender, dateOfBirth,
+        bloodGroupId, currentAddress, permanentAddress, facebook, twitter, linkedin, youtube, instagram
+      ]
     );
   } catch (e) {
     if (
@@ -383,7 +398,8 @@ function generateTeacherInitialPassword() {
  * Password: explicit → else phone digits → else cryptographically secure random (never weak default).
  * Duplicate username/email always fails the transaction (rejectUsernameConflict).
  */
-async function createTeacherUser(client, { email, phone, first_name, last_name, password }) {
+async function createTeacherUser(client, opts) {
+  const { email, phone, password } = opts;
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
   const username = (emailTrim || phoneTrim || `tch_${Date.now()}`).toString().trim().slice(0, 50);
@@ -401,11 +417,10 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
     client,
     ROLES.TEACHER,
     {
+      ...opts,
       username,
       email: emailTrim || null,
       phone: phoneTrim || null,
-      first_name: (first_name || '').toString().trim() || null,
-      last_name: (last_name || '').toString().trim() || null,
       password: rawPassword,
     },
     { rejectUsernameConflict: true }
@@ -417,7 +432,8 @@ async function createTeacherUser(client, { email, phone, first_name, last_name, 
 /**
  * Non-teaching staff (HRM directory) — default Administrative app role; use roleId for Driver (user_roles.id).
  */
-async function createAdministrativeStaffUser(client, { email, phone, first_name, last_name, password, roleId }) {
+async function createAdministrativeStaffUser(client, opts) {
+  const { email, phone, password, roleId } = opts;
   const emailTrim = (email || '').toString().trim();
   const phoneTrim = (phone || '').toString().trim();
   const username = (emailTrim || phoneTrim || `staff_${Date.now()}`).toString().trim().slice(0, 50);
@@ -438,11 +454,10 @@ async function createAdministrativeStaffUser(client, { email, phone, first_name,
     client,
     resolvedRoleId,
     {
+      ...opts,
       username,
       email: emailTrim || null,
       phone: phoneTrim || null,
-      first_name: (first_name || '').toString().trim() || null,
-      last_name: (last_name || '').toString().trim() || null,
       password: rawPassword,
     },
     { rejectUsernameConflict: true }

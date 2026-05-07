@@ -36,7 +36,7 @@ const ParentGrid = () => {
   // shape expected by this grid and the View Details modal.
   // Re-mapping here would lose data (because raw API fields are no longer present),
   // so we just pass the hook data through.
-  const data = parents ?? [];
+  const data: any[] = parents ?? [];
   const exportColumns = useMemo(
     () => [
       { title: "ID", dataKey: "id" },
@@ -361,7 +361,7 @@ const ParentGrid = () => {
                         <div className="d-flex align-items-center mt-2 pt-2 border-top">
                           <span className="avatar avatar-md flex-shrink-0">
                             <ImageWithBasePath
-                              src="assets/img/parents/parent-02.jpg"
+                              src={parent.MotherImage}
                               className="img-fluid rounded-circle"
                               alt="mother"
                             />
@@ -476,7 +476,7 @@ const ParentGrid = () => {
                   <div className="border rounded p-3 h-100">
                     <div className="d-flex align-items-center mb-2">
                       <span className="avatar avatar-lg me-2">
-                        <ImageWithBasePath src="assets/img/parents/parent-02.jpg" alt="mother" />
+                        <ImageWithBasePath src={selectedParent.MotherImage} alt="mother" />
                       </span>
                       <div>
                         <span className="badge badge-soft-success mb-1">Mother</span>
