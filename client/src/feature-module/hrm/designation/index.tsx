@@ -68,6 +68,28 @@ const Designation = () => {
     });
   }, [designations, departments]);
 
+  const departmentNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    departments.forEach((d: any) => {
+      const rawId = d.originalData?.id ?? d.id;
+      const numericId = Number(rawId);
+      if (!Number.isFinite(numericId)) return;
+      const name =
+        d.department ??
+        d.originalData?.department_name ??
+        `Department ${numericId}`;
+      map.set(numericId, String(name));
+    });
+    return map;
+  }, [departments]);
+
+  const resolveDepartmentName = (record: any): string => {
+    const deptId = record?.originalData?.department_id;
+    if (deptId == null || deptId === "") return "—";
+    const mapped = departmentNameById.get(Number(deptId));
+    return mapped ?? `ID ${deptId}`;
+  };
+
   const exportFileStamp = () => new Date().toISOString().slice(0, 10);
 
   const handleDesignationExportPdf = () => {
@@ -125,6 +147,13 @@ const Designation = () => {
         title: "Designation",
         dataIndex: "designation",
         sorter: (a: TableData, b: TableData) => a.designation.length - b.designation.length,
+      },
+      {
+        title: "Department",
+        dataIndex: "department",
+        render: (_: unknown, record: any) => resolveDepartmentName(record),
+        sorter: (a: any, b: any) =>
+          resolveDepartmentName(a).localeCompare(resolveDepartmentName(b)),
       },
       {
         title: "Salary min",
