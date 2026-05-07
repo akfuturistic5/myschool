@@ -23,6 +23,10 @@ export const useTransportAssignments = (initialParams = {}) => {
     ...initialParams
   });
 
+  useEffect(() => {
+    setParams((prev) => ({ ...prev, ...initialParams }));
+  }, [initialParams]);
+
   const fetchAssignments = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);

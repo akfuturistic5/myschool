@@ -2,7 +2,7 @@ const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getScopedDriverId } = require('../utils/driverTransportAccess');
 const bcrypt = require('bcryptjs');
-const { hasColumn } = require('../utils/schemaInspector');
+const { hasColumn, hasTable } = require('../utils/schemaInspector');
 
 const TRANSPORT_ROLES = ['driver', 'conductor'];
 
@@ -95,7 +95,103 @@ function mapDriverRow(row) {
 
 const getAllDrivers = async (req, res) => {
   try {
+    const hasDriversTable = await hasTable('drivers');
+    if (!hasDriversTable) {
+      const hasAcademicYearId = await hasColumn('staff', 'academic_year_id');
+      const {
+        page = 1,
+        limit = 10,
+        search = '',
+        status,
+        academic_year_id,
+        sortField = 'id',
+        sortOrder = 'ASC'
+      } = req.query;
+
+      const pageNumber = Math.max(Number.parseInt(page, 10) || 1, 1);
+      const pageLimit = Math.max(Number.parseInt(limit, 10) || 10, 1);
+      const offset = (pageNumber - 1) * pageLimit;
+      const params = [];
+      let whereClause = `WHERE s.deleted_at IS NULL`;
+
+      if (search) {
+        params.push(`%${search}%`);
+        whereClause += ` AND (
+          COALESCE(u.first_name, '') ILIKE $${params.length}
+          OR COALESCE(u.last_name, '') ILIKE $${params.length}
+          OR COALESCE(u.phone, '') ILIKE $${params.length}
+          OR COALESCE(s.employee_code, '') ILIKE $${params.length}
+        )`;
+      }
+
+      if (status && status !== 'all') {
+        const normalized = String(status).trim().toLowerCase();
+        if (['active', 'true', '1'].includes(normalized)) {
+          whereClause += ` AND LOWER(COALESCE(s.status, 'active')) = 'active'`;
+        } else if (['inactive', 'false', '0'].includes(normalized)) {
+          whereClause += ` AND LOWER(COALESCE(s.status, 'active')) <> 'active'`;
+        }
+      }
+
+      if (hasAcademicYearId && academic_year_id) {
+        const yearId = Number.parseInt(academic_year_id, 10);
+        if (Number.isFinite(yearId) && yearId > 0) {
+          params.push(yearId);
+          whereClause += ` AND s.academic_year_id = $${params.length}`;
+        }
+      }
+
+      const allowedSortFields = ['id', 'created_at'];
+      const finalSortField = allowedSortFields.includes(sortField) ? sortField : 'id';
+      const finalSortOrder = String(sortOrder).toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+      const countResult = await query(
+        `SELECT COUNT(*)
+         FROM staff s
+         LEFT JOIN users u ON u.id = s.user_id
+         ${whereClause}`,
+        params
+      );
+      const totalCount = Number.parseInt(countResult.rows[0]?.count || '0', 10);
+
+      const dataResult = await query(
+        `SELECT
+          s.id,
+          s.employee_code AS driver_code,
+          TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS driver_name,
+          COALESCE(u.phone, '') AS phone,
+          COALESCE(s.license_number, '') AS license_number,
+          'driver'::text AS role,
+          ''::text AS address,
+          s.user_id,
+          (LOWER(COALESCE(s.status, 'active')) = 'active') AS is_active,
+          s.photo_url,
+          s.created_at,
+          s.updated_at
+         FROM staff s
+         LEFT JOIN users u ON u.id = s.user_id
+         ${whereClause}
+         ORDER BY s.${finalSortField} ${finalSortOrder}
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, pageLimit, offset]
+      );
+
+      return success(
+        res,
+        200,
+        'Drivers fetched successfully',
+        dataResult.rows.map(mapDriverRow),
+        {
+          totalCount,
+          page: pageNumber,
+          limit: pageLimit,
+          totalPages: Math.ceil(totalCount / pageLimit),
+        }
+      );
+    }
+
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
+    const hasAcademicYearIdInDrivers = await hasColumn('drivers', 'academic_year_id');
     const scopedDriverId = await getScopedDriverId(req);
     const activeFilter = hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)';
     if (scopedDriverId != null) {
@@ -113,6 +209,7 @@ const getAllDrivers = async (req, res) => {
       search = '',
       role,
       status,
+      academic_year_id,
       sortField = 'id',
       sortOrder = 'ASC'
     } = req.query;
@@ -135,6 +232,14 @@ const getAllDrivers = async (req, res) => {
       const isActive = status === 'active' || status === 'true' || status === true;
       queryParams.push(isActive);
       whereClause += ` AND is_active = $${queryParams.length}`;
+    }
+
+    if (hasAcademicYearIdInDrivers && academic_year_id) {
+      const yearId = Number.parseInt(academic_year_id, 10);
+      if (Number.isFinite(yearId) && yearId > 0) {
+        queryParams.push(yearId);
+        whereClause += ` AND academic_year_id = $${queryParams.length}`;
+      }
     }
 
     // Sorting
@@ -174,6 +279,34 @@ const getAllDrivers = async (req, res) => {
 
 const getDriverById = async (req, res) => {
   try {
+    const hasDriversTable = await hasTable('drivers');
+    if (!hasDriversTable) {
+      const { id } = req.params;
+      const result = await query(
+        `SELECT
+          s.id,
+          s.employee_code AS driver_code,
+          TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS driver_name,
+          COALESCE(u.phone, '') AS phone,
+          COALESCE(s.license_number, '') AS license_number,
+          'driver'::text AS role,
+          ''::text AS address,
+          s.user_id,
+          (LOWER(COALESCE(s.status, 'active')) = 'active') AS is_active,
+          s.photo_url,
+          s.created_at,
+          s.updated_at
+         FROM staff s
+         LEFT JOIN users u ON u.id = s.user_id
+         WHERE s.id = $1 AND s.deleted_at IS NULL`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return errorResponse(res, 404, 'Driver not found');
+      }
+      return success(res, 200, 'Driver fetched successfully', mapDriverRow(result.rows[0]));
+    }
+
     const { id } = req.params;
     const hasDeletedAt = await hasColumn('drivers', 'deleted_at');
     const activeFilter = hasDeletedAt ? 'deleted_at IS NULL' : '(is_active IS NOT FALSE OR is_active IS NULL)';

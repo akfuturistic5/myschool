@@ -55,7 +55,7 @@ const TransportAllocation = () => {
 
   const onSort = (field: string, order: string) => {
     if (!field) return;
-    const map: any = { displayId: "id", userType: "user_type", routeName: "route_name", pickupPointName: "point_name", vehicleNumber: "vehicle_number", feeAmount: "assigned_fee_amount", startDate: "start_date", status: "status" };
+    const map: any = { displayId: "id", userType: "user_type", routeName: "route_name", pickupPointName: "point_name", vehicleNumber: "vehicle_number", feeAmount: "assigned_amount", startDate: "start_date", status: "status" };
     setParams((p: any) => ({ ...p, sortField: map[field] || "id", sortOrder: order === "ascend" ? "ASC" : "DESC" }));
   };
 
@@ -162,7 +162,7 @@ const TransportAllocation = () => {
             </li>
             <li>
               <Link className="dropdown-item rounded-1" to="#" data-bs-toggle="modal" data-bs-target="#delete-transport-allocation-modal" onClick={() => setDeleteId(record.originalData.id)}>
-                <i className="ti ti-trash-x me-2" />Close Allocation
+                <i className="ti ti-trash-x me-2" />Delete Allocation
               </Link>
             </li>
           </ul>

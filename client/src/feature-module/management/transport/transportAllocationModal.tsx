@@ -91,8 +91,8 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     const loadBase = async () => {
       try {
         const [sRes, stRes, pRes, fRes] = await Promise.all([
-          apiService.getStudents(),
-          apiService.getStaff(),
+          (apiService as any).getStudents(academicYearId ?? undefined),
+          apiService.getTransportDrivers({ status: "active", limit: 1000, academic_year_id: academicYearId ?? undefined }),
           apiService.getTransportPickupPoints({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined }),
           apiService.getTransportFees({ limit: 1000, status: "active", academic_year_id: academicYearId ?? undefined }),
         ]);
@@ -117,7 +117,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       setSinglePickupPointId(String(row.pickup_point_id || ""));
       setSingleRouteId(String(row.route_id || ""));
       setSingleVehicleId(String(row.vehicle_id || ""));
-      setSingleAssignedFeeId(String(row.assigned_fee_id || ""));
+      setSingleAssignedFeeId(String(row.fee_master_id || row.assigned_fee_id || ""));
       setSingleIsFree(Boolean(row.is_free));
       setSingleStartDate(row.start_date || today());
       setSingleEndDate(row.end_date || "");
@@ -215,7 +215,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         const res = await apiService.getTransportSeatAvailability({
           vehicle_id: Number(bulkVehicleId),
           start_date: bulkStartDate,
-          end_date: bulkEndDate || undefined,
         });
         if (res?.status === "SUCCESS" && res?.data) {
           setBulkSeatAvailability({
@@ -231,7 +230,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
     };
     loadSeatAvailability();
-  }, [bulkVehicleId, bulkStartDate, bulkEndDate]);
+  }, [bulkVehicleId, bulkStartDate]);
 
   const resetSingleAddForm = () => {
     setSingleUserType("student");
@@ -284,26 +283,32 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     singleUserType === "student"
       ? students.filter((s: any) => s.id != null).map((s: any) => ({
           value: String(s.id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.admission_number || s.id})`,
+          label: `${s.full_name || `${s.first_name || s.student_first_name || ""} ${s.last_name || s.student_last_name || ""}`.trim() || s.name || `Student ${s.id}`} (${s.admission_number || s.unique_student_ids || s.id})`,
         }))
       : staff.filter((s: any) => s.id != null).map((s: any) => ({
           value: String(s.id),
-          label: `${s.first_name || ""} ${s.last_name || ""} (${s.employee_code || s.id})`,
+          label: `${s.driver_name || s.name || `${s.first_name || ""} ${s.last_name || ""}`.trim() || `Staff ${s.id}`} (${s.employee_code || s.driver_code || s.id})`,
         }));
 
   const filteredSingleFees = useMemo(
-    () => fees.filter((f: any) => String(f.pickup_point_id) === String(singlePickupPointId)),
+    () => fees.filter((f: any) => {
+      if (!singlePickupPointId) return false;
+      return String(f.pickup_point_id || "") === String(singlePickupPointId) || !f.pickup_point_id;
+    }),
     [fees, singlePickupPointId]
   );
   const filteredBulkFees = useMemo(
-    () => fees.filter((f: any) => String(f.pickup_point_id) === String(bulkPickupPointId)),
+    () => fees.filter((f: any) => {
+      if (!bulkPickupPointId) return false;
+      return String(f.pickup_point_id || "") === String(bulkPickupPointId) || !f.pickup_point_id;
+    }),
     [fees, bulkPickupPointId]
   );
 
   const feeLabel = (fee: any, userType: string) =>
     userType === "staff"
       ? `${fee.plan_name} - Staff: ${fee.staff_amount ?? fee.amount}`
-      : `${fee.plan_name} - Student: ${fee.amount}`;
+      : `${fee.plan_name} - Student: ${fee.student_amount ?? fee.amount}`;
 
   const saveSingleAllocation = async (e: any) => {
     e.preventDefault();
@@ -314,9 +319,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       }
       if (!singleStartDate) {
         throw new Error("Please select a start date");
-      }
-      if (singleEndDate && singleEndDate < singleStartDate) {
-        throw new Error("End date cannot be before start date");
       }
       if (!singleIsFree && !singleAssignedFeeId) {
         throw new Error("Please select a fee plan");
@@ -332,7 +334,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         assigned_fee_id: singleIsFree ? null : (singleAssignedFeeId ? Number(singleAssignedFeeId) : null),
         is_free: singleIsFree,
         start_date: singleStartDate,
-        end_date: singleEndDate || null,
         status: singleStatus,
         academic_year_id: academicYearId ?? undefined,
       };
@@ -375,7 +376,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     if (bulkSearch.trim()) {
       const q = bulkSearch.trim().toLowerCase();
       rows = rows.filter((u: any) =>
-        `${u.first_name || ""} ${u.last_name || ""} ${u.admission_number || ""} ${u.employee_code || ""}`
+        `${u.full_name || u.driver_name || u.name || ""} ${u.first_name || u.student_first_name || ""} ${u.last_name || u.student_last_name || ""} ${u.admission_number || ""} ${u.employee_code || u.driver_code || ""}`
           .toLowerCase()
           .includes(q)
       );
@@ -402,9 +403,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
       if (!bulkStartDate) {
         throw new Error("Please select a start date");
       }
-      if (bulkEndDate && bulkEndDate < bulkStartDate) {
-        throw new Error("End date cannot be before start date");
-      }
       if (!bulkIsFree && !bulkAssignedFeeId) {
         throw new Error("Please select a fee plan");
       }
@@ -424,7 +422,6 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
         assigned_fee_id: bulkIsFree ? null : (bulkAssignedFeeId ? Number(bulkAssignedFeeId) : null),
         is_free: bulkIsFree,
         start_date: bulkStartDate,
-        end_date: bulkEndDate || null,
         status: bulkStatus,
         academic_year_id: academicYearId ?? undefined,
       };
@@ -455,18 +452,18 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
     setLoading(true);
     try {
       const res = await apiService.deleteTransportAllocation(deleteId);
-      if (res?.status !== "SUCCESS") throw new Error(res?.message || "Failed to close allocation");
+      if (res?.status !== "SUCCESS") throw new Error(res?.message || "Failed to delete allocation");
       Swal.fire({
         icon: "success",
         title: "Success",
-        text: "Allocation closed successfully",
+        text: "Allocation deleted successfully",
         timer: 1500,
         showConfirmButton: false,
       });
       hideModal("delete-transport-allocation-modal");
       onSuccess?.();
     } catch (err: any) {
-      Swal.fire({ icon: "error", title: "Error", text: toErrorText(err, "Failed to close allocation") });
+      Swal.fire({ icon: "error", title: "Error", text: toErrorText(err, "Failed to delete allocation") });
     } finally {
       setLoading(false);
     }
@@ -545,16 +542,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">End Date</label>
-                    <DatePicker
-                      className="form-control datetimepicker"
-                      format="DD MMM YYYY"
-                      value={singleEndDate ? dayjs(singleEndDate) : null}
-                      onChange={(d) => setSingleEndDate(d ? d.format("YYYY-MM-DD") : "")}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3 d-flex align-items-end">
+                  <div className="col-md-12 mb-3 d-flex align-items-end">
                     <div className="form-check mb-2">
                       <input className="form-check-input" type="checkbox" id="single_is_free_allocation" checked={singleIsFree} onChange={(e) => setSingleIsFree(e.target.checked)} />
                       <label className="form-check-label" htmlFor="single_is_free_allocation">Is Free Allocation</label>
@@ -649,16 +637,7 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">End Date</label>
-                    <DatePicker
-                      className="form-control datetimepicker"
-                      format="DD MMM YYYY"
-                      value={singleEndDate ? dayjs(singleEndDate) : null}
-                      onChange={(d) => setSingleEndDate(d ? d.format("YYYY-MM-DD") : "")}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3 d-flex align-items-end">
+                  <div className="col-md-12 mb-3 d-flex align-items-end">
                     <div className="form-check mb-2">
                       <input className="form-check-input" type="checkbox" id="edit_single_is_free_allocation" checked={singleIsFree} onChange={(e) => setSingleIsFree(e.target.checked)} />
                       <label className="form-check-label" htmlFor="edit_single_is_free_allocation">Is Free Allocation</label>
@@ -735,22 +714,13 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                   </div>
                 </div>
                 <div className="row">
-                  <div className="col-md-6 mb-3">
+                  <div className="col-md-12 mb-3">
                     <label className="form-label">Start Date</label>
                     <DatePicker
                       className="form-control datetimepicker"
                       format="DD MMM YYYY"
                       value={bulkStartDate ? dayjs(bulkStartDate) : null}
                       onChange={(d) => setBulkStartDate(d ? d.format("YYYY-MM-DD") : "")}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">End Date</label>
-                    <DatePicker
-                      className="form-control datetimepicker"
-                      format="DD MMM YYYY"
-                      value={bulkEndDate ? dayjs(bulkEndDate) : null}
-                      onChange={(d) => setBulkEndDate(d ? d.format("YYYY-MM-DD") : "")}
                     />
                   </div>
                 </div>
@@ -867,8 +837,8 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
                                 }}
                               />
                             </td>
-                            <td>{`${u.first_name || ""} ${u.last_name || ""}`.trim() || "N/A"}</td>
-                            <td>{bulkUserType === "student" ? (u.admission_number || "-") : (u.employee_code || "-")}</td>
+                            <td>{`${u.full_name || u.driver_name || u.name || `${u.first_name || u.student_first_name || ""} ${u.last_name || u.student_last_name || ""}`.trim()}`.trim() || "N/A"}</td>
+                            <td>{bulkUserType === "student" ? (u.admission_number || u.unique_student_ids || "-") : (u.employee_code || u.driver_code || "-")}</td>
                           </tr>
                         );
                       })}
@@ -903,11 +873,11 @@ const TransportAllocationModal = ({ selectedAllocation, deleteId, onSuccess }: P
           <div className="modal-content">
             <div className="modal-body text-center">
               <span className="delete-icon"><i className="ti ti-trash-x" /></span>
-              <h4>Close Allocation</h4>
-              <p>This will mark the allocation inactive and set end date.</p>
+              <h4>Delete Allocation</h4>
+              <p>This will permanently delete the allocation record.</p>
               <div className="d-flex justify-content-center">
                 <Link to="#" className="btn btn-light me-3" data-bs-dismiss="modal">Cancel</Link>
-                <Link to="#" className="btn btn-danger" onClick={deleteAllocation}>{loading ? "Closing..." : "Yes, Close"}</Link>
+                <Link to="#" className="btn btn-danger" onClick={deleteAllocation}>{loading ? "Deleting..." : "Yes, Delete"}</Link>
               </div>
             </div>
           </div>

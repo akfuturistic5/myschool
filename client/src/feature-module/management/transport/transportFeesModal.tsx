@@ -75,11 +75,14 @@ const TransportFeesModal = ({ selectedFee, deleteId, onSuccess }: Props) => {
     e.preventDefault();
     setLoading(true);
     try {
+      if (!planName.trim() || studentAmount === "" || staffAmount === "") {
+        throw new Error("Plan name, student amount and staff amount are required");
+      }
       const payload: any = {
-        pickup_point_id: Number(pickupPointId),
+        pickup_point_id: pickupPointId ? Number(pickupPointId) : null,
         plan_name: planName.trim(),
         duration_days: durationDays ? Number(durationDays) : null,
-        amount: Number(studentAmount),
+        student_amount: Number(studentAmount),
         staff_amount: Number(staffAmount),
         status,
         academic_year_id: academicYearId ?? undefined,

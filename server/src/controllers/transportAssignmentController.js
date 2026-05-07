@@ -8,7 +8,7 @@ function mapAssignmentRow(row) {
     assignment_code: `ASN-${String(row.id).padStart(4, '0')}`,
     vehicle_id: row.vehicle_id,
     route_id: row.route_id,
-    driver_id: row.driver_id,
+    driver_id: row.driver_id ?? row.staff_id ?? null,
     vehicle_number: row.vehicle_number || 'N/A',
     route_name: row.route_name || 'N/A',
     point_name: row.point_name || 'N/A',
@@ -29,6 +29,7 @@ const getAllAssignments = async (req, res) => {
       page = 1,
       limit = 10,
       search = '',
+      status = 'all',
       route_id,
       academic_year_id,
       sortField = 'id',
@@ -44,9 +45,14 @@ const getAllAssignments = async (req, res) => {
       whereClause += ` AND (
         v.vehicle_number ILIKE $${params.length}
         OR r.route_name ILIKE $${params.length}
-        OR s.first_name ILIKE $${params.length}
-        OR s.last_name ILIKE $${params.length}
+        OR u.first_name ILIKE $${params.length}
+        OR u.last_name ILIKE $${params.length}
       )`;
+    }
+
+    if (status && status !== 'all') {
+      params.push(String(status).toLowerCase());
+      whereClause += ` AND LOWER(COALESCE(s.status, 'active')) = $${params.length}`;
     }
 
     if (route_id && route_id !== 'all') {
@@ -74,6 +80,7 @@ const getAllAssignments = async (req, res) => {
        JOIN transport_vehicles v ON vra.vehicle_id = v.id
        JOIN routes r ON vra.route_id = r.id
        JOIN staff s ON vra.staff_id = s.id
+       LEFT JOIN users u ON u.id = s.user_id
        ${whereClause}`,
       params
     );
@@ -83,8 +90,8 @@ const getAllAssignments = async (req, res) => {
       `SELECT vra.*,
               v.vehicle_number,
               r.route_name,
-              s.first_name || ' ' || s.last_name as driver_name,
-              s.phone AS driver_phone,
+              TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) as driver_name,
+              COALESCE(u.phone, '') AS driver_phone,
               (${hasRouteStops
                 ? `SELECT string_agg(pp_sub.point_name, ', ' ORDER BY rs_sub.order_index ASC)
                    FROM route_stops rs_sub
@@ -98,6 +105,7 @@ const getAllAssignments = async (req, res) => {
        JOIN transport_vehicles v ON vra.vehicle_id = v.id
        JOIN routes r ON vra.route_id = r.id
        JOIN staff s ON vra.staff_id = s.id
+       LEFT JOIN users u ON u.id = s.user_id
        ${whereClause}
        ORDER BY ${orderBy} ${direction}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -124,9 +132,10 @@ const getAllAssignments = async (req, res) => {
 
 const createAssignment = async (req, res) => {
   try {
-    const { vehicle_id, route_id, staff_id, academic_year_id, start_date, end_date } = req.body;
+    const { vehicle_id, route_id, staff_id, driver_id, academic_year_id, start_date, end_date } = req.body;
+    const effectiveStaffId = staff_id ?? driver_id;
 
-    if (!vehicle_id || !route_id || !staff_id || !academic_year_id) {
+    if (!vehicle_id || !route_id || !effectiveStaffId || !academic_year_id) {
       return errorResponse(res, 400, 'Vehicle, route, staff and academic year are required');
     }
 
@@ -139,7 +148,7 @@ const createAssignment = async (req, res) => {
        FROM vehicle_route_assignments
        WHERE vehicle_id = $1 AND route_id = $2 AND staff_id = $3 AND deleted_at IS NULL
        LIMIT 1`,
-      [Number(vehicle_id), Number(route_id), Number(staff_id)]
+      [Number(vehicle_id), Number(route_id), Number(effectiveStaffId)]
     );
     if (existing.rows.length > 0) {
       return errorResponse(res, 400, 'This route-staff pair is already assigned to this vehicle');
@@ -149,7 +158,7 @@ const createAssignment = async (req, res) => {
       `INSERT INTO vehicle_route_assignments (vehicle_id, route_id, staff_id, academic_year_id, valid_period)
        VALUES ($1, $2, $3, $4, $5::daterange)
        RETURNING *`,
-      [Number(vehicle_id), Number(route_id), Number(staff_id), Number(academic_year_id), validPeriod]
+      [Number(vehicle_id), Number(route_id), Number(effectiveStaffId), Number(academic_year_id), validPeriod]
     );
 
     return success(res, 201, 'Assignment created successfully', mapAssignmentRow(insert.rows[0]));
@@ -166,7 +175,8 @@ const updateAssignment = async (req, res) => {
       return errorResponse(res, 400, 'Invalid assignment ID');
     }
 
-    const { vehicle_id, route_id, staff_id, academic_year_id, start_date, end_date } = req.body;
+    const { vehicle_id, route_id, staff_id, driver_id, academic_year_id, start_date, end_date } = req.body;
+    const effectiveStaffId = staff_id ?? driver_id;
     const updates = [];
     const values = [];
     let i = 1;
@@ -179,9 +189,9 @@ const updateAssignment = async (req, res) => {
       updates.push(`route_id = $${i++}`);
       values.push(route_id ? Number(route_id) : null);
     }
-    if (staff_id !== undefined) {
+    if (effectiveStaffId !== undefined) {
       updates.push(`staff_id = $${i++}`);
-      values.push(staff_id ? Number(staff_id) : null);
+      values.push(effectiveStaffId ? Number(effectiveStaffId) : null);
     }
     if (academic_year_id !== undefined) {
       updates.push(`academic_year_id = $${i++}`);
