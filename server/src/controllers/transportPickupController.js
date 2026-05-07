@@ -239,18 +239,6 @@ const getAllPickupPoints = async (req, res) => {
     const totalCount = Number.parseInt(countResult.rows[0]?.count || '0', 10);
     const data = result.rows.map((row) => mapPickupRow(row, flags));
 
-    const dataResult = await query(
-      `SELECT pp.*, r.route_name
-       FROM pickup_points pp
-       LEFT JOIN routes r ON pp.route_id = r.id
-       ${whereClause} 
-       ORDER BY pp.${actualSortField} ${actualSortOrder} 
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, parseInt(limit), offset]
-    );
-
-    const data = dataResult.rows.map((row) => mapPickupRow(row, flags));
-
     return success(res, 200, 'Pickup points fetched successfully', data, { 
       total: totalCount,
       page: pageNumber,

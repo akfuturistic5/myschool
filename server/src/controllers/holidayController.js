@@ -6,21 +6,25 @@ const cleanText = (value, max = 2000) =>
   sanitizeHtml(String(value || ''), { allowedTags: [], allowedAttributes: {} }).trim().slice(0, max);
 
 const normalizeHolidayTypeForDb = (value) => {
-  const normalized = cleanText(value || '', 32).toLowerCase();
-  if (!normalized) return null;
-  if (normalized === 'public') return 'national';
-  if (normalized === 'school') return 'academic';
-  if (normalized === 'custom') return 'optional';
-  return normalized;
+  const normalized = cleanText(value || '', 32);
+  if (!normalized) return 'Custom';
+  const lower = normalized.toLowerCase();
+  const map = {
+    national: 'National',
+    religious: 'Religious',
+    academic: 'Academic',
+    school: 'School',
+    custom: 'Custom',
+    public: 'National',
+    optional: 'Custom',
+  };
+  // DB constraint only allows fixed values; unknown free text safely folds to Custom.
+  return map[lower] || 'Custom';
 };
 
 const normalizeHolidayTypeForApi = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized === 'national' || normalized === 'religious') return 'public';
-  if (normalized === 'academic') return 'school';
-  if (normalized === 'optional') return 'custom';
-  return normalized;
+  const normalized = String(value || '').trim();
+  return normalized || null;
 };
 
 const serializeHolidayRow = (row) => {
@@ -49,21 +53,6 @@ const validateDateRange = (startDate, endDate) => {
 const parseAcademicYearId = (value) => {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
-};
-
-/** Map normalized API type values to school_holidays.holiday_type CHECK values */
-const toSchoolHolidayType = (normalizedLower) => {
-  const v = String(normalizedLower || '').toLowerCase();
-  const map = {
-    national: 'National',
-    religious: 'Religious',
-    academic: 'Academic',
-    school: 'School',
-    custom: 'Custom',
-    optional: 'Custom',
-    public: 'National',
-  };
-  return map[v] || 'Custom';
 };
 
 const ensureNoOverlap = async ({ startDate, endDate, excludeId = null }) => {
@@ -106,8 +95,7 @@ const createHoliday = async (req, res) => {
     const description = cleanText(req.body?.description, 2000) || null;
     const startDate = String(req.body?.start_date || '');
     const endDate = String(req.body?.end_date || '');
-    const holidayTypeNorm = normalizeHolidayTypeForDb(req.body?.holiday_type);
-    const dbHolidayType = toSchoolHolidayType(holidayTypeNorm);
+    const dbHolidayType = normalizeHolidayTypeForDb(req.body?.holiday_type);
     const academicYearId = await resolveAcademicYearIdForHoliday(req.body?.academic_year_id);
 
     if (!title) return errorResponse(res, 400, 'title is required', 'VALIDATION_ERROR');
@@ -230,8 +218,7 @@ const updateHoliday = async (req, res) => {
     const description = cleanText(req.body?.description, 2000) || null;
     const startDate = String(req.body?.start_date || '');
     const endDate = String(req.body?.end_date || '');
-    const holidayTypeNorm = normalizeHolidayTypeForDb(req.body?.holiday_type);
-    const dbHolidayType = toSchoolHolidayType(holidayTypeNorm);
+    const dbHolidayType = normalizeHolidayTypeForDb(req.body?.holiday_type);
     const academicYearId = await resolveAcademicYearIdForHoliday(req.body?.academic_year_id);
 
     if (!title) return errorResponse(res, 400, 'title is required', 'VALIDATION_ERROR');
