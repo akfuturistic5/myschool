@@ -41,6 +41,7 @@ const StudentDetails = () => {
     mother: null,
     guardian: null,
   })
+  const [medicalDocumentUrl, setMedicalDocumentUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!student?.id) {
@@ -91,6 +92,14 @@ const StudentDetails = () => {
       const motherRaw = student?.mother_image_url
       const guardianRaw = student?.guardian_image_url
 
+      if (student?.medical_document_path) {
+        apiService.resolveAvatarUrl(student.medical_document_path).then(url => {
+          if (!cancelled) setMedicalDocumentUrl(url)
+        })
+      } else {
+        setMedicalDocumentUrl(null)
+      }
+
       if (!fatherRaw && !motherRaw && !guardianRaw) {
         setParentImageUrls({ father: null, mother: null, guardian: null })
         return
@@ -117,10 +126,12 @@ const StudentDetails = () => {
       }
     })
 
+
+
     return () => {
       cancelled = true
     }
-  }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url])
+  }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url, student?.medical_document_path])
   const historyTableRows = useMemo(
     () =>
       promotionRows.map((row: any) => ({
@@ -647,6 +658,22 @@ const StudentDetails = () => {
                         <p>{medicalCondition ?? 'N/A'}</p>
                       </div>
                     </div>
+                    {student.medical_document_path && (
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <p className="text-dark fw-medium mb-1">Medical Document</p>
+                          <a 
+                            href={medicalDocumentUrl || '#'} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="btn btn-outline-primary btn-sm"
+                          >
+                            <i className="ti ti-file-text me-1"></i>
+                            View Document
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

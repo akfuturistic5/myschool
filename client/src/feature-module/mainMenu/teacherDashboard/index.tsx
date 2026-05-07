@@ -252,21 +252,20 @@ const TeacherDashboard = () => {
       : latestNotice?.description
         ? String(latestNotice.description).trim()
         : null;
-  const noticeDate = latestNotice?.addedOn
-    ? String(latestNotice.addedOn).trim()
-    : latestNotice?.modifiedOn
-      ? String(latestNotice.modifiedOn).trim()
-      : latestNotice?.noticeDate
-        ? String(latestNotice.noticeDate).trim()
-        : latestNotice?.publishOn
-          ? String(latestNotice.publishOn).trim()
-          : latestNotice?.created_at
-            ? new Date(latestNotice.created_at).toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-            : null;
+  const noticePublishOn = latestNotice?.publishOn
+    ? String(latestNotice.publishOn).trim()
+    : latestNotice?.addedOn
+      ? String(latestNotice.addedOn).trim()
+      : latestNotice?.created_at
+        ? new Date(latestNotice.created_at).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : null;
+  const noticeTill = latestNotice?.noticeEndDate
+    ? String(latestNotice.noticeEndDate).trim()
+    : null;
   const studentDonutChart = useMemo(() => ({
     chart: {
       height: 90,
@@ -346,7 +345,8 @@ const TeacherDashboard = () => {
                     <div className="text-light">
                       <p className="mb-1">Notice: {noticeTitle}</p>
                       {noticeMessage ? <p className="mb-1">{noticeMessage}</p> : null}
-                      {noticeDate ? <p className="mb-0 small">Date: {noticeDate}</p> : null}
+                      {noticePublishOn ? <p className="mb-0 small">Publish On: {noticePublishOn}</p> : null}
+                      <p className="mb-0 small">Notice Till: {noticeTill || "N/A"}</p>
                     </div>
                   ) : (
                     <p className="text-light mb-0">No upcoming notices.</p>

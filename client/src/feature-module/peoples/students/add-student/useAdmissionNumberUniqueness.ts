@@ -134,7 +134,7 @@ export function useAdmissionNumberUniqueness({
   const duplicateMessage =
     exists === true && admissionNumber.trim().length > 0
       ? ADMISSION_NUMBER_DUPLICATE_MSG
-      : null;
+      : undefined;
 
   return {
     checking,

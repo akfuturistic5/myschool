@@ -7,7 +7,7 @@ import { apiService } from "../../../core/services/apiService";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
-const defaultForm = { title: "", description: "", start_date: "", end_date: "", holiday_type: "school" };
+const defaultForm = { title: "", description: "", start_date: "", end_date: "", holiday_type: "" };
 const getReadableError = (err: any, fallback: string) => {
   const raw = String(err?.message || "");
   const m = raw.match(/"message"\s*:\s*"([^"]+)"/);
@@ -84,7 +84,7 @@ const Holiday = () => {
       description: row.description || "",
       start_date: String(row.start_date || "").slice(0, 10),
       end_date: String(row.end_date || "").slice(0, 10),
-      holiday_type: row.holiday_type || "school",
+      holiday_type: row.holiday_type || "",
     });
   };
 
@@ -132,15 +132,26 @@ const Holiday = () => {
             <div className="card-body">
               <form onSubmit={onSubmit}>
                 <div className="row g-2">
-                  <div className="col-md-4"><input className="form-control" placeholder="Title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} required /></div>
-                  <div className="col-md-2"><input type="date" className="form-control" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} required /></div>
-                  <div className="col-md-2"><input type="date" className="form-control" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} required /></div>
+                  <div className="col-md-4">
+                    <label className="form-label">Title</label>
+                    <input className="form-control" placeholder="Title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} required />
+                  </div>
                   <div className="col-md-2">
-                    <select className="form-select" value={form.holiday_type} onChange={(e) => setForm((p) => ({ ...p, holiday_type: e.target.value }))}>
-                      <option value="public">Public</option>
-                      <option value="school">School</option>
-                      <option value="custom">Custom</option>
-                    </select>
+                    <label className="form-label">From Date</label>
+                    <input type="date" className="form-control" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} required />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">To Date</label>
+                    <input type="date" className="form-control" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} required />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">Type</label>
+                    <input
+                      className="form-control"
+                      placeholder="Type (e.g. National)"
+                      value={form.holiday_type}
+                      onChange={(e) => setForm((p) => ({ ...p, holiday_type: e.target.value }))}
+                    />
                   </div>
                   <div className="col-md-12"><textarea className="form-control" rows={2} placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div>
                   <div className="col-md-12 d-flex gap-2">
@@ -169,7 +180,7 @@ const Holiday = () => {
                         <td>{row.title}</td>
                         <td>{String(row.start_date).slice(0, 10)}</td>
                         <td>{String(row.end_date).slice(0, 10)}</td>
-                        <td>{row.holiday_type || "custom"}</td>
+                        <td>{row.holiday_type || "—"}</td>
                         <td>{row.description || "—"}</td>
                         {canManage ? (
                           <td>

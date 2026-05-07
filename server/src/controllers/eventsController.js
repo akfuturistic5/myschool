@@ -5,6 +5,8 @@ const { getStorageProvider } = require('../storage');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { ROLES } = require('../config/roles');
+const { resolveStudentScopeForUser, resolveWardStudentIdsForUser } = require('../utils/accessControl');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 const EVENT_FOR_ALLOWED = new Set([
   'all',
@@ -15,6 +17,32 @@ const EVENT_FOR_ALLOWED = new Set([
   'parents',
   'guardians',
 ]);
+
+const eventsColumnSupportCache = new Map();
+
+async function getEventsColumnSupport() {
+  // Cache per-tenant DB (query() is tenant-aware in this codebase).
+  const cacheKey = 'events-columns-v1';
+  const cached = eventsColumnSupportCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const res = await query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'events'
+       AND column_name = ANY($1::text[])`,
+    [['target_department_ids', 'target_designation_ids']]
+  );
+  const set = new Set((res.rows || []).map((r) => String(r.column_name)));
+  const value = {
+    hasTargetDepartmentIds: set.has('target_department_ids'),
+    hasTargetDesignationIds: set.has('target_designation_ids'),
+  };
+  // short TTL: allows applying migrations without restart, but avoids per-request schema hits.
+  eventsColumnSupportCache.set(cacheKey, { value, expiresAt: Date.now() + 60_000 });
+  return value;
+}
 
 function normalizeAudienceToken(value) {
   const raw = String(value || '').trim().toLowerCase();
@@ -98,7 +126,14 @@ function isMissingEventAttachmentsTable(err) {
   return err.code === '42P01' && /event_attachments/i.test(msg);
 }
 
-function eventSelectProjection(alias = 'e') {
+function eventSelectProjection(alias = 'e', columnSupport) {
+  const depSelect = columnSupport?.hasTargetDepartmentIds
+    ? `${alias}.target_department_ids`
+    : `NULL::jsonb AS target_department_ids`;
+  const desSelect = columnSupport?.hasTargetDesignationIds
+    ? `${alias}.target_designation_ids`
+    : `NULL::jsonb AS target_designation_ids`;
+
   return `${alias}.id, ${alias}.title, ${alias}.description,
           to_char(${alias}.start_date, 'YYYY-MM-DD"T"HH24:MI:SS') AS start_date,
           CASE
@@ -108,19 +143,13 @@ function eventSelectProjection(alias = 'e') {
           ${alias}.event_color, ${alias}.is_all_day, ${alias}.location,
           ${alias}.event_category, ${alias}.event_for, ${alias}.created_at,
           ${alias}.target_class_ids, ${alias}.target_section_ids,
-          ${alias}.target_department_ids, ${alias}.target_designation_ids,
+          ${depSelect}, ${desSelect},
           ${alias}.attachment_url, ${alias}.created_by`;
 }
 
 function getUserRoleId(req) {
   const roleId = parseInt(req?.user?.role_id, 10);
   return Number.isInteger(roleId) ? roleId : null;
-}
-
-function isMissingGuardiansTableError(err) {
-  if (!err) return false;
-  if (String(err.code || '') !== '42P01') return false;
-  return /relation\s+"?guardians"?\s+does not exist/i.test(String(err.message || ''));
 }
 
 /**
@@ -136,15 +165,9 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
   }
 
   if (roleId === ROLES.STUDENT) {
-    const studentRes = await query(
-      `SELECT class_id, section_id
-       FROM students
-       WHERE user_id = $1 AND is_active = true
-       LIMIT 1`,
-      [req.user?.id]
-    );
-    const classId = studentRes.rows[0]?.class_id || null;
-    const sectionId = studentRes.rows[0]?.section_id || null;
+    const studentScope = await resolveStudentScopeForUser(req.user?.id);
+    const classId = studentScope?.classId || null;
+    const sectionId = studentScope?.sectionId || null;
     const classIds = classId ? [String(classId)] : [];
     const sectionIds = sectionId ? [String(sectionId)] : [];
     paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'students']);
@@ -168,31 +191,21 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
   }
   if (roleId === ROLES.PARENT) {
     paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'parents']);
-    let linkedRes;
-    try {
-      linkedRes = await query(
-        `SELECT s.class_id, s.section_id
-         FROM guardians g
-         INNER JOIN students s ON s.id = g.student_id
-         WHERE g.user_id = $1 AND g.is_active = true AND s.is_active = true`,
-        [req.user?.id]
+    const wardStudentIds = await resolveWardStudentIdsForUser(req);
+    let linkedRows = [];
+    if (wardStudentIds.length) {
+      const linkedRes = await query(
+        `SELECT enr.class_id, enr.section_id
+         FROM students s
+         ${lateralCurrentEnrollment('s.id')}
+         WHERE s.id = ANY($1::int[]) AND (s.deleted_at IS NULL AND s.status = 'Active')`,
+        [wardStudentIds]
       );
-    } catch (guardiansErr) {
-      // Legacy-safe fallback for deployments still using parents table.
-      if (!isMissingGuardiansTableError(guardiansErr)) {
-        throw guardiansErr;
-      }
-      linkedRes = await query(
-        `SELECT s.class_id, s.section_id
-         FROM parents p
-         INNER JOIN students s ON s.id = p.student_id
-         WHERE p.user_id = $1 AND s.is_active = true`,
-        [req.user?.id]
-      );
+      linkedRows = linkedRes.rows || [];
     }
     const classIds = Array.from(
       new Set(
-        linkedRes.rows
+        linkedRows
           .map((r) => r.class_id)
           .filter((v) => Number.isInteger(v) && v > 0)
           .map(String)
@@ -200,7 +213,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     );
     const sectionIds = Array.from(
       new Set(
-        linkedRes.rows
+        linkedRows
           .map((r) => r.section_id)
           .filter((v) => Number.isInteger(v) && v > 0)
           .map(String)
@@ -226,16 +239,21 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
   }
   if (roleId === ROLES.GUARDIAN) {
     paramCount = addAudienceWhere(where, params, paramCount, 'e', ['all', 'guardians']);
-    const linkedRes = await query(
-      `SELECT s.class_id, s.section_id
-       FROM guardians g
-       INNER JOIN students s ON s.id = g.student_id
-       WHERE g.user_id = $1 AND s.is_active = true`,
-      [req.user?.id]
-    );
+    const wardStudentIds = await resolveWardStudentIdsForUser(req);
+    let linkedRows = [];
+    if (wardStudentIds.length) {
+      const linkedRes = await query(
+        `SELECT enr.class_id, enr.section_id
+         FROM students s
+         ${lateralCurrentEnrollment('s.id')}
+         WHERE s.id = ANY($1::int[]) AND (s.deleted_at IS NULL AND s.status = 'Active')`,
+        [wardStudentIds]
+      );
+      linkedRows = linkedRes.rows || [];
+    }
     const classIds = Array.from(
       new Set(
-        linkedRes.rows
+        linkedRows
           .map((r) => r.class_id)
           .filter((v) => Number.isInteger(v) && v > 0)
           .map(String)
@@ -243,7 +261,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
     );
     const sectionIds = Array.from(
       new Set(
-        linkedRes.rows
+        linkedRows
           .map((r) => r.section_id)
           .filter((v) => Number.isInteger(v) && v > 0)
           .map(String)
@@ -277,6 +295,7 @@ async function appendAudienceVisibilityWhere(where, params, paramCount, req) {
  */
 const getAllEvents = async (req, res) => {
   try {
+    const columnSupport = await getEventsColumnSupport();
     const {
       limit,
       offset,
@@ -322,7 +341,7 @@ const getAllEvents = async (req, res) => {
     }
 
     const result = await query(
-      `SELECT ${eventSelectProjection('e')},
+      `SELECT ${eventSelectProjection('e', columnSupport)},
               u.first_name AS created_by_first_name, u.last_name AS created_by_last_name
        FROM events e
        LEFT JOIN users u ON e.created_by = u.id
@@ -345,7 +364,8 @@ const getAllEvents = async (req, res) => {
 const getUpcomingEvents = async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
-    const where = ['e.start_date >= CURRENT_TIMESTAMP'];
+    // Include both future and currently-running events for dashboard visibility.
+    const where = ['COALESCE(e.end_date, e.start_date) >= CURRENT_TIMESTAMP'];
     const params = [];
     let paramCount = 1;
     paramCount = await appendAudienceVisibilityWhere(where, params, paramCount, req);
@@ -402,6 +422,7 @@ const getCompletedEvents = async (req, res) => {
  */
 const createEvent = async (req, res) => {
   try {
+    const columnSupport = await getEventsColumnSupport();
     const userId = req.user?.id;
     const {
       title,
@@ -453,30 +474,68 @@ const createEvent = async (req, res) => {
       return errorResponse(res, 400, 'target_designation_ids must be an array of IDs');
     }
 
+    if (!columnSupport.hasTargetDepartmentIds && normalizedDepartmentIds && normalizedDepartmentIds.length) {
+      return errorResponse(
+        res,
+        503,
+        'Target departments are not enabled in this database yet',
+        'EVENT_TARGET_DEPARTMENTS_NOT_CONFIGURED'
+      );
+    }
+    if (!columnSupport.hasTargetDesignationIds && normalizedDesignationIds && normalizedDesignationIds.length) {
+      return errorResponse(
+        res,
+        503,
+        'Target designations are not enabled in this database yet',
+        'EVENT_TARGET_DESIGNATIONS_NOT_CONFIGURED'
+      );
+    }
+
+    const insertColumns = [
+      'title',
+      'description',
+      'start_date',
+      'end_date',
+      'event_color',
+      'is_all_day',
+      'location',
+      'event_category',
+      'event_for',
+      'target_class_ids',
+      'target_section_ids',
+    ];
+    const insertValues = [
+      String(title).trim(),
+      normalizeNullableText(description),
+      start_date,
+      end_date || null,
+      event_color,
+      is_all_day,
+      normalizeNullableText(location),
+      normalizeNullableText(event_category),
+      normalizedEventFor,
+      normalizedClassIds ? JSON.stringify(normalizedClassIds) : null,
+      normalizedSectionIds ? JSON.stringify(normalizedSectionIds) : null,
+    ];
+
+    if (columnSupport.hasTargetDepartmentIds) {
+      insertColumns.push('target_department_ids');
+      insertValues.push(normalizedDepartmentIds ? JSON.stringify(normalizedDepartmentIds) : null);
+    }
+    if (columnSupport.hasTargetDesignationIds) {
+      insertColumns.push('target_designation_ids');
+      insertValues.push(normalizedDesignationIds ? JSON.stringify(normalizedDesignationIds) : null);
+    }
+
+    insertColumns.push('attachment_url', 'created_by');
+    insertValues.push(normalizeNullableText(attachment_url), userId || null);
+
+    const placeholders = insertColumns.map((_, idx) => `$${idx + 1}`).join(', ');
     const result = await query(
-      `INSERT INTO events (
-        title, description, start_date, end_date, event_color, is_all_day,
-        location, event_category, event_for, target_class_ids, target_section_ids,
-        target_department_ids, target_designation_ids, attachment_url, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING ${eventSelectProjection('events')}`,
-      [
-        String(title).trim(),
-        normalizeNullableText(description),
-        start_date,
-        end_date || null,
-        event_color,
-        is_all_day,
-        normalizeNullableText(location),
-        normalizeNullableText(event_category),
-        normalizedEventFor,
-        normalizedClassIds ? JSON.stringify(normalizedClassIds) : null,
-        normalizedSectionIds ? JSON.stringify(normalizedSectionIds) : null,
-        normalizedDepartmentIds ? JSON.stringify(normalizedDepartmentIds) : null,
-        normalizedDesignationIds ? JSON.stringify(normalizedDesignationIds) : null,
-        normalizeNullableText(attachment_url),
-        userId || null,
-      ]
+      `INSERT INTO events (${insertColumns.join(', ')})
+       VALUES (${placeholders})
+       RETURNING ${eventSelectProjection('events', columnSupport)}`,
+      insertValues
     );
 
     success(res, 201, 'Event created successfully', result.rows[0]);
@@ -491,6 +550,7 @@ const createEvent = async (req, res) => {
  */
 const updateEvent = async (req, res) => {
   try {
+    const columnSupport = await getEventsColumnSupport();
     const { id } = req.params;
     const {
       title,
@@ -507,6 +567,10 @@ const updateEvent = async (req, res) => {
       target_department_ids,
       target_designation_ids,
       attachment_url,
+      // Legacy payload keys sometimes sent by older UIs.
+      // We intentionally ignore these because we store full timestamps in start_date/end_date.
+      start_time,
+      end_time,
     } = req.body;
     if (isInvalidDateOrder(start_date, end_date)) {
       return errorResponse(res, 400, 'End date/time must be after start date/time');
@@ -536,6 +600,23 @@ const updateEvent = async (req, res) => {
     const normalizedDesignationIds = normalizeIdArray(target_designation_ids);
     if (normalizedDesignationIds === 'INVALID') {
       return errorResponse(res, 400, 'target_designation_ids must be an array of IDs');
+    }
+
+    if (!columnSupport.hasTargetDepartmentIds && normalizedDepartmentIds && normalizedDepartmentIds.length) {
+      return errorResponse(
+        res,
+        503,
+        'Target departments are not enabled in this database yet',
+        'EVENT_TARGET_DEPARTMENTS_NOT_CONFIGURED'
+      );
+    }
+    if (!columnSupport.hasTargetDesignationIds && normalizedDesignationIds && normalizedDesignationIds.length) {
+      return errorResponse(
+        res,
+        503,
+        'Target designations are not enabled in this database yet',
+        'EVENT_TARGET_DESIGNATIONS_NOT_CONFIGURED'
+      );
     }
 
     const existing = await query('SELECT attachment_url FROM events WHERE id = $1', [id]);
@@ -593,12 +674,16 @@ const updateEvent = async (req, res) => {
       values.push(normalizedSectionIds ? JSON.stringify(normalizedSectionIds) : null);
     }
     if (target_department_ids !== undefined) {
-      updates.push(`target_department_ids = $${paramCount++}`);
-      values.push(normalizedDepartmentIds ? JSON.stringify(normalizedDepartmentIds) : null);
+      if (columnSupport.hasTargetDepartmentIds) {
+        updates.push(`target_department_ids = $${paramCount++}`);
+        values.push(normalizedDepartmentIds ? JSON.stringify(normalizedDepartmentIds) : null);
+      }
     }
     if (target_designation_ids !== undefined) {
-      updates.push(`target_designation_ids = $${paramCount++}`);
-      values.push(normalizedDesignationIds ? JSON.stringify(normalizedDesignationIds) : null);
+      if (columnSupport.hasTargetDesignationIds) {
+        updates.push(`target_designation_ids = $${paramCount++}`);
+        values.push(normalizedDesignationIds ? JSON.stringify(normalizedDesignationIds) : null);
+      }
     }
     if (attachment_url !== undefined) {
       updates.push(`attachment_url = $${paramCount++}`);
@@ -614,7 +699,7 @@ const updateEvent = async (req, res) => {
       `UPDATE events
        SET ${updates.join(', ')}
        WHERE id = $${paramCount}
-       RETURNING ${eventSelectProjection('events')}`,
+       RETURNING ${eventSelectProjection('events', columnSupport)}`,
       values
     );
 

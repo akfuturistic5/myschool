@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef, type ReactElement, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { DatePicker } from "antd";
 import type { Dayjs } from "dayjs";
@@ -11,11 +11,7 @@ import TagInput from "../../../core/common/Taginput";
 import { useBloodGroups } from "../../../core/hooks/useBloodGroups";
 import { useDepartments } from "../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../core/hooks/useDesignations";
-import { useHostels } from "../../../core/hooks/useHostels";
-import { useHostelRooms } from "../../../core/hooks/useHostelRooms";
-import { useTransportRoutes } from "../../../core/hooks/useTransportRoutes";
-import { useTransportPickupPoints } from "../../../core/hooks/useTransportPickupPoints";
-import { useTransportVehicles } from "../../../core/hooks/useTransportVehicles";
+
 import { staffDirectoryFriendlyError } from "./staffDirectoryErrors";
 
 const genderOptions: Option[] = [
@@ -64,11 +60,6 @@ export default function AddStaffForm() {
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes();
-  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints();
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError } = useTransportVehicles();
-  const { hostels } = useHostels();
-  const { hostelRooms } = useHostelRooms();
 
   const [owner, setOwner] = useState<string[]>([]);
   const [firstName, setFirstName] = useState("");
@@ -105,10 +96,6 @@ export default function AddStaffForm() {
   const [shift, setShift] = useState<string | null>(null);
   const [workLocation, setWorkLocation] = useState("");
 
-  const [medicalLeaves, setMedicalLeaves] = useState("");
-  const [casualLeaves, setCasualLeaves] = useState("");
-  const [maternityLeaves, setMaternityLeaves] = useState("");
-  const [sickLeaves, setSickLeaves] = useState("");
 
   const [bankAccountName, setBankAccountName] = useState("");
   const [bankAccountNumber, setBankAccountNumber] = useState("");
@@ -116,28 +103,30 @@ export default function AddStaffForm() {
   const [ifsc, setIfsc] = useState("");
   const [branchName, setBranchName] = useState("");
 
-  const [transportOn, setTransportOn] = useState(false);
-  const [routeId, setRouteId] = useState<string | null>(null);
-  const [vehicleId, setVehicleId] = useState<string | null>(null);
-  const [pickupId, setPickupId] = useState<string | null>(null);
-
-  const [hostelOn, setHostelOn] = useState(false);
-  const [hostelId, setHostelId] = useState<string | null>(null);
-  const [hostelRoomId, setHostelRoomId] = useState<string | null>(null);
-
   const [facebook, setFacebook] = useState("");
   const [twitter, setTwitter] = useState("");
   const [linkedin, setLinkedin] = useState("");
   const [instagram, setInstagram] = useState("");
+
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [joiningLetterFile, setJoiningLetterFile] = useState<File | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const [joiningLetterError, setJoiningLetterError] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const resumeRef = useRef<File | null>(null);
+  const letterRef = useRef<File | null>(null);
+  const photoRef = useRef<File | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const deptOptions = useMemo(
     () =>
-      (departments || [])
-        .filter((d: { originalData?: { id?: number } }) => d.originalData?.id != null)
-        .map((d: { originalData: { id: number }; department?: string }) => ({
+      ((departments as any[]) || [])
+        .filter((d) => d.originalData?.id != null)
+        .map((d) => ({
           value: String(d.originalData.id),
           label: d.department ?? "",
         })),
@@ -146,9 +135,9 @@ export default function AddStaffForm() {
 
   const desigOptions = useMemo(
     () =>
-      (designations || [])
-        .filter((d: { originalData?: { id?: number } }) => d.originalData?.id != null)
-        .map((d: { originalData: { id: number }; designation?: string }) => ({
+      ((designations as any[]) || [])
+        .filter((d) => d.originalData?.id != null)
+        .map((d) => ({
           value: String(d.originalData.id),
           label: d.designation ?? "",
         })),
@@ -157,79 +146,95 @@ export default function AddStaffForm() {
 
   const bloodOptions = useMemo(
     () =>
-      (bloodGroups || []).map((bg: { id?: number; blood_group?: string }) => ({
+      ((bloodGroups as any[]) || []).map((bg) => ({
         value: String(bg.id ?? ""),
-        label: bg.blood_group ?? "",
+        label: bg.blood_group_name || bg.blood_group || "",
       })),
     [bloodGroups]
   );
 
-  const routeOptions = useMemo(
-    () =>
-      (transportRoutes || []).map((r: { originalData?: { id?: number; route_name?: string }; routes?: string; id?: string | number }) => ({
-        value: String(r.originalData?.id ?? r.id ?? ""),
-        label: r.routes ?? r.originalData?.route_name ?? "N/A",
-      })),
-    [transportRoutes]
-  );
-
-  const vehicleOptions = useMemo(
-    () =>
-      (vehicles || []).map((v: { originalData?: { id?: number; vehicle_number?: string }; vehicleNo?: string; id?: string | number }) => ({
-        value: String(v.originalData?.id ?? v.id ?? ""),
-        label: v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A",
-      })),
-    [vehicles]
-  );
-
-  const pickupOptions = useMemo(
-    () =>
-      (pickupPoints || []).map((p: { originalData?: { id?: number }; pickupPoint?: string; id?: string | number }) => ({
-        value: String(p.originalData?.id ?? p.id ?? ""),
-        label: p.pickupPoint ?? "N/A",
-      })),
-    [pickupPoints]
-  );
-
-  const hostelOptions = useMemo(
-    () =>
-      (hostels || []).map((h: { originalData?: { id?: number }; hostelName?: string }) => ({
-        value: String((h.originalData as { id?: number })?.id ?? ""),
-        label: (h.hostelName as string) || "N/A",
-      })),
-    [hostels]
-  );
-
-  const hostelRoomOptions = useMemo(
-    () =>
-      (hostelRooms || []).map((r: { originalData?: { id?: number }; roomNo?: string }) => ({
-        value: String((r.originalData as { id?: number })?.id ?? ""),
-        label: (r.roomNo as string) || "N/A",
-      })),
-    [hostelRooms]
-  );
 
   const metaBusy = departmentsLoading || designationsLoading || bloodGroupsLoading;
 
   const supportStaffDepartmentId = useMemo(() => {
-    const row = (departments || []).find(
-      (d: { department?: string; originalData?: { id?: number } }) =>
-        String(d.department ?? "").trim().toLowerCase() === "support staff"
+    const row = ((departments as any[]) || []).find(
+      (d) => String(d.department ?? "").trim().toLowerCase() === "support staff"
     );
     return row?.originalData?.id != null ? String(row.originalData.id) : null;
   }, [departments]);
 
   const isDriverSelected = useMemo(() => {
     if (!designationId) return false;
-    const row = (designations || []).find(
-      (d: { originalData?: { id?: number }; designation?: string }) =>
-        String(d.originalData?.id) === designationId
+    const row = ((designations as any[]) || []).find(
+      (d) => String(d.originalData?.id) === designationId
     );
-    const name = String(row?.designation ?? (row as { originalData?: { designation_name?: string } })?.originalData?.designation_name ?? "")
+    const name = String(row?.designation ?? row?.originalData?.designation_name ?? "")
       .trim()
       .toLowerCase();
     return name === "driver" || name === "drivers";
   }, [designationId, designations]);
+
+  const onPickResume = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setResumeError(null);
+    if (f.size > 4 * 1024 * 1024) {
+      setResumeError("File must be 4MB or smaller.");
+      return;
+    }
+    if (f.type !== "application/pdf") {
+      setResumeError("Only PDF files are allowed.");
+      return;
+    }
+    setResumeFile(f);
+    resumeRef.current = f;
+  };
+
+  const onPickJoiningLetter = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setJoiningLetterError(null);
+    if (f.size > 4 * 1024 * 1024) {
+      setJoiningLetterError("File must be 4MB or smaller.");
+      return;
+    }
+    if (f.type !== "application/pdf") {
+      setJoiningLetterError("Only PDF files are allowed.");
+      return;
+    }
+    setJoiningLetterFile(f);
+    letterRef.current = f;
+  };
+
+  const onPickPhoto = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setPhotoError(null);
+    if (!file) {
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      photoRef.current = null;
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Please select an image file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setPhotoError("Image size must be under 2MB.");
+      return;
+    }
+    setPhotoFile(file);
+    photoRef.current = file;
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const onRemovePhoto = () => {
+    setPhotoFile(null);
+    photoRef.current = null;
+    setPhotoPreview(null);
+  };
 
   useEffect(() => {
     if (isDriverSelected && supportStaffDepartmentId) {
@@ -334,10 +339,35 @@ export default function AddStaffForm() {
           const n = parseFloat(salary);
           return Number.isNaN(n) ? null : n;
         })(),
-        address: address.trim() || null,
+        // Address (users table)
+        current_address: address.trim() || null,
+        permanent_address: permanentAddress.trim() || null,
+        // Emergency contact (staff table)
         emergency_contact_name: emergencyName.trim() || null,
         emergency_contact_phone: emergencyPhone.trim() || null,
+        // Additional staff fields
+        marital_status: maritalStatus || null,
+        father_name: fatherName.trim() || null,
+        mother_name: motherName.trim() || null,
+        languages_known: owner.filter(Boolean),
+        other_info: noteField.trim() || null,
         is_active: isActive,
+        // Payroll / bank
+        epf_no: epfNo.trim() || null,
+        pan_number: null,
+        bank_name: bankName.trim() || null,
+        account_name: bankAccountName.trim() || null,
+        account_number: bankAccountNumber.trim() || null,
+        branch: branchName.trim() || null,
+        ifsc: ifsc.trim() || null,
+        contract_type: contractType || null,
+        shift: shift || null,
+        work_location: workLocation.trim() || null,
+        // Social media (users table)
+        facebook: facebook.trim() || null,
+        twitter: twitter.trim() || null,
+        linkedin: linkedin.trim() || null,
+        instagram: instagram.trim() || null,
         ...(isDriverSelected
           ? {
               license_number: licenseNumber.trim(),
@@ -348,13 +378,37 @@ export default function AddStaffForm() {
       payload.employee_code = employeeCode.trim();
       if (password.trim()) payload.password = password.trim();
 
+
       setSubmitting(true);
       try {
-        const res = (await apiService.createStaff(payload)) as { status?: string; message?: string };
-        if (res?.status === "SUCCESS") {
+        const response = (await apiService.createStaff(payload)) as { status?: string; message?: string; data?: { id: number } };
+        if (response?.status === "SUCCESS") {
+          const staffId = response.data?.id;
+          const rFile = resumeRef.current;
+          const jFile = letterRef.current;
+
+          if (staffId) {
+            if (rFile || jFile) {
+              try {
+                const fd = new FormData();
+                if (rFile) fd.append("resume", rFile);
+                if (jFile) fd.append("joining_letter", jFile);
+                await apiService.uploadStaffDocuments(staffId, fd);
+              } catch (docErr) {
+                console.error("Doc upload error:", docErr);
+              }
+            }
+            if (photoRef.current) {
+              try {
+                await apiService.uploadStaffPhoto(staffId, photoRef.current);
+              } catch (photoErr) {
+                console.error("Photo upload error:", photoErr);
+              }
+            }
+          }
           navigate(routes.staff, { replace: false });
         } else {
-          setError(res?.message || "Failed to create staff.");
+          setError(response?.message || "Failed to create staff.");
         }
       } catch (err: unknown) {
         setError(staffDirectoryFriendlyError(err));
@@ -431,8 +485,12 @@ export default function AddStaffForm() {
             <div className="row">
               <div className="col-md-12">
                 <div className="d-flex align-items-center flex-wrap row-gap-3 mb-3">
-                  <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames">
-                    <i className="ti ti-photo-plus fs-16" />
+                  <div className="d-flex align-items-center justify-content-center avatar avatar-xxl border border-dashed me-2 flex-shrink-0 text-dark frames overflow-hidden">
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="Profile Preview" className="img-fluid w-100 h-100 object-fit-cover" />
+                    ) : (
+                      <i className="ti ti-photo-plus fs-16" />
+                    )}
                   </div>
                   <div className="profile-upload">
                     <p className="form-label mb-2">
@@ -441,10 +499,13 @@ export default function AddStaffForm() {
                     <div className="profile-uploader d-flex align-items-center">
                       <div className="drag-upload-btn mb-3">
                         Upload
-                        <input type="file" className="form-control image-sign" accept="image/jpeg,image/png,image/svg+xml" disabled />
+                        <input type="file" className="form-control image-sign" accept="image/*" onChange={onPickPhoto} />
                       </div>
-                      <span className="btn btn-primary mb-3 disabled">Remove</span>
+                      <button type="button" className={`btn btn-primary mb-3 ${!photoFile ? "disabled" : ""}`} onClick={onRemovePhoto}>
+                        Remove
+                      </button>
                     </div>
+                    {photoError && <div className="text-danger fs-12 mb-2">{photoError}</div>}
                   </div>
                 </div>
               </div>
@@ -835,51 +896,6 @@ export default function AddStaffForm() {
         </div>
       </div>
 
-      {/* Leaves */}
-      <div className="card">
-        <div className="card-header bg-light">
-          <div className="d-flex align-items-center">
-            <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-              <i className="ti ti-users fs-16" />
-            </span>
-            <h4 className="text-dark mb-0 d-inline-flex align-items-center flex-wrap gap-1">
-              Leaves
-              <SectionOptional />
-            </h4>
-          </div>
-        </div>
-        <div className="card-body pb-1">
-          <div className="row">
-            <div className="col-lg-3 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Medical leaves</label>
-                <input className="form-control" value={medicalLeaves} onChange={(e) => setMedicalLeaves(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Casual leaves</label>
-                <input className="form-control" value={casualLeaves} onChange={(e) => setCasualLeaves(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">
-                  Maternity leaves
-                  <Opt />
-                </label>
-                <input className="form-control" value={maternityLeaves} onChange={(e) => setMaternityLeaves(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-lg-3 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Sick leaves</label>
-                <input className="form-control" value={sickLeaves} onChange={(e) => setSickLeaves(e.target.value)} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Bank */}
       <div className="card">
@@ -930,107 +946,7 @@ export default function AddStaffForm() {
         </div>
       </div>
 
-      {/* Transport */}
-      <div className="card">
-        <div className="card-header bg-light d-flex align-items-center justify-content-between">
-          <div className="d-flex align-items-center">
-            <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-              <i className="ti ti-bus-stop fs-16" />
-            </span>
-            <h4 className="text-dark mb-0 d-inline-flex align-items-center flex-wrap gap-1">
-              Transport information
-              <SectionOptional />
-            </h4>
-          </div>
-          <div className="form-check form-switch">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              role="switch"
-              checked={transportOn}
-              onChange={(e) => setTransportOn(e.target.checked)}
-              title="Optional"
-              aria-label="Transport section optional toggle"
-            />
-          </div>
-        </div>
-        <div className="card-body pb-1">
-          <div className="row">
-            <div className="col-lg-4 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Route</label>
-                {loadOrError(
-                  routesLoading,
-                  routesError,
-                  <CommonSelect className="select" options={routeOptions} value={routeId} onChange={(v) => setRouteId(v)} />
-                )}
-              </div>
-            </div>
-            <div className="col-lg-4 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Vehicle number</label>
-                {loadOrError(
-                  vehiclesLoading,
-                  vehiclesError,
-                  <CommonSelect className="select" options={vehicleOptions} value={vehicleId} onChange={(v) => setVehicleId(v)} />
-                )}
-              </div>
-            </div>
-            <div className="col-lg-4 col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Pickup point</label>
-                {loadOrError(
-                  pickupLoading,
-                  pickupError,
-                  <CommonSelect className="select" options={pickupOptions} value={pickupId} onChange={(v) => setPickupId(v)} />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Hostel */}
-      <div className="card">
-        <div className="card-header bg-light d-flex align-items-center justify-content-between">
-          <div className="d-flex align-items-center">
-            <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-              <i className="ti ti-building-fortress fs-16" />
-            </span>
-            <h4 className="text-dark mb-0 d-inline-flex align-items-center flex-wrap gap-1">
-              Hostel information
-              <SectionOptional />
-            </h4>
-          </div>
-          <div className="form-check form-switch">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              role="switch"
-              checked={hostelOn}
-              onChange={(e) => setHostelOn(e.target.checked)}
-              title="Optional"
-              aria-label="Hostel section optional toggle"
-            />
-          </div>
-        </div>
-        <div className="card-body pb-1">
-          <div className="row">
-            <div className="col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Hostel</label>
-                <CommonSelect className="select" options={hostelOptions} value={hostelId} onChange={(v) => setHostelId(v)} />
-              </div>
-            </div>
-            <div className="col-md-6">
-              <div className="mb-3">
-                <label className="form-label">Room no.</label>
-                <CommonSelect className="select" options={hostelRoomOptions} value={hostelRoomId} onChange={(v) => setHostelRoomId(v)} />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Social */}
       <div className="card">
@@ -1090,32 +1006,60 @@ export default function AddStaffForm() {
         <div className="card-header bg-light">
           <div className="d-flex align-items-center">
             <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-              <i className="ti ti-file fs-16" />
+              <i className="ti ti-file-text fs-16" />
             </span>
-            <h4 className="text-dark mb-0">Documents</h4>
+            <h4 className="text-dark mb-0 d-inline-flex align-items-center flex-wrap gap-1">
+              Documents
+              <SectionOptional />
+            </h4>
           </div>
         </div>
         <div className="card-body pb-1">
-          <p className="fs-12 text-muted">Optional — upload not enabled for staff on this screen yet.</p>
           <div className="row">
-            <div className="col-lg-6">
-              <div className="mb-2">
+            <div className="col-lg-3 col-md-6">
+              <div className="mb-3">
                 <label className="form-label">
-                  Upload resume
+                  Resume
                   <Opt />
                 </label>
-                <p className="fs-12">PDF up to 4MB when upload is enabled.</p>
-                <input type="file" className="form-control" accept="application/pdf" disabled />
+                <div className="d-flex align-items-center gap-2">
+                  <input
+                    type="file"
+                    className={`form-control ${resumeError ? "is-invalid" : ""}`}
+                    accept=".pdf"
+                    onChange={onPickResume}
+                  />
+                  {resumeFile && (
+                    <span className="badge bg-success-transparent text-success">
+                      Selected
+                    </span>
+                  )}
+                </div>
+                {resumeError && <div className="text-danger fs-12">{resumeError}</div>}
               </div>
             </div>
-            <div className="col-lg-6">
-              <div className="mb-2">
+            <div className="col-lg-3 col-md-6">
+              <div className="mb-3">
                 <label className="form-label">
-                  Upload joining letter
+                  Joining Letter
                   <Opt />
                 </label>
-                <p className="fs-12">PDF up to 4MB when upload is enabled.</p>
-                <input type="file" className="form-control" accept="application/pdf" disabled />
+                <div className="d-flex align-items-center gap-2">
+                  <input
+                    type="file"
+                    className={`form-control ${joiningLetterError ? "is-invalid" : ""}`}
+                    accept=".pdf"
+                    onChange={onPickJoiningLetter}
+                  />
+                  {joiningLetterFile && (
+                    <span className="badge bg-success-transparent text-success">
+                      Selected
+                    </span>
+                  )}
+                </div>
+                {joiningLetterError && (
+                  <div className="text-danger fs-12">{joiningLetterError}</div>
+                )}
               </div>
             </div>
           </div>

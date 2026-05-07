@@ -9,6 +9,7 @@ const { ROLES } = require('../config/roles');
 const { getSchoolProfile } = require('../services/schoolProfileService');
 const { resolveExistingLogoPath, sanitizeFilename, sanitizeTenant } = require('../utils/schoolLogoStorage');
 const { STUDENT_CONTACT_LATERAL_SELECT, STUDENT_CONTACT_LATERAL_JOINS } = require('../utils/studentContactSync');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 function formatDate(value) {
   if (!value) return '-';
@@ -251,19 +252,21 @@ const downloadBonafide = async (req, res) => {
     const studentRes = await query(
       `SELECT
          s.id,
-         s.first_name,
-         s.last_name,
+         u.first_name,
+         u.last_name,
          s.gr_number,
          s.admission_number,
-         s.date_of_birth,
+         u.date_of_birth,
          c.class_name,
          sec.section_name,
          ay.year_name AS academic_year_name,
          ${STUDENT_CONTACT_LATERAL_SELECT}
        FROM students s
-       LEFT JOIN classes c ON s.class_id = c.id
-       LEFT JOIN sections sec ON s.section_id = sec.id
-       LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN classes c ON enr.class_id = c.id
+       LEFT JOIN sections sec ON enr.section_id = sec.id
+       LEFT JOIN academic_years ay ON enr.academic_year_id = ay.id
        ${STUDENT_CONTACT_LATERAL_JOINS}
        WHERE s.id = $1 AND s.is_active = true
        LIMIT 1`,
@@ -375,11 +378,11 @@ const fetchStudentForBonafide = async (req, res) => {
     const studentRes = await query(
       `SELECT
          s.id,
-         s.first_name,
-         s.last_name,
+         u.first_name,
+         u.last_name,
          s.gr_number,
          s.admission_number,
-         s.date_of_birth,
+         u.date_of_birth,
          c.id AS class_id,
          c.class_name,
          sec.id AS section_id,
@@ -389,12 +392,14 @@ const fetchStudentForBonafide = async (req, res) => {
          s.id AS parent_id,
          ${STUDENT_CONTACT_LATERAL_SELECT}
        FROM students s
-       LEFT JOIN classes c ON s.class_id = c.id
-       LEFT JOIN sections sec ON s.section_id = sec.id
-       LEFT JOIN academic_years ay ON s.academic_year_id = ay.id
+       LEFT JOIN users u ON s.user_id = u.id
+       ${lateralCurrentEnrollment('s.id')}
+       LEFT JOIN classes c ON enr.class_id = c.id
+       LEFT JOIN sections sec ON enr.section_id = sec.id
+       LEFT JOIN academic_years ay ON enr.academic_year_id = ay.id
        ${STUDENT_CONTACT_LATERAL_JOINS}
        WHERE s.is_active = true
-         AND s.academic_year_id = $2
+         AND enr.academic_year_id = $2
          AND LOWER(TRIM(COALESCE(s.gr_number, ''))) = LOWER(TRIM($1))
        ORDER BY s.id DESC
        LIMIT 1`,

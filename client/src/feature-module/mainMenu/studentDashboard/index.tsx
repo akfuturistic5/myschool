@@ -472,7 +472,7 @@ const StudentDasboard = () => {
                             </div>
                           ) : (
                             <div className="notice-widget">
-                              {notices.map((notice: { id?: number; title?: string; addedOn?: string; created_at?: string }) => (
+                              {notices.map((notice: { id?: number; title?: string; publishOn?: string; noticeEndDate?: string; addedOn?: string; created_at?: string }) => (
                                 <div key={notice.id} className="d-flex align-items-center justify-content-between mb-4">
                                   <div className="d-flex align-items-center overflow-hidden me-2">
                                     <span className="bg-primary-transparent avatar avatar-md me-2 rounded-circle flex-shrink-0">
@@ -482,8 +482,9 @@ const StudentDasboard = () => {
                                       <h6 className="text-truncate mb-1">{notice.title || "Notice"}</h6>
                                       <p className="mb-0">
                                         <i className="ti ti-calendar me-2" />
-                                        Added on :{" "}
-                                        {notice.addedOn ||
+                                        Publish On :{" "}
+                                        {notice.publishOn ||
+                                          notice.addedOn ||
                                           (notice.created_at
                                             ? new Date(notice.created_at).toLocaleDateString("en-GB", {
                                                 day: "numeric",
@@ -491,6 +492,9 @@ const StudentDasboard = () => {
                                                 year: "numeric",
                                               })
                                             : "—")}
+                                      </p>
+                                      <p className="mb-0 small text-muted">
+                                        Notice Till : {notice.noticeEndDate || "N/A"}
                                       </p>
                                     </div>
                                   </div>

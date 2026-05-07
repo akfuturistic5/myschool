@@ -10,7 +10,7 @@ function formatDate(val) {
 }
 
 export const useNoticeBoard = (options = {}) => {
-  const { limit = 100 } = options;
+  const { limit = 100, includeExpired = false } = options;
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,7 +20,10 @@ export const useNoticeBoard = (options = {}) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiService.getNoticeBoard({ limit });
+      const res = await apiService.getNoticeBoard({
+        limit,
+        include_expired: includeExpired ? 'true' : undefined,
+      });
       if (res.status === 'SUCCESS' && Array.isArray(res.data)) {
         setNotices(
           res.data.map((r) => ({
@@ -28,10 +31,11 @@ export const useNoticeBoard = (options = {}) => {
             title: r.title || '',
             content: r.content || '',
             messageTo: r.messageTo || r.message_to || 'All',
-            notice_date: r.notice_date || null,
-            publish_on: r.publish_on || null,
-            noticeDate: r.noticeDate || formatDate(r.notice_date),
-            publishOn: r.publishOn || formatDate(r.publish_on),
+            notice_start_date: r.notice_start_date || null,
+            notice_end_date: r.notice_end_date || null,
+            noticeStartDate: r.noticeStartDate || formatDate(r.notice_start_date),
+            noticeEndDate: r.noticeEndDate || formatDate(r.notice_end_date),
+            publishOn: r.publishOn || formatDate(r.created_at),
             addedOn: r.addedOn || formatDate(r.created_at),
             modifiedOn: r.modifiedOn || formatDate(r.modified_at),
             created_at: r.created_at,
@@ -47,7 +51,7 @@ export const useNoticeBoard = (options = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, includeExpired]);
 
   useEffect(() => {
     fetchNotices();
