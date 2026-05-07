@@ -8,7 +8,7 @@ const dayStringSchema = Joi.string().trim().valid(
 const createClassScheduleSchema = Joi.object({
   teacher_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
-  section_id: Joi.number().integer().positive().required(),
+  section_id: Joi.number().integer().positive().optional().allow(null),
   academic_year_id: Joi.number().integer().positive().required(),
   subject_id: Joi.number().integer().positive().optional().allow(null),
   time_slot_id: Joi.number().integer().positive().optional().allow(null),
@@ -18,12 +18,13 @@ const createClassScheduleSchema = Joi.object({
   ).required(),
   room_number: Joi.any().optional().allow(null),
   class_room_id: Joi.number().integer().positive().optional().allow(null),
+  room_id: Joi.number().integer().positive().optional().allow(null),
 }).unknown(false);
 
 const updateClassScheduleSchema = Joi.object({
   teacher_id: Joi.number().integer().positive().optional(),
   class_id: Joi.number().integer().positive().optional(),
-  section_id: Joi.number().integer().positive().optional(),
+  section_id: Joi.number().integer().positive().optional().allow(null),
   academic_year_id: Joi.number().integer().positive().optional(),
   subject_id: Joi.number().integer().positive().optional().allow(null),
   time_slot_id: Joi.number().integer().positive().optional().allow(null),
@@ -33,6 +34,7 @@ const updateClassScheduleSchema = Joi.object({
   ).optional(),
   room_number: Joi.any().optional().allow(null),
   class_room_id: Joi.number().integer().positive().optional().allow(null),
+  room_id: Joi.number().integer().positive().optional().allow(null),
 }).min(1).unknown(false);
 
 module.exports = { createClassScheduleSchema, updateClassScheduleSchema };

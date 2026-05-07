@@ -162,19 +162,39 @@ const ScheduleClasses = () => {
     slotName: string;
     startTime: Dayjs | null;
     endTime: Dayjs | null;
+    isBreak: boolean;
     isActive: boolean;
-  }>({ slotName: "", startTime: null, endTime: null, isActive: true });
+  }>({ slotName: "", startTime: null, endTime: null, isBreak: false, isActive: true });
   const [selectedDeleteId, setSelectedDeleteId] = useState<string | number | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
   const [editForm, setEditForm] = useState<{
     slotName: string;
     startTime: Dayjs | null;
     endTime: Dayjs | null;
+    isBreak: boolean;
     isActive: boolean;
   }>({
     slotName: "",
     startTime: null,
     endTime: null,
+    isBreak: false,
     isActive: true,
+  });
+
+  const [genForm, setGenForm] = useState<{
+    startTime: Dayjs | null;
+    endTime: Dayjs | null;
+    duration: number;
+    prefix: string;
+    includeBreaks: boolean;
+    breaks: { afterPeriod: number; duration: number }[];
+  }>({
+    startTime: dayjs().hour(8).minute(0),
+    endTime: dayjs().hour(14).minute(0),
+    duration: 45,
+    prefix: "Period",
+    includeBreaks: false,
+    breaks: [{ afterPeriod: 2, duration: 15 }],
   });
 
   useEffect(() => {
@@ -183,12 +203,12 @@ const ScheduleClasses = () => {
         slotName: editingRow.type || "",
         startTime: parseDisplayTimeToDayjs(editingRow.startTime),
         endTime: parseDisplayTimeToDayjs(editingRow.endTime),
+        isBreak: Boolean(editingRow.originalData?.isBreak ?? editingRow.originalData?.is_break),
         isActive: editingRow.status === "Active",
       });
     }
   }, [editingRow]);
 
-  /** After any Bootstrap modal hides (delete/add/edit/cancel), strip stray backdrops so the page stays clickable. */
   useEffect(() => {
     const modalIds = ["delete-modal", "add_Schedule", "edit_Schedule"];
     const cleanups: Array<{ el: HTMLElement; fn: () => void }> = [];
@@ -273,6 +293,7 @@ const ScheduleClasses = () => {
         slot_name: slotLabel,
         start_time: startApi,
         end_time: endApi,
+        is_break: editForm.isBreak,
         status: editForm.isActive ? "Active" : "Inactive",
         is_active: editForm.isActive,
       });
@@ -348,17 +369,18 @@ const ScheduleClasses = () => {
         slot_name: name,
         start_time: startApi,
         end_time: endApi,
+        is_break: addForm.isBreak,
         is_active: addForm.isActive,
       });
       await refetch();
       hideBootstrapModalById("add_Schedule");
-      setAddForm({ slotName: "", startTime: null, endTime: null, isActive: true });
+      setAddForm({ slotName: "", startTime: null, endTime: null, isBreak: false, isActive: true });
     } catch (err: any) {
       const apiMsg = extractHttpJsonMessage(err);
       const rawMsg = typeof err?.message === "string" ? err.message : "";
       const userMsg =
         apiMsg ??
-        (/^\s*HTTP error/i.test(rawMsg) ? "Failed to add time slot" : rawMsg || "Failed to add time slot");
+        (/^s*HTTP error/i.test(rawMsg) ? "Failed to add time slot" : rawMsg || "Failed to add time slot");
       if (
         userMsg.includes("overlap") ||
         rawMsg.includes("409") ||
@@ -377,15 +399,61 @@ const ScheduleClasses = () => {
   };
 
   const handleDeleteSchedule = async () => {
-    if (!selectedDeleteId) return;
     setSaving(true);
     try {
-      await apiService.deleteSchedule(String(selectedDeleteId));
+      if (selectedDeleteId) {
+        await apiService.deleteSchedule(String(selectedDeleteId));
+      } else if (selectedRowKeys.length > 0) {
+        await apiService.bulkDeleteSchedules(selectedRowKeys);
+      } else {
+        setSaving(false);
+        return;
+      }
       await refetch();
       hideBootstrapModalById("delete-modal");
       setSelectedDeleteId(null);
+      setSelectedRowKeys([]);
     } catch (err: any) {
       setSaveError(extractHttpJsonMessage(err) ?? err?.message ?? "Failed to delete time slot");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkGenerate = async () => {
+    if (!genForm.startTime || !genForm.endTime) {
+      await Swal.fire({
+        icon: "warning",
+        title: "Missing times",
+        text: "Please select both start and end times.",
+      });
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        startTime: genForm.startTime.format("HH:mm"),
+        endTime: genForm.endTime.format("HH:mm"),
+        duration: genForm.duration,
+        prefix: genForm.prefix,
+        includeBreaks: genForm.includeBreaks,
+        breaks: genForm.breaks,
+      };
+      const res = await apiService.generateSchedules(payload);
+      await Swal.fire({
+        icon: "success",
+        title: "Success",
+        text: res.message || "Slots generated successfully.",
+      });
+      await refetch();
+      hideBootstrapModalById("bulk_generate");
+    } catch (err: any) {
+      const apiMsg = extractHttpJsonMessage(err);
+      await Swal.fire({
+        icon: "error",
+        title: "Generation failed",
+        text: apiMsg || "Failed to generate slots. Check for overlaps.",
+      });
     } finally {
       setSaving(false);
     }
@@ -424,144 +492,88 @@ const ScheduleClasses = () => {
         String(a.endTime || "").length - String(b.endTime || "").length,
     },
     {
+      title: "Type",
+      dataIndex: "originalData",
+      render: (val: any) => {
+        const isBr = val?.is_break || val?.isBreak;
+        return (
+          <span className="d-flex align-items-center">
+            <i className={`ti ti-${isBr ? "coffee" : "calendar-time"} me-1`} />
+            {isBr ? "Break" : "Period"}
+          </span>
+        );
+      },
+    },
+    {
       title: "Duration",
-      dataIndex: "duration",
-      render: (_: unknown, record: any) => (
-        <span>{formatDurationMinutes(record?.duration ?? record?.originalData?.duration)}</span>
+      dataIndex: "originalData",
+      render: (val: any) => (
+        <span className="d-flex align-items-center">
+          <i className="ti ti-clock me-1" />
+          {formatDurationMinutes(val?.duration)}
+        </span>
       ),
-      sorter: (a: TableData, b: TableData) =>
-        Number((a as any).duration ?? 0) - Number((b as any).duration ?? 0),
     },
     {
       title: "Status",
       dataIndex: "status",
       render: (text: string) => (
-        <>
-          {text === "Active" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text || "Inactive"}
-            </span>
-          )}
-        </>
+        <span className={`badge badge-soft-${text === "Active" ? "success" : "danger"} d-inline-flex align-items-center`}>
+          <i className="ti ti-circle-filled fs-5 me-1" />
+          {text}
+        </span>
       ),
+      sorter: (a: TableData, b: TableData) =>
+        String(a.status || "").length - String(b.status || "").length,
     },
     {
       title: "Action",
       dataIndex: "action",
       render: (_: any, record: any) => (
-        <>
-          <div className="d-flex align-items-center">
-            <div className="dropdown">
+        <div className="dropdown">
+          <Link
+            to="#"
+            className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+          >
+            <i className="ti ti-dots-vertical fs-14" />
+          </Link>
+          <ul className="dropdown-menu dropdown-menu-end p-2">
+            <li>
               <Link
+                className="dropdown-item rounded-1"
                 to="#"
-                className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-                data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
-                aria-expanded="false"
+                onClick={() => handleEditClick(record)}
               >
-                <i className="ti ti-dots-vertical fs-14" />
+                <i className="ti ti-edit-circle me-2" />
+                Edit
               </Link>
-              <ul className="dropdown-menu dropdown-menu-end p-2">
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleEditClick(record as EditRow);
-                    }}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSelectedDeleteId(record.originalData?.id ?? record.id);
-                      (window as any).bootstrap?.Modal?.getOrCreateInstance(document.getElementById("delete-modal"))?.show();
-                    }}
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </>
+            </li>
+            <li>
+              <Link
+                className="dropdown-item rounded-1"
+                to="#"
+                data-bs-toggle="modal"
+                data-bs-target="#delete-modal"
+                onClick={() => setSelectedDeleteId(record.originalData?.id ?? record.id)}
+              >
+                <i className="ti ti-trash-x me-2" />
+                Delete
+              </Link>
+            </li>
+          </ul>
+        </div>
       ),
     },
   ];
 
-  const exportColumns = useMemo(
-    () => [
-      { title: "ID", dataKey: "id" },
-      { title: "Slot name", dataKey: "slotName" },
-      { title: "Start time", dataKey: "startTime" },
-      { title: "End time", dataKey: "endTime" },
-      { title: "Duration", dataKey: "duration" },
-      { title: "Status", dataKey: "status" },
-    ],
-    []
-  );
-
-  const exportRows = useMemo(() => {
-    const list = Array.isArray(data) ? data : [];
-    return list.map((row: any) => ({
-      id: String(row.id ?? ""),
-      slotName: String(row.type ?? row.originalData?.slot_name ?? ""),
-      startTime: String(row.startTime ?? ""),
-      endTime: String(row.endTime ?? ""),
-      duration: formatDurationMinutes(row.duration ?? row.originalData?.duration),
-      status: String(row.status ?? ""),
-    }));
-  }, [data]);
-
-  const handleExportExcel = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToExcel(exportRows, "time-slots", "Time slots");
-  }, [exportRows]);
-
-  const handleExportPdf = useCallback(() => {
-    if (!exportRows.length) return;
-    exportToPDF(exportRows, "Time slots", "time-slots", exportColumns);
-  }, [exportRows, exportColumns]);
-
-  const handlePrintSlots = useCallback(() => {
-    if (!exportRows.length) return;
-    printData("Time slots", exportColumns, exportRows);
-  }, [exportRows, exportColumns]);
-
-  if (loading) {
-    return (
-      <div className="page-wrapper">
-        <div className="content">
-          <div
-            className="d-flex justify-content-center align-items-center"
-            style={{ minHeight: "400px" }}
-          >
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div>
+    <>
+      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
+          {/* Page Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
               <h3 className="page-title mb-1">Time slots</h3>
@@ -579,13 +591,17 @@ const ScheduleClasses = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption
-                onRefresh={() => void refetch()}
-                onPrint={handlePrintSlots}
-                onExportPdf={handleExportPdf}
-                onExportExcel={handleExportExcel}
-              />
-              <div className="mb-2">
+              <TooltipOption />
+              <div className="ms-2 d-flex align-items-center">
+                <Link
+                  to="#"
+                  className="btn btn-primary me-2"
+                  data-bs-toggle="modal"
+                  data-bs-target="#bulk_generate"
+                >
+                  <i className="ti ti-layout-grid-add me-2" />
+                  Bulk Generate
+                </Link>
                 <Link
                   to="#"
                   className="btn btn-primary"
@@ -593,8 +609,8 @@ const ScheduleClasses = () => {
                   data-bs-target="#add_Schedule"
                   onClick={() => setAddSlotError(null)}
                 >
-                  <i className="ti ti-square-rounded-plus-filled me-2" />
-                  Add time slot
+                  <i className="ti ti-square-rounded-plus me-2" />
+                  Add Time Slot
                 </Link>
               </div>
             </div>
@@ -615,16 +631,15 @@ const ScheduleClasses = () => {
                   <Link
                     to="#"
                     className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
+                    data-bs-toggle="dropdown"
+                    data-bs-boundary="viewport"
+                    data-bs-popper-config='{"strategy":"fixed"}'
                     data-bs-auto-close="outside"
                   >
                     <i className="ti ti-filter me-2" />
                     Filter
                   </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
+                  <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form>
                       <div className="d-flex align-items-center border-bottom p-3">
                         <h4>Filter</h4>
@@ -637,26 +652,13 @@ const ScheduleClasses = () => {
                               <input type="text" className="form-control" placeholder="e.g. Period 1" />
                             </div>
                           </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Status</label>
-                              <CommonSelect
-                                className="select"
-                                options={activeList}
-                              />
-                            </div>
-                          </div>
                         </div>
                       </div>
                       <div className="p-3 d-flex align-items-center justify-content-end">
                         <Link to="#" className="btn btn-light me-3">
                           Reset
                         </Link>
-                        <Link
-                          to="#"
-                          className="btn btn-primary"
-                          onClick={handleApplyClick}
-                        >
+                        <Link to="#" className="btn btn-primary" onClick={handleApplyClick}>
                           Apply
                         </Link>
                       </div>
@@ -667,7 +669,9 @@ const ScheduleClasses = () => {
                   <Link
                     to="#"
                     className="btn btn-outline-light bg-white dropdown-toggle"
-                    data-bs-toggle="dropdown" data-bs-boundary="viewport" data-bs-popper-config='{"strategy":"fixed"}'
+                    data-bs-toggle="dropdown"
+                    data-bs-boundary="viewport"
+                    data-bs-popper-config='{"strategy":"fixed"}'
                   >
                     <i className="ti ti-sort-ascending-2 me-2" />
                     Sort by A-Z
@@ -698,292 +702,449 @@ const ScheduleClasses = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
+              {selectedRowKeys.length > 0 && (
+                <div className="mx-3 mb-3 p-2 bg-danger-light border-danger rounded d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center">
+                    <span className="avatar avatar-sm bg-danger rounded-circle me-2">
+                      <i className="ti ti-trash text-white" />
+                    </span>
+                    <h6 className="mb-0 text-danger">{selectedRowKeys.length} items selected</h6>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-sm"
+                    data-bs-toggle="modal"
+                    data-bs-target="#delete-modal"
+                    onClick={() => setSelectedDeleteId(null)}
+                  >
+                    Delete Selected
+                  </button>
+                </div>
+              )}
               <Table
                 columns={columns}
                 dataSource={Array.isArray(data) ? data : []}
                 Selection={true}
+                selectedRowKeys={selectedRowKeys}
+                onSelectionChange={(keys) => setSelectedRowKeys(keys)}
               />
             </div>
           </div>
         </div>
       </div>
-      <div>
-        <div className="modal fade" id="add_Schedule">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add time slot</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form onSubmit={handleCreateSchedule}>
-                <div className="modal-body" id="add_schedule_modal_body">
-                  {addSlotError ? (
-                    <div className="alert alert-danger py-2 mb-3" role="alert">
-                      {addSlotError}
+      {/* /Page Wrapper */}
+
+      {/* Add Schedule Modal */}
+      <div className="modal fade" id="add_Schedule">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Add time slot</h4>
+              <button
+                type="button"
+                className="btn-close custom-btn-close"
+                data-bs-dismiss="modal"
+                aria-label="Close"
+              >
+                <i className="ti ti-x" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateSchedule}>
+              <div className="modal-body" id="add_schedule_modal_body">
+                {addSlotError ? (
+                  <div className="alert alert-danger py-2 mb-3" role="alert">
+                    {addSlotError}
+                  </div>
+                ) : null}
+                <div className="row">
+                  <div className="col-md-12">
+                    <div className="mb-3">
+                      <label className="form-label">Slot name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Period 1, Assembly, Break"
+                        maxLength={100}
+                        value={addForm.slotName}
+                        onChange={(e) => setAddForm((f) => ({ ...f, slotName: e.target.value }))}
+                        required
+                      />
                     </div>
-                  ) : null}
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Slot name</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="e.g. Period 1, Assembly, Break"
-                          maxLength={100}
-                          value={addForm.slotName}
-                          onChange={(e) => setAddForm((f) => ({ ...f, slotName: e.target.value }))}
-                          required
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Start time</label>
+                    <div className="mb-3">
+                      <label className="form-label">Start Time</label>
+                      <div className="input-icon-end">
                         <TimePicker
-                          use12Hours
+                          className="form-control"
                           format="h:mm A"
-                          minuteStep={1}
+                          use12Hours
+                          allowClear={false}
                           value={addForm.startTime}
                           onChange={(v) => setAddForm((f) => ({ ...f, startTime: v }))}
-                          className="w-100"
-                          style={{ width: "100%" }}
-                          placeholder="e.g. 9:00 AM"
-                          changeOnScroll
-                          getPopupContainer={(trigger) =>
-                            document.getElementById("add_schedule_modal_body") ??
-                            trigger.parentElement ??
-                            document.body
-                          }
                         />
+                        <span className="input-icon-addon">
+                          <i className="ti ti-clock" />
+                        </span>
                       </div>
-                      <div className="mb-3">
-                        <label className="form-label">End time</label>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">End Time</label>
+                      <div className="input-icon-end">
                         <TimePicker
-                          use12Hours
+                          className="form-control"
                           format="h:mm A"
-                          minuteStep={1}
+                          use12Hours
+                          allowClear={false}
                           value={addForm.endTime}
                           onChange={(v) => setAddForm((f) => ({ ...f, endTime: v }))}
-                          className="w-100"
-                          style={{ width: "100%" }}
-                          placeholder="e.g. 10:00 AM"
-                          changeOnScroll
-                          getPopupContainer={(trigger) =>
-                            document.getElementById("add_schedule_modal_body") ??
-                            trigger.parentElement ??
-                            document.body
-                          }
                         />
+                        <span className="input-icon-addon">
+                          <i className="ti ti-clock" />
+                        </span>
                       </div>
-                      <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="status-toggle modal-status">
-                          <input type="checkbox" id="user1" className="check" checked={addForm.isActive} onChange={(e) => setAddForm((f) => ({ ...f, isActive: e.target.checked }))} />
-                          <label htmlFor="user1" className="checktoggle">
-                            {" "}
-                          </label>
-                        </div>
+                    </div>
+                    <div className="d-flex align-items-center mb-0">
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          checked={addForm.isBreak}
+                          onChange={(e) => setAddForm((f) => ({ ...f, isBreak: e.target.checked }))}
+                        />
+                        <label className="form-check-label">Is this a break?</label>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Add time slot"}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        <div className="modal fade" id="edit_Schedule" ref={editModalRef}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit time slot</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? "Saving..." : "Add Time Slot"}
                 </button>
               </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleEditSave(e);
-                }}
-              >
-                <div className="modal-body" id="edit_schedule_modal_body">
-                  {saveError && (
-                    <div className="alert alert-danger py-2 mb-3" role="alert">
-                      {saveError}
-                    </div>
-                  )}
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Slot name</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="e.g. Period 1, Assembly, Break"
-                          maxLength={100}
-                          value={editForm.slotName}
-                          onChange={(e) =>
-                            setEditForm((f) => ({
-                              ...f,
-                              slotName: e.target.value,
-                            }))
-                          }
-                          required
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Start time</label>
-                        <TimePicker
-                          key={`edit-start-${editingRow?.id ?? "new"}`}
-                          use12Hours
-                          format="h:mm A"
-                          minuteStep={1}
-                          value={editForm.startTime}
-                          onChange={(v) => setEditForm((f) => ({ ...f, startTime: v }))}
-                          className="w-100"
-                          style={{ width: "100%" }}
-                          placeholder="e.g. 9:00 AM"
-                          changeOnScroll
-                          getPopupContainer={(trigger) =>
-                            document.getElementById("edit_schedule_modal_body") ??
-                            trigger.parentElement ??
-                            document.body
-                          }
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">End time</label>
-                        <TimePicker
-                          key={`edit-end-${editingRow?.id ?? "new"}`}
-                          use12Hours
-                          format="h:mm A"
-                          minuteStep={1}
-                          value={editForm.endTime}
-                          onChange={(v) => setEditForm((f) => ({ ...f, endTime: v }))}
-                          className="w-100"
-                          style={{ width: "100%" }}
-                          placeholder="e.g. 10:00 AM"
-                          changeOnScroll
-                          getPopupContainer={(trigger) =>
-                            document.getElementById("edit_schedule_modal_body") ??
-                            trigger.parentElement ??
-                            document.body
-                          }
-                        />
-                      </div>
-                      <div className="modal-satus-toggle d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="user2"
-                            checked={editForm.isActive}
-                            onChange={(e) =>
-                              setEditForm((f) => ({
-                                ...f,
-                                isActive: e.target.checked,
-                              }))
-                            }
-                          />
-                          <label
-                            htmlFor="user2"
-                            className="form-check-label"
-                          >
-                            {" "}
-                          </label>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <button
-                    type="button"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                    onClick={closeEditModalAndCleanup}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={saving}
-                  >
-                    {saving ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form>
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <button type="button" className="btn btn-danger" onClick={handleDeleteSchedule} disabled={saving}>
-                      {saving ? "Deleting..." : "Yes, Delete"}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
         </div>
       </div>
-    </div>
+      {/* /Add Schedule Modal */}
+
+      {/* Edit Schedule Modal */}
+      <div className="modal fade" id="edit_Schedule" ref={editModalRef}>
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Edit time slot</h4>
+              <button
+                type="button"
+                className="btn-close custom-btn-close"
+                data-bs-dismiss="modal"
+                aria-label="Close"
+                onClick={closeEditModalAndCleanup}
+              >
+                <i className="ti ti-x" />
+              </button>
+            </div>
+            <form onSubmit={handleEditSave}>
+              <div className="modal-body">
+                {saveError ? (
+                  <div className="alert alert-danger py-2 mb-3" role="alert">
+                    {saveError}
+                  </div>
+                ) : null}
+                <div className="row">
+                  <div className="col-md-12">
+                    <div className="mb-3">
+                      <label className="form-label">Slot name</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        maxLength={100}
+                        value={editForm.slotName}
+                        onChange={(e) => setEditForm((f) => ({ ...f, slotName: e.target.value }))}
+                        required
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Start Time</label>
+                      <div className="input-icon-end">
+                        <TimePicker
+                          className="form-control"
+                          format="h:mm A"
+                          use12Hours
+                          allowClear={false}
+                          value={editForm.startTime}
+                          onChange={(v) => setEditForm((f) => ({ ...f, startTime: v }))}
+                        />
+                        <span className="input-icon-addon">
+                          <i className="ti ti-clock" />
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">End Time</label>
+                      <div className="input-icon-end">
+                        <TimePicker
+                          className="form-control"
+                          format="h:mm A"
+                          use12Hours
+                          allowClear={false}
+                          value={editForm.endTime}
+                          onChange={(v) => setEditForm((f) => ({ ...f, endTime: v }))}
+                        />
+                        <span className="input-icon-addon">
+                          <i className="ti ti-clock" />
+                        </span>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center mb-3">
+                      <div className="form-check form-switch me-4">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={editForm.isBreak}
+                          onChange={(e) => setEditForm((f) => ({ ...f, isBreak: e.target.checked }))}
+                        />
+                        <label className="form-check-label">Is Break</label>
+                      </div>
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={editForm.isActive}
+                          onChange={(e) => setEditForm((f) => ({ ...f, isActive: e.target.checked }))}
+                        />
+                        <label className="form-check-label">Active</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-light me-2"
+                  data-bs-dismiss="modal"
+                  onClick={closeEditModalAndCleanup}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {/* /Edit Schedule Modal */}
+
+      {/* Delete Schedule Modal */}
+      <div className="modal fade" id="delete-modal">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <form>
+              <div className="modal-body text-center">
+                <span className="delete-icon">
+                  <i className="ti ti-trash-x" />
+                </span>
+                <h4>
+                  {selectedDeleteId
+                    ? "Are you sure you want to delete this time slot?"
+                    : `Are you sure you want to delete the selected ${selectedRowKeys.length} time slots?`}
+                </h4>
+                <p>This action cannot be undone and will remove the selected slot(s) permanently.</p>
+                <div className="d-flex justify-content-center">
+                  <Link to="#" className="btn btn-light me-3" data-bs-dismiss="modal">
+                    Cancel
+                  </Link>
+                  <button type="button" className="btn btn-danger" onClick={handleDeleteSchedule} disabled={saving}>
+                    {saving ? "Deleting..." : "Yes, Delete"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {/* /Delete Schedule Modal */}
+
+      {/* Bulk Generate Modal */}
+      <div className="modal fade" id="bulk_generate">
+        <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-content">
+            <div className="modal-header">
+              <div className="d-flex align-items-center">
+                <div className="modal-icon me-2">
+                  <i className="ti ti-layout-grid-add" />
+                </div>
+                <h4 className="modal-title">Bulk Generate Time Slots</h4>
+              </div>
+              <button
+                type="button"
+                className="btn-close custom-btn-close"
+                data-bs-dismiss="modal"
+                aria-label="Close"
+              >
+                <i className="ti ti-x" />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleBulkGenerate();
+              }}
+            >
+              <div className="modal-body">
+                <div className="alert alert-info d-flex align-items-center mb-3">
+                  <i className="ti ti-info-circle me-2 fs-18" />
+                  <p className="mb-0 small">
+                    This will automatically generate a sequence of periods. Any overlapping existing slots will be
+                    skipped.
+                  </p>
+                </div>
+
+                <div className="row">
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Day Start Time</label>
+                    <TimePicker
+                      className="form-control"
+                      format="h:mm A"
+                      use12Hours
+                      value={genForm.startTime}
+                      onChange={(v) => setGenForm((f) => ({ ...f, startTime: v }))}
+                      allowClear={false}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Day End Time</label>
+                    <TimePicker
+                      className="form-control"
+                      format="h:mm A"
+                      use12Hours
+                      value={genForm.endTime}
+                      onChange={(v) => setGenForm((f) => ({ ...f, endTime: v }))}
+                      allowClear={false}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Period Duration (min)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={genForm.duration}
+                      onChange={(e) => setGenForm((f) => ({ ...f, duration: parseInt(e.target.value) || 0 }))}
+                      min={1}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Prefix (e.g. Period)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={genForm.prefix}
+                      onChange={(e) => setGenForm((f) => ({ ...f, prefix: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="col-12 mb-3">
+                    <div className="form-check form-switch">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="includeBreaks"
+                        checked={genForm.includeBreaks}
+                        onChange={(e) => setGenForm((f) => ({ ...f, includeBreaks: e.target.checked }))}
+                      />
+                      <label className="form-check-label" htmlFor="includeBreaks">
+                        Add Breaks between periods
+                      </label>
+                    </div>
+                  </div>
+
+                  {genForm.includeBreaks && (
+                    <div className="col-12">
+                      <div className="bg-light p-3 rounded border">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <h6 className="mb-0">Break Rules</h6>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary btn-xs"
+                            onClick={() =>
+                              setGenForm((f) => ({
+                                ...f,
+                                breaks: [...f.breaks, { afterPeriod: f.breaks.length + 1, duration: 15 }],
+                              }))
+                            }
+                          >
+                            <i className="ti ti-plus me-1" />
+                            Add Break
+                          </button>
+                        </div>
+                        {genForm.breaks.map((br, idx) => (
+                          <div key={idx} className="row g-2 mb-2 align-items-end">
+                            <div className="col-5">
+                              <label className="form-label small mb-1">After Period</label>
+                              <input
+                                type="number"
+                                className="form-control form-control-sm"
+                                value={br.afterPeriod}
+                                onChange={(e) => {
+                                  const newBreaks = [...genForm.breaks];
+                                  newBreaks[idx].afterPeriod = parseInt(e.target.value) || 0;
+                                  setGenForm((f) => ({ ...f, breaks: newBreaks }));
+                                }}
+                              />
+                            </div>
+                            <div className="col-5">
+                              <label className="form-label small mb-1">Duration (m)</label>
+                              <input
+                                type="number"
+                                className="form-control form-control-sm"
+                                value={br.duration}
+                                onChange={(e) => {
+                                  const newBreaks = [...genForm.breaks];
+                                  newBreaks[idx].duration = parseInt(e.target.value) || 0;
+                                  setGenForm((f) => ({ ...f, breaks: newBreaks }));
+                                }}
+                              />
+                            </div>
+                            <div className="col-2">
+                              <button
+                                type="button"
+                                className="btn btn-outline-danger btn-sm w-100"
+                                onClick={() => {
+                                  const newBreaks = genForm.breaks.filter((_, i) => i !== idx);
+                                  setGenForm((f) => ({ ...f, breaks: newBreaks }));
+                                }}
+                              >
+                                <i className="ti ti-trash" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-light" data-bs-dismiss="modal">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? "Generating..." : "Generate Slots"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {/* /Bulk Generate Modal */}
+    </>
   );
 };
 
 export default ScheduleClasses;
-
-
-
-
-
