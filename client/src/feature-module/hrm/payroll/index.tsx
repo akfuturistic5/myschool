@@ -13,12 +13,35 @@ import { all_routes } from "../../router/all_routes";
 import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import TooltipOption from "../../../core/common/tooltipOption";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
 const Payroll = () => {
   const { payrollData, loading, refresh } = usePayroll();
   const [selectedRowKeys, setSelectedRowKeys] = React.useState<any[]>([]);
   const navigate = useNavigate();
   const routes = all_routes;
+
+  const formatSalaryPeriod = (period: any) => {
+    if (!period) return "—";
+    const dateStr = String(period).split(",")[0].replace(/[\[\]\(\)]/g, "");
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleString("default", { month: "long", year: "numeric" });
+  };
+
+  const getExportRows = () =>
+    (Array.isArray(payrollData) ? payrollData : []).map((row: any) => ({
+      ID: row.employee_code || row.id || "",
+      Name: row.name || "",
+      Month: formatSalaryPeriod(row.salary_period),
+      Department: row.department || "",
+      Designation: row.designation || "",
+      Phone: row.phone || "",
+      Amount: Number.parseFloat(row.net_salary || 0),
+      Status: row.status || "",
+    }));
 
   const columns = [
     {
@@ -39,12 +62,7 @@ const Payroll = () => {
     {
       title: "Month",
       dataIndex: "salary_period",
-      render: (period: any) => {
-        if (!period) return "—";
-        const dateStr = String(period).split(',')[0].replace(/[\[\]\(\)]/g, '');
-        const date = new Date(dateStr);
-        return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-      },
+      render: (period: any) => formatSalaryPeriod(period),
     },
     {
       title: "Department",
@@ -254,6 +272,100 @@ const Payroll = () => {
     }
   };
 
+  const handlePrint = () => {
+    const rows = getExportRows();
+    if (!rows.length) {
+      Swal.fire("No Data", "No payroll rows available to print.", "info");
+      return;
+    }
+    const tableHeader = `
+      <tr>
+        <th>ID</th><th>Name</th><th>Month</th><th>Department</th>
+        <th>Designation</th><th>Phone</th><th>Amount</th><th>Status</th>
+      </tr>
+    `;
+    const tableRows = rows
+      .map(
+        (r) => `
+          <tr>
+            <td>${r.ID}</td>
+            <td>${r.Name}</td>
+            <td>${r.Month}</td>
+            <td>${r.Department}</td>
+            <td>${r.Designation}</td>
+            <td>${r.Phone}</td>
+            <td>${Number(r.Amount || 0).toLocaleString()}</td>
+            <td>${r.Status}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+    if (!printWindow) {
+      Swal.fire("Blocked", "Please allow pop-ups to print payroll.", "warning");
+      return;
+    }
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Payroll List</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; }
+            h2 { margin: 0 0 16px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; text-align: left; }
+            th { background: #f4f6f8; }
+          </style>
+        </head>
+        <body>
+          <h2>Payroll List</h2>
+          <table>
+            <thead>${tableHeader}</thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  };
+
+  const handleExportPdf = () => {
+    const rows = getExportRows();
+    if (!rows.length) {
+      Swal.fire("No Data", "No payroll rows available to export.", "info");
+      return;
+    }
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const headers = Object.keys(rows[0]);
+    const body = rows.map((r) => headers.map((h) => String(r[h as keyof typeof r] ?? "")));
+    doc.text("Payroll List", 30, 30);
+    autoTable(doc, {
+      startY: 42,
+      margin: { left: 20, right: 20 },
+      head: [headers],
+      body,
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [41, 128, 185], textColor: [255, 255, 255], fontStyle: "bold" },
+    });
+    doc.save(`payroll-list-${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
+  const handleExportExcel = () => {
+    const rows = getExportRows();
+    if (!rows.length) {
+      Swal.fire("No Data", "No payroll rows available to export.", "info");
+      return;
+    }
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Payroll");
+    XLSX.writeFile(workbook, `payroll-list-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   return (
     <div className="page-wrapper">
       <div className="content">
@@ -280,7 +392,12 @@ const Payroll = () => {
               <i className="ti ti-settings me-2" />
               Manage Components
             </button>
-            <TooltipOption />
+            <TooltipOption
+              onRefresh={refresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
           </div>
         </div>
 
