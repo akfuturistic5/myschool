@@ -6,25 +6,21 @@ const cleanText = (value, max = 2000) =>
   sanitizeHtml(String(value || ''), { allowedTags: [], allowedAttributes: {} }).trim().slice(0, max);
 
 const normalizeHolidayTypeForDb = (value) => {
-  const normalized = cleanText(value || '', 32);
-  if (!normalized) return 'Custom';
-  const lower = normalized.toLowerCase();
-  const map = {
-    national: 'National',
-    religious: 'Religious',
-    academic: 'Academic',
-    school: 'School',
-    custom: 'Custom',
-    public: 'National',
-    optional: 'Custom',
-  };
-  // DB constraint only allows fixed values; unknown free text safely folds to Custom.
-  return map[lower] || 'Custom';
+  const normalized = cleanText(value || '', 32).toLowerCase();
+  if (!normalized) return 'Academic';
+  if (normalized === 'public') return 'National';
+  if (normalized === 'school') return 'Academic';
+  if (normalized === 'custom') return 'Custom';
+  return 'Custom';
 };
 
 const normalizeHolidayTypeForApi = (value) => {
-  const normalized = String(value || '').trim();
-  return normalized || null;
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'custom';
+  if (normalized === 'national' || normalized === 'religious') return 'public';
+  if (normalized === 'academic' || normalized === 'school') return 'school';
+  if (normalized === 'custom' || normalized === 'optional') return 'custom';
+  return 'custom';
 };
 
 const serializeHolidayRow = (row) => {

@@ -38,10 +38,17 @@ type StaffReportRow = {
 };
 
 const STATUS_OPTIONS = ["present", "late", "absent", "half_day"];
+const normalizeStatusKey = (status: unknown): string =>
+  String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_–—−]+/g, "_")
+    .replace(/^halfday$/, "half_day");
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
   late: "bg-pending",
-  half_day: "bg-dark",
+  half_day: "bg-purple",
+  halfday: "bg-purple",
   absent: "bg-danger",
   holiday: "bg-info",
   weekly_holiday: "bg-info",
@@ -351,7 +358,7 @@ const StudentAttendance = () => {
       }
       const attendanceDate = toDateKey(row.attendance_date);
       if (!attendanceDate) return;
-      grouped.get(id).daily[attendanceDate] = String(row.status || "").trim().toLowerCase();
+      grouped.get(id).daily[attendanceDate] = normalizeStatusKey(row.status);
     });
 
     const holidaySet = new Set((Array.isArray(staffHolidayDates) ? staffHolidayDates : []).map((d) => toDateKey(d)));
@@ -393,7 +400,8 @@ const StudentAttendance = () => {
         ),
         key: day.date,
         render: (_text: any, record: any) => {
-          const status = record.daily?.[day.date];
+          const rawStatus = record.daily?.[day.date];
+          const status = normalizeStatusKey(rawStatus);
           if (status === "leaved") {
             return (
               <span
@@ -414,7 +422,7 @@ const StudentAttendance = () => {
             fontWeight: 700 as const,
             color: "#fff",
           };
-          if (!status) {
+          if (!rawStatus) {
             return (
               <span
                 className="attendance-range"
@@ -427,12 +435,16 @@ const StudentAttendance = () => {
             const rest = getCompoundHolidayAttendancePart(status);
             const subText = statusTextMapDay[rest] || "?";
             const subCls = statusClassMap[rest] || "bg-light";
+            const isHalfDaySub = rest === "half_day" || rest === "halfday";
             return (
               <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }} title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}>
                 <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
                   H
                 </span>
-                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                <span
+                  className={`attendance-range ${subCls}`.trim()}
+                  style={isHalfDaySub ? { ...pillStyle, backgroundColor: "#7b2cbf" } : pillStyle}
+                >
                   {subText}
                 </span>
               </span>
@@ -440,21 +452,37 @@ const StudentAttendance = () => {
           }
           const cls = statusClassMap[status] || "bg-light";
           const short = statusShortLabel(status);
+          const isHalfDay = status === "half_day" || status === "halfday";
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={{
-                width: 22,
-                height: 18,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 6,
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#fff",
-              }}
-              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
+              style={
+                isHalfDay
+                  ? {
+                      width: 22,
+                      height: 18,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#fff",
+                      backgroundColor: "#7b2cbf",
+                    }
+                  : {
+                      width: 22,
+                      height: 18,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#fff",
+                    }
+              }
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(rawStatus)}`}
             >
               {short}
             </span>

@@ -18,6 +18,16 @@ const normalizeTimeForInput = (value: unknown): string => {
   return `${match[1]}:${match[2]}`;
 };
 
+const normalizeStatusForSelect = (value: unknown): string => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (!normalized) return "present";
+  if (normalized === "halfday") return "half_day";
+  return normalized;
+};
+
 const getTodayLocalYMD = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -80,7 +90,7 @@ const StaffAttendance = () => {
       const state: Record<number, { status: string; checkInTime: string; checkOutTime: string; remark: string }> = {};
       roster.forEach((r: any) => {
         state[r.entity_id] = {
-          status: r.status || "present",
+          status: normalizeStatusForSelect(r.status),
           checkInTime: normalizeTimeForInput(r.check_in_time),
           checkOutTime: normalizeTimeForInput(r.check_out_time),
           remark: r.remark || "",
