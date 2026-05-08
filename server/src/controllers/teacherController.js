@@ -236,7 +236,18 @@ const getAllTeachers = async (req, res) => {
           ssa.contract_type,
           ssa.shift,
           ssa.work_location,
-          ssa.basic_salary
+          ssa.basic_salary,
+          (
+            SELECT json_agg(json_build_object(
+              'component_id', scv.component_id,
+              'amount', scv.amount,
+              'component_name', sc.component_name,
+              'type', sc.type
+            ))
+            FROM staff_salary_component_values scv
+            JOIN salary_components sc ON sc.id = scv.component_id
+            WHERE scv.salary_assignment_id = ssa.id
+          ) AS salary_components
         FROM staff_salary_assignments ssa
         WHERE ssa.staff_id = s.id
           AND ssa.valid_period @> CURRENT_DATE::date
@@ -333,7 +344,18 @@ const getCurrentTeacher = async (req, res) => {
           ssa.contract_type,
           ssa.shift,
           ssa.work_location,
-          ssa.basic_salary
+          ssa.basic_salary,
+          (
+            SELECT json_agg(json_build_object(
+              'component_id', scv.component_id,
+              'amount', scv.amount,
+              'component_name', sc.component_name,
+              'type', sc.type
+            ))
+            FROM staff_salary_component_values scv
+            JOIN salary_components sc ON sc.id = scv.component_id
+            WHERE scv.salary_assignment_id = ssa.id
+          ) AS salary_components
         FROM staff_salary_assignments ssa
         WHERE ssa.staff_id = s.id
           AND ssa.valid_period @> CURRENT_DATE::date
@@ -436,6 +458,17 @@ const getTeacherById = async (req, res) => {
         tr.pickup_alloc_name AS pickup_point_name,
         tr.vehicle_alloc_no AS vehicle_number,
         tr.plan_name AS transport_fee_plan_name,
+        (
+          SELECT json_agg(json_build_object(
+            'component_id', scv.component_id,
+            'amount', scv.amount,
+            'component_name', sc.component_name,
+            'type', sc.type
+          ))
+          FROM staff_salary_component_values scv
+          JOIN salary_components sc ON sc.id = scv.component_id
+          WHERE scv.salary_assignment_id = sal.id
+        ) AS salary_components,
         false AS is_transport_required,
         false AS is_hostel_required,
         NULL::text AS hostel_name,
@@ -779,7 +812,7 @@ const createTeacher = async (req, res) => {
       youtube, instagram, other_info,
       account_name, account_number, epf_no,
       employee_code: clientEmployeeCode,
-      status, is_active,
+      status, is_active, salary_components,
     } = body;
 
     const fn = (first_name || '').toString().trim();
@@ -967,13 +1000,13 @@ const createTeacher = async (req, res) => {
       }
 
       // Insert salary assignment
-      await client.query(
+      const assRes = await client.query(
         `INSERT INTO staff_salary_assignments (
           staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no, branch, ifsc_code,
           contract_type, shift, work_location, valid_period, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW()
-        )`,
+        ) RETURNING id`,
         [
           staffId,
           salaryNum || 0,
@@ -989,6 +1022,19 @@ const createTeacher = async (req, res) => {
           work_location || null,
         ]
       );
+      const assignmentId = assRes.rows[0].id;
+
+      if (salary_components && Array.isArray(salary_components)) {
+        for (const comp of salary_components) {
+          if (comp.component_id && comp.amount != null) {
+            await client.query(
+              `INSERT INTO staff_salary_component_values (salary_assignment_id, component_id, amount)
+               VALUES ($1, $2, $3)`,
+              [assignmentId, comp.component_id, comp.amount]
+            );
+          }
+        }
+      }
 
       // Insert subject teacher assignment
       if (classId && subjectId) {
@@ -1137,7 +1183,8 @@ const updateTeacher = async (req, res) => {
       blood_group, blood_group_id, previous_school_name, previous_school_address, previous_school_phone,
       current_address, permanent_address, pan_number, id_number,
       bank_name, branch, ifsc, account_name, account_number, epf_no, contract_type, shift, work_location,
-      facebook, twitter, linkedin, youtube, instagram, other_info, photo_url
+      facebook, twitter, linkedin, youtube, instagram, other_info, photo_url,
+      salary_components
     } = req.body;
 
     let isActiveBoolean = false;
@@ -1266,8 +1313,9 @@ const updateTeacher = async (req, res) => {
           [staffId]
         );
 
+        let assignmentId;
         if (existingSal.rows.length > 0) {
-          const salId = existingSal.rows[0].id;
+          assignmentId = existingSal.rows[0].id;
           const salUpdates = [];
           const salParams = [];
           let salIdx = 1;
@@ -1287,19 +1335,33 @@ const updateTeacher = async (req, res) => {
           salUpdates.push(`updated_at = NOW()`);
 
           if (salUpdates.length > 0) {
-            salParams.push(salId);
+            salParams.push(assignmentId);
             await client.query(`UPDATE staff_salary_assignments SET ${salUpdates.join(', ')} WHERE id = $${salIdx}`, salParams);
           }
         } else {
-          await client.query(
+          const assRes = await client.query(
             `INSERT INTO staff_salary_assignments (
               staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no, branch, ifsc_code,
               contract_type, shift, work_location, valid_period, created_at, updated_at
             ) VALUES (
               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW()
-            )`,
+            ) RETURNING id`,
             [staffId, salary || 0, epf_no || null, panVal, bank_name || null, account_name || null, account_number || null, branch || null, ifsc || null, contract_type || null, shift || null, work_location || null]
           );
+          assignmentId = assRes.rows[0].id;
+        }
+
+        if (salary_components && Array.isArray(salary_components)) {
+          await client.query(`DELETE FROM staff_salary_component_values WHERE salary_assignment_id = $1`, [assignmentId]);
+          for (const comp of salary_components) {
+            if (comp.component_id && comp.amount != null) {
+              await client.query(
+                `INSERT INTO staff_salary_component_values (salary_assignment_id, component_id, amount)
+                 VALUES ($1, $2, $3)`,
+                [assignmentId, comp.component_id, comp.amount]
+              );
+            }
+          }
         }
       }
 

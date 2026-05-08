@@ -81,6 +81,8 @@ const examModuleRoutes = require('./src/routes/examModuleRoutes');
 const examSubjectsRoutes = require('./src/routes/examSubjectsRoutes');
 const settingsRoutes = require('./src/routes/settingsRoutes');
 const enquiryRoutes = require('./src/routes/enquiryRoutes');
+const salaryComponentRoutes = require('./src/routes/salaryComponentRoutes');
+const payrollRoutes = require('./src/routes/payrollRoutes');
 const settingsController = require('./src/controllers/settingsController');
 const { protectApi } = require('./src/middleware/authMiddleware');
 const { requireActiveAccount } = require('./src/middleware/requireActiveAccount');
@@ -375,6 +377,8 @@ app.use('/api/exams', examModuleRoutes);
 app.use('/api/exam-subjects', examSubjectsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/enquiries', enquiryRoutes);
+app.use('/api/salary-components', salaryComponentRoutes);
+app.use('/api/payroll', payrollRoutes);
 
 // Load-balancer probe (no internal metrics; detailed checks live under /api/health with token)
 app.get('/health', (req, res) => {
