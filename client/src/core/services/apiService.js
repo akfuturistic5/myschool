@@ -1773,6 +1773,18 @@ class ApiService {
       method: 'DELETE',
     });
   }
+  async bulkDeleteFeesMaster(ids) {
+    return this.makeRequest('/fees-master/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdateFeesMasterStatus(ids, status) {
+    return this.makeRequest('/fees-master/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
 
   // Fees Assign
   async getFeesAssignments(params = {}) {

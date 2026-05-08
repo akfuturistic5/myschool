@@ -1,37 +1,51 @@
-const { query, pool } = require('../config/database');
+/**
+ * Fees Collect Controller
+ *
+ * In the new schema, collecting fees means:
+ * 1. Inserting into `compulsory_fees` (or `optional_fees`) — the transaction record
+ * 2. Updating `fees_paids` — the student's running ledger
+ * 3. Handling `fees_advance` — if the student has credit to apply
+ *
+ * Receipt numbering: RCPT-{year}-{00001}
+ */
+
+const { query, getClient, executeTransaction } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getAuthContext, isAdmin } = require('../utils/accessControl');
 
-// Helper to generate receipt number: RCPT-{year}-{increment}
+// ─── RECEIPT NUMBER ───────────────────────────────────────────────────────────
 const generateReceiptNo = async (academicYearId, client) => {
-    const yearResult = await client.query('SELECT year_name FROM academic_years WHERE id = $1', [academicYearId]);
-    const yearName = yearResult.rows[0].year_name.split('-')[0]; // Get e.g. "2023" from "2023-24"
-    
-    const lastReceiptResult = await client.query(
-        `SELECT receipt_no FROM fees_collect 
-         WHERE academic_year_id = $1 
-         ORDER BY id DESC LIMIT 1`,
+    const yearResult = await client.query(
+        'SELECT year_name FROM academic_years WHERE id = $1', [academicYearId]
+    );
+    if (yearResult.rowCount === 0) throw new Error('Invalid academic year');
+
+    const yearLabel = yearResult.rows[0].year_name.split('-')[0]; // e.g. "2024"
+
+    // Count existing compulsory_fees records for this year to determine increment
+    const countResult = await client.query(
+        `SELECT COUNT(*) AS cnt FROM compulsory_fees WHERE academic_year_id = $1`,
         [academicYearId]
     );
-
-    let increment = 1;
-    if (lastReceiptResult.rowCount > 0) {
-        const lastNo = lastReceiptResult.rows[0].receipt_no;
-        const parts = lastNo.split('-');
-        const lastIncrement = parseInt(parts[parts.length - 1], 10);
-        if (!isNaN(lastIncrement)) {
-            increment = lastIncrement + 1;
-        }
-    }
-
-    return `RCPT-${yearName}-${String(increment).padStart(5, '0')}`;
+    const increment = parseInt(countResult.rows[0].cnt, 10) + 1;
+    return `RCPT-${yearLabel}-${String(increment).padStart(5, '0')}`;
 };
 
+// ─── COLLECT FEES ─────────────────────────────────────────────────────────────
+// Body: {
+//   student_id, academic_year_id, payment_date?, payment_mode?, remarks?,
+//   payments: [
+//     { fee_id?, fee_installment_id?, amount_paid, fine_paid? }
+//   ],
+//   advance_amount_used?: 0   // pull from fees_advance credit bucket
+// }
 const collectFees = async (req, res) => {
-    const client = await pool.connect();
+    const client = await getClient();
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            client.release();
+            return errorResponse(res, 403, 'Access denied');
         }
 
         const {
@@ -40,246 +54,392 @@ const collectFees = async (req, res) => {
             payment_date,
             payment_mode,
             remarks,
-            fee_items // Array of { fees_assign_details_id, amount_to_pay }
+            payments,
+            fee_items,
+            advance_amount_used
         } = req.body;
 
-        if (!student_id || !academic_year_id || !fee_items || !Array.isArray(fee_items) || fee_items.length === 0) {
-            return res.status(400).json({ status: 'ERROR', message: 'student_id, academic_year_id and fee_items are required' });
+        const effectivePayments = payments || fee_items;
+
+        if (!student_id || !academic_year_id || !Array.isArray(effectivePayments) || effectivePayments.length === 0) {
+            client.release();
+            return errorResponse(res, 400, 'student_id, academic_year_id and payments[] are required');
         }
 
         await client.query('BEGIN');
 
-        let totalPaid = 0;
-        const processedItems = [];
-
-        for (const item of fee_items) {
-            const { fees_assign_details_id, amount_to_pay } = item;
-            const payAmount = parseFloat(amount_to_pay);
-
-            if (isNaN(payAmount) || payAmount <= 0) continue;
-
-            // 1. SELECT FOR UPDATE to lock the row and get latest status
-            const assignDetailResult = await client.query(
-                `SELECT fad.*, 
-                    COALESCE((SELECT SUM(paid_amount) FROM fees_collect_details WHERE fees_assign_details_id = fad.id), 0) as currently_paid
-                 FROM fees_assign_details fad
-                 WHERE fad.id = $1 AND fad.fees_assign_id IN (SELECT id FROM fees_assign WHERE student_id = $2)
-                 FOR UPDATE`,
-                [fees_assign_details_id, student_id]
-            );
-
-            if (assignDetailResult.rowCount === 0) {
-                throw new Error(`Fee assignment detail ${fees_assign_details_id} not found for this student`);
-            }
-
-            const detail = assignDetailResult.rows[0];
-            const pending = parseFloat(detail.amount) - parseFloat(detail.currently_paid);
-
-            if (payAmount > pending + 0.01) { // Small epsilon for float
-                throw new Error(`Overpayment detected for fee item. Pending: ${pending}, Attempted: ${payAmount}`);
-            }
-
-            totalPaid += payAmount;
-            processedItems.push({
-                fees_assign_details_id,
-                paid_amount: payAmount
-            });
-        }
-
-        if (processedItems.length === 0) {
-            throw new Error('No valid fee items to process');
-        }
-
-        // 2. Generate Receipt No
-        const receiptNo = await generateReceiptNo(academic_year_id, client);
-
-        // 3. Create Header
-        const headerResult = await client.query(
-            `INSERT INTO fees_collect (student_id, total_paid, receipt_no, academic_year_id, payment_date, payment_mode, remarks)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-            [
-                student_id, 
-                totalPaid, 
-                receiptNo, 
-                academic_year_id, 
-                payment_date || new Date(), 
-                payment_mode || 'Cash', 
-                remarks
-            ]
+        // 1. Lock the student's ledger row
+        const ledgerResult = await client.query(
+            `SELECT * FROM fees_paids
+             WHERE student_id = $1 AND academic_year_id = $2
+             FOR UPDATE`,
+            [student_id, academic_year_id]
         );
-        const collectHeaderId = headerResult.rows[0].id;
 
-        // 4. Create Details
-        for (const item of processedItems) {
-            await client.query(
-                `INSERT INTO fees_collect_details (fees_collect_id, fees_assign_details_id, paid_amount)
-                 VALUES ($1, $2, $3)`,
-                [collectHeaderId, item.fees_assign_details_id, item.paid_amount]
+        if (ledgerResult.rowCount === 0) {
+            throw Object.assign(
+                new Error('No fee assignment found for this student in this academic year. Please assign fees first.'),
+                { statusCode: 400 }
             );
         }
+
+        const ledger = ledgerResult.rows[0];
+        let totalNewPayment = 0;
+        let totalFinePaid = 0;
+        const receiptNo = await generateReceiptNo(academic_year_id, client);
+        const createdBy = req.user?.id || null;
+
+        // 2. Insert each payment line into compulsory_fees
+        for (const payment of effectivePayments) {
+            let { fee_id, fee_installment_id, fees_assign_details_id, amount_paid, amount_to_pay, fine_paid } = payment;
+            
+            const payAmt = parseFloat(amount_paid || amount_to_pay || 0);
+            const fineAmt = parseFloat(fine_paid || 0);
+
+            // If only fees_assign_details_id (fct.id) is provided, find the parent fee_id
+            if (fees_assign_details_id && !fee_id) {
+                const fctRes = await client.query('SELECT fee_id FROM fees_class_types WHERE id = $1', [fees_assign_details_id]);
+                if (fctRes.rowCount > 0) {
+                    fee_id = fctRes.rows[0].fee_id;
+                }
+            }
+
+            if (!fee_id && !fee_installment_id) {
+                throw Object.assign(
+                    new Error('Each payment must reference a fee_id, fee_installment_id, or fees_assign_details_id'),
+                    { statusCode: 400 }
+                );
+            }
+
+            if (payAmt <= 0) {
+                throw Object.assign(new Error('Payment amount must be greater than zero'), { statusCode: 400 });
+            }
+
+            await client.query(
+                `INSERT INTO compulsory_fees
+                    (student_id, academic_year_id, fee_id, fee_installment_id,
+                     amount_paid, advance_amount_used, fine_paid,
+                     payment_date, payment_mode, transaction_id, remarks, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                [
+                    student_id,
+                    academic_year_id,
+                    fee_id || null,
+                    fee_installment_id || null,
+                    payAmt,
+                    0, // advance_amount_used handled separately below
+                    fineAmt,
+                    payment_date || new Date(),
+                    payment_mode || 'Cash',
+                    receiptNo,
+                    remarks || null,
+                    createdBy
+                ]
+            );
+
+            totalNewPayment += payAmt;
+            totalFinePaid += fineAmt;
+        }
+
+        // 3. Apply advance credit if requested
+        const advanceUsed = parseFloat(advance_amount_used || 0);
+        if (advanceUsed > 0) {
+            const advanceRow = await client.query(
+                `SELECT id, amount FROM fees_advance
+                 WHERE student_id = $1 AND academic_year_id = $2
+                 FOR UPDATE`,
+                [student_id, academic_year_id]
+            );
+
+            if (advanceRow.rowCount === 0 || parseFloat(advanceRow.rows[0].amount) < advanceUsed) {
+                throw Object.assign(
+                    new Error('Insufficient advance balance'),
+                    { statusCode: 400 }
+                );
+            }
+
+            await client.query(
+                `UPDATE fees_advance SET amount = amount - $1, updated_at = NOW()
+                 WHERE id = $2`,
+                [advanceUsed, advanceRow.rows[0].id]
+            );
+
+            totalNewPayment += advanceUsed;
+        }
+
+        // 4. Update fees_paids ledger
+        const newTotalPaid = parseFloat(ledger.total_paid) + totalNewPayment;
+        const newBalance = parseFloat(ledger.total_payable) - newTotalPaid;
+        const newStatus = newBalance <= 0 ? 'paid' : newTotalPaid > 0 ? 'partial' : 'pending';
+
+        await client.query(
+            `UPDATE fees_paids SET
+                total_paid = $1,
+                balance_amount = $2,
+                status = $3,
+                updated_at = NOW()
+             WHERE student_id = $4 AND academic_year_id = $5`,
+            [newTotalPaid, Math.max(0, newBalance), newStatus, student_id, academic_year_id]
+        );
 
         await client.query('COMMIT');
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            message: 'Fees collected successfully',
-            data: {
-                receipt_no: receiptNo,
-                total_paid: totalPaid,
-                collect_id: collectHeaderId
-            }
+        return success(res, 200, 'Payment recorded successfully', {
+            receipt_no: receiptNo,
+            amount_paid: totalNewPayment,
+            fine_paid: totalFinePaid,
+            advance_used: advanceUsed,
+            new_balance: Math.max(0, newBalance),
+            status: newStatus
         });
+
     } catch (error) {
-        await client.query('ROLLBACK');
+        await client.query('ROLLBACK').catch(() => {});
         console.error('Error in collectFees:', error);
-        res.status(error.message.includes('not found') || error.message.includes('Overpayment') ? 400 : 500).json({ 
-            status: 'ERROR', 
-            message: error.message || 'Internal server error' 
-        });
+        if (error.statusCode === 400) {
+            return errorResponse(res, 400, error.message);
+        }
+        return errorResponse(res, 500, error.message || 'Internal server error');
     } finally {
         client.release();
     }
 };
 
+// ─── MARK AS UNPAID (Reversal) ────────────────────────────────────────────────
+// If a payment was marked by mistake, delete the compulsory_fees record
+// and revert the fees_paids ledger.
+const reversePayment = async (req, res) => {
+    const client = await getClient();
+    try {
+        const ctx = getAuthContext(req);
+        if (!isAdmin(ctx)) {
+            client.release();
+            return errorResponse(res, 403, 'Access denied');
+        }
+
+        const { id } = req.params; // compulsory_fees.id
+
+        await client.query('BEGIN');
+
+        // Fetch the payment record
+        const paymentResult = await client.query(
+            `SELECT * FROM compulsory_fees WHERE id = $1 FOR UPDATE`,
+            [id]
+        );
+
+        if (paymentResult.rowCount === 0) {
+            throw Object.assign(new Error('Payment record not found'), { statusCode: 404 });
+        }
+
+        const payment = paymentResult.rows[0];
+
+        // Delete the payment record
+        await client.query('DELETE FROM compulsory_fees WHERE id = $1', [id]);
+
+        // Revert the ledger
+        const revertAmount = parseFloat(payment.amount_paid) + parseFloat(payment.advance_amount_used || 0);
+
+        const ledger = await client.query(
+            `SELECT * FROM fees_paids
+             WHERE student_id = $1 AND academic_year_id = $2
+             FOR UPDATE`,
+            [payment.student_id, payment.academic_year_id]
+        );
+
+        if (ledger.rowCount > 0) {
+            const newTotalPaid = Math.max(0, parseFloat(ledger.rows[0].total_paid) - revertAmount);
+            const newBalance = parseFloat(ledger.rows[0].total_payable) - newTotalPaid;
+            const newStatus = newBalance <= 0 ? 'paid' : newTotalPaid > 0 ? 'partial' : 'pending';
+
+            await client.query(
+                `UPDATE fees_paids SET
+                    total_paid = $1,
+                    balance_amount = $2,
+                    status = $3,
+                    updated_at = NOW()
+                 WHERE student_id = $4 AND academic_year_id = $5`,
+                [newTotalPaid, Math.max(0, newBalance), newStatus,
+                 payment.student_id, payment.academic_year_id]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        return success(res, 200, 'Payment reversed successfully');
+
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('Error in reversePayment:', error);
+        if (error.statusCode === 404) return errorResponse(res, 404, error.message);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    } finally {
+        client.release();
+    }
+};
+
+// ─── GET STUDENT FEE STATUS ───────────────────────────────────────────────────
 const getStudentFeeStatus = async (req, res) => {
     try {
         const { studentId, academicYearId } = req.params;
-        
-        // Get breakdown per fee type
-        const result = await query(
-            `SELECT 
-                fad.id as fees_assign_details_id,
-                ft.name as fee_type,
-                fg.name as fee_group,
-                fad.amount as total_amount,
-                COALESCE((SELECT SUM(fcd.paid_amount) FROM fees_collect_details fcd WHERE fcd.fees_assign_details_id = fad.id), 0) as paid_amount
-             FROM fees_assign_details fad
-             JOIN fees_assign fa ON fad.fees_assign_id = fa.id
-             JOIN fees_master fm ON fad.fees_master_id = fm.id
-             JOIN fees_types ft ON fm.fees_type_id = ft.id
-             JOIN fees_groups fg ON fm.fees_group_id = fg.id
-             WHERE fa.student_id = $1 AND fa.academic_year_id = $2`,
+
+        // 1. Ledger summary
+        const ledgerRes = await query(
+            `SELECT fp.*, c.class_name
+             FROM fees_paids fp
+             JOIN classes c ON fp.class_id = c.id
+             WHERE fp.student_id = $1 AND fp.academic_year_id = $2`,
             [studentId, academicYearId]
         );
 
-        const rows = result.rows.map(r => ({
-            ...r,
-            total_amount: parseFloat(r.total_amount),
-            paid_amount: parseFloat(r.paid_amount),
-            pending_amount: parseFloat(r.total_amount) - parseFloat(r.paid_amount),
-            discount_amount: parseFloat(r.discount_amount || 0),
-            fine_amount: parseFloat(r.fine_amount || 0)
-        }));
-
-        res.status(200).json({
-            status: 'SUCCESS',
-            data: rows
-        });
-    } catch (error) {
-        console.error('Error in getStudentFeeStatus:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
-    }
-};
-
-const getFeeCollectionsList = async (req, res) => {
-    try {
-        const academicYearId = parseInt(req.query.academic_year_id, 10);
-        if (isNaN(academicYearId)) {
-            return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
+        if (ledgerRes.rowCount === 0) {
+            return success(res, 200, 'No fee assignment found', []);
         }
 
-        const result = await query(
-            `SELECT 
-                s.id, s.admission_number as "admNo", s.roll_number as "rollNo", 
-                s.first_name || ' ' || COALESCE(s.last_name, '') as student,
-                c.class_name as class, sec.section_name as section,
-                s.photo_url as "studentImage",
-                COALESCE(SUM(DISTINCT fad.amount), 0) as total_assigned,
-                COALESCE((
-                    SELECT SUM(fcd.paid_amount) 
-                    FROM fees_collect_details fcd
-                    JOIN fees_assign_details fad2 ON fcd.fees_assign_details_id = fad2.id
-                    JOIN fees_assign fa2 ON fad2.fees_assign_id = fa2.id
-                    WHERE fa2.student_id = s.id AND fa2.academic_year_id = $1
-                ), 0) as total_paid,
-                (
-                    SELECT MAX(payment_date)
-                    FROM fees_collect
-                    WHERE student_id = s.id AND academic_year_id = $1
-                ) as last_payment_date
-             FROM students s
-             LEFT JOIN classes c ON s.class_id = c.id
-             LEFT JOIN sections sec ON s.section_id = sec.id
-             LEFT JOIN fees_assign fa ON s.id = fa.student_id AND fa.academic_year_id = $1
-             LEFT JOIN fees_assign_details fad ON fa.id = fad.fees_assign_id
-             WHERE s.is_active = true
-             GROUP BY s.id, c.class_name, sec.section_name
-             ORDER BY c.class_name ASC, s.first_name ASC`,
-            [academicYearId]
+        const ledger = ledgerRes.rows[0];
+
+        // 2. Fee breakdown (Configuration items)
+        const breakdownRes = await query(
+            `SELECT
+                fct.id AS fees_assign_details_id,
+                COALESCE(f.description, 'General Fees') AS fee_group,
+                ft.name AS fee_type,
+                fct.amount AS total_amount,
+                fct.is_optional
+             FROM fees f
+             JOIN fees_class_types fct ON fct.fee_id = f.id
+             JOIN fees_types ft ON fct.fee_type_id = ft.id
+             WHERE f.class_id = $1 
+               AND f.academic_year_id = $2
+               AND f.deleted_at IS NULL`,
+            [ledger.class_id, ledger.academic_year_id]
         );
 
-        const rows = result.rows.map(r => {
-            const assigned = parseFloat(r.total_assigned);
-            const paid = parseFloat(r.total_paid);
-            let status = 'Unpaid';
-            if (assigned > 0) {
-                if (paid >= assigned) status = 'Paid';
-                else if (paid > 0) status = 'Partial';
-            } else {
-                status = 'No Fees';
-            }
+        // 3. Advance balance
+        const advanceRes = await query(
+            `SELECT amount FROM fees_advance
+             WHERE student_id = $1 AND academic_year_id = $2`,
+            [studentId, academicYearId]
+        );
+        const advanceBal = parseFloat(advanceRes.rows[0]?.amount || 0);
 
+        // 4. Virtualize payments across items
+        let remainingPaid = parseFloat(ledger.total_paid || 0);
+        const finalData = breakdownRes.rows.map(item => {
+            const total = parseFloat(item.total_amount || 0);
+            let paid = 0;
+            if (!item.is_optional) {
+                paid = Math.min(total, remainingPaid);
+                remainingPaid -= paid;
+            }
             return {
-                ...r,
-                amount: assigned.toString(),
-                paid: paid.toString(),
-                status: status
+                ...item,
+                fee_group: item.fee_group || 'General Fees',
+                paid_amount: paid,
+                pending_amount: total - paid,
+                discount_amount: 0,
+                fine_amount: 0,
+                // Include summary info on each row for frontend compatibility
+                total_payable: ledger.total_payable,
+                total_paid: ledger.total_paid,
+                balance_amount: ledger.balance_amount,
+                advance_balance: advanceBal
             };
         });
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            data: rows
-        });
+        // Add a hidden property to the array itself for hooks that expect it
+        Object.defineProperty(finalData, 'advance_balance', { value: advanceBal, enumerable: true });
+
+        return success(res, 200, 'Student fee status retrieved successfully', finalData);
     } catch (error) {
-        console.error('Error in getFeeCollectionsList:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        console.error('Error in getStudentFeeStatus:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
+// ─── FEE COLLECTIONS LIST (all students summary) ──────────────────────────────
+const getFeeCollectionsList = async (req, res) => {
+    try {
+        const { academic_year_id } = req.query;
+        if (!academic_year_id) {
+            return errorResponse(res, 400, 'academic_year_id is required');
+        }
+
+        const result = await query(
+            `SELECT
+                s.id,
+                s.admission_number AS "admNo",
+                s.roll_number AS "rollNo",
+                u.first_name || ' ' || COALESCE(u.last_name, '') AS student,
+                u.avatar AS "studentImage",
+                c.class_name AS class,
+                (
+                    SELECT sec.section_name
+                    FROM student_lifecycle_ledger sll
+                    LEFT JOIN sections sec ON sll.to_section_id = sec.id
+                    WHERE sll.student_id = s.id
+                      AND sll.to_academic_year_id = $1
+                      AND sll.event_type IN ('ADMISSION', 'PROMOTE', 'REJOIN')
+                    ORDER BY sll.id DESC LIMIT 1
+                ) AS section,
+                fp.total_payable AS amount,
+                fp.total_paid AS paid,
+                fp.balance_amount AS balance,
+                fp.status,
+                (
+                    SELECT MAX(pay_date) FROM (
+                        SELECT payment_date AS pay_date FROM compulsory_fees 
+                        WHERE student_id = s.id AND academic_year_id = $1
+                        UNION ALL
+                        SELECT payment_date AS pay_date FROM optional_fees 
+                        WHERE student_id = s.id AND academic_year_id = $1
+                    ) AS all_pays
+                ) AS last_payment_date
+             FROM students s
+             JOIN users u ON s.user_id = u.id
+             LEFT JOIN fees_paids fp ON fp.student_id = s.id AND fp.academic_year_id = $1
+             LEFT JOIN classes c ON fp.class_id = c.id
+             WHERE s.is_active = true
+             ORDER BY c.class_name ASC NULLS LAST, u.first_name ASC`,
+            [academic_year_id]
+        );
+
+        return success(res, 200, 'Fee collections list retrieved successfully', result.rows);
+    } catch (error) {
+        console.error('Error in getFeeCollectionsList:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+// ─── PAYMENT HISTORY ─────────────────────────────────────────────────────────
 const getPaymentHistory = async (req, res) => {
     try {
         const { studentId, academicYearId } = req.params;
-        
+
         const result = await query(
-            `SELECT fc.*, 
-                (SELECT JSON_AGG(d) FROM (
-                    SELECT fcd.*, ft.name as fee_type
-                    FROM fees_collect_details fcd
-                    JOIN fees_assign_details fad ON fcd.fees_assign_details_id = fad.id
-                    JOIN fees_master fm ON fad.fees_master_id = fm.id
-                    JOIN fees_types ft ON fm.fees_type_id = ft.id
-                    WHERE fcd.fees_collect_id = fc.id
-                ) d) as details
-             FROM fees_collect fc
-             WHERE fc.student_id = $1 AND fc.academic_year_id = $2
-             ORDER BY fc.payment_date DESC, fc.id DESC`,
+            `SELECT
+                cf.*,
+                f.due_date AS fee_due_date,
+                fi.installment_name,
+                fi.due_date AS installment_due_date
+             FROM compulsory_fees cf
+             LEFT JOIN fees f ON cf.fee_id = f.id
+             LEFT JOIN fees_installments fi ON cf.fee_installment_id = fi.id
+             WHERE cf.student_id = $1 AND cf.academic_year_id = $2
+             ORDER BY cf.payment_date DESC, cf.id DESC`,
             [studentId, academicYearId]
         );
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            data: result.rows
-        });
+        return success(res, 200, 'Payment history retrieved successfully', result.rows);
     } catch (error) {
         console.error('Error in getPaymentHistory:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
 module.exports = {
     collectFees,
+    reversePayment,
     getStudentFeeStatus,
-    getPaymentHistory,
-    getFeeCollectionsList
+    getFeeCollectionsList,
+    getPaymentHistory
 };
