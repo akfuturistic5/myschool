@@ -459,6 +459,76 @@ const ScheduleClasses = () => {
     }
   };
 
+  const exportData = useMemo(
+    () =>
+      (Array.isArray(data) ? data : []).map((row: any) => {
+        const original = row?.originalData ?? {};
+        const isBreak = Boolean(original.is_break ?? original.isBreak);
+        return {
+          id: row?.id ?? "-",
+          type: row?.type ?? "-",
+          startTime: row?.startTime ?? "-",
+          endTime: row?.endTime ?? "-",
+          slotType: isBreak ? "Break" : "Period",
+          duration: formatDurationMinutes(original.duration),
+          status: row?.status ?? "-",
+        };
+      }),
+    [data]
+  );
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Slot Name", dataKey: "type" },
+      { title: "Start Time", dataKey: "startTime" },
+      { title: "End Time", dataKey: "endTime" },
+      { title: "Type", dataKey: "slotType" },
+      { title: "Duration", dataKey: "duration" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const handleRefresh = useCallback(async () => {
+    await refetch();
+    await Swal.fire({
+      icon: "success",
+      title: "Refreshed",
+      text: "Time slots updated successfully.",
+      timer: 1200,
+      showConfirmButton: false,
+    });
+  }, [refetch]);
+
+  const handlePrint = useCallback(() => {
+    printData("Time Slots", exportColumns, exportData);
+  }, [exportColumns, exportData]);
+
+  const handleExportPdf = useCallback(() => {
+    exportToPDF(
+      exportData,
+      "Time Slots",
+      `Time_Slots_${new Date().toISOString().split("T")[0]}`,
+      exportColumns
+    );
+  }, [exportColumns, exportData]);
+
+  const handleExportExcel = useCallback(() => {
+    exportToExcel(
+      exportData.map((row) => ({
+        ID: row.id,
+        "Slot Name": row.type,
+        "Start Time": row.startTime,
+        "End Time": row.endTime,
+        Type: row.slotType,
+        Duration: row.duration,
+        Status: row.status,
+      })),
+      `Time_Slots_${new Date().toISOString().split("T")[0]}`
+    );
+  }, [exportData]);
+
   const columns = [
     {
       title: "ID",
@@ -591,7 +661,12 @@ const ScheduleClasses = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
               <div className="ms-2 d-flex align-items-center">
                 <Link
                   to="#"

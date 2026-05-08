@@ -21,6 +21,10 @@ function parsePositiveId(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 const StudentTimeTable = () => {
   const routes = all_routes;
   const location = useLocation();
@@ -37,6 +41,9 @@ const StudentTimeTable = () => {
   const sectionIdForSchedule = parsePositiveId(
     student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
   );
+  const sectionNameForSchedule = normalizeText(
+    student?.section_name ?? (student as { sectionName?: unknown })?.sectionName
+  );
 
   /** Parents/guardians should default to the child's enrolled year to avoid empty timetable on header-year mismatch. */
   const studentAcademicYearId = parsePositiveId(
@@ -52,24 +59,46 @@ const StudentTimeTable = () => {
     normalizedRole.includes("guardian");
   const academicYearForSchedules = isParentViewer
     ? studentAcademicYearId ?? headerAcademicYearId ?? undefined
-    : headerAcademicYearId ?? studentAcademicYearId ?? undefined;
+    : studentAcademicYearId ?? headerAcademicYearId ?? undefined;
 
   const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
     academicYearId: academicYearForSchedules,
     classId: classIdForSchedule ?? undefined,
-    sectionId: sectionIdForSchedule ?? undefined,
+    // Use scoped class fetch; this avoids hard failures when section id types differ (sections.id vs class_sections.id).
+    sectionId: undefined,
     skip: !classIdForSchedule,
   });
 
+  const filteredScheduleData = useMemo(() => {
+    const list = Array.isArray(scheduleData) ? scheduleData : [];
+    if (!classIdForSchedule) return [];
+    return list.filter((item: any) => {
+      const rowClassId = parsePositiveId(item?.originalData?.class_id);
+      if (rowClassId !== classIdForSchedule) return false;
+      if (!sectionIdForSchedule && !sectionNameForSchedule) return true;
+      const rowSectionId = parsePositiveId(
+        item?.originalData?.section_id ?? item?.originalData?.class_section_id
+      );
+      const rowSectionName = normalizeText(item?.section);
+      return (
+        rowSectionId == null ||
+        (sectionIdForSchedule != null && rowSectionId === sectionIdForSchedule) ||
+        (!!sectionNameForSchedule && rowSectionName === sectionNameForSchedule)
+      );
+    });
+  }, [scheduleData, classIdForSchedule, sectionIdForSchedule, sectionNameForSchedule]);
+
   const weeklySchedule = useMemo(() => {
-    if (!Array.isArray(scheduleData)) {
+    if (!Array.isArray(filteredScheduleData)) {
       return DAY_ORDER.map((day) => ({ day, classes: [] as any[] }));
     }
     return DAY_ORDER.map((day) => ({
       day,
-      classes: scheduleData.filter((item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()),
+      classes: filteredScheduleData.filter(
+        (item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()
+      ),
     }));
-  }, [scheduleData]);
+  }, [filteredScheduleData]);
 
   const totalClasses = useMemo(
     () => weeklySchedule.reduce((sum, entry) => sum + entry.classes.length, 0),
@@ -233,24 +262,28 @@ const StudentTimeTable = () => {
                                   {entry.classes.length === 0 ? (
                                     <p className="text-muted mb-0">No classes scheduled.</p>
                                   ) : (
-                                    <div className="d-flex flex-column gap-3">
+                                    <div className="row g-2">
                                       {entry.classes.map((cls: any) => (
-                                        <div key={cls.id} className="bg-light rounded p-3">
-                                          <div className="d-flex align-items-start justify-content-between gap-3">
-                                            <div>
-                                              <h6 className="mb-1">{cls.subject || "Subject"}</h6>
-                                              <p className="mb-1 text-dark">
+                                        <div key={cls.id} className="col-6 d-flex">
+                                          <div className="bg-light rounded p-2 w-100 h-100">
+                                            <div className="min-w-0">
+                                              <h6 className="mb-1 text-truncate">{cls.subject || "Subject"}</h6>
+                                              <p className="mb-1 text-dark small text-truncate">
                                                 <i className="ti ti-clock me-1" />
                                                 {cls.startTime || "N/A"} - {cls.endTime || "N/A"}
                                               </p>
-                                              <p className="mb-0 text-muted">
+                                              <p className="mb-1 text-muted small text-truncate">
                                                 <i className="ti ti-user me-1" />
                                                 {cls.teacher || "Teacher not assigned"}
                                               </p>
+                                              <p
+                                                className="mb-0 text-muted small text-truncate"
+                                                title={cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
+                                              >
+                                                <i className="ti ti-building me-1" />
+                                                {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
+                                              </p>
                                             </div>
-                                            <span className="badge badge-soft-secondary">
-                                              {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
-                                            </span>
                                           </div>
                                         </div>
                                       ))}

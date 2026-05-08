@@ -153,7 +153,8 @@ function TimetableCell({
   const filteredTeacherOptions = useMemo(() => {
     if (!subjectId) return teacherOptions;
     const allowed = subjectToTeachersMap[subjectId] || [];
-    // Strict filtering: if no teachers are assigned, the list will be empty
+    // Fallback to full list when assignment map is unavailable/misaligned.
+    if (allowed.length === 0) return teacherOptions;
     return teacherOptions.filter((opt) => !opt.value || allowed.includes(opt.value));
   }, [subjectId, teacherOptions, subjectToTeachersMap]);
 
@@ -345,19 +346,47 @@ const ClassTimetable = () => {
     }),
   ];
 
-  const subjectToTeachersMap = useMemo(() => {
-    const validTeacherIds = new Set(teacherOptions.map((opt) => String(opt.value)));
+  const subjectAliasMap = useMemo(() => {
     const map: Record<string, string[]> = {};
-    subjectTeacherAssignments.forEach((a) => {
-      const sid = String(a.classSubjectId || a.class_subject_id || a.subject_id || "");
-      const tid = String(a.teacherId || a.teacher_id || a.staff_id || "");
-      if (sid && tid && validTeacherIds.has(tid)) {
-        if (!map[sid]) map[sid] = [];
-        if (!map[sid].includes(tid)) map[sid].push(tid);
+    (Array.isArray(subjects) ? subjects : []).forEach((s: any) => {
+      const classSubjectId = String(s?.id ?? "").trim();
+      const masterSubjectId = String(s?.subject_id ?? s?.master_subject_id ?? "").trim();
+      if (!classSubjectId || !masterSubjectId) return;
+      if (!map[masterSubjectId]) map[masterSubjectId] = [];
+      if (!map[masterSubjectId].includes(classSubjectId)) {
+        map[masterSubjectId].push(classSubjectId);
       }
     });
     return map;
-  }, [subjectTeacherAssignments, teacherOptions]);
+  }, [subjects]);
+
+  const subjectToTeachersMap = useMemo(() => {
+    const validTeacherIds = new Set(teacherOptions.map((opt) => String(opt.value)));
+    const map: Record<string, string[]> = {};
+    const pushTeacher = (subjectKey: string, teacherKey: string) => {
+      if (!subjectKey || !teacherKey) return;
+      if (!map[subjectKey]) map[subjectKey] = [];
+      if (!map[subjectKey].includes(teacherKey)) map[subjectKey].push(teacherKey);
+    };
+
+    subjectTeacherAssignments.forEach((a) => {
+      const tid = String(a.teacherId || a.teacher_id || a.staff_id || "");
+      if (!tid || !validTeacherIds.has(tid)) return;
+
+      // Preferred key: class_subject_id (matches subject dropdown value).
+      const classSubjectKey = String(a.classSubjectId || a.class_subject_id || "").trim();
+      if (classSubjectKey) pushTeacher(classSubjectKey, tid);
+
+      // Compatibility key: subject_id (master subject) -> one or more class_subject ids.
+      const masterSubjectKey = String(a.subjectId || a.subject_id || "").trim();
+      if (masterSubjectKey) {
+        (subjectAliasMap[masterSubjectKey] || []).forEach((classSubjectId) => {
+          pushTeacher(classSubjectId, tid);
+        });
+      }
+    });
+    return map;
+  }, [subjectTeacherAssignments, teacherOptions, subjectAliasMap]);
 
   const subjectTeacherMap = useMemo(() => {
     const map: Record<string, string> = {};

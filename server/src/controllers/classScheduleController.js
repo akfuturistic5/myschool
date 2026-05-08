@@ -125,10 +125,28 @@ function mapScheduleRow(row, classMap, sectionMap, subjectMap, timeSlotMap, teac
   const subj = subjectMap[row.class_subject_id] ?? subjectMap[row.subject_id] ?? subjectMap[row.subject];
   const teacher = teacherMap[row.teacher_id] ?? teacherMap[row.teacher];
   const teacherName = teacher
-    ? (teacher.name ?? ([teacher.first_name, teacher.last_name].filter(Boolean).join(' ').trim() || null))
+    ? (
+      teacher.name ??
+      [teacher.first_name, teacher.last_name].filter(Boolean).join(' ').trim() ??
+      teacher.username ??
+      teacher.email ??
+      null
+    )
     : null;
-  const roomFromFk = row.class_room_id != null ? roomMap[row.class_room_id] ?? roomMap[Number(row.class_room_id)] : null;
-  const roomLabel = roomFromFk?.room_no ?? roomFromFk?.name ?? row.room_number ?? row.room ?? row.class_room ?? row.class_room_number ?? null;
+  const roomKey = row.class_room_id ?? row.room_id ?? row.class_room;
+  const roomFromFk =
+    roomKey != null
+      ? roomMap[roomKey] ?? roomMap[Number(roomKey)] ?? roomMap[String(roomKey)]
+      : null;
+  const roomLabel =
+    roomFromFk?.room_number ??
+    roomFromFk?.room_no ??
+    roomFromFk?.name ??
+    row.room_number ??
+    row.room ??
+    row.class_room ??
+    row.class_room_number ??
+    null;
 
   return {
     id: row.id,
@@ -190,8 +208,24 @@ async function enrichScheduleRows(rows) {
   const sectionIds = [...new Set(rows.map((r) => r.class_section_id).filter(Boolean))];
   const classSubjectIds = [...new Set(rows.map((r) => r.class_subject_id).filter(Boolean))];
   const timeSlotIds = [...new Set(rows.map((r) => r.time_slot_id).filter(Boolean))];
-  const teacherIds = [...new Set(rows.map((r) => r.teacher_id).filter(Boolean))];
-  const roomIds = [...new Set(rows.map((r) => r.class_room_id).filter(Boolean))];
+  const teacherIds = [
+    ...new Set(
+      rows
+        .map((r) => r.teacher_id ?? r.teacher)
+        .filter((v) => v != null && v !== '')
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
+  const roomIds = [
+    ...new Set(
+      rows
+        .map((r) => r.class_room_id ?? r.room_id ?? r.class_room)
+        .filter((v) => v != null && v !== '')
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
 
   let classMap = {};
   if (classIds.length > 0) {
@@ -250,7 +284,12 @@ async function enrichScheduleRows(rows) {
   if (teacherIds.length > 0) {
     try {
       const r = await query(
-        `SELECT st.id, TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS name, u.photo_url
+        `SELECT
+           st.id,
+           NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
+           u.username,
+           u.email,
+           u.avatar AS photo_url
            FROM staff st
            JOIN users u ON u.id = st.user_id
            WHERE st.id = ANY($1)`,
@@ -260,6 +299,37 @@ async function enrichScheduleRows(rows) {
         teacherMap[t.id] = t;
         teacherMap[Number(t.id)] = t;
         teacherMap[String(t.id)] = t;
+      });
+
+      // Backward compatibility: some legacy rows may store teachers.id in class_schedules.teacher_id.
+      const legacyTeacherRows = await query(
+        `SELECT
+           t.id AS teacher_id,
+           st.id AS staff_id,
+           NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
+           u.username,
+           u.email,
+           u.avatar AS photo_url
+         FROM teachers t
+         JOIN staff st ON st.id = t.staff_id
+         JOIN users u ON u.id = st.user_id
+         WHERE t.id = ANY($1)`,
+        [teacherIds]
+      );
+      legacyTeacherRows.rows.forEach((t) => {
+        const normalized = {
+          id: t.staff_id,
+          name: t.name,
+          username: t.username,
+          email: t.email,
+          photo_url: t.photo_url,
+        };
+        teacherMap[t.teacher_id] = normalized;
+        teacherMap[Number(t.teacher_id)] = normalized;
+        teacherMap[String(t.teacher_id)] = normalized;
+        teacherMap[t.staff_id] = normalized;
+        teacherMap[Number(t.staff_id)] = normalized;
+        teacherMap[String(t.staff_id)] = normalized;
       });
     } catch (e) {
       console.error('teacher fetch for schedules:', e.message);
@@ -346,8 +416,17 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
     where += ` AND class_id = $${p++}`;
     params.push(scope.classId);
     if (scope.sectionId) {
-      where += ` AND (class_section_id = $${p++} OR class_section_id IS NULL)`;
+      where += ` AND (
+        class_section_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM class_sections cs_scope
+          WHERE cs_scope.id = class_schedules.class_section_id
+            AND cs_scope.class_id = class_schedules.class_id
+            AND cs_scope.section_id = $${p}
+        )
+      )`;
       params.push(scope.sectionId);
+      p += 1;
     }
     if (classIdFilter && classIdFilter !== scope.classId) {
       return { forbidden: true };
@@ -368,7 +447,16 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
       WHERE s.id = ANY($${p}::int[])
         AND s.is_active = true
         AND s.class_id = class_schedules.class_id
-        AND (class_schedules.section_id IS NULL OR s.section_id IS NULL OR class_schedules.section_id = s.section_id)
+        AND (
+          class_schedules.class_section_id IS NULL
+          OR s.section_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM class_sections cs_scope
+            WHERE cs_scope.id = class_schedules.class_section_id
+              AND cs_scope.class_id = class_schedules.class_id
+              AND cs_scope.section_id = s.section_id
+          )
+        )
     )`;
     params.push(wardIds);
     p += 1;
@@ -712,9 +800,40 @@ const getTimetableClass = async (req, res) => {
   try {
     const academicYearId = parseId(req.query.academic_year_id);
     const classId = parseId(req.query.class_id);
-    const sectionId = parseId(req.query.section_id);
+    const requestedSectionId = parseId(req.query.section_id);
     if (!academicYearId || !classId) {
       return errorResponse(res, 400, 'academic_year_id and class_id are required');
+    }
+
+    let sectionMasterId = null; // sections.id
+    let classSectionId = null; // class_sections.id
+    if (requestedSectionId) {
+      const byClassSectionId = await query(
+        `SELECT id, section_id
+         FROM class_sections
+         WHERE id = $1 AND class_id = $2 AND academic_year_id = $3
+         LIMIT 1`,
+        [requestedSectionId, classId, academicYearId]
+      );
+      if (byClassSectionId.rows.length > 0) {
+        classSectionId = parseId(byClassSectionId.rows[0].id);
+        sectionMasterId = parseId(byClassSectionId.rows[0].section_id);
+      } else {
+        const bySectionId = await query(
+          `SELECT id, section_id
+           FROM class_sections
+           WHERE class_id = $1 AND section_id = $2 AND academic_year_id = $3
+           ORDER BY id DESC
+           LIMIT 1`,
+          [classId, requestedSectionId, academicYearId]
+        );
+        if (bySectionId.rows.length > 0) {
+          classSectionId = parseId(bySectionId.rows[0].id);
+          sectionMasterId = parseId(bySectionId.rows[0].section_id);
+        } else {
+          return success(res, 200, 'Class timetable fetched successfully', { entries: [], slots: [] }, { count: 0 });
+        }
+      }
     }
 
     const acc = await canAccessClass(req, classId);
@@ -723,10 +842,10 @@ const getTimetableClass = async (req, res) => {
     }
 
     const ctx = getAuthContext(req);
-    if (!isAdmin(ctx) && sectionId) {
+    if (!isAdmin(ctx) && sectionMasterId) {
       if (ctx.roleId === ROLES.STUDENT || ctx.roleName === 'student') {
         const scope = await resolveStudentScopeForUser(ctx.userId);
-        if (scope?.sectionId && scope.sectionId !== sectionId) {
+        if (scope?.sectionId && scope.sectionId !== sectionMasterId) {
           return errorResponse(res, 403, 'Access denied');
         }
       } else if (isParentOrGuardianPortalRole(ctx)) {
@@ -736,7 +855,7 @@ const getTimetableClass = async (req, res) => {
            WHERE s.id = ANY($1::int[]) AND s.is_active = true
              AND s.class_id = $2 AND s.section_id IS NOT DISTINCT FROM $3
            LIMIT 1`,
-          [wardIds, classId, sectionId]
+          [wardIds, classId, sectionMasterId]
         ).catch(() => ({ rows: [] }));
         if (!secOk.rows?.length) {
           return errorResponse(res, 403, 'Access denied');
@@ -744,7 +863,10 @@ const getTimetableClass = async (req, res) => {
       }
     }
 
-    const scoped = await buildScopedWhere(req, academicYearId, { class_id: classId, section_id: sectionId || undefined });
+    // Keep scoped builder section-agnostic here.
+    // We apply exact class_section_id filtering below after resolving section id type,
+    // otherwise admin flow may incorrectly compare class_section_id with sections.id.
+    const scoped = await buildScopedWhere(req, academicYearId, { class_id: classId });
     if (scoped.forbidden) {
       return errorResponse(res, 403, 'Access denied');
     }
@@ -754,9 +876,9 @@ const getTimetableClass = async (req, res) => {
     let p = params.length + 1;
     where += ` AND class_id = $${p++}`;
     params.push(classId);
-    if (sectionId) {
+    if (classSectionId) {
       where += ` AND (class_section_id = $${p++} OR class_section_id IS NULL)`;
-      params.push(sectionId);
+      params.push(classSectionId);
     }
 
     const rows = await loadSchedulesFromDb(where, params);
@@ -1284,7 +1406,7 @@ const bulkUpdateClassSchedules = async (req, res) => {
         if (id) {
           const r = await client.query(
             "UPDATE class_schedules SET class_subject_id = $1, teacher_id = $2, day_of_week = $3, time_slot_id = $4, class_room_id = $5, updated_at = NOW() WHERE id = $6 RETURNING *",
-            [subject_id, teacherStaffId, dayInt, time_slot_id, roomFields.classRoomId, id]
+            [subject_id, teacherStaffId, dayInt, time_slot_id, effectiveRoomId, id]
           );
           if (r.rows[0]) {
             savedIds.push(r.rows[0].id);
@@ -1292,7 +1414,7 @@ const bulkUpdateClassSchedules = async (req, res) => {
         } else {
           const r = await client.query(
             "INSERT INTO class_schedules (class_id, class_section_id, class_subject_id, teacher_id, day_of_week, time_slot_id, academic_year_id, class_room_id, valid_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE) RETURNING *",
-            [classId, sectionId, subject_id, teacherStaffId, dayInt, time_slot_id, academicYearId, roomFields.classRoomId]
+            [classId, sectionId, subject_id, teacherStaffId, dayInt, time_slot_id, academicYearId, effectiveRoomId]
           );
           if (r.rows[0]) {
             savedIds.push(r.rows[0].id);

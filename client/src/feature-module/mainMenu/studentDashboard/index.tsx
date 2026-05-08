@@ -23,6 +23,12 @@ import { DatePicker } from "antd";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+const normalizeText = (v: unknown) => String(v ?? "").trim().toLowerCase();
+const parseId = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+};
+
 const StudentDasboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
@@ -128,27 +134,54 @@ const StudentDasboard = () => {
   // Today's classes - filter schedules by student's class/section and selected date's day
   const todaysClasses = useMemo(() => {
     if (!student || !allSchedules?.length) return [];
-    const classMatch = student.class_name || student.class;
-    const sectionMatch = student.section_name || student.section;
+    const studentClassId = parseId((student as any)?.class_id ?? (student as any)?.classId);
+    const studentSectionId = parseId((student as any)?.section_id ?? (student as any)?.sectionId);
+    const classMatch = normalizeText((student as any)?.class_name || (student as any)?.class);
+    const sectionMatch = normalizeText((student as any)?.section_name || (student as any)?.section);
     const dayName = selectedDate ? DAY_NAMES[selectedDate.day()] : DAY_NAMES[today.getDay()];
     return allSchedules.filter(
-      (s: { class?: string; section?: string; day?: string }) =>
-        (s.class === classMatch || !classMatch) &&
-        (s.section === sectionMatch || !sectionMatch) &&
-        s.day === dayName
+      (s: { class?: string; section?: string; day?: string; originalData?: any }) => {
+        const rowClassId = parseId(s.originalData?.class_id);
+        const rowSectionId = parseId(s.originalData?.section_id ?? s.originalData?.class_section_id);
+        const classOk = studentClassId != null
+          ? rowClassId === studentClassId
+          : !classMatch || normalizeText(s.class) === classMatch;
+        const sectionOk = studentSectionId != null
+          ? (
+            rowSectionId == null ||
+            rowSectionId === studentSectionId ||
+            (!!sectionMatch && normalizeText(s.section) === sectionMatch)
+          )
+          : !sectionMatch || normalizeText(s.section) === sectionMatch;
+        const dayOk = normalizeText(s.day) === normalizeText(dayName);
+        return classOk && sectionOk && dayOk;
+      }
     );
   }, [student, allSchedules, selectedDate, today.getDay()]);
 
   // Class faculties - unique teachers from schedules for student's class/section
   const classFaculties = useMemo(() => {
     if (!student || !allSchedules?.length) return [];
-    const classMatch = student.class_name || student.class;
-    const sectionMatch = student.section_name || student.section;
+    const studentClassId = parseId((student as any)?.class_id ?? (student as any)?.classId);
+    const studentSectionId = parseId((student as any)?.section_id ?? (student as any)?.sectionId);
+    const classMatch = normalizeText((student as any)?.class_name || (student as any)?.class);
+    const sectionMatch = normalizeText((student as any)?.section_name || (student as any)?.section);
     const filtered = allSchedules.filter(
-      (s: { class?: string; section?: string; teacher?: string }) =>
-        (s.class === classMatch || !classMatch) &&
-        (s.section === sectionMatch || !sectionMatch) &&
-        s.teacher
+      (s: { class?: string; section?: string; teacher?: string; originalData?: any }) => {
+        const rowClassId = parseId(s.originalData?.class_id);
+        const rowSectionId = parseId(s.originalData?.section_id ?? s.originalData?.class_section_id);
+        const classOk = studentClassId != null
+          ? rowClassId === studentClassId
+          : !classMatch || normalizeText(s.class) === classMatch;
+        const sectionOk = studentSectionId != null
+          ? (
+            rowSectionId == null ||
+            rowSectionId === studentSectionId ||
+            (!!sectionMatch && normalizeText(s.section) === sectionMatch)
+          )
+          : !sectionMatch || normalizeText(s.section) === sectionMatch;
+        return classOk && sectionOk && !!s.teacher;
+      }
     );
     const seen = new Set<string>();
     return filtered.filter((s: { teacher?: string; subject?: string }) => {

@@ -2231,6 +2231,16 @@ const getStudentPromotions = async (req, res) => {
     const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
     const hasStudentFilter = studentId != null && !Number.isNaN(studentId);
 
+    if (hasStudentFilter) {
+      const access = await canAccessStudent(req, studentId);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({
+          status: 'ERROR',
+          message: access.message || 'Access denied',
+        });
+      }
+    }
+
     let scopedStudentIds = [];
     if (hasStudentFilter) {
       const baseRes = await query(
@@ -2934,7 +2944,14 @@ const getStudentById = async (req, res) => {
         SELECT ct.staff_id
         FROM class_teachers ct
         WHERE ct.class_id = enr.class_id
-          AND ct.class_section_id = enr.section_id
+          AND EXISTS (
+            SELECT 1
+            FROM class_sections cs
+            WHERE cs.id = ct.class_section_id
+              AND cs.class_id = enr.class_id
+              AND cs.section_id = enr.section_id
+              AND cs.academic_year_id = enr.academic_year_id
+          )
           AND ct.academic_year_id = enr.academic_year_id
           AND ct.deleted_at IS NULL
         ORDER BY (ct.role = 'primary') DESC, ct.id DESC

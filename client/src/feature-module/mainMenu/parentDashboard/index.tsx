@@ -55,6 +55,12 @@ const isDateInRange = (dateVal: string | Date | null | undefined, rangeKey: Stat
   return d >= start && d <= end;
 };
 
+const normalizeText = (v: unknown) => String(v ?? "").trim().toLowerCase();
+const parsePositiveId = (v: unknown): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+};
+
 const ParentDashboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
@@ -143,11 +149,25 @@ const ParentDashboard = () => {
 
   const todaysSchedule = useMemo(() => {
     if (!selectedChild || !allSchedules?.length) return [];
-    const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-    return allSchedules.filter((item: { class?: string; section?: string; day?: string }) => {
-      const classOk = String(item.class || "").trim().toLowerCase() === String(selectedChild.class_name || "").trim().toLowerCase();
-      const sectionOk = String(item.section || "").trim().toLowerCase() === String(selectedChild.section_name || "").trim().toLowerCase();
-      const dayOk = String(item.day || "").trim().toLowerCase() === todayName;
+    const todayName = normalizeText(new Date().toLocaleDateString("en-US", { weekday: "long" }));
+    const selectedClassId = parsePositiveId((selectedChild as any)?.class_id);
+    const selectedSectionId = parsePositiveId((selectedChild as any)?.section_id);
+    const selectedClassName = normalizeText((selectedChild as any)?.class_name);
+    const selectedSectionName = normalizeText((selectedChild as any)?.section_name);
+    return allSchedules.filter((item: { class?: string; section?: string; day?: string; originalData?: any }) => {
+      const rowClassId = parsePositiveId(item.originalData?.class_id);
+      const rowSectionId = parsePositiveId(item.originalData?.section_id ?? item.originalData?.class_section_id);
+      const classOk = selectedClassId != null
+        ? rowClassId === selectedClassId
+        : (!selectedClassName || normalizeText(item.class) === selectedClassName);
+      const sectionOk = selectedSectionId != null
+        ? (
+          rowSectionId == null ||
+          rowSectionId === selectedSectionId ||
+          (!!selectedSectionName && normalizeText(item.section) === selectedSectionName)
+        )
+        : (!selectedSectionName || normalizeText(item.section) === selectedSectionName);
+      const dayOk = normalizeText(item.day) === todayName;
       return classOk && sectionOk && dayOk;
     });
   }, [selectedChild, allSchedules]);

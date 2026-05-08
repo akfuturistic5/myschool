@@ -49,15 +49,6 @@ const StudentDetails = () => {
       setHistoryError(null)
       return
     }
-    const canAccessPromotionHistory =
-      role === 'admin' || role === 'headmaster' || role === 'administrative' || role === 'teacher'
-    if (!canAccessPromotionHistory) {
-      // Only admin/administrative/teacher scopes can access full promotions endpoint.
-      setPromotionRows([])
-      setHistoryError(null)
-      setHistoryLoading(false)
-      return
-    }
     let cancelled = false
     setHistoryLoading(true)
     setHistoryError(null)
