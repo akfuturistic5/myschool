@@ -288,6 +288,7 @@ export const all_routes = {
   staff: "/hrm/staff",
   departments: "/hrm/departments",
   payroll: "/hrm/payroll",
+  salarySettings: "/hrm/salary-settings",
   holidays: "/hrm/holidays",
   designation: "/hrm/designation",
   listLeaves: "/hrm/list-leaves",

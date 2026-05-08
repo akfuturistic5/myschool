@@ -3333,6 +3333,66 @@ class ApiService {
   async getNextAdmissionNumber() {
     return this.makeRequest('/students/next-admission-number');
   }
+
+  // Salary Components
+  async getSalaryComponents() {
+    return this.makeRequest('/salary-components');
+  }
+
+  async createSalaryComponent(data) {
+    return this.makeRequest('/salary-components', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSalaryComponent(id, data) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSalaryComponent(id) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Payroll
+  async getPayrollList(params = {}) {
+    const search = new URLSearchParams();
+    if (params.month) search.set('month', params.month);
+    if (params.year) search.set('year', params.year);
+    if (params.status) search.set('status', params.status);
+    const qs = search.toString();
+    return this.makeRequest(`/payroll${qs ? `?${qs}` : ''}`);
+  }
+
+  async processPayroll(data) {
+    return this.makeRequest('/payroll/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePayslipStatus(id, status) {
+    return this.makeRequest(`/payroll/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+  async bulkDeletePayslips(ids) {
+    return this.makeRequest('/payroll/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdatePayslipStatus(ids, status) {
+    return this.makeRequest('/payroll/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
 }
 
 export const apiService = new ApiService();

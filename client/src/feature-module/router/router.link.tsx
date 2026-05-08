@@ -95,6 +95,7 @@ import Holiday from "../hrm/holidays";
 import ApproveRequest from "../hrm/leaves/approve-request";
 import ListLeaves from "../hrm/leaves/list-leaves";
 import Payroll from "../hrm/payroll";
+import SalarySettings from "../hrm/salarySettings";
 import AddStaff from "../hrm/staff-list/add-staff";
 import EditStaff from "../hrm/staff-list/edit-staff";
 import Staff from "../hrm/staff-list/staff";
@@ -1024,6 +1025,11 @@ export const publicRoutes = [
   {
     path: routes.payroll,
     element: <Payroll />,
+    route: Route,
+  },
+  {
+    path: routes.salarySettings,
+    element: <SalarySettings />,
     route: Route,
   },
   {
