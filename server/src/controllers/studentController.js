@@ -53,7 +53,7 @@ function buildEmailInUseWarning(field, displayLabel) {
   return {
     code: 'EMAIL_IN_USE',
     field,
-    message: `${displayLabel}: Email already in use. Another account already uses this email. The student was saved successfully; no duplicate user was created for this email.`,
+    message: 'This email is already registered for another user account',
   };
 }
 
@@ -443,8 +443,16 @@ const createStudent = async (req, res) => {
         });
       } catch (e) {
         console.error('createStudent: could not create student user:', e.message);
-        if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
-          throw new Error(buildEmailInUseWarning('email', 'Student'));
+        if (e.code === 'EMAIL_IN_USE' || (stuEmail && (await isUserEmailTaken(client, stuEmail)))) {
+          throw new Error('This email is already registered for another user account');
+        }
+        if (e.code === '23505') {
+          if (e.constraint && e.constraint.includes('username')) {
+            throw new Error('This login name is already in use');
+          }
+          if (e.constraint && e.constraint.includes('email')) {
+            throw new Error('This email is already registered for another user account');
+          }
         }
         throw e;
       }
@@ -633,6 +641,7 @@ const createStudent = async (req, res) => {
 
       // Record Admission in Lifecycle Ledger (Source of Truth for enrollment history)
       if (academic_year_id && class_id) {
+        const { autoAssignFeesToStudents } = require('./feesGroupController');
         await client.query(`
           INSERT INTO student_lifecycle_ledger (
             student_id, event_type, to_academic_year_id, to_class_id, to_section_id, 
@@ -646,6 +655,15 @@ const createStudent = async (req, res) => {
           admission_date || new Date(),
           createdBy
         ]);
+
+        // Auto-assign fees for the new student
+        const feeConfigRes = await client.query(
+          `SELECT id FROM fees WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL LIMIT 1`,
+          [class_id, academic_year_id]
+        );
+        if (feeConfigRes.rowCount > 0) {
+          await autoAssignFeesToStudents(client, feeConfigRes.rows[0].id, class_id, academic_year_id);
+        }
       }
 
       return { studentRow, warnings: creationWarnings };
@@ -1302,6 +1320,16 @@ const updateStudent = async (req, res) => {
           section_id || null,
           id
         ]);
+
+        // Auto-assign fees for the updated student (in case class changed)
+        const { autoAssignFeesToStudents } = require('./feesGroupController');
+        const feeConfigRes = await client.query(
+          `SELECT id FROM fees WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL LIMIT 1`,
+          [class_id, academic_year_id]
+        );
+        if (feeConfigRes.rowCount > 0) {
+          await autoAssignFeesToStudents(client, feeConfigRes.rows[0].id, class_id, academic_year_id);
+        }
       }
 
       return { studentRow, warnings: updateWarnings };
@@ -2268,21 +2296,17 @@ const getStudentPromotions = async (req, res) => {
            FROM students s
            LEFT JOIN users u ON u.id = s.user_id
            WHERE ($1::int IS NOT NULL AND s.user_id = $1)
-              OR ($2::text <> '' AND TRIM(COALESCE(s.admission_number, '')) = $2)
-              OR ($3::text <> '' AND TRIM(COALESCE(s.roll_number, '')) = $3)
-              OR ($4::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $4)
-              OR ($5::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $5)
+              OR ($2::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $2)
+              OR ($3::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $3)
               OR (
-                $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
-                AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($6)
-                AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($7)
-                AND u.date_of_birth = $8::date
+                $4::text <> '' AND $5::text <> '' AND $6::date IS NOT NULL
+                AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($4)
+                AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($5)
+                AND u.date_of_birth = $6::date
               )
-              OR s.id = $9`,
+              OR s.id = $7`,
           [
             baseUserId,
-            baseAdmissionNo,
-            baseRollNo,
             baseUniqueStudentIds,
             baseGrNumber,
             baseFirstName,
@@ -2364,6 +2388,7 @@ const getStudentPromotions = async (req, res) => {
         `SELECT
           l.id,
           l.student_id,
+          l.event_type,
           l.from_class_id,
           l.to_class_id,
           l.from_section_id,

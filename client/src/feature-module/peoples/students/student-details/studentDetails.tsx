@@ -127,10 +127,11 @@ const StudentDetails = () => {
     () =>
       promotionRows.map((row: any) => ({
         key: String(row.id),
+        eventType: row.event_type || (row.from_class_id ? 'PROMOTE' : 'ADMISSION'),
         date: formatDate(row.promotion_date),
-        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
-        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
-        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
         toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
         toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
         toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
@@ -496,6 +497,7 @@ const StudentDetails = () => {
                         <thead>
                           <tr>
                             <th>Date</th>
+                            <th>Event</th>
                             <th>From Class</th>
                             <th>From Section</th>
                             <th>From Academic Year</th>
@@ -508,9 +510,26 @@ const StudentDetails = () => {
                           {historyTableRows.map((r) => (
                             <tr key={r.key}>
                               <td>{r.date}</td>
-                              <td>{r.fromClass}</td>
-                              <td>{r.fromSection}</td>
-                              <td>{r.fromYear}</td>
+                              <td>
+                                {r.eventType === 'ADMISSION' ? (
+                                  <span className="badge badge-soft-info">
+                                    <i className="ti ti-user-plus me-1"></i>Admission
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-soft-success">
+                                    <i className="ti ti-trending-up me-1"></i>Promotion
+                                  </span>
+                                )}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? <small>New Entry</small> : r.fromClass}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? '—' : r.fromSection}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? '—' : r.fromYear}
+                              </td>
                               <td>{r.toClass}</td>
                               <td>{r.toSection}</td>
                               <td>{r.toYear}</td>

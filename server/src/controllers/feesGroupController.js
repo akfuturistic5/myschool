@@ -405,5 +405,6 @@ module.exports = {
     getFeesGroupById,
     createFeesGroup,
     updateFeesGroup,
-    deleteFeesGroup
+    deleteFeesGroup,
+    autoAssignFeesToStudents
 };

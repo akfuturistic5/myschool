@@ -246,14 +246,7 @@ const StudentList = () => {
             >
               <i className="ti ti-mail" />
             </Link>
-            <Link
-              to="#"
-              data-bs-toggle="modal"
-              data-bs-target="#add_fees_collect"
-              className="btn btn-light fs-12 fw-semibold me-3"
-            >
-              Collect Fees
-            </Link>
+
             <div className="dropdown">
               <Link
                 to="#"

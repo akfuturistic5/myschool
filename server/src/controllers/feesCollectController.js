@@ -310,7 +310,8 @@ const getStudentFeeStatus = async (req, res) => {
              JOIN fees_types ft ON fct.fee_type_id = ft.id
              WHERE f.class_id = $1 
                AND f.academic_year_id = $2
-               AND f.deleted_at IS NULL`,
+               AND f.deleted_at IS NULL
+             ORDER BY fct.is_optional ASC, fct.id ASC`,
             [ledger.class_id, ledger.academic_year_id]
         );
 
@@ -327,10 +328,8 @@ const getStudentFeeStatus = async (req, res) => {
         const finalData = breakdownRes.rows.map(item => {
             const total = parseFloat(item.total_amount || 0);
             let paid = 0;
-            if (!item.is_optional) {
-                paid = Math.min(total, remainingPaid);
-                remainingPaid -= paid;
-            }
+            paid = Math.min(total, remainingPaid);
+            remainingPaid -= paid;
             return {
                 ...item,
                 fee_group: item.fee_group || 'General Fees',
@@ -371,20 +370,17 @@ const getFeeCollectionsList = async (req, res) => {
                 s.roll_number AS "rollNo",
                 u.first_name || ' ' || COALESCE(u.last_name, '') AS student,
                 u.avatar AS "studentImage",
-                c.class_name AS class,
-                (
-                    SELECT sec.section_name
-                    FROM student_lifecycle_ledger sll
-                    LEFT JOIN sections sec ON sll.to_section_id = sec.id
-                    WHERE sll.student_id = s.id
-                      AND sll.to_academic_year_id = $1
-                      AND sll.event_type IN ('ADMISSION', 'PROMOTE', 'REJOIN')
-                    ORDER BY sll.id DESC LIMIT 1
-                ) AS section,
-                fp.total_payable AS amount,
-                fp.total_paid AS paid,
-                fp.balance_amount AS balance,
-                fp.status,
+                curr.class_name AS class,
+                curr.section_name AS section,
+                (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) AS amount,
+                COALESCE(fp.total_paid, 0) AS paid,
+                ((COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) - COALESCE(fp.total_paid, 0)) AS balance,
+                CASE 
+                    WHEN ((COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) - COALESCE(fp.total_paid, 0)) <= 0 
+                         AND (COALESCE(fp.total_payable, 0) + COALESCE(opt.total_optional, 0)) > 0 THEN 'paid'
+                    WHEN COALESCE(fp.total_paid, 0) > 0 THEN 'partial'
+                    ELSE 'unpaid'
+                END AS status,
                 (
                     SELECT MAX(pay_date) FROM (
                         SELECT payment_date AS pay_date FROM compulsory_fees 
@@ -393,13 +389,38 @@ const getFeeCollectionsList = async (req, res) => {
                         SELECT payment_date AS pay_date FROM optional_fees 
                         WHERE student_id = s.id AND academic_year_id = $1
                     ) AS all_pays
-                ) AS last_payment_date
+                ) AS last_payment_date,
+                (
+                    SELECT MIN(due_date)
+                    FROM fees
+                    WHERE class_id = curr.class_id
+                      AND academic_year_id = $1
+                      AND deleted_at IS NULL
+                ) AS due_date
              FROM students s
              JOIN users u ON s.user_id = u.id
+             LEFT JOIN LATERAL (
+                SELECT cl.id AS class_id, cl.class_name, sec.section_name
+                FROM student_lifecycle_ledger sll
+                LEFT JOIN classes cl ON sll.to_class_id = cl.id
+                LEFT JOIN sections sec ON sll.to_section_id = sec.id
+                WHERE sll.student_id = s.id
+                  AND sll.to_academic_year_id = $1
+                  AND sll.event_type IN ('ADMISSION', 'PROMOTE', 'REJOIN')
+                ORDER BY sll.id DESC LIMIT 1
+             ) curr ON TRUE
              LEFT JOIN fees_paids fp ON fp.student_id = s.id AND fp.academic_year_id = $1
-             LEFT JOIN classes c ON fp.class_id = c.id
+             LEFT JOIN LATERAL (
+                SELECT SUM(fct.amount) AS total_optional
+                FROM fees_class_types fct
+                JOIN fees f ON fct.fee_id = f.id
+                WHERE f.class_id = curr.class_id
+                  AND f.academic_year_id = $1
+                  AND fct.is_optional = true
+                  AND f.deleted_at IS NULL
+             ) opt ON TRUE
              WHERE s.is_active = true
-             ORDER BY c.class_name ASC NULLS LAST, u.first_name ASC`,
+             ORDER BY curr.class_name ASC NULLS LAST, u.first_name ASC`,
             [academic_year_id]
         );
 
