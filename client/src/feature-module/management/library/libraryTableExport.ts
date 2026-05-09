@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { printData } from "../../../core/utils/exportUtils";
 
 export type ExportCell = string | number | boolean | null | undefined;
 
@@ -48,4 +49,19 @@ export function exportRowsToPdf(title: string, headers: string[], rows: ExportCe
   });
   const safe = title.replace(/[^\w-]+/g, "_").slice(0, 60) || "export";
   doc.save(`${safe}.pdf`);
+}
+
+/**
+ * Print table rows using common printable document helper.
+ */
+export function printRowsToPage(title: string, headers: string[], rows: ExportCell[][]): void {
+  const columns = headers.map((h, idx) => ({ title: h, dataKey: `c${idx}` }));
+  const data = rows.map((r) => {
+    const obj: Record<string, string> = {};
+    columns.forEach((c, i) => {
+      obj[c.dataKey] = r[i] == null ? "" : String(r[i]);
+    });
+    return obj;
+  });
+  printData(title, columns, data);
 }

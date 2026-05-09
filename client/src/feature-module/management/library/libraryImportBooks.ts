@@ -6,18 +6,16 @@ const KNOWN = new Set([
   "category",
   "category_id",
   "category_name",
-  "total_copies",
-  "book_code",
   "author",
+  "edition",
+  "language",
   "isbn",
   "publisher",
   "publication_year",
-  "available_copies",
   "book_price",
   "price",
-  "book_location",
-  "location",
-  "description",
+  // Backward compatibility: old import files may still use this column.
+  "book_code",
 ]);
 
 export function normKey(k: string): string {
@@ -31,8 +29,8 @@ function rowToBook(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(row)) {
     let nk = normKey(k);
-    if (nk === "location") nk = "book_location";
     if (nk === "price") nk = "book_price";
+    if (nk === "book_code") nk = "isbn";
     if (!KNOWN.has(nk)) continue;
     const v = row[k];
     out[nk] = v === "" || v === undefined ? null : v;
@@ -43,15 +41,13 @@ function rowToBook(row: Record<string, unknown>): Record<string, unknown> {
 function coerceNumbers(o: Record<string, unknown>) {
   const numFields = [
     "category_id",
-    "total_copies",
-    "available_copies",
     "publication_year",
     "book_price",
   ] as const;
   for (const f of numFields) {
     if (o[f] == null || o[f] === "") continue;
     const n = typeof o[f] === "number" ? o[f] : parseFloat(String(o[f]));
-    if (Number.isFinite(n)) o[f] = f === "total_copies" || f === "available_copies" || f === "publication_year" ? Math.trunc(n) : n;
+    if (Number.isFinite(n)) o[f] = f === "publication_year" ? Math.trunc(n) : n;
   }
 }
 
@@ -140,8 +136,8 @@ function parseCsvLoose(text: string): Record<string, unknown>[] {
     header.forEach((h, j) => {
       if (!h) return;
       let key = h;
-      if (key === "location") key = "book_location";
       if (key === "price") key = "book_price";
+      if (key === "book_code") key = "isbn";
       if (!KNOWN.has(key)) return;
       o[key] = cells[j] ?? "";
     });
@@ -164,19 +160,9 @@ export function downloadLibraryBooksImportTemplate() {
     ["SECTION 1 — REQUIRED FIELDS (every data row must have these)"],
     ["book_title", "Full title of the book"],
     ["category", "Category name OR numeric category id (must exist in Library)"],
-    ["total_copies", "Integer ≥ 1"],
     [""],
     ["SECTION 2 — OPTIONAL FIELDS"],
-    [
-      "book_code",
-      "author",
-      "isbn",
-      "publisher",
-      "publication_year",
-      "book_price",
-      "book_location",
-      "description",
-    ],
+    ["author", "edition", "language", "isbn", "publisher", "publication_year", "book_price"],
     [""],
     ["Enter your rows on the Data sheet. Remove the demo row or replace it with real data."],
   ];
@@ -184,29 +170,25 @@ export function downloadLibraryBooksImportTemplate() {
   const dataHeaders = [
     "book_title",
     "category",
-    "total_copies",
-    "book_code",
     "author",
+    "edition",
+    "language",
     "isbn",
     "publisher",
     "publication_year",
     "book_price",
-    "book_location",
-    "description",
   ];
 
   const demoRow = [
     "Demo: Introduction to Physics",
     "Science",
-    5,
-    "PHY-INT-01",
     "A. Kumar",
+    "2nd",
+    "English",
     "",
     "Pearson",
     2023,
     499.5,
-    "Rack B2",
-    "Lab use only",
   ];
 
   const wb = XLSX.utils.book_new();

@@ -111,7 +111,7 @@ const STAFF_SELECT_NORMALIZED = `
         s.designation_id, s.department_id, s.joining_date,
         s.qualification, s.experience_years, s.languages_known,
         s.other_info, s.photo_url, s.status, s.is_active,
-        s.resume, s.joining_letter, s.created_at, s.updated_at, s.deleted_at,
+        s.created_at, s.updated_at, s.deleted_at,
         u.first_name, u.last_name, u.email, u.phone, u.gender, u.date_of_birth,
         u.blood_group_id, u.current_address, u.permanent_address,
         u.current_address AS address,
