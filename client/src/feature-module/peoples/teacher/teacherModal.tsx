@@ -22,7 +22,7 @@ const TeacherModal = ({ staffId, onLeaveApplied }: TeacherModalProps) => {
   const day = String(today.getDate()).padStart(2, "0");
   const formattedDate = `${month}-${day}-${year}`;
   const defaultValue = dayjs(formattedDate);
-  const { leaveTypes: leaveTypeOptions } = useLeaveTypes();
+  const { leaveTypes: leaveTypeOptions } = useLeaveTypes({ applicableFor: "staff" });
   const [applyLeaveType, setApplyLeaveType] = useState<SingleValue<{ value: string; label: string }>>(null);
   const [applyFromDate, setApplyFromDate] = useState<Dayjs | null>(null);
   const [applyToDate, setApplyToDate] = useState<Dayjs | null>(null);

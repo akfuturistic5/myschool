@@ -1857,8 +1857,42 @@ class ApiService {
     });
   }
 
-  async getLeaveTypes() {
-    return this.makeRequest('/leave-applications/leave-types');
+  async getLeaveTypes(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.applicable_for) {
+      searchParams.set('applicable_for', String(params.applicable_for));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLeaveTypesAdmin(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.include_inactive != null) {
+      searchParams.set('include_inactive', String(params.include_inactive));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types/admin${qs ? `?${qs}` : ''}`);
+  }
+
+  async createLeaveType(data) {
+    return this.makeRequest('/leave-applications/leave-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeaveType(id, data) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeaveType(id) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getLeaveApplications(params = {}) {

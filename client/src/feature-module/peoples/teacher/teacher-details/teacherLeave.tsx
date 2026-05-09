@@ -267,7 +267,7 @@ const TeacherLeave = () => {
     staffId: leaveUseMeEndpoint ? undefined : (staffId ?? undefined),
     canUseAdminList: !leaveUseMeEndpoint, // teacher self should not hit admin-only leave list endpoint
   });
-  const { leaveTypes } = useLeaveTypes();
+  const { leaveTypes } = useLeaveTypes({ applicableFor: "staff" });
   const data = useMemo(() => {
     return leaveApplications.map((l) => ({
       ...l,
@@ -288,6 +288,24 @@ const TeacherLeave = () => {
           ? `id:${typeId}`
           : `name:${normalizedName || "unknown"}`;
       if (!unique.has(key)) unique.set(key, t);
+    });
+    (Array.isArray(leaveApplications) ? leaveApplications : []).forEach((l: any) => {
+      const appTypeId = Number(l?.leaveTypeId);
+      const appTypeName = String(l?.leaveType || "").trim();
+      const normalized = appTypeName.toLowerCase();
+      const key =
+        Number.isFinite(appTypeId) && appTypeId > 0
+          ? `id:${appTypeId}`
+          : `name:${normalized || "unknown"}`;
+      if (!unique.has(key)) {
+        unique.set(key, {
+          id: Number.isFinite(appTypeId) && appTypeId > 0 ? appTypeId : undefined,
+          value: Number.isFinite(appTypeId) && appTypeId > 0 ? String(appTypeId) : undefined,
+          label: appTypeName || "Leave",
+          max_days_per_year: 0,
+          max_days: 0,
+        });
+      }
     });
 
     return Array.from(unique.values()).map((t: any, idx: number) => {

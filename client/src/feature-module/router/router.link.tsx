@@ -94,6 +94,7 @@ import Designation from "../hrm/designation";
 import Holiday from "../hrm/holidays";
 import ApproveRequest from "../hrm/leaves/approve-request";
 import ListLeaves from "../hrm/leaves/list-leaves";
+import LeaveTypesPage from "../hrm/leaves/leave-types";
 import Payroll from "../hrm/payroll";
 import SalarySettings from "../hrm/salarySettings";
 import AddStaff from "../hrm/staff-list/add-staff";
@@ -1043,6 +1044,11 @@ export const publicRoutes = [
   {
     path: routes.listLeaves,
     element: <ListLeaves />,
+    route: Route,
+  },
+  {
+    path: routes.leaveTypesManage,
+    element: <LeaveTypesPage />,
     route: Route,
   },
   {

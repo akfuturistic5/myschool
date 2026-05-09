@@ -286,6 +286,9 @@ export function canAccessPath(path: string, role: RoleInput, explicitRoleId?: nu
       getRoleScope(role, explicitRoleId) === 'teacher'
     );
   }
+  if (path === all_routes.leaveTypesManage) {
+    return isHeadmasterRole(role, explicitRoleId) || isAdministrativeRole(role, explicitRoleId);
+  }
 
   const userDashboard = getDashboardForRole(role, explicitRoleId);
   const dashboardPaths = [
