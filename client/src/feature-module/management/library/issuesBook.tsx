@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { DatePicker } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
@@ -15,14 +15,18 @@ import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
 import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
+import { LibrarySearchableSelect } from "./librarySearchableSelect";
 
 const IssueBook = () => {
   const routes = all_routes;
+  const navigate = useNavigate();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [books, setBooks] = useState<{ value: string; label: string }[]>([]);
   const [members, setMembers] = useState<{ value: string; label: string }[]>([]);
+  /** Pending reservation count per book id for selected academic year (from list books API). */
+  const [pendingResByBookId, setPendingResByBookId] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -52,14 +56,23 @@ const IssueBook = () => {
     try {
       const ay = academicYearId != null ? { academic_year_id: academicYearId } : {};
       const [bRes, mRes] = await Promise.all([
-        apiService.getLibraryBooks(ay),
+        apiService.getLibraryBooks({ ...ay, include_pending_reservations: true }),
         apiService.getLibraryMembers({ ...ay, status: "active" }),
       ]);
       const bl = (bRes as any)?.data || [];
+      const pmap: Record<string, number> = {};
+      for (const b of bl) {
+        const n = Number((b as any).pending_reservations_count);
+        if (Number.isFinite(n) && n > 0) pmap[String(b.id)] = n;
+      }
+      setPendingResByBookId(pmap);
       setBooks(
         bl.map((b: any) => ({
           value: String(b.id),
-          label: b.book_title || `Book #${b.id}`,
+          label:
+            pmap[String(b.id)] != null
+              ? `${b.book_title || `Book #${b.id}`} (${pmap[String(b.id)]} waiting)`
+              : b.book_title || `Book #${b.id}`,
         }))
       );
       const ml = (mRes as any)?.data || [];
@@ -170,6 +183,25 @@ const IssueBook = () => {
     bootstrap?.Modal?.getInstance(el)?.hide();
   };
 
+  /** Close Bootstrap modal first so backdrop/body scroll lock are cleared, then navigate (SPA link leaves modal DOM open). */
+  const goToReservationsForBook = () => {
+    const bookId = String(issueForm.book_id || "").trim();
+    if (!bookId) return;
+    const target = `${routes.libraryReservations}?book_id=${encodeURIComponent(bookId)}`;
+    const el = document.getElementById("library_issue_book_modal");
+    const bootstrap = (window as any).bootstrap;
+    if (el && bootstrap?.Modal) {
+      const m = bootstrap.Modal.getInstance(el) || new bootstrap.Modal(el);
+      const onHidden = () => {
+        navigate(target);
+      };
+      el.addEventListener("hidden.bs.modal", onHidden, { once: true });
+      m.hide();
+    } else {
+      navigate(target);
+    }
+  };
+
   const openIssue = () => {
     setFormError(null);
     setIssueForm({
@@ -184,6 +216,10 @@ const IssueBook = () => {
 
   const submitIssue = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!String(issueForm.library_member_id).trim()) {
+      setFormError("Please select a library member.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -392,39 +428,25 @@ const IssueBook = () => {
                           <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Book</label>
-                              <select
-                                className="form-select"
+                              <LibrarySearchableSelect
+                                allowClear
+                                options={books}
                                 value={filterDraft.book_id}
-                                onChange={(e) =>
-                                  setFilterDraft((f) => ({ ...f, book_id: e.target.value }))
-                                }
-                              >
-                                <option value="">All</option>
-                                {books.map((b) => (
-                                  <option key={b.value} value={b.value}>
-                                    {b.label}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => setFilterDraft((f) => ({ ...f, book_id: v }))}
+                                placeholder="All books — search…"
+                              />
                             </div>
                           </div>
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Library member</label>
-                              <select
-                                className="form-select"
+                              <LibrarySearchableSelect
+                                allowClear
+                                options={members}
                                 value={filterDraft.member_id}
-                                onChange={(e) =>
-                                  setFilterDraft((f) => ({ ...f, member_id: e.target.value }))
-                                }
-                              >
-                                <option value="">Any</option>
-                                {members.map((s) => (
-                                  <option key={s.value} value={s.value}>
-                                    {s.label}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => setFilterDraft((f) => ({ ...f, member_id: v }))}
+                                placeholder="Any member — search…"
+                              />
                             </div>
                           </div>
                           <div className="col-md-6">
@@ -520,22 +542,30 @@ const IssueBook = () => {
                 {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
                 <div className="mb-3">
                   <label className="form-label">Book *</label>
-                  <select
-                    className="form-select"
-                    required
+                  <LibrarySearchableSelect
+                    options={books}
                     value={issueForm.book_id}
-                    onChange={(e) =>
-                      setIssueForm((f) => ({ ...f, book_id: e.target.value, book_copy_id: "" }))
-                    }
-                  >
-                    <option value="">Select book</option>
-                    {books.map((b) => (
-                      <option key={b.value} value={b.value}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setIssueForm((f) => ({ ...f, book_id: v, book_copy_id: "" }))}
+                    placeholder="Search book…"
+                  />
                 </div>
+                {issueForm.book_id &&
+                (pendingResByBookId[issueForm.book_id] ?? 0) > 0 ? (
+                  <div className="alert alert-warning py-2 small mb-3 d-flex flex-column flex-md-row align-items-start align-md-items-center gap-2">
+                    <span>
+                      <strong>{pendingResByBookId[issueForm.book_id]}</strong> pending reservation
+                      {pendingResByBookId[issueForm.book_id] === 1 ? "" : "s"} on the wait list for this book in
+                      the current academic year. Prefer resolving the queue in order when copies are scarce.
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-dark text-nowrap"
+                      onClick={goToReservationsForBook}
+                    >
+                      Open reservations
+                    </button>
+                  </div>
+                ) : null}
                 {issueForm.book_id ? (
                   <div className="mb-3">
                     <label className="form-label">Copy</label>
@@ -559,21 +589,12 @@ const IssueBook = () => {
                 ) : null}
                 <div className="mb-3">
                   <label className="form-label">Library member *</label>
-                  <select
-                    className="form-select"
-                    required
+                  <LibrarySearchableSelect
+                    options={members}
                     value={issueForm.library_member_id}
-                    onChange={(e) =>
-                      setIssueForm((f) => ({ ...f, library_member_id: e.target.value }))
-                    }
-                  >
-                    <option value="">Select member (card — name)</option>
-                    {members.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setIssueForm((f) => ({ ...f, library_member_id: v }))}
+                    placeholder="Search member (card — name)…"
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label">Due date *</label>

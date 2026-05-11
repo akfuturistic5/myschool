@@ -452,9 +452,22 @@ class ApiService {
   }
 
   // Students
-  async getStudents(academicYearId = null) {
-    const qs = academicYearId != null ? `?academic_year_id=${academicYearId}` : '';
-    return this.makeRequest(`/students${qs}`);
+  /**
+   * @param {number|string|null|{ academic_year_id?: number|string, limit?: number, page?: number }} [params]
+   */
+  async getStudents(params = null) {
+    const q = new URLSearchParams();
+    if (params != null && typeof params === 'object' && !Array.isArray(params)) {
+      if (params.academic_year_id != null && params.academic_year_id !== '') {
+        q.set('academic_year_id', String(params.academic_year_id));
+      }
+      if (params.limit != null && params.limit !== '') q.set('limit', String(params.limit));
+      if (params.page != null && params.page !== '') q.set('page', String(params.page));
+    } else if (params != null && params !== '') {
+      q.set('academic_year_id', String(params));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/students${qs ? `?${qs}` : ''}`);
   }
 
   async getTeacherStudents(academicYearId = null) {
@@ -2934,8 +2947,20 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
     }
+    if (
+      params.include_pending_reservations === true ||
+      params.include_pending_reservations === 1 ||
+      params.include_pending_reservations === '1' ||
+      String(params.include_pending_reservations || '').toLowerCase() === 'true'
+    ) {
+      q.set('include_pending_reservations', '1');
+    }
     const qs = q.toString();
     return this.makeRequest(`/library/books${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryNextBookAccessionNumber() {
+    return this.makeRequest('/library/book-copies/next-accession-number');
   }
 
   async importLibraryBooks(payload) {
@@ -3000,6 +3025,10 @@ class ApiService {
     return this.makeRequest(`/library/book-copies/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async getLibraryNextCardNumber() {
+    return this.makeRequest('/library/members/next-card-number');
   }
 
   async getLibraryMembers(params = {}) {

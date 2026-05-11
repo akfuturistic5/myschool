@@ -37,6 +37,7 @@ const {
   importBooks,
 } = require('../controllers/libraryBookController');
 const {
+  suggestNextAccessionNumber,
   listBookCopies,
   getBookCopy,
   createBookCopy,
@@ -47,6 +48,7 @@ const {
 const {
   listMembers,
   getMember,
+  suggestNextCardNumber,
   createMember,
   updateMember,
   deleteMember,
@@ -83,12 +85,18 @@ router.put('/books/:id', requireRole(LIBRARY_MANAGER_ROLES), validate(updateBook
 router.delete('/books/:id', requireRole(LIBRARY_MANAGER_ROLES), deleteBook);
 
 router.get('/book-copies', requireRole(ALL_AUTHENTICATED_ROLES), listBookCopies);
+router.get(
+  '/book-copies/next-accession-number',
+  requireRole(LIBRARY_MANAGER_ROLES),
+  suggestNextAccessionNumber
+);
 router.get('/book-copies/:id', requireRole(ALL_AUTHENTICATED_ROLES), getBookCopy);
 router.post('/book-copies', requireRole(LIBRARY_MANAGER_ROLES), validate(createBookCopySchema), createBookCopy);
 router.put('/book-copies/:id', requireRole(LIBRARY_MANAGER_ROLES), validate(updateBookCopySchema), updateBookCopy);
 router.delete('/book-copies/:id', requireRole(LIBRARY_MANAGER_ROLES), deleteBookCopy);
 
 router.get('/members', requireRole(ALL_AUTHENTICATED_ROLES), listMembers);
+router.get('/members/next-card-number', requireRole(LIBRARY_MANAGER_ROLES), suggestNextCardNumber);
 router.get('/members/:id', requireRole(ALL_AUTHENTICATED_ROLES), getMember);
 router.post('/members', requireRole(LIBRARY_MANAGER_ROLES), validate(createMemberSchema), createMember);
 router.put('/members/:id', requireRole(LIBRARY_MANAGER_ROLES), validate(updateMemberSchema), updateMember);

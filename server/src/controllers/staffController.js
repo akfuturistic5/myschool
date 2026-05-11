@@ -1,6 +1,6 @@
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
-const { query, executeTransaction, runWithTenant } = require('../config/database');
+const { query, executeTransaction, runWithTenant, getCurrentTenantDbName } = require('../config/database');
 const { ADMIN_ROLE_IDS, ROLES } = require('../config/roles');
 const { success, error: errorResponse } = require('../utils/responseHelper');
 const { createAdministrativeStaffUser, isUserEmailTaken } = require('../utils/createPersonUser');
@@ -205,9 +205,10 @@ async function backfillLegacyTeacherStaffAssignments() {
 const getAllStaff = async (req, res) => {
   try {
     await backfillLegacyTeacherStaffAssignments();
+    // List all linked employees (includes teachers role_id=2). Excluding teachers made this API empty for typical schools.
     const result = await query(`
       ${STAFF_SELECT_NORMALIZED}
-      WHERE s.deleted_at IS NULL AND s.status = 'Active' AND u.role_id != 2
+      WHERE s.deleted_at IS NULL AND s.status = 'Active'
       ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);
 
