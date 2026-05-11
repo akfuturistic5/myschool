@@ -284,6 +284,8 @@ export const all_routes = {
   academicYears: "/academic/academic-years",
   academicYearNew: "/academic/academic-years/new",
   academicYearDetail: "/academic/academic-years/:id",
+  examTypes: "/academic/exam-types",
+  curriculumMapping: "/academic/curriculum-mapping",
 
   //Hrm module
   staff: "/hrm/staff",

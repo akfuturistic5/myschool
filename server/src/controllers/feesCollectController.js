@@ -96,11 +96,13 @@ const collectFees = async (req, res) => {
             const payAmt = parseFloat(amount_paid || amount_to_pay || 0);
             const fineAmt = parseFloat(fine_paid || 0);
 
-            // If only fees_assign_details_id (fct.id) is provided, find the parent fee_id
-            if (fees_assign_details_id && !fee_id) {
-                const fctRes = await client.query('SELECT fee_id FROM fees_class_types WHERE id = $1', [fees_assign_details_id]);
+            // If fees_assign_details_id (fct.id) is provided, find parent context
+            let db_fee_type_id = null;
+            if (fees_assign_details_id) {
+                const fctRes = await client.query('SELECT fee_id, fee_type_id FROM fees_class_types WHERE id = $1', [fees_assign_details_id]);
                 if (fctRes.rowCount > 0) {
-                    fee_id = fctRes.rows[0].fee_id;
+                    if (!fee_id) fee_id = fctRes.rows[0].fee_id;
+                    db_fee_type_id = fctRes.rows[0].fee_type_id;
                 }
             }
 
@@ -117,15 +119,16 @@ const collectFees = async (req, res) => {
 
             await client.query(
                 `INSERT INTO compulsory_fees
-                    (student_id, academic_year_id, fee_id, fee_installment_id,
+                    (student_id, academic_year_id, fee_id, fee_installment_id, fee_type_id,
                      amount_paid, advance_amount_used, fine_paid,
                      payment_date, payment_mode, transaction_id, remarks, created_by)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
                 [
                     student_id,
                     academic_year_id,
                     fee_id || null,
                     fee_installment_id || null,
+                    db_fee_type_id || null,
                     payAmt,
                     0, // advance_amount_used handled separately below
                     fineAmt,
@@ -441,10 +444,12 @@ const getPaymentHistory = async (req, res) => {
                 cf.*,
                 f.due_date AS fee_due_date,
                 fi.installment_name,
-                fi.due_date AS installment_due_date
+                fi.due_date AS installment_due_date,
+                ft.name AS fee_type_name
              FROM compulsory_fees cf
              LEFT JOIN fees f ON cf.fee_id = f.id
              LEFT JOIN fees_installments fi ON cf.fee_installment_id = fi.id
+             LEFT JOIN fees_types ft ON cf.fee_type_id = ft.id
              WHERE cf.student_id = $1 AND cf.academic_year_id = $2
              ORDER BY cf.payment_date DESC, cf.id DESC`,
             [studentId, academicYearId]

@@ -382,8 +382,18 @@ const updateLeaveApplicationStatus = async (req, res) => {
               FROM classes c_map
               WHERE c_map.id = s.class_id
                 AND (
-                  c_map.class_teacher_id = ANY($2::int[])
-                  OR c_map.class_teacher_id = ANY($3::int[])
+                  EXISTS (
+                    SELECT 1 FROM class_teachers ct
+                    WHERE ct.class_id = c_map.id
+                      AND ct.staff_id = ANY($2::int[])
+                      AND ct.deleted_at IS NULL
+                  )
+                  OR EXISTS (
+                    SELECT 1 FROM class_teachers ct
+                    WHERE ct.class_id = c_map.id
+                      AND ct.staff_id = ANY($3::int[])
+                      AND ct.deleted_at IS NULL
+                  )
                 )
             )
           )

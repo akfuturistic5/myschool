@@ -4205,7 +4205,7 @@ const getStudentExamResults = async (req, res) => {
          e.exam_name,
          e.exam_type,
          es.exam_date,
-         es.subject_id,
+         cs.subject_id,
          s.subject_name,
          s.subject_code,
          COALESCE(es.max_marks, 100) AS max_marks,
@@ -4215,23 +4215,41 @@ const getStudentExamResults = async (req, res) => {
          ${marksExpr} AS marks_obtained,
          ${absentExpr} AS is_absent
        FROM students st
-       INNER JOIN exam_subjects es
-         ON es.class_id = st.class_id
-        AND es.section_id = st.section_id
+       INNER JOIN student_lifecycle_ledger l ON l.student_id = st.id
+       INNER JOIN exam_schedules es
+         ON es.class_id = l.to_class_id
+        AND (
+          es.class_section_id IS NULL 
+          OR es.class_section_id = (
+            SELECT id FROM class_sections 
+            WHERE section_id = l.to_section_id 
+              AND class_id = l.to_class_id 
+              AND deleted_at IS NULL 
+            LIMIT 1
+          )
+        )
+        AND es.academic_year_id = l.to_academic_year_id
        INNER JOIN exams e ON e.id = es.exam_id
-       INNER JOIN subjects s ON s.id = es.subject_id
+       INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+       INNER JOIN subjects s ON s.id = cs.subject_id
        LEFT JOIN exam_results er
-         ON er.exam_id = es.exam_id
+         ON er.exam_schedule_id = es.id
         AND er.student_id = st.id
-        AND er.subject_id = es.subject_id
-        ${hasEsComponent && hasErComponent ? 'AND COALESCE(er.exam_component,\'theory\') = COALESCE(es.exam_component,\'theory\')' : ''}
        WHERE st.id = $1
+         AND (
+           cs.is_elective = false
+           OR EXISTS (
+             SELECT 1 FROM student_subject_choices ssc
+             WHERE ssc.student_id = st.id
+               AND ssc.class_subject_id = cs.id
+               AND ssc.deleted_at IS NULL
+           )
+         )
        ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
       [studentId]
     );
 
-    // Leaving/inactive students can lose class/section mapping; in that case,
-    // fallback to direct exam_results history so latest result still opens in popup.
+    // Falling back to direct exam_results history if no active schedules found (e.g. for former students).
     if (!rows.rows || rows.rows.length === 0) {
       rows = await query(
         `SELECT
@@ -4239,7 +4257,7 @@ const getStudentExamResults = async (req, res) => {
            e.exam_name,
            e.exam_type,
            COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
-           er.subject_id,
+           COALESCE(cs.subject_id, er.subject_id) AS subject_id,
            s.subject_name,
            s.subject_code,
            COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
@@ -4249,12 +4267,10 @@ const getStudentExamResults = async (req, res) => {
            ${marksExpr} AS marks_obtained,
            ${absentExpr} AS is_absent
          FROM exam_results er
-         LEFT JOIN exams e ON e.id = er.exam_id
-         LEFT JOIN subjects s ON s.id = er.subject_id
-         LEFT JOIN exam_subjects es
-           ON es.exam_id = er.exam_id
-          AND es.subject_id = er.subject_id
-          ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}
+         INNER JOIN exams e ON e.id = er.exam_id
+         LEFT JOIN exam_schedules es ON es.id = er.exam_schedule_id
+         LEFT JOIN class_subjects cs ON cs.id = es.class_subject_id
+         LEFT JOIN subjects s ON s.id = COALESCE(cs.subject_id, er.subject_id)
          WHERE er.student_id = $1
            AND er.exam_id IS NOT NULL
          ORDER BY

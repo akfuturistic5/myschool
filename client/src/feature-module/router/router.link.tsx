@@ -57,6 +57,7 @@ import Classes from "../academic/classes";
 import AcademicYearsList from "../academic/academic-years";
 import AcademicYearCreate from "../academic/academic-years/create";
 import AcademicYearDetail from "../academic/academic-years/detail";
+import CurriculumMapping from "../academic/curriculum-mapping";
 import Exam from "../academic/examinations/exam";
 import ExamAttendance from "../academic/examinations/exam-attendance";
 import ExamResult from "../academic/examinations/exam-results";
@@ -169,6 +170,7 @@ import TeacherReport from "../report/teacher-report/teacherReport";
 import Religion from "../settings/academicSettings/religion";
 import SchoolSettings from "../settings/academicSettings/schoolSettings";
 import SchoolMasterSettingsPage from "../settings/settingsMasters/SchoolMasterSettingsPage";
+import ExamTypeManagement from "../settings/academicSettings/examType";
 import CustomFields from "../settings/appSettings/customFields";
 import InvoiceSettings from "../settings/appSettings/invoiceSettings";
 import PaymentGateways from "../settings/financialSettings/paymentGateways";
@@ -932,6 +934,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.curriculumMapping,
+    element: <CurriculumMapping />,
+    route: Route,
+  },
+  {
     path: routes.examTopPerformers,
     element: <TopPerformers />,
     route: Route,
@@ -1392,6 +1399,11 @@ export const publicRoutes = [
   {
     path: routes.schoolSettings,
     element: <SchoolSettings />,
+    route: Route,
+  },
+  {
+    path: routes.examTypes,
+    element: <ExamTypeManagement />,
     route: Route,
   },
   {

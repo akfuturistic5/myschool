@@ -14,16 +14,7 @@ const {
 
 const createExamSchema = Joi.object({
   exam_name: Joi.string().trim().min(2).max(150).required(),
-  exam_type: Joi.string().trim().valid(
-    'unit_test',
-    'monthly',
-    'quarterly',
-    'half_yearly',
-    'annual',
-    'preboard',
-    'internal',
-    'other'
-  ).required(),
+  exam_type: Joi.string().trim().required(),
   class_ids: Joi.array().items(Joi.number().integer().positive()).min(1).required(),
   academic_year_id: Joi.number().integer().positive().allow(null),
   description: Joi.string().allow('', null),
@@ -32,16 +23,16 @@ const createExamSchema = Joi.object({
 const saveSubjectsSchema = Joi.object({
   exam_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
-  section_id: Joi.number().integer().positive().required(),
+  section_id: Joi.number().integer().positive().optional().allow(null, ''),
   subjects: Joi.array()
     .items(
       Joi.object({
         subject_id: Joi.number().integer().positive().required(),
         max_marks: Joi.number().positive().required(),
         passing_marks: Joi.number().min(0).required(),
-        exam_date: Joi.date().iso().allow(null, ''),
-        start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null, ''),
-        end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null, ''),
+        exam_date: Joi.date().iso().required(),
+        start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+        end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
       })
     )
     .min(1)
@@ -51,16 +42,16 @@ const saveSubjectsSchema = Joi.object({
 const saveSubjectSetupSchema = Joi.object({
   exam_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
-  section_id: Joi.number().integer().positive().required(),
+  section_id: Joi.number().integer().positive().optional().allow(null, ''),
   rows: Joi.array()
     .items(
       Joi.object({
         subject_id: Joi.number().integer().positive().required(),
         max_marks: Joi.number().positive().required(),
         passing_marks: Joi.number().min(0).required(),
-        exam_date: Joi.date().iso().allow(null, ''),
-        start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null, ''),
-        end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).allow(null, ''),
+        exam_date: Joi.date().iso().required(),
+        start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+        end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
       })
     )
     .min(1)
@@ -70,13 +61,13 @@ const saveSubjectSetupSchema = Joi.object({
 const examMarksContextSchema = Joi.object({
   exam_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
-  section_id: Joi.number().integer().positive().required(),
+  section_id: Joi.number().integer().positive().optional().allow(null, ''),
 });
 
 const saveExamMarksSchema = Joi.object({
   exam_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
-  section_id: Joi.number().integer().positive().required(),
+  section_id: Joi.number().integer().positive().optional().allow(null, ''),
   rows: Joi.array()
     .items(
       Joi.object({
@@ -399,10 +390,14 @@ function validateNoExamSlotCollision(rows = []) {
       if (slot.date !== date) continue;
       const overlaps = startMin < slot.endMin && slot.startMin < endMin;
       if (overlaps) {
+        // Only allow overlap if BOTH are electives in the same group
+        if (row.is_elective && slot.is_elective && row.elective_group_id && row.elective_group_id === slot.elective_group_id) {
+          continue;
+        }
         return 'Two subjects cannot share overlapping exam time on the same date in the same section';
       }
     }
-    scheduled.push({ date, startMin, endMin });
+    scheduled.push({ date, startMin, endMin, is_elective: row.is_elective, elective_group_id: row.elective_group_id });
   }
   return null;
 }
@@ -582,16 +577,16 @@ async function listExams(req, res) {
 
     if (isTeacherRole(ctx)) {
       const teacherMap = await query(
-        `SELECT t.id AS teacher_id, t.staff_id
-         FROM teachers t
-         INNER JOIN staff st ON st.id = t.staff_id
+        `SELECT st.id AS staff_id
+         FROM staff st
          WHERE st.user_id = $1 AND st.status = 'Active'`,
         [ctx.userId]
       );
       if (!teacherMap.rows.length) return success(res, 200, 'Exams loaded', []);
 
-      const teacherIds = teacherMap.rows.map((x) => parseId(x.teacher_id)).filter(Boolean);
       const staffIds = teacherMap.rows.map((x) => parseId(x.staff_id)).filter(Boolean);
+      // In this schema, staff.id is used as the teacher reference
+      const teacherIds = staffIds;
 
       params.push(teacherIds, staffIds);
       const teacherIdsIdx = params.length - 1;
@@ -614,18 +609,29 @@ async function listExams(req, res) {
                   FROM class_schedules cs
                   WHERE cs.class_id = ec2.class_id
                     AND cs.teacher_id = ANY($${teacherIdsIdx}::int[])
+                    AND cs.academic_year_id = e.academic_year_id
                 )
                 OR EXISTS (
                   SELECT 1
-                  FROM classes c_map
-                  WHERE c_map.id = ec2.class_id
-                    AND (c_map.class_teacher_id = ANY($${teacherIdsIdx}::int[]) OR c_map.class_teacher_id = ANY($${staffIdsIdx}::int[]))
+                  FROM class_teachers ct
+                  WHERE ct.class_id = ec2.class_id
+                    AND ct.staff_id = ANY($${staffIdsIdx}::int[])
+                    AND ct.deleted_at IS NULL
                 )
                 OR EXISTS (
                   SELECT 1
-                  FROM sections s_map
-                  WHERE s_map.class_id = ec2.class_id
-                    AND s_map.section_teacher_id = ANY($${staffIdsIdx}::int[])
+                  FROM class_sections cs_rel
+                  WHERE cs_rel.class_id = ec2.class_id
+                    AND cs_rel.academic_year_id = e.academic_year_id
+                    AND cs_rel.deleted_at IS NULL
+                    AND (
+                      EXISTS (
+                        SELECT 1 FROM class_teachers ct 
+                        WHERE ct.class_section_id = cs_rel.id 
+                          AND ct.staff_id = ANY($${staffIdsIdx}::int[])
+                          AND ct.deleted_at IS NULL
+                      )
+                    )
                 )
               )
           )
@@ -637,18 +643,29 @@ async function listExams(req, res) {
               FROM class_schedules cs
               WHERE cs.class_id = e.class_id
                 AND cs.teacher_id = ANY($${teacherIdsIdx}::int[])
+                AND cs.academic_year_id = e.academic_year_id
             )
             OR EXISTS (
               SELECT 1
-              FROM classes c_map
-              WHERE c_map.id = e.class_id
-                AND (c_map.class_teacher_id = ANY($${teacherIdsIdx}::int[]) OR c_map.class_teacher_id = ANY($${staffIdsIdx}::int[]))
+              FROM class_teachers ct
+              WHERE ct.class_id = e.class_id
+                AND ct.staff_id = ANY($${staffIdsIdx}::int[])
+                AND ct.deleted_at IS NULL
             )
             OR EXISTS (
               SELECT 1
-              FROM sections s_map
-              WHERE s_map.class_id = e.class_id
-                AND s_map.section_teacher_id = ANY($${staffIdsIdx}::int[])
+              FROM class_sections cs_rel
+              WHERE cs_rel.class_id = e.class_id
+                AND cs_rel.academic_year_id = e.academic_year_id
+                AND cs_rel.deleted_at IS NULL
+                AND (
+                  EXISTS (
+                    SELECT 1 FROM class_teachers ct 
+                    WHERE ct.class_section_id = cs_rel.id 
+                      AND ct.staff_id = ANY($${staffIdsIdx}::int[])
+                      AND ct.deleted_at IS NULL
+                  )
+                )
             )
           )
         `;
@@ -673,54 +690,92 @@ async function listExams(req, res) {
 
 async function getTeacherMaps(userId) {
   const teacherMap = await query(
-    `SELECT t.id AS teacher_id, t.staff_id
-     FROM teachers t
-     INNER JOIN staff st ON st.id = t.staff_id
+    `SELECT st.id AS staff_id
+     FROM staff st
      WHERE st.user_id = $1 AND st.status = 'Active'`,
     [userId]
   );
+  const ids = teacherMap.rows.map((x) => parseId(x.staff_id)).filter(Boolean);
   return {
-    teacherIds: teacherMap.rows.map((x) => parseId(x.teacher_id)).filter(Boolean),
-    staffIds: teacherMap.rows.map((x) => parseId(x.staff_id)).filter(Boolean),
+    teacherIds: ids,
+    staffIds: ids,
   };
 }
 
-async function teacherCanAccessClassSection(userId, classId, sectionId) {
+async function teacherCanAccessClassSection(userId, classId, sectionId, academicYearId = null) {
   const { teacherIds, staffIds } = await getTeacherMaps(userId);
   if (!teacherIds.length && !staffIds.length) return false;
-  const p = [classId, sectionId, teacherIds, staffIds];
+
+  const p = [classId, sectionId, staffIds, academicYearId];
   const check = await query(
     `SELECT 1
      WHERE
+      -- 1. Active Class Teacher Assignment for this specific Section
       EXISTS (
-        SELECT 1 FROM sections s
-        WHERE s.id = $2 AND s.class_id = $1
-          AND s.section_teacher_id = ANY($4::int[])
+        SELECT 1 FROM class_sections cs_rel
+        WHERE cs_rel.class_id = $1 
+          AND (cs_rel.section_id = $2 OR (cs_rel.section_id IS NULL AND $2 IS NULL))
+          AND ($4::int IS NULL OR cs_rel.academic_year_id = $4)
+          AND cs_rel.deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM class_teachers ct
+            WHERE ct.class_section_id = cs_rel.id
+              AND ct.staff_id = ANY($3::int[])
+              AND ct.deleted_at IS NULL
+              AND ($4::int IS NULL OR ct.academic_year_id = $4)
+          )
       )
+      -- 2. Active Subject Teacher Assignment for this Class/Section
       OR EXISTS (
-        SELECT 1 FROM class_schedules cs
-        WHERE cs.class_id = $1
-          AND (cs.section_id = $2 OR cs.section_id IS NULL)
-          AND cs.teacher_id = ANY($3::int[])
+        SELECT 1 FROM subject_teacher_assignments sta
+        WHERE sta.class_id = $1
+          AND ($4::int IS NULL OR sta.academic_year_id = $4)
+          AND sta.staff_id = ANY($3::int[])
+          AND sta.deleted_at IS NULL
+          AND (
+            sta.class_section_id IS NULL -- Whole class assignment
+            OR EXISTS (
+              SELECT 1 FROM class_sections csec
+              WHERE csec.id = sta.class_section_id 
+                AND csec.section_id = $2 
+                AND csec.class_id = $1
+                AND ($4::int IS NULL OR csec.academic_year_id = $4)
+            )
+          )
       )
+      -- 3. Active Class Teacher Assignment for the whole Class
       OR EXISTS (
-        SELECT 1 FROM classes c
-        WHERE c.id = $1
-          AND (c.class_teacher_id = ANY($3::int[]) OR c.class_teacher_id = ANY($4::int[]))
+        SELECT 1 FROM class_teachers ct
+        WHERE ct.class_id = $1
+          AND ct.staff_id = ANY($3::int[])
+          AND ct.deleted_at IS NULL
+          AND ct.class_section_id IS NULL
+          AND ($4::int IS NULL OR ct.academic_year_id = $4)
       )`,
     p
   );
   return check.rows.length > 0;
 }
 
-async function getClassSubjects(classId) {
+async function getClassSubjects(classId, academicYearId = null) {
+  const params = [classId];
+  let ayCond = '';
+  if (academicYearId) {
+    params.push(academicYearId);
+    ayCond = `AND cs.academic_year_id = $2`;
+  }
   const r = await query(
-    `SELECT id, subject_name, subject_code, COALESCE(theory_hours, 0) AS theory_hours, COALESCE(practical_hours, 0) AS practical_hours
-     FROM subjects
-     WHERE class_id = $1
-       AND COALESCE(is_active, true) = true
-     ORDER BY subject_name ASC`,
-    [classId]
+    `SELECT cs.id, s.subject_name, s.subject_code, 
+            cs.is_elective, cs.elective_group_id,
+            0 AS theory_hours, 0 AS practical_hours,
+            s.subject_type as subject_mode
+     FROM class_subjects cs
+     JOIN subjects s ON s.id = cs.subject_id
+     WHERE cs.class_id = $1
+       AND cs.deleted_at IS NULL
+       ${ayCond}
+     ORDER BY s.subject_name ASC`,
+    params
   );
   return r.rows || [];
 }
@@ -736,6 +791,9 @@ async function getManageContext(req, res) {
     if (!schema.hasExamClassesTable && !schema.hasClassIdColumn) {
       return success(res, 200, 'Context loaded', { classes: [] });
     }
+
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
 
     const classRows = await query(
       schema.hasExamClassesTable
@@ -762,25 +820,37 @@ async function getManageContext(req, res) {
       const { teacherIds, staffIds } = await getTeacherMaps(ctx.userId);
       if (!teacherIds.length && !staffIds.length) return success(res, 200, 'Context loaded', { classes: [] });
       const sectionRows = await query(
-        `SELECT s.id AS section_id, s.section_name, s.class_id
-         FROM sections s
-         WHERE s.class_id = ANY($1::int[])
+        `SELECT s.id AS section_id, s.section_name, cs_rel.class_id
+         FROM class_sections cs_rel
+         INNER JOIN sections s ON s.id = cs_rel.section_id
+         WHERE cs_rel.class_id = ANY($1::int[])
+           AND cs_rel.deleted_at IS NULL
+           ${academicYearId ? 'AND cs_rel.academic_year_id = $4' : ''}
            AND (
-             s.section_teacher_id = ANY($2::int[])
-             OR EXISTS (
-               SELECT 1 FROM class_schedules cs
-               WHERE cs.class_id = s.class_id
-                 AND (cs.section_id = s.id OR cs.section_id IS NULL)
-                 AND cs.teacher_id = ANY($3::int[])
+             EXISTS (
+               SELECT 1 FROM class_teachers ct
+               WHERE ct.class_section_id = cs_rel.id
+                 AND ct.staff_id = ANY($2::int[])
+                 AND ct.deleted_at IS NULL
              )
              OR EXISTS (
-               SELECT 1 FROM classes c
-               WHERE c.id = s.class_id
-                 AND (c.class_teacher_id = ANY($3::int[]) OR c.class_teacher_id = ANY($2::int[]))
+               SELECT 1 FROM class_schedules cs
+               WHERE cs.class_id = cs_rel.class_id
+                 AND (cs.class_section_id = cs_rel.id OR cs.class_section_id IS NULL)
+                 AND cs.teacher_id = ANY($3::int[])
+                 ${academicYearId ? 'AND cs.academic_year_id = $4' : ''}
+             )
+             OR EXISTS (
+               SELECT 1 FROM class_teachers ct
+               WHERE (ct.class_id = cs_rel.class_id OR ct.class_section_id = cs_rel.id)
+                 AND ct.staff_id = ANY($2::int[])
+                 AND ct.deleted_at IS NULL
              )
            )
          ORDER BY s.section_name`,
-        [classMap.map((x) => x.class_id).filter(Boolean), staffIds, teacherIds]
+        academicYearId 
+          ? [classMap.map((x) => x.class_id).filter(Boolean), staffIds, teacherIds, academicYearId]
+          : [classMap.map((x) => x.class_id).filter(Boolean), staffIds, teacherIds]
       );
       const byClass = new Map();
       sectionRows.rows.forEach((s) => {
@@ -789,15 +859,19 @@ async function getManageContext(req, res) {
         byClass.get(k).push({ section_id: parseId(s.section_id), section_name: s.section_name });
       });
       classMap = classMap
-        .map((c) => ({ ...c, sections: byClass.get(c.class_id) || [] }))
-        .filter((c) => c.sections.length > 0);
+        .map((c) => ({ ...c, sections: byClass.get(c.class_id) || [] }));
     } else {
       const sec = await query(
-        `SELECT id AS section_id, section_name, class_id
-         FROM sections
-         WHERE class_id = ANY($1::int[])
-         ORDER BY section_name`,
-        [classMap.map((x) => x.class_id).filter(Boolean)]
+        `SELECT s.id AS section_id, s.section_name, cs_rel.class_id
+         FROM class_sections cs_rel
+         INNER JOIN sections s ON s.id = cs_rel.section_id
+         WHERE cs_rel.class_id = ANY($1::int[])
+           AND cs_rel.deleted_at IS NULL
+           ${academicYearId ? 'AND cs_rel.academic_year_id = $2' : ''}
+         ORDER BY s.section_name`,
+        academicYearId 
+          ? [classMap.map((x) => x.class_id).filter(Boolean), academicYearId]
+          : [classMap.map((x) => x.class_id).filter(Boolean)]
       );
       const byClass = new Map();
       sec.rows.forEach((s) => {
@@ -810,8 +884,8 @@ async function getManageContext(req, res) {
 
     return success(res, 200, 'Context loaded', { classes: classMap });
   } catch (e) {
-    console.error('getManageContext', e);
-    return error(res, 500, 'Failed to load manage context');
+    console.error('getManageContext Error:', e);
+    return error(res, 500, 'Failed to load manage context: ' + e.message);
   }
 }
 
@@ -828,13 +902,25 @@ async function listExamSubjects(req, res) {
       if (!ok) return error(res, 403, 'You are not allowed to view this class section timetable');
     }
 
+    let classSectionId = null;
+    if (sectionId) {
+      const sec = await query(
+        `SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1`,
+        [sectionId, classId]
+      );
+      if (sec.rows.length) {
+        classSectionId = sec.rows[0].id;
+      }
+    }
+
     const r = await query(
-      `SELECT es.id, es.subject_id, s.subject_name, es.max_marks, es.passing_marks, es.exam_date, es.start_time, es.end_time
-       FROM exam_subjects es
-       INNER JOIN subjects s ON s.id = es.subject_id
-       WHERE es.exam_id = $1 AND es.class_id = $2 AND es.section_id = $3
+      `SELECT es.id, es.class_subject_id AS subject_id, s.subject_name, es.max_marks, es.passing_marks, es.exam_date, es.start_time, es.end_time
+       FROM exam_schedules es
+       INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+       INNER JOIN subjects s ON s.id = cs.subject_id
+       WHERE es.exam_id = $1 AND es.class_id = $2 AND ${classSectionId ? 'es.class_section_id = $3' : 'es.class_section_id IS NULL'}
        ORDER BY s.subject_name`,
-      [examId, classId, sectionId]
+      classSectionId ? [examId, classId, classSectionId] : [examId, classId]
     );
     return success(res, 200, 'Timetable loaded', r.rows);
   } catch (e) {
@@ -856,12 +942,18 @@ async function listExamSubjectOptions(req, res) {
       if (!ok) return error(res, 403, 'You are not allowed to view this class section subjects');
     }
 
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
     const r = await query(
-      `SELECT id, subject_name
-       FROM subjects
-       WHERE class_id = $1 AND COALESCE(is_active, true) = true
-       ORDER BY subject_name ASC`,
-      [classId]
+      `SELECT s.id, s.subject_name
+       FROM class_subjects cs
+       JOIN subjects s ON s.id = cs.subject_id
+       WHERE cs.class_id = $1 
+         AND cs.deleted_at IS NULL
+         ${academicYearId ? 'AND cs.academic_year_id = $2' : ''}
+       ORDER BY s.subject_name ASC`,
+      academicYearId ? [classId, academicYearId] : [classId]
     );
     return success(res, 200, 'Subjects loaded', r.rows);
   } catch (e) {
@@ -875,24 +967,34 @@ async function getExamSubjectsContext(req, res) {
     const examId = parseId(req.query.exam_id);
     const classId = parseId(req.query.class_id);
     const sectionId = parseId(req.query.section_id);
-    if (!examId || !classId || !sectionId) {
-      return error(res, 400, 'exam_id, class_id and section_id are required');
+    if (!examId || !classId) {
+      return error(res, 400, 'exam_id and class_id are required');
     }
 
     // Section must belong to class (prevents cross-class leakage)
-    const sec = await query(
-      `SELECT id FROM sections WHERE id = $1 AND class_id = $2 LIMIT 1`,
-      [sectionId, classId]
-    );
-    if (!sec.rows.length) return error(res, 400, 'Invalid class and section combination');
-
-    const ctx = getAuthContext(req);
-    if (isTeacherRole(ctx)) {
-      const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId);
-      if (!ok) return error(res, 403, 'You are not allowed to access this class section');
+    let classSectionId = null;
+    if (sectionId) {
+      const sec = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [sectionId, classId]
+      );
+      if (sec.rows.length) {
+        classSectionId = sec.rows[0].id;
+      }
     }
 
-    const classSubjects = await getClassSubjects(classId);
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx) && isTeacherRole(ctx)) {
+      if (sectionId) {
+        const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId);
+        if (!ok) return error(res, 403, 'You are not allowed to access this class section');
+      }
+    }
+
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
+    const classSubjects = await getClassSubjects(classId, academicYearId);
     if (!classSubjects.length) {
       return success(res, 200, 'No subjects found for selected class', {
         subjects: [],
@@ -901,10 +1003,10 @@ async function getExamSubjectsContext(req, res) {
     }
 
     const existing = await query(
-      `SELECT subject_id, max_marks, passing_marks, exam_date, start_time, end_time
-       FROM exam_subjects
-       WHERE exam_id = $1 AND class_id = $2 AND section_id = $3`,
-      [examId, classId, sectionId]
+      `SELECT class_subject_id AS subject_id, max_marks, passing_marks, exam_date::TEXT, start_time, end_time
+       FROM exam_schedules
+       WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
+      classSectionId ? [examId, classId, classSectionId] : [examId, classId]
     );
     const bySubject = new Map((existing.rows || []).map((r) => [parseId(r.subject_id), r]));
 
@@ -945,6 +1047,8 @@ async function getExamSubjectsContext(req, res) {
         exam_date: ex?.exam_date || null,
         start_time: ex?.start_time ? String(ex.start_time).slice(0, 5) : null,
         end_time: ex?.end_time ? String(ex.end_time).slice(0, 5) : null,
+        is_elective: !!s.is_elective,
+        elective_group_id: s.elective_group_id || null,
       };
     });
 
@@ -954,7 +1058,7 @@ async function getExamSubjectsContext(req, res) {
     });
   } catch (e) {
     console.error('getExamSubjectsContext', e);
-    return error(res, 500, 'Failed to load exam-subject context');
+    return error(res, 500, 'Failed to load exam-subject context', e.message);
   }
 }
 
@@ -1003,50 +1107,26 @@ async function resolveStudentScopeByUser(ctx) {
   const enrichScopeFromAttendance = async (row) => {
     const normalizedRow = await normalizeToLatestStudentRecord(row);
     if (!normalizedRow?.student_id) return normalizedRow || null;
-    const baseClassId = parseId(normalizedRow.class_id);
-    const baseSectionId = parseId(normalizedRow.section_id);
 
-    // Prefer latest promotion target class/section when available.
-    // This avoids stale students.class_id/section_id mappings.
-    const promotion = await query(
+    // Use student_lifecycle_ledger as the canonical source for latest class/section
+    const ledger = await query(
       `SELECT to_class_id AS class_id, to_section_id AS section_id
-       FROM student_promotions
+       FROM student_lifecycle_ledger
        WHERE student_id = $1
-         AND to_class_id IS NOT NULL
-         AND to_section_id IS NOT NULL
-       ORDER BY id DESC
+       ORDER BY event_date DESC, id DESC
        LIMIT 1`,
       [normalizedRow.student_id]
     );
-    if (promotion.rows.length) {
+
+    if (ledger.rows.length) {
       return {
         ...normalizedRow,
-        class_id: promotion.rows[0].class_id,
-        section_id: promotion.rows[0].section_id,
+        class_id: ledger.rows[0].class_id || normalizedRow.class_id,
+        section_id: ledger.rows[0].section_id || normalizedRow.section_id,
       };
     }
 
-    if (baseClassId && baseSectionId) {
-      return normalizedRow;
-    }
-
-    // Fallback 2: derive from latest attendance.
-    const fallback = await query(
-      `SELECT class_id, section_id
-       FROM attendance
-       WHERE student_id = $1
-         AND class_id IS NOT NULL
-         AND section_id IS NOT NULL
-       ORDER BY attendance_date DESC NULLS LAST, id DESC
-       LIMIT 1`,
-      [normalizedRow.student_id]
-    );
-    if (!fallback.rows.length) return normalizedRow;
-    return {
-      ...normalizedRow,
-      class_id: normalizedRow.class_id || fallback.rows[0].class_id,
-      section_id: normalizedRow.section_id || fallback.rows[0].section_id,
-    };
+    return normalizedRow;
   };
 
   if (!ctx?.userId) return null;
@@ -1062,32 +1142,20 @@ async function resolveStudentScopeByUser(ctx) {
     return enrichScopeFromAttendance(s.rows[0] || null);
   }
   if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
-    // Legacy direct mapping first.
-    let s = await query(
-      `SELECT s.id AS student_id, s.class_id, s.section_id
-       FROM parents p
-       INNER JOIN students s ON s.id = p.student_id
-       WHERE p.user_id = $1
-         AND s.status = 'Active'
-       ORDER BY s.id DESC
+    const linked = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
+    if (!linked.studentIds || linked.studentIds.length === 0) return null;
+
+    const sid = await resolveLatestLinkedStudentId(linked.studentIds[0]);
+    if (!sid) return null;
+
+    const s = await query(
+      `SELECT id AS student_id, class_id, section_id
+       FROM students
+       WHERE id = $1
+         AND status = 'Active'
        LIMIT 1`,
-      [ctx.userId]
+      [sid]
     );
-    if (!s.rows.length) {
-      // Canonical resolver: guardians + legacy parents matching by identity.
-      const linked = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
-      const sid = await resolveLatestLinkedStudentId(linked.studentIds?.[0]);
-      if (sid) {
-        s = await query(
-          `SELECT id AS student_id, class_id, section_id
-           FROM students
-           WHERE id = $1
-             AND status = 'Active'
-           LIMIT 1`,
-          [sid]
-        );
-      }
-    }
     return enrichScopeFromAttendance(s.rows[0] || null);
   }
   if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
@@ -1133,22 +1201,40 @@ async function viewExamSchedule(req, res) {
       sectionId = parseId(selfStudent.section_id);
     }
 
-    if (!classId || !sectionId) {
-      return error(res, 400, 'class_id and section_id are required');
+    if (!classId) {
+      return error(res, 400, 'class_id is required');
     }
 
-    const sec = await query(
-      `SELECT id FROM sections WHERE id = $1 AND class_id = $2 LIMIT 1`,
-      [sectionId, classId]
-    );
-    if (!sec.rows.length) return error(res, 400, 'Invalid class and section combination');
+    let classSectionId = null;
+    if (sectionId) {
+      const sec = await query(
+        `SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1`,
+        [sectionId, classId]
+      );
+      if (sec.rows.length) {
+        classSectionId = sec.rows[0].id;
+      }
+    }
 
-    if (isTeacherRole(ctx)) {
-      const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId);
+    let academicYearId = null;
+    if (examId) {
+      const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+      academicYearId = examInfo.rows[0]?.academic_year_id;
+    }
+
+    if (!isAdmin(ctx) && isTeacherRole(ctx) && sectionId) {
+      const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId, academicYearId);
       if (!ok) return error(res, 403, 'You are not allowed to view this class section timetable');
     }
 
-    const params = [classId, sectionId];
+    const params = [classId];
+    let sectionFilter = '';
+    if (classSectionId) {
+      params.push(classSectionId);
+      sectionFilter = ` AND es.class_section_id = $${params.length}`;
+    } else {
+      sectionFilter = ' AND es.class_section_id IS NULL';
+    }
     let examFilter = '';
     if (examId) {
       params.push(examId);
@@ -1162,25 +1248,25 @@ async function viewExamSchedule(req, res) {
          e.exam_type,
          es.class_id,
          c.class_name,
-         es.section_id,
-         sec.section_name,
-         es.subject_id,
+         cs_rel.section_id,
+         sec_ref.section_name,
+         es.class_subject_id AS subject_id,
          s.subject_name,
          s.subject_code,
-         es.exam_date,
+         es.exam_date::TEXT,
          es.start_time,
          es.end_time,
          es.max_marks,
          es.passing_marks
-       FROM exam_subjects es
+       FROM exam_schedules es
        INNER JOIN exams e ON e.id = es.exam_id
-       INNER JOIN subjects s ON s.id = es.subject_id
+       INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+       INNER JOIN subjects s ON s.id = cs.subject_id
        LEFT JOIN classes c ON c.id = es.class_id
-       LEFT JOIN sections sec ON sec.id = es.section_id
-       WHERE es.class_id = $1
-         AND es.section_id = $2
-         ${examFilter}
-       ORDER BY e.created_at DESC, es.exam_date ASC NULLS LAST, es.start_time ASC NULLS LAST, s.subject_name ASC`,
+       LEFT JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+       LEFT JOIN sections sec_ref ON sec_ref.id = cs_rel.section_id
+       WHERE es.class_id = $1 ${sectionFilter} ${examFilter}
+       ORDER BY es.exam_date ASC, es.start_time ASC`,
       params
     );
 
@@ -1205,11 +1291,25 @@ async function viewExamResults(req, res) {
       const studentId = parseId(selfStudent.student_id);
       if (!studentId) return success(res, 200, 'Result loaded', []);
 
+      classId = parseId(selfStudent.class_id);
+      sectionId = parseId(selfStudent.section_id);
+
+      let classSectionId = null;
+      if (sectionId) {
+        const secRes = await query(
+          'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+          [sectionId, classId]
+        );
+        classSectionId = secRes.rows[0]?.id || null;
+      }
+
       const rows = await query(
         `SELECT
            st.id AS student_id,
-           CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, '')) AS student_name,
-           es.subject_id,
+           st.admission_number AS admission_no,
+           st.roll_number,
+           CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS student_name,
+           es.class_subject_id AS subject_id,
            sb.subject_name,
            sb.subject_code,
            er.marks_obtained,
@@ -1217,40 +1317,89 @@ async function viewExamResults(req, res) {
            es.max_marks,
            es.passing_marks
          FROM students st
-         INNER JOIN exam_subjects es
-           ON es.class_id = st.class_id
-          AND es.section_id = st.section_id
-          AND es.exam_id = $1
-         INNER JOIN subjects sb ON sb.id = es.subject_id
+         INNER JOIN users u ON u.id = st.user_id
+         INNER JOIN exam_schedules es
+           ON es.exam_id = $1
+          AND es.class_id = $3
+          AND ${classSectionId ? 'es.class_section_id = $4' : 'es.class_section_id IS NULL'}
+         INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+         INNER JOIN subjects sb ON sb.id = cs.subject_id
          LEFT JOIN exam_results er
-           ON er.exam_id = es.exam_id
+           ON er.exam_schedule_id = es.id
           AND er.student_id = st.id
-          AND er.subject_id = es.subject_id
          WHERE st.id = $2
+           AND (
+             cs.is_elective = false 
+             OR EXISTS (
+               SELECT 1 FROM student_subject_choices ssc
+               WHERE ssc.student_id = st.id
+                 AND ssc.class_subject_id = cs.id
+                 AND ssc.deleted_at IS NULL
+             )
+           )
          ORDER BY sb.subject_name ASC`,
-        [examId, studentId]
+        classSectionId ? [examId, studentId, classId, classSectionId] : [examId, studentId, classId]
       );
-      return success(res, 200, 'Result loaded', rows.rows);
+
+      const pendingCheck = await query(
+        `SELECT COUNT(DISTINCT cs.elective_group_id) AS pending_count
+         FROM class_subjects cs
+         WHERE cs.class_id = $1 
+           AND cs.is_elective = true 
+           AND cs.elective_group_id IS NOT NULL
+           AND cs.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM student_subject_choices ssc
+             INNER JOIN class_subjects cs2 ON cs2.id = ssc.class_subject_id
+             WHERE ssc.student_id = $2
+               AND ssc.class_id = $1
+               AND cs2.elective_group_id = cs.elective_group_id
+               AND ssc.deleted_at IS NULL
+           )`,
+        [classId, studentId]
+      );
+
+      return success(res, 200, 'Result loaded', {
+        results: rows.rows,
+        has_pending_electives: parseInt(pendingCheck.rows[0].pending_count) > 0
+      });
     }
 
-    if (!classId || !sectionId) {
-      return error(res, 400, 'class_id and section_id are required');
+    if (!classId) {
+      return error(res, 400, 'class_id is required');
     }
 
-    if (isTeacherRole(ctx)) {
-      const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId);
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
+    if (!isAdmin(ctx) && isTeacherRole(ctx)) {
+      const ok = await teacherCanAccessClassSection(ctx.userId, classId, sectionId, academicYearId);
       if (!ok) return error(res, 403, 'You are not allowed to view this class section result');
+    }
+
+    let classSectionId = null;
+    if (sectionId) {
+      const secRes = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [sectionId, classId]
+      );
+      classSectionId = secRes.rows[0]?.id || null;
     }
 
     const rows = await query(
       `WITH subject_plan AS (
-         SELECT subject_id, max_marks, passing_marks
-         FROM exam_subjects
-         WHERE exam_id = $1 AND class_id = $2 AND section_id = $3
+         SELECT es.id AS exam_schedule_id, es.class_subject_id AS subject_id, es.max_marks, es.passing_marks,
+                cs.is_elective, cs.elective_group_id
+         FROM exam_schedules es
+         INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+         WHERE es.exam_id = $1 AND es.class_id = $2 
+           AND ${classSectionId ? 'es.class_section_id = $3' : 'es.class_section_id IS NULL'}
        )
        SELECT
          st.id AS student_id,
-         CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, '')) AS student_name,
+         st.admission_number AS admission_no,
+         st.roll_number,
+         CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS student_name,
         COUNT(sp.subject_id) AS planned_subject_count,
         COUNT(er.student_id) AS entered_subject_count,
         CASE
@@ -1264,7 +1413,7 @@ async function viewExamResults(req, res) {
           ELSE ROUND((COALESCE(SUM(er.marks_obtained), 0) * 100.0) / NULLIF(SUM(sp.max_marks), 0), 2)
          END AS percentage,
          CASE
-          WHEN COUNT(er.student_id) = 0 THEN 'PENDING'
+          WHEN COUNT(sp.subject_id) = 0 THEN 'N/A'
           WHEN COUNT(er.student_id) < COUNT(sp.subject_id) THEN 'PENDING'
           WHEN BOOL_OR(er.student_id IS NULL) THEN 'FAIL'
            WHEN BOOL_OR(COALESCE(er.is_absent, false) = true)
@@ -1273,16 +1422,33 @@ async function viewExamResults(req, res) {
            ELSE 'PASS'
          END AS result_status
        FROM students st
-       LEFT JOIN subject_plan sp ON TRUE
+       INNER JOIN users u ON u.id = st.user_id
+       INNER JOIN LATERAL (
+         SELECT to_class_id, to_section_id
+         FROM student_lifecycle_ledger l
+         WHERE l.student_id = st.id
+           ${academicYearId ? 'AND l.to_academic_year_id = $4' : ''}
+         ORDER BY l.event_date DESC, l.id DESC
+         LIMIT 1
+       ) enr ON enr.to_class_id = $2 ${sectionId ? 'AND (enr.to_section_id = $5 OR (enr.to_section_id IS NULL AND $5 IS NULL))' : ''}
+       LEFT JOIN subject_plan sp ON (
+         sp.is_elective = false 
+         OR EXISTS (
+           SELECT 1 FROM student_subject_choices ssc
+           WHERE ssc.student_id = st.id
+             AND ssc.class_subject_id = sp.subject_id
+             AND ssc.deleted_at IS NULL
+         )
+       )
        LEFT JOIN exam_results er
-         ON er.exam_id = $1
+         ON er.exam_schedule_id = sp.exam_schedule_id
         AND er.student_id = st.id
-        AND er.subject_id = sp.subject_id
-       WHERE st.class_id = $2
-         AND st.section_id = $3
-       GROUP BY st.id, st.first_name, st.last_name
-       ORDER BY st.first_name ASC, st.last_name ASC`,
-      [examId, classId, sectionId]
+       WHERE st.status = 'Active'
+       GROUP BY st.id, st.admission_number, u.first_name, u.last_name
+       ORDER BY u.first_name ASC, u.last_name ASC`,
+      classSectionId 
+        ? (academicYearId ? [examId, classId, classSectionId, academicYearId, sectionId] : [examId, classId, classSectionId, sectionId])
+        : (academicYearId ? [examId, classId, academicYearId, sectionId] : [examId, classId, sectionId])
     );
     const gradeScale = await loadActiveGradeScale();
     const withGrade = (rows.rows || []).map((r) => ({
@@ -1292,7 +1458,7 @@ async function viewExamResults(req, res) {
     return success(res, 200, 'Result loaded', withGrade);
   } catch (e) {
     console.error('viewExamResults', e);
-    return error(res, 500, 'Failed to load exam result');
+    return error(res, 500, 'Failed to load exam result', e.message);
   }
 }
 
@@ -1321,11 +1487,12 @@ async function viewExamTopPerformers(req, res) {
     let allowedScopes = [];
     if (isAdmin(ctx)) {
       const scopeRes = await query(
-        `SELECT DISTINCT class_id, section_id
-         FROM exam_subjects
-         WHERE exam_id = $1
-           AND class_id IS NOT NULL
-           AND section_id IS NOT NULL`,
+        `SELECT DISTINCT es.class_id, cs_rel.section_id
+         FROM exam_schedules es
+         INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+         WHERE es.exam_id = $1
+           AND es.class_id IS NOT NULL
+           AND es.class_section_id IS NOT NULL`,
         [examId]
       );
       allowedScopes = (scopeRes.rows || []).map((r) => ({
@@ -1342,31 +1509,20 @@ async function viewExamTopPerformers(req, res) {
         });
       }
       const scopeRes = await query(
-        `SELECT DISTINCT es.class_id, es.section_id
-         FROM exam_subjects es
+        `SELECT DISTINCT es.class_id, cs_rel.section_id
+         FROM exam_schedules es
+         INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
          WHERE es.exam_id = $1
            AND es.class_id IS NOT NULL
-           AND es.section_id IS NOT NULL
-           AND (
-             EXISTS (
-               SELECT 1 FROM sections s
-               WHERE s.id = es.section_id
-                 AND s.class_id = es.class_id
-                 AND s.section_teacher_id = ANY($2::int[])
-             )
-             OR EXISTS (
-               SELECT 1 FROM class_schedules cs
-               WHERE cs.class_id = es.class_id
-                 AND (cs.section_id = es.section_id OR cs.section_id IS NULL)
-                 AND cs.teacher_id = ANY($3::int[])
-             )
-             OR EXISTS (
-               SELECT 1 FROM classes c
-               WHERE c.id = es.class_id
-                 AND (c.class_teacher_id = ANY($3::int[]) OR c.class_teacher_id = ANY($2::int[]))
-             )
+           AND es.class_section_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM class_teachers ct
+             WHERE ct.staff_id = $2
+               AND ct.class_id = es.class_id
+               AND (ct.class_section_id IS NULL OR ct.class_section_id = es.class_section_id)
+               AND ct.deleted_at IS NULL
            )`,
-        [examId, staffIds, teacherIds]
+        [examId, ctx.userId]
       );
       allowedScopes = (scopeRes.rows || []).map((r) => ({
         class_id: parseId(r.class_id),
@@ -1407,29 +1563,36 @@ async function viewExamTopPerformers(req, res) {
       scopeParams.push(scope.class_id, scope.section_id);
       scopeValuesSql.push(`($${idx * 2 + 1}, $${idx * 2 + 2})`);
     });
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [examId]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
     const examParamIdx = scopeParams.length + 1;
+    const yearParamIdx = scopeParams.length + 2;
     const rowsRes = await query(
       `WITH allowed_scopes(class_id, section_id) AS (
          VALUES ${scopeValuesSql.join(', ')}
        ),
        subject_plan AS (
-         SELECT es.class_id, es.section_id, es.subject_id,
+         SELECT es.id AS exam_schedule_id, es.class_id, cs_rel.section_id, es.class_subject_id AS subject_id,
                 COALESCE(es.max_marks, 100) AS max_marks,
-                COALESCE(es.passing_marks, 35) AS passing_marks
-         FROM exam_subjects es
+                COALESCE(es.passing_marks, 35) AS passing_marks,
+                cs.is_elective
+         FROM exam_schedules es
+         INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+         INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
          INNER JOIN allowed_scopes a
            ON a.class_id::text = es.class_id::text
-          AND a.section_id::text = es.section_id::text
+          AND a.section_id::text = cs_rel.section_id::text
          WHERE es.exam_id = $${examParamIdx}
        ),
        scored AS (
          SELECT
            st.id AS student_id,
-           st.first_name,
-           st.last_name,
-           st.photo_url,
-           st.class_id,
-           st.section_id,
+           u.first_name,
+           u.last_name,
+           u.avatar AS photo_url,
+           enr.class_id,
+           enr.section_id,
            COUNT(sp.subject_id)::int AS planned_subject_count,
            COUNT(er.student_id)::int AS entered_subject_count,
            COALESCE(SUM(CASE WHEN COALESCE(er.is_absent, false) THEN 0 ELSE COALESCE(er.marks_obtained, 0) END), 0)::numeric AS total_obtained,
@@ -1441,18 +1604,35 @@ async function viewExamTopPerformers(req, res) {
              AND COALESCE(er.marks_obtained, 0) < COALESCE(sp.passing_marks, 0)
            ) AS has_fail_subject
          FROM students st
+         INNER JOIN users u ON u.id = st.user_id
+         INNER JOIN LATERAL (
+           SELECT to_class_id AS class_id, to_section_id AS section_id
+           FROM student_lifecycle_ledger l
+           WHERE l.student_id = st.id
+             ${academicYearId ? `AND l.to_academic_year_id = $${yearParamIdx}` : ''}
+           ORDER BY l.event_date DESC, l.id DESC
+           LIMIT 1
+         ) enr ON TRUE
          INNER JOIN allowed_scopes a
-           ON a.class_id::text = st.class_id::text
-          AND a.section_id::text = st.section_id::text
+           ON a.class_id::text = enr.class_id::text
+          AND a.section_id::text = enr.section_id::text
          INNER JOIN subject_plan sp
-           ON sp.class_id::text = st.class_id::text
-          AND sp.section_id::text = st.section_id::text
+           ON sp.class_id::text = enr.class_id::text
+          AND sp.section_id::text = enr.section_id::text
+          AND (
+            sp.is_elective = false 
+            OR EXISTS (
+              SELECT 1 FROM student_subject_choices ssc
+              WHERE ssc.student_id = st.id
+                AND ssc.class_subject_id = sp.subject_id
+                AND ssc.deleted_at IS NULL
+            )
+          )
          LEFT JOIN exam_results er
-           ON er.exam_id = $${examParamIdx}
+           ON er.exam_schedule_id = sp.exam_schedule_id
           AND er.student_id = st.id
-          AND er.subject_id = sp.subject_id
          WHERE st.status = 'Active'
-         GROUP BY st.id, st.first_name, st.last_name, st.photo_url, st.class_id, st.section_id
+         GROUP BY st.id, st.admission_number, u.first_name, u.last_name, u.avatar, enr.class_id, enr.section_id
        )
        SELECT
          s.student_id,
@@ -1480,7 +1660,7 @@ async function viewExamTopPerformers(req, res) {
        LEFT JOIN sections sec ON sec.id = s.section_id
        ORDER BY percentage DESC NULLS LAST, total_obtained DESC, student_name ASC
        ${topLimit ? `LIMIT ${topLimit}` : ''}`,
-      [...scopeParams, examId]
+      academicYearId ? [...scopeParams, examId, academicYearId] : [...scopeParams, examId]
     );
 
     const gradeScale = await loadActiveGradeScale();
@@ -1525,7 +1705,7 @@ async function listSelfExamOptions(req, res) {
     let esWhere = 'WHERE es.class_id = $1';
     if (sectionId) {
       esParams.push(sectionId);
-      esWhere += ` AND es.section_id = $${esParams.length}`;
+      esWhere += ` AND cs_rel.section_id = $${esParams.length}`;
     }
     if (academicYearId) {
       esParams.push(academicYearId);
@@ -1533,8 +1713,9 @@ async function listSelfExamOptions(req, res) {
     }
     const fromExamSubjects = await query(
       `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
-       FROM exam_subjects es
+       FROM exam_schedules es
        INNER JOIN exams e ON e.id = es.exam_id
+       INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
        ${esWhere}
        ORDER BY e.id DESC`,
       esParams
@@ -1548,12 +1729,13 @@ async function listSelfExamOptions(req, res) {
       let retryWhere = 'WHERE es.class_id = $1';
       if (sectionId) {
         retryParams.push(sectionId);
-        retryWhere += ` AND es.section_id = $${retryParams.length}`;
+        retryWhere += ` AND cs_rel.section_id = $${retryParams.length}`;
       }
       const retryNoYear = await query(
         `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
-         FROM exam_subjects es
+         FROM exam_schedules es
          INNER JOIN exams e ON e.id = es.exam_id
+         INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
          ${retryWhere}
          ORDER BY e.id DESC`,
         retryParams
@@ -1582,15 +1764,16 @@ async function listSelfExamOptions(req, res) {
         (promotedClassId !== classId || promotedSectionId !== sectionId)
       ) {
         const promotedParams = [promotedClassId, promotedSectionId];
-        let promotedWhere = 'WHERE es.class_id = $1 AND es.section_id = $2';
+        let promotedWhere = 'WHERE es.class_id = $1 AND cs_rel.section_id = $2';
         if (academicYearId) {
           promotedParams.push(academicYearId);
           promotedWhere += ` AND e.academic_year_id = $${promotedParams.length}`;
         }
         const promotedRows = await query(
           `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
-           FROM exam_subjects es
+           FROM exam_schedules es
            INNER JOIN exams e ON e.id = es.exam_id
+           INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
            ${promotedWhere}
            ORDER BY e.id DESC`,
           promotedParams
@@ -1633,20 +1816,29 @@ async function saveExamSubjectSetup(req, res) {
     if (vErr) return error(res, 400, vErr.details[0].message);
 
     const ctx = getAuthContext(req);
-    if (isTeacherRole(ctx)) {
-      const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id);
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [value.exam_id]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
+    if (!isAdmin(ctx) && isTeacherRole(ctx)) {
+      const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id, academicYearId);
       if (!ok) return error(res, 403, 'You are not allowed to edit this class section');
     }
 
-    const sec = await query(
-      `SELECT id FROM sections WHERE id = $1 AND class_id = $2 LIMIT 1`,
-      [value.section_id, value.class_id]
-    );
-    if (!sec.rows.length) return error(res, 400, 'Invalid class and section combination');
+    let classSectionId = null;
+    if (value.section_id) {
+      const sec = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [value.section_id, value.class_id]
+      );
+      if (sec.rows.length) {
+        classSectionId = sec.rows[0].id;
+      }
+    }
+
     await assertExamClassLinked(value.exam_id, value.class_id);
     await assertExamNotFinalized(value.exam_id);
 
-    const classSubjects = await getClassSubjects(value.class_id);
+    const classSubjects = await getClassSubjects(value.class_id, academicYearId);
     if (!classSubjects.length) return error(res, 400, 'No active subjects found for selected class');
     const expectedSet = new Set(classSubjects.map((s) => parseId(s.id)));
     const incomingSet = new Set(value.rows.map((r) => parseId(r.subject_id)));
@@ -1666,72 +1858,44 @@ async function saveExamSubjectSetup(req, res) {
         return error(res, 400, 'Passing marks cannot exceed max marks');
       }
     }
-    const slotErr = validateNoExamSlotCollision(value.rows);
+    const subjectMetaMap = new Map(classSubjects.map((s) => [parseId(s.id), s]));
+    const enrichedRows = value.rows.map((row) => {
+      const meta = subjectMetaMap.get(parseId(row.subject_id));
+      return {
+        ...row,
+        is_elective: !!meta?.is_elective,
+        elective_group_id: meta?.elective_group_id || null,
+      };
+    });
+
+    const slotErr = validateNoExamSlotCollision(enrichedRows);
     if (slotErr) return error(res, 400, slotErr);
-    const examSubjectsSchema = await getExamSubjectsSchemaFlags();
 
     await executeTransaction(async (client) => {
       await client.query(
-        `DELETE FROM exam_subjects WHERE exam_id = $1 AND class_id = $2 AND section_id = $3`,
-        [value.exam_id, value.class_id, value.section_id]
+        `DELETE FROM exam_schedules WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
+        classSectionId ? [value.exam_id, value.class_id, classSectionId] : [value.exam_id, value.class_id]
       );
 
       for (const row of value.rows) {
-        if (examSubjectsSchema.hasLegacyComponentUnique) {
-          await client.query(
-            `INSERT INTO exam_subjects
-             (exam_id, class_id, section_id, subject_id, exam_component, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
-             VALUES ($1,$2,$3,$4,'theory',$5,$6,$7,$8,$9,$10)
-             ON CONFLICT (exam_id, subject_id, exam_component)
-             DO UPDATE SET
-               class_id = EXCLUDED.class_id,
-               section_id = EXCLUDED.section_id,
-               max_marks = EXCLUDED.max_marks,
-               passing_marks = EXCLUDED.passing_marks,
-               exam_date = EXCLUDED.exam_date,
-               start_time = EXCLUDED.start_time,
-               end_time = EXCLUDED.end_time,
-               updated_at = NOW()`,
-            [
-              value.exam_id,
-              value.class_id,
-              value.section_id,
-              row.subject_id,
-              row.max_marks,
-              row.passing_marks,
-              row.exam_date || null,
-              row.start_time || null,
-              row.end_time || null,
-              parseId(req.user?.id),
-            ]
-          );
-        } else {
-          await client.query(
-            `INSERT INTO exam_subjects
-             (exam_id, class_id, section_id, subject_id, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-             ON CONFLICT (exam_id, class_id, section_id, subject_id)
-             DO UPDATE SET
-               max_marks = EXCLUDED.max_marks,
-               passing_marks = EXCLUDED.passing_marks,
-               exam_date = EXCLUDED.exam_date,
-               start_time = EXCLUDED.start_time,
-               end_time = EXCLUDED.end_time,
-               updated_at = NOW()`,
-            [
-              value.exam_id,
-              value.class_id,
-              value.section_id,
-              row.subject_id,
-              row.max_marks,
-              row.passing_marks,
-              row.exam_date || null,
-              row.start_time || null,
-              row.end_time || null,
-              parseId(req.user?.id),
-            ]
-          );
-        }
+        await client.query(
+          `INSERT INTO exam_schedules
+           (exam_id, academic_year_id, class_id, class_section_id, class_subject_id, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            value.exam_id,
+            academicYearId,
+            value.class_id,
+            classSectionId,
+            row.subject_id,
+            row.max_marks,
+            row.passing_marks,
+            row.exam_date || null,
+            row.start_time || null,
+            row.end_time || null,
+            parseId(req.user?.id),
+          ]
+        );
       }
     });
 
@@ -1756,7 +1920,10 @@ async function saveExamSubjects(req, res) {
     if (vErr) return error(res, 400, vErr.details[0].message);
 
     const ctx = getAuthContext(req);
-    const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id);
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [value.exam_id]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
+    const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id, academicYearId);
     if (!ok) return error(res, 403, 'You are not allowed to edit this class section timetable');
 
     const dedup = new Set();
@@ -1766,73 +1933,60 @@ async function saveExamSubjects(req, res) {
       dedup.add(k);
       if (Number(row.passing_marks) > Number(row.max_marks)) return error(res, 400, 'Passing marks cannot exceed max marks');
     }
-    const slotErr = validateNoExamSlotCollision(value.subjects);
+    const classSubjects = await getClassSubjects(value.class_id, academicYearId);
+    const subjectMetaMap = new Map(classSubjects.map((s) => [parseId(s.id), s]));
+
+    const enrichedSubjects = value.subjects.map((row) => {
+      const meta = subjectMetaMap.get(parseId(row.subject_id));
+      return {
+        ...row,
+        is_elective: !!meta?.is_elective,
+        elective_group_id: meta?.elective_group_id || null,
+      };
+    });
+
+    const slotErr = validateNoExamSlotCollision(enrichedSubjects);
     if (slotErr) return error(res, 400, slotErr);
     await assertExamClassLinked(value.exam_id, value.class_id);
     await assertExamNotFinalized(value.exam_id);
     const examSubjectsSchema = await getExamSubjectsSchemaFlags();
 
+    let classSectionId = null;
+    if (value.section_id) {
+      const secRes = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [value.section_id, value.class_id]
+      );
+      if (!secRes.rows.length) return error(res, 400, 'Invalid class and section combination');
+      classSectionId = secRes.rows[0].id;
+    }
+
     await executeTransaction(async (client) => {
       await client.query(
-        `DELETE FROM exam_subjects WHERE exam_id = $1 AND class_id = $2 AND section_id = $3`,
-        [value.exam_id, value.class_id, value.section_id]
+        `DELETE FROM exam_schedules WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
+        classSectionId ? [value.exam_id, value.class_id, classSectionId] : [value.exam_id, value.class_id]
       );
+
       for (const row of value.subjects) {
-        if (examSubjectsSchema.hasLegacyComponentUnique) {
-          await client.query(
-            `INSERT INTO exam_subjects
-             (exam_id, class_id, section_id, subject_id, exam_component, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
-             VALUES ($1,$2,$3,$4,'theory',$5,$6,$7,$8,$9,$10)
-             ON CONFLICT (exam_id, subject_id, exam_component)
-             DO UPDATE SET
-               class_id = EXCLUDED.class_id,
-               section_id = EXCLUDED.section_id,
-               max_marks = EXCLUDED.max_marks,
-               passing_marks = EXCLUDED.passing_marks,
-               exam_date = EXCLUDED.exam_date,
-               start_time = EXCLUDED.start_time,
-               end_time = EXCLUDED.end_time,
-               updated_at = NOW()`,
-            [
-              value.exam_id,
-              value.class_id,
-              value.section_id,
-              row.subject_id,
-              row.max_marks,
-              row.passing_marks,
-              row.exam_date || null,
-              row.start_time || null,
-              row.end_time || null,
-              parseId(req.user?.id),
-            ]
-          );
-        } else {
-          await client.query(
-            `INSERT INTO exam_subjects
-             (exam_id, class_id, section_id, subject_id, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-             ON CONFLICT (exam_id, class_id, section_id, subject_id)
-             DO UPDATE SET
-               max_marks = EXCLUDED.max_marks,
-               passing_marks = EXCLUDED.passing_marks,
-               exam_date = EXCLUDED.exam_date,
-               start_time = EXCLUDED.start_time,
-               end_time = EXCLUDED.end_time,
-               updated_at = NOW()`,
-            [
-              value.exam_id,
-              value.class_id,
-              value.section_id,
-              row.subject_id,
-              row.max_marks,
-              row.passing_marks,
-              row.exam_date || null,
-              row.start_time || null,
-              row.end_time || null,
-              parseId(req.user?.id),
-            ]
-          );
-        }
+        await client.query(
+          `INSERT INTO exam_schedules (
+            exam_id, academic_year_id, class_id, class_section_id, class_subject_id, 
+            max_marks, passing_marks, exam_date, start_time, end_time, created_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            value.exam_id,
+            academicYearId,
+            value.class_id,
+            classSectionId,
+            row.subject_id,
+            row.max_marks,
+            row.passing_marks,
+            row.exam_date || null,
+            row.start_time || null,
+            row.end_time || null,
+            parseId(req.user?.id),
+          ]
+        );
       }
     });
 
@@ -1856,69 +2010,160 @@ async function getExamMarksContext(req, res) {
     const { error: vErr, value } = examMarksContextSchema.validate(req.query, { stripUnknown: true });
     if (vErr) return error(res, 400, vErr.details[0].message);
 
+    // Normalize empty strings to null for database safety
+    if (value.section_id === "") value.section_id = null;
+
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [value.exam_id]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
     const ctx = getAuthContext(req);
-    const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id);
-    if (!ok) return error(res, 403, 'You are not allowed to manage marks for this class section');
+    if (!isAdmin(ctx) && isTeacherRole(ctx)) {
+      const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id, academicYearId);
+      if (!ok) return error(res, 403, 'You are not allowed to manage marks for this class section');
+    }
     await assertExamClassLinked(value.exam_id, value.class_id);
     await assertExamNotFinalized(value.exam_id);
 
-    const subjects = await query(
-      `SELECT es.subject_id, sb.subject_name, sb.subject_code, es.max_marks, es.passing_marks
-       FROM exam_subjects es
-       INNER JOIN subjects sb ON sb.id = es.subject_id
-       WHERE es.exam_id = $1
-         AND es.class_id = $2
-         AND es.section_id = $3
-       ORDER BY sb.subject_name ASC`,
-      [value.exam_id, value.class_id, value.section_id]
-    );
-    if (!subjects.rows.length) {
-      return error(res, 400, 'Timetable not found for selected exam/class/section');
+    let classSectionId = null;
+    if (value.section_id) {
+      const secRes = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [value.section_id, value.class_id]
+      );
+      if (secRes.rows.length) {
+        classSectionId = secRes.rows[0].id;
+      }
     }
 
-    const students = await query(
-      `SELECT id AS student_id,
-              CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) AS student_name,
-              roll_number
-       FROM students
-       WHERE class_id = $1
-         AND section_id = $2
-         AND COALESCE(is_active, true) = true
-       ORDER BY first_name ASC, last_name ASC`,
-      [value.class_id, value.section_id]
+    const subjects = await query(
+      `SELECT es.id AS exam_schedule_id, es.class_subject_id AS subject_id, 
+              sb.subject_name, sb.subject_code, sb.subject_type, 
+              cs.is_elective, cs.elective_group_id,
+              es.max_marks, es.passing_marks
+       FROM exam_schedules es
+       INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
+       INNER JOIN subjects sb ON sb.id = cs.subject_id
+       WHERE es.exam_id = $1
+         AND es.class_id = $2
+         AND ${classSectionId ? 'es.class_section_id = $3' : 'es.class_section_id IS NULL'}
+       ORDER BY cs.is_elective ASC, cs.elective_group_id, sb.subject_name ASC`,
+      classSectionId ? [value.exam_id, value.class_id, classSectionId] : [value.exam_id, value.class_id]
+    );
+    if (!subjects.rows.length) {
+      return success(res, 200, 'Timetable not found for selected exam/class/section', { subjects: [], students: [] });
+    }
+
+    const studentParams = [value.class_id];
+    let studentSql = `
+      SELECT st.id AS student_id,
+             CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS student_name,
+             st.roll_number
+      FROM students st
+      INNER JOIN users u ON u.id = st.user_id
+      INNER JOIN LATERAL (
+        SELECT to_class_id, to_section_id
+        FROM student_lifecycle_ledger l
+        WHERE l.student_id = st.id
+    `;
+
+    if (academicYearId) {
+      studentParams.push(academicYearId);
+      studentSql += ` AND l.to_academic_year_id = $${studentParams.length} `;
+    }
+
+    studentSql += `
+        ORDER BY l.event_date DESC, l.id DESC
+        LIMIT 1
+      ) enr ON enr.to_class_id = $1
+    `;
+
+    if (value.section_id) {
+      studentParams.push(value.section_id);
+      studentSql += ` AND enr.to_section_id = $${studentParams.length} `;
+    }
+
+    studentSql += `
+      WHERE st.status = 'Active'
+      ORDER BY u.first_name ASC, u.last_name ASC
+    `;
+
+    const students = await query(studentSql, studentParams);
+
+    const studentIds = students.rows.map((s) => parseId(s.student_id));
+    const choices = await query(
+      `SELECT student_id, class_subject_id
+       FROM student_subject_choices
+       WHERE student_id = ANY($1::int[])
+         AND class_id = $2
+         ${academicYearId ? 'AND academic_year_id = $3' : ''}
+         AND deleted_at IS NULL`,
+      academicYearId ? [studentIds, value.class_id, academicYearId] : [studentIds, value.class_id]
     );
 
+    const choicesByStudent = new Map();
+    for (const row of choices.rows) {
+      const sid = parseId(row.student_id);
+      if (!choicesByStudent.has(sid)) choicesByStudent.set(sid, new Set());
+      choicesByStudent.get(sid).add(parseId(row.class_subject_id));
+    }
+
     const marks = await query(
-      `SELECT student_id, subject_id, marks_obtained, is_absent
+      `SELECT student_id, exam_schedule_id, marks_obtained, is_absent
        FROM exam_results
-       WHERE exam_id = $1
-         AND student_id = ANY($2::int[])
-         AND subject_id = ANY($3::int[])`,
+       WHERE exam_schedule_id = ANY($1::int[])
+         AND student_id = ANY($2::int[])`,
       [
-        value.exam_id,
-        students.rows.map((s) => parseId(s.student_id)),
-        subjects.rows.map((s) => parseId(s.subject_id)),
+        subjects.rows.map((s) => parseId(s.exam_schedule_id)),
+        studentIds,
       ]
     );
 
     const byKey = new Map();
     for (const row of marks.rows) {
-      byKey.set(`${row.student_id}:${row.subject_id}`, row);
+      byKey.set(`${row.student_id}:${row.exam_schedule_id}`, row);
     }
 
+    // Determine which subjects are "active" (Mandatory OR Selected by at least one student)
+    const activeScheduleIds = new Set();
+    for (const subject of subjects.rows) {
+      if (!subject.is_elective) {
+        activeScheduleIds.add(parseId(subject.exam_schedule_id));
+        continue;
+      }
+      const classSubId = parseId(subject.subject_id);
+      const isSelectedByAny = Array.from(choicesByStudent.values()).some((choiceSet) => choiceSet.has(classSubId));
+      if (isSelectedByAny) {
+        activeScheduleIds.add(parseId(subject.exam_schedule_id));
+      }
+    }
+
+    const filteredSubjects = subjects.rows.filter((s) => activeScheduleIds.has(parseId(s.exam_schedule_id)));
+    const hasHiddenElectives = subjects.rows.some(s => s.is_elective && !activeScheduleIds.has(parseId(s.exam_schedule_id)));
+
     const matrix = students.rows.map((student) => {
-      const cells = subjects.rows.map((subject) => {
-        const row = byKey.get(`${student.student_id}:${subject.subject_id}`);
+      const studentId = parseId(student.student_id);
+      const studentChoices = choicesByStudent.get(studentId);
+
+      const cells = filteredSubjects.map((subject) => {
+        const mark = byKey.get(`${studentId}:${subject.exam_schedule_id}`);
+        const classSubjectId = parseId(subject.subject_id);
+        const isAvailable = !subject.is_elective || (studentChoices && studentChoices.has(classSubjectId));
+
         return {
-          subject_id: parseId(subject.subject_id),
-          is_absent: !!row?.is_absent,
-          marks_obtained: row?.is_absent ? null : (row?.marks_obtained ?? null),
+          subject_id: classSubjectId,
+          exam_schedule_id: parseId(subject.exam_schedule_id),
+          is_absent: !!mark?.is_absent,
+          marks_obtained: mark?.is_absent ? null : (mark?.marks_obtained ?? null),
           max_marks: Number(subject.max_marks),
           passing_marks: Number(subject.passing_marks),
+          is_elective: !!subject.is_elective,
+          elective_group_id: parseId(subject.elective_group_id),
+          is_available: isAvailable,
         };
       });
+
       return {
-        student_id: parseId(student.student_id),
+        student_id: studentId,
         student_name: student.student_name.trim(),
         roll_number: student.roll_number || null,
         cells,
@@ -1926,62 +2171,72 @@ async function getExamMarksContext(req, res) {
     });
 
     return success(res, 200, 'Marks context loaded', {
-      subjects: subjects.rows,
+      subjects: filteredSubjects,
       students: matrix,
+      has_hidden_electives: hasHiddenElectives
     });
   } catch (e) {
     console.error('getExamMarksContext', e);
-    return error(res, 500, 'Failed to load marks context');
+    if (e?.statusCode) return error(res, e.statusCode, e.message);
+    return error(res, 500, 'Failed to load marks context', e.message);
   }
 }
 
 async function saveExamMarks(req, res) {
   try {
     const { error: vErr, value } = saveExamMarksSchema.validate(req.body, { stripUnknown: true });
-    if (vErr) return error(res, 400, vErr.details[0].message);
-
     const ctx = getAuthContext(req);
-    const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id);
-    if (!ok) return error(res, 403, 'You are not allowed to manage marks for this class section');
+    const examInfo = await query('SELECT academic_year_id FROM exams WHERE id = $1', [value.exam_id]);
+    const academicYearId = examInfo.rows[0]?.academic_year_id;
+
+    if (!isAdmin(ctx) && isTeacherRole(ctx)) {
+      const ok = await teacherCanAccessClassSection(ctx.userId, value.class_id, value.section_id, academicYearId);
+      if (!ok) return error(res, 403, 'You are not allowed to manage marks for this class section');
+    }
     await assertExamClassLinked(value.exam_id, value.class_id);
     await assertExamNotFinalized(value.exam_id);
 
-    const subjects = await query(
-      `SELECT subject_id, max_marks, passing_marks
-       FROM exam_subjects
-       WHERE exam_id = $1
-         AND class_id = $2
-         AND section_id = $3`,
-      [value.exam_id, value.class_id, value.section_id]
-    );
-    if (!subjects.rows.length) return error(res, 400, 'Timetable not found for selected exam/class/section');
-    const subjectMap = new Map(subjects.rows.map((s) => [parseId(s.subject_id), s]));
-
-    const students = await query(
-      `SELECT id FROM students
-       WHERE class_id = $1
-         AND section_id = $2
-         AND COALESCE(is_active, true) = true`,
-      [value.class_id, value.section_id]
-    );
-    const allowedStudentIds = new Set(students.rows.map((s) => parseId(s.id)));
-    const examResultsSchema = await getExamResultsSchemaFlags();
-    const conflictTarget = examResultsSchema.hasExamComponentColumn && examResultsSchema.hasUniqueExamStudentSubjectComponent
-      ? '(exam_id, student_id, subject_id, exam_component)'
-      : examResultsSchema.hasUniqueExamStudentSubject
-        ? '(exam_id, student_id, subject_id)'
-        : null;
-    if (!conflictTarget) {
-      return error(
-        res,
-        500,
-        'exam_results unique key for marks upsert is missing. Apply exam module migrations before saving marks.'
+    let classSectionId = null;
+    if (value.section_id) {
+      const secRes = await query(
+        'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
+        [value.section_id, value.class_id]
       );
+      if (secRes.rows.length) {
+        classSectionId = secRes.rows[0].id;
+      }
     }
 
+    const timetable = await query(
+      `SELECT id AS exam_schedule_id, class_subject_id AS subject_id, max_marks
+       FROM exam_schedules
+       WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
+      classSectionId ? [value.exam_id, value.class_id, classSectionId] : [value.exam_id, value.class_id]
+    );
+    if (!timetable.rows.length) {
+      return error(res, 400, 'Timetable not found for selected exam/class/section');
+    }
+    const scheduleBySubjectId = new Map(timetable.rows.map((r) => [parseId(r.subject_id), r]));
+
+    const students = await query(
+      `SELECT st.id
+       FROM students st
+       INNER JOIN LATERAL (
+         SELECT to_class_id, to_section_id
+         FROM student_lifecycle_ledger l
+         WHERE l.student_id = st.id
+           ${academicYearId ? 'AND l.to_academic_year_id = $3' : ''}
+         ORDER BY l.event_date DESC, l.id DESC
+         LIMIT 1
+       ) enr ON enr.to_class_id = $1 ${value.section_id ? 'AND enr.to_section_id = $2' : ''}
+       WHERE st.status = 'Active'`,
+      academicYearId ? [value.class_id, value.section_id, academicYearId] : [value.class_id, value.section_id]
+    );
+    const allowedStudentIds = new Set(students.rows.map((s) => parseId(s.id)));
+
     for (const row of value.rows) {
-      const subject = subjectMap.get(parseId(row.subject_id));
-      if (!subject) return error(res, 400, 'Payload contains subject outside timetable');
+      const schedule = scheduleBySubjectId.get(parseId(row.subject_id));
+      if (!schedule) return error(res, 400, 'Payload contains subject outside timetable');
       if (!allowedStudentIds.has(parseId(row.student_id))) {
         return error(res, 400, 'Payload contains student outside selected class section');
       }
@@ -1989,46 +2244,39 @@ async function saveExamMarks(req, res) {
       if (row.marks_obtained == null) {
         return error(res, 400, 'Marks are required for non-absent entries');
       }
-      if (Number(row.marks_obtained) > Number(subject.max_marks)) {
+      if (Number(row.marks_obtained) > Number(schedule.max_marks)) {
         return error(res, 400, 'Marks obtained cannot exceed max marks');
       }
     }
 
+    const staffRes = await query(
+      `SELECT id FROM staff WHERE user_id = $1 AND deleted_at IS NULL LIMIT 1`,
+      [ctx.userId]
+    );
+    const staffId = staffRes.rows[0]?.id;
+    if (!staffId) {
+      return error(res, 403, 'Your account is not linked to a staff record. Only staff can enter marks.');
+    }
+
     await executeTransaction(async (client) => {
       for (const row of value.rows) {
-        const marksValue = row.is_absent ? null : Number(row.marks_obtained);
-        const insertColumns = ['exam_id', 'student_id', 'subject_id', 'marks_obtained', 'is_absent'];
-        const insertValues = [
-          value.exam_id,
-          row.student_id,
-          row.subject_id,
-          marksValue,
-          !!row.is_absent,
-        ];
-        if (examResultsSchema.hasExamComponentColumn) {
-          insertColumns.push('exam_component');
-          insertValues.push('theory');
-        }
-        if (examResultsSchema.hasCreatedByColumn) {
-          insertColumns.push('created_by');
-          insertValues.push(parseId(req.user?.id) || null);
-        }
-        const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(',');
-        const updateSet = [
-          'marks_obtained = EXCLUDED.marks_obtained',
-          'is_absent = EXCLUDED.is_absent',
-        ];
-        if (examResultsSchema.hasModifiedAtColumn) {
-          updateSet.push('updated_at = NOW()');
-        }
+        const schedule = scheduleBySubjectId.get(parseId(row.subject_id));
         await client.query(
-          `INSERT INTO exam_results
-           (${insertColumns.join(', ')})
-           VALUES (${placeholders})
-           ON CONFLICT ${conflictTarget}
+          `INSERT INTO exam_results (exam_schedule_id, student_id, marks_obtained, is_absent, entered_by, created_by)
+           VALUES ($1, $2, $3, $4, $5, $5)
+           ON CONFLICT (student_id, exam_schedule_id)
            DO UPDATE SET
-             ${updateSet.join(', ')}`,
-          insertValues
+             marks_obtained = EXCLUDED.marks_obtained,
+             is_absent = EXCLUDED.is_absent,
+             updated_at = NOW(),
+             updated_by = EXCLUDED.created_by`,
+          [
+            schedule.exam_schedule_id,
+            row.student_id,
+            row.marks_obtained,
+            row.is_absent || false,
+            staffId,
+          ]
         );
       }
     });
@@ -2037,7 +2285,7 @@ async function saveExamMarks(req, res) {
   } catch (e) {
     console.error('saveExamMarks', e);
     if (e?.statusCode) return error(res, e.statusCode, e.message);
-    return error(res, 500, 'Failed to save marks');
+    return error(res, 500, 'Failed to save marks', e.message);
   }
 }
 
@@ -2108,8 +2356,8 @@ async function deleteExam(req, res) {
       }
 
       // Defensive explicit deletes so legacy schemas also remain clean.
-      await client.query(`DELETE FROM exam_results WHERE exam_id = $1`, [examId]);
-      await client.query(`DELETE FROM exam_subjects WHERE exam_id = $1`, [examId]);
+      await client.query(`DELETE FROM exam_results WHERE exam_schedule_id IN (SELECT id FROM exam_schedules WHERE exam_id = $1)`, [examId]);
+      await client.query(`DELETE FROM exam_schedules WHERE exam_id = $1`, [examId]);
       if (schema.hasExamClassesTable) {
         await client.query(`DELETE FROM exam_classes WHERE exam_id = $1`, [examId]);
       }
