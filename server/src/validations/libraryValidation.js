@@ -24,7 +24,6 @@ const createBookSchema = Joi.object({
   category_id: Joi.number().integer().allow(null),
   total_copies: Joi.number().integer().min(1).optional(),
   available_copies: Joi.number().integer().min(0).optional(),
-  book_price: Joi.number().allow(null),
   book_location: Joi.string().trim().max(50).allow(null, ''),
   description: Joi.string().allow(null, ''),
   academic_year_id: Joi.number().integer().allow(null),
@@ -42,7 +41,6 @@ const updateBookSchema = Joi.object({
   category_id: Joi.number().integer().allow(null),
   total_copies: Joi.number().integer().min(1).optional(),
   available_copies: Joi.number().integer().min(0).optional(),
-  book_price: Joi.number().allow(null),
   book_location: Joi.string().trim().max(50).allow(null, ''),
   description: Joi.string().allow(null, ''),
   is_active: Joi.boolean().optional(),
@@ -54,6 +52,7 @@ const createBookCopySchema = Joi.object({
   accession_number: Joi.string().trim().max(50).required(),
   book_location: Joi.string().trim().max(100).allow(null, ''),
   condition: Joi.string().trim().valid('New', 'Good', 'Damaged', 'Lost', 'Maintenance').optional(),
+  copy_price: Joi.number().allow(null),
 });
 
 const updateBookCopySchema = Joi.object({
@@ -61,6 +60,7 @@ const updateBookCopySchema = Joi.object({
   accession_number: Joi.string().trim().max(50).optional(),
   book_location: Joi.string().trim().max(100).allow(null, ''),
   condition: Joi.string().trim().valid('New', 'Good', 'Damaged', 'Lost', 'Maintenance').optional(),
+  copy_price: Joi.number().allow(null),
 }).min(1);
 
 const createMemberSchema = Joi.object({
@@ -132,7 +132,6 @@ const importBooksRowSchema = Joi.object({
   publication_year: Joi.number().integer().min(1000).max(2100).allow(null),
   category_id: Joi.number().integer().allow(null),
   category_name: Joi.string().trim().max(100).allow(null, ''),
-  book_price: Joi.number().allow(null),
 }).unknown(true);
 
 const importBooksSchema = Joi.object({

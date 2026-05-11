@@ -56,7 +56,6 @@ const Books = () => {
     publisher: "",
     publication_year: "" as string | number,
     category_id: "" as string | number,
-    book_price: "" as string | number,
   };
   const [addForm, setAddForm] = useState({ ...emptyForm });
   const [editForm, setEditForm] = useState({ ...emptyForm });
@@ -132,7 +131,6 @@ const Books = () => {
     "Edition",
     "Copies",
     "Available",
-    "Price",
     "Post Date",
   ];
 
@@ -147,7 +145,6 @@ const Books = () => {
       r.edition || "",
       r.copies_count ?? 0,
       r.available_copies ?? 0,
-      r.book_price ?? "",
       formatDateDMY(r.postDate || r.created_at),
     ]);
 
@@ -250,7 +247,6 @@ const Books = () => {
       publisher: r.publisher || "",
       publication_year: r.publication_year ?? "",
       category_id: r.category_id != null ? String(r.category_id) : "",
-      book_price: r.book_price ?? "",
     });
     setTimeout(() => showModal("edit_library_book"), 0);
   };
@@ -276,7 +272,6 @@ const Books = () => {
         publisher: addForm.publisher || null,
         publication_year: addForm.publication_year === "" ? null : Number(addForm.publication_year),
         category_id: addForm.category_id === "" ? null : Number(addForm.category_id),
-        book_price: addForm.book_price === "" ? null : Number(addForm.book_price),
       };
       await apiService.createLibraryBook(payload);
       hideModal("add_library_book");
@@ -303,7 +298,6 @@ const Books = () => {
         publisher: editForm.publisher || null,
         publication_year: editForm.publication_year === "" ? null : Number(editForm.publication_year),
         category_id: editForm.category_id === "" ? null : Number(editForm.category_id),
-        book_price: editForm.book_price === "" ? null : Number(editForm.book_price),
       };
       await apiService.updateLibraryBook(selected.id, payload);
       hideModal("edit_library_book");
@@ -340,7 +334,6 @@ const Books = () => {
     rackNo: r.edition || "—",
     qty: String(r.copies_count ?? 0),
     available: String(r.available_copies ?? ""),
-    price: r.book_price != null ? String(r.book_price) : "—",
     postDate: formatDateDMY(r.postDate || r.created_at),
     raw: r,
   }));
@@ -404,12 +397,6 @@ const Books = () => {
       dataIndex: "available",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).available || "").localeCompare(String((b as any).available || "")),
-    },
-    {
-      title: "Price",
-      dataIndex: "price",
-      sorter: (a: TableData, b: TableData) =>
-        String((a as any).price || "").localeCompare(String((b as any).price || "")),
     },
     {
       title: "Post Date",
@@ -799,16 +786,6 @@ const Books = () => {
                       onChange={(e) => setAddForm((f) => ({ ...f, publication_year: e.target.value }))}
                     />
                   </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Price</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="form-control"
-                      value={addForm.book_price}
-                      onChange={(e) => setAddForm((f) => ({ ...f, book_price: e.target.value }))}
-                    />
-                  </div>
                 </div>
               </div>
               <div className="modal-footer">
@@ -913,16 +890,6 @@ const Books = () => {
                       className="form-control"
                       value={editForm.publication_year}
                       onChange={(e) => setEditForm((f) => ({ ...f, publication_year: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Price</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="form-control"
-                      value={editForm.book_price}
-                      onChange={(e) => setEditForm((f) => ({ ...f, book_price: e.target.value }))}
                     />
                   </div>
                 </div>

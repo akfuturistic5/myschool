@@ -11,6 +11,7 @@ import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicY
 import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
+import { LibrarySearchableSelect } from "./librarySearchableSelect";
 
 const normalizeStatus = (value: unknown): "active" | "inactive" =>
   String(value || "").toLowerCase() === "active" ? "active" : "inactive";
@@ -27,6 +28,7 @@ const LibraryMember = () => {
   const [selected, setSelected] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [peopleLoadWarning, setPeopleLoadWarning] = useState<string | null>(null);
   const [appliedFilters, setAppliedFilters] = useState({
     member_type: "" as "" | "student" | "staff",
     member_id: "",
@@ -49,32 +51,52 @@ const LibraryMember = () => {
   });
 
   const loadPeople = useCallback(async () => {
-    try {
-      const [stRes, sfRes] = await Promise.all([
-        (apiService as any).getStudents(academicYearId ?? undefined),
-        apiService.getStaff(),
-      ]);
-      const stData = (stRes as any)?.data || [];
-      setStudents(
-        stData.map((s: any) => ({
-          value: String(s.id),
-          label:
-            `${[s.first_name, s.last_name].filter(Boolean).join(" ") || `Student #${s.id}`}` +
-            `${s.class_name || s.section_name ? ` (${[s.class_name, s.section_name].filter(Boolean).join(" - ")})` : ""}`,
-        }))
-      );
-      const sfData = (sfRes as any)?.data || [];
-      setStaffList(
-        sfData
-          .filter((s: any) => String(s.status || "").toLowerCase() === "active")
-          .map((s: any) => ({
-            value: String(s.id),
-            label: [s.first_name, s.last_name].filter(Boolean).join(" ") || `Staff #${s.id}`,
-          }))
-      );
-    } catch {
-      /* ignore; dropdowns stay empty */
+    const listFromResponse = (res: unknown): any[] => {
+      if (res == null || typeof res !== "object") return [];
+      const r = res as Record<string, unknown>;
+      if (r.status === "ERROR" || r.success === false) return [];
+      const d = r.data;
+      return Array.isArray(d) ? d : [];
+    };
+
+    setPeopleLoadWarning(null);
+    const [stOut, sfOut] = await Promise.allSettled([
+      apiService.getStudents({
+        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
+        limit: 10000,
+        page: 1,
+      }),
+      apiService.getStaff(),
+    ]);
+
+    let warn: string | null = null;
+    const stData = stOut.status === "fulfilled" ? listFromResponse(stOut.value) : [];
+    if (stOut.status === "rejected") {
+      warn = "Could not load students.";
     }
+
+    const sfData = sfOut.status === "fulfilled" ? listFromResponse(sfOut.value) : [];
+    if (sfOut.status === "rejected") {
+      warn = warn ? `${warn} Could not load staff.` : "Could not load staff.";
+    }
+    setPeopleLoadWarning(warn);
+
+    setStudents(
+      stData.map((s: any) => ({
+        value: String(s.id),
+        label:
+          `${[s.first_name, s.last_name].filter(Boolean).join(" ") || `Student #${s.id}`}` +
+          `${s.class_name || s.section_name ? ` (${[s.class_name, s.section_name].filter(Boolean).join(" — ")})` : ""}`,
+      }))
+    );
+    setStaffList(
+      sfData
+        .filter((s: any) => String(s.status || "").toLowerCase() === "active" || s.is_active === true)
+        .map((s: any) => ({
+          value: String(s.id),
+          label: [s.first_name, s.last_name].filter(Boolean).join(" ") || `Staff #${s.id}`,
+        }))
+    );
   }, [academicYearId]);
 
   const load = useCallback(async () => {
@@ -164,15 +186,30 @@ const LibraryMember = () => {
 
   const openAdd = () => {
     setFormError(null);
-    setAddForm({
-      member_type: "student",
-      student_id: "",
-      staff_id: "",
-      card_number: "",
-      status: "active",
-      remarks: "",
-    });
-    setTimeout(() => showModal("add_library_members"), 0);
+    void (async () => {
+      await loadPeople();
+      let card = "";
+      try {
+        const res = await apiService.getLibraryNextCardNumber();
+        card = (res as any)?.data?.card_number ?? "";
+      } catch {
+        const maxSeq = rows.reduce((acc, r) => {
+          const c = String(r.card_number || r.cardNo || "").trim();
+          const m = /^LIB-(\d+)$/i.exec(c);
+          return m ? Math.max(acc, parseInt(m[1], 10)) : acc;
+        }, 0);
+        card = `LIB-${String(maxSeq + 1).padStart(5, "0")}`;
+      }
+      setAddForm({
+        member_type: "student",
+        student_id: "",
+        staff_id: "",
+        card_number: card,
+        status: "active",
+        remarks: "",
+      });
+      setTimeout(() => showModal("add_library_members"), 0);
+    })();
   };
 
   const openEdit = (record: any) => {
@@ -195,6 +232,14 @@ const LibraryMember = () => {
 
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (addForm.member_type === "student" && !String(addForm.student_id).trim()) {
+      setFormError("Please select a student.");
+      return;
+    }
+    if (addForm.member_type === "staff" && !String(addForm.staff_id).trim()) {
+      setFormError("Please select a staff member.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -558,14 +603,23 @@ const LibraryMember = () => {
             <form onSubmit={submitAdd}>
               <div className="modal-body">
                 {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
+                {peopleLoadWarning && (
+                  <div className="alert alert-warning py-2 small">{peopleLoadWarning}</div>
+                )}
                 <div className="mb-3">
                   <label className="form-label">Member type</label>
                   <select
                     className="form-select"
                     value={addForm.member_type}
-                    onChange={(e) =>
-                      setAddForm((f) => ({ ...f, member_type: e.target.value as "student" | "staff" }))
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value as "student" | "staff";
+                      setAddForm((f) => ({
+                        ...f,
+                        member_type: v,
+                        student_id: v === "student" ? f.student_id : "",
+                        staff_id: v === "staff" ? f.staff_id : "",
+                      }));
+                    }}
                   >
                     <option value="student">Student</option>
                     <option value="staff">Staff</option>
@@ -573,37 +627,23 @@ const LibraryMember = () => {
                 </div>
                 {addForm.member_type === "student" ? (
                   <div className="mb-3">
-                    <label className="form-label">Student</label>
-                    <select
-                      className="form-select"
-                      required
+                    <label className="form-label">Student *</label>
+                    <LibrarySearchableSelect
+                      options={students}
                       value={addForm.student_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, student_id: e.target.value }))}
-                    >
-                      <option value="">Select student</option>
-                      {students.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => setAddForm((f) => ({ ...f, student_id: v }))}
+                      placeholder="Search student…"
+                    />
                   </div>
                 ) : (
                   <div className="mb-3">
-                    <label className="form-label">Staff</label>
-                    <select
-                      className="form-select"
-                      required
+                    <label className="form-label">Staff *</label>
+                    <LibrarySearchableSelect
+                      options={staffList}
                       value={addForm.staff_id}
-                      onChange={(e) => setAddForm((f) => ({ ...f, staff_id: e.target.value }))}
-                    >
-                      <option value="">Select staff</option>
-                      {staffList.map((s) => (
-                        <option key={s.value} value={s.value}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => setAddForm((f) => ({ ...f, staff_id: v }))}
+                      placeholder="Search staff…"
+                    />
                   </div>
                 )}
                 <div className="mb-3">
@@ -614,10 +654,20 @@ const LibraryMember = () => {
                     value={addForm.card_number}
                     onChange={(e) => setAddForm((f) => ({ ...f, card_number: e.target.value }))}
                   />
+                  <small className="text-muted">Suggested serial (LIB-00001); you may change it.</small>
                 </div>
-                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                <div className="mb-3">
+                  <label className="form-label">Remarks</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={addForm.remarks}
+                    onChange={(e) => setAddForm((f) => ({ ...f, remarks: e.target.value }))}
+                  />
+                </div>
+                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2 mb-0">
                   <div className="status-title">
-                    <h5>Status</h5>
+                    <h5 className="mb-0">Status</h5>
                     <label className="form-label mb-0" htmlFor="add_library_member_status">
                       {addForm.status === "active" ? "Active" : "Inactive"}
                     </label>
@@ -636,15 +686,6 @@ const LibraryMember = () => {
                       }
                     />
                   </div>
-                </div>
-                <div className="mb-0">
-                  <label className="form-label">Remarks</label>
-                  <textarea
-                    className="form-control"
-                    rows={2}
-                    value={addForm.remarks}
-                    onChange={(e) => setAddForm((f) => ({ ...f, remarks: e.target.value }))}
-                  />
                 </div>
               </div>
               <div className="modal-footer">
@@ -680,10 +721,20 @@ const LibraryMember = () => {
                     value={editForm.card_number}
                     onChange={(e) => setEditForm((f) => ({ ...f, card_number: e.target.value }))}
                   />
+                  <small className="text-muted">Editable; suggested format LIB-00001.</small>
                 </div>
-                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                <div className="mb-3">
+                  <label className="form-label">Remarks</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={editForm.remarks}
+                    onChange={(e) => setEditForm((f) => ({ ...f, remarks: e.target.value }))}
+                  />
+                </div>
+                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-1 mx-2 mb-0">
                   <div className="status-title">
-                    <h5>Status</h5>
+                    <h5 className="mb-0">Status</h5>
                     <label className="form-label mb-0" htmlFor="edit_library_member_status">
                       {editForm.status === "active" ? "Active" : "Inactive"}
                     </label>
@@ -702,15 +753,6 @@ const LibraryMember = () => {
                       }
                     />
                   </div>
-                </div>
-                <div className="mb-0">
-                  <label className="form-label">Remarks</label>
-                  <textarea
-                    className="form-control"
-                    rows={2}
-                    value={editForm.remarks}
-                    onChange={(e) => setEditForm((f) => ({ ...f, remarks: e.target.value }))}
-                  />
                 </div>
               </div>
               <div className="modal-footer">

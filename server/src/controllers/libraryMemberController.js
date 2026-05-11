@@ -223,6 +223,29 @@ const updateMember = async (req, res) => {
   }
 };
 
+/** Next serial card in form LIB-00001 … LIB-99999 (based on existing LIB-nnnnn cards). */
+const suggestNextCardNumber = async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT card_number FROM library_members WHERE card_number ~* '^LIB-[0-9]+$'`
+    );
+    let maxSeq = 0;
+    for (const row of r.rows) {
+      const m = /^LIB-(\d+)$/i.exec(String(row.card_number || '').trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n)) maxSeq = Math.max(maxSeq, n);
+      }
+    }
+    const next = maxSeq + 1;
+    const card_number = `LIB-${String(next).padStart(5, '0')}`;
+    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: { card_number } });
+  } catch (e) {
+    console.error('library member next card', e);
+    res.status(500).json({ status: 'ERROR', message: 'Failed to suggest card number' });
+  }
+};
+
 const deleteMember = async (req, res) => {
   try {
     const { id } = req.params;
@@ -240,6 +263,7 @@ const deleteMember = async (req, res) => {
 module.exports = {
   listMembers,
   getMember,
+  suggestNextCardNumber,
   createMember,
   updateMember,
   deleteMember,

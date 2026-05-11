@@ -8,6 +8,7 @@ import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
+import { LibrarySearchableSelect } from "./librarySearchableSelect";
 
 const conditionOptions = ["New", "Good", "Damaged", "Lost", "Maintenance"];
 
@@ -23,8 +24,20 @@ const LibraryBookCopies = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [appliedFilters, setAppliedFilters] = useState({ book_id: "", accession_number: "", condition: "" });
   const [filterDraft, setFilterDraft] = useState({ ...appliedFilters });
-  const [addForm, setAddForm] = useState({ book_id: "", accession_number: "", book_location: "", condition: "New" });
-  const [editForm, setEditForm] = useState({ book_id: "", accession_number: "", book_location: "", condition: "New" });
+  const [addForm, setAddForm] = useState({
+    book_id: "",
+    accession_number: "",
+    book_location: "",
+    condition: "New",
+    copy_price: "" as string | number,
+  });
+  const [editForm, setEditForm] = useState({
+    book_id: "",
+    accession_number: "",
+    book_location: "",
+    condition: "New",
+    copy_price: "" as string | number,
+  });
 
   const showModal = (id: string) => {
     const el = document.getElementById(id);
@@ -68,7 +81,7 @@ const LibraryBookCopies = () => {
     load();
   }, [load]);
 
-  const tableExportHeaders = ["ID", "Book", "Accession No", "Location", "Condition", "Available", "Created"];
+  const tableExportHeaders = ["ID", "Book", "Accession No", "Location", "Condition", "Price", "Available", "Created"];
   const exportRows = useMemo(
     () =>
       rows.map((r) => [
@@ -77,6 +90,7 @@ const LibraryBookCopies = () => {
         r.accession_number || "",
         r.book_location || "",
         r.condition || "",
+        r.copy_price != null && r.copy_price !== "" ? String(r.copy_price) : "",
         r.is_available ? "Yes" : "No",
         formatDateDMY(r.created_at),
       ]),
@@ -85,8 +99,28 @@ const LibraryBookCopies = () => {
 
   const openAdd = () => {
     setFormError(null);
-    setAddForm({ book_id: "", accession_number: "", book_location: "", condition: "New" });
-    setTimeout(() => showModal("add_library_book_copy"), 0);
+    void (async () => {
+      let acc = "";
+      try {
+        const res = await apiService.getLibraryNextBookAccessionNumber();
+        acc = (res as any)?.data?.accession_number ?? "";
+      } catch {
+        const maxSeq = rows.reduce((accN, r) => {
+          const c = String(r.accession_number || "").trim();
+          const m = /^ACC-(\d+)$/i.exec(c);
+          return m ? Math.max(accN, parseInt(m[1], 10)) : accN;
+        }, 0);
+        acc = `ACC-${String(maxSeq + 1).padStart(5, "0")}`;
+      }
+      setAddForm({
+        book_id: "",
+        accession_number: acc,
+        book_location: "",
+        condition: "New",
+        copy_price: "",
+      });
+      setTimeout(() => showModal("add_library_book_copy"), 0);
+    })();
   };
 
   const openEdit = (record: any) => {
@@ -98,6 +132,7 @@ const LibraryBookCopies = () => {
       accession_number: r.accession_number || "",
       book_location: r.book_location || "",
       condition: r.condition || "New",
+      copy_price: r.copy_price ?? "",
     });
     setTimeout(() => showModal("edit_library_book_copy"), 0);
   };
@@ -111,6 +146,10 @@ const LibraryBookCopies = () => {
 
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!String(addForm.book_id).trim()) {
+      setFormError("Please select a book.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -119,6 +158,10 @@ const LibraryBookCopies = () => {
         accession_number: addForm.accession_number.trim(),
         book_location: addForm.book_location || null,
         condition: addForm.condition,
+        copy_price:
+          addForm.copy_price === "" || addForm.copy_price === undefined
+            ? null
+            : (Number.isFinite(Number(addForm.copy_price)) ? Number(addForm.copy_price) : null),
       });
       hideModal("add_library_book_copy");
       await load();
@@ -132,6 +175,10 @@ const LibraryBookCopies = () => {
   const submitEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected?.id) return;
+    if (!String(editForm.book_id).trim()) {
+      setFormError("Please select a book.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -140,6 +187,10 @@ const LibraryBookCopies = () => {
         accession_number: editForm.accession_number.trim(),
         book_location: editForm.book_location || null,
         condition: editForm.condition,
+        copy_price:
+          editForm.copy_price === "" || editForm.copy_price === undefined
+            ? null
+            : (Number.isFinite(Number(editForm.copy_price)) ? Number(editForm.copy_price) : null),
       });
       hideModal("edit_library_book_copy");
       await load();
@@ -171,6 +222,7 @@ const LibraryBookCopies = () => {
     accessionNo: r.accession_number || "—",
     location: r.book_location || "—",
     condition: r.condition || "New",
+    copyPrice: r.copy_price != null && r.copy_price !== "" ? String(r.copy_price) : "—",
     available: r.is_available ? "Yes" : "No",
     createdAt: formatDateDMY(r.created_at),
     raw: r,
@@ -182,6 +234,7 @@ const LibraryBookCopies = () => {
     { title: "Accession No", dataIndex: "accessionNo" },
     { title: "Location", dataIndex: "location" },
     { title: "Condition", dataIndex: "condition" },
+    { title: "Price", dataIndex: "copyPrice" },
     { title: "Available", dataIndex: "available" },
     { title: "Created", dataIndex: "createdAt" },
     {
@@ -247,10 +300,13 @@ const LibraryBookCopies = () => {
                     <div className="p-3 border-bottom">
                       <div className="mb-3">
                         <label className="form-label">Book</label>
-                        <select className="form-select" value={filterDraft.book_id} onChange={(e) => setFilterDraft((f) => ({ ...f, book_id: e.target.value }))}>
-                          <option value="">All books</option>
-                          {books.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
-                        </select>
+                        <LibrarySearchableSelect
+                          allowClear
+                          options={books}
+                          value={filterDraft.book_id}
+                          onChange={(v) => setFilterDraft((f) => ({ ...f, book_id: v }))}
+                          placeholder="All books — search…"
+                        />
                       </div>
                       <div className="mb-3">
                         <label className="form-label">Accession No</label>
@@ -281,9 +337,10 @@ const LibraryBookCopies = () => {
         <div className="modal-dialog modal-dialog-centered"><div className="modal-content"><div className="modal-header"><h4 className="modal-title">Add Book Copy</h4><button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button></div>
           <form onSubmit={submitAdd}><div className="modal-body">
             {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
-            <div className="mb-3"><label className="form-label">Book <span className="text-danger">*</span></label><select className="form-select" required value={addForm.book_id} onChange={(e) => setAddForm((f) => ({ ...f, book_id: e.target.value }))}><option value="">Select</option>{books.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}</select></div>
-            <div className="mb-3"><label className="form-label">Accession Number <span className="text-danger">*</span></label><input required className="form-control" value={addForm.accession_number} onChange={(e) => setAddForm((f) => ({ ...f, accession_number: e.target.value }))} /></div>
+            <div className="mb-3"><label className="form-label">Book <span className="text-danger">*</span></label><LibrarySearchableSelect options={books} value={addForm.book_id} onChange={(v) => setAddForm((f) => ({ ...f, book_id: v }))} placeholder="Search book…" /></div>
+            <div className="mb-3"><label className="form-label">Accession number <span className="text-danger">*</span></label><input required className="form-control" value={addForm.accession_number} onChange={(e) => setAddForm((f) => ({ ...f, accession_number: e.target.value }))} /><small className="text-muted">Suggested serial (ACC-00001); you may change it.</small></div>
             <div className="mb-3"><label className="form-label">Book Location</label><input className="form-control" value={addForm.book_location} onChange={(e) => setAddForm((f) => ({ ...f, book_location: e.target.value }))} /></div>
+            <div className="mb-3"><label className="form-label">Price</label><input type="number" min={0} step="0.01" className="form-control" value={addForm.copy_price} onChange={(e) => setAddForm((f) => ({ ...f, copy_price: e.target.value }))} placeholder="Optional" /></div>
             <div className="mb-0"><label className="form-label">Condition</label><select className="form-select" value={addForm.condition} onChange={(e) => setAddForm((f) => ({ ...f, condition: e.target.value }))}>{conditionOptions.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
           </div><div className="modal-footer"><button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save"}</button></div></form>
         </div></div>
@@ -293,9 +350,10 @@ const LibraryBookCopies = () => {
         <div className="modal-dialog modal-dialog-centered"><div className="modal-content"><div className="modal-header"><h4 className="modal-title">Edit Book Copy</h4><button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button></div>
           <form onSubmit={submitEdit}><div className="modal-body">
             {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
-            <div className="mb-3"><label className="form-label">Book <span className="text-danger">*</span></label><select className="form-select" required value={editForm.book_id} onChange={(e) => setEditForm((f) => ({ ...f, book_id: e.target.value }))}><option value="">Select</option>{books.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}</select></div>
-            <div className="mb-3"><label className="form-label">Accession Number <span className="text-danger">*</span></label><input required className="form-control" value={editForm.accession_number} onChange={(e) => setEditForm((f) => ({ ...f, accession_number: e.target.value }))} /></div>
+            <div className="mb-3"><label className="form-label">Book <span className="text-danger">*</span></label><LibrarySearchableSelect options={books} value={editForm.book_id} onChange={(v) => setEditForm((f) => ({ ...f, book_id: v }))} placeholder="Search book…" /></div>
+            <div className="mb-3"><label className="form-label">Accession number <span className="text-danger">*</span></label><input required className="form-control" value={editForm.accession_number} onChange={(e) => setEditForm((f) => ({ ...f, accession_number: e.target.value }))} /><small className="text-muted">Editable; suggested format ACC-00001.</small></div>
             <div className="mb-3"><label className="form-label">Book Location</label><input className="form-control" value={editForm.book_location} onChange={(e) => setEditForm((f) => ({ ...f, book_location: e.target.value }))} /></div>
+            <div className="mb-3"><label className="form-label">Price</label><input type="number" min={0} step="0.01" className="form-control" value={editForm.copy_price} onChange={(e) => setEditForm((f) => ({ ...f, copy_price: e.target.value }))} placeholder="Optional" /></div>
             <div className="mb-0"><label className="form-label">Condition</label><select className="form-select" value={editForm.condition} onChange={(e) => setEditForm((f) => ({ ...f, condition: e.target.value }))}>{conditionOptions.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
           </div><div className="modal-footer"><button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Update"}</button></div></form>
         </div></div>

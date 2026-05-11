@@ -1,5 +1,9 @@
 const { query } = require('../config/database');
 const { toYmd } = require('../utils/dateOnly');
+const {
+  resolveAcademicYearIdFromQuery,
+  getDefaultAcademicYearId,
+} = require('../utils/libraryAcademicYear');
 
 function normalizeIsbn(v) {
   if (v == null || String(v).trim() === '') return null;
@@ -56,10 +60,37 @@ const listBooks = async (req, res) => {
       params.push(dateTo);
       where += ` AND b.created_at::date <= $${params.length}::date`;
     }
+
+    const includePending =
+      String(req.query.include_pending_reservations || '').trim() === '1' ||
+      String(req.query.include_pending_reservations || '').trim().toLowerCase() === 'true';
+
+    let pendingJoinClause = '';
+    let pendingSelect = '0::int AS pending_reservations_count';
+    if (includePending) {
+      let yearForRes = await resolveAcademicYearIdFromQuery(req);
+      if (yearForRes == null) yearForRes = await getDefaultAcademicYearId();
+      if (yearForRes != null) {
+        params.push(yearForRes);
+        const yi = params.length;
+        pendingSelect = `COALESCE(pr.cnt, 0)::int AS pending_reservations_count`;
+        pendingJoinClause = `
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::int AS cnt
+         FROM library_book_reservations r
+         WHERE r.book_id = b.id
+           AND r.deleted_at IS NULL
+           AND COALESCE(TRIM(r.status::text), 'Pending') = 'Pending'
+           AND r.academic_year_id = $${yi}
+       ) pr ON true`;
+      }
+    }
+
     const r = await query(
       `SELECT b.id, b.book_title, b.author, b.edition, b.language, b.isbn, b.publisher, b.publication_year,
               b.category_id, c.category_name,
-              b.book_price, b.created_at, b.updated_at,
+              b.created_at, b.updated_at,
+              ${pendingSelect},
               COALESCE(cc.total_copies, 0) AS copies_count,
               COALESCE(cc.available_copies, 0) AS available_copies
        FROM library_books b
@@ -80,6 +111,7 @@ const listBooks = async (req, res) => {
          WHERE bc.book_id = b.id
            AND bc.deleted_at IS NULL
        ) cc ON true
+       ${pendingJoinClause}
        ${where}
        ORDER BY b.book_title ASC`,
       params
@@ -91,7 +123,6 @@ const listBooks = async (req, res) => {
       subject: row.category_name || '',
       qty: row.copies_count != null ? String(row.copies_count) : '0',
       available: row.available_copies != null ? String(row.available_copies) : '0',
-      price: row.book_price != null ? String(row.book_price) : '',
       postDate: row.created_at ? toYmd(row.created_at) : '',
     }));
     res.status(200).json({
@@ -157,17 +188,16 @@ const createBook = async (req, res) => {
       publisher,
       publication_year,
       category_id,
-      book_price,
     } = req.body;
     const isbnN = normalizeIsbn(isbn || book_code);
 
     const r = await query(
       `INSERT INTO library_books (
         book_title, author, edition, language, isbn, publisher, publication_year, category_id,
-        book_price, created_at, updated_at
+        created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
-        $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       ) RETURNING *`,
       [
         String(book_title).trim(),
@@ -178,7 +208,6 @@ const createBook = async (req, res) => {
         publisher != null ? String(publisher).trim() : null,
         publication_year != null ? parseInt(publication_year, 10) : null,
         category_id != null && category_id !== '' ? parseInt(category_id, 10) : null,
-        book_price != null && book_price !== '' ? parseFloat(String(book_price)) : null,
       ]
     );
     res.status(201).json({ status: 'SUCCESS', message: 'Book created', data: r.rows[0] });
@@ -230,12 +259,6 @@ const updateBook = async (req, res) => {
           : parseInt(body.category_id, 10)
         : ex.category_id;
 
-    const book_price =
-      body.book_price !== undefined
-        ? body.book_price == null || body.book_price === ''
-          ? null
-          : parseFloat(String(body.book_price))
-        : ex.book_price;
     const r = await query(
       `UPDATE library_books SET
          book_title = $2,
@@ -246,7 +269,6 @@ const updateBook = async (req, res) => {
          publisher = $7,
          publication_year = $8,
          category_id = $9,
-         book_price = $10,
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
          AND deleted_at IS NULL
@@ -261,7 +283,6 @@ const updateBook = async (req, res) => {
         publisher,
         publication_year,
         category_id,
-        book_price,
       ]
     );
     res.status(200).json({ status: 'SUCCESS', message: 'Book updated', data: r.rows[0] });
@@ -408,10 +429,10 @@ const importBooks = async (req, res) => {
         await query(
           `INSERT INTO library_books (
             book_title, author, edition, language, isbn, publisher, publication_year, category_id,
-            book_price, created_at, updated_at
+            created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
           )`,
           [
             book_title,
@@ -424,7 +445,6 @@ const importBooks = async (req, res) => {
               ? parseInt(row.publication_year, 10)
               : null,
             catId,
-            row.book_price != null && row.book_price !== '' ? parseFloat(String(row.book_price)) : null,
           ]
         );
         summary.created += 1;

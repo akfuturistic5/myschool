@@ -12,8 +12,6 @@ const KNOWN = new Set([
   "isbn",
   "publisher",
   "publication_year",
-  "book_price",
-  "price",
   // Backward compatibility: old import files may still use this column.
   "book_code",
 ]);
@@ -29,7 +27,6 @@ function rowToBook(row: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(row)) {
     let nk = normKey(k);
-    if (nk === "price") nk = "book_price";
     if (nk === "book_code") nk = "isbn";
     if (!KNOWN.has(nk)) continue;
     const v = row[k];
@@ -39,11 +36,7 @@ function rowToBook(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 function coerceNumbers(o: Record<string, unknown>) {
-  const numFields = [
-    "category_id",
-    "publication_year",
-    "book_price",
-  ] as const;
+  const numFields = ["category_id", "publication_year"] as const;
   for (const f of numFields) {
     if (o[f] == null || o[f] === "") continue;
     const n = typeof o[f] === "number" ? o[f] : parseFloat(String(o[f]));
@@ -136,7 +129,6 @@ function parseCsvLoose(text: string): Record<string, unknown>[] {
     header.forEach((h, j) => {
       if (!h) return;
       let key = h;
-      if (key === "price") key = "book_price";
       if (key === "book_code") key = "isbn";
       if (!KNOWN.has(key)) return;
       o[key] = cells[j] ?? "";
@@ -162,7 +154,7 @@ export function downloadLibraryBooksImportTemplate() {
     ["category", "Category name OR numeric category id (must exist in Library)"],
     [""],
     ["SECTION 2 — OPTIONAL FIELDS"],
-    ["author", "edition", "language", "isbn", "publisher", "publication_year", "book_price"],
+    ["author", "edition", "language", "isbn", "publisher", "publication_year"],
     [""],
     ["Enter your rows on the Data sheet. Remove the demo row or replace it with real data."],
   ];
@@ -176,7 +168,6 @@ export function downloadLibraryBooksImportTemplate() {
     "isbn",
     "publisher",
     "publication_year",
-    "book_price",
   ];
 
   const demoRow = [
@@ -188,7 +179,6 @@ export function downloadLibraryBooksImportTemplate() {
     "",
     "Pearson",
     2023,
-    499.5,
   ];
 
   const wb = XLSX.utils.book_new();
