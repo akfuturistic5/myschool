@@ -366,6 +366,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "List of leaves", link: routes.listLeaves },
           { label: "Approve Request", link: routes.approveRequest },
+          { label: "Leave Types", link: routes.leaveTypesManage },
         ],
       },
       {

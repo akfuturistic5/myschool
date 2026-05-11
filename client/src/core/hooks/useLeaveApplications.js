@@ -52,6 +52,34 @@ export const useLeaveApplications = (options = {}) => {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const shouldRetryWithoutAcademicYear =
+    !pendingOnly &&
+    academicYearId != null &&
+    String(status || '')
+      .toLowerCase()
+      .split(/[, ]+/)
+      .filter(Boolean)
+      .some((s) => s === 'approved' || s === 'rejected');
+
+  const buildAdminParams = (withAcademicYear = true, refreshKey = null) => ({
+    limit,
+    page: page ?? undefined,
+    page_size: pageSize ?? undefined,
+    academic_year_id: withAcademicYear ? academicYearId : undefined,
+    leave_type_id: leaveTypeId ?? undefined,
+    applicant_type: applicantType ?? undefined,
+    class_id: classId ?? undefined,
+    section_id: sectionId ?? undefined,
+    department_id: departmentId ?? undefined,
+    designation_id: designationId ?? undefined,
+    status: status ?? undefined,
+    sort_by: sortBy ?? undefined,
+    sort_order: sortOrder ?? undefined,
+    leave_from: leaveFrom || undefined,
+    leave_to: leaveTo || undefined,
+    ...(pendingOnly ? { pending_only: true } : {}),
+    ...(refreshKey != null ? { _refresh: refreshKey } : {}),
+  });
 
   const fetchList = async (bustCache = false) => {
     try {
@@ -118,25 +146,7 @@ export const useLeaveApplications = (options = {}) => {
           ...(refreshKey != null ? { _refresh: refreshKey } : {}),
         });
       } else if (canUseAdminList) {
-        response = await apiService.getLeaveApplications({
-          limit,
-          page: page ?? undefined,
-          page_size: pageSize ?? undefined,
-          academic_year_id: academicYearId,
-          leave_type_id: leaveTypeId ?? undefined,
-          applicant_type: applicantType ?? undefined,
-          class_id: classId ?? undefined,
-          section_id: sectionId ?? undefined,
-          department_id: departmentId ?? undefined,
-          designation_id: designationId ?? undefined,
-          status: status ?? undefined,
-          sort_by: sortBy ?? undefined,
-          sort_order: sortOrder ?? undefined,
-          leave_from: leaveFrom || undefined,
-          leave_to: leaveTo || undefined,
-          ...(pendingOnly ? { pending_only: true } : {}),
-          ...(refreshKey != null ? { _refresh: refreshKey } : {}),
-        });
+        response = await apiService.getLeaveApplications(buildAdminParams(true, refreshKey));
       } else {
         // Role loading or non-admin - skip admin API to avoid 403
         setList([]);
@@ -146,8 +156,21 @@ export const useLeaveApplications = (options = {}) => {
 
       const rawData = response?.data;
       const dataArr = Array.isArray(rawData) ? rawData : (Array.isArray(rawData?.data) ? rawData.data : rawData?.items) || [];
-      if (response.status === 'SUCCESS' && Array.isArray(dataArr)) {
-        let rows = dataArr;
+      if (
+        canUseAdminList &&
+        shouldRetryWithoutAcademicYear &&
+        Array.isArray(dataArr) &&
+        dataArr.length === 0
+      ) {
+        const retryResponse = await apiService.getLeaveApplications(buildAdminParams(false, refreshKey));
+        response = retryResponse;
+      }
+      const normalizedRawData = response?.data;
+      const normalizedDataArr = Array.isArray(normalizedRawData)
+        ? normalizedRawData
+        : (Array.isArray(normalizedRawData?.data) ? normalizedRawData.data : normalizedRawData?.items) || [];
+      if (response.status === 'SUCCESS' && Array.isArray(normalizedDataArr)) {
+        let rows = normalizedDataArr;
         if (!parentChildren && !studentOnly) {
           rows = rows.filter((r, i, a) => {
             if (r == null) return false;

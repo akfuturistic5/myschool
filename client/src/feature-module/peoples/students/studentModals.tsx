@@ -41,7 +41,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const formattedDate = `${month}-${day}-${year}`
   const defaultValue = dayjs(formattedDate)
 
-  const { leaveTypes } = useLeaveTypes()
+  const { leaveTypes } = useLeaveTypes({ applicableFor: "student" })
   const leaveTypeOptions = leaveTypes.length > 0 ? leaveTypes : []
   const { feeStructures } = useFeeStructures()
   

@@ -41,7 +41,7 @@ const StaffLeave = () => {
   const data = (Array.isArray(leaveApplications) ? leaveApplications : []).map(
     (l: any) => ({ ...l, leaveDate: l.leaveRange })
   );
-  const { leaveTypes } = useLeaveTypes();
+  const { leaveTypes } = useLeaveTypes({ applicableFor: "staff" });
   const [applyType, setApplyType] = useState<SingleValue<{ value: string; label: string }>>(null);
   const [applyFrom, setApplyFrom] = useState<Dayjs | null>(null);
   const [applyTo, setApplyTo] = useState<Dayjs | null>(null);
@@ -51,7 +51,29 @@ const StaffLeave = () => {
 
   const leaveSummary = useMemo(() => {
     const leaves = Array.isArray(leaveApplications) ? leaveApplications : [];
-    return (Array.isArray(leaveTypes) ? leaveTypes : []).map((t: any) => {
+    const source = Array.isArray(leaveTypes) ? [...leaveTypes] : [];
+    const seen = new Set<string>();
+    source.forEach((t: any) => {
+      const tid = Number(t?.id ?? t?.value);
+      const tname = String(t?.label ?? t?.leave_type ?? "").trim().toLowerCase();
+      seen.add(Number.isFinite(tid) && tid > 0 ? `id:${tid}` : `name:${tname || "unknown"}`);
+    });
+    leaves.forEach((l: any) => {
+      const tid = Number(l?.leaveTypeId);
+      const tname = String(l?.leaveType || "").trim().toLowerCase();
+      const key = Number.isFinite(tid) && tid > 0 ? `id:${tid}` : `name:${tname || "unknown"}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        source.push({
+          id: Number.isFinite(tid) && tid > 0 ? tid : undefined,
+          value: Number.isFinite(tid) && tid > 0 ? String(tid) : undefined,
+          label: String(l?.leaveType || "").trim() || "Leave",
+          max_days_per_year: 0,
+          max_days: 0,
+        });
+      }
+    });
+    return source.map((t: any) => {
       const typeId = Number(t?.id ?? t?.value);
       const typeLabel = String(t?.label ?? t?.leave_type ?? "Leave");
       const yearlyLimit = Number(t?.max_days_per_year ?? t?.max_days ?? 0);

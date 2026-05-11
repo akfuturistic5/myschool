@@ -21,4 +21,24 @@ const updateLeaveStatusSchema = Joi.object({
 
 const cancelLeaveSchema = Joi.object({}).unknown(true);
 
-module.exports = { createLeaveApplicationSchema, updateLeaveStatusSchema, cancelLeaveSchema };
+const leaveTypePayloadSchema = Joi.object({
+  leave_type: Joi.string().trim().min(2).max(100).required(),
+  code: Joi.string().trim().max(20).allow(null, ''),
+  max_days: Joi.number().integer().min(0).allow(null),
+  description: Joi.string().trim().max(1000).allow(null, ''),
+  is_paid: Joi.boolean().optional(),
+  applicable_for: Joi.string().trim().lowercase().valid('student', 'staff', 'both').allow(null, ''),
+  requires_medical_certificate: Joi.boolean().optional(),
+  is_active: Joi.boolean().optional(),
+}).unknown(false);
+
+const createLeaveTypeSchema = leaveTypePayloadSchema;
+const updateLeaveTypeSchema = leaveTypePayloadSchema.fork(['leave_type'], (schema) => schema.optional());
+
+module.exports = {
+  createLeaveApplicationSchema,
+  updateLeaveStatusSchema,
+  cancelLeaveSchema,
+  createLeaveTypeSchema,
+  updateLeaveTypeSchema,
+};
