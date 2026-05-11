@@ -82,37 +82,51 @@ const CollectFees = () => {
   useEffect(() => {
     let filtered = [...data];
 
-    if (searchAdmNo) {
-      filtered = filtered.filter((item: any) => 
-        item.admNo.toLowerCase().includes(searchAdmNo.toLowerCase())
+    const admQ = String(searchAdmNo ?? "").trim().toLowerCase();
+    if (admQ) {
+      filtered = filtered.filter((item: any) =>
+        String(item.admNo ?? "")
+          .toLowerCase()
+          .includes(admQ)
       );
     }
-    if (searchRollNo) {
-      filtered = filtered.filter((item: any) => 
-        item.rollNo.toLowerCase().includes(searchRollNo.toLowerCase())
+    const rollQ = String(searchRollNo ?? "").trim().toLowerCase();
+    if (rollQ) {
+      filtered = filtered.filter((item: any) =>
+        String(item.rollNo ?? "")
+          .toLowerCase()
+          .includes(rollQ)
       );
     }
     if (selectedClass !== "All") {
-      filtered = filtered.filter((item: any) => 
-        item.class === selectedClass
+      filtered = filtered.filter(
+        (item: any) => String(item.class ?? "").trim() === String(selectedClass ?? "").trim()
       );
     }
     if (selectedSection !== "All") {
-      filtered = filtered.filter((item: any) => 
-        item.section === selectedSection
+      filtered = filtered.filter(
+        (item: any) => String(item.section ?? "").trim() === String(selectedSection ?? "").trim()
       );
     }
     if (filterStatus !== "All") {
-      filtered = filtered.filter((item: any) => item.status === filterStatus);
+      const want = String(filterStatus ?? "").toLowerCase();
+      filtered = filtered.filter(
+        (item: any) => String(item.status ?? "").toLowerCase() === want
+      );
     }
 
-    if (dateRange) {
-      const start = dateRange[0].startOf('day');
-      const end = dateRange[1].endOf('day');
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      const start = dateRange[0].startOf("day");
+      const end = dateRange[1].endOf("day");
       filtered = filtered.filter((item: any) => {
-        if (!item.lastDate || item.lastDate === '-') return false;
-        const d = dayjs(item.lastDate, "DD MMM YYYY");
-        return (d.isSame(start) || d.isAfter(start)) && (d.isSame(end) || d.isBefore(end));
+        const raw = item.lastDate;
+        if (raw == null || raw === "-" || String(raw).trim() === "") return true;
+        const d = dayjs(raw, "DD MMM YYYY", true);
+        if (!d.isValid()) return true;
+        return (
+          (d.isSame(start, "day") || d.isAfter(start)) &&
+          (d.isSame(end, "day") || d.isBefore(end))
+        );
       });
     }
 
@@ -420,7 +434,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Classes" }}
                                 value={selectedClass}
-                                onChange={(val: any) => setSelectedClass(val)}
+                                onChange={(val: any) => setSelectedClass(val ?? "All")}
                               />
                             </div>
                           </div>
@@ -435,7 +449,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Sections" }}
                                 value={selectedSection}
-                                onChange={(val: any) => setSelectedSection(val)}
+                                onChange={(val: any) => setSelectedSection(val ?? "All")}
                               />
                             </div>
                           </div>
@@ -453,7 +467,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Status" }}
                                 value={filterStatus}
-                                onChange={(val: any) => setFilterStatus(val)}
+                                onChange={(val: any) => setFilterStatus(val ?? "All")}
                               />
                             </div>
                           </div>

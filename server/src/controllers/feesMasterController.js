@@ -38,8 +38,10 @@ const getFeesMaster = async (req, res) => {
             `SELECT
                 fct.*,
                 ft.name AS fee_type_name,
+                ft.name AS fees_type_name,
                 ft.code AS fee_type_code,
                 c.class_name,
+                c.class_name AS fees_group_name,
                 f.due_date AS fee_due_date,
                 f.late_fee_type,
                 f.late_fee_charge,

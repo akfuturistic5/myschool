@@ -153,6 +153,10 @@ export const useLinkedStudentContext = ({
       class_id: parseStudentId(row.class_id),
       section_id: parseStudentId(row.section_id),
       academic_year_id: parseStudentId(row.academic_year_id),
+      section_name:
+        row.section_name != null && String(row.section_name).trim() !== ""
+          ? String(row.section_name).trim()
+          : null,
     };
   }, [isParentRole, resolvedStudentId, parents]);
 
@@ -250,8 +254,12 @@ export const useLinkedStudentContext = ({
   return {
     role,
     isStudentRole,
+    /** True for parent, father, mother, guardian (portal users viewing a linked child). */
+    isParentRole,
     isParentLeaveViewer,
     isGuardianViewer,
+    /** Ward class / section (sections.id) / year from same source as /parents/me — use when GET /students/:id omits placement for parent portal. */
+    parentPlacementForWard,
     student,
     studentId: resolvedStudentId,
     loading,

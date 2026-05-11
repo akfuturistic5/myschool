@@ -146,6 +146,21 @@ const getFeesAssignments = async (req, res) => {
                 u.avatar AS student_image,
                 s.admission_number,
                 c.class_name,
+                c.class_name AS fees_group_name,
+                (
+                    SELECT string_agg(sub.name, ', ' ORDER BY sub.name)
+                    FROM (
+                        SELECT DISTINCT ft.name AS name
+                        FROM fees_class_types fct2
+                        JOIN fees f2 ON f2.id = fct2.fee_id
+                            AND f2.class_id = fct2.class_id
+                            AND f2.academic_year_id = fct2.academic_year_id
+                            AND f2.deleted_at IS NULL
+                        JOIN fees_types ft ON ft.id = fct2.fee_type_id
+                        WHERE f2.class_id = fp.class_id
+                          AND f2.academic_year_id = fp.academic_year_id
+                    ) sub
+                ) AS fees_type_name,
                 -- Section from lifecycle ledger
                 (
                     SELECT sec.section_name

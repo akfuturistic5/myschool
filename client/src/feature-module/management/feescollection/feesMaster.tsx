@@ -152,11 +152,11 @@ const FeesMaster = () => {
     let filtered = [...data];
 
     if (selectedGroup !== "All") {
-      filtered = filtered.filter(item => item.fees_group_id === Number(selectedGroup));
+      filtered = filtered.filter(item => Number(item.fee_id) === Number(selectedGroup));
     }
 
     if (selectedType !== "All") {
-      filtered = filtered.filter(item => item.fees_type_id === Number(selectedType));
+      filtered = filtered.filter(item => Number(item.fee_type_id) === Number(selectedType));
     }
 
     if (filterStatus !== "All") {
@@ -467,7 +467,10 @@ const FeesMaster = () => {
                                 className="select"
                                 options={[
                                   { value: "All", label: "All Groups" },
-                                  ...groups.map(g => ({ value: g.id.toString(), label: g.name }))
+                                  ...groups.map((g: any) => ({
+                                    value: String(g.id),
+                                    label: g.class_name ?? g.name ?? (g.description ? String(g.description).slice(0, 80) : `Fee config #${g.id}`),
+                                  }))
                                 ]}
                                 defaultValue={{ value: "All", label: "All Groups" }}
                                 value={selectedGroup}

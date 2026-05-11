@@ -167,30 +167,39 @@ async function getParentsForUser(userId) {
   const baseSelect = `
     SELECT
       g.id AS g_id,
-      g.student_id,
+      sgl.student_id,
       g.user_id,
-      g.guardian_type,
+      sgl.relation AS guardian_type,
       u.first_name,
       u.last_name,
       u.email,
       u.phone,
       u.occupation,
-      g.created_at,
-      g.updated_at AS updated_at,
-      s.first_name AS student_first_name,
-      s.last_name AS student_last_name,
+      sgl.created_at AS created_at,
+      sgl.updated_at AS updated_at,
+      su.first_name AS student_first_name,
+      su.last_name AS student_last_name,
       s.admission_number,
       s.roll_number,
-      s.class_id,
-      s.section_id,
-      s.academic_year_id,
+      enr.class_id,
+      enr.section_id,
+      enr.academic_year_id,
       c.class_name,
       sec.section_name
     FROM guardians g
     INNER JOIN users u ON u.id = g.user_id
-    INNER JOIN students s ON s.id = g.student_id
-    LEFT JOIN classes c ON s.class_id = c.id
-    LEFT JOIN sections sec ON s.section_id = sec.id
+    INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+    INNER JOIN students s ON s.id = sgl.student_id
+    LEFT JOIN users su ON su.id = s.user_id
+    LEFT JOIN LATERAL (
+      SELECT l.to_class_id AS class_id, l.to_section_id AS section_id, l.to_academic_year_id AS academic_year_id
+      FROM student_lifecycle_ledger l
+      WHERE l.student_id = s.id
+      ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+      LIMIT 1
+    ) enr ON true
+    LEFT JOIN classes c ON c.id = enr.class_id
+    LEFT JOIN sections sec ON sec.id = enr.section_id
     WHERE s.is_active = true
       AND g.is_active = true
       AND u.is_active = true
@@ -203,7 +212,7 @@ async function getParentsForUser(userId) {
 
   let directUserMatch = await query(
     `${baseSelect} AND g.user_id = $1
-     ORDER BY s.first_name ASC, s.last_name ASC`,
+     ORDER BY su.first_name ASC, su.last_name ASC`,
     [userId]
   );
   if (directUserMatch.rows.length > 0) {
@@ -232,26 +241,34 @@ async function getParentsForUser(userId) {
         p.mother_image_url,
         p.created_at,
         p.updated_at,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
+        su.first_name AS student_first_name,
+        su.last_name AS student_last_name,
         s.admission_number,
         s.roll_number,
-        s.class_id,
-        s.section_id,
-        s.academic_year_id,
+        enr.class_id,
+        enr.section_id,
+        enr.academic_year_id,
         c.class_name,
         sec.section_name
       FROM parents p
       INNER JOIN students s ON s.id = p.student_id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN users su ON su.id = s.user_id
+      LEFT JOIN LATERAL (
+        SELECT l.to_class_id AS class_id, l.to_section_id AS section_id, l.to_academic_year_id AS academic_year_id
+        FROM student_lifecycle_ledger l
+        WHERE l.student_id = s.id
+        ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+        LIMIT 1
+      ) enr ON true
+      LEFT JOIN classes c ON c.id = enr.class_id
+      LEFT JOIN sections sec ON sec.id = enr.section_id
       WHERE s.is_active = true
         AND (
           p.user_id = $1
           OR p.father_user_id = $1
           OR p.mother_user_id = $1
         )
-      ORDER BY s.first_name ASC, s.last_name ASC`;
+      ORDER BY su.first_name ASC, su.last_name ASC`;
     const selectLegacyCols = `
       SELECT
         p.id,
@@ -269,22 +286,30 @@ async function getParentsForUser(userId) {
         p.mother_image_url,
         p.created_at,
         p.updated_at,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
+        su.first_name AS student_first_name,
+        su.last_name AS student_last_name,
         s.admission_number,
         s.roll_number,
-        s.class_id,
-        s.section_id,
-        s.academic_year_id,
+        enr.class_id,
+        enr.section_id,
+        enr.academic_year_id,
         c.class_name,
         sec.section_name
       FROM parents p
       INNER JOIN students s ON s.id = p.student_id
-      LEFT JOIN classes c ON s.class_id = c.id
-      LEFT JOIN sections sec ON s.section_id = sec.id
+      LEFT JOIN users su ON su.id = s.user_id
+      LEFT JOIN LATERAL (
+        SELECT l.to_class_id AS class_id, l.to_section_id AS section_id, l.to_academic_year_id AS academic_year_id
+        FROM student_lifecycle_ledger l
+        WHERE l.student_id = s.id
+        ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+        LIMIT 1
+      ) enr ON true
+      LEFT JOIN classes c ON c.id = enr.class_id
+      LEFT JOIN sections sec ON sec.id = enr.section_id
       WHERE s.is_active = true
         AND p.user_id = $1
-      ORDER BY s.first_name ASC, s.last_name ASC`;
+      ORDER BY su.first_name ASC, su.last_name ASC`;
 
     try {
       const r = await query(selectSplitCols, params);
@@ -334,49 +359,58 @@ async function getParentsForUser(userId) {
         params.push(normalizedPhone);
         const phoneParam = `$${params.length}`;
         where.push(`(
-          LOWER(BTRIM(COALESCE(g.email, ''))) = ANY(${emailParam}::text[])
-          OR regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}
+          LOWER(BTRIM(COALESCE(u.email, ''))) = ANY(${emailParam}::text[])
+          OR regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}
         )`);
       } else if (canMatchByEmail) {
         params.push(emailList);
         const emailParam = `$${params.length}`;
-        where.push(`LOWER(BTRIM(COALESCE(g.email, ''))) = ANY(${emailParam}::text[])`);
+        where.push(`LOWER(BTRIM(COALESCE(u.email, ''))) = ANY(${emailParam}::text[])`);
       } else if (canMatchByPhone) {
         params.push(normalizedPhone);
         const phoneParam = `$${params.length}`;
-        where.push(`regexp_replace(COALESCE(g.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}`);
+        where.push(`regexp_replace(COALESCE(u.phone, ''), '[^0-9]', '', 'g') = ${phoneParam}`);
       }
 
       try {
-        const legacyRes = await query(
+      const legacyRes = await query(
           `SELECT
             g.id AS g_id,
-            g.student_id,
+            sgl.student_id,
             g.user_id,
-            g.guardian_type,
-            COALESCE(NULLIF(BTRIM(u.first_name), ''), NULLIF(BTRIM(g.first_name), '')) AS first_name,
-            COALESCE(NULLIF(BTRIM(u.last_name), ''), NULLIF(BTRIM(g.last_name), '')) AS last_name,
-            COALESCE(NULLIF(BTRIM(u.email), ''), NULLIF(BTRIM(g.email), '')) AS email,
-            COALESCE(NULLIF(BTRIM(u.phone), ''), NULLIF(BTRIM(g.phone), '')) AS phone,
-            COALESCE(NULLIF(BTRIM(u.occupation), ''), NULLIF(BTRIM(g.occupation), '')) AS occupation,
-            g.created_at,
-            g.updated_at AS updated_at,
-            s.first_name AS student_first_name,
-            s.last_name AS student_last_name,
+            sgl.relation AS guardian_type,
+            NULLIF(BTRIM(u.first_name), '') AS first_name,
+            NULLIF(BTRIM(u.last_name), '') AS last_name,
+            NULLIF(BTRIM(u.email), '') AS email,
+            NULLIF(BTRIM(u.phone), '') AS phone,
+            NULLIF(BTRIM(u.occupation), '') AS occupation,
+            sgl.created_at AS created_at,
+            sgl.updated_at AS updated_at,
+            su.first_name AS student_first_name,
+            su.last_name AS student_last_name,
             s.admission_number,
             s.roll_number,
-            s.class_id,
-            s.section_id,
-            s.academic_year_id,
+            enr.class_id,
+            enr.section_id,
+            enr.academic_year_id,
             c.class_name,
             sec.section_name
           FROM guardians g
-          LEFT JOIN users u ON u.id = g.user_id
-          INNER JOIN students s ON s.id = g.student_id
-          LEFT JOIN classes c ON s.class_id = c.id
-          LEFT JOIN sections sec ON s.section_id = sec.id
+          INNER JOIN users u ON u.id = g.user_id
+          INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+          INNER JOIN students s ON s.id = sgl.student_id
+          LEFT JOIN users su ON su.id = s.user_id
+          LEFT JOIN LATERAL (
+            SELECT l.to_class_id AS class_id, l.to_section_id AS section_id, l.to_academic_year_id AS academic_year_id
+            FROM student_lifecycle_ledger l
+            WHERE l.student_id = s.id
+            ORDER BY l.event_date DESC NULLS LAST, l.id DESC
+            LIMIT 1
+          ) enr ON true
+          LEFT JOIN classes c ON c.id = enr.class_id
+          LEFT JOIN sections sec ON sec.id = enr.section_id
           WHERE ${where.join(' AND ')}
-          ORDER BY s.first_name ASC, s.last_name ASC`,
+          ORDER BY su.first_name ASC, su.last_name ASC`,
           params
         );
 

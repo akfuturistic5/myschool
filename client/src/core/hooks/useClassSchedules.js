@@ -34,7 +34,7 @@ function dedupeSlotsById(slots) {
 
 export const useClassSchedules = (params = {}) => {
   const reduxAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { classId = null, sectionId = null, skip = false } = params;
+  const { classId = null, sectionId = null, skip = false, relaxClientFilters = false } = params;
   const academicYearId = params.academicYearId ?? reduxAcademicYearId ?? null;
 
   const [data, setData] = useState([]);
@@ -91,7 +91,11 @@ export const useClassSchedules = (params = {}) => {
       if (Array.isArray(list)) {
         const filtered = list.filter((row) => {
           const classOk = classId == null || Number(row.class_id) === Number(classId);
-          const sectionOk = sectionId == null || Number(row.section_id) === Number(sectionId);
+          if (relaxClientFilters) return classOk;
+          const sectionOk =
+            sectionId == null ||
+            Number(row.section_id) === Number(sectionId) ||
+            Number(row.class_section_id) === Number(sectionId);
           return classOk && sectionOk;
         });
         const mapped = filtered.map((row, index) => ({
@@ -125,7 +129,7 @@ export const useClassSchedules = (params = {}) => {
 
   useEffect(() => {
     fetchSchedules();
-  }, [classId, sectionId, academicYearId, skip]);
+  }, [classId, sectionId, academicYearId, skip, relaxClientFilters]);
 
   return {
     data,

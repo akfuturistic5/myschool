@@ -105,6 +105,7 @@ import StaffLeave from "../hrm/staff-list/staff-leave";
 import StaffPayRoll from "../hrm/staff-list/staff-payroll.tsx";
 import StaffsAttendance from "../hrm/staff-list/staffs-attendance";
 import CollectFees from "../management/feescollection/collectFees";
+import FeesAssign from "../management/feescollection/feesAssign";
 import FeesGroup from "../management/feescollection/feesGroup";
 import FeesTypes from "../management/feescollection/feesTypes";
 import HostelList from "../management/hostel/hostelList";
@@ -1120,6 +1121,11 @@ export const publicRoutes = [
   {
     path: routes.collectFees,
     element: <CollectFees />,
+    route: Route,
+  },
+  {
+    path: routes.feesAssign,
+    element: <FeesAssign />,
     route: Route,
   },
   {

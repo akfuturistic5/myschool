@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
@@ -28,7 +28,9 @@ const FeesModal = ({
     const academicYearId = useSelector(selectSelectedAcademicYearId);
 
     // ── Fee Config (fees header) State ──────────────────────────────────────
-    const [feeClassId, setFeeClassId] = useState<number | null>(null);
+    /** Add mode only: multi-class via checkboxes / "All classes" */
+    const [feeClassIds, setFeeClassIds] = useState<number[]>([]);
+    const [allClassesSelected, setAllClassesSelected] = useState(false);
     const [feeDueDate, setFeeDueDate] = useState("");
     const [feeLateType, setFeeLateType] = useState<"fixed"|"percentage"|"none">("none");
     const [feeLateCharge, setFeeLateCharge] = useState("0");
@@ -69,7 +71,6 @@ const FeesModal = ({
     // Populate form when editing a fee config
     useEffect(() => {
       if (editFeeData) {
-        setFeeClassId(editFeeData.class_id ?? null);
         setFeeDueDate(editFeeData.due_date ?? "");
         setFeeLateType(editFeeData.late_fee_type ?? "none");
         setFeeLateCharge(editFeeData.late_fee_charge?.toString() ?? "0");
@@ -85,7 +86,8 @@ const FeesModal = ({
           setFeeItems([{ fee_type_id: 0, amount: "", is_optional: false }]);
         }
       } else {
-        setFeeClassId(null);
+        setFeeClassIds([]);
+        setAllClassesSelected(false);
         setFeeDueDate("");
         setFeeLateType("none");
         setFeeLateCharge("0");
@@ -94,6 +96,26 @@ const FeesModal = ({
         setFeeItems([{ fee_type_id: 0, amount: "", is_optional: false }]);
       }
     }, [editFeeData]);
+
+    const sortedFeeClasses = useMemo(
+      () =>
+        [...(classes ?? [])].sort((a, b) =>
+          String(a.class_name ?? "").localeCompare(String(b.class_name ?? ""), undefined, {
+            sensitivity: "base",
+          })
+        ),
+      [classes]
+    );
+
+    const addModeClassSummary = useMemo(() => {
+      if (allClassesSelected) return `All classes (${sortedFeeClasses.length})`;
+      if (feeClassIds.length === 0) return "Select classes…";
+      if (feeClassIds.length === 1) {
+        const c = sortedFeeClasses.find((x: any) => x.id === feeClassIds[0]);
+        return c?.class_name ?? `Class #${feeClassIds[0]}`;
+      }
+      return `${feeClassIds.length} classes selected`;
+    }, [allClassesSelected, feeClassIds, sortedFeeClasses]);
 
     // Populate form when editing a fee type
     useEffect(() => {
@@ -128,8 +150,16 @@ const FeesModal = ({
     const handleSaveFeeConfig = async (e: any) => {
       e.preventDefault();
       try {
-        if (!feeClassId || !academicYearId) {
-          Swal.fire("Validation", "Class and Academic Year are required", "warning");
+        if (!academicYearId) {
+          Swal.fire("Validation", "Academic Year is required", "warning");
+          return;
+        }
+        if (!editFeeData?.id && !allClassesSelected && feeClassIds.length === 0) {
+          Swal.fire(
+            "Validation",
+            'Select one or more classes, or choose "All classes".',
+            "warning"
+          );
           return;
         }
         const validItems = feeItems.filter(i => i.fee_type_id > 0 && i.amount !== "");
@@ -138,8 +168,7 @@ const FeesModal = ({
           return;
         }
 
-        const payload = {
-          class_id: feeClassId,
+        const payload: Record<string, unknown> = {
           academic_year_id: academicYearId,
           due_date: feeDueDate || null,
           late_fee_type: feeLateType !== "none" ? feeLateType : "fixed",
@@ -153,6 +182,16 @@ const FeesModal = ({
           }))
         };
 
+        if (!editFeeData?.id) {
+          if (allClassesSelected) {
+            payload.apply_to_all_classes = true;
+          } else {
+            payload.class_ids = [...feeClassIds];
+          }
+        } else {
+          payload.class_id = editFeeData.class_id;
+        }
+
         let res;
         if (editFeeData?.id) {
           res = await apiService.updateFeesGroup(editFeeData.id, payload);
@@ -161,7 +200,24 @@ const FeesModal = ({
         }
 
         if (res.status === "SUCCESS") {
-          Swal.fire("Success", `Fee configuration ${editFeeData?.id ? "updated" : "created"} successfully`, "success");
+          let msg =
+            res.message ??
+            `Fee configuration ${editFeeData?.id ? "updated" : "created"} successfully`;
+          if (!editFeeData?.id && res.data?.summary) {
+            const s = res.data.summary as Record<string, number | undefined>;
+            if (typeof s.new_fee_headers === "number") {
+              msg = `${msg}\n\nNew configs: ${s.new_fee_headers} · Existing updated: ${s.merged_existing ?? 0} · Lines added: ${s.lines_added ?? 0}`;
+              if ((s.duplicate_types_skipped ?? 0) > 0) {
+                msg += ` · Types skipped (already on class): ${s.duplicate_types_skipped}`;
+              }
+              if ((s.failed_count ?? 0) > 0) msg += ` · Failed: ${s.failed_count}`;
+            } else if (typeof s.created_count === "number") {
+              msg = `${msg}\n\nCreated: ${s.created_count} · Skipped (already exist): ${s.skipped_count}${
+                s.failed_count ? ` · Failed: ${s.failed_count}` : ""
+              }`;
+            }
+          }
+          Swal.fire("Success", msg, "success");
           if (onSuccess) onSuccess();
           closeActiveModal();
         }
@@ -259,12 +315,74 @@ const FeesModal = ({
                         {editFeeData?.id ? (
                           <input className="form-control" value={editFeeData.class_name ?? ""} disabled />
                         ) : (
-                          <CommonSelect
-                            className="select"
-                            options={classes.map((c: any) => ({ value: c.id.toString(), label: c.class_name }))}
-                            value={feeClassId?.toString()}
-                            onChange={(val: any) => setFeeClassId(Number(val?.value ?? val))}
-                          />
+                          <div className="w-100">
+                            <div className="dropdown w-100">
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center justify-content-between gap-2"
+                                data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside"
+                                aria-expanded="false"
+                              >
+                                <span className="text-truncate">{addModeClassSummary}</span>
+                              </button>
+                              <div
+                                className="dropdown-menu shadow w-100 p-3 mt-1"
+                                style={{
+                                  maxHeight: "min(280px, 45vh)",
+                                  overflowY: "auto",
+                                  zIndex: 1060,
+                                }}
+                                onClick={(ev) => ev.stopPropagation()}
+                              >
+                                <div className="form-check mb-2 pb-2 border-bottom">
+                                  <input
+                                    className="form-check-input"
+                                    type="checkbox"
+                                    id="fee-class-all"
+                                    checked={allClassesSelected}
+                                    onChange={(e) => {
+                                      const c = e.target.checked;
+                                      setAllClassesSelected(c);
+                                      if (c) setFeeClassIds([]);
+                                    }}
+                                  />
+                                  <label className="form-check-label fw-medium ms-2" htmlFor="fee-class-all">
+                                    All classes
+                                  </label>
+                                </div>
+                                {sortedFeeClasses.map((c: any) => (
+                                  <div key={c.id} className="form-check mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      id={`fee-class-${c.id}`}
+                                      disabled={allClassesSelected}
+                                      checked={
+                                        allClassesSelected || feeClassIds.includes(Number(c.id))
+                                      }
+                                      onChange={(e) => {
+                                        if (allClassesSelected) return;
+                                        const idNum = Number(c.id);
+                                        const checked = e.target.checked;
+                                        setFeeClassIds((prev) =>
+                                          checked
+                                            ? [...new Set([...prev, idNum])]
+                                            : prev.filter((x) => x !== idNum)
+                                        );
+                                      }}
+                                    />
+                                    <label
+                                      className="form-check-label ms-2"
+                                      htmlFor={`fee-class-${c.id}`}
+                                    >
+                                      {c.class_name}
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                       <div className="col-md-6">
