@@ -137,7 +137,7 @@ const CollectFees = () => {
       Class: item.class,
       Section: item.section,
       Amount: item.amount,
-      "Last Date": item.lastDate,
+      "Due Date": item.lastDate,
       Status: item.status
     }));
     exportToExcel(exportData, `FeeCollections_${new Date().toISOString().split('T')[0]}`);
@@ -151,7 +151,7 @@ const CollectFees = () => {
       { title: "Class", dataKey: "class" },
       { title: "Section", dataKey: "section" },
       { title: "Amount", dataKey: "amount" },
-      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Due Date", dataKey: "lastDate" },
       { title: "Status", dataKey: "status" },
     ];
     exportToPDF(filteredData, "Fee Collection List", `FeeCollections_${new Date().toISOString().split('T')[0]}`, cols);
@@ -165,7 +165,7 @@ const CollectFees = () => {
       { title: "Class", dataKey: "class" },
       { title: "Section", dataKey: "section" },
       { title: "Amount", dataKey: "amount" },
-      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Due Date", dataKey: "lastDate" },
       { title: "Status", dataKey: "status" },
     ];
     printData("Fee Collection List", cols, filteredData);
@@ -239,43 +239,61 @@ const CollectFees = () => {
     },
 
     {
-      title: "Last Date",
+      title: "Due Date",
       dataIndex: "lastDate",
       sorter: (a: TableData, b: TableData) =>
         dayjs(a.lastDate, "DD MMM YYYY").unix() - dayjs(b.lastDate, "DD MMM YYYY").unix(),
+    },
+    {
+      title: "Balance",
+      dataIndex: "balance",
+      sorter: (a: TableData, b: TableData) => (a.balance || 0) - (b.balance || 0),
+      render: (text: number) => <span className={text > 0 ? "text-danger" : ""}>{text.toLocaleString()}</span>
     },
 
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Paid" ? (
+      render: (text: string) => {
+        const status = text?.toLowerCase();
+        if (status === "paid") {
+          return (
             <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
+              Paid
             </span>
-          ) : (
+          );
+        } else if (status === "partial") {
+          return (
+            <span className="badge badge-soft-warning d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              Partial
+            </span>
+          );
+        } else {
+          return (
             <span className="badge badge-soft-danger d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
+              {text === "unpaid" ? "Unpaid" : text}
             </span>
-          )}
-        </>
-      ),
+          );
+        }
+      },
       sorter: (a: TableData, b: TableData) => (a.status || "").localeCompare(b.status || ""),
     },
     {
       title: "Action",
       dataIndex: "status",
-      render: (text: string, record: any) => (
-        <>
-          {text === "Paid" ? (
-            <Link to={routes.studentFees} state={record.id ? { studentId: record.id } : undefined} className="btn btn-light">
-              View Details
-            </Link>
-          ) : (
-            <button
+      render: (text: string, record: any) => {
+        const balance = parseFloat(record.balance || 0);
+        return (
+          <>
+            {balance <= 0 ? (
+              <Link to={routes.studentFees} state={record.id ? { studentId: record.id } : undefined} className="btn btn-light">
+                View Details
+              </Link>
+            ) : (
+              <button
               type="button"
               className="btn btn-light"
               onClick={() => {
@@ -300,8 +318,9 @@ const CollectFees = () => {
               Collect Fees
             </button>
           )}
-        </>
-      ),
+          </>
+        );
+      },
     },
   ];
   return (

@@ -404,6 +404,24 @@ class ApiService {
   async deleteClassSchedule(id) {
     return this.makeRequest(`/class-schedules/${id}`, { method: 'DELETE' });
   }
+  async bulkUpdateClassSchedules(payload) {
+    return this.makeRequest('/class-schedules/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async copyClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/copy', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async resetClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/reset', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
 
   // Schedules (time_slots / schedule table - ID, Type, Start Time, End Time, Status)
   async getSchedules() {
@@ -425,6 +443,12 @@ class ApiService {
   }
   async deleteSchedule(id) {
     return this.makeRequest(`/schedules/${id}`, { method: 'DELETE' });
+  }
+  async bulkDeleteSchedules(ids) {
+    return this.makeRequest('/schedules/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+  }
+  async generateSchedules(data) {
+    return this.makeRequest('/schedules/generate', { method: 'POST', body: JSON.stringify(data) });
   }
 
   // Students
@@ -1238,6 +1262,10 @@ class ApiService {
     return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, { method: 'DELETE' });
   }
 
+  /**
+   * @param {number|string} classId
+   * @param {number|null} [academicYearId]
+   */
   async getTeacherAssignmentClassMeta(classId, academicYearId = null) {
     const qs = academicYearId ? `?academicYearId=${academicYearId}` : '';
     return this.makeRequest(`/teacher-assignments/class/${classId}/meta${qs}`);
@@ -1745,6 +1773,18 @@ class ApiService {
       method: 'DELETE',
     });
   }
+  async bulkDeleteFeesMaster(ids) {
+    return this.makeRequest('/fees-master/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdateFeesMasterStatus(ids, status) {
+    return this.makeRequest('/fees-master/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
 
   // Fees Assign
   async getFeesAssignments(params = {}) {
@@ -1777,6 +1817,27 @@ class ApiService {
       body: JSON.stringify(data),
     });
   }
+  async getPaymentModes(activeOnly = true) {
+    return this.makeRequest(`/payment-modes${activeOnly ? '?activeOnly=true' : ''}`);
+  }
+  async createPaymentMode(data) {
+    return this.makeRequest('/payment-modes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePaymentMode(id, data) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deletePaymentMode(id) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getStudentFeeDetailedStatus(studentId, academicYearId) {
     return this.makeRequest(`/fees-collect/student/${studentId}/${academicYearId}`);
   }
@@ -1817,8 +1878,42 @@ class ApiService {
     });
   }
 
-  async getLeaveTypes() {
-    return this.makeRequest('/leave-applications/leave-types');
+  async getLeaveTypes(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.applicable_for) {
+      searchParams.set('applicable_for', String(params.applicable_for));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLeaveTypesAdmin(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.include_inactive != null) {
+      searchParams.set('include_inactive', String(params.include_inactive));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types/admin${qs ? `?${qs}` : ''}`);
+  }
+
+  async createLeaveType(data) {
+    return this.makeRequest('/leave-applications/leave-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeaveType(id, data) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeaveType(id) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getLeaveApplications(params = {}) {
@@ -2226,6 +2321,15 @@ class ApiService {
   }
   async assignSubjectToClass(data) {
     return this.makeRequest('/class-subjects', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async getSubjectTeacherAssignments(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.classId) params.append('classId', filters.classId);
+    if (filters.academicYearId) params.append('academicYearId', filters.academicYearId);
+    if (filters.teacherId) params.append('teacherId', filters.teacherId);
+    const qs = params.toString();
+    return this.makeRequest(`/teacher-assignments/subject-teachers${qs ? `?${qs}` : ''}`);
   }
   async updateClassSubject(id, data) {
     return this.makeRequest(`/class-subjects/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -3390,6 +3494,66 @@ class ApiService {
   }
   async getNextAdmissionNumber() {
     return this.makeRequest('/students/next-admission-number');
+  }
+
+  // Salary Components
+  async getSalaryComponents() {
+    return this.makeRequest('/salary-components');
+  }
+
+  async createSalaryComponent(data) {
+    return this.makeRequest('/salary-components', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSalaryComponent(id, data) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSalaryComponent(id) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Payroll
+  async getPayrollList(params = {}) {
+    const search = new URLSearchParams();
+    if (params.month) search.set('month', params.month);
+    if (params.year) search.set('year', params.year);
+    if (params.status) search.set('status', params.status);
+    const qs = search.toString();
+    return this.makeRequest(`/payroll${qs ? `?${qs}` : ''}`);
+  }
+
+  async processPayroll(data) {
+    return this.makeRequest('/payroll/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePayslipStatus(id, status) {
+    return this.makeRequest(`/payroll/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+  async bulkDeletePayslips(ids) {
+    return this.makeRequest('/payroll/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdatePayslipStatus(ids, status) {
+    return this.makeRequest('/payroll/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
   }
 }
 

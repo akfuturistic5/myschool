@@ -187,6 +187,56 @@ const ApproveRequest = () => {
       },
     },
   ];
+
+  const exportHeaders = ["Submitted By", "Leave Type", "Role", "Leave Date", "No of Days", "Applied On", "Status"];
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => [
+        row.submittedBy ?? "—",
+        row.leaveType ?? "—",
+        row.role ?? "—",
+        row.leaveDate ?? "—",
+        row.noofDays ?? "—",
+        row.appliedOn ?? "—",
+        row.status ?? "—",
+      ]),
+    [data]
+  );
+
+  const downloadCsv = (filename: string) => {
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [exportHeaders, ...exportRows].map((r) => r.map(escape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printTable = () => {
+    const htmlRows = exportRows
+      .map((r) => `<tr>${r.map((c) => `<td>${String(c ?? "")}</td>`).join("")}</tr>`)
+      .join("");
+    const printWindow = window.open("", "_blank", "width=1200,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>Leave Approval Requests</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:16px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #ddd;padding:8px;font-size:12px;text-align:left}
+        th{background:#f5f5f5}
+      </style></head><body>
+      <h3>Leave Approval Requests</h3>
+      <table><thead><tr>${exportHeaders.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${htmlRows}</tbody></table>
+      </body></html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
   return (
     <div>
       <>
@@ -212,7 +262,12 @@ const ApproveRequest = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={() => refetchLeaves()}
+                onPrint={printTable}
+                onExportPdf={printTable}
+                onExportExcel={() => downloadCsv("leave-approval-requests.csv")}
+              />
               </div>
             </div>
             {/* Page Header*/}

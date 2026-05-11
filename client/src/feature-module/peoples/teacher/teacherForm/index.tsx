@@ -29,6 +29,7 @@ import { useSubjects } from "../../../../core/hooks/useSubjects";
 import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
+import { useSalaryComponents } from "../../../../core/hooks/useSalaryComponents";
 import {
   validateField,
   validateTeacherFormSync,
@@ -188,6 +189,8 @@ const TeacherForm = () => {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [asyncErrors, setAsyncErrors] = useState<Partial<Record<"phone" | "email", string>>>({});
   const [checkingUnique, setCheckingUnique] = useState(false);
+  const [assignedComponents, setAssignedComponents] = useState<Array<{ component_id: number; amount: string }>>([]);
+  const { salaryComponents, loading: loadingComponents } = useSalaryComponents();
   const [formBanner, setFormBanner] = useState<{ title: string; message: string } | null>(null);
   const [resumeFileError, setResumeFileError] = useState<string | null>(null);
   const [joiningLetterFileError, setJoiningLetterFileError] = useState<string | null>(null);
@@ -518,6 +521,14 @@ const TeacherForm = () => {
       setIdNumber(teacherData.id_number ?? "");
       setPrevSchoolPhone(teacherData.previous_school_phone ?? "");
       setEpfNo(teacherData.epf_no ?? "");
+      if (teacherData.salary_components && Array.isArray(teacherData.salary_components)) {
+        setAssignedComponents(teacherData.salary_components.map((sc: any) => ({
+          component_id: sc.component_id,
+          amount: sc.amount?.toString() || ""
+        })));
+      } else {
+        setAssignedComponents([]);
+      }
       setTouched({});
       setSubmitAttempted(false);
       setFormBanner(null);
@@ -1341,6 +1352,117 @@ const TeacherForm = () => {
                     </div>
                   </div>
                   {/* /Bank Details */}
+                  {/* Salary Components Assignment */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-cash fs-16" />
+                        </span>
+                        <h4 className="text-dark">Salary Components Assignment</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <p className="text-muted small mb-3">
+                        Assign standard earnings and deductions for this teacher. These will be used for monthly payroll generation.
+                      </p>
+                      {loadingComponents ? (
+                        <div className="p-3 text-center">
+                          <i className="ti ti-loader ti-spin me-2" /> Loading components…
+                        </div>
+                      ) : (
+                        <div className="row">
+                          {/* Earnings */}
+                          <div className="col-md-6 border-end">
+                            <h6 className="mb-3 text-success">Earnings (Allowances)</h6>
+                            {salaryComponents?.filter(c => c.type === 'allowance' || c.type === 'earning').map(comp => {
+                              const assigned = assignedComponents.find(ac => ac.component_id === comp.id);
+                              return (
+                                <div key={comp.id} className="mb-3 p-2 border-bottom">
+                                  <div className="form-check form-switch mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      checked={!!assigned}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setAssignedComponents([...assignedComponents, { component_id: comp.id, amount: "" }]);
+                                        } else {
+                                          setAssignedComponents(assignedComponents.filter(ac => ac.component_id !== comp.id));
+                                        }
+                                      }}
+                                    />
+                                    <label className="form-check-label fw-bold">{comp.component_name}</label>
+                                  </div>
+                                  {assigned && (
+                                    <div className="input-group input-group-sm">
+                                      <span className="input-group-text">Monthly Amount</span>
+                                      <input
+                                        type="number"
+                                        className="form-control"
+                                        value={assigned.amount}
+                                        placeholder="0.00"
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAssignedComponents(assignedComponents.map(ac => 
+                                            ac.component_id === comp.id ? { ...ac, amount: val } : ac
+                                          ));
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Deductions */}
+                          <div className="col-md-6">
+                            <h6 className="mb-3 text-danger">Deductions</h6>
+                            {salaryComponents?.filter(c => c.type === 'deduction').map(comp => {
+                              const assigned = assignedComponents.find(ac => ac.component_id === comp.id);
+                              return (
+                                <div key={comp.id} className="mb-3 p-2 border-bottom">
+                                  <div className="form-check form-switch mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      checked={!!assigned}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setAssignedComponents([...assignedComponents, { component_id: comp.id, amount: "" }]);
+                                        } else {
+                                          setAssignedComponents(assignedComponents.filter(ac => ac.component_id !== comp.id));
+                                        }
+                                      }}
+                                    />
+                                    <label className="form-check-label fw-bold">{comp.component_name}</label>
+                                  </div>
+                                  {assigned && (
+                                    <div className="input-group input-group-sm">
+                                      <span className="input-group-text">Monthly Amount</span>
+                                      <input
+                                        type="number"
+                                        className="form-control"
+                                        value={assigned.amount}
+                                        placeholder="0.00"
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAssignedComponents(assignedComponents.map(ac => 
+                                            ac.component_id === comp.id ? { ...ac, amount: val } : ac
+                                          ));
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* /Salary Components Assignment */}
                 </>
 
                 {/* Hostel Information - temporarily disabled until hostel workflow redesign (same as student form) */}
@@ -1678,6 +1800,10 @@ const TeacherForm = () => {
                                 : undefined),
                             academic_year_id: academicYearId ?? undefined,
                             is_hostel_required: false,
+                            salary_components: assignedComponents.map(ac => ({
+                              component_id: ac.component_id,
+                              amount: parseFloat(ac.amount) || 0
+                            })),
                           };
                           Object.keys(updateData).forEach(k => { if (updateData[k] === undefined) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
@@ -1816,6 +1942,10 @@ const TeacherForm = () => {
                             emergency_contact_phone: get("emergency_contact_phone") || undefined,
                             academic_year_id: academicYearId ?? undefined,
                             is_hostel_required: false,
+                            salary_components: assignedComponents.map(ac => ({
+                              component_id: ac.component_id,
+                              amount: parseFloat(ac.amount) || 0
+                            })),
                           };
                           Object.keys(payload).forEach((k) => {
                             if (payload[k] === undefined)

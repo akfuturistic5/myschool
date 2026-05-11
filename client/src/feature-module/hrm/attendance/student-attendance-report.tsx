@@ -22,7 +22,8 @@ import {
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
   late: "bg-pending",
-  half_day: "bg-dark",
+  half_day: "bg-purple",
+  halfday: "bg-purple",
   absent: "bg-danger",
   leaved: "bg-secondary",
   holiday: "bg-info",
@@ -38,6 +39,13 @@ const statusTextMap: Record<string, string> = {
   half_day: "HD",
   halfday: "HD",
 };
+
+const normalizeStatusKey = (status: unknown): string =>
+  String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_–—−]+/g, "_")
+    .replace(/^halfday$/, "half_day");
 
 const getTodayLocalYMD = () => {
   const now = new Date();
@@ -265,7 +273,8 @@ const StudentAttendanceReport = () => {
         ),
         key: day.date,
         render: (_text: any, record: any) => {
-          const status = record.daily?.[day.date];
+          const rawStatus = record.daily?.[day.date];
+          const status = normalizeStatusKey(rawStatus);
           if (status === "leaved") {
             return (
               <span
@@ -286,7 +295,7 @@ const StudentAttendanceReport = () => {
             fontWeight: 700 as const,
             color: "#fff",
           };
-          if (!status) {
+          if (!rawStatus) {
             return (
               <span
                 className="attendance-range"
@@ -299,36 +308,56 @@ const StudentAttendanceReport = () => {
             const rest = getCompoundHolidayAttendancePart(status);
             const subText = statusTextMap[rest] || "?";
             const subCls = statusClassMap[rest] || "bg-light";
+            const isHalfDaySub = rest === "half_day" || rest === "halfday";
             return (
               <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }} title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}>
                 <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
                   H
                 </span>
-                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                <span
+                  className={`attendance-range ${subCls}`.trim()}
+                  style={isHalfDaySub ? { ...pillStyle, backgroundColor: "#7b2cbf" } : pillStyle}
+                >
                   {subText}
                 </span>
               </span>
             );
           }
           const cls = statusClassMap[status] || "bg-light";
-          const sLo = String(status).toLowerCase();
+          const sLo = status;
           const short =
             sLo === "half_day" || sLo === "halfday" ? "HD" : formatAttendanceDayShort(status);
+          const isHalfDay = sLo === "half_day" || sLo === "halfday";
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={{
-                width: 22,
-                height: 18,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 6,
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#fff",
-              }}
-              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
+              style={
+                isHalfDay
+                  ? {
+                      width: 22,
+                      height: 18,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#fff",
+                      backgroundColor: "#7b2cbf",
+                    }
+                  : {
+                      width: 22,
+                      height: 18,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "#fff",
+                    }
+              }
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(rawStatus)}`}
             >
               {short}
             </span>

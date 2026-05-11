@@ -216,10 +216,10 @@ async function createStudentUser(client, { admission_number, first_name, last_na
   if (emailTrim) {
     const existing = await findUserRowByEmail(client, emailTrim);
     if (existing) {
-      console.warn(
-        `createStudentUser: email already in use (user id=${existing.id}), skipping student user link`
-      );
-      return null;
+      const err = new Error('Email address is already in use by another student or staff member');
+      err.code = 'EMAIL_IN_USE';
+      err.statusCode = 400;
+      throw err;
     }
   }
 

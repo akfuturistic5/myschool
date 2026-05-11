@@ -9,7 +9,7 @@ const holidayBodySchema = Joi.object({
   description: Joi.string().trim().max(2000).allow('', null),
   start_date: parseDate,
   end_date: parseDate,
-  holiday_type: Joi.string().trim().max(32).allow('', null),
+  holiday_type: Joi.string().trim().lowercase().valid('public', 'school', 'custom').required(),
   academic_year_id: Joi.number().integer().positive().allow(null),
 });
 

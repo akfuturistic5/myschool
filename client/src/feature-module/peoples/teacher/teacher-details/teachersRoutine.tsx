@@ -106,8 +106,8 @@ function TeacherRoutineGridCell({ slot, entry }: { slot: PeriodCol; entry: any |
   if (entry) {
     return (
       <td className="align-top small" style={{ minWidth: 168, maxWidth: 240 }}>
-        <div className="fw-medium text-break">{entry.subject ?? "—"}</div>
-        <div className="text-muted text-break">{entry.classSection ?? "—"}</div>
+        <div className="fw-medium text-break">{entry.classSection ?? "—"}</div>
+        <div className="text-muted text-break">{entry.subject ?? "—"}</div>
         <div className="text-muted">Room: {entry.classRoom ?? "—"}</div>
       </td>
     );
@@ -228,7 +228,7 @@ const TeachersRoutine = () => {
         day: item.dayOfWeek,
         subject: item.subjectName,
         classRoom: item.roomNumber,
-        classSection: [item.className, item.sectionName].filter(Boolean).join(" · ") || "—",
+        classSection: item.className ? `Class: ${item.className}${item.sectionName ? ` - ${item.sectionName}` : ""}` : "—",
         originalData: { time_slot_id: item.timeSlotId },
       })),
     [routine]

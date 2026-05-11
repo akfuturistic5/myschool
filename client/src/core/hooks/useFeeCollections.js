@@ -44,7 +44,8 @@ export function useFeeCollections(options = {}) {
           balance,
           status: statusText,
           lastPaymentRaw: last ? dayjs(last).format('YYYY-MM-DD') : '',
-          lastDate: last ? dayjs(last).format('DD MMM YYYY') : '-',
+          dueDate: r.due_date ? dayjs(r.due_date).format('DD MMM YYYY') : '-',
+          lastDate: r.due_date ? dayjs(r.due_date).format('DD MMM YYYY') : '-', // Keep lastDate for compat or rename
           statusClass: statusText === 'Paid' ? 'badge badge-soft-success' : 'badge badge-soft-danger',
           view: statusText === 'Paid' ? 'View Details' : 'Collect Fees',
         };

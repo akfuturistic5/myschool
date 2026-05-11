@@ -269,8 +269,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "Fees Group", link: routes.feesGroup },
           { label: "Fees Type", link: routes.feesType },
-          { label: "Fees Master", link: routes.feesMaster },
-          { label: "Fees Assign", link: routes.feesAssign },
+          { label: "Assign Fees", link: routes.feesAssign },
           { label: "Collect Fees", link: routes.collectFees },
         ],
       },
@@ -370,6 +369,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "List of leaves", link: routes.listLeaves },
           { label: "Approve Request", link: routes.approveRequest },
+          { label: "Leave Types", link: routes.leaveTypesManage },
         ],
       },
       {
@@ -589,6 +589,13 @@ export const SidebarData = [
         label: "Casts",
         icon: "ti ti-users-group",
         link: routes.settingsCasts,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Payment Modes",
+        icon: "ti ti-credit-card",
+        link: routes.paymentModes,
         submenu: false,
         showSubRoute: false,
       },

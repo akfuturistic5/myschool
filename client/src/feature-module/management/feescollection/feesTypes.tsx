@@ -1,19 +1,8 @@
 import { useRef, useState, useEffect } from "react";
-import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
-import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
-import PredefinedDateRanges from "../../../core/common/datePicker";
 import CommonSelect from "../../../core/common/commonSelect";
-import {
-  feeGroup,
-  feesTypes,
-  ids,
-  names,
-  status,
-} from "../../../core/common/selectoption/selectoption";
-import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import FeesModal from "./feesModal";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -22,7 +11,6 @@ import Swal from "sweetalert2";
 
 const FeesTypes = () => {
   const routes = all_routes;
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [data, setData] = useState<any[]>([]);
@@ -30,61 +18,33 @@ const FeesTypes = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter States
-  const [filterGroup, setFilterGroup] = useState<string | number>("All");
+  // Filter
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // Options
-  const [groups, setGroups] = useState<any[]>([]);
-
-  // Modal States
+  // Modal
   const [selectedType, setSelectedType] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const fetchGroups = async () => {
-    try {
-      if (!academicYearId) return;
-      const res = await apiService.getFeesGroups({ academic_year_id: academicYearId });
-      if (res.status === "SUCCESS") {
-        setGroups(res.data
-          .filter((g: any) => g.status === "Active")
-          .map((g: any) => ({ value: String(g.id), label: g.name }))
-        );
-      }
-    } catch (err) {
-      console.error("Failed to fetch groups", err);
-    }
-  };
-
   const fetchFeesTypes = async (isManualRefresh = false) => {
     try {
-      if (!academicYearId) return;
       setLoading(true);
       setError(null);
-      const res = await apiService.getFeesTypes({ academic_year_id: academicYearId });
+      // fees_types are global (no academic_year_id filter needed)
+      // pass include_inactive to show all, filter in UI
+      const res = await apiService.getFeesTypes({ include_inactive: 'true' });
       if (res.status === "SUCCESS") {
         const mappedData = res.data.map((item: any) => ({
           ...item,
           key: item.id,
-          feesType: item.name,
-          feesCode: item.code || "-",
-          feesGroup: item.group_names || "-",
-          groupIds: item.group_ids || []
         }));
         setData(mappedData);
         setFilteredData(mappedData);
         if (isManualRefresh) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Refreshed',
-            text: 'Data updated successfully',
-            timer: 1500,
-            showConfirmButton: false
-          });
+          Swal.fire({ icon: 'success', title: 'Refreshed', timer: 1200, showConfirmButton: false });
         }
       }
     } catch (err: any) {
-      setError(err.message || "Failed to fetch fees types");
+      setError(err.message || "Failed to fetch fee types");
     } finally {
       setLoading(false);
     }
@@ -92,26 +52,15 @@ const FeesTypes = () => {
 
   useEffect(() => {
     fetchFeesTypes();
-    fetchGroups();
-  }, [academicYearId]);
+  }, []);
 
   const handleApplyClick = (e: any) => {
     e.preventDefault();
     let filtered = [...data];
 
-    if (filterGroup !== "All") {
-      filtered = filtered.filter(item => {
-        const ids = item.group_ids || [];
-        // Handle both array (PostgreSQL ARRAY_AGG) and potential JSON string
-        const normalizedIds = Array.isArray(ids) ? ids : (typeof ids === 'string' ? JSON.parse(ids) : []);
-        return normalizedIds.some((gid: any) => Number(gid) === Number(filterGroup));
-      });
-    }
-
     if (filterStatus !== "All") {
-      filtered = filtered.filter(item => 
-        item.status && item.status.toLowerCase() === filterStatus.toLowerCase()
-      );
+      const isActive = filterStatus === "active";
+      filtered = filtered.filter(item => item.is_active === isActive);
     }
 
     setFilteredData(filtered);
@@ -121,45 +70,41 @@ const FeesTypes = () => {
   };
 
   const handleReset = () => {
-    setFilterGroup("All");
     setFilterStatus("All");
     setFilteredData(data);
   };
 
   const handleExportExcel = () => {
     const exportData = filteredData.map(item => ({
-      ID: item.id,
-      "Fees Type": item.name,
+      "Fee Type": item.name,
       Code: item.code || "",
-      "Fees Group": item.group_names || "-",
       Description: item.description || "",
-      Status: item.status
+      "Used In (configs)": item.usage_count ?? 0,
+      Status: item.is_active ? "Active" : "Inactive"
     }));
     exportToExcel(exportData, `FeesTypes_${new Date().toISOString().split('T')[0]}`);
   };
 
   const handleExportPDF = () => {
     const columns = [
-      { title: "ID", dataKey: "id" },
-      { title: "Fees Type", dataKey: "name" },
+      { title: "Fee Type", dataKey: "name" },
       { title: "Code", dataKey: "code" },
-      { title: "Fees Group", dataKey: "group_names" },
       { title: "Description", dataKey: "description" },
-      { title: "Status", dataKey: "status" },
+      { title: "Status", dataKey: "status_label" },
     ];
-    exportToPDF(filteredData, "Fees Type List", `FeesTypes_${new Date().toISOString().split('T')[0]}`, columns);
+    const rows = filteredData.map((r: any) => ({ ...r, status_label: r.is_active ? "Active" : "Inactive" }));
+    exportToPDF(rows, "Fee Type List", `FeesTypes_${new Date().toISOString().split('T')[0]}`, columns);
   };
 
   const handlePrint = () => {
     const columns = [
-      { title: "ID", dataKey: "id" },
-      { title: "Fees Type", dataKey: "name" },
+      { title: "Fee Type", dataKey: "name" },
       { title: "Code", dataKey: "code" },
-      { title: "Fees Group", dataKey: "group_names" },
       { title: "Description", dataKey: "description" },
-      { title: "Status", dataKey: "status" },
+      { title: "Status", dataKey: "status_label" },
     ];
-    printData("Fees Type List", columns, filteredData);
+    const rows = filteredData.map((r: any) => ({ ...r, status_label: r.is_active ? "Active" : "Inactive" }));
+    printData("Fee Type List", columns, rows);
   };
 
   const handleEdit = (type: any) => {
@@ -176,58 +121,39 @@ const FeesTypes = () => {
   };
   const columns = [
     {
-      title: "ID",
-      dataIndex: "id",
-      render: (text: string) => (
-        <Link to="#" className="link-primary">
-          {text}
-        </Link>
-      ),
-      sorter: (a: TableData, b: TableData) => Number(a.id || 0) - Number(b.id || 0),
+      title: "Fee Type",
+      dataIndex: "name",
+      sorter: (a: any, b: any) => (a.name ?? "").localeCompare(b.name ?? ""),
+      render: (text: string) => <span className="fw-medium">{text}</span>
     },
     {
-      title: "Fees Type",
-      dataIndex: "feesType",
-      sorter: (a: TableData, b: TableData) =>
-        (a.feesType || "").localeCompare(b.feesType || ""),
-    },
-    {
-      title: "Fees Code",
-      dataIndex: "feesCode",
-      sorter: (a: TableData, b: TableData) =>
-        (a.feesCode || "").localeCompare(b.feesCode || ""),
-    },
-    {
-      title: "Fees Group",
-      dataIndex: "feesGroup",
-      sorter: (a: TableData, b: TableData) =>
-        (a.feesGroup || "").localeCompare(b.feesGroup || ""),
+      title: "Code",
+      dataIndex: "code",
+      render: (val: string) => val || <span className="text-muted">—</span>
     },
     {
       title: "Description",
       dataIndex: "description",
-      sorter: (a: TableData, b: TableData) =>
-        (a.description || "").localeCompare(b.description || ""),
+      render: (val: string) => val || <span className="text-muted">—</span>
+    },
+    {
+      title: "Used In",
+      dataIndex: "usage_count",
+      render: (val: number) => (
+        <span className={`badge ${Number(val) > 0 ? 'badge-soft-primary' : 'badge-soft-secondary'}`}>
+          {val ?? 0} config{Number(val) !== 1 ? 's' : ''}
+        </span>
+      )
     },
     {
       title: "Status",
-      dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Active" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
-          )}
-        </>
+      dataIndex: "is_active",
+      render: (val: boolean) => (
+        val
+          ? <span className="badge badge-soft-success d-inline-flex align-items-center"><i className="ti ti-circle-filled fs-5 me-1" />Active</span>
+          : <span className="badge badge-soft-danger d-inline-flex align-items-center"><i className="ti ti-circle-filled fs-5 me-1" />Inactive</span>
       ),
-      sorter: (a: any, b: any) => (a.status || "").localeCompare(b.status || ""),
+      sorter: (a: any, b: any) => Number(b.is_active) - Number(a.is_active),
     },
     {
       title: "Action",
@@ -252,20 +178,18 @@ const FeesTypes = () => {
                   data-bs-target="#edit_fees_Type"
                   onClick={() => handleEdit(record)}
                 >
-                  <i className="ti ti-edit-circle me-2" />
-                  Edit
+                  <i className="ti ti-edit-circle me-2" />Edit
                 </Link>
               </li>
               <li>
                 <Link
-                  className="dropdown-item rounded-1"
+                  className="dropdown-item rounded-1 text-danger"
                   to="#"
                   data-bs-toggle="modal"
                   data-bs-target="#delete-modal"
                   onClick={() => handleDeleteClick(record.id)}
                 >
-                  <i className="ti ti-trash-x me-2" />
-                  Delete
+                  <i className="ti ti-trash-x me-2" />Delete
                 </Link>
               </li>
             </ul>
@@ -345,28 +269,16 @@ const FeesTypes = () => {
                       <div className="p-3 border-bottom">
                         <div className="row">
                           <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Fees Group</label>
-                              <CommonSelect
-                                className="select"
-                                options={[{ value: "All", label: "All Groups" }, ...groups]}
-                                defaultValue={{ value: "All", label: "All Groups" }}
-                                value={filterGroup === "All" ? "All" : filterGroup.toString()}
-                                onChange={(val: any) => setFilterGroup(val)}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
                             <div className="mb-0">
                               <label className="form-label">Status</label>
                               <CommonSelect
                                 className="select"
                                 options={[
-                                  { value: "All", label: "All Status" },
-                                  { value: "Active", label: "Active" },
-                                  { value: "Inactive", label: "Inactive" }
+                                  { value: "All", label: "All" },
+                                  { value: "active", label: "Active" },
+                                  { value: "inactive", label: "Inactive" }
                                 ]}
-                                defaultValue={{ value: "All", label: "All Status" }}
+                                defaultValue={{ value: "All", label: "All" }}
                                 value={filterStatus}
                                 onChange={(val: any) => setFilterStatus(val)}
                               />
@@ -398,10 +310,11 @@ const FeesTypes = () => {
         </div>
       </div>
       {/* /Page Wrapper */}
-      <FeesModal 
-        onSuccess={fetchFeesTypes} 
-        editTypeData={selectedType} 
+      <FeesModal
+        onSuccess={fetchFeesTypes}
+        editTypeData={selectedType}
         deleteId={deleteId}
+        deleteContext="type"
         onDeleteSuccess={handleDeleteSuccess}
       />
     </>

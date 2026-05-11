@@ -110,8 +110,9 @@ const STAFF_SELECT_NORMALIZED = `
         s.license_expiry AS driver_license_expiry,
         s.designation_id, s.department_id, s.joining_date,
         s.qualification, s.experience_years, s.languages_known,
-        s.other_info, s.photo_url, s.status, s.is_active,
-        s.created_at, s.updated_at, s.deleted_at,
+        s.other_info, s.photo_url, s.status,
+        (LOWER(TRIM(COALESCE(s.status, ''))) = 'active') AS is_active,
+        s.resume, s.joining_letter, s.created_at, s.updated_at, s.deleted_at,
         u.first_name, u.last_name, u.email, u.phone, u.gender, u.date_of_birth,
         u.blood_group_id, u.current_address, u.permanent_address,
         u.current_address AS address,
@@ -206,7 +207,7 @@ const getAllStaff = async (req, res) => {
     await backfillLegacyTeacherStaffAssignments();
     const result = await query(`
       ${STAFF_SELECT_NORMALIZED}
-      WHERE s.deleted_at IS NULL AND s.status = 'Active'
+      WHERE s.deleted_at IS NULL AND s.status = 'Active' AND u.role_id != 2
       ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);
 

@@ -94,7 +94,9 @@ import Designation from "../hrm/designation";
 import Holiday from "../hrm/holidays";
 import ApproveRequest from "../hrm/leaves/approve-request";
 import ListLeaves from "../hrm/leaves/list-leaves";
+import LeaveTypesPage from "../hrm/leaves/leave-types";
 import Payroll from "../hrm/payroll";
+import SalarySettings from "../hrm/salarySettings";
 import AddStaff from "../hrm/staff-list/add-staff";
 import EditStaff from "../hrm/staff-list/edit-staff";
 import Staff from "../hrm/staff-list/staff";
@@ -103,9 +105,7 @@ import StaffLeave from "../hrm/staff-list/staff-leave";
 import StaffPayRoll from "../hrm/staff-list/staff-payroll.tsx";
 import StaffsAttendance from "../hrm/staff-list/staffs-attendance";
 import CollectFees from "../management/feescollection/collectFees";
-import FeesAssign from "../management/feescollection/feesAssign";
 import FeesGroup from "../management/feescollection/feesGroup";
-import FeesMaster from "../management/feescollection/feesMaster";
 import FeesTypes from "../management/feescollection/feesTypes";
 import HostelList from "../management/hostel/hostelList";
 import HostelRooms from "../management/hostel/hostelRooms";
@@ -178,6 +178,7 @@ import CustomFields from "../settings/appSettings/customFields";
 import InvoiceSettings from "../settings/appSettings/invoiceSettings";
 import PaymentGateways from "../settings/financialSettings/paymentGateways";
 import TaxRates from "../settings/financialSettings/taxRates";
+import PaymentModes from "../settings/financialSettings/paymentModes";
 
 import ConnectedApps from "../settings/generalSettings/connectedApps";
 import Notificationssettings from "../settings/generalSettings/notifications";
@@ -1031,6 +1032,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.salarySettings,
+    element: <SalarySettings />,
+    route: Route,
+  },
+  {
     path: routes.holidays,
     element: <Holiday />,
     route: Route,
@@ -1043,6 +1049,11 @@ export const publicRoutes = [
   {
     path: routes.listLeaves,
     element: <ListLeaves />,
+    route: Route,
+  },
+  {
+    path: routes.leaveTypesManage,
+    element: <LeaveTypesPage />,
     route: Route,
   },
   {
@@ -1104,16 +1115,6 @@ export const publicRoutes = [
   {
     path: routes.feesType,
     element: <FeesTypes />,
-    route: Route,
-  },
-  {
-    path: routes.feesMaster,
-    element: <FeesMaster />,
-    route: Route,
-  },
-  {
-    path: routes.feesAssign,
-    element: <FeesAssign />,
     route: Route,
   },
   {
@@ -1410,6 +1411,11 @@ export const publicRoutes = [
   {
     path: routes.taxRates,
     element: <TaxRates />,
+    route: Route,
+  },
+  {
+    path: routes.paymentModes,
+    element: <PaymentModes />,
     route: Route,
   },
 

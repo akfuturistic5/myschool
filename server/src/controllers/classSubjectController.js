@@ -24,6 +24,7 @@ const getAllClassSubjects = async (req, res) => {
         s.subject_name,
         s.subject_code,
         s.subject_type,
+        s.subject_type as subject_mode,
         c.class_name,
         c.class_code
       FROM class_subjects cs
@@ -69,6 +70,7 @@ const getSubjectsByClass = async (req, res) => {
         s.subject_name,
         s.subject_code,
         s.subject_type,
+        s.subject_type as subject_mode,
         cs.id,
         cs.class_id,
         cs.subject_id,

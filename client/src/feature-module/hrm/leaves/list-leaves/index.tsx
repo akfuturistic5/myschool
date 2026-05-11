@@ -32,6 +32,12 @@ const LEAVE_STATUS_OPTIONS = [
   { value: "rejected", label: "Rejected only" },
 ];
 
+const APPLICANT_TYPE_OPTIONS = [
+  { value: "both", label: "Both" },
+  { value: "staff", label: "Staff" },
+  { value: "student", label: "Student" },
+];
+
 const ListLeaves = () => {
   const routes = all_routes;
   const { user: currentUser } = useCurrentUser();
@@ -48,6 +54,7 @@ const ListLeaves = () => {
     [datePreset, customDateRange]
   );
   const [filterLeaveTypeId, setFilterLeaveTypeId] = useState<string | null>(null);
+  const [filterApplicantType, setFilterApplicantType] = useState<string>("both");
   const [filterDepartmentId, setFilterDepartmentId] = useState<string | null>(null);
   const [filterDesignationId, setFilterDesignationId] = useState<string | null>(null);
   const [filterClassId, setFilterClassId] = useState<string | null>(null);
@@ -85,10 +92,11 @@ const ListLeaves = () => {
   );
   const leaveTypeOptions = useMemo(() => {
     const source = leaveTypes.length > 0 ? leaveTypes : leaveType;
-    return (Array.isArray(source) ? source : []).map((item: any) => ({
+    const mapped = (Array.isArray(source) ? source : []).map((item: any) => ({
       value: String(item.value ?? item.id ?? ""),
       label: String(item.label ?? item.leave_type ?? item.name ?? "Leave Type"),
     }));
+    return [{ value: "all", label: "All" }, ...mapped];
   }, [leaveTypes]);
   const departmentOptions = useMemo(
     () =>
@@ -106,7 +114,7 @@ const ListLeaves = () => {
       })),
     [designations]
   );
-  const { leaveApplications, loading: leaveLoading, error: leaveError } = useLeaveApplications({
+  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 200,
     page: 1,
     pageSize: 200,
@@ -114,6 +122,7 @@ const ListLeaves = () => {
     studentOnly: isOwnLeavesOnly,
     status: filterStatus != null && String(filterStatus).trim() !== "" ? String(filterStatus).toLowerCase() : null,
     leaveTypeId: Number.isFinite(selectedLeaveTypeId) && selectedLeaveTypeId > 0 ? selectedLeaveTypeId : null,
+    applicantType: filterApplicantType === "both" ? null : filterApplicantType,
     departmentId: Number.isFinite(selectedDepartmentId) && selectedDepartmentId > 0 ? selectedDepartmentId : null,
     designationId: Number.isFinite(selectedDesignationId) && selectedDesignationId > 0 ? selectedDesignationId : null,
     classId: Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
@@ -203,6 +212,57 @@ const ListLeaves = () => {
       sorter: (a: any, b: any) => String(a?.status ?? "").length - String(b?.status ?? "").length,
     },
   ];
+
+  const exportHeaders = ["ID", "Submitted By", "Leave Type", "Role", "Leave Date", "No of Days", "Applied On", "Status"];
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => [
+        row.id ?? "—",
+        row.submittedBy ?? "—",
+        row.leaveType ?? "—",
+        row.role ?? "—",
+        row.leaveDate ?? "—",
+        row.noofDays ?? "—",
+        row.appliedOn ?? "—",
+        row.status ?? "—",
+      ]),
+    [data]
+  );
+
+  const downloadCsv = (filename: string) => {
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [exportHeaders, ...exportRows].map((r) => r.map(escape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printTable = () => {
+    const htmlRows = exportRows
+      .map((r) => `<tr>${r.map((c) => `<td>${String(c ?? "")}</td>`).join("")}</tr>`)
+      .join("");
+    const printWindow = window.open("", "_blank", "width=1200,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>List of Leaves</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:16px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #ddd;padding:8px;font-size:12px;text-align:left}
+        th{background:#f5f5f5}
+      </style></head><body>
+      <h3>List of Leaves</h3>
+      <table><thead><tr>${exportHeaders.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${htmlRows}</tbody></table>
+      </body></html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
   return (
     <div>
       <>
@@ -228,7 +288,12 @@ const ListLeaves = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-                <TooltipOption />
+                <TooltipOption
+                  onRefresh={() => refetchLeaves()}
+                  onPrint={printTable}
+                  onExportPdf={printTable}
+                  onExportExcel={() => downloadCsv("list-of-leaves.csv")}
+                />
               </div>
             </div>
             {/* /Page Header */}
@@ -268,8 +333,19 @@ const ListLeaves = () => {
                                 <CommonSelect
                                   className="select"
                                   options={leaveTypeOptions}
-                                  value={filterLeaveTypeId}
-                                  onChange={(value) => setFilterLeaveTypeId(value)}
+                                  value={filterLeaveTypeId ?? "all"}
+                                  onChange={(value) => setFilterLeaveTypeId(value === "all" ? null : value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-3">
+                                <label className="form-label">Applicant</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={APPLICANT_TYPE_OPTIONS}
+                                  value={filterApplicantType}
+                                  onChange={(value) => setFilterApplicantType(value || "both")}
                                 />
                               </div>
                             </div>
@@ -341,6 +417,7 @@ const ListLeaves = () => {
                             className="btn btn-light me-3"
                             onClick={() => {
                               setFilterLeaveTypeId(null);
+                              setFilterApplicantType("both");
                               setFilterStatus(DEFAULT_LIST_LEAVE_STATUSES);
                               setFilterDepartmentId(null);
                               setFilterDesignationId(null);

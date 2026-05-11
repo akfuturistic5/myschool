@@ -215,7 +215,7 @@ const getAllTeachers = async (req, res) => {
         s.qualification,
         s.experience_years,
         s.photo_url,
-        s.is_active,
+        u.is_active AS is_active,
         u.youtube,
         u.instagram,
         s.other_info,
@@ -236,7 +236,18 @@ const getAllTeachers = async (req, res) => {
           ssa.contract_type,
           ssa.shift,
           ssa.work_location,
-          ssa.basic_salary
+          ssa.basic_salary,
+          (
+            SELECT json_agg(json_build_object(
+              'component_id', scv.component_id,
+              'amount', scv.amount,
+              'component_name', sc.component_name,
+              'type', sc.type
+            ))
+            FROM staff_salary_component_values scv
+            JOIN salary_components sc ON sc.id = scv.component_id
+            WHERE scv.salary_assignment_id = ssa.id
+          ) AS salary_components
         FROM staff_salary_assignments ssa
         WHERE ssa.staff_id = s.id
           AND ssa.valid_period @> CURRENT_DATE::date
@@ -312,7 +323,7 @@ const getCurrentTeacher = async (req, res) => {
         s.qualification,
         s.experience_years,
         s.photo_url,
-        s.is_active,
+        u.is_active AS is_active,
         u.youtube,
         u.instagram,
         s.other_info,
@@ -333,7 +344,18 @@ const getCurrentTeacher = async (req, res) => {
           ssa.contract_type,
           ssa.shift,
           ssa.work_location,
-          ssa.basic_salary
+          ssa.basic_salary,
+          (
+            SELECT json_agg(json_build_object(
+              'component_id', scv.component_id,
+              'amount', scv.amount,
+              'component_name', sc.component_name,
+              'type', sc.type
+            ))
+            FROM staff_salary_component_values scv
+            JOIN salary_components sc ON sc.id = scv.component_id
+            WHERE scv.salary_assignment_id = ssa.id
+          ) AS salary_components
         FROM staff_salary_assignments ssa
         WHERE ssa.staff_id = s.id
           AND ssa.valid_period @> CURRENT_DATE::date
@@ -422,7 +444,7 @@ const getTeacherById = async (req, res) => {
         s.qualification,
         s.experience_years,
         s.photo_url,
-        s.is_active,
+        u.is_active AS is_active,
         sal.epf_no,
         c.class_name,
         sub.subject_name,
@@ -436,6 +458,17 @@ const getTeacherById = async (req, res) => {
         tr.pickup_alloc_name AS pickup_point_name,
         tr.vehicle_alloc_no AS vehicle_number,
         tr.plan_name AS transport_fee_plan_name,
+        (
+          SELECT json_agg(json_build_object(
+            'component_id', scv.component_id,
+            'amount', scv.amount,
+            'component_name', sc.component_name,
+            'type', sc.type
+          ))
+          FROM staff_salary_component_values scv
+          JOIN salary_components sc ON sc.id = scv.component_id
+          WHERE scv.salary_assignment_id = sal.id
+        ) AS salary_components,
         false AS is_transport_required,
         false AS is_hostel_required,
         NULL::text AS hostel_name,
@@ -647,7 +680,7 @@ const getTeachersByClass = async (req, res) => {
         s.qualification,
         s.experience_years,
         s.photo_url,
-        s.is_active,
+        u.is_active AS is_active,
         sal.epf_no,
         c.class_name,
         sub.subject_name
@@ -681,15 +714,14 @@ const getTeachersByClass = async (req, res) => {
 const getTeacherRoutine = async (req, res) => {
   try {
     const { id } = req.params;
+    const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
+    
+    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
+      return errorResponse(res, 400, 'academic_year_id query parameter is required');
+    }
 
-    // First verify teacher exists (class_schedules.teacher_id references staff.id)
     const teacherCheck = await query(
-      `
-      SELECT t.id, t.staff_id
-      FROM teachers t
-      WHERE t.id = $1
-        AND (t.status IS NULL OR LOWER(TRIM(t.status)) = 'active')
-    `,
+      `SELECT id FROM staff WHERE id = $1 AND (status IS NULL OR LOWER(TRIM(status)) = 'active')`,
       [id]
     );
 
@@ -697,278 +729,66 @@ const getTeacherRoutine = async (req, res) => {
       return errorResponse(res, 404, 'Teacher not found');
     }
 
-    const staffId = parseId(teacherCheck.rows[0].staff_id);
+    const staffId = parseId(teacherCheck.rows[0].id);
     if (!staffId) {
-      return success(res, 200, 'Teacher routine fetched successfully', {
-        routine: [],
-        breaks: [],
-        count: 0,
-      });
+      return success(res, 200, 'Teacher routine fetched successfully', { routine: [], slots: [] });
     }
 
     const ctx = getAuthContext(req);
     if (!isAdmin(ctx)) {
       const myTeacherId = await resolveTeacherIdForUser(ctx.userId);
-      const requestedTeacherId = parseId(id);
-      if (!myTeacherId || !requestedTeacherId || myTeacherId !== requestedTeacherId) {
+      if (!myTeacherId || myTeacherId !== parseId(id)) {
         return errorResponse(res, 403, 'You can only view your own routine');
       }
     }
 
-    const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
-    if (academicYearId == null || Number.isNaN(academicYearId) || academicYearId <= 0) {
-      return errorResponse(res, 400, 'academic_year_id query parameter is required');
-    }
-    const scheduleParams = [staffId, academicYearId];
+    const slotsRes = await query(
+      "SELECT id, slot_name, start_time, end_time, duration, is_break FROM timetable_time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC"
+    );
+    const slots = slotsRes.rows;
 
-    // Get class schedules for this teacher
-    // Handle both 'slots' and 'time_slots' table names
-    let schedulesQuery = `
+    const routineRes = await query(`
       SELECT 
-        cs.id,
-        cs.class_id,
-        cs.section_id,
-        cs.subject_id,
-        cs.time_slot_id,
-        cs.day_of_week,
-        cs.room_number,
-        cs.teacher_id,
-        cs.academic_year_id,
-        c.class_name,
-        sec.section_name,
-        sub.subject_name,
-        ts.slot_name,
-        ts.start_time,
-        ts.end_time,
-        ts.duration,
-        ts.is_break,
-        ts.is_active
+        cs.id, cs.class_id, cs.class_section_id, cs.class_subject_id, cs.time_slot_id, cs.day_of_week, cs.class_room_id,
+        c.class_name, sec.section_name, sub.subject_name, r.room_number,
+        ts.slot_name, ts.start_time, ts.end_time, ts.is_break
       FROM class_schedules cs
-      LEFT JOIN classes c ON cs.class_id = c.id
-      LEFT JOIN sections sec ON cs.section_id = sec.id
-      LEFT JOIN subjects sub ON cs.subject_id = sub.id
-      LEFT JOIN slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-      WHERE cs.teacher_id = $1
-        AND cs.academic_year_id = $2
-      ORDER BY 
-        CASE LOWER(TRIM(cs.day_of_week::text))
-          WHEN '0' THEN 1
-          WHEN '1' THEN 2
-          WHEN '2' THEN 3
-          WHEN '3' THEN 4
-          WHEN '4' THEN 5
-          WHEN '5' THEN 6
-          WHEN '6' THEN 7
-          WHEN 'sunday' THEN 1
-          WHEN 'monday' THEN 2
-          WHEN 'tuesday' THEN 3
-          WHEN 'wednesday' THEN 4
-          WHEN 'thursday' THEN 5
-          WHEN 'friday' THEN 6
-          WHEN 'saturday' THEN 7
-          ELSE 8
-        END,
-        ts.start_time ASC
-    `;
+      INNER JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
+      LEFT JOIN classes c ON c.id = cs.class_id
+      LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+      LEFT JOIN sections sec ON sec.id = csec.section_id
+      LEFT JOIN class_subjects csub ON csub.id = cs.class_subject_id
+      LEFT JOIN subjects sub ON sub.id = csub.subject_id
+      LEFT JOIN class_rooms r ON r.id = cs.class_room_id
+      WHERE cs.teacher_id = $1 AND cs.academic_year_id = $2
+    `, [staffId, academicYearId]);
 
-    let schedulesResult;
-    try {
-      schedulesResult = await query(schedulesQuery, scheduleParams);
-    } catch (e) {
-      console.error('Error with slots table:', e.message);
-      const isSlotsError = e.message.includes('slots') || e.message.includes('does not exist') ||
-        e.message.includes('relation') || e.message.includes('invalid input syntax');
-      if (isSlotsError) {
-        schedulesQuery = `
-          SELECT 
-            cs.id,
-            cs.class_id,
-            cs.section_id,
-            cs.subject_id,
-            cs.time_slot_id,
-            cs.day_of_week,
-            cs.room_number,
-            cs.teacher_id,
-            cs.academic_year_id,
-            c.class_name,
-            sec.section_name,
-            sub.subject_name,
-            ts.slot_name,
-            ts.start_time,
-            ts.end_time,
-            ts.duration,
-            ts.is_break,
-            ts.is_active
-          FROM class_schedules cs
-          LEFT JOIN classes c ON cs.class_id = c.id
-          LEFT JOIN sections sec ON cs.section_id = sec.id
-          LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          LEFT JOIN time_slots ts ON cs.time_slot_id::text ~ '^[0-9]+$' AND ts.id = (cs.time_slot_id::text)::int
-          WHERE cs.teacher_id = $1
-            AND cs.academic_year_id = $2
-          ORDER BY 
-            CASE LOWER(TRIM(cs.day_of_week::text))
-              WHEN '0' THEN 1
-              WHEN '1' THEN 2
-              WHEN '2' THEN 3
-              WHEN '3' THEN 4
-              WHEN '4' THEN 5
-              WHEN '5' THEN 6
-              WHEN '6' THEN 7
-              WHEN 'sunday' THEN 1
-              WHEN 'monday' THEN 2
-              WHEN 'tuesday' THEN 3
-              WHEN 'wednesday' THEN 4
-              WHEN 'thursday' THEN 5
-              WHEN 'friday' THEN 6
-              WHEN 'saturday' THEN 7
-              ELSE 8
-            END,
-            ts.start_time ASC
-        `;
-        schedulesResult = await query(schedulesQuery, scheduleParams);
-      } else {
-        // If error is not about slots table, try without slot join
-        schedulesQuery = `
-          SELECT 
-            cs.*,
-            c.class_name,
-            sec.section_name,
-            sub.subject_name
-          FROM class_schedules cs
-          LEFT JOIN classes c ON cs.class_id = c.id
-          LEFT JOIN sections sec ON cs.section_id = sec.id
-          LEFT JOIN subjects sub ON cs.subject_id = sub.id
-          WHERE cs.teacher_id = $1
-            AND cs.academic_year_id = $2
-        `;
-        schedulesResult = await query(schedulesQuery, scheduleParams);
-      }
-    }
-
-    // Get break/lunch times from slots table
-    let breaksQuery = `
-      SELECT 
-        slot_name,
-        start_time,
-        end_time,
-        duration,
-        is_break,
-        is_active
-      FROM slots
-      WHERE is_break = true AND is_active = true
-      ORDER BY start_time ASC
-    `;
-
-    let breaksResult;
-    try {
-      breaksResult = await query(breaksQuery);
-    } catch (e) {
-      // Try with time_slots table if slots doesn't exist
-      if (e.message.includes('slots') || e.message.includes('does not exist')) {
-        breaksQuery = `
-          SELECT 
-            slot_name,
-            start_time,
-            end_time,
-            duration,
-            is_break,
-            is_active
-          FROM time_slots
-          WHERE is_break = true AND is_active = true
-          ORDER BY start_time ASC
-        `;
-        breaksResult = await query(breaksQuery);
-      } else {
-        breaksResult = { rows: [] };
-      }
-    }
-
-    // Helper function to convert day to text
-    const getDayName = (day) => {
-      if (!day && day !== 0) return 'Monday';
-      const iso = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      if (typeof day === 'number') {
-        if (day >= 1 && day <= 7) return iso[day];
-        return dayNames[day] || 'Monday';
-      }
-      if (typeof day === 'string') {
-        const dayLower = day.toLowerCase();
-        if (dayLower.includes('monday')) return 'Monday';
-        if (dayLower.includes('tuesday')) return 'Tuesday';
-        if (dayLower.includes('wednesday')) return 'Wednesday';
-        if (dayLower.includes('thursday')) return 'Thursday';
-        if (dayLower.includes('friday')) return 'Friday';
-        if (dayLower.includes('saturday')) return 'Saturday';
-        if (dayLower.includes('sunday')) return 'Sunday';
-        return day; // Return as is if already formatted
-      }
-      return 'Monday';
-    };
-
-    // Format the response
-    const routine = schedulesResult.rows.map(row => {
-      // Get day value from any possible column name
-      const dayValue = row.day_of_week || row.day || row.weekday ||
-        row['day of week'] || row['dayOfWeek'];
-
-      // Get time from slot join or from class_schedules directly
-      const startTime = row.start_time || row.startTime || row.period_start;
-      const endTime = row.end_time || row.endTime || row.period_end;
-
-      return {
-        id: row.id,
-        classId: row.class_id,
-        className: row.class_name || row.className || 'N/A',
-        sectionId: row.section_id,
-        sectionName: row.section_name || row.sectionName || 'N/A',
-        subjectId: row.subject_id,
-        subjectName: row.subject_name || row.subjectName || 'N/A',
-        timeSlotId: row.time_slot_id || row.time_slot || row.timeSlotId,
-        slotName: row.slot_name || row.slotName || '',
-        dayOfWeek: getDayName(dayValue),
-        roomNumber: row.room_number || row.roomNumber || row.room_number || 'N/A',
-        startTime: startTime,
-        endTime: endTime,
-        duration: row.duration || '',
-        isBreak: row.is_break || false,
-        academicYearId: row.academic_year_id || row.academicYearId
-      };
-    });
-
-    const breaks = breaksResult.rows.map(row => ({
+    const routine = routineRes.rows.map(row => ({
+      id: row.id,
+      classId: row.class_id,
+      className: row.class_name || '',
+      sectionId: row.class_section_id,
+      sectionName: row.section_name || '',
+      subjectId: row.class_subject_id,
+      subjectName: row.subject_name || '',
+      timeSlotId: row.time_slot_id,
       slotName: row.slot_name,
+      dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][row.day_of_week - 1] || 'Unknown',
+      roomNumber: row.room_number || '—',
       startTime: row.start_time,
       endTime: row.end_time,
-      duration: row.duration
+      isBreak: row.is_break,
+      academicYearId: academicYearId
     }));
-
-    let slots = [];
-    try {
-      const sr = await query(
-        'SELECT id, slot_name, start_time, end_time, duration, is_break, is_active FROM time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC'
-      );
-      slots = sr.rows || [];
-    } catch (e) {
-      slots = [];
-    }
 
     return success(res, 200, 'Teacher routine fetched successfully', {
       routine,
-      breaks,
       slots,
-      count: routine.length,
+      count: routine.length
     });
   } catch (error) {
     console.error('Error fetching teacher routine:', error);
-    return errorResponse(
-      res,
-      500,
-      process.env.NODE_ENV === 'production'
-        ? 'Failed to fetch teacher routine'
-        : (error.message || 'Failed to fetch teacher routine')
-    );
+    return errorResponse(res, 500, 'Failed to fetch teacher routine', error.message);
   }
 };
 
@@ -992,7 +812,7 @@ const createTeacher = async (req, res) => {
       youtube, instagram, other_info,
       account_name, account_number, epf_no,
       employee_code: clientEmployeeCode,
-      status, is_active,
+      status, is_active, salary_components,
     } = body;
 
     const fn = (first_name || '').toString().trim();
@@ -1180,13 +1000,13 @@ const createTeacher = async (req, res) => {
       }
 
       // Insert salary assignment
-      await client.query(
+      const assRes = await client.query(
         `INSERT INTO staff_salary_assignments (
           staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no, branch, ifsc_code,
           contract_type, shift, work_location, valid_period, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW()
-        )`,
+        ) RETURNING id`,
         [
           staffId,
           salaryNum || 0,
@@ -1202,6 +1022,19 @@ const createTeacher = async (req, res) => {
           work_location || null,
         ]
       );
+      const assignmentId = assRes.rows[0].id;
+
+      if (salary_components && Array.isArray(salary_components)) {
+        for (const comp of salary_components) {
+          if (comp.component_id && comp.amount != null) {
+            await client.query(
+              `INSERT INTO staff_salary_component_values (salary_assignment_id, component_id, amount)
+               VALUES ($1, $2, $3)`,
+              [assignmentId, comp.component_id, comp.amount]
+            );
+          }
+        }
+      }
 
       // Insert subject teacher assignment
       if (classId && subjectId) {
@@ -1278,7 +1111,7 @@ const createTeacher = async (req, res) => {
         s.qualification,
         s.experience_years,
         s.photo_url,
-        s.is_active,
+        u.is_active AS is_active,
         sal.epf_no,
         c.class_name,
         sub.subject_name
@@ -1350,7 +1183,8 @@ const updateTeacher = async (req, res) => {
       blood_group, blood_group_id, previous_school_name, previous_school_address, previous_school_phone,
       current_address, permanent_address, pan_number, id_number,
       bank_name, branch, ifsc, account_name, account_number, epf_no, contract_type, shift, work_location,
-      facebook, twitter, linkedin, youtube, instagram, other_info, photo_url
+      facebook, twitter, linkedin, youtube, instagram, other_info, photo_url,
+      salary_components
     } = req.body;
 
     let isActiveBoolean = false;
@@ -1479,8 +1313,9 @@ const updateTeacher = async (req, res) => {
           [staffId]
         );
 
+        let assignmentId;
         if (existingSal.rows.length > 0) {
-          const salId = existingSal.rows[0].id;
+          assignmentId = existingSal.rows[0].id;
           const salUpdates = [];
           const salParams = [];
           let salIdx = 1;
@@ -1500,19 +1335,33 @@ const updateTeacher = async (req, res) => {
           salUpdates.push(`updated_at = NOW()`);
 
           if (salUpdates.length > 0) {
-            salParams.push(salId);
+            salParams.push(assignmentId);
             await client.query(`UPDATE staff_salary_assignments SET ${salUpdates.join(', ')} WHERE id = $${salIdx}`, salParams);
           }
         } else {
-          await client.query(
+          const assRes = await client.query(
             `INSERT INTO staff_salary_assignments (
               staff_id, basic_salary, epf_no, pan_number, bank_name, account_name, account_no, branch, ifsc_code,
               contract_type, shift, work_location, valid_period, created_at, updated_at
             ) VALUES (
               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, daterange(CURRENT_DATE, NULL, '[)'), NOW(), NOW()
-            )`,
+            ) RETURNING id`,
             [staffId, salary || 0, epf_no || null, panVal, bank_name || null, account_name || null, account_number || null, branch || null, ifsc || null, contract_type || null, shift || null, work_location || null]
           );
+          assignmentId = assRes.rows[0].id;
+        }
+
+        if (salary_components && Array.isArray(salary_components)) {
+          await client.query(`DELETE FROM staff_salary_component_values WHERE salary_assignment_id = $1`, [assignmentId]);
+          for (const comp of salary_components) {
+            if (comp.component_id && comp.amount != null) {
+              await client.query(
+                `INSERT INTO staff_salary_component_values (salary_assignment_id, component_id, amount)
+                 VALUES ($1, $2, $3)`,
+                [assignmentId, comp.component_id, comp.amount]
+              );
+            }
+          }
         }
       }
 
@@ -1601,7 +1450,7 @@ const updateTeacher = async (req, res) => {
           s.qualification,
           s.experience_years,
           s.photo_url,
-          s.is_active,
+          u.is_active AS is_active,
           sal.epf_no,
           s.resume,
           s.joining_letter,

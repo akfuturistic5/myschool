@@ -53,7 +53,7 @@ function buildEmailInUseWarning(field, displayLabel) {
   return {
     code: 'EMAIL_IN_USE',
     field,
-    message: `${displayLabel}: Email already in use. Another account already uses this email. The student was saved successfully; no duplicate user was created for this email.`,
+    message: 'This email is already registered for another user account',
   };
 }
 
@@ -443,8 +443,16 @@ const createStudent = async (req, res) => {
         });
       } catch (e) {
         console.error('createStudent: could not create student user:', e.message);
-        if (stuEmail && (await isUserEmailTaken(client, stuEmail))) {
-          throw new Error(buildEmailInUseWarning('email', 'Student'));
+        if (e.code === 'EMAIL_IN_USE' || (stuEmail && (await isUserEmailTaken(client, stuEmail)))) {
+          throw new Error('This email is already registered for another user account');
+        }
+        if (e.code === '23505') {
+          if (e.constraint && e.constraint.includes('username')) {
+            throw new Error('This login name is already in use');
+          }
+          if (e.constraint && e.constraint.includes('email')) {
+            throw new Error('This email is already registered for another user account');
+          }
         }
         throw e;
       }
@@ -633,6 +641,7 @@ const createStudent = async (req, res) => {
 
       // Record Admission in Lifecycle Ledger (Source of Truth for enrollment history)
       if (academic_year_id && class_id) {
+        const { autoAssignFeesToStudents } = require('./feesGroupController');
         await client.query(`
           INSERT INTO student_lifecycle_ledger (
             student_id, event_type, to_academic_year_id, to_class_id, to_section_id, 
@@ -646,6 +655,15 @@ const createStudent = async (req, res) => {
           admission_date || new Date(),
           createdBy
         ]);
+
+        // Auto-assign fees for the new student
+        const feeConfigRes = await client.query(
+          `SELECT id FROM fees WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL LIMIT 1`,
+          [class_id, academic_year_id]
+        );
+        if (feeConfigRes.rowCount > 0) {
+          await autoAssignFeesToStudents(client, feeConfigRes.rows[0].id, class_id, academic_year_id);
+        }
       }
 
       return { studentRow, warnings: creationWarnings };
@@ -1302,6 +1320,16 @@ const updateStudent = async (req, res) => {
           section_id || null,
           id
         ]);
+
+        // Auto-assign fees for the updated student (in case class changed)
+        const { autoAssignFeesToStudents } = require('./feesGroupController');
+        const feeConfigRes = await client.query(
+          `SELECT id FROM fees WHERE class_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL LIMIT 1`,
+          [class_id, academic_year_id]
+        );
+        if (feeConfigRes.rowCount > 0) {
+          await autoAssignFeesToStudents(client, feeConfigRes.rows[0].id, class_id, academic_year_id);
+        }
       }
 
       return { studentRow, warnings: updateWarnings };
@@ -2231,6 +2259,16 @@ const getStudentPromotions = async (req, res) => {
     const studentId = req.query.student_id ? parseInt(req.query.student_id, 10) : null;
     const hasStudentFilter = studentId != null && !Number.isNaN(studentId);
 
+    if (hasStudentFilter) {
+      const access = await canAccessStudent(req, studentId);
+      if (!access.ok) {
+        return res.status(access.status || 403).json({
+          status: 'ERROR',
+          message: access.message || 'Access denied',
+        });
+      }
+    }
+
     let scopedStudentIds = [];
     if (hasStudentFilter) {
       const baseRes = await query(
@@ -2258,21 +2296,17 @@ const getStudentPromotions = async (req, res) => {
            FROM students s
            LEFT JOIN users u ON u.id = s.user_id
            WHERE ($1::int IS NOT NULL AND s.user_id = $1)
-              OR ($2::text <> '' AND TRIM(COALESCE(s.admission_number, '')) = $2)
-              OR ($3::text <> '' AND TRIM(COALESCE(s.roll_number, '')) = $3)
-              OR ($4::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $4)
-              OR ($5::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $5)
+              OR ($2::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $2)
+              OR ($3::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $3)
               OR (
-                $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
-                AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($6)
-                AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($7)
-                AND u.date_of_birth = $8::date
+                $4::text <> '' AND $5::text <> '' AND $6::date IS NOT NULL
+                AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($4)
+                AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($5)
+                AND u.date_of_birth = $6::date
               )
-              OR s.id = $9`,
+              OR s.id = $7`,
           [
             baseUserId,
-            baseAdmissionNo,
-            baseRollNo,
             baseUniqueStudentIds,
             baseGrNumber,
             baseFirstName,
@@ -2354,6 +2388,7 @@ const getStudentPromotions = async (req, res) => {
         `SELECT
           l.id,
           l.student_id,
+          l.event_type,
           l.from_class_id,
           l.to_class_id,
           l.from_section_id,
@@ -2832,29 +2867,11 @@ const getTeacherStudents = async (req, res) => {
        ${lateralCurrentEnrollment('s.id')}
        LEFT JOIN classes c ON enr.class_id = c.id
        LEFT JOIN sections sec ON enr.section_id = sec.id
-       WHERE s.status = 'Active' AND s.deleted_at IS NULL AND (
-         EXISTS (
-           SELECT 1 FROM class_schedules cs
-           WHERE cs.teacher_id = ANY($1::int[])
-             AND cs.class_id = enr.class_id
-             AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
-             AND (cs.academic_year_id = enr.academic_year_id OR cs.academic_year_id IS NULL)
-         )
-         OR EXISTS (
-           SELECT 1 FROM teachers t
-            WHERE t.id = ANY($1::int[]) AND t.class_id = enr.class_id
-         )
-         OR EXISTS (
-           SELECT 1 FROM sections sec_map
-           WHERE sec_map.id = enr.section_id
-             AND sec_map.section_teacher_id = ANY($2::int[])
-         )
-         OR EXISTS (
-           SELECT 1 FROM classes c_map
-           WHERE c_map.id = enr.class_id
-             AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
-         )
-       )${academicYearClause}
+       WHERE s.status = 'Active'
+         AND s.deleted_at IS NULL
+         AND enr.class_id IS NOT NULL
+         AND ${buildTeacherEnrollmentScopeSql({ teacherIdsParamRef: '$1', staffIdsParamRef: '$2' })}
+         ${academicYearClause}
        ORDER BY u.first_name ASC, u.last_name ASC`,
       params
     );
@@ -2952,7 +2969,14 @@ const getStudentById = async (req, res) => {
         SELECT ct.staff_id
         FROM class_teachers ct
         WHERE ct.class_id = enr.class_id
-          AND ct.class_section_id = enr.section_id
+          AND EXISTS (
+            SELECT 1
+            FROM class_sections cs
+            WHERE cs.id = ct.class_section_id
+              AND cs.class_id = enr.class_id
+              AND cs.section_id = enr.section_id
+              AND cs.academic_year_id = enr.academic_year_id
+          )
           AND ct.academic_year_id = enr.academic_year_id
           AND ct.deleted_at IS NULL
         ORDER BY (ct.role = 'primary') DESC, ct.id DESC
@@ -3832,10 +3856,19 @@ const getStudentAttendance = async (req, res) => {
       const sid = parseId(requestedStudentId);
       if (!sid) return [];
       const baseRes = await query(
-        `SELECT id, user_id, admission_number, roll_number, unique_student_ids, gr_number,
-                first_name, last_name, date_of_birth
-         FROM students
-         WHERE id = $1
+        `SELECT
+            s.id,
+            s.user_id,
+            s.admission_number,
+            s.roll_number,
+            s.unique_student_ids,
+            s.gr_number,
+            u.first_name,
+            u.last_name,
+            u.date_of_birth
+         FROM students s
+         LEFT JOIN users u ON u.id = s.user_id
+         WHERE s.id = $1
          LIMIT 1`,
         [sid]
       );
@@ -3850,20 +3883,21 @@ const getStudentAttendance = async (req, res) => {
       const baseLastName = String(base.last_name || '').trim();
       const baseDob = String(base.date_of_birth || '').slice(0, 10);
       const linked = await query(
-        `SELECT id
-         FROM students
-         WHERE ($1::int IS NOT NULL AND user_id = $1)
-            OR ($2::text <> '' AND TRIM(COALESCE(admission_number, '')) = $2)
-            OR ($3::text <> '' AND TRIM(COALESCE(roll_number, '')) = $3)
-            OR ($4::text <> '' AND TRIM(COALESCE(unique_student_ids, '')) = $4)
-            OR ($5::text <> '' AND TRIM(COALESCE(gr_number, '')) = $5)
+        `SELECT s.id
+         FROM students s
+         LEFT JOIN users u ON u.id = s.user_id
+         WHERE ($1::int IS NOT NULL AND s.user_id = $1)
+            OR ($2::text <> '' AND TRIM(COALESCE(s.admission_number, '')) = $2)
+            OR ($3::text <> '' AND TRIM(COALESCE(s.roll_number, '')) = $3)
+            OR ($4::text <> '' AND TRIM(COALESCE(s.unique_student_ids, '')) = $4)
+            OR ($5::text <> '' AND TRIM(COALESCE(s.gr_number, '')) = $5)
             OR (
               $6::text <> '' AND $7::text <> '' AND $8::date IS NOT NULL
-              AND LOWER(TRIM(COALESCE(first_name, ''))) = LOWER($6)
-              AND LOWER(TRIM(COALESCE(last_name, ''))) = LOWER($7)
-              AND date_of_birth = $8::date
+              AND LOWER(TRIM(COALESCE(u.first_name, ''))) = LOWER($6)
+              AND LOWER(TRIM(COALESCE(u.last_name, ''))) = LOWER($7)
+              AND u.date_of_birth = $8::date
             )
-            OR id = $9`,
+            OR s.id = $9`,
         [
           baseUserId,
           baseAdmissionNo,
@@ -3884,21 +3918,96 @@ const getStudentAttendance = async (req, res) => {
     };
 
     const scopedStudentIds = await resolveLinkedStudentIds(studentId);
-    const result = await query(
-      `SELECT id, student_id, class_id, section_id, attendance_date, status, 
-              check_in_time, check_out_time, marked_by, remarks
-       FROM attendance
-       WHERE student_id = ANY($1::int[])
-       ORDER BY attendance_date DESC`,
-      [scopedStudentIds]
-    );
+    const useStudentAttendance = await hasTable('student_attendance');
+    const useLegacyAttendance = await hasTable('attendance');
+    let result;
+    if (useStudentAttendance && useLegacyAttendance) {
+      result = await query(
+        `WITH unified AS (
+           SELECT
+             sa.id,
+             sa.student_id,
+             sa.class_id,
+             csec.section_id,
+             sa.attendance_date,
+             sa.status,
+             NULL::text AS check_in_time,
+             NULL::text AS check_out_time,
+             sa.marked_by,
+             sa.remarks,
+             1 AS source_priority
+           FROM student_attendance sa
+           LEFT JOIN class_sections csec ON csec.id = sa.class_section_id
+           WHERE sa.student_id = ANY($1::int[])
+           UNION ALL
+           SELECT
+             a.id,
+             a.student_id,
+             a.class_id,
+             a.section_id,
+             a.attendance_date,
+             a.status,
+             a.check_in_time::text,
+             a.check_out_time::text,
+             a.marked_by,
+             a.remarks,
+             2 AS source_priority
+           FROM attendance a
+           WHERE a.student_id = ANY($1::int[])
+         ),
+         dedup AS (
+           SELECT *,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY student_id, attendance_date
+                    ORDER BY source_priority ASC, id DESC
+                  ) AS rn
+           FROM unified
+         )
+         SELECT
+           id, student_id, class_id, section_id, attendance_date, status,
+           check_in_time, check_out_time, marked_by, remarks
+         FROM dedup
+         WHERE rn = 1
+         ORDER BY attendance_date DESC, id DESC`,
+        [scopedStudentIds]
+      );
+    } else if (useStudentAttendance) {
+      result = await query(
+        `SELECT
+           sa.id,
+           sa.student_id,
+           sa.class_id,
+           csec.section_id,
+           sa.attendance_date,
+           sa.status,
+           NULL::text AS check_in_time,
+           NULL::text AS check_out_time,
+           sa.marked_by,
+           sa.remarks
+         FROM student_attendance sa
+         LEFT JOIN class_sections csec ON csec.id = sa.class_section_id
+         WHERE sa.student_id = ANY($1::int[])
+         ORDER BY sa.attendance_date DESC, sa.id DESC`,
+        [scopedStudentIds]
+      );
+    } else {
+      result = await query(
+        `SELECT id, student_id, class_id, section_id, attendance_date, status,
+                check_in_time, check_out_time, marked_by, remarks
+         FROM attendance
+         WHERE student_id = ANY($1::int[])
+         ORDER BY attendance_date DESC, id DESC`,
+        [scopedStudentIds]
+      );
+    }
 
     const normalizeStatus = (s) => {
-      const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+      const v = (s || '').toString().trim().toLowerCase().replace(/[\s-]+/g, '_');
       if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
       if (v === 'absent' || v === 'absence' || v === 'a' || v === 'ab') return 'absent';
       if (v === 'present' || v === 'p' || v === 'pres') return 'present';
       if (v === 'late' || v === 'l') return 'late';
+      if (v === 'excused') return 'on_leave';
       return v;
     };
 
@@ -4453,6 +4562,34 @@ const normalizeAttendanceStatus = (s) => {
   return v || null;
 };
 
+const buildTeacherEnrollmentScopeSql = ({ teacherIdsParamRef, staffIdsParamRef }) => `(
+  EXISTS (
+    SELECT 1
+    FROM class_schedules cs
+    LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+    WHERE cs.teacher_id = ANY(${staffIdsParamRef}::int[])
+      AND cs.class_id = enr.class_id
+      AND (enr.section_id IS NULL OR csec.section_id = enr.section_id OR csec.section_id IS NULL)
+      AND (enr.academic_year_id IS NULL OR cs.academic_year_id = enr.academic_year_id OR cs.academic_year_id IS NULL)
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM teachers t
+    WHERE t.id = ANY(${teacherIdsParamRef}::int[])
+      AND t.class_id = enr.class_id
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM class_teachers ct
+    LEFT JOIN class_sections ct_sec ON ct_sec.id = ct.class_section_id
+    WHERE ct.staff_id = ANY(${staffIdsParamRef}::int[])
+      AND ct.class_id = enr.class_id
+      AND ct.deleted_at IS NULL
+      AND (enr.section_id IS NULL OR ct.class_section_id IS NULL OR ct_sec.section_id = enr.section_id)
+      AND (enr.academic_year_id IS NULL OR ct.academic_year_id = enr.academic_year_id OR ct.academic_year_id IS NULL)
+  )
+)`;
+
 const getGradeReport = async (req, res) => {
   try {
     const classId = parseId(req.query.class_id);
@@ -4508,20 +4645,12 @@ const getGradeReport = async (req, res) => {
     if (isTeacher) {
       scopedStudentsParams.push(teacherIds);
       scopedStudentsWhere.push(`(
-        EXISTS (
-          SELECT 1
-          FROM class_schedules cs
-          WHERE cs.teacher_id = ANY($${scopedStudentsParams.length}::int[])
-            AND cs.class_id = enr.class_id
-            AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM teachers t
-          WHERE t.id = ANY($${scopedStudentsParams.length}::int[])
-            AND t.class_id = enr.class_id
-        )
+        ${buildTeacherEnrollmentScopeSql({
+          teacherIdsParamRef: `$${scopedStudentsParams.length}`,
+          staffIdsParamRef: `$${scopedStudentsParams.length + 1}`,
+        })}
       )`);
+      scopedStudentsParams.push(teacherStaffIds);
     }
 
     const scopedWhereSql = scopedStudentsWhere.join(' AND ');
@@ -4720,6 +4849,8 @@ const getAttendanceReport = async (req, res) => {
     const sectionId = parseId(req.query.section_id);
     const academicYearId = parseId(req.query.academic_year_id);
     const month = String(req.query.month || '').trim();
+    const useStudentAttendance = await hasTable('student_attendance');
+    const attendanceTable = useStudentAttendance ? 'student_attendance' : 'attendance';
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({ status: 'ERROR', message: 'month must be in YYYY-MM format' });
@@ -4791,34 +4922,7 @@ const getAttendanceReport = async (req, res) => {
       rosterParams.push(teacherStaffIds);
       const staffIdsParamRef = `$${rosterParams.length}`;
       rosterWhere.push(`(
-        EXISTS (
-          SELECT 1
-          FROM class_schedules cs
-          WHERE cs.teacher_id = ANY(${teacherIdsParamRef}::int[])
-            AND cs.class_id = enr.class_id
-            AND (cs.section_id = enr.section_id OR cs.section_id IS NULL)
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM teachers t
-          WHERE t.id = ANY(${teacherIdsParamRef}::int[])
-            AND t.class_id = enr.class_id
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM sections sec_map
-          WHERE sec_map.id = enr.section_id
-            AND sec_map.section_teacher_id = ANY(${staffIdsParamRef}::int[])
-        )
-        OR EXISTS (
-          SELECT 1
-          FROM classes c_map
-          WHERE c_map.id = enr.class_id
-            AND (
-              c_map.class_teacher_id = ANY(${teacherIdsParamRef}::int[])
-              OR c_map.class_teacher_id = ANY(${staffIdsParamRef}::int[])
-            )
-        )
+        ${buildTeacherEnrollmentScopeSql({ teacherIdsParamRef, staffIdsParamRef })}
       )`);
     }
 
@@ -4847,16 +4951,28 @@ const getAttendanceReport = async (req, res) => {
       .filter(Boolean);
     const leavingDateByStudentId = new Map();
     if (rosterStudentIds.length > 0) {
-      const leavingRes = await query(
-        `SELECT DISTINCT ON (ls.student_id)
-           ls.student_id,
-           ls.leaving_date::date AS leaving_date
-         FROM leaving_students ls
-         WHERE ls.student_id = ANY($1::int[])
-           AND COALESCE(ls.is_active, true) = true
-         ORDER BY ls.student_id, ls.leaving_date DESC, ls.id DESC`,
-        [rosterStudentIds]
-      );
+      const useLegacyLeaving = await hasTable('leaving_students');
+      const leavingRes = useLegacyLeaving
+        ? await query(
+          `SELECT DISTINCT ON (ls.student_id)
+             ls.student_id,
+             ls.leaving_date::date AS leaving_date
+           FROM leaving_students ls
+           WHERE ls.student_id = ANY($1::int[])
+             AND COALESCE(ls.is_active, true) = true
+           ORDER BY ls.student_id, ls.leaving_date DESC, ls.id DESC`,
+          [rosterStudentIds]
+        )
+        : await query(
+          `SELECT DISTINCT ON (l.student_id)
+             l.student_id,
+             l.event_date::date AS leaving_date
+           FROM student_lifecycle_ledger l
+           WHERE l.student_id = ANY($1::int[])
+             AND l.event_type = 'LEAVE'
+           ORDER BY l.student_id, l.event_date DESC NULLS LAST, l.id DESC`,
+          [rosterStudentIds]
+        );
       (leavingRes.rows || []).forEach((row) => {
         const sid = parseId(row.student_id);
         const leavingDate = toYmd(row.leaving_date);
@@ -4872,8 +4988,9 @@ const getAttendanceReport = async (req, res) => {
          a.student_id,
          a.attendance_date::date AS attendance_date,
          a.status
-       FROM attendance a
+       FROM ${attendanceTable} a
        INNER JOIN students s ON s.id = a.student_id
+       ${lateralCurrentEnrollment('s.id')}
        WHERE ${rosterWhere.join(' AND ')}
          AND a.attendance_date >= $${attendanceParams.length - 1}
          AND a.attendance_date < $${attendanceParams.length}
@@ -4942,8 +5059,6 @@ const getAttendanceReport = async (req, res) => {
           } else if (!existing) {
             daily[day.date] = 'holiday';
           }
-        } else if (!existing) {
-          daily[day.date] = 'absent';
         }
       });
 
