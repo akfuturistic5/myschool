@@ -2896,6 +2896,34 @@ class ApiService {
     });
   }
 
+  async getLibraryPolicies() {
+    return this.makeRequest('/library/policies');
+  }
+
+  async getLibraryPolicyById(id) {
+    return this.makeRequest(`/library/policies/${id}`);
+  }
+
+  async createLibraryPolicy(data) {
+    return this.makeRequest('/library/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryPolicy(id, data) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryPolicy(id) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getLibraryBooks(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2941,6 +2969,39 @@ class ApiService {
     });
   }
 
+  async getLibraryBookCopies(params = {}) {
+    const q = new URLSearchParams();
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.accession_number) q.set('accession_number', String(params.accession_number));
+    if (params.condition) q.set('condition', String(params.condition));
+    const qs = q.toString();
+    return this.makeRequest(`/library/book-copies${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryBookCopyById(id) {
+    return this.makeRequest(`/library/book-copies/${id}`);
+  }
+
+  async createLibraryBookCopy(data) {
+    return this.makeRequest('/library/book-copies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryBookCopy(id, data) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryBookCopy(id) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getLibraryMembers(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2950,6 +3011,9 @@ class ApiService {
     if (params.date_to) q.set('date_to', String(params.date_to));
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.status != null && params.status !== '') {
+      q.set('status', String(params.status));
     }
     const qs = q.toString();
     return this.makeRequest(`/library/members${qs ? `?${qs}` : ''}`);
@@ -3009,6 +3073,37 @@ class ApiService {
 
   async returnLibraryIssue(id, data) {
     return this.makeRequest(`/library/issues/${id}/return`, {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async getLibraryReservations(params = {}) {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.member_id != null && params.member_id !== '') q.set('member_id', String(params.member_id));
+    if (params.search) q.set('search', String(params.search));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/reservations${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryReservationById(id) {
+    return this.makeRequest(`/library/reservations/${id}`);
+  }
+
+  async createLibraryReservation(data) {
+    return this.makeRequest('/library/reservations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryReservation(id, data) {
+    return this.makeRequest(`/library/reservations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data || {}),
     });

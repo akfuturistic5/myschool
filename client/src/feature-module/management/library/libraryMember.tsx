@@ -2,19 +2,18 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
-import { DatePicker } from "antd";
-import type { Dayjs } from "dayjs";
-import dayjs from "dayjs";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
-import { formatDateDMY, toYmdString } from "../../../core/utils/dateDisplay";
+import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
-import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
+import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
-import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
+
+const normalizeStatus = (value: unknown): "active" | "inactive" =>
+  String(value || "").toLowerCase() === "active" ? "active" : "inactive";
 
 const LibraryMember = () => {
   const routes = all_routes;
@@ -31,8 +30,7 @@ const LibraryMember = () => {
   const [appliedFilters, setAppliedFilters] = useState({
     member_type: "" as "" | "student" | "staff",
     member_id: "",
-    date_from: "",
-    date_to: "",
+    status: "" as "" | "active" | "inactive",
   });
   const [filterDraft, setFilterDraft] = useState({ ...appliedFilters });
 
@@ -41,34 +39,43 @@ const LibraryMember = () => {
     student_id: "",
     staff_id: "",
     card_number: "",
-    date_joined: "",
+    status: "active" as "active" | "inactive",
+    remarks: "",
   });
   const [editForm, setEditForm] = useState({
     card_number: "",
-    date_joined: "",
+    status: "active" as "active" | "inactive",
+    remarks: "",
   });
 
   const loadPeople = useCallback(async () => {
     try {
-      const [stRes, sfRes] = await Promise.all([apiService.getStudents(), apiService.getStaff()]);
+      const [stRes, sfRes] = await Promise.all([
+        (apiService as any).getStudents(academicYearId ?? undefined),
+        apiService.getStaff(),
+      ]);
       const stData = (stRes as any)?.data || [];
       setStudents(
         stData.map((s: any) => ({
           value: String(s.id),
-          label: [s.first_name, s.last_name].filter(Boolean).join(" ") || `Student #${s.id}`,
+          label:
+            `${[s.first_name, s.last_name].filter(Boolean).join(" ") || `Student #${s.id}`}` +
+            `${s.class_name || s.section_name ? ` (${[s.class_name, s.section_name].filter(Boolean).join(" - ")})` : ""}`,
         }))
       );
       const sfData = (sfRes as any)?.data || [];
       setStaffList(
-        sfData.map((s: any) => ({
-          value: String(s.id),
-          label: [s.first_name, s.last_name].filter(Boolean).join(" ") || `Staff #${s.id}`,
-        }))
+        sfData
+          .filter((s: any) => String(s.status || "").toLowerCase() === "active")
+          .map((s: any) => ({
+            value: String(s.id),
+            label: [s.first_name, s.last_name].filter(Boolean).join(" ") || `Staff #${s.id}`,
+          }))
       );
     } catch {
       /* ignore; dropdowns stay empty */
     }
-  }, []);
+  }, [academicYearId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,8 +84,7 @@ const LibraryMember = () => {
       const res = await apiService.getLibraryMembers({
         member_type: appliedFilters.member_type || undefined,
         member_id: appliedFilters.member_id.trim() || undefined,
-        date_from: appliedFilters.date_from || undefined,
-        date_to: appliedFilters.date_to || undefined,
+        status: appliedFilters.status || undefined,
         ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
       });
       const list = (res as any)?.data || [];
@@ -111,20 +117,21 @@ const LibraryMember = () => {
   };
 
   const resetFilters = () => {
-    const empty = { member_type: "" as const, member_id: "", date_from: "", date_to: "" };
+    const empty = { member_type: "" as const, member_id: "", status: "" as const };
     setFilterDraft(empty);
     setAppliedFilters(empty);
   };
 
-  const memberExportHeaders = ["ID", "Name", "Card", "Email", "Date joined", "Mobile"];
+  const memberExportHeaders = ["ID", "Name", "Type", "Card", "Email", "Mobile", "Status"];
   const buildMemberExportRows = () =>
     rows.map((r) => [
       r.id,
       r.name || r.member_name,
+      r.member_type || (r.student_id ? "student" : "staff"),
       r.cardNo || r.card_number,
       r.email || "",
-      formatDateDMY(r.dateofJoin || r.date_joined),
       r.mobile || r.phone || "",
+      normalizeStatus(r.status),
     ]);
 
   const handleExportXlsx = async () => {
@@ -133,6 +140,10 @@ const LibraryMember = () => {
 
   const handleExportPdf = () => {
     exportRowsToPdf("Library — Members", memberExportHeaders, buildMemberExportRows());
+  };
+
+  const handlePrint = () => {
+    printRowsToPage("Library — Members", memberExportHeaders, buildMemberExportRows());
   };
 
   const showModal = (id: string) => {
@@ -158,7 +169,8 @@ const LibraryMember = () => {
       student_id: "",
       staff_id: "",
       card_number: "",
-      date_joined: dayjs().format("YYYY-MM-DD"),
+      status: "active",
+      remarks: "",
     });
     setTimeout(() => showModal("add_library_members"), 0);
   };
@@ -169,7 +181,8 @@ const LibraryMember = () => {
     setFormError(null);
     setEditForm({
       card_number: r.card_number || r.cardNo || "",
-      date_joined: toYmdString(r.date_joined || r.dateofJoin) || dayjs().format("YYYY-MM-DD"),
+      status: normalizeStatus(r.status),
+      remarks: r.remarks || "",
     });
     setTimeout(() => showModal("edit_library_members"), 0);
   };
@@ -186,11 +199,11 @@ const LibraryMember = () => {
     setFormError(null);
     try {
       const payload: any = {
-        member_type: addForm.member_type,
         card_number: addForm.card_number.trim(),
-        date_joined: addForm.date_joined || null,
         student_id: addForm.member_type === "student" ? Number(addForm.student_id) : null,
         staff_id: addForm.member_type === "staff" ? Number(addForm.staff_id) : null,
+        status: addForm.status,
+        remarks: addForm.remarks.trim() || null,
         ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
       };
       await apiService.createLibraryMember(payload);
@@ -211,7 +224,8 @@ const LibraryMember = () => {
     try {
       await apiService.updateLibraryMember(selected.id, {
         card_number: editForm.card_number.trim(),
-        date_joined: editForm.date_joined,
+        status: editForm.status,
+        remarks: editForm.remarks.trim() || null,
       });
       hideModal("edit_library_members");
       await load();
@@ -240,11 +254,12 @@ const LibraryMember = () => {
   const tableData = rows.map((r) => ({
     ...r,
     name: r.name || r.member_name || "—",
+    memberType: r.member_type || (r.student_id ? "student" : "staff"),
     cardNo: r.cardNo || r.card_number || "—",
     email: r.email || "—",
-    dateofJoin: formatDateDMY(r.dateofJoin || r.date_joined),
     mobile: r.mobile || r.phone || "—",
     img: r.img || r.photo_url || "assets/img/profiles/avatar-01.jpg",
+    status: normalizeStatus(r.status),
     raw: r,
   }));
 
@@ -286,22 +301,42 @@ const LibraryMember = () => {
         String((a as any).cardNo || "").localeCompare(String((b as any).cardNo || "")),
     },
     {
+      title: "Type",
+      dataIndex: "memberType",
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).memberType || "").localeCompare(String((b as any).memberType || "")),
+    },
+    {
       title: "Email",
       dataIndex: "email",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).email || "").localeCompare(String((b as any).email || "")),
     },
     {
-      title: "Date Of Join",
-      dataIndex: "dateofJoin",
-      sorter: (a: TableData, b: TableData) =>
-        String((a as any).dateofJoin || "").localeCompare(String((b as any).dateofJoin || "")),
-    },
-    {
       title: "Mobile",
       dataIndex: "mobile",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).mobile || "").localeCompare(String((b as any).mobile || "")),
+    },
+    {
+      title: "Status",
+      dataIndex: "status",
+      sorter: (a: TableData, b: TableData) =>
+        String((a as any).status || "").localeCompare(String((b as any).status || "")),
+      render: (text: string) => {
+        const active = normalizeStatus(text) === "active";
+        return active ? (
+          <span className="badge badge-soft-success d-inline-flex align-items-center">
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            Active
+          </span>
+        ) : (
+          <span className="badge badge-soft-danger d-inline-flex align-items-center">
+            <i className="ti ti-circle-filled fs-5 me-1" />
+            Inactive
+          </span>
+        );
+      },
     },
     {
       title: "Action",
@@ -372,18 +407,19 @@ const LibraryMember = () => {
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <LibraryToolbar
-                onRefresh={load}
-                onExportExcel={handleExportXlsx}
-                onExportPdf={handleExportPdf}
-              />
+            <div className="d-flex my-xl-auto right-content align-items-center justify-content-end flex-wrap flex-row-reverse gap-2">
               <div className="mb-2">
                 <button type="button" className="btn btn-primary" onClick={openAdd}>
                   <i className="ti ti-square-rounded-plus me-2" />
                   Add Member
                 </button>
               </div>
+              <LibraryToolbar
+                onRefresh={load}
+                onExportExcel={handleExportXlsx}
+                onExportPdf={handleExportPdf}
+                onPrint={handlePrint}
+              />
             </div>
           </div>
 
@@ -458,46 +494,21 @@ const LibraryMember = () => {
                           </div>
                           <div className="col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Joined from</label>
-                              <DatePicker
-                                className="w-100"
-                                format="DD-MM-YYYY"
-                                allowClear
-                                getPopupContainer={getFilterDropdownPopupContainer}
-                                value={
-                                  filterDraft.date_from
-                                    ? dayjs(filterDraft.date_from, "YYYY-MM-DD")
-                                    : null
-                                }
-                                onChange={(d: Dayjs | null) =>
+                              <label className="form-label">Status</label>
+                              <select
+                                className="form-select"
+                                value={filterDraft.status}
+                                onChange={(e) =>
                                   setFilterDraft((f) => ({
                                     ...f,
-                                    date_from: d ? d.format("YYYY-MM-DD") : "",
+                                    status: e.target.value as any,
                                   }))
                                 }
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-6">
-                            <div className="mb-3">
-                              <label className="form-label">Joined to</label>
-                              <DatePicker
-                                className="w-100"
-                                format="DD-MM-YYYY"
-                                allowClear
-                                getPopupContainer={getFilterDropdownPopupContainer}
-                                value={
-                                  filterDraft.date_to
-                                    ? dayjs(filterDraft.date_to, "YYYY-MM-DD")
-                                    : null
-                                }
-                                onChange={(d: Dayjs | null) =>
-                                  setFilterDraft((f) => ({
-                                    ...f,
-                                    date_to: d ? d.format("YYYY-MM-DD") : "",
-                                  }))
-                                }
-                              />
+                              >
+                                <option value="">All</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                              </select>
                             </div>
                           </div>
                         </div>
@@ -604,15 +615,35 @@ const LibraryMember = () => {
                     onChange={(e) => setAddForm((f) => ({ ...f, card_number: e.target.value }))}
                   />
                 </div>
+                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                  <div className="status-title">
+                    <h5>Status</h5>
+                    <label className="form-label mb-0" htmlFor="add_library_member_status">
+                      {addForm.status === "active" ? "Active" : "Inactive"}
+                    </label>
+                  </div>
+                  <div className="form-check form-switch">
+                    <input
+                      id="add_library_member_status"
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={addForm.status === "active"}
+                      onChange={(e) =>
+                        setAddForm((f) => ({
+                          ...f,
+                          status: e.target.checked ? "active" : "inactive",
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
                 <div className="mb-0">
-                  <label className="form-label">Date of join</label>
-                  <DatePicker
-                    className="w-100"
-                    format="DD-MM-YYYY"
-                    value={addForm.date_joined ? dayjs(addForm.date_joined, "YYYY-MM-DD") : null}
-                    onChange={(d: Dayjs | null) =>
-                      setAddForm((f) => ({ ...f, date_joined: d ? d.format("YYYY-MM-DD") : "" }))
-                    }
+                  <label className="form-label">Remarks</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={addForm.remarks}
+                    onChange={(e) => setAddForm((f) => ({ ...f, remarks: e.target.value }))}
                   />
                 </div>
               </div>
@@ -650,15 +681,35 @@ const LibraryMember = () => {
                     onChange={(e) => setEditForm((f) => ({ ...f, card_number: e.target.value }))}
                   />
                 </div>
+                <div className="modal-status-toggle d-flex align-items-center justify-content-between mt-3 mx-2">
+                  <div className="status-title">
+                    <h5>Status</h5>
+                    <label className="form-label mb-0" htmlFor="edit_library_member_status">
+                      {editForm.status === "active" ? "Active" : "Inactive"}
+                    </label>
+                  </div>
+                  <div className="form-check form-switch">
+                    <input
+                      id="edit_library_member_status"
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={editForm.status === "active"}
+                      onChange={(e) =>
+                        setEditForm((f) => ({
+                          ...f,
+                          status: e.target.checked ? "active" : "inactive",
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
                 <div className="mb-0">
-                  <label className="form-label">Date of join</label>
-                  <DatePicker
-                    className="w-100"
-                    format="DD-MM-YYYY"
-                    value={editForm.date_joined ? dayjs(editForm.date_joined, "YYYY-MM-DD") : null}
-                    onChange={(d: Dayjs | null) =>
-                      setEditForm((f) => ({ ...f, date_joined: d ? d.format("YYYY-MM-DD") : "" }))
-                    }
+                  <label className="form-label">Remarks</label>
+                  <textarea
+                    className="form-control"
+                    rows={2}
+                    value={editForm.remarks}
+                    onChange={(e) => setEditForm((f) => ({ ...f, remarks: e.target.value }))}
                   />
                 </div>
               </div>

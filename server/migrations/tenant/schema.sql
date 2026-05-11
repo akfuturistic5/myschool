@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS public.library_categories (
     id SERIAL PRIMARY KEY,
     category_name character varying(100) NOT NULL,
     description text,
+    is_active boolean DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
@@ -1464,7 +1465,7 @@ CREATE TABLE IF NOT EXISTS public.library_policies (
     per_day_fine numeric(6,2) DEFAULT 0.00,
     grace_period_days integer DEFAULT 0,
     max_fine_limit numeric(8,2),
-    
+    is_active boolean DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     deleted_at TIMESTAMPTZ,

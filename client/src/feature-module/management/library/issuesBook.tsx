@@ -12,7 +12,7 @@ import { apiService } from "../../../core/services/apiService";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
-import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
+import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
 import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
 
@@ -37,8 +37,12 @@ const IssueBook = () => {
   });
   const [filterDraft, setFilterDraft] = useState({ ...appliedFilters });
 
+  const [copiesForBook, setCopiesForBook] = useState<
+    { value: string; label: string; is_available: boolean }[]
+  >([]);
   const [issueForm, setIssueForm] = useState({
     book_id: "",
+    book_copy_id: "",
     library_member_id: "",
     due_date: "",
     remarks: "",
@@ -49,7 +53,7 @@ const IssueBook = () => {
       const ay = academicYearId != null ? { academic_year_id: academicYearId } : {};
       const [bRes, mRes] = await Promise.all([
         apiService.getLibraryBooks(ay),
-        apiService.getLibraryMembers(ay),
+        apiService.getLibraryMembers({ ...ay, status: "active" }),
       ]);
       const bl = (bRes as any)?.data || [];
       setBooks(
@@ -60,10 +64,14 @@ const IssueBook = () => {
       );
       const ml = (mRes as any)?.data || [];
       setMembers(
-        ml.map((m: any) => ({
-          value: String(m.id),
-          label: `${m.card_number || m.cardNo || m.id} — ${m.name || m.member_name || "Member"} (${m.member_type})`,
-        }))
+        ml.map((m: any) => {
+          const kind =
+            String(m.member_type || "").toLowerCase() === "staff" ? "Staff" : "Student";
+          return {
+            value: String(m.id),
+            label: `${m.card_number || m.cardNo || m.id} — ${m.name || m.member_name || "Member"} (${kind})`,
+          };
+        })
       );
     } catch {
       /* ignore */
@@ -143,6 +151,10 @@ const IssueBook = () => {
     exportRowsToPdf("Library — Issues", issueExportHeaders, buildIssueExportRows());
   };
 
+  const handlePrint = () => {
+    printRowsToPage("Library — Issues", issueExportHeaders, buildIssueExportRows());
+  };
+
   const showModal = (id: string) => {
     const el = document.getElementById(id);
     const bootstrap = (window as any).bootstrap;
@@ -162,6 +174,7 @@ const IssueBook = () => {
     setFormError(null);
     setIssueForm({
       book_id: "",
+      book_copy_id: "",
       library_member_id: "",
       due_date: dayjs().add(14, "day").format("YYYY-MM-DD"),
       remarks: "",
@@ -175,11 +188,19 @@ const IssueBook = () => {
     setFormError(null);
     try {
       const payload: any = {
-        book_id: Number(issueForm.book_id),
         library_member_id: Number(issueForm.library_member_id),
         due_date: issueForm.due_date,
         remarks: issueForm.remarks || null,
       };
+      if (!issueForm.book_id || String(issueForm.book_id).trim() === "") {
+        setFormError("Select a book.");
+        setSaving(false);
+        return;
+      }
+      payload.book_id = Number(issueForm.book_id);
+      if (issueForm.book_copy_id && issueForm.book_copy_id.trim() !== "") {
+        payload.book_copy_id = Number(issueForm.book_copy_id);
+      }
       await apiService.createLibraryIssue(payload);
       hideModal("library_issue_book_modal");
       await load();
@@ -303,16 +324,17 @@ const IssueBook = () => {
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
+            <div className="d-flex my-xl-auto right-content align-items-center justify-content-end flex-wrap flex-row-reverse gap-2">
+              <button type="button" className="btn btn-primary mb-2" onClick={openIssue}>
+                <i className="ti ti-book me-1" />
+                Issue Book
+              </button>
               <LibraryToolbar
                 onRefresh={load}
                 onExportExcel={handleExportXlsx}
                 onExportPdf={handleExportPdf}
+                onPrint={handlePrint}
               />
-              <button type="button" className="btn btn-primary" onClick={openIssue}>
-                <i className="ti ti-book me-1" />
-                Issue Book
-              </button>
             </div>
           </div>
 
@@ -502,7 +524,9 @@ const IssueBook = () => {
                     className="form-select"
                     required
                     value={issueForm.book_id}
-                    onChange={(e) => setIssueForm((f) => ({ ...f, book_id: e.target.value }))}
+                    onChange={(e) =>
+                      setIssueForm((f) => ({ ...f, book_id: e.target.value, book_copy_id: "" }))
+                    }
                   >
                     <option value="">Select book</option>
                     {books.map((b) => (
@@ -512,6 +536,27 @@ const IssueBook = () => {
                     ))}
                   </select>
                 </div>
+                {issueForm.book_id ? (
+                  <div className="mb-3">
+                    <label className="form-label">Copy</label>
+                    <select
+                      className="form-select"
+                      value={issueForm.book_copy_id}
+                      onChange={(e) => setIssueForm((f) => ({ ...f, book_copy_id: e.target.value }))}
+                    >
+                      <option value="">First available copy (automatic)</option>
+                      {copiesForBook.map((c) => (
+                        <option key={c.value} value={c.value} disabled={!c.is_available}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <small className="text-muted">
+                      Pick a barcode/accession only if you need a specific copy; otherwise the system assigns
+                      the next free copy.
+                    </small>
+                  </div>
+                ) : null}
                 <div className="mb-3">
                   <label className="form-label">Library member *</label>
                   <select
@@ -590,8 +635,11 @@ const IssueBook = () => {
                         <h6>{detail.booksIssued || detail.book_title}</h6>
                       </li>
                       <li className="mb-2">
-                        <span>ISBN / code</span>
-                        <h6>{detail.isbn || "—"} / {detail.book_code || "—"}</h6>
+                        <span>ISBN / accession</span>
+                        <h6>
+                          {detail.isbn || "—"}
+                          {detail.accession_number ? ` / ${detail.accession_number}` : ""}
+                        </h6>
                       </li>
                       <li className="mb-2">
                         <span>Issued to</span>

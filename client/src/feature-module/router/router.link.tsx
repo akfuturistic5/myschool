@@ -111,9 +111,13 @@ import HostelList from "../management/hostel/hostelList";
 import HostelRooms from "../management/hostel/hostelRooms";
 import HostelType from "../management/hostel/hostelType";
 import Books from "../management/library/books";
+import LibraryBookCopies from "../management/library/libraryBookCopies";
+import LibraryCategory from "../management/library/libraryCategory";
+import LibraryPolicy from "../management/library/libraryPolicy.tsx";
 import IssueBook from "../management/library/issuesBook";
 import LibraryMember from "../management/library/libraryMember";
 import ReturnBook from "../management/library/returnBook";
+import LibraryReservations from "../management/library/libraryReservations";
 import PlayersList from "../management/sports/playersList";
 import SportsList from "../management/sports/sportsList";
 import TransportAssignVehicle from "../management/transport/transportAssignVehicle";
@@ -1124,8 +1128,23 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.libraryCategories,
+    element: <LibraryCategory />,
+    route: Route,
+  },
+  {
+    path: routes.libraryPolicies,
+    element: <LibraryPolicy />,
+    route: Route,
+  },
+  {
     path: routes.libraryBooks,
     element: <Books />,
+    route: Route,
+  },
+  {
+    path: routes.libraryBookCopies,
+    element: <LibraryBookCopies />,
     route: Route,
   },
   {
@@ -1136,6 +1155,11 @@ export const publicRoutes = [
   {
     path: routes.libraryReturn,
     element: <ReturnBook />,
+    route: Route,
+  },
+  {
+    path: routes.libraryReservations,
+    element: <LibraryReservations />,
     route: Route,
   },
   {

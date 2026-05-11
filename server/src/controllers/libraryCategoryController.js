@@ -3,10 +3,9 @@ const { query } = require('../config/database');
 const listCategories = async (req, res) => {
   try {
     const r = await query(
-      `SELECT id, category_name, description, is_active, created_at, updated_at
+      `SELECT id, category_name, description, COALESCE(is_active, true) AS is_active, created_at, updated_at
        FROM library_categories
-       WHERE COALESCE(is_active, true) = true
-       ORDER BY category_name ASC`
+       ORDER BY COALESCE(is_active, true) DESC, category_name ASC`
     );
     res.status(200).json({
       status: 'SUCCESS',
@@ -40,13 +39,19 @@ const getCategory = async (req, res) => {
 
 const createCategory = async (req, res) => {
   try {
-    const userId = req.user?.id || null;
-    const { category_name, description } = req.body;
+    const body = req.body || {};
+    const { category_name, description } = body;
+    const is_active =
+      typeof body.is_active === 'boolean' ? body.is_active : true;
     const r = await query(
-      `INSERT INTO library_categories (category_name, description, is_active, created_by, created_at, updated_at)
-       VALUES ($1, $2, true, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `INSERT INTO library_categories (category_name, description, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
-      [String(category_name).trim(), description != null ? String(description).trim() : null, userId]
+      [
+        String(category_name).trim(),
+        description != null ? String(description).trim() : null,
+        is_active,
+      ]
     );
     res.status(201).json({ status: 'SUCCESS', message: 'Category created', data: r.rows[0] });
   } catch (e) {
