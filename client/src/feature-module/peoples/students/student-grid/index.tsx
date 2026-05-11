@@ -460,14 +460,7 @@ const StudentGrid = () => {
                       <i className="ti ti-mail" />
                     </Link>
                   </div>
-                  <Link
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#add_fees_collect"
-                    className="btn btn-light btn-sm fw-semibold"
-                  >
-                    Add Fees
-                  </Link>
+
                 </div>
               </div>
             </div>

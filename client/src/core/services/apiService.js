@@ -1817,6 +1817,27 @@ class ApiService {
       body: JSON.stringify(data),
     });
   }
+  async getPaymentModes(activeOnly = true) {
+    return this.makeRequest(`/payment-modes${activeOnly ? '?activeOnly=true' : ''}`);
+  }
+  async createPaymentMode(data) {
+    return this.makeRequest('/payment-modes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePaymentMode(id, data) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deletePaymentMode(id) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getStudentFeeDetailedStatus(studentId, academicYearId) {
     return this.makeRequest(`/fees-collect/student/${studentId}/${academicYearId}`);
   }

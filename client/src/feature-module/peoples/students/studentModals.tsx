@@ -60,7 +60,8 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [feeStructureId, setFeeStructureId] = useState<string>('')
   const [amountPaid, setAmountPaid] = useState<string>('')
   const [collectionDate, setCollectionDate] = useState<Dayjs | null>(defaultValue)
-  const [paymentMethod, setPaymentMethod] = useState<string>('cash')
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [paymentOptions, setPaymentOptions] = useState<{ value: string; label: string }[]>([])
   const [paymentRefNo, setPaymentRefNo] = useState('')
   const [remarks, setRemarks] = useState('')
   const [feeSubmitting, setFeeSubmitting] = useState(false)
@@ -84,17 +85,52 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
           setLoadingFees(false);
         }
       };
+      
+      const fetchPaymentModes = async () => {
+        try {
+          const res = await apiService.getPaymentModes();
+          if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
+            const options = res.data.map(m => ({ value: m.name, label: m.name }));
+            setPaymentOptions(options);
+            if (options.length > 0 && !paymentMethod) {
+              setPaymentMethod(options[0].value);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch payment modes', err);
+        }
+      };
+      fetchPaymentModes();
+
       if (student?.id && academicYearId) fetchFeesStatus();
     }, [student?.id, academicYearId]);
 
-    const feeStructureOptions = assignedFees
+    const totalCompulsoryBalance = assignedFees
+      .filter(f => !f.is_optional && parseFloat(f.pending_amount) > 0)
+      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+      
+    const totalBalance = assignedFees
       .filter(f => parseFloat(f.pending_amount) > 0)
-      .map((f) => ({
-        value: String(f.fees_assign_details_id),
-        label: `${f.fee_group} - ${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
-        balance: parseFloat(f.pending_amount)
-      }));
-  const paymentOptions = paymentType.map((p) => ({ value: p.value, label: p.label }))
+      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+
+    const feeStructureOptions = useMemo(() => {
+      return assignedFees
+        .filter(f => parseFloat(f.pending_amount) > 0)
+        .map((f) => ({
+          value: String(f.fees_assign_details_id),
+          label: `${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
+          balance: parseFloat(f.pending_amount),
+          isOptional: !!f.is_optional,
+          group: f.fee_group,
+          type: f.fee_type
+        }));
+    }, [assignedFees]);
+
+    // Virtual options for internal state tracking when bulk buttons are clicked
+    const bulkOptions = [
+      { value: 'ALL_COMPULSORY', label: 'All Compulsory Fees' },
+      { value: 'ALL_TOTAL', label: 'Total Outstanding Balance' }
+    ];
 
   // Login details (usernames) for parent & student
   const [loginRows, setLoginRows] = useState<Array<{ userType: string; username: string | null; phone?: string | null; email?: string | null }>>([])
@@ -241,11 +277,36 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       Swal.fire("Error", 'Please enter a valid amount.', "error");
       return
     }
-    
-    const selectedFee = assignedFees.find(f => String(f.fees_assign_details_id) === feeStructureId);
-    if (selectedFee && amt > parseFloat(selectedFee.pending_amount)) {
-      Swal.fire("Error", `Amount exceeds balance (${selectedFee.pending_amount})`, "error");
-      return;
+
+    let feeItemsToPay: { fees_assign_details_id: number; amount_to_pay: number }[] = [];
+    if (feeStructureId === 'ALL_COMPULSORY' || feeStructureId === 'ALL_TOTAL') {
+      const targetItems = assignedFees.filter(f => {
+        if (feeStructureId === 'ALL_COMPULSORY') return !f.is_optional && parseFloat(f.pending_amount) > 0;
+        return parseFloat(f.pending_amount) > 0;
+      });
+
+      // Distribute amount across items
+      let remainingToDistribute = amt;
+      for (const item of targetItems) {
+        if (remainingToDistribute <= 0) break;
+        const itemBal = parseFloat(item.pending_amount);
+        const payForThisItem = Math.min(itemBal, remainingToDistribute);
+        feeItemsToPay.push({
+          fees_assign_details_id: Number(item.fees_assign_details_id),
+          amount_to_pay: payForThisItem
+        });
+        remainingToDistribute -= payForThisItem;
+      }
+    } else {
+      const selectedFee = assignedFees.find(f => String(f.fees_assign_details_id) === feeStructureId);
+      if (selectedFee && amt > parseFloat(selectedFee.pending_amount)) {
+        Swal.fire("Error", `Amount exceeds balance (${selectedFee.pending_amount})`, "error");
+        return;
+      }
+      feeItemsToPay.push({
+        fees_assign_details_id: Number(feeStructureId),
+        amount_to_pay: amt
+      });
     }
 
     setFeeSubmitting(true)
@@ -257,12 +318,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         payment_mode: paymentMethod || 'Cash',
         remarks: remarks || '',
         receipt_no: paymentRefNo.trim() || undefined,
-        fee_items: [
-          {
-            fees_assign_details_id: Number(feeStructureId),
-            amount_to_pay: amt
-          }
-        ]
+        fee_items: feeItemsToPay
       })
       if (res?.status === 'SUCCESS') {
         Swal.fire("Success", "Fee collected successfully", "success");
@@ -397,17 +453,47 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
                             <span className="fs-12 mb-1">Total Outstanding</span>
-                            <p className="text-dark fw-bold text-danger">
-                              {(effectiveFeeData || []).reduce((sum, r) => sum + (parseFloat(r?.pending_amount) || 0), 0).toLocaleString()}
-                            </p>
+                            <div className="d-flex align-items-center flex-wrap gap-1">
+                              <p className="text-dark fw-bold text-danger mb-0 me-2">
+                                {totalBalance.toLocaleString()}
+                              </p>
+                              {totalBalance > 0 && (
+                                <button 
+                                  type="button" 
+                                  className="btn btn-soft-danger btn-xs py-0 px-1" 
+                                  style={{ fontSize: '10px' }}
+                                  onClick={() => {
+                                    setFeeStructureId('ALL_TOTAL');
+                                    setAmountPaid(String(totalBalance));
+                                  }}
+                                >
+                                  Pay All
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
-                            <span className="fs-12 mb-1">Items for Payment</span>
-                            <p className="text-dark">
-                              {feeStructureOptions.length} Items
-                            </p>
+                            <span className="fs-12 mb-1">Compulsory Fees</span>
+                            <div className="d-flex align-items-center flex-wrap gap-1">
+                              <p className="text-dark fw-bold mb-0 me-2">
+                                {totalCompulsoryBalance.toLocaleString()}
+                              </p>
+                              {totalCompulsoryBalance > 0 && totalCompulsoryBalance !== totalBalance && (
+                                <button 
+                                  type="button" 
+                                  className="btn btn-soft-primary btn-xs py-0 px-1" 
+                                  style={{ fontSize: '10px' }}
+                                  onClick={() => {
+                                    setFeeStructureId('ALL_COMPULSORY');
+                                    setAmountPaid(String(totalCompulsoryBalance));
+                                  }}
+                                >
+                                  Pay Compulsory
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="col-lg-3 col-md-6">
@@ -428,12 +514,32 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             classNamePrefix="react-select"
                             className="select"
                             options={feeStructureOptions}
-                            value={feeStructureOptions.find((o) => o.value === feeStructureId) ?? null}
+                            value={feeStructureOptions.find((o) => o.value === feeStructureId) ?? bulkOptions.find((o) => o.value === feeStructureId) ?? null}
                             onChange={(opt) => {
-                              setFeeStructureId(opt?.value ?? '')
-                              const fs = assignedFees.find((f) => String(f.fees_assign_details_id) === opt?.value)
-                              if (fs && fs.pending_amount != null) setAmountPaid(String(fs.pending_amount))
+                              const val = opt?.value ?? '';
+                              setFeeStructureId(val);
+                              
+                              if (val === 'ALL_COMPULSORY') {
+                                setAmountPaid(String(totalCompulsoryBalance));
+                              } else if (val === 'ALL_TOTAL') {
+                                setAmountPaid(String(totalBalance));
+                              } else {
+                                const fs = assignedFees.find((f) => String(f.fees_assign_details_id) === val);
+                                if (fs && fs.pending_amount != null) {
+                                  setAmountPaid(String(fs.pending_amount));
+                                }
+                              }
                             }}
+                            formatOptionLabel={(data: any) => (
+                              <div className="d-flex justify-content-between align-items-center w-100">
+                                <span>{data.label}</span>
+                                {data.isOptional ? (
+                                  <span className="badge badge-soft-warning ms-2" style={{ fontSize: '10px' }}>Optional</span>
+                                ) : (
+                                  <span className="badge bg-info text-white ms-2" style={{ fontSize: '10px' }}>Compulsory</span>
+                                )}
+                              </div>
+                            )}
                             placeholder="Select Fee Type"
                             isClearable
                           />

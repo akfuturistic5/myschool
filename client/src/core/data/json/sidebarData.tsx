@@ -269,6 +269,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "Fees Group", link: routes.feesGroup },
           { label: "Fees Type", link: routes.feesType },
+          { label: "Assign Fees", link: routes.feesAssign },
           { label: "Collect Fees", link: routes.collectFees },
         ],
       },
@@ -584,6 +585,13 @@ export const SidebarData = [
         label: "Casts",
         icon: "ti ti-users-group",
         link: routes.settingsCasts,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Payment Modes",
+        icon: "ti ti-credit-card",
+        link: routes.paymentModes,
         submenu: false,
         showSubRoute: false,
       },

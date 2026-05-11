@@ -38,6 +38,7 @@ import { STUDENT_FIELD_HELP_TEXT } from "./studentFieldHelpText";
 import { useAddStudentFieldErrors } from "./useAddStudentFieldErrors";
 import { ParentPersonPicker, type ParentPersonRow } from "./ParentPersonPicker";
 import { useAdmissionNumberUniqueness } from "./useAdmissionNumberUniqueness";
+import { useUserUniqueness } from "./useUserUniqueness";
 import { ADMISSION_NUMBER_DUPLICATE_MSG } from "../../../../core/validation/uniqueFieldChecks";
 
 const STUDENT_DOC_MAX_BYTES = 4 * 1024 * 1024;
@@ -282,6 +283,12 @@ const AddStudent = () => {
     admissionNumber: formData.admission_number,
     excludeStudentId: isEdit && id ? id : null,
     baselineAdmission,
+  });
+
+  const userUniqueness = useUserUniqueness({
+    phone: formData.phone,
+    email: formData.email,
+    excludeUserId: isEdit && studentData?.user_id ? Number(studentData.user_id) : null,
   });
 
   // Fetch academic years from API
@@ -1483,10 +1490,13 @@ const AddStudent = () => {
                               className={`form-control ${formControlInvalidClass(!!fieldErrors.phone)}`}
                               value={formData.phone}
                               onChange={(e) => handleInputChange('phone', e.target.value)}
-                              onBlur={() => validateOnBlur('phone', formData)}
+                              onBlur={() => userUniqueness.refresh()}
                               autoComplete="tel"
                             />
-                            <FieldError message={fieldErrors.phone} />
+                            {userUniqueness.checking && !fieldErrors.phone && (
+                              <small className="text-muted mt-1 d-block">Checking availability…</small>
+                            )}
+                            <FieldError message={fieldErrors.phone || userUniqueness.asyncErrors.phone} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">
@@ -1504,10 +1514,13 @@ const AddStudent = () => {
                               className={`form-control ${formControlInvalidClass(!!fieldErrors.email)}`}
                               value={formData.email}
                               onChange={(e) => handleInputChange('email', e.target.value)}
-                              onBlur={() => validateOnBlur('email', formData)}
+                              onBlur={() => userUniqueness.refresh()}
                               autoComplete="email"
                             />
-                            <FieldError message={fieldErrors.email} />
+                            {userUniqueness.checking && !fieldErrors.email && (
+                              <small className="text-muted mt-1 d-block">Checking availability…</small>
+                            )}
+                            <FieldError message={fieldErrors.email || userUniqueness.asyncErrors.email} />
                           </div>
                         </div>
                         <div className="col-xxl col-xl-3 col-md-6">

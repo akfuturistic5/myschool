@@ -212,16 +212,6 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
               <dt className="col-6 fw-medium text-dark mb-3">Class &amp; Section</dt>
               <dd className="col-6 mb-3">{classSection}</dd>
             </dl>
-            {canCollectFees && (
-              <Link
-                to="#"
-                data-bs-toggle="modal"
-                data-bs-target="#add_fees_collect"
-                className="btn btn-primary btn-sm w-100"
-              >
-                Add Fees
-              </Link>
-            )}
           </div>
           {/* /Basic Information */}
         </div>

@@ -139,7 +139,10 @@ const StudentFees = () => {
                   {/* /List */}
                   <div className="card">
                     <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                      <h4 className="mb-3">Fees</h4>
+                      <div className="d-flex align-items-center mb-3">
+                        <h4 className="mb-0 me-3">Fees</h4>
+
+                      </div>
                       <span className="badge badge-soft-primary mb-3">
                         {(currentAcademicYear as any)?.year_name ? `Academic Year: ${(currentAcademicYear as any).year_name}` : "Academic Year not available"}
                       </span>

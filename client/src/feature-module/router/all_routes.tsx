@@ -133,6 +133,7 @@ export const all_routes = {
   bankAccount: "/financial-settings/bank-ccount",
   paymentGateways: "/financial-settings/payment-gateways",
   taxRates: "/financial-settings/tax-rates",
+  paymentModes: "/financial-settings/payment-modes",
   invoiceSettings: "/app-settings/invoice-settings",
 
   schoolSettings : "/academic-settings/school-settings",
