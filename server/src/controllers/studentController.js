@@ -4079,12 +4079,19 @@ const loadExamSchemaCapabilities = async () => {
   }
 
   examSchemaCache.pending = (async () => {
-    const schemaCols = await query(
+    const [schemaCols, tableCheck] = await Promise.all([
+      query(
       `SELECT table_name, column_name
        FROM information_schema.columns
        WHERE table_schema = 'public'
          AND table_name IN ('exam_subjects', 'exam_results', 'subjects')`
-    );
+      ),
+      query(
+        `SELECT
+          (to_regclass('public.exam_subjects') IS NOT NULL) AS has_exam_subjects_table,
+          (to_regclass('public.exam_schedules') IS NOT NULL) AS has_exam_schedules_table`
+      ),
+    ]);
     const examSubjectsCols = new Set(
       (schemaCols.rows || [])
         .filter((r) => r.table_name === 'exam_subjects' && ['exam_component'].includes(r.column_name))
@@ -4102,6 +4109,8 @@ const loadExamSchemaCapabilities = async () => {
     );
 
     return {
+      hasExamSubjectsTable: !!tableCheck.rows?.[0]?.has_exam_subjects_table,
+      hasExamSchedulesTable: !!tableCheck.rows?.[0]?.has_exam_schedules_table,
       hasEsComponent: examSubjectsCols.has('exam_component'),
       hasErComponent: examResultsCols.has('exam_component'),
       hasPracticalHours: subjectsCols.has('practical_hours'),
@@ -4187,8 +4196,17 @@ const getStudentExamResults = async (req, res) => {
     // Normalize to latest active row of the same user so exam pages stay consistent.
     const studentId = await resolveLatestLinkedStudentId(requestedStudentId);
 
-    const { hasEsComponent, hasErComponent, hasPracticalHours, examResultsCols } = await loadExamSchemaCapabilities();
+    const {
+      hasExamSubjectsTable,
+      hasExamSchedulesTable,
+      hasEsComponent,
+      hasErComponent,
+      hasPracticalHours,
+      examResultsCols,
+    } = await loadExamSchemaCapabilities();
     const erCols = new Set((examResultsCols || []).map((c) => String(c)));
+    /** Tenant schema: exam_results links to exam_schedules, not exam_id/subject_id on er. */
+    const useExamScheduleLinkForResults = erCols.has('exam_schedule_id');
     const coalesceExpr = (candidates, fallbackSql) => {
       const cols = candidates.filter((c) => erCols.has(c)).map((c) => `er.${c}`);
       if (cols.length === 0) return fallbackSql;
@@ -4199,70 +4217,174 @@ const getStudentExamResults = async (req, res) => {
     const maxMarksExpr = coalesceExpr(['max_marks', 'total_marks'], '100');
     const passMarksExpr = coalesceExpr(['min_marks', 'pass_marks', 'min_mark', 'min'], '35');
 
-    let rows = await query(
-      `SELECT
-         es.exam_id,
-         e.exam_name,
-         e.exam_type,
-         es.exam_date,
-         es.subject_id,
-         s.subject_name,
-         s.subject_code,
-         COALESCE(es.max_marks, 100) AS max_marks,
-         COALESCE(es.passing_marks, 35) AS passing_marks,
-         ${hasEsComponent ? 'es.exam_component' : "NULL::text AS exam_component"},
-         ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-         ${marksExpr} AS marks_obtained,
-         ${absentExpr} AS is_absent
-       FROM students st
-       INNER JOIN exam_subjects es
-         ON es.class_id = st.class_id
-        AND es.section_id = st.section_id
-       INNER JOIN exams e ON e.id = es.exam_id
-       INNER JOIN subjects s ON s.id = es.subject_id
-       LEFT JOIN exam_results er
-         ON er.exam_id = es.exam_id
-        AND er.student_id = st.id
-        AND er.subject_id = es.subject_id
-        ${hasEsComponent && hasErComponent ? 'AND COALESCE(er.exam_component,\'theory\') = COALESCE(es.exam_component,\'theory\')' : ''}
-       WHERE st.id = $1
-       ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
-      [studentId]
-    );
+    let rows = { rows: [] };
+    if (hasExamSubjectsTable) {
+      rows = await query(
+        `SELECT
+           es.exam_id,
+           e.exam_name,
+           e.exam_type,
+           es.exam_date,
+           es.subject_id,
+           s.subject_name,
+           s.subject_code,
+           COALESCE(es.max_marks, 100) AS max_marks,
+           COALESCE(es.passing_marks, 35) AS passing_marks,
+           ${hasEsComponent ? 'es.exam_component' : "NULL::text AS exam_component"},
+           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+           ${marksExpr} AS marks_obtained,
+           ${absentExpr} AS is_absent
+         FROM students st
+         INNER JOIN exam_subjects es
+           ON es.class_id = st.class_id
+          AND es.section_id = st.section_id
+         INNER JOIN exams e ON e.id = es.exam_id
+         INNER JOIN subjects s ON s.id = es.subject_id
+         LEFT JOIN exam_results er
+           ON er.exam_id = es.exam_id
+          AND er.student_id = st.id
+          AND er.subject_id = es.subject_id
+          ${hasEsComponent && hasErComponent ? 'AND COALESCE(er.exam_component,\'theory\') = COALESCE(es.exam_component,\'theory\')' : ''}
+         WHERE st.id = $1
+         ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
+        [studentId]
+      );
+    } else if (hasExamSchedulesTable) {
+      const erJoinSchedule =
+        useExamScheduleLinkForResults
+          ? `LEFT JOIN exam_results er
+             ON er.exam_schedule_id = es.id
+            AND er.student_id = st.id`
+          : erCols.has('exam_id') && erCols.has('subject_id')
+            ? `LEFT JOIN exam_results er
+               ON er.exam_id = es.exam_id
+              AND er.student_id = st.id
+              AND er.subject_id = csu.subject_id`
+            : `LEFT JOIN exam_results er ON false`;
+      rows = await query(
+        `SELECT
+           es.exam_id,
+           e.exam_name,
+           e.exam_type,
+           es.exam_date,
+           csu.subject_id,
+           s.subject_name,
+           s.subject_code,
+           COALESCE(es.max_marks, 100) AS max_marks,
+           COALESCE(es.passing_marks, 35) AS passing_marks,
+           NULL::text AS exam_component,
+           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+           ${marksExpr} AS marks_obtained,
+           ${absentExpr} AS is_absent
+         FROM students st
+         ${lateralCurrentEnrollment('st.id')}
+         INNER JOIN exam_schedules es
+           ON es.class_id = enr.class_id
+         INNER JOIN class_sections csec
+           ON csec.id = es.class_section_id
+          AND csec.class_id = es.class_id
+          AND csec.academic_year_id = es.academic_year_id
+          AND csec.section_id = enr.section_id
+         INNER JOIN class_subjects csu
+           ON csu.id = es.class_subject_id
+          AND csu.class_id = es.class_id
+          AND csu.academic_year_id = es.academic_year_id
+         INNER JOIN exams e ON e.id = es.exam_id
+         INNER JOIN subjects s ON s.id = csu.subject_id
+         ${erJoinSchedule}
+         WHERE st.id = $1
+         ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
+        [studentId]
+      );
+    }
 
     // Leaving/inactive students can lose class/section mapping; in that case,
     // fallback to direct exam_results history so latest result still opens in popup.
     if (!rows.rows || rows.rows.length === 0) {
-      rows = await query(
-        `SELECT
-           er.exam_id,
-           e.exam_name,
-           e.exam_type,
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
-           er.subject_id,
-           s.subject_name,
-           s.subject_code,
-           COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
-           COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
-           ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
-           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-           ${marksExpr} AS marks_obtained,
-           ${absentExpr} AS is_absent
-         FROM exam_results er
-         LEFT JOIN exams e ON e.id = er.exam_id
-         LEFT JOIN subjects s ON s.id = er.subject_id
-         LEFT JOIN exam_subjects es
-           ON es.exam_id = er.exam_id
-          AND es.subject_id = er.subject_id
-          ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}
-         WHERE er.student_id = $1
-           AND er.exam_id IS NOT NULL
-         ORDER BY
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
-           er.exam_id DESC,
-           s.subject_name ASC`,
-        [studentId]
-      );
+      if (useExamScheduleLinkForResults && hasExamSchedulesTable) {
+        rows = await query(
+          `SELECT
+             es.exam_id,
+             e.exam_name,
+             e.exam_type,
+             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
+             csu.subject_id,
+             s.subject_name,
+             s.subject_code,
+             COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+             COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+             ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+             ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+             ${marksExpr} AS marks_obtained,
+             ${absentExpr} AS is_absent
+           FROM exam_results er
+           INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id
+           LEFT JOIN exams e ON e.id = es.exam_id
+           INNER JOIN class_subjects csu
+             ON csu.id = es.class_subject_id
+            AND csu.class_id = es.class_id
+            AND csu.academic_year_id = es.academic_year_id
+           LEFT JOIN subjects s ON s.id = csu.subject_id
+           WHERE er.student_id = $1
+             AND er.exam_schedule_id IS NOT NULL
+           ORDER BY
+             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
+             es.exam_id DESC,
+             s.subject_name ASC`,
+          [studentId]
+        );
+      } else {
+        if (!erCols.has('exam_id')) {
+          rows = { rows: [] };
+        } else {
+          const subjectPlanJoin = hasExamSubjectsTable
+          ? `LEFT JOIN exam_subjects es
+             ON es.exam_id = er.exam_id
+            AND es.subject_id = er.subject_id
+            ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}`
+          : hasExamSchedulesTable && erCols.has('exam_id')
+            ? `LEFT JOIN exam_schedules es
+               ON es.exam_id = er.exam_id
+             LEFT JOIN class_subjects csu
+               ON csu.id = es.class_subject_id
+              AND csu.subject_id = er.subject_id`
+            : `LEFT JOIN (
+                 SELECT
+                   NULL::integer AS exam_id,
+                   NULL::integer AS subject_id,
+                   NULL::date AS exam_date,
+                   NULL::numeric AS max_marks,
+                   NULL::numeric AS passing_marks
+               ) es ON false`;
+        rows = await query(
+          `SELECT
+             er.exam_id,
+             e.exam_name,
+             e.exam_type,
+             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
+             er.subject_id,
+             s.subject_name,
+             s.subject_code,
+             COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+             COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+             ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+             ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+             ${marksExpr} AS marks_obtained,
+             ${absentExpr} AS is_absent
+           FROM exam_results er
+           LEFT JOIN exams e ON e.id = er.exam_id
+           LEFT JOIN subjects s ON s.id = er.subject_id
+           ${subjectPlanJoin}
+           WHERE er.student_id = $1
+             AND er.exam_id IS NOT NULL
+           ORDER BY
+             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
+             er.exam_id DESC,
+             s.subject_name ASC`,
+          [studentId]
+        );
+        }
+      }
     }
 
     if (!rows.rows || rows.rows.length === 0) {

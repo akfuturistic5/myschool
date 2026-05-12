@@ -1519,55 +1519,87 @@ const getTeacherClassAttendance = async (req, res) => {
     }
     const staffId = teacherId;
 
-    const days = parseInt(req.query.days, 10);
-    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const daysRaw = req.query.days;
+    const offsetRaw = req.query.offset;
+    const days =
+      daysRaw === '' || daysRaw == null ? NaN : parseInt(String(daysRaw), 10);
+    const offset =
+      offsetRaw === '' || offsetRaw == null
+        ? 0
+        : Math.max(0, parseInt(String(offsetRaw), 10) || 0);
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     let dateFilter = '';
-    // $1 = staff id for class_schedules.teacher_id; $2 = teachers.id for homeroom class match
-    let params = [staffId, teacherId];
-    if (days > 0 && days <= 365) {
+    // $1 = staff id (class_schedules / class_teachers / subject_teacher_assignments). Do not bind unused
+    // placeholders: PostgreSQL 42P18 "could not determine data type of parameter $N" if $2 is never referenced.
+    let params = [staffId];
+    if (Number.isFinite(days) && days > 0 && days <= 365) {
       if (offset > 0) {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($3 + $4) * INTERVAL '1 day'
-                      AND a.attendance_date < CURRENT_DATE - $4 * INTERVAL '1 day'`;
-        params = [staffId, teacherId, days, offset];
+        // Explicit ::integer so ($2 + $3) is not "unknown + unknown" (PostgreSQL 42725).
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - (($2::integer + $3::integer) * INTERVAL '1 day')
+                      AND a.attendance_date < CURRENT_DATE - ($3::integer * INTERVAL '1 day')`;
+        params = [staffId, days, offset];
       } else {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $3 * INTERVAL '1 day'`;
-        params = [staffId, teacherId, days];
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($2::integer * INTERVAL '1 day')`;
+        params = [staffId, days];
       }
     }
     if (hasAcademicYearFilter) {
       params.push(academicYearId);
     }
-    const rowLimit = days === 0 ? 5000 : 500; // All Time: higher limit to fetch more records
-    const academicYearFilter = hasAcademicYearFilter ? `AND s.academic_year_id = $${params.length}` : '';
+    const rowLimit = Number.isFinite(days) && days === 0 ? 5000 : 500; // All Time: higher limit to fetch more records
+    // Filter by the attendance row's academic year (ledger model); do not rely on students.academic_year_id
+    const academicYearFilter = hasAcademicYearFilter ? `AND a.academic_year_id = $${params.length}` : '';
 
-    // Use EXISTS to avoid duplicates; include BOTH class_schedules (staff id) AND class_teachers/subject_teacher_assignments
+    // Visibility must match teacher scope used when saving attendance (attendanceController.buildTeacherScopeSql):
+    // schedule/class_teachers use section_id + optional NULL academic_year on config rows, not strict class_section_id
+    // or schedule valid_from/valid_to vs each attendance date (routine also ignores schedule validity dates).
+    // Rows this staff marked (marked_by) are included so substitutes see what they entered.
+    // check_in_time / check_out_time are not on student_attendance in tenant schema — mirror student attendance API shape.
     const result = await query(
-      `SELECT a.id, a.student_id, a.class_id, a.section_id, a.attendance_date, a.status,
-              a.check_in_time, a.check_out_time, a.marked_by, a.remarks
+      `SELECT a.id, a.student_id, a.class_id, csec.section_id, a.attendance_date, a.status,
+              NULL::text AS check_in_time, NULL::text AS check_out_time, a.marked_by, a.remarks
        FROM student_attendance a
-       INNER JOIN students s ON a.student_id = s.id AND s.status = 'Active'
+       LEFT JOIN class_sections csec ON csec.id = a.class_section_id
+       INNER JOIN students s ON a.student_id = s.id AND s.deleted_at IS NULL AND s.status = 'Active'
        WHERE (
          EXISTS (
-           SELECT 1 FROM class_schedules cs
-           WHERE cs.teacher_id = $1
-             AND cs.class_id = a.class_id
-             AND (cs.section_id = a.section_id OR cs.section_id IS NULL)
+           SELECT 1
+           FROM class_schedules cs
+           LEFT JOIN class_sections csec_cs ON csec_cs.id = cs.class_section_id
+           WHERE cs.class_id = a.class_id
+             AND cs.teacher_id = $1
+             AND (cs.academic_year_id = a.academic_year_id OR cs.academic_year_id IS NULL)
+             AND (
+               csec.section_id IS NULL
+               OR csec_cs.section_id = csec.section_id
+               OR csec_cs.section_id IS NULL
+             )
          )
          OR EXISTS (
-           SELECT 1 FROM class_teachers ct
-           WHERE ct.staff_id = $1 AND ct.class_id = a.class_id
-             AND (ct.class_section_id = a.section_id OR ct.class_section_id IS NULL)
-             AND (ct.valid_period @> CURRENT_DATE)
+           SELECT 1
+           FROM class_teachers ct
+           LEFT JOIN class_sections ct_sec ON ct_sec.id = ct.class_section_id
+           WHERE ct.staff_id = $1
+             AND ct.class_id = a.class_id
+             AND ct.deleted_at IS NULL
+             AND (ct.academic_year_id = a.academic_year_id OR ct.academic_year_id IS NULL)
+             AND (
+               csec.section_id IS NULL
+               OR ct.class_section_id IS NULL
+               OR ct_sec.section_id = csec.section_id
+             )
          )
          OR EXISTS (
            SELECT 1
            FROM subject_teacher_assignments sta
            WHERE sta.staff_id = $1
              AND sta.class_id = a.class_id
-             AND (sta.valid_period @> CURRENT_DATE)
+             AND sta.deleted_at IS NULL
+             AND (sta.academic_year_id = a.academic_year_id OR sta.academic_year_id IS NULL)
+             AND (sta.class_section_id IS NULL OR sta.class_section_id = a.class_section_id)
          )
+         OR a.marked_by = $1
        )
        ${academicYearFilter}
        ${dateFilter}

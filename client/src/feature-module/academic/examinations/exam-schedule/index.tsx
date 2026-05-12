@@ -65,14 +65,12 @@ const ExamSchedule = () => {
   const [sectionId, setSectionId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!examId) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setMessage(null);
       try {
         const res = await apiService.getExamManageContext(examId);
         const classes = (res as any)?.data?.classes || [];
@@ -95,7 +93,14 @@ const ExamSchedule = () => {
           setSectionId(flat[0].section_id);
         }
       } catch (e: any) {
-        if (!cancelled) setMessage(e?.message || "Failed to load exam context");
+        if (!cancelled) {
+          await Swal.fire({
+            icon: "error",
+            title: "Load failed",
+            text: e?.message || "Failed to load exam context",
+            confirmButtonText: "OK",
+          });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -174,12 +179,23 @@ const ExamSchedule = () => {
             end_time: r.end_time ? String(r.end_time).slice(0, 5) : "",
           }))
         );
-        if (!ctxRows.length) setMessage("No subjects found for selected class and section.");
-        else setMessage(null);
+        if (!ctxRows.length) {
+          await Swal.fire({
+            icon: "info",
+            title: "No subjects",
+            text: "No subjects found for selected class and section.",
+            confirmButtonText: "OK",
+          });
+        }
       } catch (e: any) {
         if (!cancelled) {
           setRows([]);
-          setMessage(e?.message || "Failed to load timetable context");
+          await Swal.fire({
+            icon: "error",
+            title: "Load failed",
+            text: e?.message || "Failed to load timetable context",
+            confirmButtonText: "OK",
+          });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -194,25 +210,26 @@ const ExamSchedule = () => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
     const collisionError = getTimeCollisionError(next);
     if (collisionError) {
-      Swal.fire({
+      void Swal.fire({
         icon: "warning",
         title: "Time slot conflict",
         text: collisionError,
         confirmButtonText: "OK",
       });
-      setMessage(collisionError);
       return;
     }
     setRows(next);
-    if (message?.toLowerCase().includes("overlap") || message?.toLowerCase().includes("same date")) {
-      setMessage(null);
-    }
   };
 
   const save = async () => {
     if (!examId || !classId || !sectionId) return;
     if (!rows.length) {
-      setMessage("No subjects available for timetable.");
+      await Swal.fire({
+        icon: "warning",
+        title: "Cannot save",
+        text: "No subjects available for timetable.",
+        confirmButtonText: "OK",
+      });
       return;
     }
     const payload = rows.map((r) => ({
@@ -230,11 +247,21 @@ const ExamSchedule = () => {
       const end = row.end_time ? String(row.end_time).slice(0, 5) : "";
       if (!date && !start && !end) continue;
       if (!date || !start || !end) {
-        setMessage("Date, start time and end time must be filled together for each subject.");
+        await Swal.fire({
+          icon: "warning",
+          title: "Incomplete schedule",
+          text: "Date, start time and end time must be filled together for each subject.",
+          confirmButtonText: "OK",
+        });
         return;
       }
       if (start >= end) {
-        setMessage("Start time must be earlier than end time.");
+        await Swal.fire({
+          icon: "warning",
+          title: "Invalid time",
+          text: "Start time must be earlier than end time.",
+          confirmButtonText: "OK",
+        });
         return;
       }
     }
@@ -250,18 +277,16 @@ const ExamSchedule = () => {
       }))
     );
     if (collisionError) {
-      Swal.fire({
+      await Swal.fire({
         icon: "warning",
         title: "Time slot conflict",
         text: collisionError,
         confirmButtonText: "OK",
       });
-      setMessage(collisionError);
       return;
     }
 
     setSaving(true);
-    setMessage(null);
     try {
       await apiService.saveExamSubjectSetup({
         exam_id: examId,
@@ -269,9 +294,19 @@ const ExamSchedule = () => {
         section_id: Number(sectionId),
         rows: payload,
       });
-      setMessage("Timetable saved successfully.");
+      await Swal.fire({
+        icon: "success",
+        title: "Saved",
+        text: "Timetable saved successfully.",
+        confirmButtonText: "OK",
+      });
     } catch (e: any) {
-      setMessage(e?.message || "Failed to save timetable");
+      await Swal.fire({
+        icon: "error",
+        title: "Save failed",
+        text: e?.message || "Failed to save timetable",
+        confirmButtonText: "OK",
+      });
     } finally {
       setSaving(false);
     }
@@ -289,8 +324,6 @@ const ExamSchedule = () => {
             Back to exams
                       </Link>
         </div>
-
-        {message && <div className="alert alert-warning">{message}</div>}
 
         <div className="card mb-3">
           <div className="card-body">
