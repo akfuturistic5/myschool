@@ -4,6 +4,7 @@ interface LibraryToolbarProps {
   onRefresh: () => void;
   onExportExcel: () => void;
   onExportPdf: () => void;
+  onPrint?: () => void;
   /** e.g. Import books button */
   extra?: React.ReactNode;
 }
@@ -11,22 +12,10 @@ interface LibraryToolbarProps {
 /**
  * Action bar for library pages: refresh, Excel (.xlsx), PDF (jsPDF + autoTable).
  */
-const LibraryToolbar = ({ onRefresh, onExportExcel, onExportPdf, extra }: LibraryToolbarProps) => {
+const LibraryToolbar = ({ onRefresh, onExportExcel, onExportPdf, onPrint, extra }: LibraryToolbarProps) => {
   return (
     <>
       {extra}
-      <div className="pe-1 mb-2">
-        <OverlayTrigger placement="top" overlay={<Tooltip id="lib-tt-refresh">Refresh</Tooltip>}>
-          <button
-            type="button"
-            className="btn btn-outline-light bg-white btn-icon me-1"
-            onClick={onRefresh}
-            aria-label="Refresh"
-          >
-            <i className="ti ti-refresh" />
-          </button>
-        </OverlayTrigger>
-      </div>
       <div className="dropdown me-2 mb-2">
         <button
           type="button"
@@ -51,6 +40,32 @@ const LibraryToolbar = ({ onRefresh, onExportExcel, onExportPdf, extra }: Librar
             </button>
           </li>
         </ul>
+      </div>
+      {typeof onPrint === "function" && (
+        <div className="mb-2 me-2">
+          <OverlayTrigger placement="top" overlay={<Tooltip id="lib-tt-print">Print</Tooltip>}>
+            <button
+              type="button"
+              className="btn btn-outline-light bg-white btn-icon"
+              onClick={onPrint}
+              aria-label="Print"
+            >
+              <i className="ti ti-printer" />
+            </button>
+          </OverlayTrigger>
+        </div>
+      )}
+      <div className="mb-2">
+        <OverlayTrigger placement="top" overlay={<Tooltip id="lib-tt-refresh">Refresh</Tooltip>}>
+          <button
+            type="button"
+            className="btn btn-outline-light bg-white btn-icon"
+            onClick={onRefresh}
+            aria-label="Refresh"
+          >
+            <i className="ti ti-refresh" />
+          </button>
+        </OverlayTrigger>
       </div>
     </>
   );

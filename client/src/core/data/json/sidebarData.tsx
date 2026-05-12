@@ -283,9 +283,12 @@ export const SidebarData = [
 
         submenuItems: [
           { label: "Library Members", link: routes.libraryMembers },
-          { label: "Books", link: routes.libraryBooks },
+          { label: "Categories", link: routes.libraryCategories },
+          { label: "Policies", link: routes.libraryPolicies },
+          { label: "Books", link: routes.libraryBooks, subLink1: routes.libraryBookCopies },
           { label: "Issue Book", link: routes.libraryIssueBook },
           { label: "Return", link: routes.libraryReturn },
+          { label: "Reservations", link: routes.libraryReservations },
         ],
       },
       {
@@ -368,6 +371,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "List of leaves", link: routes.listLeaves },
           { label: "Approve Request", link: routes.approveRequest },
+          { label: "Leave Types", link: routes.leaveTypesManage },
         ],
       },
       {

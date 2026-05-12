@@ -11,7 +11,7 @@ import { apiService } from "../../../core/services/apiService";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
-import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
+import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { downloadLibraryBooksImportTemplate, parseBooksImportFile } from "./libraryImportBooks";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
 import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
@@ -49,17 +49,13 @@ const Books = () => {
 
   const emptyForm = {
     book_title: "",
-    book_code: "",
     author: "",
+    edition: "",
+    language: "English",
     isbn: "",
     publisher: "",
     publication_year: "" as string | number,
     category_id: "" as string | number,
-    total_copies: 1,
-    available_copies: 1,
-    book_price: "" as string | number,
-    book_location: "",
-    description: "",
   };
   const [addForm, setAddForm] = useState({ ...emptyForm });
   const [editForm, setEditForm] = useState({ ...emptyForm });
@@ -128,14 +124,13 @@ const Books = () => {
   const tableExportHeaders = [
     "ID",
     "Book Name",
-    "Book No",
+    "ISBN",
     "Publisher",
     "Author",
     "Subject",
-    "Rack No",
-    "Qty",
+    "Edition",
+    "Copies",
     "Available",
-    "Price",
     "Post Date",
   ];
 
@@ -143,14 +138,13 @@ const Books = () => {
     sortedRows.map((r) => [
       r.id,
       r.book_title,
-      r.book_code || r.isbn || "",
+      r.isbn || "",
       r.publisher || "",
       r.author || "",
       r.category_name || "",
-      r.book_location || "",
-      r.total_copies ?? "",
-      r.available_copies ?? "",
-      r.book_price ?? "",
+      r.edition || "",
+      r.copies_count ?? 0,
+      r.available_copies ?? 0,
       formatDateDMY(r.postDate || r.created_at),
     ]);
 
@@ -172,6 +166,10 @@ const Books = () => {
     }
   };
 
+  const handlePrint = () => {
+    printRowsToPage("Library — Books", tableExportHeaders, buildBookExportRows());
+  };
+
   const openImportModal = () => {
     setImportModalFile(null);
     setImportModalResult(null);
@@ -191,13 +189,12 @@ const Books = () => {
       const books = await parseBooksImportFile(importModalFile);
       if (!books.length) {
         setImportModalParseError(
-          'No data rows found. Use the "Data" sheet with headers (book_title, category, total_copies, …).'
+          'No data rows found. Use the "Data" sheet with headers (book_title, category, isbn, …).'
         );
         return;
       }
       const res = await apiService.importLibraryBooks({
         books,
-        academic_year_id: academicYearId ?? undefined,
       });
       const d = (res as any)?.data;
       setImportModalResult({
@@ -243,17 +240,13 @@ const Books = () => {
     setSelected(r);
     setEditForm({
       book_title: r.book_title || "",
-      book_code: r.book_code || "",
       author: r.author || "",
+      edition: r.edition || "",
+      language: r.language || "English",
       isbn: r.isbn || "",
       publisher: r.publisher || "",
       publication_year: r.publication_year ?? "",
       category_id: r.category_id != null ? String(r.category_id) : "",
-      total_copies: r.total_copies ?? 1,
-      available_copies: r.available_copies ?? 1,
-      book_price: r.book_price ?? "",
-      book_location: r.book_location || "",
-      description: r.description || "",
     });
     setTimeout(() => showModal("edit_library_book"), 0);
   };
@@ -270,24 +263,15 @@ const Books = () => {
     setSaving(true);
     setFormError(null);
     try {
-      const tc = Number(addForm.total_copies) || 1;
-      let ac = Number(addForm.available_copies);
-      if (!Number.isFinite(ac)) ac = tc;
-      ac = Math.min(Math.max(0, ac), tc);
       const payload: any = {
         book_title: addForm.book_title.trim(),
-        book_code: addForm.book_code || null,
         author: addForm.author || null,
+        edition: addForm.edition || null,
+        language: addForm.language || "English",
         isbn: addForm.isbn || null,
         publisher: addForm.publisher || null,
         publication_year: addForm.publication_year === "" ? null : Number(addForm.publication_year),
         category_id: addForm.category_id === "" ? null : Number(addForm.category_id),
-        total_copies: tc,
-        available_copies: ac,
-        book_price: addForm.book_price === "" ? null : Number(addForm.book_price),
-        book_location: addForm.book_location || null,
-        description: addForm.description || null,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
       };
       await apiService.createLibraryBook(payload);
       hideModal("add_library_book");
@@ -307,19 +291,13 @@ const Books = () => {
     try {
       const payload: any = {
         book_title: editForm.book_title.trim(),
-        book_code: editForm.book_code || null,
         author: editForm.author || null,
+        edition: editForm.edition || null,
+        language: editForm.language || "English",
         isbn: editForm.isbn || null,
         publisher: editForm.publisher || null,
         publication_year: editForm.publication_year === "" ? null : Number(editForm.publication_year),
         category_id: editForm.category_id === "" ? null : Number(editForm.category_id),
-        total_copies: Number(editForm.total_copies) || 1,
-        available_copies: Number(editForm.available_copies) || 0,
-        book_price: editForm.book_price === "" ? null : Number(editForm.book_price),
-        book_location: editForm.book_location || null,
-        description: editForm.description || null,
-        is_active: true,
-        ...(academicYearId != null ? { academic_year_id: academicYearId } : {}),
       };
       await apiService.updateLibraryBook(selected.id, payload);
       hideModal("edit_library_book");
@@ -349,14 +327,13 @@ const Books = () => {
   const tableData = sortedRows.map((r) => ({
     ...r,
     bookName: r.book_title,
-    bookNo: r.book_code || r.isbn || "—",
+    bookNo: r.isbn || "—",
     publisher: r.publisher || "—",
     author: r.author || "—",
     subject: r.category_name || r.subject || "—",
-    rackNo: r.book_location || "—",
-    qty: String(r.total_copies ?? ""),
+    rackNo: r.edition || "—",
+    qty: String(r.copies_count ?? 0),
     available: String(r.available_copies ?? ""),
-    price: r.book_price != null ? String(r.book_price) : "—",
     postDate: formatDateDMY(r.postDate || r.created_at),
     raw: r,
   }));
@@ -380,7 +357,7 @@ const Books = () => {
         String((a as any).bookName || "").localeCompare(String((b as any).bookName || "")),
     },
     {
-      title: "Book No",
+      title: "ISBN",
       dataIndex: "bookNo",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).bookNo || "").localeCompare(String((b as any).bookNo || "")),
@@ -404,13 +381,13 @@ const Books = () => {
         String((a as any).subject || "").localeCompare(String((b as any).subject || "")),
     },
     {
-      title: "Rack No",
+      title: "Edition",
       dataIndex: "rackNo",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).rackNo || "").localeCompare(String((b as any).rackNo || "")),
     },
     {
-      title: "Qty",
+      title: "Copies",
       dataIndex: "qty",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).qty || "").localeCompare(String((b as any).qty || "")),
@@ -420,12 +397,6 @@ const Books = () => {
       dataIndex: "available",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).available || "").localeCompare(String((b as any).available || "")),
-    },
-    {
-      title: "Price",
-      dataIndex: "price",
-      sorter: (a: TableData, b: TableData) =>
-        String((a as any).price || "").localeCompare(String((b as any).price || "")),
     },
     {
       title: "Post Date",
@@ -502,11 +473,24 @@ const Books = () => {
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+            <div className="d-flex my-xl-auto right-content align-items-center justify-content-end flex-wrap flex-row-reverse gap-2">
+              <div className="mb-2">
+                <button type="button" className="btn btn-primary" onClick={openAdd}>
+                  <i className="ti ti-square-rounded-plus me-2" />
+                  Add Book
+                </button>
+              </div>
+              <div className="mb-2">
+                <Link to={routes.libraryBookCopies} className="btn btn-secondary">
+                  <i className="ti ti-copy-plus me-2" />
+                  Book Copies
+                </Link>
+              </div>
               <LibraryToolbar
                 onRefresh={load}
                 onExportExcel={handleExportXlsx}
                 onExportPdf={handleExportPdf}
+                onPrint={handlePrint}
                 extra={
                   <div className="mb-2 me-2">
                     <button
@@ -521,12 +505,6 @@ const Books = () => {
                   </div>
                 }
               />
-              <div className="mb-2">
-                <button type="button" className="btn btn-primary" onClick={openAdd}>
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Book
-                </button>
-              </div>
             </div>
           </div>
 
@@ -588,7 +566,7 @@ const Books = () => {
                           </div>
                           <div className="col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Book / accession no.</label>
+                              <label className="form-label">ISBN / accession no.</label>
                               <input
                                 className="form-control"
                                 placeholder="Contains…"
@@ -745,19 +723,27 @@ const Books = () => {
                     />
                   </div>
                   <div className="col-md-6 mb-3">
-                    <label className="form-label">Book No / Accession</label>
-                    <input
-                      className="form-control"
-                      value={addForm.book_code}
-                      onChange={(e) => setAddForm((f) => ({ ...f, book_code: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
                     <label className="form-label">ISBN</label>
                     <input
                       className="form-control"
                       value={addForm.isbn}
                       onChange={(e) => setAddForm((f) => ({ ...f, isbn: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Edition</label>
+                    <input
+                      className="form-control"
+                      value={addForm.edition}
+                      onChange={(e) => setAddForm((f) => ({ ...f, edition: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Language</label>
+                    <input
+                      className="form-control"
+                      value={addForm.language}
+                      onChange={(e) => setAddForm((f) => ({ ...f, language: e.target.value }))}
                     />
                   </div>
                   <div className="col-md-6 mb-3">
@@ -791,64 +777,13 @@ const Books = () => {
                       onChange={(e) => setAddForm((f) => ({ ...f, author: e.target.value }))}
                     />
                   </div>
-                  <div className="col-md-4 mb-3">
+                  <div className="col-md-6 mb-3">
                     <label className="form-label">Publication year</label>
                     <input
                       type="number"
                       className="form-control"
                       value={addForm.publication_year}
                       onChange={(e) => setAddForm((f) => ({ ...f, publication_year: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label className="form-label">Qty</label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="form-control"
-                      value={addForm.total_copies}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, total_copies: Number(e.target.value) || 1 }))
-                      }
-                    />
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label className="form-label">Available</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="form-control"
-                      value={addForm.available_copies}
-                      onChange={(e) =>
-                        setAddForm((f) => ({ ...f, available_copies: Number(e.target.value) }))
-                      }
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Rack / Location</label>
-                    <input
-                      className="form-control"
-                      value={addForm.book_location}
-                      onChange={(e) => setAddForm((f) => ({ ...f, book_location: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Price</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="form-control"
-                      value={addForm.book_price}
-                      onChange={(e) => setAddForm((f) => ({ ...f, book_price: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-12 mb-0">
-                    <label className="form-label">Description</label>
-                    <textarea
-                      className="form-control"
-                      rows={2}
-                      value={addForm.description}
-                      onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -894,19 +829,27 @@ const Books = () => {
                     />
                   </div>
                   <div className="col-md-6 mb-3">
-                    <label className="form-label">Book No / Accession</label>
-                    <input
-                      className="form-control"
-                      value={editForm.book_code}
-                      onChange={(e) => setEditForm((f) => ({ ...f, book_code: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
                     <label className="form-label">ISBN</label>
                     <input
                       className="form-control"
                       value={editForm.isbn}
                       onChange={(e) => setEditForm((f) => ({ ...f, isbn: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Edition</label>
+                    <input
+                      className="form-control"
+                      value={editForm.edition}
+                      onChange={(e) => setEditForm((f) => ({ ...f, edition: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-md-6 mb-3">
+                    <label className="form-label">Language</label>
+                    <input
+                      className="form-control"
+                      value={editForm.language}
+                      onChange={(e) => setEditForm((f) => ({ ...f, language: e.target.value }))}
                     />
                   </div>
                   <div className="col-md-6 mb-3">
@@ -940,64 +883,13 @@ const Books = () => {
                       onChange={(e) => setEditForm((f) => ({ ...f, author: e.target.value }))}
                     />
                   </div>
-                  <div className="col-md-4 mb-3">
+                  <div className="col-md-6 mb-3">
                     <label className="form-label">Publication year</label>
                     <input
                       type="number"
                       className="form-control"
                       value={editForm.publication_year}
                       onChange={(e) => setEditForm((f) => ({ ...f, publication_year: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label className="form-label">Qty</label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="form-control"
-                      value={editForm.total_copies}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, total_copies: Number(e.target.value) || 1 }))
-                      }
-                    />
-                  </div>
-                  <div className="col-md-4 mb-3">
-                    <label className="form-label">Available</label>
-                    <input
-                      type="number"
-                      min={0}
-                      className="form-control"
-                      value={editForm.available_copies}
-                      onChange={(e) =>
-                        setEditForm((f) => ({ ...f, available_copies: Number(e.target.value) }))
-                      }
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Rack / Location</label>
-                    <input
-                      className="form-control"
-                      value={editForm.book_location}
-                      onChange={(e) => setEditForm((f) => ({ ...f, book_location: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-md-6 mb-3">
-                    <label className="form-label">Price</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="form-control"
-                      value={editForm.book_price}
-                      onChange={(e) => setEditForm((f) => ({ ...f, book_price: e.target.value }))}
-                    />
-                  </div>
-                  <div className="col-12 mb-0">
-                    <label className="form-label">Description</label>
-                    <textarea
-                      className="form-control"
-                      rows={2}
-                      value={editForm.description}
-                      onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
                     />
                   </div>
                 </div>
@@ -1028,7 +920,7 @@ const Books = () => {
             <div className="modal-body">
               <p className="text-muted small mb-3">
                 Upload an Excel (<code>.xlsx</code>) or CSV file. Required columns:{" "}
-                <strong>book_title</strong>, <strong>category</strong> (name or id), <strong>total_copies</strong>.
+                <strong>book_title</strong>, <strong>category</strong> (name or id), <strong>isbn</strong>.
                 Use the <strong>Data</strong> sheet in the template (ignore the Guide sheet when saving).
               </p>
               <div className="mb-3">

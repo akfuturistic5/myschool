@@ -452,9 +452,22 @@ class ApiService {
   }
 
   // Students
-  async getStudents(academicYearId = null) {
-    const qs = academicYearId != null ? `?academic_year_id=${academicYearId}` : '';
-    return this.makeRequest(`/students${qs}`);
+  /**
+   * @param {number|string|null|{ academic_year_id?: number|string, limit?: number, page?: number }} [params]
+   */
+  async getStudents(params = null) {
+    const q = new URLSearchParams();
+    if (params != null && typeof params === 'object' && !Array.isArray(params)) {
+      if (params.academic_year_id != null && params.academic_year_id !== '') {
+        q.set('academic_year_id', String(params.academic_year_id));
+      }
+      if (params.limit != null && params.limit !== '') q.set('limit', String(params.limit));
+      if (params.page != null && params.page !== '') q.set('page', String(params.page));
+    } else if (params != null && params !== '') {
+      q.set('academic_year_id', String(params));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/students${qs ? `?${qs}` : ''}`);
   }
 
   async getTeacherStudents(academicYearId = null) {
@@ -1947,8 +1960,42 @@ class ApiService {
     });
   }
 
-  async getLeaveTypes() {
-    return this.makeRequest('/leave-applications/leave-types');
+  async getLeaveTypes(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.applicable_for) {
+      searchParams.set('applicable_for', String(params.applicable_for));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLeaveTypesAdmin(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.include_inactive != null) {
+      searchParams.set('include_inactive', String(params.include_inactive));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types/admin${qs ? `?${qs}` : ''}`);
+  }
+
+  async createLeaveType(data) {
+    return this.makeRequest('/leave-applications/leave-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeaveType(id, data) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeaveType(id) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getLeaveApplications(params = {}) {
@@ -2931,6 +2978,34 @@ class ApiService {
     });
   }
 
+  async getLibraryPolicies() {
+    return this.makeRequest('/library/policies');
+  }
+
+  async getLibraryPolicyById(id) {
+    return this.makeRequest(`/library/policies/${id}`);
+  }
+
+  async createLibraryPolicy(data) {
+    return this.makeRequest('/library/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryPolicy(id, data) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryPolicy(id) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getLibraryBooks(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2941,8 +3016,20 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
     }
+    if (
+      params.include_pending_reservations === true ||
+      params.include_pending_reservations === 1 ||
+      params.include_pending_reservations === '1' ||
+      String(params.include_pending_reservations || '').toLowerCase() === 'true'
+    ) {
+      q.set('include_pending_reservations', '1');
+    }
     const qs = q.toString();
     return this.makeRequest(`/library/books${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryNextBookAccessionNumber() {
+    return this.makeRequest('/library/book-copies/next-accession-number');
   }
 
   async importLibraryBooks(payload) {
@@ -2976,6 +3063,43 @@ class ApiService {
     });
   }
 
+  async getLibraryBookCopies(params = {}) {
+    const q = new URLSearchParams();
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.accession_number) q.set('accession_number', String(params.accession_number));
+    if (params.condition) q.set('condition', String(params.condition));
+    const qs = q.toString();
+    return this.makeRequest(`/library/book-copies${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryBookCopyById(id) {
+    return this.makeRequest(`/library/book-copies/${id}`);
+  }
+
+  async createLibraryBookCopy(data) {
+    return this.makeRequest('/library/book-copies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryBookCopy(id, data) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryBookCopy(id) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLibraryNextCardNumber() {
+    return this.makeRequest('/library/members/next-card-number');
+  }
+
   async getLibraryMembers(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2985,6 +3109,9 @@ class ApiService {
     if (params.date_to) q.set('date_to', String(params.date_to));
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.status != null && params.status !== '') {
+      q.set('status', String(params.status));
     }
     const qs = q.toString();
     return this.makeRequest(`/library/members${qs ? `?${qs}` : ''}`);
@@ -3044,6 +3171,37 @@ class ApiService {
 
   async returnLibraryIssue(id, data) {
     return this.makeRequest(`/library/issues/${id}/return`, {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async getLibraryReservations(params = {}) {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.member_id != null && params.member_id !== '') q.set('member_id', String(params.member_id));
+    if (params.search) q.set('search', String(params.search));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/reservations${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryReservationById(id) {
+    return this.makeRequest(`/library/reservations/${id}`);
+  }
+
+  async createLibraryReservation(data) {
+    return this.makeRequest('/library/reservations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryReservation(id, data) {
+    return this.makeRequest(`/library/reservations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data || {}),
     });

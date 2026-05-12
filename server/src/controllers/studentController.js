@@ -2666,10 +2666,17 @@ const getAllStudents = async (req, res) => {
           : Math.min(10000, rawLimit);
       offset = (page - 1) * limit;
     } else {
-      const p = parsePagination(req.query);
-      page = p.page;
-      limit = p.limit;
-      offset = p.offset;
+      const rawLimit = parseInt(req.query.limit, 10);
+      if (Number.isFinite(rawLimit) && rawLimit >= 1) {
+        page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        limit = Math.min(10000, rawLimit);
+        offset = (page - 1) * limit;
+      } else {
+        const p = parsePagination(req.query);
+        page = p.page;
+        limit = p.limit;
+        offset = p.offset;
+      }
     }
 
     const countQuery = hasAcademicYearFilter

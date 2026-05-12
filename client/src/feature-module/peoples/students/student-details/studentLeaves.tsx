@@ -115,7 +115,7 @@ const StudentLeaves = () => {
     limit: 50,
     studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
-  const { leaveTypes } = useLeaveTypes();
+  const { leaveTypes } = useLeaveTypes({ applicableFor: "student" });
   const leaveTypesList = Array.isArray(leaveTypes) ? (leaveTypes as any[]) : [];
 
   const data = useMemo(() => {

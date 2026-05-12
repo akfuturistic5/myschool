@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
-export const useLeaveTypes = () => {
+export const useLeaveTypes = (options = {}) => {
+  const applicableFor = options?.applicableFor || null;
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -10,7 +11,9 @@ export const useLeaveTypes = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiService.getLeaveTypes();
+      const res = await apiService.getLeaveTypes({
+        applicable_for: applicableFor || undefined,
+      });
       if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
         setLeaveTypes(
           res.data.map((lt) => ({
@@ -19,6 +22,7 @@ export const useLeaveTypes = () => {
             id: lt.id,
             max_days_per_year: lt.max_days_per_year,
             max_days: lt.max_days,
+            applicable_for: lt.applicable_for || 'both',
           }))
         );
       } else {
@@ -34,7 +38,7 @@ export const useLeaveTypes = () => {
 
   useEffect(() => {
     fetchLeaveTypes();
-  }, []);
+  }, [applicableFor]);
 
   return { leaveTypes, loading, error, refetch: fetchLeaveTypes };
 };
