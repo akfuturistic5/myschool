@@ -545,7 +545,13 @@ const getAllParents = async (req, res) => {
         `SELECT COUNT(*)::int as total
         FROM students s
         WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
+          AND EXISTS (
+            SELECT 1
+            FROM student_guardian_links sgl
+            JOIN guardians g ON g.id = sgl.guardian_id
+            WHERE sgl.student_id = s.id
+              AND g.is_active = true
+          )${yearWhere}`,
         countParams
       );
       result = await query(
@@ -562,27 +568,33 @@ const getAllParents = async (req, res) => {
           s.roll_number,
           NULL::text AS class_name,
           NULL::text AS section_name,
-          (SELECT g.user_id FROM guardians g
+          (SELECT g.user_id
+            FROM student_guardian_links sgl
+            JOIN guardians g ON g.id = sgl.guardian_id
             LEFT JOIN users u ON u.id = g.user_id
-            WHERE g.student_id = s.id AND g.status = \'Active\'
+            WHERE sgl.student_id = s.id AND g.is_active = true
               AND (
-                LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-                OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+                LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
                 OR u.role_id = ${ROLES.PARENT}
               )
             ORDER BY
               CASE
-                WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
-                WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
+                WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
                 WHEN u.role_id = ${ROLES.PARENT} THEN 2
                 ELSE 9
               END,
-              g.id ASC
+              sgl.id ASC
             LIMIT 1) AS father_user_id
         FROM students s
         ${STUDENT_CONTACT_LATERAL_JOINS}
         WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
+          AND EXISTS (
+            SELECT 1
+            FROM student_guardian_links sgl
+            JOIN guardians g ON g.id = sgl.guardian_id
+            WHERE sgl.student_id = s.id
+              AND g.is_active = true
+          )${yearWhere}
         ORDER BY s.first_name ASC, s.last_name ASC
         ${limitOffsetPlaceholders}`,
         listParams

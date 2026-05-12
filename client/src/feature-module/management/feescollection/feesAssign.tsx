@@ -61,7 +61,7 @@ const FeesAssign = () => {
           feesType: item.fees_type_name || "Unknown Type",
           class: item.class_name || "-",
           section: item.section_name || "-",
-          amount: item.total_amount || "0",
+          amount: item.total_payable ?? item.total_amount ?? "0",
           gender: item.gender || "All",
           category: item.category || "All"
         }));

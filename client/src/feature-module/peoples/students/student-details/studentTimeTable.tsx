@@ -30,42 +30,57 @@ const StudentTimeTable = () => {
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { student, loading, role } = useLinkedStudentContext({
+  const { student, loading, parentPlacementForWard, isParentRole } = useLinkedStudentContext({
     locationState: state,
   });
   const effectiveStudentId = parsePositiveId(student?.id);
 
+  /**
+   * Parent/guardian portal: same placement rules server-side as GET /students/:id + /parents/me.
+   * Timetable must use GET /class-schedules (scoped list) like the student tab — not /timetable/class with
+   * sections.id, which returns empty when class_sections cannot be resolved for that year.
+   */
   const classIdForSchedule = parsePositiveId(
-    student?.class_id ?? (student as { classId?: unknown })?.classId
+    isParentRole
+      ? parentPlacementForWard?.class_id ??
+          student?.class_id ??
+          (student as { classId?: unknown })?.classId
+      : student?.class_id ??
+          (student as { classId?: unknown })?.classId ??
+          parentPlacementForWard?.class_id
   );
   const sectionIdForSchedule = parsePositiveId(
-    student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
+    isParentRole
+      ? parentPlacementForWard?.section_id ??
+          student?.section_id ??
+          (student as { sectionId?: unknown })?.sectionId
+      : student?.section_id ??
+          (student as { sectionId?: unknown })?.sectionId ??
+          parentPlacementForWard?.section_id
   );
   const sectionNameForSchedule = normalizeText(
-    student?.section_name ?? (student as { sectionName?: unknown })?.sectionName
+    student?.section_name ??
+      (student as { sectionName?: unknown })?.sectionName ??
+      parentPlacementForWard?.section_name
   );
 
-  /** Parents/guardians should default to the child's enrolled year to avoid empty timetable on header-year mismatch. */
   const studentAcademicYearId = parsePositiveId(
-    student?.academic_year_id ?? (student as { academicYearId?: unknown })?.academicYearId
+    isParentRole
+      ? parentPlacementForWard?.academic_year_id ??
+          student?.academic_year_id ??
+          (student as { academicYearId?: unknown })?.academicYearId
+      : student?.academic_year_id ??
+          (student as { academicYearId?: unknown })?.academicYearId ??
+          parentPlacementForWard?.academic_year_id
   );
-  const normalizedRole = String(role || "").trim().toLowerCase();
-  const isParentViewer =
-    normalizedRole === "parent" ||
-    normalizedRole === "guardian" ||
-    normalizedRole === "father" ||
-    normalizedRole === "mother" ||
-    normalizedRole.includes("parent") ||
-    normalizedRole.includes("guardian");
-  const academicYearForSchedules = isParentViewer
-    ? studentAcademicYearId ?? headerAcademicYearId ?? undefined
-    : studentAcademicYearId ?? headerAcademicYearId ?? undefined;
+  const academicYearForSchedules =
+    studentAcademicYearId ?? headerAcademicYearId ?? undefined;
 
   const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
     academicYearId: academicYearForSchedules,
     classId: classIdForSchedule ?? undefined,
-    // Use scoped class fetch; this avoids hard failures when section id types differ (sections.id vs class_sections.id).
     sectionId: undefined,
+    relaxClientFilters: isParentRole,
     skip: !classIdForSchedule,
   });
 
@@ -75,6 +90,9 @@ const StudentTimeTable = () => {
     return list.filter((item: any) => {
       const rowClassId = parsePositiveId(item?.originalData?.class_id);
       if (rowClassId !== classIdForSchedule) return false;
+      // Parent/guardian: API is already scoped server-side to this ward's class/section; do not re-filter by
+      // section name (labels often differ from /parents/me) or by section id (class_sections.id vs sections.id).
+      if (isParentRole) return true;
       if (!sectionIdForSchedule && !sectionNameForSchedule) return true;
       const rowSectionId = parsePositiveId(
         item?.originalData?.section_id ?? item?.originalData?.class_section_id
@@ -86,7 +104,7 @@ const StudentTimeTable = () => {
         (!!sectionNameForSchedule && rowSectionName === sectionNameForSchedule)
       );
     });
-  }, [scheduleData, classIdForSchedule, sectionIdForSchedule, sectionNameForSchedule]);
+  }, [scheduleData, classIdForSchedule, sectionIdForSchedule, sectionNameForSchedule, isParentRole]);
 
   const weeklySchedule = useMemo(() => {
     if (!Array.isArray(filteredScheduleData)) {
@@ -226,13 +244,6 @@ const StudentTimeTable = () => {
                         </div>
                       )}
 
-                      {!headerAcademicYearId && studentAcademicYearId && !scheduleError ? (
-                        <div className="alert alert-light border small mb-3" role="status">
-                          Timetable is loaded using this student&apos;s academic year. Choose a year in the header to
-                          switch when viewing as staff.
-                        </div>
-                      ) : null}
-
                       {scheduleLoading && (
                         <div className="d-flex justify-content-center align-items-center p-4">
                           <div className="spinner-border text-primary" role="status" />
@@ -243,7 +254,11 @@ const StudentTimeTable = () => {
                       {!scheduleLoading && totalClasses === 0 && (
                         <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
                           <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No timetable is available for your class and section yet.</span>
+                          <span>
+                            {isParentRole
+                              ? "No timetable is published for this child's class (and section) for the selected year yet."
+                              : "No timetable is available for your class and section yet."}
+                          </span>
                         </div>
                       )}
 

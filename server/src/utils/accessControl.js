@@ -11,8 +11,9 @@ function parseId(value) {
 function getAuthContext(req) {
   const u = req?.user || {};
   const userId = parseId(u.id);
-  const roleId = u.role_id != null ? parseId(u.role_id) : null;
-  const roleName = (u.role_name || '').toString().trim().toLowerCase();
+  const roleId =
+    u.role_id != null ? parseId(u.role_id) : u.user_role_id != null ? parseId(u.user_role_id) : null;
+  const roleName = (u.role_name || u.role || '').toString().trim().toLowerCase();
   return { userId, roleId, roleName, staffId: parseId(u.staff_id) };
 }
 
@@ -132,12 +133,13 @@ async function canAccessStudent(req, studentId) {
     return { ok: false, status: 403, message: 'Access denied' };
   }
 
-  // Guardian: must have guardian row tied to this user + student
+  // Guardian: must have guardian row tied to this user + student (wards live on student_guardian_links)
   if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
     const gCheck = await query(
       `SELECT 1
        FROM guardians g
-       WHERE g.user_id = $1 AND g.student_id = $2
+       INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+       WHERE g.user_id = $1 AND sgl.student_id = $2 AND COALESCE(g.is_active, true) = true
        LIMIT 1`,
       [ctx.userId, sid]
     );
@@ -197,9 +199,10 @@ async function resolveWardStudentIdsForUser(req) {
 
   if (isGuardianPortalRole(ctx)) {
     const g = await query(
-      `SELECT g.student_id
+      `SELECT sgl.student_id
        FROM guardians g
-       WHERE g.user_id = $1`,
+       INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+       WHERE g.user_id = $1 AND COALESCE(g.is_active, true) = true`,
       [ctx.userId]
     );
     return (g.rows || []).map((r) => parseId(r.student_id)).filter(Boolean);
