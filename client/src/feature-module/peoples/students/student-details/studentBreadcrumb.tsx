@@ -2,7 +2,7 @@ import { all_routes } from '../../../router/all_routes'
 import { Link, useLocation } from 'react-router-dom'
 import { useSelector } from 'react-redux'
 import { selectUser } from '../../../../core/data/redux/authSlice'
-import { getDashboardForRole, isAdministrativeRole, isHeadmasterRole } from '../../../../core/utils/roleUtils'
+import { getDashboardForRole, isAdministrativeRole, isHeadmasterRole, isTeacherRole } from '../../../../core/utils/roleUtils'
 
 interface StudentBreadcrumbProps {
   studentId?: number | string
@@ -19,19 +19,14 @@ const StudentBreadcrumb = ({ studentId }: StudentBreadcrumbProps) => {
   const user = useSelector(selectUser)
   const role = user?.role || ''
   const roleLower = (role || '').trim().toLowerCase()
-  const isTeacherUser =
-    Number(user?.role_id) === 2 ||
-    Number(user?.user_role_id) === 2 ||
-    roleLower === 'teacher' ||
-    roleLower.includes('teacher')
   const dashboardRoles = ['student', 'parent', 'guardian', 'teacher']
   const roleBasedBack = dashboardRoles.includes(roleLower) ? getDashboardForRole(role) : routes.studentList
   const dashboardLink = getDashboardForRole(role)
   const backTo = state?.returnTo || roleBasedBack
   const canEditStudent =
     isHeadmasterRole(user) ||
-    isAdministrativeRole(user) ||
-    isTeacherUser
+    isAdministrativeRole(user)
+  const isTeacherUser = isTeacherRole(user)
   const sectionLabel = roleLower === 'parent' || roleLower === 'guardian' ? 'Child Profile' : 'Student'
 
   return (

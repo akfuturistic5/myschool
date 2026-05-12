@@ -11,7 +11,7 @@ import PredefinedDateRanges from '../../../../core/common/datePicker'
 import { useStudents } from '../../../../core/hooks/useStudents'
 import { useCurrentStudent } from '../../../../core/hooks/useCurrentStudent'
 import { selectUser } from '../../../../core/data/redux/authSlice'
-import { getDashboardForRole } from '../../../../core/utils/roleUtils'
+import { getDashboardForRole, isTeacherRole } from '../../../../core/utils/roleUtils'
 import { exportToExcel, exportToPDF, printData } from '../../../../core/utils/exportUtils'
 
 const StudentGrid = () => {
@@ -20,6 +20,7 @@ const StudentGrid = () => {
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<any>(null)
   const user = useSelector(selectUser)
+  const isTeacher = isTeacherRole(user)
   const role = (user?.role || '').toLowerCase()
   const isStudentRole = role === 'student'
 
@@ -143,15 +144,17 @@ const StudentGrid = () => {
           onExportExcel={handleExportExcel}
         />
 
-          <div className="mb-2">
-            <Link
-              to={routes.addStudent}
-              className="btn btn-primary d-flex align-items-center"
-            >
-              <i className="ti ti-square-rounded-plus me-2" />
-              Add Student
-            </Link>
-          </div>
+          {!isTeacher && (
+            <div className="mb-2">
+              <Link
+                to={routes.addStudent}
+                className="btn btn-primary d-flex align-items-center"
+              >
+                <i className="ti ti-square-rounded-plus me-2" />
+                Add Student
+              </Link>
+            </div>
+          )}
         </div>
       </div>
       {/* /Page Header */}
@@ -362,36 +365,42 @@ const StudentGrid = () => {
                             View Student
                           </Link>
                         </li>
-                        <li>
-                          <Link
-                            className="dropdown-item rounded-1"
-                            to={`${routes.editStudent}/${student.id}`}
-                          >
-                            <i className="ti ti-edit-circle me-2" />
-                            Edit
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            className="dropdown-item rounded-1"
-                            to={routes.studentPromotion}
-                          >
-                            <i className="ti ti-arrow-ramp-right-2 me-2" />
-                            Promote Student
-                          </Link>
-                        </li>
-                        <li>
-                          <Link
-                            className="dropdown-item rounded-1"
-                            to="#"
-                            data-bs-toggle="modal"
-                            data-bs-target="#delete-modal"
-                            onClick={() => setSelectedStudent(student.student)}
-                          >
-                            <i className="ti ti-trash-x me-2" />
-                            Delete
-                          </Link>
-                        </li>
+                        {!isTeacher && (
+                          <li>
+                            <Link
+                              className="dropdown-item rounded-1"
+                              to={`${routes.editStudent}/${student.id}`}
+                            >
+                              <i className="ti ti-edit-circle me-2" />
+                              Edit
+                            </Link>
+                          </li>
+                        )}
+                        {!isTeacher && (
+                          <li>
+                            <Link
+                              className="dropdown-item rounded-1"
+                              to={routes.studentPromotion}
+                            >
+                              <i className="ti ti-arrow-ramp-right-2 me-2" />
+                              Promote Student
+                            </Link>
+                          </li>
+                        )}
+                        {!isTeacher && (
+                          <li>
+                            <Link
+                              className="dropdown-item rounded-1"
+                              to="#"
+                              data-bs-toggle="modal"
+                              data-bs-target="#delete-modal"
+                              onClick={() => setSelectedStudent(student.student)}
+                            >
+                              <i className="ti ti-trash-x me-2" />
+                              Delete
+                            </Link>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>

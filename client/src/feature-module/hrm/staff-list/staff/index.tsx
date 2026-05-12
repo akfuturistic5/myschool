@@ -144,6 +144,9 @@ const Staff = () => {
 
     const rows = staffList.filter((row: any) => {
       const orig = row.originalData as Record<string, unknown> | undefined;
+
+      // Exclude teachers from this administrative staff table
+      if (orig?.role_id === 2) return false;
       if (q) {
         const nm = String(row.name || "").toLowerCase();
         if (!nm.includes(q)) return false;

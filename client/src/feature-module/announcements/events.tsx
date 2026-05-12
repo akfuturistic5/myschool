@@ -173,9 +173,9 @@ function toLocalApiDateTime(value: Dayjs) {
 
 const Events = () => {
   const routes = all_routes;
-  const { user } = useCurrentUser();
+  const { user } = useCurrentUser() as any;
   const canManage = canManageSchoolEvents(user);
-  const isAdmin = Number((user as { role_id?: number | string } | null)?.role_id) === 1;
+  const isAdmin = Number(user?.user_role_id) === 1;
   const [filterCategory, setFilterCategory] = useState<string | "all">("all");
   const [filterAudience, setFilterAudience] = useState<
     "all" | "students" | "staff" | "parents" | "guardians"

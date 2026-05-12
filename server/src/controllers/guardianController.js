@@ -3,6 +3,8 @@ const { createGuardianUser } = require('../utils/createPersonUser');
 const { guardiansIsSlimSchema } = require('../utils/studentContactSync');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
+const { getAuthContext, isAdmin, parseId, canAccessStudent } = require('../utils/accessControl');
+const { ROLES } = require('../config/roles');
 
 const guardianSelectBase = `
         g.id,
@@ -18,6 +20,7 @@ const guardianSelectBase = `
         u.avatar,
         student_u.first_name as student_first_name,
         student_u.last_name as student_last_name,
+        student_u.avatar as student_image_url,
         s.admission_number,
         s.roll_number,
         c.class_name,
@@ -337,36 +340,109 @@ const getAllGuardians = async (req, res) => {
   try {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const yearWhere = hasYearFilter ? ' AND enr.academic_year_id = $1' : '';
-    const params = hasYearFilter ? [academicYearId] : [];
+    
+    const ctx = getAuthContext(req);
+    const isTeacher = ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher';
+    const isAdm = isAdmin(ctx);
+
+    if (!isTeacher && !isAdm) {
+      return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+    }
+
+    let scopingSql = '';
+    let queryParams = [];
+
+    if (isTeacher) {
+      const teacherCheck = await query(
+        `SELECT st.id AS staff_id FROM staff st WHERE st.user_id = $1 AND st.status = 'Active'`,
+        [ctx.userId]
+      );
+      const teacherStaffIds = [...new Set(teacherCheck.rows.map((row) => parseId(row.staff_id)).filter(Boolean))];
+      if (!teacherStaffIds.length) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
+      }
+      queryParams = [teacherStaffIds];
+      scopingSql = `
+        AND EXISTS (
+          SELECT 1 FROM class_teachers ct
+          LEFT JOIN class_sections csec2 ON csec2.id = ct.class_section_id
+          WHERE ct.staff_id = ANY($1::int[])
+            AND ct.class_id = enr.class_id
+            AND (ct.class_section_id IS NULL OR csec2.section_id = enr.section_id)
+            AND ct.deleted_at IS NULL
+        )`;
+    }
+
+    const yearIdx = queryParams.length + 1;
+    const yearWhere = hasYearFilter ? ` AND enr.academic_year_id = $${yearIdx}` : '';
+    const listParams = hasYearFilter ? [...queryParams, academicYearId] : queryParams;
 
     const result = await query(
       `SELECT ${guardianSelectBase}
       ${guardianJoins}
-      WHERE s.is_active = true${yearWhere}
+      WHERE s.is_active = true ${scopingSql}${yearWhere}
         AND LOWER(COALESCE(sgl.relation::text, '')) NOT IN ('father', 'mother')
       ORDER BY student_u.first_name ASC, student_u.last_name ASC`,
-      params
+      listParams
     );
+
+    const rows = result.rows;
+    const grouped = [];
+    const guardianMap = new Map();
+
+    for (const row of rows) {
+      const key = row.id; // Guardian ID is unique per guardian record
+      if (guardianMap.has(key)) {
+        const existing = guardianMap.get(key);
+        // Add student if not already in list
+        const alreadyIn = existing.all_children.some(c => String(c.id) === String(row.student_id));
+        if (!alreadyIn) {
+          existing.all_children.push({
+            id: row.student_id,
+            name: `${row.student_first_name} ${row.student_last_name}`.trim(),
+            admission_number: row.admission_number,
+            class_name: row.class_name,
+            section_name: row.section_name,
+            photo_url: row.student_image_url
+          });
+        }
+      } else {
+        const entry = {
+          ...row,
+          all_children: [
+            {
+              id: row.student_id,
+              name: `${row.student_first_name} ${row.student_last_name}`.trim(),
+              admission_number: row.admission_number,
+              class_name: row.class_name,
+              section_name: row.section_name,
+              photo_url: row.student_image_url
+            }
+          ]
+        };
+        guardianMap.set(key, entry);
+        grouped.push(entry);
+      }
+    }
 
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Guardians fetched successfully',
-      data: result.rows,
-      count: result.rows.length,
+      data: grouped,
+      count: grouped.length,
     });
   } catch (error) {
     console.error('Error fetching guardians:', error);
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to fetch guardians',
+      error: error.message,
     });
   }
 };
 
 const getGuardianById = async (req, res) => {
   try {
-    const { canAccessStudent, parseId, isAdmin, getAuthContext } = require('../utils/accessControl');
     const gid = parseId(req.params.id);
     if (!gid) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid guardian ID' });
@@ -452,7 +528,6 @@ const getCurrentGuardian = async (req, res) => {
 
 const getGuardianByStudentId = async (req, res) => {
   try {
-    const { canAccessStudent, parseId } = require('../utils/accessControl');
     const studentId = parseId(req.params.studentId);
     if (!studentId) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid student ID' });

@@ -273,7 +273,9 @@ const GuardianGrid = () => {
                       className="link-primary fw-semibold"
                       onClick={() => handleViewGuardian(guardian)}
                     >
-                      {guardian.student_admission_number ? `Admission# ${guardian.student_admission_number}` : `Guardian #${guardian.id}`}
+                      {guardian.all_children && guardian.all_children.length > 1 
+                        ? `Family of ${guardian.all_children.length} Students` 
+                        : (guardian.student_admission_number ? `Admission# ${guardian.student_admission_number}` : `Guardian #${guardian.id}`)}
                     </Link>
                     <div className="d-flex align-items-center">
                       <div className="dropdown">
@@ -361,19 +363,32 @@ const GuardianGrid = () => {
                   </div>
                   <div className="card-footer d-flex align-items-center justify-content-between">
                     <div className="d-flex align-items-center">
-                      <div className="d-flex align-items-center">
-                        <Link
-                          to={routes.studentDetail}
-                          state={guardian.student_id != null ? { studentId: guardian.student_id } : undefined}
-                          className="avatar avatar-md flex-shrink-0 p-0 me-2"
-                        >
-                          <ImageWithBasePath
-                            src={guardian.ChildImage}
-                            alt="img"
-                            className="img-fluid rounded-circle"
-                          />
-                        </Link>
-                        <p className="text-dark">{guardian.Child}</p>
+                      <div className="avatar-list-stacked">
+                        {(guardian.all_children || []).slice(0, 3).map((child: any) => (
+                          <Link
+                            key={child.id}
+                            to={routes.studentDetail}
+                            state={{ studentId: child.id }}
+                            className="avatar avatar-md border border-white flex-shrink-0 p-0"
+                            title={child.name}
+                          >
+                            <ImageWithBasePath
+                              src={child.photo_url}
+                              alt="img"
+                              className="img-fluid rounded-circle"
+                            />
+                          </Link>
+                        ))}
+                        {guardian.all_children && guardian.all_children.length > 3 && (
+                          <span className="avatar avatar-md border border-white bg-light text-primary flex-shrink-0 fs-12 d-flex align-items-center justify-content-center rounded-circle">
+                            +{guardian.all_children.length - 3}
+                          </span>
+                        )}
+                      </div>
+                      <div className="ms-2">
+                        <p className="text-dark mb-0 fs-12 text-truncate" style={{ maxWidth: '150px' }}>
+                          {guardian.Child}
+                        </p>
                       </div>
                     </div>
                     <Link
@@ -450,10 +465,10 @@ const GuardianGrid = () => {
             </div>
           )}
           <h5 className="mb-3">Children Details</h5>
-          {selectedGuardian && (
-            <div className="border rounded p-4 pb-1 mb-3">
+          {selectedGuardian && (selectedGuardian.all_children || []).map((child: any) => (
+            <div key={child.id} className="border rounded p-3 pb-1 mb-3">
               <div className="d-flex align-items-center justify-content-between flex-wrap pb-1 mb-3 border-bottom">
-                <span className="link-primary mb-2">{selectedGuardian.student_admission_number}</span>
+                <span className="link-primary mb-2">Admission# {child.admission_number}</span>
                 <span className="badge badge-soft-success badge-md mb-2">
                   <i className="ti ti-circle-filled me-2" />
                   Active
@@ -463,11 +478,11 @@ const GuardianGrid = () => {
                 <div className="d-flex align-items-center mb-3">
                   <Link
                     to={routes.studentDetail}
-                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    state={{ studentId: child.id }}
                     className="avatar"
                   >
                     <ImageWithBasePath
-                      src={selectedGuardian.ChildImage}
+                      src={child.photo_url}
                       className="img-fluid rounded-circle"
                       alt="img"
                     />
@@ -476,35 +491,18 @@ const GuardianGrid = () => {
                     <p className="mb-0">
                       <Link
                         to={routes.studentDetail}
-                        state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                        state={{ studentId: child.id }}
                       >
-                        {selectedGuardian.Child}
+                        {child.name}
                       </Link>
                     </p>
-                    <span>{selectedGuardian.class}</span>
+                    <span>{child.class_name} {child.section_name ? `, ${child.section_name}` : ''}</span>
                   </div>
                 </div>
-                <ul className="d-flex align-items-center flex-wrap">
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Roll No</p>
-                    <h6 className="fw-normal">{selectedGuardian.student_roll_number}</h6>
-                  </li>
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Guardian Type</p>
-                    <h6 className="fw-normal">{selectedGuardian.guardian_type || 'N/A'}</h6>
-                  </li>
-                  <li className="mb-3">
-                    <p className="mb-1">Relation</p>
-                    <h6 className="fw-normal">{selectedGuardian.relation || 'N/A'}</h6>
-                  </li>
-                </ul>
                 <div className="d-flex align-items-center">
-                  <Link to="#" className="btn btn-light mb-3 me-3">
-                    Add Fees
-                  </Link>
                   <Link
                     to={routes.studentDetail}
-                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    state={{ studentId: child.id }}
                     className="btn btn-primary mb-3"
                   >
                     View Details
@@ -512,7 +510,7 @@ const GuardianGrid = () => {
                 </div>
               </div>
             </div>
-          )}
+          ))}
         </div>
       </Modal>
     </>

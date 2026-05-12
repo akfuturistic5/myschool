@@ -17,9 +17,9 @@ const ApproveRequest = () => {
   const routes = all_routes;
   const [leaveActionId, setLeaveActionId] = useState<number | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "danger"; text: string } | null>(null);
-  const { user: currentUser } = useCurrentUser();
+  const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
-  const roleId = Number(currentUser?.user_role_id ?? currentUser?.role_id);
+  const roleId = Number(currentUser?.user_role_id);
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
   const canUseAdminList = isTeacher || isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
   const applicantType = isTeacher ? "student" : "staff";
@@ -28,7 +28,7 @@ const ApproveRequest = () => {
     canUseAdminList,
     pendingOnly: true,
     applicantType,
-  });
+  }) as any;
 
   const data = useMemo(() => {
     if (!Array.isArray(leaveApplications)) return [];

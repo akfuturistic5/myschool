@@ -7,6 +7,9 @@ import StudentSidebar from './studentSidebar'
 import StudentBreadcrumb from './studentBreadcrumb'
 import { useLinkedStudentContext } from '../../../../core/hooks/useLinkedStudentContext'
 import { apiService } from '../../../../core/services/apiService'
+import { useSelector } from 'react-redux'
+import { selectUser } from '../../../../core/data/redux/authSlice'
+import { isTeacherRole } from '../../../../core/utils/roleUtils'
 
 interface StudentDetailsLocationState {
   studentId?: number
@@ -29,6 +32,8 @@ const StudentDetails = () => {
     locationState: state,
     routeStudentId: paramId,
   })
+  const user = useSelector(selectUser)
+  const isTeacher = isTeacherRole(user)
   const [promotionRows, setPromotionRows] = useState<any[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -262,16 +267,18 @@ const StudentDetails = () => {
                     Leave &amp; Attendance
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    to={routes.studentFees}
-                    className="nav-link"
-                    state={{ studentId: student.id, student }}
-                  >
-                    <i className="ti ti-report-money me-2" />
-                    Fees
-                  </Link>
-                </li>
+                {!isTeacher && (
+                  <li>
+                    <Link
+                      to={routes.studentFees}
+                      className="nav-link"
+                      state={{ studentId: student.id, student }}
+                    >
+                      <i className="ti ti-report-money me-2" />
+                      Fees
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link
                     to={routes.studentResult}

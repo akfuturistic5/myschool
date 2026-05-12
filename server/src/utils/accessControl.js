@@ -91,22 +91,6 @@ async function canAccessStudent(req, studentId) {
     const studentSectionId = parseId(stud.section_id);
 
     if (studentClassId && staffIds.length > 0) {
-      const cs = await query(
-        `SELECT 1
-         FROM class_schedules cs
-         WHERE cs.teacher_id = ANY($1::int[])
-           AND cs.class_id = $2
-           AND ($3::int IS NULL OR EXISTS (
-             SELECT 1 FROM class_sections csec
-             WHERE csec.id = cs.class_section_id AND csec.section_id = $3
-           ) OR $3::int IS NULL)
-         LIMIT 1`,
-        [staffIds, studentClassId, studentSectionId]
-      ).catch(() => ({ rows: [] }));
-      if (cs.rows && cs.rows.length > 0) return { ok: true };
-    }
-
-    if (studentClassId && staffIds.length > 0) {
       const ct = await query(
         `SELECT 1
          FROM class_teachers ct
@@ -242,16 +226,6 @@ async function canAccessClass(req, classId) {
       [cid, staffIds]
     ).catch(() => ({ rows: [] }));
     if (ct.rows && ct.rows.length > 0) return { ok: true };
-
-    const cs = await query(
-      `SELECT 1
-       FROM class_schedules cs
-       WHERE cs.class_id = $2
-         AND cs.teacher_id = ANY($1::int[])
-       LIMIT 1`,
-      [staffIds, cid]
-    ).catch(() => ({ rows: [] }));
-    if (cs.rows && cs.rows.length > 0) return { ok: true };
 
     return { ok: false, status: 403, message: 'Access denied' };
   }

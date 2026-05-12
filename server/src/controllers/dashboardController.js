@@ -280,7 +280,9 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
          COUNT(*) FILTER (WHERE LOWER(TRIM(sa.status::text)) IN ('half-day', 'half_day'))::int AS half_day,
          COUNT(*)::int AS total_marked
        FROM staff_attendance sa
-       ${where}`,
+       INNER JOIN staff s ON s.id = sa.staff_id
+       INNER JOIN users u ON u.id = s.user_id
+       ${where ? where + ' AND' : 'WHERE'} u.role_id NOT IN (2, 3, 4, 5)`,
       params
     );
     const row = marks.rows[0] || {};
@@ -356,64 +358,23 @@ const getDashboardStats = async (req, res) => {
       console.warn('Dashboard: students count failed', e.message);
     }
 
-    // Teachers: school-wide when no year; with year = linked to that year via timetable OR class teacher OR assigned class.
-    // If year-scoped mapping is empty but teachers exist, fallback to school-wide counts to avoid misleading 0 cards.
+    // Teachers: total, active, inactive (school-wide headcount)
     try {
-      const fetchSchoolWideTeacherCounts = async () => {
-        const totalRes = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS total 
-           FROM staff s 
-           INNER JOIN users u ON u.id = s.user_id 
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.role_id = 2`
-        );
-        const activeRes = await query(`
-          SELECT COUNT(DISTINCT s.id)::int AS active
-          FROM staff s
-          INNER JOIN users u ON u.id = s.user_id
-          WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL 
-            AND s.status = 'Active' AND u.role_id = 2
-        `);
-        return {
-          total: parseInt(totalRes.rows[0]?.total, 10) || 0,
-          active: parseInt(activeRes.rows[0]?.active, 10) || 0,
-        };
-      };
-
-      if (hasYearFilter) {
-        const yearTeacherScope = sqlTeacherInAcademicYear('s', 1);
-        const teachersTotal = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS total
-           FROM staff s
-           INNER JOIN users u ON u.id = s.user_id
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-             AND u.role_id = 2
-             AND ${yearTeacherScope}`,
-          [academicYearId]
-        );
-        stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
-        const teachersActive = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS active
-           FROM staff s
-           INNER JOIN users u ON u.id = s.user_id
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-             AND u.role_id = 2
-             AND s.status = 'Active'
-             AND ${yearTeacherScope}`,
-          [academicYearId]
-        );
-        stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
-
-        if (stats.teachers.total === 0) {
-          const fallback = await fetchSchoolWideTeacherCounts();
-          stats.teachers.total = fallback.total;
-          stats.teachers.active = fallback.active;
-        }
-      } else {
-        const schoolWide = await fetchSchoolWideTeacherCounts();
-        stats.teachers.total = schoolWide.total;
-        stats.teachers.active = schoolWide.active;
+      const teachersCount = await query(`
+        SELECT
+          COUNT(DISTINCT s.id)::int as total,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'Active')::int as active,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status != 'Active')::int as inactive
+        FROM staff s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
+          AND u.role_id = 2
+      `);
+      if (teachersCount.rows[0]) {
+        stats.teachers.total = parseInt(teachersCount.rows[0].total, 10) || 0;
+        stats.teachers.active = parseInt(teachersCount.rows[0].active, 10) || 0;
+        stats.teachers.inactive = parseInt(teachersCount.rows[0].inactive, 10) || 0;
       }
-      stats.teachers.inactive = Math.max(0, stats.teachers.total - stats.teachers.active);
     } catch (e) {
       console.warn('Dashboard: teachers count failed', e.message);
     }
@@ -428,7 +389,7 @@ const getDashboardStats = async (req, res) => {
         FROM staff s
         INNER JOIN users u ON u.id = s.user_id
         WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-          AND u.role_id NOT IN (3, 4)
+          AND u.role_id NOT IN (2, 3, 4, 5)
       `);
       if (staffCount.rows[0]) {
         stats.staff.total = parseInt(staffCount.rows[0].total, 10) || 0;
@@ -794,7 +755,7 @@ const getClassRoutineForDashboard = async (req, res) => {
             where = ` WHERE cs.class_id = $${params.length + 1}`;
             params.push(scope.classId);
             if (scope.sectionId) {
-              where += ` AND (cs.section_id = $${params.length + 1} OR cs.section_id IS NULL)`;
+              where += ` AND (csec.section_id = $${params.length + 1} OR cs.class_section_id IS NULL)`;
               params.push(scope.sectionId);
             }
           }
@@ -816,7 +777,7 @@ const getClassRoutineForDashboard = async (req, res) => {
               where = ` WHERE cs.class_id = ANY($${params.length + 1})`;
               params.push(classIds);
               if (sectionIds.length > 0) {
-                where += ` AND (cs.section_id IS NULL OR cs.section_id = ANY($${params.length + 1}))`;
+                where += ` AND (cs.class_section_id IS NULL OR csec.section_id = ANY($${params.length + 1}))`;
                 params.push(sectionIds);
               }
             }
@@ -829,26 +790,21 @@ const getClassRoutineForDashboard = async (req, res) => {
         }
       }
 
-      if (hasYearFilter) {
-        const r = await query(
-          `SELECT cs.id, cs.class_id, cs.section_id, cs.subject_id, cs.teacher_id, cs.class_room_id, cs.day_of_week, cs.day, cs.weekday, cs.room_number, cs.room_id, cs.class_room
-           FROM class_schedules cs
-           INNER JOIN classes c ON cs.class_id = c.id
-           ${where ? where + ' AND c.academic_year_id = $' + (params.length + 1) : 'WHERE c.academic_year_id = $1'}
-           ORDER BY cs.id DESC LIMIT $${params.length + 2}`,
-          where ? [...params, academicYearId, limit] : [academicYearId, limit]
-        );
-        rows = r.rows;
-      } else {
-        const r = await query(
-          `SELECT id, class_id, section_id, subject_id, teacher_id, class_room_id, day_of_week, day, weekday, room_number, room_id, class_room
-           FROM class_schedules cs
-           ${where}
-           ORDER BY id DESC LIMIT $${params.length + 1}`,
-          [...params, limit]
-        );
-        rows = r.rows;
-      }
+      const finalWhere = hasYearFilter
+        ? (where ? `${where} AND cs.academic_year_id = $${params.length + 1}` : ` WHERE cs.academic_year_id = $1`)
+        : (where || '');
+      const finalParams = hasYearFilter ? [...params, academicYearId, limit] : [...params, limit];
+      const limitParam = hasYearFilter ? params.length + 2 : params.length + 1;
+
+      const r = await query(
+        `SELECT cs.id, cs.class_id, csec.section_id, cs.class_subject_id AS subject_id, cs.teacher_id, cs.class_room_id, cs.day_of_week
+         FROM class_schedules cs
+         LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+         ${finalWhere}
+         ORDER BY cs.id DESC LIMIT $${limitParam}`,
+        finalParams
+      );
+      rows = r.rows;
     } catch (e) {
       try {
         const r = await query(

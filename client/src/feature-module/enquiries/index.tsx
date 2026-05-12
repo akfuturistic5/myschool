@@ -60,7 +60,7 @@ const Enquiries = () => {
   const user = useSelector(selectUser);
   const selectedAcademicYearId = useSelector(selectSelectedAcademicYearId);
   const normalizedRole = String(user?.role || "").trim().toLowerCase();
-  const roleId = Number(user?.role_id ?? user?.user_role_id ?? 0);
+  const roleId = Number(user?.user_role_id ?? 0);
   const canManage = roleCanManage(normalizedRole, roleId);
 
   const [rows, setRows] = useState<any[]>([]);

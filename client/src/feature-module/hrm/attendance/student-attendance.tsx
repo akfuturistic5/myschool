@@ -92,7 +92,7 @@ const StudentAttendance = () => {
   const user = useSelector(selectUser);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const role = (user?.role || "").toLowerCase();
-  const roleId = Number(user?.user_role_id ?? user?.role_id);
+  const roleId = Number(user?.user_role_id);
   const isHeadmaster = isHeadmasterRole(user);
   const isAdministrative = isAdministrativeRole(user);
   const isTeacher = !isHeadmaster && !isAdministrative && (role === "teacher" || roleId === 2);
@@ -157,7 +157,7 @@ const StudentAttendance = () => {
         return;
       }
       try {
-        const response = await apiService.getTeacherStudents(academicYearId);
+        const response = await (apiService as any).getTeacherStudents(academicYearId);
         const scoped = Array.isArray(response?.data) ? response.data : [];
         if (!cancelled) setTeacherScopeRows(scoped);
       } catch {
@@ -169,6 +169,8 @@ const StudentAttendance = () => {
       cancelled = true;
     };
   }, [isTeacher, academicYearId]);
+
+
 
   const fetchRoster = async () => {
     if (!canEditStudentAttendance) return;
@@ -215,7 +217,7 @@ const StudentAttendance = () => {
       try {
         setReportLoading(true);
         setReportError(null);
-        const res = await apiService.getAttendanceReport({
+        const res = await apiService.getEntityAttendanceReport("student", {
           classId,
           sectionId,
           academicYearId,
@@ -309,6 +311,20 @@ const StudentAttendance = () => {
       });
     return Array.from(map.values());
   }, [isTeacher, sections, teacherScopeRows, classId]);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    if (classId == null && classOptions.length > 0) {
+      setClassId(Number(classOptions[0].id));
+    }
+  }, [isTeacher, classId, classOptions]);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    if (sectionId == null && sectionOptions.length > 0) {
+      setSectionId(Number(sectionOptions[0].id));
+    }
+  }, [isTeacher, sectionId, sectionOptions]);
 
   const shouldEnableSectionSelect = classId != null;
 
