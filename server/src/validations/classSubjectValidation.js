@@ -3,7 +3,9 @@ const Joi = require('joi');
 const electiveGroupSchema = Joi.object({
   group_name: Joi.string().trim().max(100).required(),
   description: Joi.string().trim().allow('', null).optional(),
-  class_id: Joi.number().integer().required(),
+  class_id: Joi.number().integer().optional(), // Optional for updates
+  max_subjects: Joi.number().integer().min(0).optional(),
+  selectable_subjects: Joi.number().integer().min(0).optional(),
 });
 
 const classSubjectAssignSchema = Joi.object({

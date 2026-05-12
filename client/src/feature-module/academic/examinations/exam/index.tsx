@@ -8,24 +8,13 @@ import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { all_routes } from "../../../router/all_routes";
 
-const EXAM_TYPES = [
-  "unit_test",
-  "monthly",
-  "quarterly",
-  "half_yearly",
-  "annual",
-  "preboard",
-  "internal",
-  "other",
-];
-
 const Exam = () => {
   const routes = all_routes;
   const navigate = useNavigate();
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { user } = useCurrentUser();
   const { classes } = useClasses();
-  const role = String(user?.role_name || user?.role || "").toLowerCase();
+  const role = String((user as any)?.role_name || (user as any)?.role || "").toLowerCase();
   const isAdminLike =
     role === "admin" || role === "headmaster" || role === "administrator" || role === "administrative";
 
@@ -34,12 +23,26 @@ const Exam = () => {
   const [saving, setSaving] = useState(false);
   const [deletingExamId, setDeletingExamId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [examTypes, setExamTypes] = useState<string[]>([]);
   const [form, setForm] = useState({
     exam_name: "",
-    exam_type: "unit_test",
+    exam_type: "",
     class_ids: [] as number[],
     description: "",
   });
+
+  const loadExamTypes = async () => {
+    try {
+      const res = await apiService.getExamTypes();
+      const types = Array.isArray(res?.data) ? res.data.map((t: any) => t.type_name) : [];
+      setExamTypes(types);
+      if (types.length > 0) {
+        setForm((p) => ({ ...p, exam_type: p.exam_type || types[0] }));
+      }
+    } catch (e) {
+      console.error("loadExamTypes", e);
+    }
+  };
 
   const loadExams = async () => {
     setLoading(true);
@@ -58,6 +61,7 @@ const Exam = () => {
   };
 
   useEffect(() => {
+    loadExamTypes();
     loadExams();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [academicYearId]);
@@ -151,6 +155,14 @@ const Exam = () => {
     });
   };
 
+  const selectAllClasses = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setForm((prev) => ({ ...prev, class_ids: classOptions.map((c) => c.id) }));
+    } else {
+      setForm((prev) => ({ ...prev, class_ids: [] }));
+    }
+  };
+
   const createExam = async (manageAfterCreate = false) => {
     if (!form.exam_name.trim()) {
       setMessage("Exam name is required.");
@@ -171,7 +183,7 @@ const Exam = () => {
         description: form.description || null,
       });
       const createdExamId = Number((res as any)?.data?.id);
-      setForm({ exam_name: "", exam_type: "unit_test", class_ids: [], description: "" });
+      setForm({ exam_name: "", exam_type: examTypes[0] || "", class_ids: [], description: "" });
       setMessage("Exam created successfully.");
       await loadExams();
       if (manageAfterCreate && Number.isFinite(createdExamId) && createdExamId > 0) {
@@ -192,81 +204,136 @@ const Exam = () => {
   return (
     <div className="page-wrapper">
       <div className="content">
-        <div className="page-header">
-          <h3 className="page-title">Exams</h3>
+        <div className="d-md-flex d-block align-items-center justify-content-between mb-4">
+          <div className="my-auto mb-2">
+            <h3 className="page-title mb-1">Exams</h3>
+            <nav>
+              <ol className="breadcrumb mb-0">
+                <li className="breadcrumb-item">
+                  <Link to={routes.adminDashboard}>Dashboard</Link>
+                </li>
+                <li className="breadcrumb-item active" aria-current="page">
+                  Examinations
+                </li>
+              </ol>
+            </nav>
+          </div>
         </div>
 
-        {message && <div className="alert alert-warning">{message}</div>}
+        {message && (
+          <div className={`alert ${message.includes("success") ? "alert-success" : "alert-warning"} alert-dismissible fade show`} role="alert">
+            {message}
+            <button type="button" className="btn-close" onClick={() => setMessage(null)} />
+          </div>
+        )}
 
         {isAdminLike && (
-          <div className="card mb-3">
-            <div className="card-header">
-              <h5 className="mb-0">Create Exam</h5>
+          <div className="card border-0 shadow-sm mb-4">
+            <div className="card-header bg-transparent border-bottom">
+              <h5 className="card-title mb-0">
+                <i className="ti ti-plus me-2 text-primary" />
+                Create New Exam
+              </h5>
             </div>
             <div className="card-body">
               <form onSubmit={submit}>
-                <div className="row g-3">
-                  <div className="col-md-4">
-                    <label className="form-label">Exam name</label>
+                <div className="row g-4">
+                  <div className="col-lg-4 col-md-6">
+                    <label className="form-label fw-semibold">Exam Name</label>
                     <input
                       className="form-control"
+                      placeholder="e.g. Mid-Term Examination"
                       value={form.exam_name}
                       onChange={(ev) => setForm((p) => ({ ...p, exam_name: ev.target.value }))}
                     />
                   </div>
-                  <div className="col-md-3">
-                    <label className="form-label">Exam type</label>
+                  <div className="col-lg-3 col-md-6">
+                    <label className="form-label fw-semibold">Exam Type</label>
                     <select
-                      className="form-select"
+                      className="form-select text-capitalize"
                       value={form.exam_type}
                       onChange={(ev) => setForm((p) => ({ ...p, exam_type: ev.target.value }))}
                     >
-                      {EXAM_TYPES.map((t) => (
+                      {examTypes.length === 0 && <option value="">Loading types...</option>}
+                      {examTypes.map((t) => (
                         <option key={t} value={t}>
-                          {t}
+                          {t.replace(/_/g, " ")}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div className="col-md-5">
-                    <label className="form-label">Classes</label>
-                    <div className="border rounded p-2" style={{ maxHeight: 140, overflowY: "auto" }}>
-                      {classOptions.map((c) => (
-                        <div key={c.id} className="form-check">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            id={`cls_${c.id}`}
-                            checked={form.class_ids.includes(Number(c.id))}
-                            onChange={() => toggleClass(Number(c.id))}
-                          />
-                          <label className="form-check-label" htmlFor={`cls_${c.id}`}>
-                            {c.label}
-                          </label>
-                        </div>
-                      ))}
+                  <div className="col-lg-5 col-12">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <label className="form-label fw-semibold mb-0">
+                        Target Classes 
+                        <span className="badge bg-soft-primary text-primary ms-2">
+                          {form.class_ids.length} Selected
+                        </span>
+                      </label>
+                      <div className="form-check form-check-inline me-0">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="selectAll"
+                          checked={classOptions.length > 0 && form.class_ids.length === classOptions.length}
+                          onChange={selectAllClasses}
+                        />
+                        <label className="form-check-label small text-muted" htmlFor="selectAll">
+                          Select All
+                        </label>
+                      </div>
+                    </div>
+                    <div className="border rounded p-3 bg-light-gray" style={{ maxHeight: "160px", overflowY: "auto" }}>
+                      <div className="row row-cols-2 row-cols-sm-3 g-2">
+                        {classOptions.map((c) => (
+                          <div key={c.id} className="col">
+                            <div className="form-check custom-check">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                id={`cls_${c.id}`}
+                                checked={form.class_ids.includes(Number(c.id))}
+                                onChange={() => toggleClass(Number(c.id))}
+                              />
+                              <label className="form-check-label small text-dark text-truncate d-block" htmlFor={`cls_${c.id}`} title={c.label}>
+                                {c.label}
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {classOptions.length === 0 && (
+                        <div className="text-center py-2 text-muted small">No classes available</div>
+                      )}
                     </div>
                   </div>
                   <div className="col-12">
-                    <label className="form-label">Description</label>
+                    <label className="form-label fw-semibold">Description</label>
                     <textarea
                       className="form-control"
-                      rows={2}
+                      placeholder="Add any additional notes or instructions for this exam..."
+                      rows={3}
                       value={form.description}
                       onChange={(ev) => setForm((p) => ({ ...p, description: ev.target.value }))}
                     />
                   </div>
-                  <div className="col-12">
-                    <button className="btn btn-primary me-2" type="submit" disabled={saving}>
-                      {saving ? "Creating..." : "Create exam"}
+                  <div className="col-12 d-flex gap-2">
+                    <button className="btn btn-primary d-flex align-items-center" type="submit" disabled={saving}>
+                      {saving ? (
+                        <span className="spinner-border spinner-border-sm me-2" />
+                      ) : (
+                        <i className="ti ti-device-floppy me-2" />
+                      )}
+                      Create Exam
                     </button>
                     <button
-                      className="btn btn-outline-primary"
+                      className="btn btn-outline-primary d-flex align-items-center"
                       type="button"
                       disabled={saving}
                       onClick={() => createExam(true)}
                     >
-                      {saving ? "Creating..." : "Create & Add Subjects"}
+                      <i className="ti ti-table-plus me-2" />
+                      Create & Add Subjects
                     </button>
                   </div>
                 </div>
@@ -275,12 +342,19 @@ const Exam = () => {
           </div>
         )}
 
-        <div className="card">
-          <div className="card-header d-flex justify-content-between align-items-center">
-            <h5 className="mb-0">Exam List</h5>
-            {loading && <span className="text-muted">Loading...</span>}
+        <div className="card border-0 shadow-sm">
+          <div className="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
+            <h5 className="card-title mb-0">
+              <i className="ti ti-list me-2 text-primary" />
+              Existing Exams
+            </h5>
+            {loading && (
+              <div className="spinner-border spinner-border-sm text-primary" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+            )}
           </div>
-          <div className="card-body p-0 py-2">
+          <div className="card-body p-0">
             <Table columns={columns} dataSource={tableData} Selection={false} showSearch />
           </div>
         </div>

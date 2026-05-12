@@ -623,6 +623,24 @@ class ApiService {
     return this.makeRequest(`/exams${qs ? `?${qs}` : ''}`);
   }
 
+  // Curriculum Mapping & Electives
+  async getElectiveSubjects(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/curriculum/electives?${search.toString()}`);
+  }
+
+  async getCurriculumMap(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/curriculum/map?${search.toString()}`);
+  }
+
+  async assignElectives(payload) {
+    return this.makeRequest('/curriculum/assign', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async createExam(payload) {
     return this.makeRequest('/exams', {
       method: 'POST',
@@ -675,8 +693,14 @@ class ApiService {
   }
 
   async viewExamResults(params = {}) {
-    const search = new URLSearchParams(params);
-    return this.makeRequest(`/exam-subjects/results?${search.toString()}`);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/exam-subjects/results${qs ? `?${qs}` : ""}`);
   }
 
   async getExamTopPerformers(params = {}) {
@@ -694,8 +718,14 @@ class ApiService {
   }
 
   async getExamMarksContext(params = {}) {
-    const search = new URLSearchParams(params);
-    return this.makeRequest(`/exam-subjects/marks-context?${search.toString()}`);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/exam-subjects/marks-context${qs ? `?${qs}` : ""}`);
   }
 
   async getExamGradeScale() {
@@ -1075,6 +1105,45 @@ class ApiService {
 
   async deleteHouse(id) {
     return this.makeRequest(`/houses/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Exam Types
+  async getExamTypes(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/exam-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getExamTypeById(id) {
+    return this.makeRequest(`/exam-types/${id}`);
+  }
+
+  async createExamType(payload) {
+    return this.makeRequest('/exam-types', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateExamType(id, payload) {
+    return this.makeRequest(`/exam-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleExamTypeStatus(id) {
+    return this.makeRequest(`/exam-types/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteExamType(id) {
+    return this.makeRequest(`/exam-types/${id}`, {
       method: 'DELETE',
     });
   }

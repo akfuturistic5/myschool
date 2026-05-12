@@ -11,11 +11,13 @@ import Select from 'react-select'
 import type { SingleValue } from 'react-select'
 import { apiService } from '../../../core/services/apiService'
 import { useLeaveTypes } from '../../../core/hooks/useLeaveTypes'
+import { useAcademicYears } from '../../../core/hooks/useAcademicYears'
 import { useFeeStructures } from '../../../core/hooks/useFeeStructures'
 import { useStudentFees } from '../../../core/hooks/useStudentFees'
 import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice'
 import Swal from 'sweetalert2'
 import { useSelector } from 'react-redux'
+import { generateFeeReceipt } from '../../../core/utils/pdfReceiptGenerator'
 
 interface StudentModalsProps {
   studentId?: number | null
@@ -41,7 +43,8 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const formattedDate = `${month}-${day}-${year}`
   const defaultValue = dayjs(formattedDate)
 
-  const { leaveTypes } = useLeaveTypes({ applicableFor: "student" })
+  const { leaveTypes } = useLeaveTypes()
+  const { academicYears } = useAcademicYears()
   const leaveTypeOptions = leaveTypes.length > 0 ? leaveTypes : []
   const { feeStructures } = useFeeStructures()
   
@@ -322,6 +325,57 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       })
       if (res?.status === 'SUCCESS') {
         Swal.fire("Success", "Fee collected successfully", "success");
+        
+        // Generate PDF Receipt
+        try {
+          const schoolRes = await apiService.getSchoolProfile();
+          const schoolInfo = schoolRes?.data || {
+            name: "School Management System",
+            address: "N/A",
+            phone: "N/A",
+            email: "N/A"
+          };
+
+          const academicYears = (window as any).academicYears || [];
+          const currentYear = academicYears.find((y: any) => y.id === academicYearId)?.year_name || "N/A";
+
+          await generateFeeReceipt({
+            school: {
+              name: schoolInfo.school_name || schoolInfo.name || "School Management System",
+              address: schoolInfo.address || "N/A",
+              phone: schoolInfo.phone || schoolInfo.mobile || "N/A",
+              email: schoolInfo.email || "N/A",
+              logo_url: schoolInfo.logo_url
+            },
+            student: {
+              name: [student.first_name, student.last_name].filter(Boolean).join(' '),
+              admission_number: student.admission_number || "N/A",
+              roll_number: (student as any).roll_number,
+              class_name: student.class_name || "N/A",
+              section_name: student.section_name || "N/A"
+            },
+            academic_year: academicYears.find((y: any) => y.id === academicYearId)?.year_name || "N/A",
+            payment: {
+              receipt_no: res.data.receipt_no || paymentRefNo || "N/A",
+              date: collectionDate ? collectionDate.toISOString() : new Date().toISOString(),
+              payment_mode: paymentMethod,
+              remarks: remarks,
+              items: feeItemsToPay.map(item => {
+                const fs = assignedFees.find(f => Number(f.fees_assign_details_id) === item.fees_assign_details_id);
+                return {
+                  fee_type: fs?.fee_type || "Fee Payment",
+                  amount: item.amount_to_pay
+                };
+              }),
+              total_paid: res.data.amount_paid || amt,
+              fine_paid: res.data.fine_paid || 0,
+              new_balance: res.data.new_balance
+            }
+          });
+        } catch (pdfErr) {
+          console.error("Failed to generate PDF receipt", pdfErr);
+        }
+
         onFeeCollected?.()
         hideAddFeesModal()
         setFeeStructureId('')

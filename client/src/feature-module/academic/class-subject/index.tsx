@@ -30,7 +30,11 @@ const ClassSubject = () => {
 
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroup, setNewGroup] = useState({
+    name: "",
+    max_subjects: 0,
+    selectable_subjects: 0
+  });
   const [form, setForm] = useState({
     class_id: "",
     subject_id: "",
@@ -55,8 +59,17 @@ const ClassSubject = () => {
 
   // Sync groups when class_id changes in the form
   useEffect(() => {
-    fetchGroups(form.class_id);
+    if (form.class_id) {
+      fetchGroups(form.class_id);
+    }
   }, [form.class_id, fetchGroups]);
+
+  // Sync groups when class list filter changes
+  useEffect(() => {
+    if (classFilterId) {
+      fetchGroups(classFilterId);
+    }
+  }, [classFilterId, fetchGroups]);
 
   const resetForm = () => {
     setForm({
@@ -246,16 +259,18 @@ const ClassSubject = () => {
   };
 
   const handleCreateGroup = async () => {
-    if (!newGroupName.trim() || !form.class_id) return;
+    if (!newGroup.name.trim() || !form.class_id) return;
     try {
       const res = await apiService.createElectiveGroup({ 
-        group_name: newGroupName.trim(),
-        class_id: Number(form.class_id)
+        group_name: newGroup.name.trim(),
+        class_id: Number(form.class_id),
+        max_subjects: Number(newGroup.max_subjects),
+        selectable_subjects: Number(newGroup.selectable_subjects)
       });
       if (res.status === 'SUCCESS') {
         await fetchGroups(form.class_id);
         setForm({ ...form, elective_group_id: String(res.data.id) });
-        setNewGroupName("");
+        setNewGroup({ name: "", max_subjects: 0, selectable_subjects: 0 });
         (window as any).bootstrap?.Collapse?.getOrCreateInstance(document.getElementById("newGroupCollapse"))?.hide();
       }
     } catch (err) {
@@ -303,6 +318,18 @@ const ClassSubject = () => {
               onRefresh={() => refetch()}
               onPrint={() => printData("Class Subjects", [{ title: "Name", dataKey: "name" }, { title: "Class", dataKey: "class" }, { title: "Type", dataKey: "type" }], data)}
             />
+            <div className="mb-2 me-2">
+              <button 
+                className="btn btn-outline-primary d-flex align-items-center" 
+                data-bs-toggle="modal" 
+                data-bs-target="#manage_groups" 
+                disabled={!classFilterId}
+                onClick={() => fetchGroups(classFilterId)}
+              >
+                <i className="ti ti-settings me-2"></i>
+                Manage Groups
+              </button>
+            </div>
             <div className="mb-2">
               <button className="btn btn-primary d-flex align-items-center" data-bs-toggle="modal" data-bs-target="#add_assignment" onClick={resetForm}>
                 <i className="ti ti-square-rounded-plus-filled me-2"></i>
@@ -397,10 +424,51 @@ const ClassSubject = () => {
                       isDisabled={!form.class_id}
                     />
                     
-                    <div className="collapse mt-2" id="newGroupCollapse">
-                      <div className="input-group">
-                        <input type="text" className="form-control form-control-sm" placeholder="Group Name" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
-                        <button className="btn btn-sm btn-primary" type="button" onClick={handleCreateGroup}>Create</button>
+                    <div className="collapse mt-3" id="newGroupCollapse">
+                      <div className="p-3 border rounded bg-white shadow-sm">
+                        <h6 className="mb-2 text-primary">Define New Elective Group</h6>
+                        <div className="mb-2">
+                          <label className="form-label small mb-1">Group Name</label>
+                          <input 
+                            type="text" 
+                            className="form-control form-control-sm" 
+                            placeholder="e.g. Group A (Science)" 
+                            value={newGroup.name} 
+                            onChange={e => setNewGroup({...newGroup, name: e.target.value})} 
+                          />
+                        </div>
+                        <div className="row g-2 mb-3">
+                          <div className="col-6">
+                            <label className="form-label small mb-1">Max Subjects</label>
+                            <input 
+                              type="number" 
+                              className="form-control form-control-sm" 
+                              placeholder="Total" 
+                              value={newGroup.max_subjects} 
+                              onChange={e => setNewGroup({...newGroup, max_subjects: Number(e.target.value)})} 
+                            />
+                          </div>
+                          <div className="col-6">
+                            <label className="form-label small mb-1">Selectable</label>
+                            <input 
+                              type="number" 
+                              className="form-control form-control-sm" 
+                              placeholder="Choice" 
+                              value={newGroup.selectable_subjects} 
+                              onChange={e => setNewGroup({...newGroup, selectable_subjects: Number(e.target.value)})} 
+                            />
+                          </div>
+                        </div>
+                        <div className="d-flex justify-content-end">
+                          <button 
+                            className="btn btn-sm btn-primary px-3" 
+                            type="button" 
+                            onClick={handleCreateGroup}
+                          >
+                            <i className="ti ti-check me-1"></i>
+                            Create Group
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -460,6 +528,117 @@ const ClassSubject = () => {
                 <button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? "Updating..." : "Save Changes"}</button>
               </div>
             </form>
+          </div>
+        </div>
+      </div>
+      {/* Manage Groups Modal */}
+      <div className="modal fade" id="manage_groups">
+        <div className="modal-dialog modal-dialog-centered modal-lg">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Manage Elective Groups - {classes.find(c => String(c.id) === classFilterId)?.class_name || 'Selected Class'}</h4>
+              <button type="button" className="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div className="modal-body">
+              {!classFilterId ? (
+                <div className="text-center p-4">Please select a class first to manage its elective groups.</div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-nowrap custom-table mb-0">
+                    <thead className="thead-light">
+                      <tr>
+                        <th>Group Name</th>
+                        <th>Max Subjects</th>
+                        <th>Selectable</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {electiveGroups.map(g => (
+                        <tr key={g.id}>
+                          <td>
+                            <input 
+                              type="text" 
+                              className="form-control form-control-sm" 
+                              value={g.group_name} 
+                              onChange={async (e) => {
+                                const newName = e.target.value;
+                                setElectiveGroups(electiveGroups.map(group => group.id === g.id ? {...group, group_name: newName} : group));
+                              }}
+                              onBlur={async (e) => {
+                                if (e.target.value.trim() !== g.group_name) {
+                                  await apiService.updateElectiveGroup(g.id, { group_name: e.target.value.trim(), max_subjects: g.max_subjects, selectable_subjects: g.selectable_subjects, class_id: Number(classFilterId) });
+                                  Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, icon: 'success', title: 'Group name updated' });
+                                }
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <input 
+                              type="number" 
+                              className="form-control form-control-sm" 
+                              style={{ width: '80px' }}
+                              value={g.max_subjects} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setElectiveGroups(electiveGroups.map(group => group.id === g.id ? {...group, max_subjects: val} : group));
+                              }}
+                              onBlur={async (e) => {
+                                await apiService.updateElectiveGroup(g.id, { group_name: g.group_name, max_subjects: Number(e.target.value), selectable_subjects: g.selectable_subjects, class_id: Number(classFilterId) });
+                                Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, icon: 'success', title: 'Max subjects updated' });
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <input 
+                              type="number" 
+                              className="form-control form-control-sm" 
+                              style={{ width: '80px' }}
+                              value={g.selectable_subjects} 
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setElectiveGroups(electiveGroups.map(group => group.id === g.id ? {...group, selectable_subjects: val} : group));
+                              }}
+                              onBlur={async (e) => {
+                                await apiService.updateElectiveGroup(g.id, { group_name: g.group_name, max_subjects: g.max_subjects, selectable_subjects: Number(e.target.value), class_id: Number(classFilterId) });
+                                Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, icon: 'success', title: 'Selectable count updated' });
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <button 
+                              className="btn btn-sm btn-icon btn-soft-danger" 
+                              onClick={async () => {
+                                const confirm = await Swal.fire({
+                                  title: 'Are you sure?',
+                                  text: "This will delete the group. Subjects in this group will become ungrouped.",
+                                  icon: 'warning',
+                                  showCancelButton: true,
+                                  confirmButtonText: 'Yes, delete it!'
+                                });
+                                if (confirm.isConfirmed) {
+                                  await apiService.deleteElectiveGroup(g.id);
+                                  await fetchGroups(classFilterId);
+                                  Swal.fire('Deleted!', 'Group has been deleted.', 'success');
+                                }
+                              }}
+                            >
+                              <i className="ti ti-trash"></i>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {electiveGroups.length === 0 && (
+                        <tr><td colSpan={4} className="text-center p-3 text-muted">No elective groups found for this class</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-primary" data-bs-dismiss="modal">Done</button>
+            </div>
           </div>
         </div>
       </div>
