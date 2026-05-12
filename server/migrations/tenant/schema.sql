@@ -1419,7 +1419,6 @@ CREATE TABLE IF NOT EXISTS public.library_books (
     isbn character varying(20),
     publisher character varying(255),
     publication_year integer,
-    book_price numeric(10,2),
     
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1438,6 +1437,7 @@ CREATE TABLE IF NOT EXISTS public.library_book_copies (
     accession_number character varying(50) NOT NULL,
     book_location character varying(100), -- Shelf/Rack info
     condition character varying(20) DEFAULT 'New', -- New, Good, Damaged, Lost, Maintenance
+    copy_price numeric(10,2),
     
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),

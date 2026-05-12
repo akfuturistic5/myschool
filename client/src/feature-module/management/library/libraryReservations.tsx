@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DatePicker } from "antd";
 import type { Dayjs } from "dayjs";
 import dayjs from "dayjs";
@@ -14,10 +14,12 @@ import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicY
 import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
+import { LibrarySearchableSelect } from "./librarySearchableSelect";
 
 const LibraryReservations = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const [searchParams] = useSearchParams();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [books, setBooks] = useState<{ value: string; label: string }[]>([]);
@@ -99,6 +101,15 @@ const LibraryReservations = () => {
   }, [loadRefs]);
 
   useEffect(() => {
+    const bid = searchParams.get("book_id");
+    if (bid && /^\d+$/.test(String(bid).trim())) {
+      const id = String(bid).trim();
+      setAppliedFilters((f) => ({ ...f, book_id: id }));
+      setFilterDraft((f) => ({ ...f, book_id: id }));
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     load();
   }, [load]);
 
@@ -151,6 +162,14 @@ const LibraryReservations = () => {
 
   const submitReservation = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!String(resForm.book_id).trim()) {
+      setFormError("Please select a book.");
+      return;
+    }
+    if (!String(resForm.library_member_id).trim()) {
+      setFormError("Please select a library member.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -390,39 +409,25 @@ const LibraryReservations = () => {
                         <div className="col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Book</label>
-                            <select
-                              className="form-select"
+                            <LibrarySearchableSelect
+                              allowClear
+                              options={books}
                               value={filterDraft.book_id}
-                              onChange={(e) =>
-                                setFilterDraft((f) => ({ ...f, book_id: e.target.value }))
-                              }
-                            >
-                              <option value="">All</option>
-                              {books.map((b) => (
-                                <option key={b.value} value={b.value}>
-                                  {b.label}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={(v) => setFilterDraft((f) => ({ ...f, book_id: v }))}
+                              placeholder="All books — search…"
+                            />
                           </div>
                         </div>
                         <div className="col-md-12">
                           <div className="mb-0">
                             <label className="form-label">Library member</label>
-                            <select
-                              className="form-select"
+                            <LibrarySearchableSelect
+                              allowClear
+                              options={members}
                               value={filterDraft.member_id}
-                              onChange={(e) =>
-                                setFilterDraft((f) => ({ ...f, member_id: e.target.value }))
-                              }
-                            >
-                              <option value="">Any</option>
-                              {members.map((s) => (
-                                <option key={s.value} value={s.value}>
-                                  {s.label}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={(v) => setFilterDraft((f) => ({ ...f, member_id: v }))}
+                              placeholder="Any member — search…"
+                            />
                           </div>
                         </div>
                       </div>
@@ -476,37 +481,21 @@ const LibraryReservations = () => {
                 </p>
                 <div className="mb-3">
                   <label className="form-label">Book *</label>
-                  <select
-                    className="form-select"
-                    required
+                  <LibrarySearchableSelect
+                    options={books}
                     value={resForm.book_id}
-                    onChange={(e) => setResForm((f) => ({ ...f, book_id: e.target.value }))}
-                  >
-                    <option value="">Select book</option>
-                    {books.map((b) => (
-                      <option key={b.value} value={b.value}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setResForm((f) => ({ ...f, book_id: v }))}
+                    placeholder="Search book…"
+                  />
                 </div>
                 <div className="mb-3">
                   <label className="form-label">Library member *</label>
-                  <select
-                    className="form-select"
-                    required
+                  <LibrarySearchableSelect
+                    options={members}
                     value={resForm.library_member_id}
-                    onChange={(e) =>
-                      setResForm((f) => ({ ...f, library_member_id: e.target.value }))
-                    }
-                  >
-                    <option value="">Select member</option>
-                    {members.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setResForm((f) => ({ ...f, library_member_id: v }))}
+                    placeholder="Search member…"
+                  />
                 </div>
                 <div className="mb-0">
                   <label className="form-label">Hold expiry (optional)</label>

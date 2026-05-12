@@ -115,6 +115,22 @@ const assignSubjectToClass = async (req, res) => {
       return errorResponse(res, 409, 'This subject is already assigned to this class for the selected academic year');
     }
 
+    // Check if group limit is exceeded
+    if (is_elective && elective_group_id) {
+      const groupRes = await query('SELECT max_subjects FROM subject_elective_groups WHERE id = $1', [elective_group_id]);
+      const maxSubjects = groupRes.rows[0]?.max_subjects || 0;
+      
+      if (maxSubjects > 0) {
+        const countRes = await query(
+          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND deleted_at IS NULL', 
+          [elective_group_id]
+        );
+        if (Number(countRes.rows[0].count) >= maxSubjects) {
+          return errorResponse(res, 400, `This elective group has reached its maximum capacity of ${maxSubjects} subjects.`);
+        }
+      }
+    }
+
     const result = await query(
       `INSERT INTO class_subjects (class_id, subject_id, academic_year_id, is_elective, elective_group_id, created_by)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -133,6 +149,22 @@ const updateClassSubject = async (req, res) => {
     const { id } = req.params;
     const { is_elective, elective_group_id } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
+
+    // Check if group limit is exceeded
+    if (is_elective && elective_group_id) {
+      const groupRes = await query('SELECT max_subjects FROM subject_elective_groups WHERE id = $1', [elective_group_id]);
+      const maxSubjects = groupRes.rows[0]?.max_subjects || 0;
+      
+      if (maxSubjects > 0) {
+        const countRes = await query(
+          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND deleted_at IS NULL AND id != $2', 
+          [elective_group_id, id]
+        );
+        if (Number(countRes.rows[0].count) >= maxSubjects) {
+          return errorResponse(res, 400, `This elective group has reached its maximum capacity of ${maxSubjects} subjects.`);
+        }
+      }
+    }
 
     const result = await query(
       `UPDATE class_subjects 

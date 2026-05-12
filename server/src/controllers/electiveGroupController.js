@@ -24,7 +24,7 @@ const getAllGroups = async (req, res) => {
 
 const createGroup = async (req, res) => {
   try {
-    const { group_name, description, class_id } = req.body;
+    const { group_name, description, class_id, max_subjects, selectable_subjects } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
     if (!class_id) {
@@ -32,9 +32,16 @@ const createGroup = async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO subject_elective_groups (group_name, description, class_id, created_by)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [group_name.trim(), description || null, class_id, userId]
+      `INSERT INTO subject_elective_groups (group_name, description, class_id, max_subjects, selectable_subjects, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [
+        group_name.trim(), 
+        description || null, 
+        class_id, 
+        parseInt(max_subjects, 10) || 0, 
+        parseInt(selectable_subjects, 10) || 0, 
+        userId
+      ]
     );
 
     return success(res, 201, 'Elective group created successfully', result.rows[0]);
@@ -47,14 +54,26 @@ const createGroup = async (req, res) => {
 const updateGroup = async (req, res) => {
   try {
     const { id } = req.params;
-    const { group_name, description } = req.body;
+    const { group_name, description, max_subjects, selectable_subjects } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
     const result = await query(
       `UPDATE subject_elective_groups 
-       SET group_name = $1, description = $2, updated_at = NOW(), updated_by = $3 
-       WHERE id = $4 AND deleted_at IS NULL RETURNING *`,
-      [group_name.trim(), description || null, userId, id]
+       SET group_name = $1, 
+           description = $2, 
+           max_subjects = $3, 
+           selectable_subjects = $4, 
+           updated_at = NOW(), 
+           updated_by = $5 
+       WHERE id = $6 AND deleted_at IS NULL RETURNING *`,
+      [
+        group_name.trim(), 
+        description || null, 
+        parseInt(max_subjects, 10) || 0, 
+        parseInt(selectable_subjects, 10) || 0, 
+        userId, 
+        id
+      ]
     );
 
     if (result.rows.length === 0) {

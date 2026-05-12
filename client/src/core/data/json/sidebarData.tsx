@@ -182,6 +182,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "Subject List", link: routes.subjects },
           { label: "Class Subjects", link: routes.classSubject },
+          { label: "Curriculum Mapping", link: routes.curriculumMapping },
         ],
       },
       {
@@ -217,6 +218,7 @@ export const SidebarData = [
 
         submenuItems: [
           { label: "Exams", link: routes.exam },
+          { label: "Exam Types", link: routes.examTypes },
           { label: "Schedule", link: routes.examAttendance },
           { label: "Exam Result", link: routes.examResult },
           { label: "Top Performers", link: routes.examTopPerformers },
@@ -971,7 +973,7 @@ export const SidebarData = [
                 link: routes.fantawesome,
                 showSubRoute: false,
               },
-              
+
               {
                 label: "Ionic Icons",
                 link: routes.iconicIcon,
@@ -983,7 +985,7 @@ export const SidebarData = [
                 showSubRoute: false,
               },
               { label: "Pe7 Icons", link: routes.pe7icon, showSubRoute: false },
-             
+
               {
                 label: "Themify Icons",
                 link: routes.themifyIcon,

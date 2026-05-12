@@ -1,5 +1,31 @@
 const { query } = require('../config/database');
 
+/** Next serial accession ACC-00001 … (based on existing ACC-nnnnn copies). */
+const suggestNextAccessionNumber = async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT accession_number
+       FROM library_book_copies
+       WHERE deleted_at IS NULL
+         AND accession_number ~* '^ACC-[0-9]+$'`
+    );
+    let maxSeq = 0;
+    for (const row of r.rows) {
+      const m = /^ACC-(\d+)$/i.exec(String(row.accession_number || '').trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n)) maxSeq = Math.max(maxSeq, n);
+      }
+    }
+    const next = maxSeq + 1;
+    const accession_number = `ACC-${String(next).padStart(5, '0')}`;
+    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: { accession_number } });
+  } catch (e) {
+    console.error('library next accession', e);
+    res.status(500).json({ status: 'ERROR', message: 'Failed to suggest accession number' });
+  }
+};
+
 const listBookCopies = async (req, res) => {
   try {
     const bookId =
@@ -35,6 +61,7 @@ const listBookCopies = async (req, res) => {
          bc.accession_number,
          bc.book_location,
          COALESCE(bc.condition, 'New') AS condition,
+         bc.copy_price,
          bc.created_at,
          bc.updated_at,
          CASE
@@ -80,6 +107,7 @@ const getBookCopy = async (req, res) => {
          bc.accession_number,
          bc.book_location,
          COALESCE(bc.condition, 'New') AS condition,
+         bc.copy_price,
          bc.created_at,
          bc.updated_at
        FROM library_book_copies bc
@@ -112,6 +140,10 @@ const createBookCopy = async (req, res) => {
     }
     const condition = body.condition != null && String(body.condition).trim() !== '' ? String(body.condition).trim() : 'New';
     const location = body.book_location != null ? String(body.book_location).trim() : null;
+    const copyPrice =
+      body.copy_price != null && body.copy_price !== ''
+        ? parseFloat(String(body.copy_price))
+        : null;
 
     const book = await query(`SELECT id FROM library_books WHERE id = $1 AND deleted_at IS NULL`, [bookId]);
     if (!book.rows.length) {
@@ -120,10 +152,10 @@ const createBookCopy = async (req, res) => {
 
     const r = await query(
       `INSERT INTO library_book_copies (
-         book_id, accession_number, book_location, condition, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         book_id, accession_number, book_location, condition, copy_price, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
        RETURNING *`,
-      [bookId, accessionNumber, location || null, condition]
+      [bookId, accessionNumber, location || null, condition, Number.isFinite(copyPrice) ? copyPrice : null]
     );
     return res.status(201).json({ status: 'SUCCESS', message: 'Book copy created', data: r.rows[0] });
   } catch (e) {
@@ -160,6 +192,14 @@ const updateBookCopy = async (req, res) => {
           ? null
           : String(body.book_location).trim()
         : ex.book_location;
+    let nextCopyPrice = ex.copy_price != null ? parseFloat(String(ex.copy_price)) : null;
+    if (body.copy_price !== undefined) {
+      nextCopyPrice =
+        body.copy_price == null || body.copy_price === ''
+          ? null
+          : parseFloat(String(body.copy_price));
+    }
+    if (nextCopyPrice != null && !Number.isFinite(nextCopyPrice)) nextCopyPrice = null;
 
     const r = await query(
       `UPDATE library_book_copies SET
@@ -167,10 +207,11 @@ const updateBookCopy = async (req, res) => {
          accession_number = $3,
          book_location = $4,
          condition = $5,
+         copy_price = $6,
          updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
-      [id, nextBookId, nextAccession, nextLocation, nextCondition]
+      [id, nextBookId, nextAccession, nextLocation, nextCondition, nextCopyPrice]
     );
     return res.status(200).json({ status: 'SUCCESS', message: 'Book copy updated', data: r.rows[0] });
   } catch (e) {
@@ -218,6 +259,7 @@ const deleteBookCopy = async (req, res) => {
 };
 
 module.exports = {
+  suggestNextAccessionNumber,
   listBookCopies,
   getBookCopy,
   createBookCopy,

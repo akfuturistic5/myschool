@@ -485,7 +485,12 @@ const getAllParents = async (req, res) => {
             OR EXISTS (
               SELECT 1 FROM classes c_map
               WHERE c_map.id = enr.class_id
-                AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
+                AND EXISTS (
+                  SELECT 1 FROM class_teachers ct
+                  WHERE ct.class_id = c_map.id
+                    AND (ct.staff_id = ANY($1::int[]) OR ct.staff_id = ANY($2::int[]))
+                    AND ct.deleted_at IS NULL
+                )
             )
           )${academicYearClause}
         ORDER BY u.first_name ASC, u.last_name ASC`,
