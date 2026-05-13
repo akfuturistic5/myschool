@@ -1,27 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSelector } from "react-redux";
 import { apiService } from "../../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 import { all_routes } from "../../../router/all_routes";
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
+import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
 
 const ExamAttendance = () => {
   const routes = all_routes;
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { user, loading: userLoading } = useCurrentUser();
   const roleTokens = [(user as any)?.role_name, (user as any)?.role, (user as any)?.display_role]
     .map((v) => String(v || "").trim().toLowerCase())
     .filter(Boolean);
-  const selfOnly = roleTokens.some(
-    (r) =>
-      r === "student" ||
-      r === "parent" ||
-      r === "guardian" ||
-      r === "father" ||
-      r === "mother" ||
-      r.includes("student") ||
-      r.includes("parent") ||
-      r.includes("guardian")
-  );
+  const canonicalRoleId = Number((user as any)?.role_id ?? (user as any)?.user_role_id);
+  const selfOnly =
+    canonicalRoleId === 3 ||
+    canonicalRoleId === 4 ||
+    canonicalRoleId === 5 ||
+    roleTokens.some(
+      (r) =>
+        r === "student" ||
+        r === "parent" ||
+        r === "guardian" ||
+        r === "father" ||
+        r === "mother" ||
+        r.includes("student") ||
+        r.includes("parent") ||
+        r.includes("guardian")
+    );
 
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>("");
@@ -38,7 +46,7 @@ const ExamAttendance = () => {
       try {
         if (userLoading || !(user as any)?.id) return;
         if (selfOnly) {
-          const res = await apiService.listSelfExams();
+          const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
           if (cancelled) return;
           const nextExams = (res as any)?.data || [];
           setExams(nextExams);
@@ -61,7 +69,7 @@ const ExamAttendance = () => {
     return () => {
       cancelled = true;
     };
-  }, [selfOnly, userLoading, (user as any)?.id]);
+  }, [academicYearId, selfOnly, userLoading, (user as any)?.id]);
 
   useEffect(() => {
     if (!selectedExamId || selfOnly) return;

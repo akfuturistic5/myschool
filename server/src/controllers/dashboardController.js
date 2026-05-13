@@ -1,6 +1,8 @@
 const { query } = require('../config/database');
 const { getAuthContext, isAdmin, resolveTeacherStaffIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
+const { getExamSchemaFlags } = require('./examModuleController');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 // Parse academic_year_id from query (optional - when set, filter year-specific data)
 function parseAcademicYearId(req) {
@@ -952,10 +954,12 @@ const getStarStudents = async (req, res) => {
     const classNameFilter = parseTextQueryParam(req, 'class_name');
     const sectionNameFilter = parseTextQueryParam(req, 'section_name');
     const timeRange = parseStarStudentsTimeRange(req);
-    const [{ totalMarksExpr, joinExamSubjectsSql }, { examDateExpr, requiresExamSubjectsJoinForDate }] = await Promise.all([
-      buildExamResultTotalMarksSpec(),
-      buildExamResultExamDateSpec(),
-    ]);
+    const [{ totalMarksExpr, joinExamSubjectsSql }, { examDateExpr, requiresExamSubjectsJoinForDate }, schema] =
+      await Promise.all([
+        buildExamResultTotalMarksSpec(),
+        buildExamResultExamDateSpec(),
+        getExamSchemaFlags(),
+      ]);
     const joinExamSubjectsDateSql = requiresExamSubjectsJoinForDate
       ? 'LEFT JOIN exam_subjects es ON es.id = er.exam_subject_id'
       : '';
@@ -1040,6 +1044,36 @@ const getStarStudents = async (req, res) => {
     }
     const classSectionFilterSql = extraFilters.join('\n            ');
 
+    const useLedgerEnrollment = schema.hasStudentLifecycleLedger;
+    const scheduleBackedStar =
+      schema.examResultsHasExamScheduleIdColumn &&
+      !schema.examResultsHasSubjectIdColumn &&
+      schema.hasExamSchedulesTable &&
+      (useLedgerEnrollment || schema.studentsHasLegacyClassColumns);
+
+    const legacySubjectsStar =
+      !scheduleBackedStar &&
+      schema.hasExamSubjectsTable &&
+      schema.examResultsHasExamIdColumn &&
+      schema.examResultsHasSubjectIdColumn &&
+      (useLedgerEnrollment || schema.studentsHasLegacyClassColumns);
+
+    const teacherScopeWhereStar = isTeacherUser
+      ? useLedgerEnrollment
+        ? ` AND EXISTS (
+        SELECT 1
+        FROM teacher_scope ts
+        WHERE ts.class_id = enr.class_id
+          AND (ts.section_id IS NULL OR ts.section_id = enr.section_id)
+      )`
+        : ` AND EXISTS (
+        SELECT 1
+        FROM teacher_scope ts
+        WHERE ts.class_id = st.class_id
+          AND (ts.section_id IS NULL OR ts.section_id = st.section_id)
+      )`
+      : '';
+
     const latestExamResult = await query(
       `WITH ${teacherScopeCte}
         latest_exam AS (
@@ -1090,7 +1124,174 @@ const getStarStudents = async (req, res) => {
     const topParams = [...baseParams, ...extraParams, latestExam.exam_id, limit];
     const topExamIdParam = p + extraParams.length;
     const topLimitParam = p + extraParams.length + 1;
-    const rowsResult = await query(
+    const yearFilterForTopExam = hasYearFilter
+      ? ` AND EXISTS (SELECT 1 FROM exams exyf WHERE exyf.id = $${topExamIdParam} AND exyf.academic_year_id = $1)`
+      : '';
+
+    const rosterJoinSchedulePlan = useLedgerEnrollment
+      ? `${lateralCurrentEnrollment('st.id')}
+         INNER JOIN subject_plan sp
+           ON sp.class_id::integer = enr.class_id::integer
+          AND sp.section_id::integer = enr.section_id::integer`
+      : `INNER JOIN subject_plan sp
+           ON sp.class_id::integer = st.class_id::integer
+          AND sp.section_id::integer = st.section_id::integer`;
+
+    const rosterJoinLegacySubjects = useLedgerEnrollment
+      ? `${lateralCurrentEnrollment('st.id')}
+         INNER JOIN subject_plan sp
+           ON sp.class_id::text = enr.class_id::text
+          AND sp.section_id::text = enr.section_id::text`
+      : `INNER JOIN subject_plan sp
+           ON sp.class_id::text = st.class_id::text
+          AND sp.section_id::text = st.section_id::text`;
+
+    const enrolClassSql = useLedgerEnrollment ? 'enr.class_id' : 'st.class_id';
+    const enrolSectionSql = useLedgerEnrollment ? 'enr.section_id' : 'st.section_id';
+    const enrolNotNullSql = useLedgerEnrollment
+      ? 'enr.class_id IS NOT NULL AND enr.section_id IS NOT NULL'
+      : 'st.class_id IS NOT NULL AND st.section_id IS NOT NULL';
+
+    const scoredOuterSelect = `
+       SELECT
+         id,
+         first_name,
+         last_name,
+         photo_url,
+         class_name,
+         section_name,
+         marks_obtained,
+         total_marks,
+         ROUND(
+           CASE
+             WHEN total_marks > 0 THEN (marks_obtained / total_marks) * 100
+             ELSE 0
+           END::numeric,
+           1
+         ) AS percentage,
+         exam_name,
+         exam_date
+       FROM scored
+       ORDER BY percentage DESC NULLS LAST, marks_obtained DESC NULLS LAST, first_name ASC, last_name ASC
+       LIMIT $${topLimitParam}`;
+
+    let rowsResult;
+    if (scheduleBackedStar) {
+      rowsResult = await query(
+        `WITH ${teacherScopeCte}
+         subject_plan AS (
+           SELECT esch.class_id,
+                  csec.section_id,
+                  esch.id AS exam_schedule_id,
+                  COALESCE(esch.max_marks, 100)::numeric AS max_marks
+           FROM exam_schedules esch
+           INNER JOIN class_sections csec
+             ON csec.id = esch.class_section_id
+            AND csec.class_id = esch.class_id
+            AND csec.academic_year_id = esch.academic_year_id
+           WHERE esch.exam_id = $${topExamIdParam}
+         ),
+         scored AS (
+           SELECT
+             st.id,
+             u.first_name,
+             u.last_name,
+             u.avatar AS photo_url,
+             c.class_name,
+             sec.section_name,
+             COALESCE(SUM(
+               CASE WHEN COALESCE(er.is_absent, false) THEN 0::numeric
+               ELSE COALESCE(er.marks_obtained, 0)::numeric END
+             ), 0) AS marks_obtained,
+             COALESCE(SUM(sp.max_marks), 0)::numeric AS total_marks,
+             COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+             MAX(${examDateExpr}) AS exam_date
+           FROM students st
+           INNER JOIN users u ON u.id = st.user_id
+           ${rosterJoinSchedulePlan}
+           LEFT JOIN classes c ON c.id = ${enrolClassSql}
+           LEFT JOIN sections sec ON sec.id = ${enrolSectionSql}
+           LEFT JOIN exam_results er
+             ON er.exam_schedule_id = sp.exam_schedule_id
+            AND er.student_id = st.id
+           LEFT JOIN exam_schedules esc ON esc.id = sp.exam_schedule_id
+           LEFT JOIN exams e ON e.id = esc.exam_id
+           ${joinExamSubjectsForScoredSql}
+           WHERE st.status = 'Active'
+             AND ${enrolNotNullSql}
+             AND EXISTS (
+               SELECT 1 FROM exam_results erx
+               INNER JOIN exam_schedules esx ON esx.id = erx.exam_schedule_id
+               WHERE erx.student_id = st.id
+                 AND esx.exam_id = $${topExamIdParam}
+                 AND COALESCE(erx.is_absent, false) = false
+             )
+             ${examYearClause}
+             ${teacherScopeWhereStar}
+             ${classSectionFilterSql}
+           GROUP BY
+             st.id, u.first_name, u.last_name, u.avatar,
+             c.class_name, sec.section_name
+         )
+         ${scoredOuterSelect}`,
+        topParams
+      );
+    } else if (legacySubjectsStar) {
+      rowsResult = await query(
+        `WITH ${teacherScopeCte}
+         subject_plan AS (
+           SELECT es.class_id, es.section_id, es.subject_id,
+                  COALESCE(es.max_marks, 100)::numeric AS max_marks
+           FROM exam_subjects es
+           WHERE es.exam_id = $${topExamIdParam}
+         ),
+         scored AS (
+           SELECT
+             st.id,
+             u.first_name,
+             u.last_name,
+             u.avatar AS photo_url,
+             c.class_name,
+             sec.section_name,
+             COALESCE(SUM(
+               CASE WHEN COALESCE(er.is_absent, false) THEN 0::numeric
+               ELSE COALESCE(er.marks_obtained, 0)::numeric END
+             ), 0) AS marks_obtained,
+             COALESCE(SUM(sp.max_marks), 0)::numeric AS total_marks,
+             COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+             MAX(${examDateExpr}) AS exam_date
+           FROM students st
+           INNER JOIN users u ON u.id = st.user_id
+           ${rosterJoinLegacySubjects}
+           LEFT JOIN classes c ON c.id = ${enrolClassSql}
+           LEFT JOIN sections sec ON sec.id = ${enrolSectionSql}
+           LEFT JOIN exam_results er
+             ON er.exam_id = $${topExamIdParam}
+            AND er.student_id = st.id
+            AND er.subject_id = sp.subject_id
+           LEFT JOIN exam_schedules esc ON esc.id = er.exam_schedule_id
+           LEFT JOIN exams e ON e.id = $${topExamIdParam}
+           ${joinExamSubjectsForScoredSql}
+           WHERE st.status = 'Active'
+             AND ${enrolNotNullSql}
+             AND EXISTS (
+               SELECT 1 FROM exam_results erx
+               WHERE erx.exam_id = $${topExamIdParam}
+                 AND erx.student_id = st.id
+                 AND COALESCE(erx.is_absent, false) = false
+             )
+             ${yearFilterForTopExam}
+             ${teacherScopeWhereStar}
+             ${classSectionFilterSql}
+           GROUP BY
+             st.id, u.first_name, u.last_name, u.avatar,
+             c.class_name, sec.section_name
+         )
+         ${scoredOuterSelect}`,
+        topParams
+      );
+    } else {
+      rowsResult = await query(
       `WITH ${teacherScopeCte}
        scored AS (
          SELECT
@@ -1153,6 +1354,7 @@ const getStarStudents = async (req, res) => {
        LIMIT $${topLimitParam}`,
       topParams
     );
+    }
 
     const data = rowsResult.rows.map((r) => ({
       id: r.id,

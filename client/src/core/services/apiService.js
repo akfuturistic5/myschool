@@ -1268,9 +1268,19 @@ class ApiService {
 
   async getTeacherClassAttendance(teacherId, params = {}) {
     const searchParams = new URLSearchParams();
-    if (params.days != null) searchParams.set('days', params.days);
-    if (params.offset != null) searchParams.set('offset', params.offset);
-    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    // Never send days=/offset= empty (URLSearchParams coerces ''; backend gets '' and NaN / odd states).
+    const d = params.days;
+    if (d !== '' && d != null && Number.isFinite(Number(d))) {
+      searchParams.set('days', String(Number(d)));
+    }
+    const o = params.offset;
+    if (o !== '' && o != null && Number.isFinite(Number(o))) {
+      searchParams.set('offset', String(Math.max(0, Number(o))));
+    }
+    const ay = params.academicYearId;
+    if (ay !== '' && ay != null && Number.isFinite(Number(ay))) {
+      searchParams.set('academic_year_id', String(Number(ay)));
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/teachers/${teacherId}/class-attendance${qs ? `?${qs}` : ''}`);
   }

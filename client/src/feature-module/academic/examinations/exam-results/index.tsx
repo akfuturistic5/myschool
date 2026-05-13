@@ -76,7 +76,8 @@ const ExamResult = () => {
         if (selfOnly) {
           const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
           if (cancelled) return;
-          const nextExams = (res as any)?.data || [];
+          const raw = (res as any)?.data;
+          const nextExams = Array.isArray(raw) ? raw : Array.isArray(raw?.exams) ? raw.exams : [];
           setExams(nextExams);
           if (nextExams.length > 0) {
             setSelectedExamId(String(nextExams[0].id));
@@ -101,8 +102,11 @@ const ExamResult = () => {
         } else if (current) {
           setSelectedExamId(current);
         }
-      } catch {
-        if (!cancelled) setExams([]);
+      } catch (e: any) {
+        if (!cancelled) {
+          setExams([]);
+          setMessage(e?.message || "Could not load exams. Please try again.");
+        }
       }
     })();
     return () => {
