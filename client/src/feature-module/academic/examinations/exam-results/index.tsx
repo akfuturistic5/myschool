@@ -1171,6 +1171,7 @@ const ExamResult = () => {
     const payloadRows: any[] = [];
     for (const student of marksStudents) {
       for (const cell of student.cells || []) {
+        if (cell.is_available === false) continue;
         const hasMarks = !(cell.marks_obtained === "" || cell.marks_obtained == null);
         if (!cell.is_absent && !hasMarks) continue;
         const numericMarks = cell.is_absent ? null : Number(cell.marks_obtained);
