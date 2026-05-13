@@ -5,34 +5,54 @@ import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import HostelModal from "./hostelModal";
-import { useRoomTypes } from "../../../core/hooks/useRoomTypes";
+import { ActiveInactiveBadge } from "./hostelUiUtils";
+import { useHostelRoomTypes } from "../../../core/hooks/useHostelRoomTypes";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 import { apiService } from "../../../core/services/apiService";
 
+import CommonSelect from "../../../core/common/commonSelect";
+
+const CAPACITY_FILTER = [
+  { value: "all", label: "Any capacity" },
+  ...Array.from({ length: 20 }, (_, i) => ({
+    value: String(i + 1),
+    label: String(i + 1),
+  })),
+];
+
 const HostelType = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { roomTypes, loading, error, refetch } = useRoomTypes();
+  const { roomTypes, loading, error, refetch } = useHostelRoomTypes({ includeInactive: true });
   const [selectedRoomType, setSelectedRoomType] = useState<any>(null);
   const [formResetKey, setFormResetKey] = useState(0);
   const [draftSearch, setDraftSearch] = useState("");
+  const [draftCapacity, setDraftCapacity] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");
+  const [filterCapacity, setFilterCapacity] = useState("all");
 
   const filtered = useMemo(() => {
-    const q = filterSearch.trim().toLowerCase();
-    if (!q) return roomTypes;
-    return roomTypes.filter(
-      (row: any) =>
+    return roomTypes.filter((row: any) => {
+      const od = row.originalData || {};
+      if (filterCapacity !== "all") {
+        const cap = od.sharing_capacity ?? row.sharing_capacity;
+        if (cap == null || String(cap) !== filterCapacity) return false;
+      }
+      const q = filterSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
         String(row.roomType || "").toLowerCase().includes(q) ||
         String(row.description || "").toLowerCase().includes(q) ||
         String(row.id || "").toLowerCase().includes(q)
-    );
-  }, [roomTypes, filterSearch]);
+      );
+    });
+  }, [roomTypes, filterSearch, filterCapacity]);
 
   const handleApplyClick = (e: React.MouseEvent) => {
     e.preventDefault();
     setFilterSearch(draftSearch);
+    setFilterCapacity(draftCapacity);
     if (dropdownMenuRef.current) dropdownMenuRef.current.classList.remove("show");
   };
 
@@ -46,7 +66,18 @@ const HostelType = () => {
       filtered.map((r: any) => ({
         id: r.id,
         roomType: r.roomType,
+        sharing:
+          r.originalData?.sharing_capacity != null
+            ? String(r.originalData.sharing_capacity)
+            : r.sharing_capacity != null
+              ? String(r.sharing_capacity)
+              : "",
+        hasAc: r.hasAc ? "Yes" : "No",
+        hasWifi: r.hasWifi ? "Yes" : "No",
+        hasBath: r.hasBath ? "Yes" : "No",
         description: r.description,
+        addedOn: r.addedOn,
+        recordStatus: r.isActive === true ? "Active" : r.isActive === false ? "Inactive" : "—",
       })),
     [filtered]
   );
@@ -56,7 +87,13 @@ const HostelType = () => {
       exportRows.map((r) => ({
         ID: r.id,
         "Room Type": r.roomType,
+        Capacity: r.sharing ?? "",
+        AC: r.hasAc,
+        "Wi‑Fi": r.hasWifi,
+        "Attached bath": r.hasBath,
         Description: r.description,
+        "Add On": r.addedOn,
+        Status: r.recordStatus,
       })),
       `Room_Types_${new Date().toISOString().split("T")[0]}`
     );
@@ -65,7 +102,13 @@ const HostelType = () => {
   const pdfCols = [
     { title: "ID", dataKey: "id" },
     { title: "Room Type", dataKey: "roomType" },
+    { title: "Capacity", dataKey: "sharing" },
+    { title: "AC", dataKey: "hasAc" },
+    { title: "Wi‑Fi", dataKey: "hasWifi" },
+    { title: "Bath", dataKey: "hasBath" },
     { title: "Description", dataKey: "description" },
+    { title: "Add On", dataKey: "addedOn" },
+    { title: "Status", dataKey: "recordStatus" },
   ];
 
   const handleExportPDF = () => {
@@ -88,7 +131,7 @@ const HostelType = () => {
     });
     if (!r.isConfirmed) return;
     try {
-      const res = await apiService.deleteRoomType(id);
+      const res = await apiService.deleteHostelRoomType(id);
       if (res?.status === "SUCCESS" || res?.success) {
         await refetch();
         Swal.fire({ icon: "success", title: "Deleted", timer: 1200, showConfirmButton: false });
@@ -117,10 +160,38 @@ const HostelType = () => {
       sorter: (a: TableData, b: TableData) => String(a.roomType || "").localeCompare(String(b.roomType || "")),
     },
     {
+      title: "Sharing capacity",
+      dataIndex: "sharing_capacity",
+      render: (_: any, record: any) =>
+        record?.originalData?.sharing_capacity ?? record?.sharing_capacity ?? "—",
+    },
+    {
+      title: "Amenities",
+      dataIndex: "amenities",
+      render: (_: any, record: any) => {
+        const tags: string[] = [];
+        if (record?.hasAc ?? record?.originalData?.has_ac) tags.push("AC");
+        if (record?.hasWifi ?? record?.originalData?.has_wifi) tags.push("Wi‑Fi");
+        if (record?.hasBath ?? record?.originalData?.has_attached_bathroom) tags.push("Bath");
+        return tags.length ? tags.join(" · ") : "—";
+      },
+    },
+    {
       title: "Description",
       dataIndex: "description",
       sorter: (a: TableData, b: TableData) =>
         String(a.description || "").localeCompare(String(b.description || "")),
+    },
+    {
+      title: "Add On",
+      dataIndex: "addedOn",
+      sorter: (a: TableData, b: TableData) => String(a.addedOn || "").localeCompare(String(b.addedOn || "")),
+    },
+    {
+      title: "Status",
+      dataIndex: "isActive",
+      render: (_: unknown, record: any) => <ActiveInactiveBadge isActive={record.isActive} />,
+      sorter: (a: any, b: any) => Number(a.isActive === true) - Number(b.isActive === true),
     },
     {
       title: "Action",
@@ -238,8 +309,8 @@ const HostelType = () => {
                       </div>
                       <div className="p-3 border-bottom">
                         <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-0">
+                          <div className="col-12">
+                            <div className="mb-3">
                               <label className="form-label">Search</label>
                               <input
                                 type="text"
@@ -247,6 +318,17 @@ const HostelType = () => {
                                 placeholder="Room type or description…"
                                 value={draftSearch}
                                 onChange={(e) => setDraftSearch(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-12">
+                            <div className="mb-0">
+                              <label className="form-label">Sharing capacity</label>
+                              <CommonSelect
+                                className="select"
+                                options={CAPACITY_FILTER}
+                                value={draftCapacity}
+                                onChange={(v) => setDraftCapacity(v || "all")}
                               />
                             </div>
                           </div>
@@ -258,7 +340,9 @@ const HostelType = () => {
                           className="btn btn-light me-3"
                           onClick={() => {
                             setDraftSearch("");
+                            setDraftCapacity("all");
                             setFilterSearch("");
+                            setFilterCapacity("all");
                           }}
                         >
                           Reset

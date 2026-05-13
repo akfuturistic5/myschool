@@ -2363,6 +2363,9 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       search.set('academic_year_id', String(params.academic_year_id));
     }
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
+    }
     const qs = search.toString();
     return this.makeRequest(`/hostels${qs ? `?${qs}` : ''}`);
   }
@@ -2389,6 +2392,12 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       search.set('academic_year_id', String(params.academic_year_id));
     }
+    if (params.hostel_id != null && params.hostel_id !== '') {
+      search.set('hostel_id', String(params.hostel_id));
+    }
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
+    }
     const qs = search.toString();
     return this.makeRequest(`/hostel-rooms${qs ? `?${qs}` : ''}`);
   }
@@ -2413,6 +2422,160 @@ class ApiService {
 
   async deleteHostelRoom(id) {
     return this.makeRequest(`/hostel-rooms/${id}`, { method: 'DELETE' });
+  }
+
+  async getHostelRoomBeds(roomId) {
+    return this.getHostelBeds(roomId);
+  }
+
+  /** Beds CRUD — pass `{ room_id, include_inactive }` or legacy numeric `roomId` */
+  async getHostelBeds(roomIdOrParams) {
+    const q = new URLSearchParams();
+    if (
+      roomIdOrParams != null &&
+      typeof roomIdOrParams === 'object' &&
+      !Array.isArray(roomIdOrParams)
+    ) {
+      const p = roomIdOrParams;
+      if (p.room_id != null && p.room_id !== '') q.set('room_id', String(p.room_id));
+      if (p.include_inactive === true || p.include_inactive === 'true') {
+        q.set('include_inactive', 'true');
+      }
+    } else if (roomIdOrParams != null && roomIdOrParams !== '') {
+      q.set('room_id', String(roomIdOrParams));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/hostel-beds${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelBedById(id) {
+    return this.makeRequest(`/hostel-beds/${id}`);
+  }
+
+  async createHostelBed(body) {
+    return this.makeRequest('/hostel-beds', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async updateHostelBed(id, body) {
+    return this.makeRequest(`/hostel-beds/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  async deleteHostelBed(id) {
+    return this.makeRequest(`/hostel-beds/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel floors
+  /** Pass `{ hostel_id, include_inactive }` or legacy numeric hostelId */
+  async getHostelFloors(hostelIdOrParams) {
+    const q = new URLSearchParams();
+    if (
+      hostelIdOrParams != null &&
+      typeof hostelIdOrParams === 'object' &&
+      !Array.isArray(hostelIdOrParams)
+    ) {
+      const p = hostelIdOrParams;
+      if (p.hostel_id != null && p.hostel_id !== '') q.set('hostel_id', String(p.hostel_id));
+      if (p.include_inactive === true || p.include_inactive === 'true') {
+        q.set('include_inactive', 'true');
+      }
+    } else if (hostelIdOrParams != null && hostelIdOrParams !== '') {
+      q.set('hostel_id', String(hostelIdOrParams));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/hostel-floors${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelFloorById(id) {
+    return this.makeRequest(`/hostel-floors/${id}`);
+  }
+
+  async createHostelFloor(data) {
+    return this.makeRequest('/hostel-floors', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelFloor(id, data) {
+    return this.makeRequest(`/hostel-floors/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteHostelFloor(id) {
+    return this.makeRequest(`/hostel-floors/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel room types (inventory taxonomy — not classroom room_types)
+  async getHostelRoomTypes(params = {}) {
+    const search = new URLSearchParams();
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostel-room-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelRoomTypeById(id) {
+    return this.makeRequest(`/hostel-room-types/${id}`);
+  }
+
+  async createHostelRoomType(data) {
+    return this.makeRequest('/hostel-room-types', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelRoomType(id, data) {
+    return this.makeRequest(`/hostel-room-types/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteHostelRoomType(id) {
+    return this.makeRequest(`/hostel-room-types/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel assignments
+  async getHostelAssignments(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      search.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.hostel_id != null && params.hostel_id !== '') {
+      search.set('hostel_id', String(params.hostel_id));
+    }
+    if (params.student_id != null && params.student_id !== '') {
+      search.set('student_id', String(params.student_id));
+    }
+    if (params.status != null && params.status !== '') {
+      search.set('status', String(params.status));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostel-assignments${qs ? `?${qs}` : ''}`);
+  }
+
+  async createHostelAssignment(data) {
+    return this.makeRequest('/hostel-assignments', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelAssignment(id, data) {
+    return this.makeRequest(`/hostel-assignments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async checkoutHostelAssignment(id, data = {}) {
+    return this.makeRequest(`/hostel-assignments/${id}/checkout`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelHostelAssignment(id) {
+    return this.makeRequest(`/hostel-assignments/${id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getHostelAssignmentById(id) {
+    return this.makeRequest(`/hostel-assignments/${id}`);
   }
 
   // Room Types

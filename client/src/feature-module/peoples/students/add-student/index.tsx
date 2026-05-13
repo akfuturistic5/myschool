@@ -332,7 +332,7 @@ const AddStudent = () => {
 
   // Fetch hostels and hostel rooms from API (for dropdowns with real IDs)
   // Fetch transport and hostel options from API (for dropdowns with real IDs)
-  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels(academicYearId);
+  const { hostels, loading: hostelsLoading, error: hostelsError } = useHostels();
   const { hostelRooms, loading: hostelRoomsLoading, error: hostelRoomsError } = useHostelRooms(academicYearId);
 
   const hostelOptions = (hostels || []).map((h: { originalData?: { id: number }; hostelName?: string }) => ({

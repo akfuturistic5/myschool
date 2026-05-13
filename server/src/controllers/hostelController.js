@@ -1,17 +1,53 @@
-const { query } = require('../config/database');
+const { query, executeTransaction } = require('../config/database');
 const { success, errorResponse } = require('../utils/responseHelper');
 
-const normalizeHostelType = (t) => {
+const normalizeGenderFromLegacyType = (t) => {
   if (t == null || t === '') return null;
   const s = String(t).trim().toLowerCase();
   if (['boys', 'girls', 'mixed'].includes(s)) return s;
   return null;
 };
 
+const normalizeHostelCategory = (v) => {
+  if (v == null || v === '') return 'student';
+  const s = String(v).trim().toLowerCase();
+  if (s === 'student' || s === 'staff') return s;
+  return null;
+};
+
+const buildCodeSlug = (name) => {
+  const slug = String(name)
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .substring(0, 40)
+    .toUpperCase();
+  return slug || 'HOSTEL';
+};
+
+const allocateUniqueHostelCode = async (base) => {
+  for (let i = 0; i < 100; i += 1) {
+    const c = i === 0 ? base : `${base}_${i}`;
+    const ch = await query(`SELECT id FROM hostels WHERE code = $1 AND deleted_at IS NULL LIMIT 1`, [c]);
+    if (ch.rows.length === 0) return c;
+  }
+  throw new Error('Could not allocate unique hostel code');
+};
+
+const listFrom = `
+  SELECT
+    h.*,
+    h.gender AS hostel_type
+  FROM hostels h
+`;
+
 const getAllHostels = async (req, res) => {
   try {
-    const result = await query(`SELECT * FROM hostels WHERE is_active = true ORDER BY hostel_name ASC`);
-
+    const includeInactive =
+      req.query.include_inactive === 'true' || req.query.include_inactive === '1';
+    const where = includeInactive ? 'WHERE h.deleted_at IS NULL' : 'WHERE h.deleted_at IS NULL AND h.is_active = true';
+    const sql = `${listFrom} ${where} ORDER BY h.hostel_name ASC`;
+    const result = await query(sql);
     return success(res, 200, 'Hostels fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {
     console.error('Error fetching hostels:', error);
@@ -22,20 +58,23 @@ const getAllHostels = async (req, res) => {
 const getHostelById = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query(
+
+    const rowResult = await query(
       `
-      SELECT *
-      FROM hostels
-      WHERE id = $1 AND is_active = true
-    `,
+      SELECT
+        h.*,
+        h.gender AS hostel_type
+      FROM hostels h
+      WHERE h.id = $1 AND h.deleted_at IS NULL
+      `,
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (rowResult.rows.length === 0) {
       return errorResponse(res, 404, 'Hostel not found');
     }
 
-    return success(res, 200, 'Hostel fetched successfully', result.rows[0]);
+    return success(res, 200, 'Hostel fetched successfully', rowResult.rows[0]);
   } catch (error) {
     console.error('Error fetching hostel:', error);
     return errorResponse(res, 500, 'Failed to fetch hostel');
@@ -44,68 +83,124 @@ const getHostelById = async (req, res) => {
 
 const createHostel = async (req, res) => {
   try {
+    const body = req.body || {};
     const {
       hostel_name,
+      hostel_category,
+      gender,
       hostel_type,
       address,
       intake_capacity,
       description,
-      total_rooms,
+      total_floors,
       contact_number,
+      email,
       facilities,
       rules,
-      warden_id,
-    } = req.body;
+      warden_user_id,
+      code,
+      is_active: isActiveBody,
+    } = body;
 
     if (!hostel_name || String(hostel_name).trim() === '') {
       return errorResponse(res, 400, 'hostel_name is required');
     }
 
-    const ht = normalizeHostelType(hostel_type);
-    if (!ht) {
-      return errorResponse(res, 400, 'hostel_type must be boys, girls, or mixed');
+    const hc = normalizeHostelCategory(hostel_category ?? body.category);
+    if (!hc) {
+      return errorResponse(res, 400, 'hostel_category must be student or staff');
     }
 
-    const intake =
+    const g = normalizeGenderFromLegacyType(gender ?? hostel_type);
+    if (!g) {
+      return errorResponse(res, 400, 'gender must be boys, girls, or mixed (or send legacy hostel_type with the same values)');
+    }
+
+    const floors =
+      total_floors !== undefined && total_floors !== null && total_floors !== ''
+        ? Number(total_floors)
+        : 1;
+
+    let intake =
       intake_capacity !== undefined && intake_capacity !== null && intake_capacity !== ''
         ? Number(intake_capacity)
         : null;
 
-    const rooms =
-      total_rooms !== undefined && total_rooms !== null && total_rooms !== ''
-        ? Number(total_rooms)
+    let wUid =
+      warden_user_id !== undefined && warden_user_id !== null && warden_user_id !== ''
+        ? Number(warden_user_id)
         : null;
+    if (wUid !== null && Number.isNaN(wUid)) wUid = null;
+    if (wUid !== null) {
+      const w = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [wUid]);
+      if (!w.rows.length) return errorResponse(res, 400, 'Invalid warden_user_id');
+    }
 
-    const result = await query(
+    const finalCodeRaw = code != null && String(code).trim() !== '' ? String(code).trim().toUpperCase() : null;
+
+    let isActiveCreate = true;
+    if (isActiveBody !== undefined && isActiveBody !== null && isActiveBody !== '') {
+      const s = String(isActiveBody).trim().toLowerCase();
+      if (s === 'false' || s === '0') isActiveCreate = false;
+      if (s === 'true' || s === '1') isActiveCreate = true;
+    }
+
+    const row = await executeTransaction(async (client) => {
+      const finalCode = finalCodeRaw || (await allocateUniqueHostelCode(buildCodeSlug(hostel_name)));
+      const ch = await client.query(
+        `
+        INSERT INTO hostels (
+          hostel_name, code, hostel_category, gender, address,
+          total_floors, intake_capacity, warden_user_id, contact_number, email,
+          description, facilities, rules, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING *
+        `,
+        [
+          String(hostel_name).trim(),
+          finalCode,
+          hc,
+          g,
+          address != null ? String(address) : null,
+          floors != null && !Number.isNaN(floors) && floors >= 1 ? floors : 1,
+          intake != null && !Number.isNaN(intake) ? intake : null,
+          wUid,
+          contact_number != null ? String(contact_number) : null,
+          email != null ? String(email) : null,
+          description != null ? String(description) : null,
+          facilities != null ? String(facilities) : null,
+          rules != null ? String(rules) : null,
+          isActiveCreate,
+        ]
+      );
+
+      const newHostel = ch.rows[0];
+      await client.query(
+        `
+        INSERT INTO hostel_floors (hostel_id, floor_name, floor_number, is_active)
+        VALUES ($1, 'Ground floor', $2, true)
+        `,
+        [newHostel.id, 0]
+      );
+
+      return newHostel;
+    });
+
+    const fresh = await query(
       `
-      INSERT INTO hostels (
-        hostel_name, hostel_type, address, intake_capacity, description,
-        hostel_name, hostel_type, address, intake_capacity, description,
-        total_rooms, contact_number, facilities, rules, warden_id, is_active
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
-      RETURNING *
-    `,
-      [
-        String(hostel_name).trim(),
-        ht,
-        address != null ? String(address) : null,
-        intake != null && !Number.isNaN(intake) ? intake : null,
-        description != null ? String(description) : null,
-        rooms != null && !Number.isNaN(rooms) ? rooms : null,
-        contact_number != null ? String(contact_number) : null,
-        facilities != null ? String(facilities) : null,
-        rules != null ? String(rules) : null,
-        warden_id != null && warden_id !== '' ? Number(warden_id) : null,
-      ]
+      SELECT h.*, h.gender AS hostel_type
+      FROM hostels h
+      WHERE h.id = $1
+      `,
+      [row.id]
     );
 
-    return success(res, 201, 'Hostel created successfully', result.rows[0]);
+    return success(res, 201, 'Hostel created successfully', fresh.rows[0]);
   } catch (error) {
     console.error('Error creating hostel:', error);
     if (error.code === '23505') {
-      return errorResponse(res, 409, 'Hostel name already exists');
+      return errorResponse(res, 409, 'Hostel name or code already exists');
     }
     return errorResponse(res, 500, 'Failed to create hostel');
   }
@@ -114,70 +209,85 @@ const createHostel = async (req, res) => {
 const updateHostel = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      hostel_name,
-      hostel_type,
-      address,
-      intake_capacity,
-      description,
-      total_rooms,
-      contact_number,
-      facilities,
-      rules,
-      warden_id,
-    } = req.body;
+    const body = req.body || {};
 
     const updates = [];
     const params = [];
     let idx = 1;
 
-    if (hostel_name !== undefined) {
+    if (body.hostel_name !== undefined && body.hostel_name !== null) {
       updates.push(`hostel_name = $${idx++}`);
-      params.push(String(hostel_name).trim());
+      params.push(String(body.hostel_name).trim());
     }
-    if (hostel_type !== undefined) {
-      const ht = normalizeHostelType(hostel_type);
-      if (!ht) {
-        return errorResponse(res, 400, 'hostel_type must be boys, girls, or mixed');
-      }
-      updates.push(`hostel_type = $${idx++}`);
-      params.push(ht);
+    if (body.code !== undefined && body.code !== null) {
+      updates.push(`code = $${idx++}`);
+      params.push(String(body.code).trim().toUpperCase());
     }
-    if (address !== undefined) {
+    if (body.hostel_category !== undefined || body.category !== undefined) {
+      const hc = normalizeHostelCategory(body.hostel_category ?? body.category);
+      if (!hc) return errorResponse(res, 400, 'hostel_category must be student or staff');
+      updates.push(`hostel_category = $${idx++}`);
+      params.push(hc);
+    }
+    if (body.gender !== undefined || body.hostel_type !== undefined) {
+      const g = normalizeGenderFromLegacyType(body.gender ?? body.hostel_type);
+      if (!g) return errorResponse(res, 400, 'gender must be boys, girls, or mixed');
+      updates.push(`gender = $${idx++}`);
+      params.push(g);
+    }
+    if (body.address !== undefined) {
       updates.push(`address = $${idx++}`);
-      params.push(address);
+      params.push(body.address);
     }
-    if (intake_capacity !== undefined) {
+    if (body.total_floors !== undefined) {
+      const f = Number(body.total_floors);
+      updates.push(`total_floors = $${idx++}`);
+      params.push(!Number.isNaN(f) && f >= 1 ? f : 1);
+    }
+    if (body.intake_capacity !== undefined) {
       const intake =
-        intake_capacity !== null && intake_capacity !== '' ? Number(intake_capacity) : null;
+        body.intake_capacity !== null && body.intake_capacity !== ''
+          ? Number(body.intake_capacity)
+          : null;
       updates.push(`intake_capacity = $${idx++}`);
       params.push(intake != null && !Number.isNaN(intake) ? intake : null);
     }
-    if (description !== undefined) {
-      updates.push(`description = $${idx++}`);
-      params.push(description);
-    }
-    if (total_rooms !== undefined) {
-      const rooms = total_rooms !== null && total_rooms !== '' ? Number(total_rooms) : null;
-      updates.push(`total_rooms = $${idx++}`);
-      params.push(rooms != null && !Number.isNaN(rooms) ? rooms : null);
-    }
-    if (contact_number !== undefined) {
+    if (body.contact_number !== undefined) {
       updates.push(`contact_number = $${idx++}`);
-      params.push(contact_number);
+      params.push(body.contact_number);
     }
-    if (facilities !== undefined) {
+    if (body.email !== undefined) {
+      updates.push(`email = $${idx++}`);
+      params.push(body.email);
+    }
+    if (body.description !== undefined) {
+      updates.push(`description = $${idx++}`);
+      params.push(body.description);
+    }
+    if (body.facilities !== undefined) {
       updates.push(`facilities = $${idx++}`);
-      params.push(facilities);
+      params.push(body.facilities);
     }
-    if (rules !== undefined) {
+    if (body.rules !== undefined) {
       updates.push(`rules = $${idx++}`);
-      params.push(rules);
+      params.push(body.rules);
     }
-    if (warden_id !== undefined) {
-      const wid = warden_id !== null && warden_id !== '' ? Number(warden_id) : null;
-      updates.push(`warden_id = $${idx++}`);
-      params.push(wid != null && !Number.isNaN(wid) ? wid : null);
+    if (body.warden_user_id !== undefined) {
+      let wUid =
+        body.warden_user_id !== null && body.warden_user_id !== '' ? Number(body.warden_user_id) : null;
+      if (wUid !== null && Number.isNaN(wUid)) wUid = null;
+      if (wUid !== null) {
+        const w = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [wUid]);
+        if (!w.rows.length) return errorResponse(res, 400, 'Invalid warden_user_id');
+      }
+      updates.push(`warden_user_id = $${idx++}`);
+      params.push(wUid);
+    }
+    if (body.is_active !== undefined && body.is_active !== null && body.is_active !== '') {
+      const s = String(body.is_active).trim().toLowerCase();
+      const ia = !(s === 'false' || s === '0');
+      updates.push(`is_active = $${idx++}`);
+      params.push(ia);
     }
 
     if (updates.length === 0) {
@@ -191,9 +301,9 @@ const updateHostel = async (req, res) => {
       `
       UPDATE hostels
       SET ${updates.join(', ')}
-      WHERE id = $${idx} AND is_active = true
+      WHERE id = $${idx} AND deleted_at IS NULL
       RETURNING *
-    `,
+      `,
       params
     );
 
@@ -201,11 +311,20 @@ const updateHostel = async (req, res) => {
       return errorResponse(res, 404, 'Hostel not found');
     }
 
-    return success(res, 200, 'Hostel updated successfully', result.rows[0]);
+    const fresh = await query(
+      `
+      SELECT h.*, h.gender AS hostel_type
+      FROM hostels h
+      WHERE h.id = $1
+      `,
+      [id]
+    );
+
+    return success(res, 200, 'Hostel updated successfully', fresh.rows[0]);
   } catch (error) {
     console.error('Error updating hostel:', error);
     if (error.code === '23505') {
-      return errorResponse(res, 409, 'Hostel name already exists');
+      return errorResponse(res, 409, 'Duplicate hostel name or code');
     }
     return errorResponse(res, 500, 'Failed to update hostel');
   }
@@ -215,36 +334,33 @@ const deleteHostel = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const students = await query(
+    const assigns = await query(
       `
       SELECT COUNT(*)::int AS c
-      FROM students
-      WHERE is_active = true AND (hostel_id = $1 OR hostel_room_id IN (
-        SELECT id FROM hostel_rooms WHERE hostel_id = $1 AND is_active = true
-      ))
-    `,
+      FROM hostel_assignments
+      WHERE hostel_id = $1 AND assignment_status = 'active' AND deleted_at IS NULL
+      `,
       [id]
     );
-    if (students.rows[0] && students.rows[0].c > 0) {
+    if (assigns.rows[0]?.c > 0) {
       return errorResponse(
         res,
         409,
-        'Cannot delete hostel while students are assigned to it or its rooms'
+        'Cannot deactivate hostel while there are active hostel assignments'
       );
     }
 
-    await query(
-      `UPDATE hostel_rooms SET is_active = false, updated_at = NOW() WHERE hostel_id = $1`,
-      [id]
-    );
+    await query(`UPDATE hostel_rooms SET is_active = false, updated_at = NOW() WHERE hostel_id = $1 AND deleted_at IS NULL`, [
+      id,
+    ]);
 
     const result = await query(
       `
       UPDATE hostels
-      SET is_active = false, updated_at = NOW()
-      WHERE id = $1 AND is_active = true
+      SET is_active = false, deleted_at = NOW(), updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL AND is_active = true
       RETURNING id
-    `,
+      `,
       [id]
     );
 
