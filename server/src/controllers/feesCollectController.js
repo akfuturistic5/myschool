@@ -283,6 +283,10 @@ const reversePayment = async (req, res) => {
 // ─── GET STUDENT FEE STATUS ───────────────────────────────────────────────────
 const getStudentFeeStatus = async (req, res) => {
     try {
+        const roleId = Number(req.user?.role_id);
+        if (roleId === 2) {
+            return errorResponse(res, 403, 'Teachers are not authorized to view student fee transactions');
+        }
         const { studentId, academicYearId } = req.params;
 
         // 1. Ledger summary
@@ -437,6 +441,10 @@ const getFeeCollectionsList = async (req, res) => {
 // ─── PAYMENT HISTORY ─────────────────────────────────────────────────────────
 const getPaymentHistory = async (req, res) => {
     try {
+        const roleId = Number(req.user?.role_id);
+        if (roleId === 2) {
+            return errorResponse(res, 403, 'Teachers are not authorized to view student fee transactions');
+        }
         const { studentId, academicYearId } = req.params;
 
         const result = await query(

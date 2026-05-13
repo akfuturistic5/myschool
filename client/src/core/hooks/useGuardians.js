@@ -20,18 +20,28 @@ export const useGuardians = (options = {}) => {
     const [resolvedGuardianImage] = await Promise.all([
       guardian.avatar ? apiService.resolveAvatarUrl(guardian.avatar) : Promise.resolve(''),
     ]);
+
+    const childrenWithResolvedImages = await Promise.all(
+      (guardian.all_children || []).map(async (child) => {
+        const img = child.photo_url ? await apiService.resolveAvatarUrl(child.photo_url) : "assets/img/profiles/avatar-27.jpg";
+        return { ...child, photo_url: img };
+      })
+    );
+    const childNames = childrenWithResolvedImages.map(c => c.name).join(', ');
+
     return {
       key: guardian.id,
       id: guardian.id,
       name: `${guardian.first_name || ''} ${guardian.last_name || ''}`.trim() || 'N/A',
       Addedon: guardian.created_at ? `Added on ${new Date(guardian.created_at).toLocaleDateString('en-GB')}` : 'Added on 25 Mar 2024',
-      Child: `${guardian.student_first_name || ''} ${guardian.student_last_name || ''}`.trim() || 'N/A',
+      Child: childNames || `${guardian.student_first_name || ''} ${guardian.student_last_name || ''}`.trim() || 'N/A',
+      all_children: childrenWithResolvedImages,
       class: `${guardian.class_name || ''}, ${guardian.section_name || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, '') || 'N/A',
       phone: guardian.phone || '',
       email: guardian.email || '',
       avatar: resolvedGuardianImage || '',
       GuardianImage: resolvedGuardianImage || "assets/img/profiles/avatar-27.jpg",
-      ChildImage: "assets/img/students/student-01.jpg",
+      ChildImage: childrenWithResolvedImages[0]?.photo_url || "assets/img/students/student-01.jpg",
       student_admission_number: guardian.admission_number,
       student_roll_number: guardian.roll_number,
       guardian_type: guardian.guardian_type,

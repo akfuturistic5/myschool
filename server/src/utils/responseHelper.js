@@ -16,13 +16,14 @@ const success = (res, statusCode = 200, message = 'Success', data = null, extra 
   return res.status(statusCode).json(body);
 };
 
-const error = (res, statusCode = 500, message = 'Something went wrong', code = 'ERROR') => {
+const error = (res, statusCode = 500, message = 'Something went wrong', code = 'ERROR', extra = {}) => {
   return res.status(statusCode).json({
     success: false,
     status: 'ERROR',
     code,
     errorCode: code,
-    message
+    message,
+    ...extra
   });
 };
 

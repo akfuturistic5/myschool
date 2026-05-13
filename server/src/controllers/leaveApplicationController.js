@@ -508,7 +508,7 @@ const createLeaveApplication = async (req, res) => {
       );
       if (staffCheck.rows.length === 0) {
         const teacherCheck = await query(
-          'SELECT s.id FROM teachers t INNER JOIN staff s ON t.staff_id = s.id WHERE s.id = $1 AND s.user_id = $2',
+          'SELECT s.id FROM staff s WHERE s.id = $1 AND s.user_id = $2',
           [reqStaffId, userId]
         );
         if (teacherCheck.rows.length === 0) {
@@ -800,50 +800,17 @@ const updateLeaveApplicationStatus = async (req, res) => {
         SELECT s.id
         FROM students s
         WHERE s.id = $1
-          AND (
-            EXISTS (
-              SELECT 1
-              FROM class_schedules cs
-              WHERE cs.teacher_id = ANY($2::int[])
-                AND cs.class_id = s.class_id
-                AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-                AND (cs.academic_year_id = s.academic_year_id OR cs.academic_year_id IS NULL)
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM teachers t
-              WHERE t.id = ANY($2::int[])
-                AND t.class_id = s.class_id
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM sections sec_map
-              WHERE sec_map.id = s.section_id
-                AND sec_map.section_teacher_id = ANY($3::int[])
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM classes c_map
-              WHERE c_map.id = s.class_id
-                AND (
-                  EXISTS (
-                    SELECT 1 FROM class_teachers ct
-                    WHERE ct.class_id = c_map.id
-                      AND ct.staff_id = ANY($2::int[])
-                      AND ct.deleted_at IS NULL
-                  )
-                  OR EXISTS (
-                    SELECT 1 FROM class_teachers ct
-                    WHERE ct.class_id = c_map.id
-                      AND ct.staff_id = ANY($3::int[])
-                      AND ct.deleted_at IS NULL
-                  )
-                )
-            )
+          AND EXISTS (
+            SELECT 1
+            FROM class_teachers ct
+            LEFT JOIN class_sections csec ON csec.id = ct.class_section_id
+            WHERE ct.staff_id = ANY($2::int[])
+              AND ct.class_id = s.class_id
+              AND (ct.class_section_id IS NULL OR csec.section_id = s.section_id)
+              AND ct.deleted_at IS NULL
           )
-        LIMIT 1
-        `,
-        [target.student_id, teacherIds, staffIds]
+        LIMIT 1`,
+        [target.student_id, staffIds]
       );
       if (studentScopeCheck.rows.length === 0) {
         return res.status(403).json({

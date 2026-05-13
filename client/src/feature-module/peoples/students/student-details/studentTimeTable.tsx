@@ -8,6 +8,8 @@ import StudentBreadcrumb from "./studentBreadcrumb";
 import { useClassSchedules } from "../../../../core/hooks/useClassSchedules";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -29,6 +31,8 @@ const StudentTimeTable = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
+  const user = useSelector(selectUser);
+  const isTeacher = isTeacherRole(user);
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
   const { student, loading, parentPlacementForWard, isParentRole } = useLinkedStudentContext({
     locationState: state,
@@ -195,16 +199,18 @@ const StudentTimeTable = () => {
                         Leave &amp; Attendance
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
+                    {!isTeacher && (
+                      <li>
+                        <Link
+                          to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
+                          className="nav-link"
+                          state={student ? { studentId: student.id, student } : undefined}
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Fees
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}

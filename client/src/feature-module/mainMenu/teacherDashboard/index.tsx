@@ -111,9 +111,10 @@ const TeacherDashboard = () => {
     teacher?.id ?? null,
     { days: selectedAttendanceRange.days, offset: selectedAttendanceRange.offset, academicYearId } as any
   ) as { data: AttendancePayload | null; loading: boolean; error: string | null };
-  const { data: syllabusData } = useClassSyllabus({ academicYearId }) as {
-    data: any[];
-  };
+  // const { data: syllabusData } = useClassSyllabus({ academicYearId }) as {
+  //   data: any[];
+  // };
+  const syllabusData: any[] = []; // Temporary placeholder to avoid breaking downstream logic if any remains active
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
   const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 }) as {
     upcomingEvents: any[];
@@ -195,6 +196,7 @@ const TeacherDashboard = () => {
     return subjects;
   }, [routine]);
 
+  /*
   const mySyllabus = useMemo(() => {
     if (!syllabusData?.length) return [];
     return syllabusData.filter(
@@ -217,6 +219,9 @@ const TeacherDashboard = () => {
     const activePct = total > 0 ? Math.round((activeCount / total) * 100) : 0;
     return { activePct, otherPct: 100 - activePct, activeCount, otherCount, total };
   }, [mySyllabus]);
+  */
+
+  const syllabusChartData = { activePct: 0, otherPct: 100, activeCount: 0, otherCount: 0, total: 0 };
 
   // Today's classes - filter routine by selected date's day
   const today = new Date();

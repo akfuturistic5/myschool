@@ -646,16 +646,16 @@ const getUserRoleContext = (user) => {
 };
 
 const getTeacherIdentity = async (userId) => {
-  const teacherRows = await query(
-    `SELECT t.id, t.staff_id
-     FROM teachers t
-     INNER JOIN staff st ON st.id = t.staff_id
-     WHERE st.user_id = $1
-       AND st.status = 'Active'`,
+  const staffRows = await query(
+    `SELECT s.id
+     FROM staff s
+     WHERE s.user_id = $1
+       AND s.status = 'Active'
+       AND s.deleted_at IS NULL`,
     [userId]
   );
-  const teacherIds = [...new Set((teacherRows.rows || []).map((row) => Number(row.id)).filter(Number.isFinite))];
-  const staffIds = [...new Set((teacherRows.rows || []).map((row) => Number(row.staff_id)).filter(Number.isFinite))];
+  const staffIds = [...new Set((staffRows.rows || []).map((row) => Number(row.id)).filter(Number.isFinite))];
+  const teacherIds = staffIds; // Staff ID is used as teacher ID
   return { teacherIds, staffIds };
 };
 
@@ -669,12 +669,6 @@ const buildTeacherScopeSql = ({ classExpr, sectionExpr, academicYearExpr, teache
       AND cs.teacher_id = ANY(${staffIdsParamRef})
       AND (${sectionExpr} IS NULL OR csec.section_id = ${sectionExpr} OR csec.section_id IS NULL)
       AND (${academicYearExpr} IS NULL OR cs.academic_year_id = ${academicYearExpr} OR cs.academic_year_id IS NULL)
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM teachers t
-    WHERE t.id = ANY(${teacherIdsParamRef})
-      AND t.class_id = ${classExpr}
   )
   OR EXISTS (
     SELECT 1
@@ -907,16 +901,14 @@ const getMarkingRoster = async (req, res) => {
           return errorResponse(res, 403, 'Access denied. User is not an active teacher.', 'FORBIDDEN');
         }
 
-        params.push(teacherIds);
-        const teacherIdsParamRef = `$${params.length}::int[]`;
         params.push(staffIds);
         const staffIdsParamRef = `$${params.length}::int[]`;
         where += ` AND ${buildTeacherScopeSql({
           classExpr: 'enr.class_id',
           sectionExpr: 'enr.section_id',
           academicYearExpr: 'enr.academic_year_id',
-          teacherIdsParamRef,
-          staffIdsParamRef,
+          teacherIdsParamRef: staffIdsParamRef,
+          staffIdsParamRef: staffIdsParamRef,
         })}`;
       }
 
@@ -948,6 +940,8 @@ const getMarkingRoster = async (req, res) => {
     const remarkColumn = await resolveStaffAttendanceRemarkColumn();
     const params = [date];
     let where = "WHERE st.status = 'Active'";
+    params.push(ROLES.TEACHER);
+    where += ` AND u.role_id != $${params.length}`;
     where = appendStaffOrgFilters({ params, where, departmentId: department_id, designationId: designation_id });
     const academicYearJoinFilter = '';
 
@@ -957,12 +951,16 @@ const getMarkingRoster = async (req, res) => {
         TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS entity_name,
         st.department_id,
         st.designation_id,
+        d.department_name,
+        des.designation_name,
         sa.status,
         sa.${remarkColumn} AS remark,
         sa.check_in_time::text AS check_in_time,
         sa.check_out_time::text AS check_out_time
       FROM staff st
       INNER JOIN users u ON u.id = st.user_id
+      LEFT JOIN departments d ON d.id = st.department_id
+      LEFT JOIN designations des ON des.id = st.designation_id
       LEFT JOIN staff_attendance sa
         ON sa.staff_id = st.id
        AND sa.attendance_date = $1
@@ -978,7 +976,7 @@ const getMarkingRoster = async (req, res) => {
     return success(res, 200, 'Staff attendance roster fetched', rows, { holiday: activeHoliday || null });
   } catch (err) {
     console.error('getMarkingRoster error:', err);
-    return errorResponse(res, 500, 'Failed to fetch attendance roster', 'ATTENDANCE_ROSTER_FAILED');
+    return errorResponse(res, 500, 'Failed to fetch attendance roster', 'ATTENDANCE_ROSTER_FAILED', { error: err.message });
   }
 };
 
@@ -986,6 +984,10 @@ const getAttendanceReport = async (req, res) => {
   try {
     const { entityType } = req.params;
     const { month, class_id, section_id, department_id, designation_id } = req.query;
+    console.log('[attendanceController] getAttendanceReport requested:', { entityType, month, class_id, section_id });
+    if (!month) {
+      return errorResponse(res, 400, 'Month is required (YYYY-MM)', 'VALIDATION_ERROR');
+    }
     const [year, monthNumber] = month.split('-').map(Number);
     const monthStart = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
     const monthEndResult = await query(
@@ -1007,11 +1009,29 @@ const getAttendanceReport = async (req, res) => {
         params.push(Number(section_id));
         where += ` AND enr.section_id = $${params.length}`;
       }
+
+      const { isTeacher } = getUserRoleContext(req.user);
+      if (isTeacher) {
+        const { teacherIds, staffIds } = await getTeacherIdentity(req.user?.id);
+        if (!teacherIds.length || !staffIds.length) {
+          return errorResponse(res, 403, 'Access denied. User is not an active teacher.', 'FORBIDDEN');
+        }
+        params.push(staffIds);
+        const staffIdsParamRef = `$${params.length}::int[]`;
+        where += ` AND ${buildTeacherScopeSql({
+          classExpr: 'enr.class_id',
+          sectionExpr: 'enr.section_id',
+          academicYearExpr: 'enr.academic_year_id',
+          teacherIdsParamRef: staffIdsParamRef,
+          staffIdsParamRef: staffIdsParamRef,
+        })}`;
+      }
       const result = await query(
         `
         SELECT
           s.id AS entity_id,
           TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS entity_name,
+          s.admission_number AS "rollNo",
           enr.class_id,
           enr.section_id,
           a.attendance_date::date AS attendance_date,
@@ -1051,6 +1071,8 @@ const getAttendanceReport = async (req, res) => {
     const remarkColumn = await resolveStaffAttendanceRemarkColumn();
     const params = [monthStart, monthEnd];
     let where = "WHERE st.status = 'Active'";
+    params.push(ROLES.TEACHER);
+    where += ` AND u.role_id != $${params.length}`;
     where = appendStaffOrgFilters({ params, where, departmentId: department_id, designationId: designation_id });
     const academicYearJoinFilter = '';
     const result = await query(
@@ -1059,11 +1081,16 @@ const getAttendanceReport = async (req, res) => {
         st.id AS entity_id,
         TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS entity_name,
         st.department_id,
+        st.designation_id,
+        d.department_name,
+        des.designation_name,
         sa.attendance_date::date AS attendance_date,
         sa.status,
         sa.${remarkColumn} AS remark
       FROM staff st
       INNER JOIN users u ON u.id = st.user_id
+      LEFT JOIN departments d ON d.id = st.department_id
+      LEFT JOIN designations des ON des.id = st.designation_id
       LEFT JOIN staff_attendance sa
         ON sa.staff_id = st.id
        AND sa.attendance_date BETWEEN $1::date AND $2::date
@@ -1093,7 +1120,13 @@ const getAttendanceReport = async (req, res) => {
     });
   } catch (err) {
     console.error('getAttendanceReport error:', err);
-    return errorResponse(res, 500, 'Failed to fetch attendance report', 'ATTENDANCE_REPORT_FAILED');
+    return res.status(500).json({
+      status: 'ERROR',
+      message: 'Failed to fetch attendance report',
+      code: 'ATTENDANCE_REPORT_FAILED',
+      error: err.message,
+      stack: err.stack
+    });
   }
 };
 
@@ -1162,7 +1195,7 @@ const getAttendanceDayWise = async (req, res) => {
     });
   } catch (err) {
     console.error('getAttendanceDayWise error:', err);
-    return errorResponse(res, 500, 'Failed to fetch day-wise attendance', 'ATTENDANCE_DAY_WISE_FAILED');
+    return errorResponse(res, 500, 'Failed to fetch day-wise attendance', 'ATTENDANCE_DAY_WISE_FAILED', { error: err.message });
   }
 };
 
@@ -1242,7 +1275,7 @@ const getMyAttendance = async (req, res) => {
     });
   } catch (err) {
     console.error('getMyAttendance error:', err);
-    return errorResponse(res, 500, 'Failed to fetch my attendance', 'MY_ATTENDANCE_FAILED');
+    return errorResponse(res, 500, 'Failed to fetch my attendance', 'MY_ATTENDANCE_FAILED', { error: err.message });
   }
 };
 

@@ -30,10 +30,10 @@ const listClassTeacherAssignments = async (req, res) => {
     const teacherId = req.query.teacherId != null ? parseId(req.query.teacherId) : null;
     const classId = req.query.classId != null ? parseId(req.query.classId) : null;
     const academicYearId = req.query.academicYearId != null ? parseId(req.query.academicYearId) : null;
-    
+
     const params = [];
     let where = 'WHERE ct.deleted_at IS NULL';
-    
+
     if (teacherId) {
       params.push(teacherId);
       where += ` AND ct.staff_id = $${params.length}`;
@@ -188,10 +188,10 @@ const listSubjectTeacherAssignments = async (req, res) => {
     const teacherId = req.query.teacherId != null ? parseId(req.query.teacherId) : null;
     const classId = req.query.classId != null ? parseId(req.query.classId) : null;
     const academicYearId = req.query.academicYearId != null ? parseId(req.query.academicYearId) : null;
-    
+
     const params = [];
     let where = 'WHERE ta.deleted_at IS NULL';
-    
+
     if (teacherId) {
       params.push(teacherId);
       where += ` AND ta.staff_id = $${params.length}`;
@@ -362,7 +362,7 @@ const getClassAssignmentMetaHandler = async (req, res) => {
     const academicYearId = parseId(req.query.academicYearId);
     if (Number.isNaN(classId)) return errorResponse(res, 400, 'Invalid class id');
     if (Number.isNaN(academicYearId)) return errorResponse(res, 400, 'academicYearId is required for meta');
-    
+
     const meta = await getClassAssignmentMeta(classId, academicYearId);
     if (!meta.ok) return errorResponse(res, meta.status, meta.message);
     return success(res, 200, 'Assignment rules for class', meta.data);

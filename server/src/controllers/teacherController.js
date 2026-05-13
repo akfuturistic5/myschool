@@ -1583,6 +1583,7 @@ const getTeacherClassAttendance = async (req, res) => {
            WHERE ct.staff_id = $1
              AND ct.class_id = a.class_id
              AND ct.deleted_at IS NULL
+             AND ct.valid_period @> COALESCE(a.attendance_date::date, CURRENT_DATE)
              AND (ct.academic_year_id = a.academic_year_id OR ct.academic_year_id IS NULL)
              AND (
                csec.section_id IS NULL
@@ -1596,6 +1597,7 @@ const getTeacherClassAttendance = async (req, res) => {
            WHERE sta.staff_id = $1
              AND sta.class_id = a.class_id
              AND sta.deleted_at IS NULL
+             AND sta.valid_period @> COALESCE(a.attendance_date::date, CURRENT_DATE)
              AND (sta.academic_year_id = a.academic_year_id OR sta.academic_year_id IS NULL)
              AND (sta.class_section_id IS NULL OR sta.class_section_id = a.class_section_id)
          )
@@ -1626,8 +1628,6 @@ const getTeacherClassAttendance = async (req, res) => {
         sectionId: r.section_id,
         attendanceDate: r.attendance_date,
         status,
-        checkInTime: r.check_in_time,
-        checkOutTime: r.check_out_time,
         markedBy: r.marked_by,
         remark: r.remarks,
       };
@@ -1644,7 +1644,7 @@ const getTeacherClassAttendance = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching teacher class attendance:', error);
-    return errorResponse(res, 500, 'Failed to fetch teacher class attendance');
+    return errorResponse(res, 500, 'Failed to fetch teacher class attendance', error.message);
   }
 };
 

@@ -8,7 +8,7 @@ interface UseSectionsOptions {
 }
 
 export const useSections = (
-  classId: number | string | null = null, 
+  classId: number | string | null = null,
   options: UseSectionsOptions = {}
 ) => {
   const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
@@ -28,7 +28,7 @@ export const useSections = (
 
       let response;
       if (classId) {
-        response = await apiService.getClassSections(classId);
+        response = await apiService.getClassSections(classId, options.academicYearId);
       } else {
         response = await apiService.getSections();
       }
@@ -47,7 +47,7 @@ export const useSections = (
 
   useEffect(() => {
     fetchSections();
-  }, [classId, fetchAllWhenNoClass]);
+  }, [classId, fetchAllWhenNoClass, options.academicYearId]);
 
   return {
     sections,

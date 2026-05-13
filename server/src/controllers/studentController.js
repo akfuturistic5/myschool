@@ -716,6 +716,13 @@ const createStudent = async (req, res) => {
 // Update student
 const updateStudent = async (req, res) => {
   try {
+    const roleId = Number(req.user?.role_id);
+    if (roleId === 2) {
+      return res.status(403).json({
+        status: 'ERROR',
+        message: 'Teachers are not authorized to update student profiles'
+      });
+    }
     const { id } = req.params;
     const {
       academic_year_id, admission_number, admission_date, roll_number, status,
@@ -2837,26 +2844,25 @@ const getTeacherStudents = async (req, res) => {
     }
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-
-    // Get the teacher record for the current user
+    // Get the staff record for the current user (role_id 2 is Teacher)
     const teacherCheck = await query(
-      `SELECT t.id, t.staff_id
-       FROM teachers t 
-       INNER JOIN staff st ON t.staff_id = st.id 
-       WHERE st.user_id = $1 AND st.status = 'Active'`,
+      `SELECT s.id
+       FROM staff s 
+       WHERE s.user_id = $1 AND s.status = 'Active' AND s.deleted_at IS NULL`,
       [userId]
     );
-
+    
     if (teacherCheck.rows.length === 0) {
       return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
     }
-    const teacherIds = [...new Set(teacherCheck.rows.map((row) => parseInt(row.id, 10)).filter((id) => Number.isFinite(id)))];
-    const staffIds = [...new Set(teacherCheck.rows.map((row) => parseInt(row.staff_id, 10)).filter((id) => Number.isFinite(id)))];
-    if (teacherIds.length === 0 || staffIds.length === 0) {
+    
+    const staffIds = teacherCheck.rows.map((row) => parseInt(row.id, 10)).filter((id) => Number.isFinite(id));
+    const teacherIds = staffIds; // In this schema, staff ID is used as teacher ID for scoping
+    if (staffIds.length === 0) {
       return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
     }
 
-    const params = [teacherIds, staffIds];
+    const params = [staffIds];
     let academicYearClause = '';
     if (hasAcademicYearFilter) {
       params.push(academicYearId);
@@ -2877,7 +2883,7 @@ const getTeacherStudents = async (req, res) => {
        WHERE s.status = 'Active'
          AND s.deleted_at IS NULL
          AND enr.class_id IS NOT NULL
-         AND ${buildTeacherEnrollmentScopeSql({ teacherIdsParamRef: '$1', staffIdsParamRef: '$2' })}
+         AND ${buildTeacherEnrollmentScopeSql({ staffIdsParamRef: '$1' })}
          ${academicYearClause}
        ORDER BY u.first_name ASC, u.last_name ASC`,
       params
@@ -2893,7 +2899,8 @@ const getTeacherStudents = async (req, res) => {
     console.error('Error fetching teacher students:', error);
     res.status(500).json({
       status: 'ERROR',
-      message: 'Failed to fetch teacher students'
+      message: 'Failed to fetch teacher students',
+      error: error.message
     });
   }
 };
@@ -4784,23 +4791,8 @@ const normalizeAttendanceStatus = (s) => {
   return v || null;
 };
 
-const buildTeacherEnrollmentScopeSql = ({ teacherIdsParamRef, staffIdsParamRef }) => `(
+const buildTeacherEnrollmentScopeSql = ({ staffIdsParamRef }) => `(
   EXISTS (
-    SELECT 1
-    FROM class_schedules cs
-    LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
-    WHERE cs.teacher_id = ANY(${staffIdsParamRef}::int[])
-      AND cs.class_id = enr.class_id
-      AND (enr.section_id IS NULL OR csec.section_id = enr.section_id OR csec.section_id IS NULL)
-      AND (enr.academic_year_id IS NULL OR cs.academic_year_id = enr.academic_year_id OR cs.academic_year_id IS NULL)
-  )
-  OR EXISTS (
-    SELECT 1
-    FROM teachers t
-    WHERE t.id = ANY(${teacherIdsParamRef}::int[])
-      AND t.class_id = enr.class_id
-  )
-  OR EXISTS (
     SELECT 1
     FROM class_teachers ct
     LEFT JOIN class_sections ct_sec ON ct_sec.id = ct.class_section_id
@@ -4827,22 +4819,21 @@ const getGradeReport = async (req, res) => {
     const roleName = String(req.user?.role_name || '').trim().toLowerCase();
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
 
-    let teacherIds = [];
     let teacherStaffIds = [];
+    let teacherIds = [];
     if (isTeacher) {
       const teacherRes = await query(
-        `SELECT t.id, t.staff_id
-         FROM teachers t
-         INNER JOIN staff st ON st.id = t.staff_id
+        `SELECT st.id
+         FROM staff st
          WHERE st.user_id = $1
            AND st.status = 'Active'`,
         [req.user?.id]
       );
-      teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
-      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.staff_id)).filter(Boolean);
-      if (!teacherIds.length || !teacherStaffIds.length) {
+      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
+      if (!teacherStaffIds.length) {
         return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
       }
+      teacherIds = teacherStaffIds; // staff.id maps to legacy teacher_id
     } else {
       const access = await canAccessClass(req, classId);
       if (!access.ok) {
@@ -4865,14 +4856,11 @@ const getGradeReport = async (req, res) => {
       scopedStudentsWhere.push(`enr.academic_year_id = $${scopedStudentsParams.length}`);
     }
     if (isTeacher) {
-      scopedStudentsParams.push(teacherIds);
-      scopedStudentsWhere.push(`(
-        ${buildTeacherEnrollmentScopeSql({
-          teacherIdsParamRef: `$${scopedStudentsParams.length}`,
-          staffIdsParamRef: `$${scopedStudentsParams.length + 1}`,
-        })}
-      )`);
       scopedStudentsParams.push(teacherStaffIds);
+      const staffIdsParamRef = `$${scopedStudentsParams.length}`;
+      scopedStudentsWhere.push(`(
+        ${buildTeacherEnrollmentScopeSql({ staffIdsParamRef })}
+      )`);
     }
 
     const scopedWhereSql = scopedStudentsWhere.join(' AND ');
@@ -5071,6 +5059,8 @@ const getAttendanceReport = async (req, res) => {
     const sectionId = parseId(req.query.section_id);
     const academicYearId = parseId(req.query.academic_year_id);
     const month = String(req.query.month || '').trim();
+    console.log('[studentController] getAttendanceReport requested:', { classId, sectionId, academicYearId, month });
+
     const useStudentAttendance = await hasTable('student_attendance');
     const attendanceTable = useStudentAttendance ? 'student_attendance' : 'attendance';
 
@@ -5083,22 +5073,21 @@ const getAttendanceReport = async (req, res) => {
     const isTeacher = roleId === ROLES.TEACHER || roleName === 'teacher';
 
     // Teachers are scoped to their mapped students via schedules/homeroom mappings.
-    let teacherIds = [];
     let teacherStaffIds = [];
+    let teacherIds = [];
     if (isTeacher) {
       const teacherRes = await query(
-        `SELECT t.id, t.staff_id
-         FROM teachers t
-         INNER JOIN staff st ON st.id = t.staff_id
+        `SELECT st.id
+         FROM staff st
          WHERE st.user_id = $1
            AND st.status = 'Active'`,
         [req.user?.id]
       );
-      teacherIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
-      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.staff_id)).filter(Boolean);
-      if (!teacherIds.length || !teacherStaffIds.length) {
+      teacherStaffIds = (teacherRes.rows || []).map((r) => parseId(r.id)).filter(Boolean);
+      if (!teacherStaffIds.length) {
         return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
       }
+      teacherIds = teacherStaffIds;
     } else if (classId) {
       const access = await canAccessClass(req, classId);
       if (!access.ok) {
@@ -5139,12 +5128,10 @@ const getAttendanceReport = async (req, res) => {
       rosterWhere.push(`enr.academic_year_id = $${rosterParams.length}`);
     }
     if (isTeacher) {
-      rosterParams.push(teacherIds);
-      const teacherIdsParamRef = `$${rosterParams.length}`;
       rosterParams.push(teacherStaffIds);
       const staffIdsParamRef = `$${rosterParams.length}`;
       rosterWhere.push(`(
-        ${buildTeacherEnrollmentScopeSql({ teacherIdsParamRef, staffIdsParamRef })}
+        ${buildTeacherEnrollmentScopeSql({ staffIdsParamRef })}
       )`);
     }
 
@@ -5349,6 +5336,8 @@ const getAttendanceReport = async (req, res) => {
       status: 'ERROR',
       message: 'Failed to fetch attendance report',
       code: 'ATTENDANCE_REPORT_FAILED',
+      error: error.message,
+      stack: error.stack
     });
   }
 };

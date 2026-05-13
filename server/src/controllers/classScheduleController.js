@@ -83,15 +83,10 @@ function normalizeDayOfWeek(day) {
 
 async function resolveTeacherToStaffId(teacherId) {
   if (!teacherId) return null;
+  // Support case where input might already be a staff ID
   try {
     const staffTry = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
     if (staffTry.rows.length) return staffTry.rows[0].id;
-  } catch (e) { }
-
-  try {
-    // Legacy support (might fail if table removed)
-    const teacherTry = await query('SELECT staff_id FROM teachers WHERE id = $1 LIMIT 1', [teacherId]);
-    if (teacherTry.rows.length) return teacherTry.rows[0].staff_id;
   } catch (e) { }
 
   return null;
@@ -302,19 +297,17 @@ async function enrichScheduleRows(rows) {
         teacherMap[String(t.id)] = t;
       });
 
-      // Backward compatibility: some legacy rows may store teachers.id in class_schedules.teacher_id.
+      // Backward compatibility: legacy rows might have different IDs but mapping should be consistent in staff.
       const legacyTeacherRows = await query(
         `SELECT
-           t.id AS teacher_id,
            st.id AS staff_id,
            NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
            u.username,
            u.email,
            u.avatar AS photo_url
-         FROM teachers t
-         JOIN staff st ON st.id = t.staff_id
+         FROM staff st
          JOIN users u ON u.id = st.user_id
-         WHERE t.id = ANY($1)`,
+         WHERE st.id = ANY($1)`,
         [teacherIds]
       );
       legacyTeacherRows.rows.forEach((t) => {
@@ -325,9 +318,6 @@ async function enrichScheduleRows(rows) {
           email: t.email,
           photo_url: t.photo_url,
         };
-        teacherMap[t.teacher_id] = normalized;
-        teacherMap[Number(t.teacher_id)] = normalized;
-        teacherMap[String(t.teacher_id)] = normalized;
         teacherMap[t.staff_id] = normalized;
         teacherMap[Number(t.staff_id)] = normalized;
         teacherMap[String(t.staff_id)] = normalized;
@@ -832,6 +822,7 @@ const getTimetableClass = async (req, res) => {
     let sectionMasterId = null; // sections.id
     let classSectionId = null; // class_sections.id
     if (requestedSectionId) {
+      // 1. Try strict lookup by class_sections.id
       const byClassSectionId = await query(
         `SELECT id, section_id
          FROM class_sections
@@ -843,6 +834,7 @@ const getTimetableClass = async (req, res) => {
         classSectionId = parseId(byClassSectionId.rows[0].id);
         sectionMasterId = parseId(byClassSectionId.rows[0].section_id);
       } else {
+        // 2. Try lookup by sections.id (master)
         const bySectionId = await query(
           `SELECT id, section_id
            FROM class_sections
@@ -855,7 +847,27 @@ const getTimetableClass = async (req, res) => {
           classSectionId = parseId(bySectionId.rows[0].id);
           sectionMasterId = parseId(bySectionId.rows[0].section_id);
         } else {
-          return success(res, 200, 'Class timetable fetched successfully', { entries: [], slots: [] }, { count: 0 });
+          // 3. Robust fallback: Maybe it's a class_sections.id from another year?
+          const fromOtherYear = await query(
+            `SELECT section_id FROM class_sections WHERE id = $1 LIMIT 1`,
+            [requestedSectionId]
+          );
+          if (fromOtherYear.rows.length > 0) {
+            const masterId = fromOtherYear.rows[0].section_id;
+            const currentMapping = await query(
+              `SELECT id, section_id FROM class_sections 
+               WHERE class_id = $1 AND section_id = $2 AND academic_year_id = $3 LIMIT 1`,
+              [classId, masterId, academicYearId]
+            );
+            if (currentMapping.rows.length > 0) {
+              classSectionId = parseId(currentMapping.rows[0].id);
+              sectionMasterId = parseId(currentMapping.rows[0].section_id);
+            } else {
+              // Valid master section but no mapping for this year. 
+              // We set sectionMasterId to allow access control checks, but classSectionId remains null.
+              sectionMasterId = parseId(masterId);
+            }
+          }
         }
       }
     }
@@ -908,6 +920,10 @@ const getTimetableClass = async (req, res) => {
     if (classSectionId) {
       where += ` AND (class_section_id = $${p++} OR class_section_id IS NULL)`;
       params.push(classSectionId);
+    } else if (requestedSectionId) {
+      // If a section was explicitly requested but no mapping was found for this year,
+      // we must ensure we don't return entries from other sections.
+      where += ` AND class_section_id = -1`;
     }
 
     const rows = await loadSchedulesFromDb(where, params);
