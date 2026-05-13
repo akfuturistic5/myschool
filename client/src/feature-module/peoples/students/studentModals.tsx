@@ -18,6 +18,8 @@ import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicY
 import Swal from 'sweetalert2'
 import { useSelector } from 'react-redux'
 import { generateFeeReceipt } from '../../../core/utils/pdfReceiptGenerator'
+import { isTeacherRole } from '../../../core/utils/roleUtils'
+import { selectUser } from '../../../core/data/redux/authSlice'
 
 interface StudentModalsProps {
   studentId?: number | null
@@ -35,6 +37,8 @@ interface StudentModalsProps {
 const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected, onStudentDeleted }: StudentModalsProps) => {
     const routes = all_routes
     const academicYearId = useSelector(selectSelectedAcademicYearId);
+    const user = useSelector(selectUser);
+    const isTeacher = isTeacherRole(user);
     
     const today = new Date()
   const year = today.getFullYear()
@@ -489,7 +493,12 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
             </div>
             <form onSubmit={handleAddFeesSubmit}>
               <div id="modal-datepicker" className="modal-body">
-                {student ? (
+                {isTeacher ? (
+                  <div className="alert alert-soft-danger border-0 d-flex align-items-center mb-0">
+                    <i className="ti ti-alert-circle me-2 fs-18" />
+                    <span>You do not have permission to collect fees.</span>
+                  </div>
+                ) : student ? (
                   <>
                     <div className="bg-light-300 p-3 pb-0 rounded mb-4">
                       <div className="row align-items-center">
@@ -674,7 +683,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                   </div>
                 )}
               </div>
-              {student && (
+              {student && !isTeacher && (
                 <div className="modal-footer">
                   <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" className="btn btn-primary" disabled={feeSubmitting || !feeStructureId || !amountPaid}>
@@ -696,10 +705,16 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                 <span className="delete-icon">
                   <i className="ti ti-trash-x" />
                 </span>
-                <h4>Confirm Deletion</h4>
+                {isTeacher ? (
+                   <h4>Permission Denied</h4>
+                ) : (
+                  <h4>Confirm Deletion</h4>
+                )}
                 <p>
-                  You want to delete all the marked items, this cant be undone once
-                  you delete.
+                  {isTeacher 
+                    ? "You do not have permission to delete student records."
+                    : "You want to delete all the marked items, this cant be undone once you delete."
+                  }
                 </p>
                 <div className="d-flex justify-content-center">
                   <Link
@@ -707,16 +722,18 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                     className="btn btn-light me-3"
                     data-bs-dismiss="modal"
                   >
-                    Cancel
+                    {isTeacher ? "Close" : "Cancel"}
                   </Link>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={handleDelete}
-                    disabled={isDeleting || !student?.id}
-                  >
-                    {isDeleting ? 'Deleting...' : 'Yes, Delete'}
-                  </button>
+                  {!isTeacher && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={handleDelete}
+                      disabled={isDeleting || !student?.id}
+                    >
+                      {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

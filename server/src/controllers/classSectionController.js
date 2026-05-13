@@ -118,13 +118,13 @@ const assignSectionsToClass = async (req, res) => {
       const isObject = typeof item === 'object' && item !== null;
       const rawSid = isObject ? item.section_id : item;
       const sid = (rawSid === null || rawSid === undefined || rawSid === "") ? null : parseInt(String(rawSid), 10);
-      
+
       let classRoomId = null;
       if (isObject && item.class_room_id !== undefined && item.class_room_id !== null && item.class_room_id !== "") {
         const parsedRoomId = parseInt(String(item.class_room_id), 10);
         classRoomId = isNaN(parsedRoomId) ? null : parsedRoomId;
       }
-      
+
       let maxStudents = 30;
       if (isObject && item.max_students !== undefined && item.max_students !== null) {
         const parsedMax = parseInt(String(item.max_students), 10);
@@ -145,7 +145,7 @@ const assignSectionsToClass = async (req, res) => {
            AND cs.deleted_at IS NULL`,
           [ay, classRoomId, class_id, sid]
         );
-        
+
         if (existingAssignment.rows.length > 0) {
           const e = existingAssignment.rows[0];
           return errorResponse(res, `Room is already assigned to Class ${e.class_name} - Section ${e.section_name}`, 400);
@@ -163,8 +163,8 @@ const assignSectionsToClass = async (req, res) => {
       if (restoreResult.rows.length > 0) {
         results.push(restoreResult.rows[0]);
       } else {
-      const row = await query(
-        `INSERT INTO class_sections (class_id, section_id, academic_year_id, max_students, class_room_id, is_active, created_by)
+        const row = await query(
+          `INSERT INTO class_sections (class_id, section_id, academic_year_id, max_students, class_room_id, is_active, created_by)
          VALUES ($1, $2, $3, $4, $5, true, $6)
          ON CONFLICT (class_id, COALESCE(section_id, -1), academic_year_id) WHERE deleted_at IS NULL
          DO UPDATE SET 
@@ -173,9 +173,9 @@ const assignSectionsToClass = async (req, res) => {
            class_room_id = EXCLUDED.class_room_id, 
            max_students = EXCLUDED.max_students
          RETURNING *`,
-        [class_id, sid, ay, maxStudents, classRoomId, createdBy]
-      ).then(r => r.rows[0]);
-      results.push(row);
+          [class_id, sid, ay, maxStudents, classRoomId, createdBy]
+        ).then(r => r.rows[0]);
+        results.push(row);
       }
     }
 
@@ -220,7 +220,7 @@ const updateClassSection = async (req, res) => {
          AND cs.deleted_at IS NULL`,
         [cur.academic_year_id, targetRoomId, id]
       );
-      
+
       if (existingAssignment.rows.length > 0) {
         const e = existingAssignment.rows[0];
         return errorResponse(res, 400, `Room is already assigned to Class ${e.class_name} - Section ${e.section_name}`);

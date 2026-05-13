@@ -298,11 +298,18 @@ class ApiService {
   }
 
   // Class Section Assignments
+  /**
+   * @param {number|string|null} [academicYearId=null]
+   */
   async getClassSectionsSummary(academicYearId = null) {
     const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
     return this.makeRequest(`/class-sections/summary${qs}`);
   }
 
+  /**
+   * @param {number|string} classId
+   * @param {number|string|null} [academicYearId=null]
+   */
   async getClassSections(classId, academicYearId = null) {
     const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
     return this.makeRequest(`/class-sections/class/${classId}${qs}`);
@@ -771,13 +778,7 @@ class ApiService {
   }
 
   async getAttendanceReport(params = {}) {
-    const search = new URLSearchParams();
-    if (params.classId != null) search.set('class_id', String(params.classId));
-    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
-    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
-    if (params.month) search.set('month', String(params.month));
-    const qs = search.toString();
-    return this.makeRequest(`/students/reports/attendance${qs ? `?${qs}` : ''}`);
+    return this.getEntityAttendanceReport("student", params);
   }
 
   async getAttendanceMarkingRoster(entityType, params = {}) {

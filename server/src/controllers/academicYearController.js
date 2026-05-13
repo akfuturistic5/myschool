@@ -7,6 +7,13 @@ const {
   cloneAcademicYearData,
 } = require('../services/academicYearCloneService');
 
+async function tableExists(client, tableName) {
+  const r = client
+    ? await client.query("SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1", [tableName])
+    : await query("SELECT 1 FROM information_schema.tables WHERE table_name = $1 LIMIT 1", [tableName]);
+  return r.rows.length > 0;
+}
+
 function parseYearId(param) {
   const n = parseInt(param, 10);
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -20,7 +27,16 @@ async function resolveStaffIdForUser(userId) {
 
 function normalizeDateString(s) {
   if (s == null || s === '') return null;
-  return String(s).trim();
+  const str = String(s).trim();
+  // If already YYYY-MM-DD, return it
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // Attempt to parse and format as ISO date only
+  const d = new Date(str);
+  if (Number.isNaN(d.getTime())) return str; // Fallback to raw if unparseable, though DB might still reject
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function compareIsoDates(a, b) {
@@ -30,7 +46,12 @@ function compareIsoDates(a, b) {
 
 function formatPgDateOnly(d) {
   if (d == null) return null;
-  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  if (d instanceof Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
   const s = String(d);
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
@@ -116,7 +137,6 @@ async function collectAcademicYearSummaryStatistics(yearId) {
     promotions_into_count,
     promotions_from_count,
     attendance_records_count,
-    teacher_routines_count,
   ] = await Promise.all([
     execStatFirstMatch(
       [
@@ -172,10 +192,6 @@ async function collectAcademicYearSummaryStatistics(yearId) {
       p
     ),
     execStatFirstMatch([`SELECT COUNT(*)::int AS v FROM attendance a WHERE a.academic_year_id = $1`], p),
-    execStatFirstMatch(
-      [`SELECT COUNT(*)::int AS v FROM teacher_routines tr WHERE tr.academic_year_id = $1`],
-      p
-    ),
   ]);
 
   return {
@@ -190,7 +206,7 @@ async function collectAcademicYearSummaryStatistics(yearId) {
     promotions_into_count,
     promotions_from_count,
     attendance_records_count,
-    teacher_routines_count,
+    teacher_routines_count: 0,
   };
 }
 
@@ -201,10 +217,16 @@ const getAllAcademicYears = async (req, res) => {
       'SELECT * FROM academic_years WHERE is_active = true ORDER BY start_date DESC NULLS LAST, id DESC'
     );
 
+    const data = result.rows.map(row => ({
+      ...row,
+      start_date: formatPgDateOnly(row.start_date),
+      end_date: formatPgDateOnly(row.end_date),
+    }));
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Academic years fetched successfully',
-      data: result.rows,
+      data,
       count: result.rows.length,
     });
   } catch (error) {
@@ -223,10 +245,16 @@ const getAllAcademicYearsManage = async (req, res) => {
       'SELECT * FROM academic_years ORDER BY start_date DESC NULLS LAST, id DESC'
     );
 
+    const data = result.rows.map(row => ({
+      ...row,
+      start_date: formatPgDateOnly(row.start_date),
+      end_date: formatPgDateOnly(row.end_date),
+    }));
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Academic years fetched successfully',
-      data: result.rows,
+      data,
       count: result.rows.length,
     });
   } catch (error) {
@@ -254,10 +282,17 @@ const getAcademicYearById = async (req, res) => {
       });
     }
 
+    const row = result.rows[0];
+    const data = {
+      ...row,
+      start_date: formatPgDateOnly(row.start_date),
+      end_date: formatPgDateOnly(row.end_date),
+    };
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Academic year fetched successfully',
-      data: result.rows[0],
+      data,
     });
   } catch (error) {
     console.error('Error fetching academic year:', error);
@@ -282,11 +317,18 @@ const getAcademicYearSummary = async (req, res) => {
 
     const statistics = await collectAcademicYearSummaryStatistics(id);
 
+    const ay = yearRes.rows[0];
+    const academic_year = {
+      ...ay,
+      start_date: formatPgDateOnly(ay.start_date),
+      end_date: formatPgDateOnly(ay.end_date),
+    };
+
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Academic year summary fetched successfully',
       data: {
-        academic_year: yearRes.rows[0],
+        academic_year,
         statistics,
       },
     });
@@ -369,25 +411,38 @@ const createAcademicYear = async (req, res) => {
     const is_active = isActive === false ? false : true;
 
     const row = await executeTransaction(async (client) => {
-      // Enforce: you cannot open a new year until the latest year has an end date recorded.
-      // Lock the latest row to serialize concurrent creates.
+      // 1. Comprehensive overlap check using the same logic as the DB constraint
+      const overlapRes = await client.query(
+        `SELECT id, year_name, start_date, end_date 
+         FROM academic_years 
+         WHERE daterange(start_date, end_date, '[]') && daterange($1::date, $2::date, '[]')
+         LIMIT 1 FOR UPDATE`,
+        [start_date, endInsert]
+      );
+      if (overlapRes.rows.length > 0) {
+        const ov = overlapRes.rows[0];
+        const ovStart = formatPgDateOnly(ov.start_date);
+        const ovEnd = formatPgDateOnly(ov.end_date);
+        throw makeHttpError(
+          409,
+          'ACADEMIC_YEAR_DATES_OVERLAP',
+          `The period ${start_date} to ${endInsert} overlaps with existing academic year "${ov.year_name}" (${ovStart} to ${ovEnd}).`
+        );
+      }
+
+      // 2. Chronology check: usually new years are added after the latest one.
+      // We still allow inserting gaps, but we warn if it's before the latest end date.
       const latest = await client.query(
-        'SELECT id, year_name, start_date, end_date FROM academic_years ORDER BY start_date DESC NULLS LAST, id DESC LIMIT 1 FOR UPDATE'
+        'SELECT id, year_name, start_date, end_date FROM academic_years ORDER BY start_date DESC NULLS LAST, id DESC LIMIT 1'
       );
       const latestRow = latest.rows?.[0] || null;
       const latestEnd = latestRow?.end_date != null ? formatPgDateOnly(latestRow.end_date) : null;
+      
       if (latestRow && !latestEnd) {
         throw makeHttpError(
           409,
           'ACADEMIC_YEAR_PREVIOUS_END_DATE_REQUIRED',
           'Please set the current/previous academic year end date before creating a new academic year.'
-        );
-      }
-      if (latestEnd && compareIsoDates(start_date, latestEnd) <= 0) {
-        throw makeHttpError(
-          400,
-          'ACADEMIC_YEAR_START_DATE_TOO_EARLY',
-          `Start date must be after the previous academic year end date (${latestEnd}).`
         );
       }
 
@@ -465,6 +520,14 @@ const createAcademicYear = async (req, res) => {
         message: 'An academic year with this name already exists',
       });
     }
+    if (error && error.code === '23P01') {
+      return res.status(409).json({
+        status: 'ERROR',
+        code: 'ACADEMIC_YEAR_DATES_OVERLAP',
+        message:
+          'These start/end dates overlap another academic session. Adjust dates so school years do not overlap on the timeline.',
+      });
+    }
     if (error && error.code === '23502') {
       return res.status(500).json({
         status: 'ERROR',
@@ -526,6 +589,26 @@ const updateAcademicYear = async (req, res) => {
     const row = await executeTransaction(async (client) => {
       await client.query('SELECT id FROM academic_years WHERE id = $1 FOR UPDATE', [id]);
 
+      // Check for overlaps with OTHER years
+      const overlapRes = await client.query(
+        `SELECT id, year_name, start_date, end_date 
+         FROM academic_years 
+         WHERE id <> $1
+           AND daterange(start_date, end_date, '[]') && daterange($2::date, $3::date, '[]')
+         LIMIT 1`,
+        [id, startStr, endStr]
+      );
+      if (overlapRes.rows.length > 0) {
+        const ov = overlapRes.rows[0];
+        const ovStart = formatPgDateOnly(ov.start_date);
+        const ovEnd = formatPgDateOnly(ov.end_date);
+        throw makeHttpError(
+          409,
+          'ACADEMIC_YEAR_DATES_OVERLAP',
+          `The period ${startStr} to ${endStr || 'open'} overlaps with existing academic year "${ov.year_name}" (${ovStart} to ${ovEnd}).`
+        );
+      }
+
       if (patch.is_current === true) {
         await client.query('UPDATE academic_years SET is_current = false WHERE id <> $1', [id]);
       }
@@ -560,7 +643,6 @@ const updateAcademicYear = async (req, res) => {
         return again.rows[0];
       }
 
-      fields.push('updated_at = CURRENT_TIMESTAMP');
       fields.push('updated_at = CURRENT_TIMESTAMP');
       values.push(id);
 
@@ -693,80 +775,42 @@ const deleteAcademicYear = async (req, res) => {
         `
       );
 
-      // class_schedules has unique indexes that can conflict after year reassignment.
-      // For any source schedule that would collide in fallback year, drop dependent
-      // teacher_routines for that source row, then delete the source schedule row.
-      await client.query(
-        `
-        DELETE FROM teacher_routines tr
-        USING class_schedules src
-        WHERE tr.class_schedule_id = src.id
-          AND src.academic_year_id = $1
-          AND EXISTS (
-            SELECT 1
-            FROM class_schedules dst
-            WHERE dst.academic_year_id = $2
-              AND (
-                (
-                  src.teacher_id IS NOT NULL
-                  AND dst.teacher_id = src.teacher_id
-                  AND dst.day_of_week = src.day_of_week
-                  AND dst.time_slot_id = src.time_slot_id
-                )
-                OR (
-                  dst.class_id = src.class_id
-                  AND COALESCE(dst.section_id, -1) = COALESCE(src.section_id, -1)
-                  AND dst.day_of_week = src.day_of_week
-                  AND dst.time_slot_id = src.time_slot_id
-                )
-              )
-          )
-        `,
-        [id, fallbackYearId]
-      );
-
-      await client.query(
-        `
-        DELETE FROM class_schedules src
-        WHERE src.academic_year_id = $1
-          AND EXISTS (
-            SELECT 1
-            FROM class_schedules dst
-            WHERE dst.academic_year_id = $2
-              AND (
-                (
-                  src.teacher_id IS NOT NULL
-                  AND dst.teacher_id = src.teacher_id
-                  AND dst.day_of_week = src.day_of_week
-                  AND dst.time_slot_id = src.time_slot_id
-                )
-                OR (
-                  dst.class_id = src.class_id
-                  AND COALESCE(dst.section_id, -1) = COALESCE(src.section_id, -1)
-                  AND dst.day_of_week = src.day_of_week
-                  AND dst.time_slot_id = src.time_slot_id
-                )
-              )
-          )
-        `,
-        [id, fallbackYearId]
-      );
-
-      for (const row of fkColsRes.rows || []) {
-        const schema = String(row.schema_name || '').replace(/"/g, '""');
-        const table = String(row.table_name || '').replace(/"/g, '""');
-        const column = String(row.column_name || '').replace(/"/g, '""');
-        if (!schema || !table || !column) continue;
-        if (schema === 'public' && table === 'class_schedules' && column === 'academic_year_id') {
-          // already conflict-cleaned above; handle explicitly once.
-          await client.query(
-            'UPDATE public.class_schedules SET academic_year_id = $1 WHERE academic_year_id = $2',
-            [fallbackYearId, id]
-          );
-          continue;
+      // 1. HARD DELETE session-scoped records.
+      // These tables are strictly year-scoped and cannot be reassigned without breaking triple-key integrity.
+      const tablesToDelete = [
+        'subject_teacher_assignments',
+        'class_teachers',
+        'class_schedules',
+        'class_subjects',
+        'class_sections',
+      ];
+      for (const table of tablesToDelete) {
+        if (await tableExists(client, table)) {
+          await client.query(`DELETE FROM public.${table} WHERE academic_year_id = $1`, [id]);
         }
+      }
+
+      // 2. Reassign remaining records to fallback year.
+      const tableUpdates = {};
+      for (const row of fkColsRes.rows || []) {
+        const schema = String(row.schema_name || '');
+        const table = String(row.table_name || '');
+        const column = String(row.column_name || '');
+        if (!schema || !table || !column) continue;
+        
+        // Skip tables we already hard-deleted
+        if (schema === 'public' && tablesToDelete.includes(table)) continue;
+
+        const key = `"${schema}"."${table}"`;
+        if (!tableUpdates[key]) tableUpdates[key] = [];
+        tableUpdates[key].push(`"${column}"`);
+      }
+
+      for (const [tablePath, columns] of Object.entries(tableUpdates)) {
+        const setClause = columns.map(col => `${col} = $1`).join(', ');
+        const whereClause = columns.map(col => `${col} = $2`).join(' OR ');
         await client.query(
-          `UPDATE "${schema}"."${table}" SET "${column}" = $1 WHERE "${column}" = $2`,
+          `UPDATE ${tablePath} SET ${setClause} WHERE ${whereClause}`,
           [fallbackYearId, id]
         );
       }
@@ -818,6 +862,7 @@ const deleteAcademicYear = async (req, res) => {
     return res.status(500).json({
       status: 'ERROR',
       message: 'Failed to delete academic year',
+      error: error.message,
     });
   }
 };

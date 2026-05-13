@@ -39,18 +39,18 @@ const getInitialForm = () => ({
 
 const NoticeBoard = () => {
   const routes = all_routes;
-  const { userRoles, loading: rolesLoading } = useUserRoles();
-  const { user } = useCurrentUser();
+  const { userRoles, loading: rolesLoading } = useUserRoles() as any;
+  const { user } = useCurrentUser() as any;
   const canManageNotices = useMemo(() => {
-    const roleId = Number(user?.role_id);
+    const roleId = Number(user?.user_role_id);
     return roleId === 1 || roleId === 6;
-  }, [user?.role_id]);
+  }, [user?.user_role_id]);
   /** Notice board page should show complete list for every role. */
   const noticeFetchLimit = 100;
   const { notices, loading, error, saving, refetch, createNotice, updateNotice, deleteNotice } = useNoticeBoard({
     limit: noticeFetchLimit,
     includeExpired: true,
-  });
+  }) as any;
   const [selectedNotice, setSelectedNotice] = useState<any>(null);
   const [createForm, setCreateForm] = useState(getInitialForm());
   const [editForm, setEditForm] = useState(getInitialForm());

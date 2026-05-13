@@ -8,6 +8,7 @@ import { apiService } from "../../../../core/services/apiService";
 import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -22,6 +23,7 @@ const StudentLibrary = () => {
   const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent();
   const role = (currentUser?.role || "").toString().toLowerCase();
   const isStudentRole = role === "student";
+  const isTeacher = isTeacherRole(currentUser);
 
   const queryStudentId = useMemo(() => {
     try {
@@ -159,16 +161,18 @@ const StudentLibrary = () => {
                         Leave &amp; Attendance
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={routes.studentFees}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
+                    {!isTeacher && (
+                      <li>
+                        <Link
+                          to={routes.studentFees}
+                          className="nav-link"
+                          state={student ? { studentId: student.id, student } : undefined}
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Fees
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={routes.studentResult}

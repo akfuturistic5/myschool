@@ -129,6 +129,10 @@ export function isAdministrativeRole(role: RoleInput, explicitRoleId?: number | 
   return getRoleScope(role, explicitRoleId) === 'administrative';
 }
 
+export function isTeacherRole(role: RoleInput, explicitRoleId?: number | null): boolean {
+  return getRoleScope(role, explicitRoleId) === 'teacher';
+}
+
 /** Matches server EVENT_MANAGER_ROLES: Headmaster, Administrative. */
 export function canManageSchoolEvents(role: RoleInput, explicitRoleId?: number | null): boolean {
   const scope = getRoleScope(role, explicitRoleId);

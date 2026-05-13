@@ -12,6 +12,7 @@ import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudent
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { getSchoolLogoSrc } from "../../../../core/utils/schoolLogo";
 import { apiService } from "../../../../core/services/apiService";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -29,6 +30,7 @@ const StudentResult = () => {
   });
   const { user } = useCurrentUser();
   const currentUser = user as any;
+  const isTeacher = isTeacherRole(currentUser);
   const returnToExamResult = typeof state?.returnTo === "string" ? state.returnTo : "";
   const forwardedState = student
     ? {
@@ -399,11 +401,13 @@ const StudentResult = () => {
                             <i className="ti ti-calendar-due me-2" /> Attendance
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-report-money me-2" /> Fees
-                          </Link>
-                        </li>
+                        {!isTeacher && (
+                          <li className="nav-item">
+                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                              <i className="ti ti-report-money me-2" /> Fees
+                            </Link>
+                          </li>
+                        )}
                         <li className="nav-item">
                           <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active py-3 px-4 border-0 fw-bold" state={forwardedState}>
                             <i className="ti ti-bookmark-edit me-2" /> Performance

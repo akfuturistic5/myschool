@@ -11,6 +11,10 @@ import { useState, useEffect, useCallback } from "react";
 import { apiService } from "../../../../core/services/apiService";
 import { generateFeeReceipt } from "../../../../core/utils/pdfReceiptGenerator";
 import dayjs from "dayjs";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
+import { useNavigate } from "react-router-dom";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -24,6 +28,17 @@ const StudentFees = () => {
   const { studentId, student, loading } = useLinkedStudentContext({
     locationState: state,
   });
+  const user = useSelector(selectUser);
+  const navigate = useNavigate();
+  const isTeacher = isTeacherRole(user);
+
+  useEffect(() => {
+    if (!loading && isTeacher && student?.id) {
+      navigate(`${routes.studentDetail}/${student.id}`, { replace: true, state });
+    } else if (!loading && isTeacher) {
+      navigate(routes.studentList, { replace: true });
+    }
+  }, [isTeacher, loading, student, navigate, routes]);
   const effectiveStudentId =
     (typeof studentId === "number" && Number.isFinite(studentId) && studentId > 0
       ? studentId
@@ -205,15 +220,17 @@ const StudentFees = () => {
                         Leave &amp; Attendance
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
-                        className="nav-link active"
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
+                    {!isTeacher && (
+                      <li>
+                        <Link
+                          to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
+                          className="nav-link active"
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Fees
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}

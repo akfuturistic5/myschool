@@ -19,7 +19,7 @@ const Holiday = () => {
   const routes = all_routes;
   const user = useSelector(selectUser);
   const role = String(user?.role || "").trim().toLowerCase();
-  const roleId = Number(user?.user_role_id ?? user?.role_id);
+  const roleId = Number(user?.user_role_id);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const canManage = roleId === 1 || roleId === 6 || role === "admin" || role === "administrative" || role === "headmaster";
   const [rows, setRows] = useState<any[]>([]);

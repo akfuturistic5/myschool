@@ -40,9 +40,9 @@ const APPLICANT_TYPE_OPTIONS = [
 
 const ListLeaves = () => {
   const routes = all_routes;
-  const { user: currentUser } = useCurrentUser();
+  const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
-  const roleId = Number(currentUser?.user_role_id ?? currentUser?.role_id);
+  const roleId = Number(currentUser?.user_role_id);
   const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
   const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
   const isOwnLeavesOnly = false;
@@ -134,7 +134,7 @@ const ListLeaves = () => {
     // (sorting only by start_date desc surfaces far-future dates first and drops past rows).
     sortBy: "created_at",
     sortOrder,
-  });
+  }) as any;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {

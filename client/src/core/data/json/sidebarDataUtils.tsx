@@ -91,6 +91,16 @@ function buildTeacherSidebar() {
             { label: "Parents List", link: routes.parentList },
           ],
         },
+        {
+          label: "Guardians",
+          icon: "ti ti-user-shield",
+          submenu: true,
+          showSubRoute: false,
+          submenuItems: [
+            { label: "All Guardians", link: routes.guardiansGrid },
+            { label: "Guardians List", link: routes.guardiansList },
+          ],
+        },
       ],
     },
     {
@@ -111,7 +121,11 @@ function buildTeacherSidebar() {
           icon: "ti ti-school-bell",
           submenu: true,
           showSubRoute: false,
-          submenuItems: [{ label: "My Leave & Attendance", link: routes.teacherLeaves }],
+          submenuItems: [
+            { label: "Student Attendance", link: routes.studentAttendance },
+            { label: "Attendance Report", link: routes.studentAttendanceReport },
+            { label: "My Leave & Attendance", link: routes.teacherLeaves },
+          ],
         },
         {
           label: "Examinations",

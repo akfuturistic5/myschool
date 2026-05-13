@@ -1524,28 +1524,27 @@ const getTeacherClassAttendance = async (req, res) => {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasAcademicYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     let dateFilter = '';
-    // $1 = staff id for class_schedules.teacher_id; $2 = teachers.id for homeroom class match
-    let params = [staffId, teacherId];
+    let params = [staffId];
     if (days > 0 && days <= 365) {
       if (offset > 0) {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($3 + $4) * INTERVAL '1 day'
-                      AND a.attendance_date < CURRENT_DATE - $4 * INTERVAL '1 day'`;
-        params = [staffId, teacherId, days, offset];
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - ($2 + $3) * INTERVAL '1 day'
+                      AND a.attendance_date < CURRENT_DATE - $3 * INTERVAL '1 day'`;
+        params.push(days, offset);
       } else {
-        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $3 * INTERVAL '1 day'`;
-        params = [staffId, teacherId, days];
+        dateFilter = `AND a.attendance_date >= CURRENT_DATE - $2 * INTERVAL '1 day'`;
+        params.push(days);
       }
     }
     if (hasAcademicYearFilter) {
       params.push(academicYearId);
     }
     const rowLimit = days === 0 ? 5000 : 500; // All Time: higher limit to fetch more records
-    const academicYearFilter = hasAcademicYearFilter ? `AND s.academic_year_id = $${params.length}` : '';
+    const academicYearFilter = hasAcademicYearFilter ? `AND a.academic_year_id = $${params.length}` : '';
 
     // Use EXISTS to avoid duplicates; include BOTH class_schedules (staff id) AND class_teachers/subject_teacher_assignments
     const result = await query(
-      `SELECT a.id, a.student_id, a.class_id, a.section_id, a.attendance_date, a.status,
-              a.check_in_time, a.check_out_time, a.marked_by, a.remarks
+      `SELECT a.id, a.student_id, a.class_id, a.class_section_id as section_id, a.attendance_date, a.status,
+              a.marked_by, a.remarks
        FROM student_attendance a
        INNER JOIN students s ON a.student_id = s.id AND s.status = 'Active'
        WHERE (
@@ -1553,12 +1552,12 @@ const getTeacherClassAttendance = async (req, res) => {
            SELECT 1 FROM class_schedules cs
            WHERE cs.teacher_id = $1
              AND cs.class_id = a.class_id
-             AND (cs.section_id = a.section_id OR cs.section_id IS NULL)
+             AND (cs.class_section_id = a.class_section_id OR cs.class_section_id IS NULL)
          )
          OR EXISTS (
            SELECT 1 FROM class_teachers ct
            WHERE ct.staff_id = $1 AND ct.class_id = a.class_id
-             AND (ct.class_section_id = a.section_id OR ct.class_section_id IS NULL)
+             AND (ct.class_section_id = a.class_section_id OR ct.class_section_id IS NULL)
              AND (ct.valid_period @> CURRENT_DATE)
          )
          OR EXISTS (
@@ -1594,8 +1593,6 @@ const getTeacherClassAttendance = async (req, res) => {
         sectionId: r.section_id,
         attendanceDate: r.attendance_date,
         status,
-        checkInTime: r.check_in_time,
-        checkOutTime: r.check_out_time,
         markedBy: r.marked_by,
         remark: r.remarks,
       };
@@ -1612,7 +1609,7 @@ const getTeacherClassAttendance = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching teacher class attendance:', error);
-    return errorResponse(res, 500, 'Failed to fetch teacher class attendance');
+    return errorResponse(res, 500, 'Failed to fetch teacher class attendance', error.message);
   }
 };
 
