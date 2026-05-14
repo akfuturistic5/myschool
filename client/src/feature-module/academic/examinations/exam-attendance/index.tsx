@@ -155,6 +155,7 @@ const ExamAttendance = () => {
       { title: "End", dataKey: "end_time" },
       { title: "Max", dataKey: "max_marks" },
       { title: "Pass", dataKey: "passing_marks" },
+      { title: "Room", dataKey: "room" },
     ],
     []
   );
@@ -199,6 +200,7 @@ const ExamAttendance = () => {
       end_time: r.end_time ? String(r.end_time).slice(0, 5) : "-",
       max_marks: r.max_marks ?? "-",
       passing_marks: r.passing_marks ?? "-",
+      room: r.room_number ? `${r.room_number}${r.building_name ? ` (${r.building_name})` : ""}` : "-",
     }));
 
   const handleExport = (type: "pdf" | "excel" | "print") => {
@@ -416,7 +418,8 @@ const ExamAttendance = () => {
                       <th className="py-3 px-3 fw-bold text-dark border-0">Exam Date</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0">Timing (Start - End)</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0 text-center">Max Marks</th>
-                      <th className="py-3 px-4 fw-bold text-dark border-0 text-center">Passing Marks</th>
+                      <th className="py-3 px-3 fw-bold text-dark border-0 text-center">Passing Marks</th>
+                      <th className="py-3 px-4 fw-bold text-dark border-0">Room</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -440,6 +443,16 @@ const ExamAttendance = () => {
                         </td>
                         <td className="border-light text-center fw-bold text-primary">{r.max_marks}</td>
                         <td className="px-4 border-light text-center fw-bold text-success">{r.passing_marks}</td>
+                        <td className="px-4 border-light">
+                          {r.room_number ? (
+                            <span className="text-dark fw-semibold">
+                              <i className="ti ti-door-enter text-secondary me-1"></i>
+                              {r.room_number} {r.building_name && <small className="text-muted">({r.building_name})</small>}
+                            </span>
+                          ) : (
+                            <span className="text-muted small">-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

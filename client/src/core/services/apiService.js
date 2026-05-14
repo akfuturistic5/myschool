@@ -655,6 +655,13 @@ class ApiService {
     });
   }
 
+  async updateExam(examId, payload) {
+    return this.makeRequest(`/exams/${examId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async deleteExam(examId) {
     return this.makeRequest(`/exams/${examId}`, {
       method: 'DELETE',
@@ -666,17 +673,32 @@ class ApiService {
   }
 
   async listExamSubjectsQuery(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exams/subjects/list?${search.toString()}`);
   }
 
   async getExamSubjectOptions(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exams/subjects/options?${search.toString()}`);
   }
 
   async getExamSubjectsContext(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/context?${search.toString()}`);
   }
 
@@ -695,7 +717,12 @@ class ApiService {
   }
 
   async viewExamSchedule(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/schedule?${search.toString()}`);
   }
 
@@ -720,7 +747,12 @@ class ApiService {
   }
 
   async listSelfExams(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/self-exams?${search.toString()}`);
   }
 
