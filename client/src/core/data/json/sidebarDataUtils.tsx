@@ -47,6 +47,13 @@ function buildTeacherSidebar() {
           showSubRoute: false,
         },
         {
+          label: "My Leave & Attendance",
+          icon: "ti ti-calendar-due",
+          link: routes.teacherLeaves,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Application",
           icon: "ti ti-layout-list",
           submenu: true,
@@ -117,14 +124,13 @@ function buildTeacherSidebar() {
           showSubRoute: false,
         },
         {
-          label: "Classes",
-          icon: "ti ti-school-bell",
+          label: "Attendance",
+          icon: "ti ti-calendar-check",
           submenu: true,
           showSubRoute: false,
           submenuItems: [
             { label: "Student Attendance", link: routes.studentAttendance },
             { label: "Attendance Report", link: routes.studentAttendanceReport },
-            { label: "My Leave & Attendance", link: routes.teacherLeaves },
           ],
         },
         {
@@ -179,12 +185,9 @@ function buildTeacherSidebar() {
         {
           label: "Leaves",
           icon: "ti ti-calendar-time",
-          submenu: true,
+          link: routes.listLeaves,
+          submenu: false,
           showSubRoute: false,
-          submenuItems: [
-            { label: "List Leaves", link: routes.listLeaves, showSubRoute: false },
-            { label: "Approve Request", link: routes.approveRequest, showSubRoute: false },
-          ],
         },
       ],
     },
@@ -194,13 +197,6 @@ function buildTeacherSidebar() {
       showSubRoute: false,
       submenuHdr: "Reports",
       submenuItems: [
-        {
-          label: "Student Attendance",
-          link: routes.studentAttendance,
-          icon: "ti ti-report-analytics",
-          showSubRoute: false,
-          submenu: false,
-        },
         {
           label: "Student Attendance Report",
           link: routes.studentAttendanceReport,
