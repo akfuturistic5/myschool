@@ -29,6 +29,8 @@ type RosterRow = {
   remark?: string | null;
   check_in_time?: string | null;
   check_out_time?: string | null;
+  roll_number?: string | number | null;
+  admission_number?: string | number | null;
 };
 type StaffReportRow = {
   entity_id: number;
@@ -112,6 +114,8 @@ const StudentAttendance = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [teacherScopeRows, setTeacherScopeRows] = useState<any[]>([]);
+  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
+  const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, half_day: 0 });
   const [studentSearch, setStudentSearch] = useState("");
   const [reportData, setReportData] = useState<any>({ month: attendanceMonth, days: [], rows: [] });
   const [reportLoading, setReportLoading] = useState(false);
@@ -165,6 +169,23 @@ const StudentAttendance = () => {
       }
     };
     loadTeacherScope();
+    
+    const loadTeacherAssignments = async () => {
+      if (!isTeacher || !user) return;
+      try {
+        const response = await (apiService as any).getClassTeacherAssignments({ 
+          teacherId: user.staff_id,
+          academicYearId 
+        });
+        if (!cancelled && response?.success) {
+          setTeacherAssignments(response.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to load teacher assignments:", err);
+      }
+    };
+    loadTeacherAssignments();
+
     return () => {
       cancelled = true;
     };
@@ -209,6 +230,7 @@ const StudentAttendance = () => {
     if (!canEditStudentAttendance) return;
     fetchRoster();
   }, [attendanceDate, classId, sectionId, academicYearId, canEditStudentAttendance]);
+
 
   useEffect(() => {
     if (!canEditStudentAttendance && reportViewType !== "student") return;
@@ -287,6 +309,8 @@ const StudentAttendance = () => {
   const classOptions = useMemo(() => {
     if (!isTeacher) return classes || [];
     const map = new Map<number, any>();
+    
+    // Add classes from students
     (teacherScopeRows || []).forEach((row: any) => {
       const cid = Number(row?.class_id);
       if (!Number.isFinite(cid) || map.has(cid)) return;
@@ -296,12 +320,26 @@ const StudentAttendance = () => {
         class_code: row?.class_code || "",
       });
     });
+
+    // Add classes from direct assignments (handles empty classes)
+    (teacherAssignments || []).forEach((a: any) => {
+      const cid = Number(a?.classId);
+      if (!Number.isFinite(cid) || map.has(cid)) return;
+      map.set(cid, {
+        id: cid,
+        class_name: a?.className || `Class ${cid}`,
+        class_code: "",
+      });
+    });
+
     return Array.from(map.values());
-  }, [isTeacher, classes, teacherScopeRows]);
+  }, [isTeacher, classes, teacherScopeRows, teacherAssignments]);
 
   const sectionOptions = useMemo(() => {
     if (!isTeacher) return sections || [];
     const map = new Map<number, any>();
+
+    // Add sections from students
     (teacherScopeRows || [])
       .filter((row: any) => (classId == null ? true : Number(row?.class_id) === Number(classId)))
       .forEach((row: any) => {
@@ -309,8 +347,22 @@ const StudentAttendance = () => {
         if (!Number.isFinite(sid) || map.has(sid)) return;
         map.set(sid, { id: sid, section_name: row?.section_name || `Section ${sid}` });
       });
+
+    // Add sections from assignments
+    (teacherAssignments || [])
+      .filter((a: any) => (classId == null ? true : Number(a?.classId) === Number(classId)))
+      .forEach((a: any) => {
+        const sid = Number(a?.sectionId || a?.classSectionId); // Fallback to classSectionId if needed
+        if (!Number.isFinite(sid) || map.has(sid)) return;
+        
+        // If we have a section name from assignments, use it
+        if (a.sectionName) {
+           map.set(sid, { id: sid, section_name: a.sectionName });
+        }
+      });
+
     return Array.from(map.values());
-  }, [isTeacher, sections, teacherScopeRows, classId]);
+  }, [isTeacher, sections, teacherScopeRows, teacherAssignments, classId]);
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -333,6 +385,18 @@ const StudentAttendance = () => {
     if (!q) return rows;
     return rows.filter((r) => String(r.entity_name || "").toLowerCase().includes(q));
   }, [rows, studentSearch]);
+
+  useEffect(() => {
+    const s = { total: visibleRows.length, present: 0, absent: 0, late: 0, half_day: 0 };
+    visibleRows.forEach(r => {
+      const status = rowState[r.entity_id]?.status || "present";
+      if (status === 'present') s.present++;
+      else if (status === 'absent') s.absent++;
+      else if (status === 'late') s.late++;
+      else if (status === 'half_day') s.half_day++;
+    });
+    setStats(s);
+  }, [visibleRows, rowState]);
 
   const reportRows = useMemo(
     () =>
@@ -676,83 +740,157 @@ const StudentAttendance = () => {
           <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
         </div>
 
-        <div className="card">
-          <div className="card-header">
+        <div className="row mb-4">
+          <div className="col-md-3 col-sm-6 mb-3">
+            <div className="card border-0 shadow-sm overflow-hidden h-100" style={{ borderRadius: '16px' }}>
+              <div className="card-body p-3 d-flex align-items-center">
+                <div className="bg-primary-light rounded-3 p-3 me-3" style={{ background: 'rgba(78, 115, 223, 0.1)' }}>
+                  <i className="ti ti-users text-primary fs-3"></i>
+                </div>
+                <div>
+                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Students</p>
+                  <h4 className="mb-0 fw-bold">{stats.total}</h4>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3 col-sm-6 mb-3">
+            <div className="card border-0 shadow-sm overflow-hidden h-100" style={{ borderRadius: '16px' }}>
+              <div className="card-body p-3 d-flex align-items-center">
+                <div className="bg-success-light rounded-3 p-3 me-3" style={{ background: 'rgba(28, 200, 138, 0.1)' }}>
+                  <i className="ti ti-circle-check text-success fs-3"></i>
+                </div>
+                <div>
+                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Present</p>
+                  <h4 className="mb-0 fw-bold text-success">{stats.present}</h4>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3 col-sm-6 mb-3">
+            <div className="card border-0 shadow-sm overflow-hidden h-100" style={{ borderRadius: '16px' }}>
+              <div className="card-body p-3 d-flex align-items-center">
+                <div className="bg-danger-light rounded-3 p-3 me-3" style={{ background: 'rgba(231, 74, 59, 0.1)' }}>
+                  <i className="ti ti-circle-x text-danger fs-3"></i>
+                </div>
+                <div>
+                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Absent</p>
+                  <h4 className="mb-0 fw-bold text-danger">{stats.absent}</h4>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-3 col-sm-6 mb-3">
+            <div className="card border-0 shadow-sm overflow-hidden h-100" style={{ borderRadius: '16px' }}>
+              <div className="card-body p-3 d-flex align-items-center">
+                <div className="bg-warning-light rounded-3 p-3 me-3" style={{ background: 'rgba(246, 194, 62, 0.1)' }}>
+                  <i className="ti ti-clock text-warning fs-3"></i>
+                </div>
+                <div>
+                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Others</p>
+                  <h4 className="mb-0 fw-bold text-warning">{stats.late + stats.half_day}</h4>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: '20px' }}>
+          <div className="card-header bg-transparent border-0 pt-4 px-4">
             {!canEditStudentAttendance && (
               <div className="d-flex justify-content-center mb-3">
-                <div className="border rounded-3 px-3 py-2 bg-light">
-                  <label className="form-label d-block text-center mb-2">Report Type</label>
-                  <div className="btn-group" role="group" aria-label="Attendance report type">
+                <div className="border-0 rounded-3 px-3 py-2 bg-light shadow-none">
+                  <div className="btn-group" role="group">
                     <button
                       type="button"
-                      className={`btn ${reportViewType === "staff" ? "btn-primary" : "btn-outline-primary"}`}
+                      className={`btn btn-sm ${reportViewType === "staff" ? "btn-primary shadow-sm" : "btn-light text-muted"}`}
                       onClick={() => setReportViewType("staff")}
+                      style={{ borderRadius: '8px 0 0 8px' }}
                     >
-                      Staff Attendance
+                      Staff Report
                     </button>
                     <button
                       type="button"
-                      className={`btn ${reportViewType === "student" ? "btn-primary" : "btn-outline-primary"}`}
+                      className={`btn btn-sm ${reportViewType === "student" ? "btn-primary shadow-sm" : "btn-light text-muted"}`}
                       onClick={() => setReportViewType("student")}
+                      style={{ borderRadius: '0 8px 8px 0' }}
                     >
-                      Student Attendance
+                      Student Report
                     </button>
                   </div>
                 </div>
               </div>
             )}
-            <div className="row g-2">
+            <div className="row g-3">
               <div className="col-md-3">
-                <label className="form-label">{canEditStudentAttendance ? "Date" : "Month"}</label>
-                {canEditStudentAttendance ? (
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={attendanceDate}
-                    max={today}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setAttendanceDate(next && next > today ? today : next);
-                    }}
-                  />
-                ) : (
-                  <input
-                    type="month"
-                    className="form-control"
-                    value={attendanceMonth}
-                    onChange={(e) => setAttendanceMonth(e.target.value || today.slice(0, 7))}
-                  />
-                )}
+                <label className="form-label small fw-bold text-muted text-uppercase mb-1">
+                  {canEditStudentAttendance ? "Date" : "Month"}
+                </label>
+                <div className="input-group input-group-merge border rounded-3">
+                  <span className="input-group-text border-0 bg-transparent text-muted"><i className="ti ti-calendar"></i></span>
+                  {canEditStudentAttendance ? (
+                    <input
+                      type="date"
+                      className="form-control border-0 ps-0"
+                      value={attendanceDate}
+                      max={today}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setAttendanceDate(next && next > today ? today : next);
+                      }}
+                    />
+                  ) : (
+                    <input
+                      type="month"
+                      className="form-control border-0 ps-0"
+                      value={attendanceMonth}
+                      onChange={(e) => setAttendanceMonth(e.target.value || today.slice(0, 7))}
+                    />
+                  )}
+                </div>
               </div>
               {!canEditStudentAttendance && reportViewType === "staff" && (
                 <div className="col-md-3">
-                  <label className="form-label">Department</label>
+                  <label className="form-label small fw-bold text-muted text-uppercase mb-1">Department</label>
                   <select
-                    className="form-select"
+                    className="form-select border rounded-3 py-2"
                     value={departmentId ?? ""}
                     onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : null)}
                   >
                     <option value="">All Departments</option>
-                    {departmentOptions.map((d: any) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
-                      </option>
-                    ))}
+                    {(departmentOptions || []).map((d: any) => <option key={d.id} value={d.id}>{d.label}</option>)}
                   </select>
                 </div>
               )}
               {!canEditStudentAttendance && reportViewType === "staff" && (
                 <div className="col-md-3">
-                  <label className="form-label">Designation</label>
+                  <label className="form-label small fw-bold text-muted text-uppercase mb-1">Designation</label>
                   <select
-                    className="form-select"
+                    className="form-select border rounded-3 py-2"
                     value={designationId ?? ""}
                     onChange={(e) => setDesignationId(e.target.value ? Number(e.target.value) : null)}
                   >
                     <option value="">All Designations</option>
-                    {designationOptions.map((d: any) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
+                    {(designationOptions || []).map((d: any) => <option key={d.id} value={d.id}>{d.label}</option>)}
+                  </select>
+                </div>
+              )}
+              {(canEditStudentAttendance || reportViewType === "student") && (
+                <div className="col-md-3">
+                  <label className="form-label small fw-bold text-muted text-uppercase mb-1">Class</label>
+                  <select
+                    className="form-select border rounded-3 py-2"
+                    value={classId ?? ""}
+                    onChange={(e) => {
+                      const nextClassId = e.target.value ? Number(e.target.value) : null;
+                      setClassId(nextClassId);
+                      if (nextClassId == null) setSectionId(null);
+                    }}
+                  >
+                    {!isTeacher && <option value="">All Classes</option>}
+                    {classOptions.map((c: any) => (
+                      <option key={c.id} value={c.id}>
+                        {c.class_name || c.name || `Class ${c.id}`}
                       </option>
                     ))}
                   </select>
@@ -760,37 +898,9 @@ const StudentAttendance = () => {
               )}
               {(canEditStudentAttendance || reportViewType === "student") && (
                 <div className="col-md-3">
-                  <label className="form-label">Class</label>
+                  <label className="form-label small fw-bold text-muted text-uppercase mb-1">Section</label>
                   <select
-                    className="form-select"
-                    value={classId ?? ""}
-                    onChange={(e) => {
-                      const nextClassId = e.target.value ? Number(e.target.value) : null;
-                      setClassId(nextClassId);
-                      if (nextClassId == null) {
-                        setSectionId(null);
-                      }
-                    }}
-                  >
-                    {!isTeacher && <option value="">All Classes</option>}
-                    {classOptions.map((c: any) => {
-                      const className = c.class_name || c.name || `Class ${c.id}`;
-                      const classCode = String(c.class_code || "").trim();
-                      const label = classCode ? `${className} (${classCode})` : className;
-                      return (
-                        <option key={c.id} value={c.id}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              )}
-              {(canEditStudentAttendance || reportViewType === "student") && (
-                <div className="col-md-3">
-                  <label className="form-label">Section</label>
-                  <select
-                    className="form-select"
+                    className="form-select border rounded-3 py-2"
                     value={sectionId ?? ""}
                     disabled={!shouldEnableSectionSelect}
                     onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}
@@ -800,198 +910,177 @@ const StudentAttendance = () => {
                   </select>
                 </div>
               )}
-              <div className="col-md-3 d-flex align-items-end">
+              <div className="col-md-3 d-flex align-items-end pb-1">
                 {canEditStudentAttendance ? (
                   <button
                     type="button"
-                    className="btn btn-primary w-100"
+                    className={`btn ${visibleRows.length > 0 ? 'btn-primary' : 'btn-outline-primary'} w-100 py-2 fw-bold shadow-sm transition-all`}
                     onClick={handlePrimaryMarkingAction}
-                    disabled={saving || loading || rows.length === 0 || !!activeHoliday}
+                    disabled={saving || loading || visibleRows.length === 0 || !!activeHoliday}
+                    style={{ borderRadius: '10px' }}
                   >
-                    {saving
-                      ? "Saving..."
-                      : isPastMarkingDate && !pastDateEditMode
-                        ? "Edit Attendance"
-                        : isPastMarkingDate
-                          ? "Save changes"
-                          : "Save Attendance"}
+                    {saving ? (
+                      <><i className="ti ti-loader animate-spin me-2"></i>Saving...</>
+                    ) : (
+                      <><i className="ti ti-device-floppy me-2"></i>{isPastMarkingDate && !pastDateEditMode ? "Edit Attendance" : "Save Attendance"}</>
+                    )}
                   </button>
                 ) : (
-                  <div className="w-100 alert alert-info py-2 px-3 mb-0">
-                    View only. Student attendance is marked by teachers.
+                  <div className="w-100 badge bg-soft-info text-info p-3 text-wrap text-start border-0 shadow-none rounded-3 d-flex align-items-center h-100">
+                    <i className="ti ti-info-circle me-2 fs-5"></i> View Only
                   </div>
                 )}
               </div>
-              {isReadOnlyViewer && reportViewType === "student" && (
-                <div className="col-md-3">
-                  <label className="form-label">Student Search</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={studentSearch}
-                    onChange={(e) => setStudentSearch(e.target.value)}
-                    placeholder="Search student name"
-                  />
-                </div>
-              )}
             </div>
           </div>
-          <div className="card-body">
-            {error && <div className="alert alert-danger">{error}</div>}
-            {message && <div className="alert alert-success">{message}</div>}
+
+          <div className="card-body p-0 mt-3">
+            {error && <div className="mx-4 mb-3 alert alert-danger border-0 shadow-sm">{error}</div>}
+            {message && <div className="mx-4 mb-3 alert alert-success border-0 shadow-sm">{message}</div>}
             {activeHoliday && (
-              <div className="alert alert-info">
-                Holiday (auto): {activeHoliday.title}. Manual attendance marking is disabled for this date.
+              <div className="mx-4 mb-3 alert alert-info border-0 shadow-sm d-flex align-items-center">
+                <i className="ti ti-calendar-event fs-4 me-2"></i>
+                <span>Holiday: <strong>{activeHoliday.title}</strong>. Manual marking is disabled.</span>
               </div>
             )}
-            {canEditStudentAttendance ? (
-              loading ? (
-                <div className="text-muted">Loading roster...</div>
-              ) : visibleRows.length === 0 ? (
-                <div className="text-muted">No students found for selected filters.</div>
-              ) : (
+
+            {loading ? (
+              <div className="p-5 text-center">
+                <div className="spinner-border text-primary" role="status"></div>
+                <p className="text-muted mt-2">Loading roster...</p>
+              </div>
+            ) : visibleRows.length === 0 ? (
+              <div className="p-5 text-center">
+                <i className="ti ti-database-off fs-1 text-muted mb-3 d-block"></i>
+                <p className="text-muted h6">No students found.</p>
+                <p className="text-muted small">Select a class and section to load students.</p>
+              </div>
+            ) : canEditStudentAttendance ? (
               <div className="table-responsive">
-                <table className="table table-striped align-middle">
-                  <thead>
+                <table className="table table-hover align-middle mb-0 custom-attendance-table">
+                  <thead className="bg-light">
                     <tr>
-                      <th>Student</th>
-                      <th>Status</th>
-                      <th>Check In</th>
-                      <th>Check Out</th>
-                      <th>Remark</th>
+                      <th className="ps-4 py-3 border-0">Student Name</th>
+                      <th className="py-3 border-0 text-center">Status</th>
+                      <th className="pe-4 py-3 border-0">Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleRows.map((r) => (
-                      <tr key={r.entity_id}>
-                        <td>
-                          <Link
-                            to={`${all_routes.studentLeaves}?studentId=${r.entity_id}`}
-                            state={{
-                              studentId: r.entity_id,
-                              activeTab: "attendance",
-                              returnTo: markingReturnTo,
-                            }}
-                            className="fw-semibold"
-                          >
-                            {r.entity_name}
-                          </Link>
-                        </td>
-                        <td>
-                          {canEditStudentAttendance && !activeHoliday ? (
-                            <select
-                              className="form-select"
-                              disabled={markingFieldsLocked}
-                              value={rowState[r.entity_id]?.status || "present"}
-                              onChange={(e) =>
-                                setRowState((prev) => ({
-                                  ...prev,
-                                  [r.entity_id]: {
-                                    status: e.target.value,
-                                    remark: prev[r.entity_id]?.remark || "",
-                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
-                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
-                                  },
-                                }))
-                              }
-                            >
-                              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-                            </select>
-                          ) : (
-                            <span className="fw-medium">{formatStatusLabel(rowState[r.entity_id]?.status)}</span>
-                          )}
-                        </td>
-                        <td>
-                          {canEditStudentAttendance ? (
-                            <input
-                              type="time"
-                              className="form-control"
-                              disabled={markingFieldsLocked}
-                              value={rowState[r.entity_id]?.checkInTime || ""}
-                              onChange={(e) =>
-                                setRowState((prev) => ({
-                                  ...prev,
-                                  [r.entity_id]: {
-                                    status: prev[r.entity_id]?.status || "present",
-                                    remark: prev[r.entity_id]?.remark || "",
-                                    checkInTime: e.target.value,
-                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
-                                  },
-                                }))
-                              }
-                              placeholder="Optional"
-                            />
-                          ) : (
-                            <span>{rowState[r.entity_id]?.checkInTime || "—"}</span>
-                          )}
-                        </td>
-                        <td>
-                          {canEditStudentAttendance ? (
-                            <input
-                              type="time"
-                              className="form-control"
-                              disabled={markingFieldsLocked}
-                              value={rowState[r.entity_id]?.checkOutTime || ""}
-                              onChange={(e) =>
-                                setRowState((prev) => ({
-                                  ...prev,
-                                  [r.entity_id]: {
-                                    status: prev[r.entity_id]?.status || "present",
-                                    remark: prev[r.entity_id]?.remark || "",
-                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
-                                    checkOutTime: e.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="Optional"
-                            />
-                          ) : (
-                            <span>{rowState[r.entity_id]?.checkOutTime || "—"}</span>
-                          )}
-                        </td>
-                        <td>
-                          {canEditStudentAttendance ? (
+                    {visibleRows.map((r) => {
+                      const status = rowState[r.entity_id]?.status || "present";
+                      const statusTheme = status === 'present' ? 'success' : status === 'absent' ? 'danger' : 'warning';
+                      
+                      return (
+                        <tr key={r.entity_id} className="border-bottom">
+                          <td className="ps-4 py-3">
+                            <div className="d-flex align-items-center">
+                              <div className={`avatar avatar-sm bg-soft-${statusTheme} text-${statusTheme} rounded-circle me-3 fw-bold d-flex align-items-center justify-content-center`} style={{ width: '38px', height: '38px' }}>
+                                {r.entity_name?.charAt(0)}
+                              </div>
+                              <div>
+                                <Link
+                                  to={`${all_routes.studentLeaves}?studentId=${r.entity_id}`}
+                                  state={{ studentId: r.entity_id, activeTab: "attendance", returnTo: markingReturnTo }}
+                                  className="fw-bold text-dark d-block mb-0 h6 mb-0"
+                                >
+                                  {r.entity_name}
+                                </Link>
+                                <span className="text-muted small">Roll No: {r.roll_number || '—'}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 text-center" style={{ minWidth: '160px' }}>
+                            {!activeHoliday ? (
+                              <div className="d-inline-flex align-items-center position-relative" style={{ minWidth: '120px' }}>
+                                <select
+                                  className={`form-select form-select-sm border-0 fw-bold shadow-none rounded-pill ps-3 pe-4 bg-soft-${statusTheme} text-${statusTheme} status-pill-select w-100`}
+                                  style={{ cursor: 'pointer', appearance: 'none', textAlign: 'center', height: '32px', fontSize: '12px' }}
+                                  disabled={markingFieldsLocked}
+                                  value={status}
+                                  onChange={(e) =>
+                                    setRowState((prev) => ({
+                                      ...prev,
+                                      [r.entity_id]: {
+                                        ...prev[r.entity_id],
+                                        status: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                >
+                                  {STATUS_OPTIONS.map((s) => (
+                                    <option key={s} value={s} className="bg-white text-dark">
+                                      {s.toUpperCase().replace("_", " ")}
+                                    </option>
+                                  ))}
+                                </select>
+                                <i className={`ti ti-chevron-down position-absolute text-${statusTheme}`} style={{ right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: '11px' }}></i>
+                              </div>
+                            ) : (
+                              <span className={`badge rounded-pill bg-soft-${statusTheme} text-${statusTheme} px-3 py-2 fw-bold`} style={{ minWidth: '100px' }}>
+                                {formatStatusLabel(status)?.toUpperCase()}
+                              </span>
+                            )}
+                          </td>
+                          <td className="pe-4 py-3">
                             <input
                               type="text"
-                              className="form-control"
+                              className="form-control form-control-sm border-0 bg-light rounded-pill px-3"
                               disabled={markingFieldsLocked}
+                              placeholder="Add a remark..."
                               value={rowState[r.entity_id]?.remark || ""}
                               onChange={(e) =>
                                 setRowState((prev) => ({
                                   ...prev,
                                   [r.entity_id]: {
-                                    status: prev[r.entity_id]?.status || "present",
+                                    ...prev[r.entity_id],
                                     remark: e.target.value,
-                                    checkInTime: prev[r.entity_id]?.checkInTime || "",
-                                    checkOutTime: prev[r.entity_id]?.checkOutTime || "",
                                   },
                                 }))
                               }
-                              placeholder="Optional note"
                             />
-                          ) : (
-                            <span>{rowState[r.entity_id]?.remark || "—"}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              )
-            ) : reportLoading ? (
-              <div className="text-muted">Loading attendance report...</div>
-            ) : reportError ? (
-              <div className="alert alert-danger mb-0">{reportError}</div>
             ) : (
-              <Table
-                dataSource={!canEditStudentAttendance && reportViewType === "staff" ? staffReportData.rows : reportRows}
-                columns={reportColumns as any}
-                Selection={false}
-              />
+              <div className="p-4">
+                 {reportLoading ? (
+                    <div className="text-center py-4"><div className="spinner-border text-primary"></div></div>
+                 ) : (
+                   <Table
+                     dataSource={!canEditStudentAttendance && reportViewType === "staff" ? staffReportData.rows : reportRows}
+                     columns={reportColumns as any}
+                     Selection={false}
+                   />
+                 )}
+              </div>
             )}
           </div>
         </div>
+
+        <style>{`
+          .bg-soft-primary { background-color: rgba(78, 115, 223, 0.1); }
+          .bg-soft-success { background-color: rgba(28, 200, 138, 0.1); }
+          .bg-soft-danger { background-color: rgba(231, 74, 59, 0.1); }
+          .bg-soft-warning { background-color: rgba(246, 194, 62, 0.1); }
+          .bg-soft-info { background-color: rgba(54, 185, 204, 0.1); }
+          
+          .transition-all { transition: all 0.2s ease-in-out; }
+          .custom-attendance-table tr:hover { background-color: rgba(78, 115, 223, 0.02); }
+          .animate-spin { animation: spin 1s linear infinite; }
+          @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          
+          .form-select-sm:focus { box-shadow: none !important; }
+          .card-header .form-control:focus, .card-header .form-select:focus { 
+            border-color: var(--primary-color) !important;
+            box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.1) !important;
+          }
+          .status-pill-select { transition: all 0.2s ease; min-width: 110px; }
+          .status-pill-select:hover { transform: scale(1.05); filter: brightness(0.95); }
+        `}</style>
       </div>
     </div>
   );

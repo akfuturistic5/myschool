@@ -79,6 +79,8 @@ const StudentAttendanceReport = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
+
   const { classes } = useClasses(academicYearId);
   const { sections } = useSections(isTeacher ? null : classId, {
     fetchAllWhenNoClass: false,
@@ -101,14 +103,33 @@ const StudentAttendanceReport = () => {
       }
     };
     loadTeacherScope();
+
+    const loadTeacherAssignments = async () => {
+      if (!isTeacher || !user) return;
+      try {
+        const response = await (apiService as any).getClassTeacherAssignments({ 
+          teacherId: user.staff_id,
+          academicYearId 
+        });
+        if (!cancelled && response?.success) {
+          setTeacherAssignments(response.data || []);
+        }
+      } catch (err) {
+        console.error("Failed to load teacher assignments:", err);
+      }
+    };
+    loadTeacherAssignments();
+
     return () => {
       cancelled = true;
     };
-  }, [isTeacher, academicYearId]);
+  }, [isTeacher, academicYearId, user?.staff_id]);
 
   const classOptions = useMemo(() => {
     if (!isTeacher) return classes || [];
     const map = new Map<number, any>();
+    
+    // Add classes from students
     (teacherScopeRows || []).forEach((row: any) => {
       const cid = Number(row?.class_id);
       if (!Number.isFinite(cid) || map.has(cid)) return;
@@ -118,12 +139,26 @@ const StudentAttendanceReport = () => {
         class_code: row?.class_code || "",
       });
     });
+
+    // Add classes from direct assignments
+    (teacherAssignments || []).forEach((a: any) => {
+      const cid = Number(a?.classId);
+      if (!Number.isFinite(cid) || map.has(cid)) return;
+      map.set(cid, {
+        id: cid,
+        class_name: a?.className || `Class ${cid}`,
+        class_code: "",
+      });
+    });
+
     return Array.from(map.values());
-  }, [isTeacher, classes, teacherScopeRows]);
+  }, [isTeacher, classes, teacherScopeRows, teacherAssignments]);
 
   const sectionOptions = useMemo(() => {
     if (!isTeacher) return sections || [];
     const map = new Map<number, any>();
+    
+    // From students
     (teacherScopeRows || [])
       .filter((row: any) => (classId == null ? true : Number(row?.class_id) === Number(classId)))
       .forEach((row: any) => {
@@ -131,10 +166,20 @@ const StudentAttendanceReport = () => {
         if (!Number.isFinite(sid) || map.has(sid)) return;
         map.set(sid, { id: sid, section_name: row?.section_name || `Section ${sid}` });
       });
-    return Array.from(map.values());
-  }, [isTeacher, sections, teacherScopeRows, classId]);
 
-  const shouldEnableSectionSelect = isTeacher ? classId != null : classId != null;
+    // From direct assignments
+    (teacherAssignments || [])
+      .filter((a: any) => (classId == null ? true : Number(a?.classId) === Number(classId)))
+      .forEach((a: any) => {
+        const sid = Number(a?.sectionId);
+        if (!Number.isFinite(sid) || map.has(sid)) return;
+        map.set(sid, { id: sid, section_name: a?.sectionName || `Section ${sid}` });
+      });
+
+    return Array.from(map.values());
+  }, [isTeacher, sections, teacherScopeRows, teacherAssignments, classId]);
+
+  const shouldEnableSectionSelect = classId != null;
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -205,12 +250,18 @@ const StudentAttendanceReport = () => {
     return `${all_routes.studentAttendanceReport}?${search.toString()}`;
   }, [mode, attendanceDate, attendanceMonth, classId, sectionId, academicYearId]);
 
+  const getStudentInitials = (name: string) => {
+    if (!name) return "S";
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
   const dayTableData = useMemo(() => {
     const q = studentSearch.trim().toLowerCase();
     const list = (dayRows || []).map((r: any) => ({
       key: r.entity_id,
       studentId: r.entity_id,
       name: r.entity_name,
+      roll_number: r.roll_number,
       status: r.status || "",
       checkInTime: r.check_in_time,
       checkOutTime: r.check_out_time,
@@ -223,22 +274,40 @@ const StudentAttendanceReport = () => {
   const dayColumns = useMemo(
     () => [
       {
-        title: "Student",
+        title: "Student Name",
         dataIndex: "name",
         render: (text: string, record: any) => (
-          <Link
-            to={`${all_routes.studentLeaves}?studentId=${record.studentId}`}
-            state={{ studentId: record.studentId, activeTab: "attendance", returnTo: reportReturnTo }}
-            className="fw-semibold"
-          >
-            {text || "—"}
-          </Link>
+          <div className="d-flex align-items-center">
+            <div className="avatar avatar-md rounded-circle bg-soft-primary text-primary border-0 me-2 d-flex align-items-center justify-content-center fw-bold">
+              {getStudentInitials(text)}
+            </div>
+            <div>
+              <Link
+                to={`${all_routes.studentLeaves}?studentId=${record.studentId}`}
+                state={{ studentId: record.studentId, activeTab: "attendance", returnTo: reportReturnTo }}
+                className="fw-bold text-dark d-block"
+              >
+                {text || "—"}
+              </Link>
+              <span className="fs-12 text-muted">Roll No: {record.roll_number || "—"}</span>
+            </div>
+          </div>
         ),
       },
       {
         title: "Status",
         dataIndex: "status",
-        render: (s: string) => formatRosterHolidayStatus(s) || formatAttendanceDayHumanLabel(s),
+        render: (s: string) => {
+          const label = formatRosterHolidayStatus(s) || formatAttendanceDayHumanLabel(s);
+          const status = normalizeStatusKey(s);
+          const theme = status === 'present' ? 'success' : status === 'absent' ? 'danger' : status === 'late' ? 'warning' : status === 'holiday' ? 'info' : status === 'half_day' ? 'purple' : 'secondary';
+          
+          return (
+            <span className={`badge rounded-pill bg-soft-${theme} text-${theme} px-3 py-2 fw-bold`}>
+              {label?.toUpperCase()}
+            </span>
+          );
+        },
       },
       { title: "Check In", dataIndex: "checkInTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
       { title: "Check Out", dataIndex: "checkOutTime", render: (v: string) => (v ? String(v).slice(0, 5) : "—") },
@@ -251,12 +320,12 @@ const StudentAttendanceReport = () => {
     () =>
       (Array.isArray(reportData?.rows) ? reportData.rows : [])
         .map((row: any, index: number) => ({
-          key: row.studentId ?? `attendance-report-${index}`,
+          key: row.entity_id ?? `attendance-report-${index}`,
           ...row,
         }))
         .filter((row: any) =>
           studentSearch.trim()
-            ? String(row.name || "").toLowerCase().includes(studentSearch.trim().toLowerCase())
+            ? String(row.entity_name || "").toLowerCase().includes(studentSearch.trim().toLowerCase())
             : true
         ),
     [reportData, studentSearch]
@@ -266,101 +335,49 @@ const StudentAttendanceReport = () => {
     () =>
       (Array.isArray(reportData?.days) ? reportData.days : []).map((day: any) => ({
         title: (
-          <div className="text-center">
-            <span className="day-num d-block">{String(day.day).padStart(2, "0")}</span>
-            <span>{String(day.weekdayShort || "").charAt(0)}</span>
+          <div className="text-center p-1">
+            <span className="fs-10 d-block text-muted text-uppercase">{day.weekdayShort?.charAt(0)}</span>
+            <span className="fw-bold">{String(day.day).padStart(2, "0")}</span>
           </div>
         ),
         key: day.date,
+        width: 40,
         render: (_text: any, record: any) => {
           const rawStatus = record.daily?.[day.date];
           const status = normalizeStatusKey(rawStatus);
           if (status === "leaved") {
             return (
-              <span
-                className="attendance-range"
-                style={{ opacity: 0.15, width: 22, height: 18, display: "inline-flex" }}
-                title={`${day.date}: Leaved`}
-              />
+              <div className="d-flex justify-content-center">
+                <span className="dot bg-secondary" style={{ width: 6, height: 6, borderRadius: '50%' }} />
+              </div>
             );
           }
-          const pillStyle = {
-            width: 20,
-            height: 16,
-            display: "inline-flex" as const,
-            alignItems: "center" as const,
-            justifyContent: "center" as const,
-            borderRadius: 6,
-            fontSize: 9,
-            fontWeight: 700 as const,
-            color: "#fff",
-          };
-          if (!rawStatus) {
-            return (
-              <span
-                className="attendance-range"
-                style={{ opacity: 0.15, width: 22, height: 18, display: "inline-flex" }}
-                title={`${day.date}: Not Marked`}
-              />
-            );
-          }
-          if (isHolidayAttendanceCompound(status)) {
-            const rest = getCompoundHolidayAttendancePart(status);
-            const subText = statusTextMap[rest] || "?";
-            const subCls = statusClassMap[rest] || "bg-light";
-            const isHalfDaySub = rest === "half_day" || rest === "halfday";
-            return (
-              <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }} title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}>
-                <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
-                  H
-                </span>
-                <span
-                  className={`attendance-range ${subCls}`.trim()}
-                  style={isHalfDaySub ? { ...pillStyle, backgroundColor: "#7b2cbf" } : pillStyle}
-                >
-                  {subText}
-                </span>
-              </span>
-            );
-          }
-          const cls = statusClassMap[status] || "bg-light";
-          const sLo = status;
-          const short =
-            sLo === "half_day" || sLo === "halfday" ? "HD" : formatAttendanceDayShort(status);
-          const isHalfDay = sLo === "half_day" || sLo === "halfday";
+          if (!rawStatus) return <div className="text-center text-light">-</div>;
+          
+          const theme = status === 'present' ? 'success' : status === 'absent' ? 'danger' : status === 'late' ? 'warning' : status === 'holiday' ? 'info' : status === 'half_day' ? 'purple' : 'secondary';
+          const short = formatAttendanceDayShort(status);
+          
           return (
-            <span
-              className={`attendance-range ${cls}`.trim()}
-              style={
-                isHalfDay
-                  ? {
-                      width: 22,
-                      height: 18,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#fff",
-                      backgroundColor: "#7b2cbf",
-                    }
-                  : {
-                      width: 22,
-                      height: 18,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#fff",
-                    }
-              }
-              title={`${day.date}: ${formatAttendanceDayHumanLabel(rawStatus)}`}
-            >
-              {short}
-            </span>
+            <div className="text-center">
+              <span 
+                className={`badge bg-soft-${theme} text-${theme} border-0`} 
+                style={{ 
+                  width: 22, 
+                  height: 22, 
+                  padding: 0, 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '9px', 
+                  borderRadius: '4px',
+                  backgroundColor: theme === 'purple' ? 'rgba(123, 44, 191, 0.1)' : undefined,
+                  color: theme === 'purple' ? '#7b2cbf' : undefined
+                }}
+                title={formatAttendanceDayHumanLabel(rawStatus)}
+              >
+                {short}
+              </span>
+            </div>
           );
         },
       })),
@@ -370,48 +387,46 @@ const StudentAttendanceReport = () => {
   const reportColumns = useMemo(
     () => [
       {
-        title: "Student/Date",
-        dataIndex: "name",
+        title: "Student Details",
+        dataIndex: "entity_name",
+        fixed: "left" as const,
+        width: 220,
         render: (text: string, record: any) => (
-          <div>
-            <p className="text-dark mb-0">
+          <div className="d-flex align-items-center">
+            <div className="avatar avatar-sm rounded-circle bg-soft-primary text-primary border-0 me-2 d-flex align-items-center justify-content-center fw-bold" style={{ width: 32, height: 32, fontSize: '11px' }}>
+              {getStudentInitials(text)}
+            </div>
+            <div style={{ lineHeight: '1.2' }}>
               <Link
-                to={`${all_routes.studentLeaves}?studentId=${record.studentId}`}
-                state={{
-                  studentId: record.studentId,
-                  activeTab: "attendance",
-                  returnTo: reportReturnTo,
-                }}
-                className="fw-semibold"
+                to={`${all_routes.studentLeaves}?studentId=${record.entity_id}`}
+                state={{ studentId: record.entity_id, activeTab: "attendance", returnTo: reportReturnTo }}
+                className="fw-bold text-dark d-block fs-13"
               >
                 {text || "—"}
               </Link>
-            </p>
-            <span className="fs-12">Roll No : {record.rollNo || "—"}</span>
-            {record.isLeaved && (
-              <div className="mt-1">
-                <span className="badge bg-danger text-white">
-                  Leaved{record.leavingDate ? ` (${record.leavingDate})` : ""}
-                </span>
-              </div>
-            )}
+              <span className="fs-11 text-muted">Roll No: {record.roll_number || "—"}</span>
+            </div>
           </div>
         ),
       },
       {
-        title: "%",
-        key: "percentage",
-        render: (_: any, record: any) => (
-          <span className={Number(record.summary?.percentage ?? 0) >= 75 ? "text-success" : "text-danger"}>
-            {record.summary?.percentage ?? 0}%
-          </span>
-        ),
+        title: "Stats",
+        key: "stats",
+        width: 180,
+        render: (_: any, record: any) => {
+          const isGood = Number(record.summary?.attendance_percentage ?? 0) >= 75;
+          return (
+            <div className="d-flex gap-2 align-items-center">
+              <span className={`badge bg-soft-${isGood ? 'success' : 'danger'} text-${isGood ? 'success' : 'danger'} fw-bold`}>
+                {record.summary?.attendance_percentage ?? 0}%
+              </span>
+              <div className="fs-11 text-muted">
+                P:{record.summary?.present || 0} A:{record.summary?.absent || 0}
+              </div>
+            </div>
+          );
+        },
       },
-      { title: "P", key: "present", render: (_: any, record: any) => record.summary?.present ?? 0 },
-      { title: "L", key: "late", render: (_: any, record: any) => record.summary?.late ?? 0 },
-      { title: "A", key: "absent", render: (_: any, record: any) => record.summary?.absent ?? 0 },
-      { title: "H", key: "holiday", render: (_: any, record: any) => record.summary?.holiday ?? 0 },
-      { title: "HD", key: "halfDay", render: (_: any, record: any) => record.summary?.halfDay ?? 0 },
       ...reportDayColumns,
     ],
     [reportDayColumns, reportReturnTo]
@@ -421,15 +436,12 @@ const StudentAttendanceReport = () => {
     const dayKeys = (Array.isArray(reportData?.days) ? reportData.days : []).map((d: any) => d?.date).filter(Boolean);
     return reportRows.map((row: any) => {
       const base: Record<string, any> = {
-        Student: row.name || "",
-        RollNo: row.rollNo || "",
-        Leaved: row.isLeaved ? (row.leavingDate ? `Yes (${row.leavingDate})` : "Yes") : "No",
+        Student: row.entity_name || "",
+        RollNo: row.roll_number || "",
         Percentage: row.summary?.percentage ?? 0,
         Present: row.summary?.present ?? 0,
         Late: row.summary?.late ?? 0,
         Absent: row.summary?.absent ?? 0,
-        Holiday: row.summary?.holiday ?? 0,
-        HalfDay: row.summary?.halfDay ?? 0,
       };
       dayKeys.forEach((day) => {
         base[day] = formatAttendanceDayHumanLabel(row.daily?.[day]);
@@ -477,13 +489,13 @@ const StudentAttendanceReport = () => {
   return (
     <div className="page-wrapper">
       <div className="content">
-        <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
+        <div className="d-md-flex d-block align-items-center justify-content-between mb-4">
           <div className="my-auto mb-2">
-            <h3 className="page-title mb-1">Student Attendance Report</h3>
+            <h3 className="page-title mb-1 fw-bold">Student Attendance Report</h3>
             <nav>
               <ol className="breadcrumb mb-0">
                 <li className="breadcrumb-item"><Link to={dashboardRoute}>Dashboard</Link></li>
-                <li className="breadcrumb-item active" aria-current="page">Student Attendance Report</li>
+                <li className="breadcrumb-item active" aria-current="page">Attendance Analytics</li>
               </ol>
             </nav>
           </div>
@@ -492,100 +504,132 @@ const StudentAttendanceReport = () => {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <div className="row g-2">
-              <div className="col-md-2">
-                <label className="form-label">Mode</label>
-                <select className="form-select" value={mode} onChange={(e) => setMode((e.target.value as "day" | "month") || "month")}>
-                  <option value="month">Monthly</option>
-                  <option value="day">Particular Day</option>
-                </select>
-              </div>
-              <div className="col-md-2">
-                <label className="form-label">{mode === "day" ? "Date" : "Month"}</label>
-                {mode === "day" ? (
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={attendanceDate}
-                    max={today}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setAttendanceDate(next && next > today ? today : next);
-                    }}
-                  />
-                ) : (
-                  <input
-                    type="month"
-                    className="form-control"
-                    value={attendanceMonth}
-                    onChange={(e) => setAttendanceMonth(e.target.value || today.slice(0, 7))}
-                  />
-                )}
-              </div>
-              <div className="col-md-3">
-                <label className="form-label">Class</label>
-                <select
-                  className="form-select"
-                  value={classId ?? ""}
-                  onChange={(e) => {
-                    const nextClassId = e.target.value ? Number(e.target.value) : null;
-                    setClassId(nextClassId);
-                    if (nextClassId == null) {
-                      setSectionId(null);
-                    }
-                  }}
-                >
-                  {!isTeacher && <option value="">All Classes</option>}
-                  {classOptions.map((c: any) => {
-                    const className = c.class_name || c.name || `Class ${c.id}`;
-                    const classCode = String(c.class_code || "").trim();
-                    const label = classCode ? `${className} (${classCode})` : className;
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="col-md-3">
-                <label className="form-label">Section</label>
-                <select
-                  className="form-select"
-                  value={sectionId ?? ""}
-                  disabled={!shouldEnableSectionSelect}
-                  onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}
-                >
-                  <option value="">{shouldEnableSectionSelect ? "All Sections" : "Select class first"}</option>
-                  {sectionOptions.map((s: any) => <option key={s.id} value={s.id}>{s.section_name || s.name || `Section ${s.id}`}</option>)}
-                </select>
-              </div>
-              <div className="col-md-2">
-                <label className="form-label">Search</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={studentSearch}
-                  onChange={(e) => setStudentSearch(e.target.value)}
-                  placeholder="Student name"
-                />
+        <div className="card border-0 shadow-sm mb-4 overflow-hidden" style={{ borderRadius: '15px' }}>
+          <div className="card-body p-0">
+            <div className="p-4" style={{ background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)' }}>
+              <div className="row g-3 align-items-end">
+                <div className="col-md-2">
+                  <label className="form-label fs-12 fw-bold text-uppercase text-muted mb-2">View Mode</label>
+                  <div className="btn-group w-100" role="group">
+                    <button 
+                      type="button" 
+                      className={`btn btn-sm ${mode === 'month' ? 'btn-primary shadow-sm' : 'btn-outline-primary'}`}
+                      onClick={() => setMode('month')}
+                    >Monthly</button>
+                    <button 
+                      type="button" 
+                      className={`btn btn-sm ${mode === 'day' ? 'btn-primary shadow-sm' : 'btn-outline-primary'}`}
+                      onClick={() => setMode('day')}
+                    >Daily</button>
+                  </div>
+                </div>
+                <div className="col-md-2">
+                  <label className="form-label fs-12 fw-bold text-uppercase text-muted mb-2">{mode === "day" ? "Select Date" : "Select Month"}</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-white border-end-0"><i className="ti ti-calendar text-primary"></i></span>
+                    {mode === "day" ? (
+                      <input type="date" className="form-control border-start-0 ps-0" value={attendanceDate} max={today} onChange={(e) => setAttendanceDate(e.target.value)} />
+                    ) : (
+                      <input type="month" className="form-control border-start-0 ps-0" value={attendanceMonth} onChange={(e) => setAttendanceMonth(e.target.value)} />
+                    )}
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label fs-12 fw-bold text-uppercase text-muted mb-2">Academic Class</label>
+                  <select className="form-select form-select-sm border-0 shadow-sm" value={classId ?? ""} onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}>
+                    {!isTeacher && <option value="">Global Overview</option>}
+                    {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.class_name}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-2">
+                  <label className="form-label fs-12 fw-bold text-uppercase text-muted mb-2">Section</label>
+                  <select className="form-select form-select-sm border-0 shadow-sm" value={sectionId ?? ""} disabled={!shouldEnableSectionSelect} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">{shouldEnableSectionSelect ? "All Sections" : "Select class"}</option>
+                    {sectionOptions.map((s: any) => <option key={s.id} value={s.id}>{s.section_name}</option>)}
+                  </select>
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label fs-12 fw-bold text-uppercase text-muted mb-2">Filter Students</label>
+                  <div className="input-group input-group-sm shadow-sm rounded">
+                    <span className="input-group-text bg-white border-0"><i className="ti ti-search text-muted"></i></span>
+                    <input type="text" className="form-control border-0" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} placeholder="Student name..." />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="card-body">
-            {error && <div className="alert alert-danger">{error}</div>}
+        </div>
+
+        <div className="card border-0 shadow-sm" style={{ borderRadius: '15px' }}>
+          <div className="card-body p-0">
+            <div className="px-4 pt-4 pb-2 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-3">
+              <div className="d-flex flex-wrap gap-4">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge bg-soft-success text-success d-flex align-items-center justify-content-center fw-bold" style={{ width: 24, height: 24, borderRadius: '6px' }}>P</span>
+                  <span className="fs-12 fw-bold text-muted text-uppercase">Present</span>
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge bg-soft-danger text-danger d-flex align-items-center justify-content-center fw-bold" style={{ width: 24, height: 24, borderRadius: '6px' }}>A</span>
+                  <span className="fs-12 fw-bold text-muted text-uppercase">Absent</span>
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge bg-soft-warning text-warning d-flex align-items-center justify-content-center fw-bold" style={{ width: 24, height: 24, borderRadius: '6px' }}>L</span>
+                  <span className="fs-12 fw-bold text-muted text-uppercase">Late</span>
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge bg-soft-info text-info d-flex align-items-center justify-content-center fw-bold" style={{ width: 24, height: 24, borderRadius: '6px' }}>H</span>
+                  <span className="fs-12 fw-bold text-muted text-uppercase">Holiday</span>
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="badge d-flex align-items-center justify-content-center fw-bold text-white" style={{ width: 24, height: 24, borderRadius: '6px', backgroundColor: '#7b2cbf' }}>HD</span>
+                  <span className="fs-12 fw-bold text-muted text-uppercase">Half Day</span>
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="dot bg-secondary" style={{ width: 8, height: 8, borderRadius: '50%' }}></span>
+                <span className="fs-12 fw-bold text-muted text-uppercase">Leaved Student</span>
+              </div>
+            </div>
+            {error && <div className="alert alert-danger m-3">{error}</div>}
             {loading ? (
-              <div className="text-muted">Loading attendance report...</div>
-            ) : mode === "day" ? (
-              <Table dataSource={dayTableData} columns={dayColumns as any} Selection={false} />
+              <div className="p-5 text-center">
+                <div className="spinner-border text-primary mb-3" role="status" />
+                <p className="text-muted">Synthesizing attendance data...</p>
+              </div>
             ) : (
-              <Table dataSource={reportRows} columns={reportColumns as any} Selection={false} />
-            )}
+                <div className="attendance-report-table custom-scrollbar" style={{ overflowX: 'auto' }}>
+                  <Table 
+                    dataSource={mode === "day" ? dayTableData : reportRows} 
+                    columns={(mode === "day" ? dayColumns : reportColumns) as any} 
+                    Selection={false} 
+                    pagination={{ pageSize: 15 }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+        <style>{`
+          .bg-soft-primary { background-color: rgba(62, 121, 247, 0.1); }
+          .bg-soft-success { background-color: rgba(26, 188, 156, 0.1); }
+          .bg-soft-danger { background-color: rgba(231, 76, 60, 0.1); }
+          .bg-soft-warning { background-color: rgba(243, 156, 18, 0.1); }
+          .bg-soft-info { background-color: rgba(52, 152, 219, 0.1); }
+          .bg-soft-purple { background-color: rgba(123, 44, 191, 0.1); }
+          .text-success { color: #16a34a !important; }
+          .text-danger { color: #dc2626 !important; }
+          .text-warning { color: #ca8a04 !important; }
+          .text-info { color: #0284c7 !important; }
+          .text-purple { color: #7b2cbf !important; }
+          .attendance-report-table .ant-table { background: transparent; }
+          .attendance-report-table .ant-table-thead > tr > th { background: #f8f9fa; font-weight: 700; color: #4b5563; border-bottom: 2px solid #e5e7eb; font-size: 11px; text-transform: uppercase; white-space: nowrap; }
+          .attendance-report-table .ant-table-tbody > tr > td { padding: 12px 8px; border-bottom: 1px solid #f3f4f6; white-space: nowrap; }
+          .attendance-report-table .ant-table-tbody > tr:hover > td { background: #f9fafb !important; }
+          .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+          .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 10px; }
+          .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #999; }
+        `}</style>
     </div>
   );
 };

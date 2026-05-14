@@ -27,9 +27,20 @@ async function resolveClassSubjectId(classId, subjectId, academicYearId) {
 
 const listClassTeacherAssignments = async (req, res) => {
   try {
-    const teacherId = req.query.teacherId != null ? parseId(req.query.teacherId) : null;
-    const classId = req.query.classId != null ? parseId(req.query.classId) : null;
+    const teacherIdRaw = req.query.teacherId != null ? parseId(req.query.teacherId) : null;
+    let teacherId = teacherIdRaw;
     const academicYearId = req.query.academicYearId != null ? parseId(req.query.academicYearId) : null;
+
+    // Fallback: If no teacherId provided but user is logged in, try to resolve their staff record
+    if (!teacherId && req.user?.id) {
+      const staffCheck = await query(
+        'SELECT id FROM staff WHERE user_id = $1 AND status = \'Active\' AND deleted_at IS NULL LIMIT 1',
+        [req.user.id]
+      );
+      if (staffCheck.rows.length > 0) {
+        teacherId = parseInt(staffCheck.rows[0].id, 10);
+      }
+    }
 
     const params = [];
     let where = 'WHERE ct.deleted_at IS NULL';
@@ -38,6 +49,7 @@ const listClassTeacherAssignments = async (req, res) => {
       params.push(teacherId);
       where += ` AND ct.staff_id = $${params.length}`;
     }
+    const classId = req.query.classId != null ? parseId(req.query.classId) : null;
     if (classId) {
       params.push(classId);
       where += ` AND ct.class_id = $${params.length}`;
@@ -53,6 +65,7 @@ const listClassTeacherAssignments = async (req, res) => {
         ct.staff_id,
         ct.class_id,
         ct.class_section_id,
+        sec.id AS section_id,
         ct.role,
         ct.academic_year_id,
         ct.created_at,
@@ -77,6 +90,7 @@ const listClassTeacherAssignments = async (req, res) => {
       teacherId: r.staff_id,
       classId: r.class_id,
       classSectionId: r.class_section_id,
+      sectionId: r.section_id,
       role: r.role,
       academicYearId: r.academic_year_id,
       className: r.class_name,

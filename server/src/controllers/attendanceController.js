@@ -743,7 +743,7 @@ const saveAttendance = async (req, res) => {
 
         const studentIds = [...new Set(records.map((record) => Number(record.entityId)).filter(Number.isFinite))];
         if (studentIds.length > 0) {
-          const scopeParams = [studentIds, teacherIds, staffIds];
+          const scopeParams = [studentIds, staffIds];
           const allowedRes = await query(
             `SELECT s.id
              FROM students s
@@ -757,7 +757,7 @@ const saveAttendance = async (req, res) => {
                  sectionExpr: 'enr.section_id',
                  academicYearExpr: 'enr.academic_year_id',
                  teacherIdsParamRef: '$2::int[]',
-                 staffIdsParamRef: '$3::int[]',
+                 staffIdsParamRef: '$2::int[]',
                })}`,
             scopeParams
           );
@@ -864,7 +864,7 @@ const saveAttendance = async (req, res) => {
         err.errorCode || 'ATTENDANCE_SAVE_FAILED'
       );
     }
-    return errorResponse(res, 500, 'Failed to save attendance', 'ATTENDANCE_SAVE_FAILED');
+    return errorResponse(res, 500, 'Failed to save attendance', err.message);
   }
 };
 
@@ -916,6 +916,8 @@ const getMarkingRoster = async (req, res) => {
         SELECT
           s.id AS entity_id,
           TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS entity_name,
+          s.roll_number,
+          s.admission_number,
           enr.class_id,
           enr.section_id,
           a.status,
@@ -996,6 +998,17 @@ const getAttendanceReport = async (req, res) => {
     );
     const monthEnd = monthEndResult.rows[0].month_end;
     const monthEndYmd = toYmd(monthEnd);
+    
+    const reportDaysMetadata = [];
+    const cur = new Date(monthStart);
+    while (cur <= monthEnd) {
+      reportDaysMetadata.push({
+        day: cur.getDate(),
+        date: toYmd(cur),
+        weekdayShort: cur.toLocaleDateString('en-US', { weekday: 'short' }),
+      });
+      cur.setDate(cur.getDate() + 1);
+    }
 
     if (entityType === 'student') {
       const studentAttendanceModel = await resolveStudentAttendanceModel();
@@ -1031,6 +1044,8 @@ const getAttendanceReport = async (req, res) => {
         SELECT
           s.id AS entity_id,
           TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS entity_name,
+          s.roll_number,
+          s.admission_number,
           s.admission_number AS "rollNo",
           enr.class_id,
           enr.section_id,
@@ -1050,7 +1065,9 @@ const getAttendanceReport = async (req, res) => {
       );
       const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
       const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
-      const rows = (result.rows || []).map((row) => {
+      const rawRows = result.rows || [];
+
+      const processedRows = rawRows.map((row) => {
         const day = toYmd(row.attendance_date);
         const isHoliday = day ? holidayDates.has(day) : false;
         const normalized = normalizeAttendanceStatusForApi(row.status);
@@ -1060,9 +1077,39 @@ const getAttendanceReport = async (req, res) => {
           status: applyHolidayOverride(normalized, isHoliday),
         };
       });
+
+      const grouped = {};
+      processedRows.forEach((r) => {
+        const id = r.entity_id;
+        if (!grouped[id]) {
+          grouped[id] = {
+            entity_id: id,
+            entity_name: r.entity_name,
+            roll_number: r.roll_number,
+            admission_number: r.admission_number,
+            rollNo: r.rollNo,
+            daily: {},
+            _events: [],
+          };
+        }
+        if (r.attendance_date) {
+          grouped[id].daily[r.attendance_date] = r.status;
+          grouped[id]._events.push(r);
+        }
+      });
+
+      const finalRows = Object.values(grouped).map((g) => {
+        const { _events, ...rest } = g;
+        return {
+          ...rest,
+          summary: buildSummaryFromRows(_events),
+        };
+      });
+
       return success(res, 200, 'Student attendance report fetched', {
-        rows,
-        summary: buildSummaryFromRows(rows),
+        rows: finalRows,
+        days: reportDaysMetadata,
+        summary: buildSummaryFromRows(processedRows),
         holiday_dates: Array.from(holidayDates),
         filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, class_id, section_id },
       });
@@ -1102,7 +1149,9 @@ const getAttendanceReport = async (req, res) => {
     );
     const holidays = await listHolidaysInRange(monthStart, monthEndYmd);
     const holidayDates = buildHolidayDateSet(holidays, monthStart, monthEndYmd);
-    const rows = (result.rows || []).map((row) => {
+    const rawRows = result.rows || [];
+    
+    const processedRows = rawRows.map((row) => {
       const day = toYmd(row.attendance_date);
       const isHoliday = day ? holidayDates.has(day) : false;
       const normalized = normalizeAttendanceStatusForApi(row.status);
@@ -1112,9 +1161,38 @@ const getAttendanceReport = async (req, res) => {
         status: applyHolidayOverride(normalized, isHoliday),
       };
     });
+
+    const grouped = {};
+    processedRows.forEach((r) => {
+      const id = r.entity_id;
+      if (!grouped[id]) {
+        grouped[id] = {
+          entity_id: id,
+          entity_name: r.entity_name,
+          department_name: r.department_name,
+          designation_name: r.designation_name,
+          daily: {},
+          _events: [],
+        };
+      }
+      if (r.attendance_date) {
+        grouped[id].daily[r.attendance_date] = r.status;
+        grouped[id]._events.push(r);
+      }
+    });
+
+    const finalRows = Object.values(grouped).map((g) => {
+      const { _events, ...rest } = g;
+      return {
+        ...rest,
+        summary: buildSummaryFromRows(_events),
+      };
+    });
+
     return success(res, 200, 'Staff attendance report fetched', {
-      rows,
-      summary: buildSummaryFromRows(rows),
+      rows: finalRows,
+      days: reportDaysMetadata,
+      summary: buildSummaryFromRows(processedRows),
       holiday_dates: Array.from(holidayDates),
       filters: { entityType, month: `${year}-${String(monthNumber).padStart(2, '0')}`, department_id, designation_id },
     });
