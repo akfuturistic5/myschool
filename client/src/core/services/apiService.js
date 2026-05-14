@@ -862,6 +862,36 @@ class ApiService {
     });
   }
 
+  async patchEnquiryStatus(id, payload) {
+    return this.makeRequest(`/enquiries/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getEnquiryFollowUpCounselors() {
+    return this.makeRequest('/enquiries/follow-up/counselors');
+  }
+
+  async getEnquiryFollowUpActivity(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null) search.set('academic_year_id', String(params.academic_year_id));
+    if (params.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return this.makeRequest(`/enquiries/follow-up/activity${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEnquiryFollowUps(enquiryId) {
+    return this.makeRequest(`/enquiries/${enquiryId}/follow-ups`);
+  }
+
+  async createEnquiryFollowUp(enquiryId, payload) {
+    return this.makeRequest(`/enquiries/${enquiryId}/follow-ups`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async saveAttendance(payload) {
     return this.makeRequest('/attendance', {
       method: 'POST',
