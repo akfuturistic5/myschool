@@ -112,6 +112,9 @@ import FeesTypes from "../management/feescollection/feesTypes";
 import HostelList from "../management/hostel/hostelList";
 import HostelRooms from "../management/hostel/hostelRooms";
 import HostelType from "../management/hostel/hostelType";
+import HostelFloors from "../management/hostel/hostelFloors";
+import HostelBeds from "../management/hostel/hostelBeds";
+import HostelAssignments from "../management/hostel/hostelAssignments";
 import Books from "../management/library/books";
 import LibraryBookCopies from "../management/library/libraryBookCopies";
 import LibraryCategory from "../management/library/libraryCategory";
@@ -1188,6 +1191,21 @@ export const publicRoutes = [
   {
     path: routes.hostelRoom,
     element: <HostelRooms />,
+    route: Route,
+  },
+  {
+    path: routes.hostelFloors,
+    element: <HostelFloors />,
+    route: Route,
+  },
+  {
+    path: routes.hostelBeds,
+    element: <HostelBeds />,
+    route: Route,
+  },
+  {
+    path: routes.hostelAssignments,
+    element: <HostelAssignments />,
     route: Route,
   },
   {

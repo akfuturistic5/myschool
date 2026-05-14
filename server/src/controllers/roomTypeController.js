@@ -150,15 +150,30 @@ const deleteRoomType = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const rooms = await query(
-      `
-      SELECT COUNT(*)::int AS c FROM hostel_rooms
-      WHERE is_active = true AND room_type_id = $1
-    `,
-      [id]
-    );
-    if (rooms.rows[0] && rooms.rows[0].c > 0) {
-      return errorResponse(res, 409, 'Cannot delete room type while hostel rooms use it');
+    const refChecks = [
+      { table: 'class_rooms', column: 'room_type_id' },
+      { table: 'hostel_rooms', column: 'room_type_id' },
+    ];
+    let refs = 0;
+    for (const { table, column } of refChecks) {
+      try {
+        const r = await query(
+          `SELECT COUNT(*)::int AS c FROM ${table} WHERE ${column} = $1`,
+          [id]
+        );
+        refs += r.rows[0]?.c ?? 0;
+      } catch (err) {
+        if (err.code !== '42703' && err.code !== '42P01') {
+          throw err;
+        }
+      }
+    }
+    if (refs > 0) {
+      return errorResponse(
+        res,
+        409,
+        'Cannot delete room type while other modules still reference this record'
+      );
     }
 
     const result = await query(

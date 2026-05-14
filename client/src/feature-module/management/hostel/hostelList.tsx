@@ -7,46 +7,63 @@ import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import HostelModal from "./hostelModal";
 import { useHostels } from "../../../core/hooks/useHostels";
+import { ActiveInactiveBadge } from "./hostelUiUtils";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 import { apiService } from "../../../core/services/apiService";
 
 const TYPE_FILTER = [
-  { value: "all", label: "All types" },
+  { value: "all", label: "All genders" },
   { value: "boys", label: "Boys" },
   { value: "girls", label: "Girls" },
   { value: "mixed", label: "Mixed" },
 ];
 
+const CATEGORY_FILTER = [
+  { value: "all", label: "All categories" },
+  { value: "student", label: "Student" },
+  { value: "staff", label: "Staff" },
+];
+
 const HostelList = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { hostels, loading, error, refetch } = useHostels();
+  const { hostels, loading, error, refetch } = useHostels({ includeInactive: true });
   const [selectedHostel, setSelectedHostel] = useState<any>(null);
   const [formResetKey, setFormResetKey] = useState(0);
   const [draftType, setDraftType] = useState("all");
+  const [draftCategory, setDraftCategory] = useState("all");
   const [draftSearch, setDraftSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
   const [filterSearch, setFilterSearch] = useState("");
 
   const filtered = useMemo(() => {
     return hostels.filter((row: any) => {
+      if (filterCategory !== "all") {
+        const c = String(row.hostelCategory || row.originalData?.hostel_category || "").toLowerCase();
+        if (c !== filterCategory) return false;
+      }
       if (filterType !== "all") {
-        const t = String(row.originalData?.hostel_type || row.hostelType || "").toLowerCase();
+        const t = String(row.originalData?.gender || row.originalData?.hostel_type || row.hostelType || "").toLowerCase();
         if (t !== filterType) return false;
       }
       const q = filterSearch.trim().toLowerCase();
       if (q) {
-        const blob = `${row.hostelName} ${row.address} ${row.description} ${row.id}`.toLowerCase();
+        const blob =
+          `${row.hostelName} ${row.hostelCode} ${row.contactSummary} ${row.categoryLabel} ${row.address} ${row.description} ${row.id}`
+            .toLowerCase()
+            .replace(/\s+/g, " ");
         if (!blob.includes(q)) return false;
       }
       return true;
     });
-  }, [hostels, filterType, filterSearch]);
+  }, [hostels, filterCategory, filterType, filterSearch]);
 
   const handleApplyClick = (e: React.MouseEvent) => {
     e.preventDefault();
     setFilterType(draftType);
+    setFilterCategory(draftCategory);
     setFilterSearch(draftSearch);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
@@ -62,24 +79,34 @@ const HostelList = () => {
     () =>
       filtered.map((r: any) => ({
         id: r.id,
+        hostelCode: r.hostelCode,
         hostelName: r.hostelName,
+        category: r.categoryLabel,
         hostelType: r.hostelType,
+        contactSummary: r.contactSummary,
         address: r.address,
         inTake: r.inTake,
         description: r.description,
+        addedOn: r.addedOn,
+        recordStatus: r.isActive === true ? "Active" : r.isActive === false ? "Inactive" : "—",
       })),
     [filtered]
   );
 
   const handleExportExcel = () => {
     exportToExcel(
-      exportRows.map((r) => ({
+      exportRows.map((r: any) => ({
         ID: r.id,
+        Code: r.hostelCode,
         "Hostel Name": r.hostelName,
-        Type: r.hostelType,
+        Category: r.category,
+        Gender: r.hostelType,
+        Contact: r.contactSummary,
         Address: r.address,
         Intake: r.inTake,
         Description: r.description,
+        "Add On": r.addedOn,
+        Status: r.recordStatus,
       })),
       `Hostels_${new Date().toISOString().split("T")[0]}`
     );
@@ -87,11 +114,16 @@ const HostelList = () => {
 
   const pdfCols = [
     { title: "ID", dataKey: "id" },
+    { title: "Code", dataKey: "hostelCode" },
     { title: "Hostel Name", dataKey: "hostelName" },
-    { title: "Type", dataKey: "hostelType" },
+    { title: "Category", dataKey: "category" },
+    { title: "Gender", dataKey: "hostelType" },
+    { title: "Contact", dataKey: "contactSummary" },
     { title: "Address", dataKey: "address" },
     { title: "Intake", dataKey: "inTake" },
     { title: "Description", dataKey: "description" },
+    { title: "Add On", dataKey: "addedOn" },
+    { title: "Status", dataKey: "recordStatus" },
   ];
 
   const handleExportPDF = () => {
@@ -138,16 +170,31 @@ const HostelList = () => {
       sorter: (a: TableData, b: TableData) => String(a.id || "").localeCompare(String(b.id || "")),
     },
     {
+      title: "Code",
+      dataIndex: "hostelCode",
+      sorter: (a: any, b: any) => String(a.hostelCode || "").localeCompare(String(b.hostelCode || "")),
+    },
+    {
       title: "Hostel Name",
       dataIndex: "hostelName",
       sorter: (a: TableData, b: TableData) =>
         String(a.hostelName || "").localeCompare(String(b.hostelName || "")),
     },
     {
-      title: "Hostel Type",
+      title: "Category",
+      dataIndex: "categoryLabel",
+      sorter: (a: any, b: any) => String(a.categoryLabel || "").localeCompare(String(b.categoryLabel || "")),
+    },
+    {
+      title: "Gender",
       dataIndex: "hostelType",
       sorter: (a: TableData, b: TableData) =>
         String(a.hostelType || "").localeCompare(String(b.hostelType || "")),
+    },
+    {
+      title: "Contact",
+      dataIndex: "contactSummary",
+      sorter: (a: any, b: any) => String(a.contactSummary || "").localeCompare(String(b.contactSummary || "")),
     },
     {
       title: "Address",
@@ -164,6 +211,17 @@ const HostelList = () => {
       dataIndex: "description",
       sorter: (a: TableData, b: TableData) =>
         String(a.description || "").localeCompare(String(b.description || "")),
+    },
+    {
+      title: "Add On",
+      dataIndex: "addedOn",
+      sorter: (a: any, b: any) => String(a.addedOn || "").localeCompare(String(b.addedOn || "")),
+    },
+    {
+      title: "Status",
+      dataIndex: "isActive",
+      render: (_: unknown, record: any) => <ActiveInactiveBadge isActive={record.isActive} />,
+      sorter: (a: any, b: any) => Number(a.isActive === true) - Number(b.isActive === true),
     },
     {
       title: "Action",
@@ -279,13 +337,27 @@ const HostelList = () => {
                   <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form onSubmit={(e) => e.preventDefault()}>
                       <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
+                        <h4 className="mb-0">Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
+                        <p className="text-muted small mb-3">
+                          Hostels are school-wide. Bed assignments still use the academic year selected in the app header.
+                        </p>
                         <div className="row">
                           <div className="col-md-6">
                             <div className="mb-3">
-                              <label className="form-label">Hostel type</label>
+                              <label className="form-label">Category</label>
+                              <CommonSelect
+                                className="select"
+                                options={CATEGORY_FILTER}
+                                value={draftCategory}
+                                onChange={(v) => setDraftCategory(v || "all")}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-md-6">
+                            <div className="mb-3">
+                              <label className="form-label">Gender</label>
                               <CommonSelect
                                 className="select"
                                 options={TYPE_FILTER}
@@ -294,13 +366,13 @@ const HostelList = () => {
                               />
                             </div>
                           </div>
-                          <div className="col-md-6">
+                          <div className="col-12">
                             <div className="mb-0">
                               <label className="form-label">Search</label>
                               <input
                                 type="text"
                                 className="form-control"
-                                placeholder="Name, address, description…"
+                                placeholder="Code, name, contact, description…"
                                 value={draftSearch}
                                 onChange={(e) => setDraftSearch(e.target.value)}
                               />
@@ -314,8 +386,10 @@ const HostelList = () => {
                           className="btn btn-light me-3"
                           onClick={() => {
                             setDraftType("all");
+                            setDraftCategory("all");
                             setDraftSearch("");
                             setFilterType("all");
+                            setFilterCategory("all");
                             setFilterSearch("");
                           }}
                         >

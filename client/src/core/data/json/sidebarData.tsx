@@ -298,9 +298,12 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
+          { label: "Hostel Assignments", link: routes.hostelAssignments },
           { label: "Hostel List", link: routes.hostelList },
-          { label: "Hostel Rooms", link: routes.hostelRoom },
+          { label: "Hostel Floors", link: routes.hostelFloors },
           { label: "Room Type", link: routes.hostelType },
+          { label: "Hostel Rooms", link: routes.hostelRoom },
+          { label: "Hostel Beds", link: routes.hostelBeds },
         ],
       },
       {
