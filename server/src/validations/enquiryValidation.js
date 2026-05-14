@@ -35,8 +35,27 @@ const enquiryIdParamSchema = Joi.object({
   id: Joi.number().integer().positive().required(),
 });
 
+const followUpBodySchema = Joi.object({
+  remarks: Joi.string().trim().min(1).max(8000).required(),
+  follow_up_date: Joi.string().trim().max(40).allow('', null),
+  next_follow_up_date: dateString.allow('', null),
+  counselor_id: Joi.number().integer().positive().allow(null),
+});
+
+const followUpActivityQuerySchema = Joi.object({
+  academic_year_id: Joi.number().integer().positive().allow('', null),
+  limit: Joi.number().integer().min(1).max(100).allow('', null),
+});
+
+const enquiryStatusBodySchema = Joi.object({
+  status: Joi.string().trim().valid('Open', 'In Progress', 'Converted', 'Lost').required(),
+});
+
 module.exports = {
   enquiryBodySchema,
   enquiryQuerySchema,
   enquiryIdParamSchema,
+  followUpBodySchema,
+  followUpActivityQuerySchema,
+  enquiryStatusBodySchema,
 };
