@@ -20,7 +20,7 @@ import { exportToExcel, exportToPDF } from "../../../../core/utils/exportUtils";
 
 type AcademicYearItem = { id: number | string; year_name?: string };
 type ClassItem = { id: number | string; class_name?: string; class_code?: string | null };
-type SectionItem = { id: number | string; section_name?: string };
+type SectionItem = { id: number | string; section_id?: number | string; section_name?: string };
 type StudentItem = {
   id: number;
   class_id?: number | string | null;
@@ -191,10 +191,13 @@ const StudentPromotion = () => {
   }, [classesFrom]);
 
   useEffect(() => {
-    if (!fromSections.length || !fromClassId) return;
+    if (!fromSections.length || !fromClassId) {
+      setFromSectionId("");
+      return;
+    }
     setFromSectionId((prev) => {
-      if (prev && fromSections.some((sec) => String(sec.id) === prev)) return prev;
-      return String(fromSections[0].id);
+      if (prev && fromSections.some((sec) => String(sec.section_id) === prev)) return prev;
+      return String(fromSections[0].section_id);
     });
   }, [fromSections, fromClassId]);
 
@@ -207,10 +210,13 @@ const StudentPromotion = () => {
   }, [classesTo, toAcademicYearId]);
 
   useEffect(() => {
-    if (!toSections.length || !toClassId) return;
+    if (!toSections.length || !toClassId) {
+      setToSectionId("");
+      return;
+    }
     setToSectionId((prev) => {
-      if (prev && toSections.some((sec) => String(sec.id) === prev)) return prev;
-      return String(toSections[0].id);
+      if (prev && toSections.some((sec) => String(sec.section_id) === prev)) return prev;
+      return String(toSections[0].section_id);
     });
   }, [toSections, toClassId]);
 
@@ -284,7 +290,7 @@ const StudentPromotion = () => {
   const rejoinSectionOptions = useMemo(
     () =>
       rejoinSections.map((section) => ({
-        value: section.id.toString(),
+        value: (section.section_id ?? "").toString(),
         label: section.section_name ?? "Unnamed Section",
       })),
     [rejoinSections]
@@ -299,10 +305,13 @@ const StudentPromotion = () => {
   }, [rejoinClasses, rejoinAcademicYearId]);
 
   useEffect(() => {
-    if (!rejoinSections.length || !rejoinClassId) return;
+    if (!rejoinSections.length || !rejoinClassId) {
+      setRejoinSectionId("");
+      return;
+    }
     setRejoinSectionId((prev) => {
-      if (prev && rejoinSections.some((sec) => String(sec.id) === prev)) return prev;
-      return String(rejoinSections[0].id);
+      if (prev && rejoinSections.some((sec) => String(sec.section_id) === prev)) return prev;
+      return String(rejoinSections[0].section_id);
     });
   }, [rejoinSections, rejoinClassId]);
 
@@ -338,6 +347,17 @@ const StudentPromotion = () => {
     const wantSectionName = fromSectionId ? normLabel(fromSec?.section_name) : "";
 
     return activeStudents.filter((s: any) => {
+      // If the student is already in a later year (promoted), hide them from the 'available' list.
+      const latestYearId = Number(s.latest_academic_year_id);
+      const sourceYearId = Number(fromAcademicYearId);
+      if (
+        Number.isFinite(latestYearId) && 
+        Number.isFinite(sourceYearId) && 
+        latestYearId > sourceYearId
+      ) {
+        return false;
+      }
+
       const sid = fromSectionId ? parseInt(fromSectionId, 10) : NaN;
       const idMatch =
         Number(s.class_id) === cid &&
@@ -408,7 +428,7 @@ const StudentPromotion = () => {
   const sectionOptionsFrom = useMemo(
     () =>
       fromSections.map((section) => ({
-        value: section.id.toString(),
+        value: (section.section_id ?? "").toString(),
         label: section.section_name ?? "Unnamed Section",
       })),
     [fromSections]
@@ -416,7 +436,7 @@ const StudentPromotion = () => {
   const sectionOptionsTo = useMemo(
     () =>
       toSections.map((section) => ({
-        value: section.id.toString(),
+        value: (section.section_id ?? "").toString(),
         label: section.section_name ?? "Unnamed Section",
       })),
     [toSections]
@@ -790,7 +810,7 @@ const StudentPromotion = () => {
     const ay = parseInt(rejoinAcademicYearId, 10);
     const cls = parseInt(rejoinClassId, 10);
     const sec = parseInt(rejoinSectionId, 10);
-    if (Number.isNaN(ay) || Number.isNaN(cls) || Number.isNaN(sec)) {
+    if (Number.isNaN(ay) || Number.isNaN(cls) || (rejoinSections.length > 0 && Number.isNaN(sec))) {
       setRejoinError("Choose valid academic year, class, and section.");
       return;
     }
@@ -842,7 +862,7 @@ const StudentPromotion = () => {
     const tc = parseInt(toClassId, 10);
     const ts = parseInt(toSectionId, 10);
     const ty = parseInt(toAcademicYearId, 10);
-    if (isPromote && (Number.isNaN(tc) || Number.isNaN(ts) || Number.isNaN(ty))) {
+    if (isPromote && (Number.isNaN(tc) || Number.isNaN(ty) || (toSections.length > 0 && Number.isNaN(ts)))) {
       setPromoteError("Choose a valid target class, section, and academic year.");
       return;
     }
@@ -978,12 +998,12 @@ const StudentPromotion = () => {
           `${row.last_class_name ?? "—"} / ${row.last_section_name ?? "—"} / ${row.last_academic_year_name ?? "—"}`,
         leavingDate: formatDate(row.leaving_date),
         leavingDateRaw: row.leaving_date ?? null,
-        leavingRecordActive: !(row.is_active === false || row.is_active === "f" || row.is_active === 0),
+        leavingRecordActive: row.is_active === false || row.is_active === "f" || row.is_active === 0,
         lastAcademicYearId: row.last_academic_year_id ?? null,
         lastAcademicYearName: row.last_academic_year_name ?? "—",
         lastResult: row.last_class_result ?? "Not Available",
         leavingStatus:
-          row.is_active === false || row.is_active === "f" || row.is_active === 0
+          row.is_active === true || row.is_active === "t" || row.is_active === 1
             ? "Rejoined"
             : "Left",
         reason: row.reason ?? "—",

@@ -72,6 +72,7 @@ interface ClassItem {
 }
 interface SectionItem {
   id: number;
+  section_id?: number | string;
   section_name?: string;
 }
 interface BloodGroupItem {

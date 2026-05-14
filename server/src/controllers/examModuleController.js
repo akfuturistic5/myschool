@@ -2147,13 +2147,13 @@ async function getExamMarksContext(req, res) {
       const cells = filteredSubjects.map((subject) => {
         const mark = byKey.get(`${studentId}:${subject.exam_schedule_id}`);
         const classSubjectId = parseId(subject.subject_id);
-        const isAvailable = !subject.is_elective || (studentChoices && studentChoices.has(classSubjectId));
+        const isAvailable = !subject.is_elective || !!(studentChoices && studentChoices.has(classSubjectId));
 
         return {
           subject_id: classSubjectId,
           exam_schedule_id: parseId(subject.exam_schedule_id),
-          is_absent: !!mark?.is_absent,
-          marks_obtained: mark?.is_absent ? null : (mark?.marks_obtained ?? null),
+          is_absent: isAvailable ? !!mark?.is_absent : false,
+          marks_obtained: isAvailable ? (mark?.is_absent ? null : (mark?.marks_obtained ?? null)) : null,
           max_marks: Number(subject.max_marks),
           passing_marks: Number(subject.passing_marks),
           is_elective: !!subject.is_elective,
@@ -2208,15 +2208,33 @@ async function saveExamMarks(req, res) {
     }
 
     const timetable = await query(
-      `SELECT id AS exam_schedule_id, class_subject_id AS subject_id, max_marks
-       FROM exam_schedules
-       WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
+      `SELECT es.id AS exam_schedule_id, es.class_subject_id AS subject_id, es.max_marks, cs.is_elective
+       FROM exam_schedules es
+       JOIN class_subjects cs ON cs.id = es.class_subject_id
+       WHERE es.exam_id = $1 AND es.class_id = $2 AND ${classSectionId ? 'es.class_section_id = $3' : 'es.class_section_id IS NULL'}`,
       classSectionId ? [value.exam_id, value.class_id, classSectionId] : [value.exam_id, value.class_id]
     );
     if (!timetable.rows.length) {
       return error(res, 400, 'Timetable not found for selected exam/class/section');
     }
     const scheduleBySubjectId = new Map(timetable.rows.map((r) => [parseId(r.subject_id), r]));
+
+    const payloadStudentIds = [...new Set(value.rows.map((r) => parseId(r.student_id)))];
+    const choices = await query(
+      `SELECT student_id, class_subject_id
+       FROM student_subject_choices
+       WHERE student_id = ANY($1::int[])
+         AND class_id = $2
+         ${academicYearId ? 'AND academic_year_id = $3' : ''}
+         AND deleted_at IS NULL`,
+      academicYearId ? [payloadStudentIds, value.class_id, academicYearId] : [payloadStudentIds, value.class_id]
+    );
+    const choicesByStudent = new Map();
+    for (const row of choices.rows) {
+      const sid = parseId(row.student_id);
+      if (!choicesByStudent.has(sid)) choicesByStudent.set(sid, new Set());
+      choicesByStudent.get(sid).add(parseId(row.class_subject_id));
+    }
 
     const students = await query(
       `SELECT st.id
@@ -2240,6 +2258,14 @@ async function saveExamMarks(req, res) {
       if (!allowedStudentIds.has(parseId(row.student_id))) {
         return error(res, 400, 'Payload contains student outside selected class section');
       }
+
+      if (schedule.is_elective) {
+        const studentChoices = choicesByStudent.get(parseId(row.student_id));
+        if (!studentChoices || !studentChoices.has(parseId(row.subject_id))) {
+          return error(res, 400, `Student has not chosen elective subject (Subject ID: ${row.subject_id}, Student ID: ${row.student_id})`);
+        }
+      }
+
       if (row.is_absent) continue;
       if (row.marks_obtained == null) {
         return error(res, 400, 'Marks are required for non-absent entries');
