@@ -10,12 +10,14 @@ const {
   listExamSubjects,
   listExamSubjectOptions,
   saveExamSubjects,
+  updateExam,
 } = require('../controllers/examModuleController');
 
 const router = express.Router();
 
 router.get('/', requireRole(EXAM_LIST_ROLES), listExams);
 router.post('/', requireRole(EXAM_ADMIN_ROLES), createExam);
+router.patch('/:id', requireRole(EXAM_ADMIN_ROLES), updateExam);
 router.delete('/:id', requireRole(EXAM_ADMIN_ROLES), deleteExam);
 router.get('/subjects/list', requireRole(EXAM_LIST_ROLES), listExamSubjects);
 router.get('/subjects/options', requireRole(EXAM_LIST_ROLES), listExamSubjectOptions);
