@@ -9,6 +9,7 @@ import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { ActiveInactiveBadge, HostelRecordStatusToggle } from "./hostelUiUtils";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 type FloorRow = {
   key: string;
@@ -103,6 +104,48 @@ const HostelFloors = () => {
   const onRefresh = async () => {
     await loadFloors(hostelId);
     Swal.fire({ icon: "success", title: "Refreshed", timer: 1000, showConfirmButton: false });
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(
+      rows.map((r) => ({
+        ID: r.dbId,
+        Hostel: r.hostelName,
+        "Floor name": r.floorName,
+        "Floor #": r.floorNumber,
+        Wing: r.wingName,
+        "Add On": r.addedOn,
+        Status: r.isActive ? "Active" : "Inactive",
+      })),
+      `Hostel_Floors_${new Date().toISOString().split("T")[0]}`
+    );
+  };
+
+  const pdfCols = [
+    { title: "ID", dataKey: "dbId" },
+    { title: "Hostel", dataKey: "hostelName" },
+    { title: "Floor name", dataKey: "floorName" },
+    { title: "Floor #", dataKey: "floorNumber" },
+    { title: "Wing", dataKey: "wingName" },
+    { title: "Add On", dataKey: "addedOn" },
+    { title: "Status", dataKey: "isActiveStr" },
+  ];
+
+  const handleExportPDF = () => {
+    exportToPDF(
+      rows.map((r) => ({ ...r, isActiveStr: r.isActive ? "Active" : "Inactive" })),
+      "Hostel Floors",
+      `Hostel_Floors_${new Date().toISOString().split("T")[0]}`,
+      pdfCols
+    );
+  };
+
+  const handlePrint = () => {
+    printData(
+      "Hostel Floors",
+      pdfCols,
+      rows.map((r) => ({ ...r, isActiveStr: r.isActive ? "Active" : "Inactive" }))
+    );
   };
 
   const openEdit = (record: FloorRow) => {
@@ -313,7 +356,12 @@ const HostelFloors = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
-              <TooltipOption onRefresh={onRefresh} />
+              <TooltipOption
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPDF}
+                onExportExcel={handleExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to="#"
