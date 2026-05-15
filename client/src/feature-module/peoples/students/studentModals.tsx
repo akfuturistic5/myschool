@@ -11,11 +11,15 @@ import Select from 'react-select'
 import type { SingleValue } from 'react-select'
 import { apiService } from '../../../core/services/apiService'
 import { useLeaveTypes } from '../../../core/hooks/useLeaveTypes'
+import { useAcademicYears } from '../../../core/hooks/useAcademicYears'
 import { useFeeStructures } from '../../../core/hooks/useFeeStructures'
 import { useStudentFees } from '../../../core/hooks/useStudentFees'
 import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice'
 import Swal from 'sweetalert2'
 import { useSelector } from 'react-redux'
+import { generateFeeReceipt } from '../../../core/utils/pdfReceiptGenerator'
+import { isTeacherRole } from '../../../core/utils/roleUtils'
+import { selectUser } from '../../../core/data/redux/authSlice'
 
 interface StudentModalsProps {
   studentId?: number | null
@@ -33,6 +37,8 @@ interface StudentModalsProps {
 const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected, onStudentDeleted }: StudentModalsProps) => {
     const routes = all_routes
     const academicYearId = useSelector(selectSelectedAcademicYearId);
+    const user = useSelector(selectUser);
+    const isTeacher = isTeacherRole(user);
     
     const today = new Date()
   const year = today.getFullYear()
@@ -42,6 +48,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const defaultValue = dayjs(formattedDate)
 
   const { leaveTypes } = useLeaveTypes()
+  const { academicYears } = useAcademicYears()
   const leaveTypeOptions = leaveTypes.length > 0 ? leaveTypes : []
   const { feeStructures } = useFeeStructures()
   
@@ -60,7 +67,8 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [feeStructureId, setFeeStructureId] = useState<string>('')
   const [amountPaid, setAmountPaid] = useState<string>('')
   const [collectionDate, setCollectionDate] = useState<Dayjs | null>(defaultValue)
-  const [paymentMethod, setPaymentMethod] = useState<string>('cash')
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [paymentOptions, setPaymentOptions] = useState<{ value: string; label: string }[]>([])
   const [paymentRefNo, setPaymentRefNo] = useState('')
   const [remarks, setRemarks] = useState('')
   const [feeSubmitting, setFeeSubmitting] = useState(false)
@@ -84,17 +92,52 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
           setLoadingFees(false);
         }
       };
+      
+      const fetchPaymentModes = async () => {
+        try {
+          const res = await apiService.getPaymentModes();
+          if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
+            const options = res.data.map(m => ({ value: m.name, label: m.name }));
+            setPaymentOptions(options);
+            if (options.length > 0 && !paymentMethod) {
+              setPaymentMethod(options[0].value);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch payment modes', err);
+        }
+      };
+      fetchPaymentModes();
+
       if (student?.id && academicYearId) fetchFeesStatus();
     }, [student?.id, academicYearId]);
 
-    const feeStructureOptions = assignedFees
+    const totalCompulsoryBalance = assignedFees
+      .filter(f => !f.is_optional && parseFloat(f.pending_amount) > 0)
+      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+      
+    const totalBalance = assignedFees
       .filter(f => parseFloat(f.pending_amount) > 0)
-      .map((f) => ({
-        value: String(f.fees_assign_details_id),
-        label: `${f.fee_group} - ${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
-        balance: parseFloat(f.pending_amount)
-      }));
-  const paymentOptions = paymentType.map((p) => ({ value: p.value, label: p.label }))
+      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+
+    const feeStructureOptions = useMemo(() => {
+      return assignedFees
+        .filter(f => parseFloat(f.pending_amount) > 0)
+        .map((f) => ({
+          value: String(f.fees_assign_details_id),
+          label: `${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
+          balance: parseFloat(f.pending_amount),
+          isOptional: !!f.is_optional,
+          group: f.fee_group,
+          type: f.fee_type
+        }));
+    }, [assignedFees]);
+
+    // Virtual options for internal state tracking when bulk buttons are clicked
+    const bulkOptions = [
+      { value: 'ALL_COMPULSORY', label: 'All Compulsory Fees' },
+      { value: 'ALL_TOTAL', label: 'Total Outstanding Balance' }
+    ];
 
   // Login details (usernames) for parent & student
   const [loginRows, setLoginRows] = useState<Array<{ userType: string; username: string | null; phone?: string | null; email?: string | null }>>([])
@@ -241,11 +284,36 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       Swal.fire("Error", 'Please enter a valid amount.', "error");
       return
     }
-    
-    const selectedFee = assignedFees.find(f => String(f.fees_assign_details_id) === feeStructureId);
-    if (selectedFee && amt > parseFloat(selectedFee.pending_amount)) {
-      Swal.fire("Error", `Amount exceeds balance (${selectedFee.pending_amount})`, "error");
-      return;
+
+    let feeItemsToPay: { fees_assign_details_id: number; amount_to_pay: number }[] = [];
+    if (feeStructureId === 'ALL_COMPULSORY' || feeStructureId === 'ALL_TOTAL') {
+      const targetItems = assignedFees.filter(f => {
+        if (feeStructureId === 'ALL_COMPULSORY') return !f.is_optional && parseFloat(f.pending_amount) > 0;
+        return parseFloat(f.pending_amount) > 0;
+      });
+
+      // Distribute amount across items
+      let remainingToDistribute = amt;
+      for (const item of targetItems) {
+        if (remainingToDistribute <= 0) break;
+        const itemBal = parseFloat(item.pending_amount);
+        const payForThisItem = Math.min(itemBal, remainingToDistribute);
+        feeItemsToPay.push({
+          fees_assign_details_id: Number(item.fees_assign_details_id),
+          amount_to_pay: payForThisItem
+        });
+        remainingToDistribute -= payForThisItem;
+      }
+    } else {
+      const selectedFee = assignedFees.find(f => String(f.fees_assign_details_id) === feeStructureId);
+      if (selectedFee && amt > parseFloat(selectedFee.pending_amount)) {
+        Swal.fire("Error", `Amount exceeds balance (${selectedFee.pending_amount})`, "error");
+        return;
+      }
+      feeItemsToPay.push({
+        fees_assign_details_id: Number(feeStructureId),
+        amount_to_pay: amt
+      });
     }
 
     setFeeSubmitting(true)
@@ -257,15 +325,61 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         payment_mode: paymentMethod || 'Cash',
         remarks: remarks || '',
         receipt_no: paymentRefNo.trim() || undefined,
-        fee_items: [
-          {
-            fees_assign_details_id: Number(feeStructureId),
-            amount_to_pay: amt
-          }
-        ]
+        fee_items: feeItemsToPay
       })
       if (res?.status === 'SUCCESS') {
         Swal.fire("Success", "Fee collected successfully", "success");
+        
+        // Generate PDF Receipt
+        try {
+          const schoolRes = await apiService.getSchoolProfile();
+          const schoolInfo = schoolRes?.data || {
+            name: "School Management System",
+            address: "N/A",
+            phone: "N/A",
+            email: "N/A"
+          };
+
+          const academicYears = (window as any).academicYears || [];
+          const currentYear = academicYears.find((y: any) => y.id === academicYearId)?.year_name || "N/A";
+
+          await generateFeeReceipt({
+            school: {
+              name: schoolInfo.school_name || schoolInfo.name || "School Management System",
+              address: schoolInfo.address || "N/A",
+              phone: schoolInfo.phone || schoolInfo.mobile || "N/A",
+              email: schoolInfo.email || "N/A",
+              logo_url: schoolInfo.logo_url
+            },
+            student: {
+              name: [student.first_name, student.last_name].filter(Boolean).join(' '),
+              admission_number: student.admission_number || "N/A",
+              roll_number: (student as any).roll_number,
+              class_name: student.class_name || "N/A",
+              section_name: student.section_name || "N/A"
+            },
+            academic_year: academicYears.find((y: any) => y.id === academicYearId)?.year_name || "N/A",
+            payment: {
+              receipt_no: res.data.receipt_no || paymentRefNo || "N/A",
+              date: collectionDate ? collectionDate.toISOString() : new Date().toISOString(),
+              payment_mode: paymentMethod,
+              remarks: remarks,
+              items: feeItemsToPay.map(item => {
+                const fs = assignedFees.find(f => Number(f.fees_assign_details_id) === item.fees_assign_details_id);
+                return {
+                  fee_type: fs?.fee_type || "Fee Payment",
+                  amount: item.amount_to_pay
+                };
+              }),
+              total_paid: res.data.amount_paid || amt,
+              fine_paid: res.data.fine_paid || 0,
+              new_balance: res.data.new_balance
+            }
+          });
+        } catch (pdfErr) {
+          console.error("Failed to generate PDF receipt", pdfErr);
+        }
+
         onFeeCollected?.()
         hideAddFeesModal()
         setFeeStructureId('')
@@ -379,7 +493,12 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
             </div>
             <form onSubmit={handleAddFeesSubmit}>
               <div id="modal-datepicker" className="modal-body">
-                {student ? (
+                {isTeacher ? (
+                  <div className="alert alert-soft-danger border-0 d-flex align-items-center mb-0">
+                    <i className="ti ti-alert-circle me-2 fs-18" />
+                    <span>You do not have permission to collect fees.</span>
+                  </div>
+                ) : student ? (
                   <>
                     <div className="bg-light-300 p-3 pb-0 rounded mb-4">
                       <div className="row align-items-center">
@@ -397,17 +516,47 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
                             <span className="fs-12 mb-1">Total Outstanding</span>
-                            <p className="text-dark fw-bold text-danger">
-                              {(effectiveFeeData || []).reduce((sum, r) => sum + (parseFloat(r?.pending_amount) || 0), 0).toLocaleString()}
-                            </p>
+                            <div className="d-flex align-items-center flex-wrap gap-1">
+                              <p className="text-dark fw-bold text-danger mb-0 me-2">
+                                {totalBalance.toLocaleString()}
+                              </p>
+                              {totalBalance > 0 && (
+                                <button 
+                                  type="button" 
+                                  className="btn btn-soft-danger btn-xs py-0 px-1" 
+                                  style={{ fontSize: '10px' }}
+                                  onClick={() => {
+                                    setFeeStructureId('ALL_TOTAL');
+                                    setAmountPaid(String(totalBalance));
+                                  }}
+                                >
+                                  Pay All
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="col-lg-3 col-md-6">
                           <div className="mb-3">
-                            <span className="fs-12 mb-1">Items for Payment</span>
-                            <p className="text-dark">
-                              {feeStructureOptions.length} Items
-                            </p>
+                            <span className="fs-12 mb-1">Compulsory Fees</span>
+                            <div className="d-flex align-items-center flex-wrap gap-1">
+                              <p className="text-dark fw-bold mb-0 me-2">
+                                {totalCompulsoryBalance.toLocaleString()}
+                              </p>
+                              {totalCompulsoryBalance > 0 && totalCompulsoryBalance !== totalBalance && (
+                                <button 
+                                  type="button" 
+                                  className="btn btn-soft-primary btn-xs py-0 px-1" 
+                                  style={{ fontSize: '10px' }}
+                                  onClick={() => {
+                                    setFeeStructureId('ALL_COMPULSORY');
+                                    setAmountPaid(String(totalCompulsoryBalance));
+                                  }}
+                                >
+                                  Pay Compulsory
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="col-lg-3 col-md-6">
@@ -428,12 +577,32 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             classNamePrefix="react-select"
                             className="select"
                             options={feeStructureOptions}
-                            value={feeStructureOptions.find((o) => o.value === feeStructureId) ?? null}
+                            value={feeStructureOptions.find((o) => o.value === feeStructureId) ?? bulkOptions.find((o) => o.value === feeStructureId) ?? null}
                             onChange={(opt) => {
-                              setFeeStructureId(opt?.value ?? '')
-                              const fs = assignedFees.find((f) => String(f.fees_assign_details_id) === opt?.value)
-                              if (fs && fs.pending_amount != null) setAmountPaid(String(fs.pending_amount))
+                              const val = opt?.value ?? '';
+                              setFeeStructureId(val);
+                              
+                              if (val === 'ALL_COMPULSORY') {
+                                setAmountPaid(String(totalCompulsoryBalance));
+                              } else if (val === 'ALL_TOTAL') {
+                                setAmountPaid(String(totalBalance));
+                              } else {
+                                const fs = assignedFees.find((f) => String(f.fees_assign_details_id) === val);
+                                if (fs && fs.pending_amount != null) {
+                                  setAmountPaid(String(fs.pending_amount));
+                                }
+                              }
                             }}
+                            formatOptionLabel={(data: any) => (
+                              <div className="d-flex justify-content-between align-items-center w-100">
+                                <span>{data.label}</span>
+                                {data.isOptional ? (
+                                  <span className="badge badge-soft-warning ms-2" style={{ fontSize: '10px' }}>Optional</span>
+                                ) : (
+                                  <span className="badge bg-info text-white ms-2" style={{ fontSize: '10px' }}>Compulsory</span>
+                                )}
+                              </div>
+                            )}
                             placeholder="Select Fee Type"
                             isClearable
                           />
@@ -514,7 +683,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                   </div>
                 )}
               </div>
-              {student && (
+              {student && !isTeacher && (
                 <div className="modal-footer">
                   <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" className="btn btn-primary" disabled={feeSubmitting || !feeStructureId || !amountPaid}>
@@ -536,10 +705,16 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                 <span className="delete-icon">
                   <i className="ti ti-trash-x" />
                 </span>
-                <h4>Confirm Deletion</h4>
+                {isTeacher ? (
+                   <h4>Permission Denied</h4>
+                ) : (
+                  <h4>Confirm Deletion</h4>
+                )}
                 <p>
-                  You want to delete all the marked items, this cant be undone once
-                  you delete.
+                  {isTeacher 
+                    ? "You do not have permission to delete student records."
+                    : "You want to delete all the marked items, this cant be undone once you delete."
+                  }
                 </p>
                 <div className="d-flex justify-content-center">
                   <Link
@@ -547,16 +722,18 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                     className="btn btn-light me-3"
                     data-bs-dismiss="modal"
                   >
-                    Cancel
+                    {isTeacher ? "Close" : "Cancel"}
                   </Link>
-                  <button
-                    type="button"
-                    className="btn btn-danger"
-                    onClick={handleDelete}
-                    disabled={isDeleting || !student?.id}
-                  >
-                    {isDeleting ? 'Deleting...' : 'Yes, Delete'}
-                  </button>
+                  {!isTeacher && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={handleDelete}
+                      disabled={isDeleting || !student?.id}
+                    >
+                      {isDeleting ? 'Deleting...' : 'Yes, Delete'}
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

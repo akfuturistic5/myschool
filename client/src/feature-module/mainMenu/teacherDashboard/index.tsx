@@ -111,9 +111,10 @@ const TeacherDashboard = () => {
     teacher?.id ?? null,
     { days: selectedAttendanceRange.days, offset: selectedAttendanceRange.offset, academicYearId } as any
   ) as { data: AttendancePayload | null; loading: boolean; error: string | null };
-  const { data: syllabusData } = useClassSyllabus({ academicYearId }) as {
-    data: any[];
-  };
+  // const { data: syllabusData } = useClassSyllabus({ academicYearId }) as {
+  //   data: any[];
+  // };
+  const syllabusData: any[] = []; // Temporary placeholder to avoid breaking downstream logic if any remains active
   const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 10 });
   const { upcomingEvents, completedEvents, loading: eventsLoading, refetch: refetchEvents } = useEvents({ forDashboard: true, limit: 5 }) as {
     upcomingEvents: any[];
@@ -195,6 +196,7 @@ const TeacherDashboard = () => {
     return subjects;
   }, [routine]);
 
+  /*
   const mySyllabus = useMemo(() => {
     if (!syllabusData?.length) return [];
     return syllabusData.filter(
@@ -217,6 +219,9 @@ const TeacherDashboard = () => {
     const activePct = total > 0 ? Math.round((activeCount / total) * 100) : 0;
     return { activePct, otherPct: 100 - activePct, activeCount, otherCount, total };
   }, [mySyllabus]);
+  */
+
+  const syllabusChartData = { activePct: 0, otherPct: 100, activeCount: 0, otherCount: 0, total: 0 };
 
   // Today's classes - filter routine by selected date's day
   const today = new Date();
@@ -252,21 +257,20 @@ const TeacherDashboard = () => {
       : latestNotice?.description
         ? String(latestNotice.description).trim()
         : null;
-  const noticeDate = latestNotice?.addedOn
-    ? String(latestNotice.addedOn).trim()
-    : latestNotice?.modifiedOn
-      ? String(latestNotice.modifiedOn).trim()
-      : latestNotice?.noticeDate
-        ? String(latestNotice.noticeDate).trim()
-        : latestNotice?.publishOn
-          ? String(latestNotice.publishOn).trim()
-          : latestNotice?.created_at
-            ? new Date(latestNotice.created_at).toLocaleDateString("en-GB", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
-            : null;
+  const noticePublishOn = latestNotice?.publishOn
+    ? String(latestNotice.publishOn).trim()
+    : latestNotice?.addedOn
+      ? String(latestNotice.addedOn).trim()
+      : latestNotice?.created_at
+        ? new Date(latestNotice.created_at).toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : null;
+  const noticeTill = latestNotice?.noticeEndDate
+    ? String(latestNotice.noticeEndDate).trim()
+    : null;
   const studentDonutChart = useMemo(() => ({
     chart: {
       height: 90,
@@ -346,7 +350,8 @@ const TeacherDashboard = () => {
                     <div className="text-light">
                       <p className="mb-1">Notice: {noticeTitle}</p>
                       {noticeMessage ? <p className="mb-1">{noticeMessage}</p> : null}
-                      {noticeDate ? <p className="mb-0 small">Date: {noticeDate}</p> : null}
+                      {noticePublishOn ? <p className="mb-0 small">Publish On: {noticePublishOn}</p> : null}
+                      <p className="mb-0 small">Notice Till: {noticeTill || "N/A"}</p>
                     </div>
                   ) : (
                     <p className="text-light mb-0">No upcoming notices.</p>

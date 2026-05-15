@@ -1,169 +1,244 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
 import CommonSelect from "../../../core/common/commonSelect";
-import dayjs from "dayjs";
 import Swal from "sweetalert2";
 
 interface FeesModalProps {
   onSuccess?: (isManualRefresh?: boolean) => void;
-  editGroupData?: any;
-  editTypeData?: any;
-  editMasterData?: any;
+  editFeeData?: any;       // fees (header) record for editing
+  editTypeData?: any;      // fees_types record for editing
+  editItemData?: any;      // fees_class_types record for editing
   deleteId?: number | null;
+  deleteContext?: "fee" | "type" | "item"; // what we're deleting
   onDeleteSuccess?: () => void;
 }
 
-const FeesModal = ({ onSuccess, editGroupData, editTypeData, editMasterData, deleteId, onDeleteSuccess }: FeesModalProps) => {
+const FeesModal = ({
+  onSuccess,
+  editFeeData,
+  editTypeData,
+  editItemData,
+  deleteId,
+  deleteContext,
+  onDeleteSuccess
+}: FeesModalProps) => {
     const academicYearId = useSelector(selectSelectedAcademicYearId);
-    const [activeContent, setActiveContent] = useState('none');
-    
-    // Fees Group Form State
-    const [groupName, setGroupName] = useState("");
-    const [groupDescription, setGroupDescription] = useState("");
-    const [groupStatus, setGroupStatus] = useState(true);
 
-    // Fees Type Form State
+    // ── Fee Config (fees header) State ──────────────────────────────────────
+    /** Add mode only: multi-class via checkboxes / "All classes" */
+    const [feeClassIds, setFeeClassIds] = useState<number[]>([]);
+    const [allClassesSelected, setAllClassesSelected] = useState(false);
+    const [feeDueDate, setFeeDueDate] = useState("");
+    const [feeLateType, setFeeLateType] = useState<"fixed"|"percentage"|"none">("none");
+    const [feeLateCharge, setFeeLateCharge] = useState("0");
+    const [feeLateFreq, setFeeLateFreq] = useState("once");
+    const [feeDescription, setFeeDescription] = useState("");
+    // Line items for the fee config
+    const [feeItems, setFeeItems] = useState<{ fee_type_id: number; amount: string; is_optional: boolean }[]>([
+      { fee_type_id: 0, amount: "", is_optional: false }
+    ]);
+
+    // ── Fee Type State ──────────────────────────────────────────────────────
     const [typeName, setTypeName] = useState("");
     const [typeCode, setTypeCode] = useState("");
     const [typeDescription, setTypeDescription] = useState("");
-    const [typeStatus, setTypeStatus] = useState(true);
+    const [typeIsActive, setTypeIsActive] = useState(true);
 
-    // Fees Master Form State
-    const [masterGroupId, setMasterGroupId] = useState<number | null>(null);
-    const [masterTypeId, setMasterTypeId] = useState<number | null>(null);
-    const [masterAmount, setMasterAmount] = useState<string>("");
-    const [masterDueDate, setMasterDueDate] = useState<string>("");
-    const [masterFineAmount, setMasterFineAmount] = useState<string>("0");
-    const [masterFinePercentage, setMasterFinePercentage] = useState<string>("0");
-    const [masterStatus, setMasterStatus] = useState(true);
+    // ── Dropdown data ───────────────────────────────────────────────────────
+    const [classes, setClasses] = useState<any[]>([]);
+    const [feeTypes, setFeeTypes] = useState<any[]>([]);
 
-    // Dropdown Data
-    const [groups, setGroups] = useState<any[]>([]);
-    const [types, setTypes] = useState<any[]>([]);
-
-    const fetchDropdowns = async () => {
+    const fetchDropdowns = useCallback(async () => {
       try {
-        const gRes = await apiService.getFeesGroups({ academic_year_id: academicYearId });
-        if (gRes.status === "SUCCESS") {
-          setGroups(gRes.data.filter((g: any) => g.status === 'Active'));
-        }
-        
-        const tRes = await apiService.getFeesTypes();
-        if (tRes.status === "SUCCESS") setTypes(tRes.data);
+        const [classRes, typeRes] = await Promise.all([
+          apiService.getClasses(),
+          apiService.getFeesTypes()
+        ]);
+        if (classRes.status === "SUCCESS") setClasses(classRes.data ?? classRes.classes ?? []);
+        if (typeRes.status === "SUCCESS") setFeeTypes(typeRes.data);
       } catch (err) {
-        console.error(err);
+        console.error("Dropdown fetch failed:", err);
       }
-    };
+    }, []);
 
     useEffect(() => {
-      if (academicYearId) fetchDropdowns();
-    }, [academicYearId]);
+      fetchDropdowns();
+    }, [fetchDropdowns]);
 
+    // Populate form when editing a fee config
     useEffect(() => {
-      if (editGroupData) {
-        setGroupName(editGroupData.name || "");
-        setGroupDescription(editGroupData.description || "");
-        setGroupStatus(editGroupData.status?.toLowerCase() === "active");
+      if (editFeeData) {
+        setFeeDueDate(editFeeData.due_date ?? "");
+        setFeeLateType(editFeeData.late_fee_type ?? "none");
+        setFeeLateCharge(editFeeData.late_fee_charge?.toString() ?? "0");
+        setFeeLateFreq(editFeeData.late_fee_frequency ?? "once");
+        setFeeDescription(editFeeData.description ?? "");
+        if (Array.isArray(editFeeData.fee_items) && editFeeData.fee_items.length > 0) {
+          setFeeItems(editFeeData.fee_items.map((i: any) => ({
+            fee_type_id: i.fee_type_id,
+            amount: i.amount?.toString() ?? "",
+            is_optional: i.is_optional ?? false
+          })));
+        } else {
+          setFeeItems([{ fee_type_id: 0, amount: "", is_optional: false }]);
+        }
       } else {
-        setGroupName("");
-        setGroupDescription("");
-        setGroupStatus(true);
+        setFeeClassIds([]);
+        setAllClassesSelected(false);
+        setFeeDueDate("");
+        setFeeLateType("none");
+        setFeeLateCharge("0");
+        setFeeLateFreq("once");
+        setFeeDescription("");
+        setFeeItems([{ fee_type_id: 0, amount: "", is_optional: false }]);
       }
-    }, [editGroupData]);
+    }, [editFeeData]);
 
-    useEffect(() => {
-      if (editMasterData) {
-        setMasterGroupId(editMasterData.fees_group_id || null);
-        setMasterTypeId(editMasterData.fees_type_id || null);
-        setMasterAmount(editMasterData.amount?.toString() || "");
-        setMasterDueDate(editMasterData.due_date ? dayjs(editMasterData.due_date).format("YYYY-MM-DD") : "");
-        setMasterFineAmount(editMasterData.fine_amount?.toString() || "0");
-        setMasterFinePercentage(editMasterData.fine_percentage?.toString() || "0");
-        setActiveContent(editMasterData.fine_type || "None");
-        setMasterStatus(editMasterData.status?.toLowerCase() === "active");
-      } else {
-        setMasterGroupId(null);
-        setMasterTypeId(null);
-        setMasterAmount("");
-        setMasterDueDate("");
-        setMasterFineAmount("0");
-        setMasterFinePercentage("0");
-        setActiveContent("None");
-        setMasterStatus(true);
+    const sortedFeeClasses = useMemo(
+      () =>
+        [...(classes ?? [])].sort((a, b) =>
+          String(a.class_name ?? "").localeCompare(String(b.class_name ?? ""), undefined, {
+            sensitivity: "base",
+          })
+        ),
+      [classes]
+    );
+
+    const addModeClassSummary = useMemo(() => {
+      if (allClassesSelected) return `All classes (${sortedFeeClasses.length})`;
+      if (feeClassIds.length === 0) return "Select classes…";
+      if (feeClassIds.length === 1) {
+        const c = sortedFeeClasses.find((x: any) => x.id === feeClassIds[0]);
+        return c?.class_name ?? `Class #${feeClassIds[0]}`;
       }
-    }, [editMasterData]);
+      return `${feeClassIds.length} classes selected`;
+    }, [allClassesSelected, feeClassIds, sortedFeeClasses]);
 
+    // Populate form when editing a fee type
     useEffect(() => {
       if (editTypeData) {
-        setTypeName(editTypeData.name || "");
-        setTypeCode(editTypeData.code || "");
-        setTypeDescription(editTypeData.description || "");
-        setTypeStatus(editTypeData.status?.toLowerCase() === "active");
-        if (editTypeData.fees_group_id) setMasterGroupId(editTypeData.fees_group_id);
+        setTypeName(editTypeData.name ?? "");
+        setTypeCode(editTypeData.code ?? "");
+        setTypeDescription(editTypeData.description ?? "");
+        setTypeIsActive(editTypeData.is_active !== false);
       } else {
         setTypeName("");
         setTypeCode("");
         setTypeDescription("");
-        setTypeStatus(true);
+        setTypeIsActive(true);
       }
     }, [editTypeData]);
 
-    const handleAddFeesGroup = async (e: any) => {
-        e.preventDefault();
-        try {
-          if (!groupName) {
-            Swal.fire("Error", "Name is required", "error");
-            return;
-          }
-          
-          const payload = {
-            name: groupName,
-            description: groupDescription,
-            status: groupStatus ? "Active" : "Inactive",
-            academic_year_id: academicYearId
-          };
-  
-          let res;
-          if (editGroupData?.id) {
-            res = await apiService.updateFeesGroup(editGroupData.id, payload);
-          } else {
-            res = await apiService.createFeesGroup(payload);
-          }
-  
-          if (res.status === "SUCCESS") {
-            Swal.fire("Success", `Fees Group ${editGroupData?.id ? 'updated' : 'added'} successfully`, "success");
-            setGroupName("");
-            setGroupDescription("");
-            if (onSuccess) onSuccess();
-            
-            const activeModal = document.querySelector('.modal.show')?.id;
-            if (activeModal) {
-                const modalElement = document.getElementById(activeModal);
-                if (modalElement) (window as any).bootstrap?.Modal?.getInstance(modalElement)?.hide();
-            }
-          }
-        } catch (err: any) {
-          Swal.fire("Error", err.message || "Operation failed", "error");
-        }
-      };
+    // ── Fee Item helpers ────────────────────────────────────────────────────
+    const addFeeItem = () => setFeeItems(prev => [...prev, { fee_type_id: 0, amount: "", is_optional: false }]);
+    const removeFeeItem = (idx: number) => setFeeItems(prev => prev.filter((_, i) => i !== idx));
+    const updateFeeItem = (idx: number, field: string, value: any) =>
+      setFeeItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
 
-    const handleAddFeesType = async (e: any) => {
-      if (e) e.preventDefault();
+    const closeActiveModal = () => {
+      const activeModal = document.querySelector(".modal.show")?.id;
+      if (activeModal) {
+        const el = document.getElementById(activeModal);
+        if (el) (window as any).bootstrap?.Modal?.getInstance(el)?.hide();
+      }
+    };
+
+    // ── Save Fee Config ─────────────────────────────────────────────────────
+    const handleSaveFeeConfig = async (e: any) => {
+      e.preventDefault();
       try {
-        if (!typeName) {
-          Swal.fire("Error", "Fees Type name is required", "error");
+        if (!academicYearId) {
+          Swal.fire("Validation", "Academic Year is required", "warning");
           return;
         }
-        
+        if (!editFeeData?.id && !allClassesSelected && feeClassIds.length === 0) {
+          Swal.fire(
+            "Validation",
+            'Select one or more classes, or choose "All classes".',
+            "warning"
+          );
+          return;
+        }
+        const validItems = feeItems.filter(i => i.fee_type_id > 0 && i.amount !== "");
+        if (validItems.length === 0) {
+          Swal.fire("Validation", "Add at least one fee item with a type and amount", "warning");
+          return;
+        }
+
+        const payload: Record<string, unknown> = {
+          academic_year_id: academicYearId,
+          due_date: feeDueDate || null,
+          late_fee_type: feeLateType !== "none" ? feeLateType : "fixed",
+          late_fee_charge: feeLateType !== "none" ? parseFloat(feeLateCharge) : 0,
+          late_fee_frequency: feeLateFreq,
+          description: feeDescription || null,
+          fee_items: validItems.map(i => ({
+            fee_type_id: Number(i.fee_type_id),
+            amount: parseFloat(i.amount),
+            is_optional: i.is_optional
+          }))
+        };
+
+        if (!editFeeData?.id) {
+          if (allClassesSelected) {
+            payload.apply_to_all_classes = true;
+          } else {
+            payload.class_ids = [...feeClassIds];
+          }
+        } else {
+          payload.class_id = editFeeData.class_id;
+        }
+
+        let res;
+        if (editFeeData?.id) {
+          res = await apiService.updateFeesGroup(editFeeData.id, payload);
+        } else {
+          res = await apiService.createFeesGroup(payload);
+        }
+
+        if (res.status === "SUCCESS") {
+          let msg =
+            res.message ??
+            `Fee configuration ${editFeeData?.id ? "updated" : "created"} successfully`;
+          if (!editFeeData?.id && res.data?.summary) {
+            const s = res.data.summary as Record<string, number | undefined>;
+            if (typeof s.new_fee_headers === "number") {
+              msg = `${msg}\n\nNew configs: ${s.new_fee_headers} · Existing updated: ${s.merged_existing ?? 0} · Lines added: ${s.lines_added ?? 0}`;
+              if ((s.duplicate_types_skipped ?? 0) > 0) {
+                msg += ` · Types skipped (already on class): ${s.duplicate_types_skipped}`;
+              }
+              if ((s.failed_count ?? 0) > 0) msg += ` · Failed: ${s.failed_count}`;
+            } else if (typeof s.created_count === "number") {
+              msg = `${msg}\n\nCreated: ${s.created_count} · Skipped (already exist): ${s.skipped_count}${
+                s.failed_count ? ` · Failed: ${s.failed_count}` : ""
+              }`;
+            }
+          }
+          Swal.fire("Success", msg, "success");
+          if (onSuccess) onSuccess();
+          closeActiveModal();
+        }
+      } catch (err: any) {
+        Swal.fire("Error", err.message || "Operation failed", "error");
+      }
+    };
+
+    // ── Save Fee Type ───────────────────────────────────────────────────────
+    const handleSaveFeeType = async (e: any) => {
+      e.preventDefault();
+      try {
+        if (!typeName.trim()) {
+          Swal.fire("Validation", "Fee type name is required", "warning");
+          return;
+        }
         const payload = {
-          name: typeName,
-          code: typeCode,
-          description: typeDescription,
-          status: typeStatus ? "Active" : "Inactive",
-          fees_group_id: masterGroupId // Included for backward compatibility or simple association
+          name: typeName.trim(),
+          code: typeCode.trim() || null,
+          description: typeDescription.trim() || null,
+          is_active: typeIsActive
         };
 
         let res;
@@ -174,439 +249,449 @@ const FeesModal = ({ onSuccess, editGroupData, editTypeData, editMasterData, del
         }
 
         if (res.status === "SUCCESS") {
-          Swal.fire("Success", `Fees Type ${editTypeData?.id ? 'updated' : 'added'} successfully`, "success");
-          setTypeName("");
-          setTypeCode("");
-          setTypeDescription("");
+          Swal.fire("Success", `Fee type ${editTypeData?.id ? "updated" : "created"} successfully`, "success");
+          // Refresh dropdown in case new type was added
+          fetchDropdowns();
           if (onSuccess) onSuccess();
-          const activeModal = document.querySelector('.modal.show')?.id;
-          if (activeModal) {
-              const modalElement = document.getElementById(activeModal);
-              if (modalElement) (window as any).bootstrap?.Modal?.getInstance(modalElement)?.hide();
-          }
+          closeActiveModal();
         }
       } catch (err: any) {
         Swal.fire("Error", err.message || "Operation failed", "error");
       }
     };
 
-    const handleAddFeesMaster = async (e: any) => {
-      e.preventDefault();
-      try {
-        if (!masterGroupId || !masterTypeId || !masterAmount || !academicYearId) {
-          Swal.fire("Error", "Please fill required fields", "error");
-          return;
-        }
-        
-        const payload = {
-          fees_group_id: Number(masterGroupId),
-          fees_type_id: Number(masterTypeId),
-          amount: parseFloat(masterAmount),
-          due_date: masterDueDate || null,
-          fine_type: activeContent || "None",
-          fine_amount: activeContent === "fixed" ? parseFloat(masterFineAmount) : 0,
-          fine_percentage: activeContent === "percentage" ? parseFloat(masterFinePercentage) : 0,
-          academic_year_id: academicYearId,
-          status: masterStatus ? "Active" : "Inactive"
-        };
-
-        let res;
-        if (editMasterData?.id) {
-          res = await apiService.updateFeesMaster(editMasterData.id, payload);
-        } else {
-          res = await apiService.createFeesMaster(payload);
-        }
-
-        if (res.status === "SUCCESS") {
-          Swal.fire("Success", `Fees Master ${editMasterData?.id ? 'updated' : 'added'} successfully`, "success");
-          setMasterAmount("");
-          setMasterGroupId(null);
-          setMasterTypeId(null);
-          if (onSuccess) onSuccess();
-          const activeModal = document.querySelector('.modal.show')?.id;
-          if (activeModal) {
-              const modalElement = document.getElementById(activeModal);
-              if (modalElement) (window as any).bootstrap?.Modal?.getInstance(modalElement)?.hide();
-          }
-        }
-      } catch (err: any) {
-        Swal.fire("Error", err.message || "Operation failed", "error");
-      }
-    };
-
+    // ── Delete ──────────────────────────────────────────────────────────────
     const handleDelete = async (e: any) => {
       e.preventDefault();
       if (!deleteId) return;
-
       try {
         let res;
-        if (editMasterData) res = await apiService.deleteFeesMaster(deleteId);
-        else if (editGroupData) res = await apiService.deleteFeesGroup(deleteId);
-        else if (editTypeData) res = await apiService.deleteFeesType(deleteId);
-        else res = await apiService.deleteFeesType(deleteId); 
+        if (deleteContext === "type") res = await apiService.deleteFeesType(deleteId);
+        else if (deleteContext === "item") res = await apiService.deleteFeesMaster(deleteId);
+        else res = await apiService.deleteFeesGroup(deleteId); // "fee" or default
 
-        if (res && res.status === "SUCCESS") {
-          Swal.fire("Deleted!", "Record has been deleted.", "success");
+        if (res?.status === "SUCCESS") {
+          Swal.fire("Deleted!", "Record deleted successfully.", "success");
           if (onDeleteSuccess) onDeleteSuccess();
-          const modalElement = document.getElementById('delete-modal');
-          if (modalElement) {
-            (window as any).bootstrap?.Modal?.getInstance(modalElement)?.hide();
-          }
+          const el = document.getElementById("delete-modal");
+          if (el) (window as any).bootstrap?.Modal?.getInstance(el)?.hide();
         }
       } catch (err: any) {
-        Swal.fire("Error", err.message || "Failed to delete record", "error");
+        Swal.fire("Error", err.message || "Failed to delete", "error");
       }
     };
 
-    const defaultValue = dayjs();
-    const getModalContainer = () => document.getElementById('modal-datepicker') || document.body;
-
   return (
     <>
-      {/* Fees Master Modals */}
-      <div className="modal fade" id="add_fees_master">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Add Fees Master</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
-            </div>
-            <form onSubmit={handleAddFeesMaster}>
-              <div className="modal-body">
-                <div className="row">
-                  <div className="col-md-12">
-                    <div className="mb-3">
-                      <label className="form-label">Fees Group</label>
-                      <CommonSelect
-                        className="select"
-                        options={groups.map(g => ({ value: g.id.toString(), label: g.name }))}
-                        value={masterGroupId?.toString()}
-                        onChange={(val: any) => setMasterGroupId(Number(val))}
+      {/* ── Add / Edit Fee Configuration Modal ── */}
+      {["add_fees_group", "edit_fees_group"].map((modalId) => (
+        <div className="modal fade" id={modalId} key={modalId}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content">
+              <div className="modal-header border-0 pb-0">
+                <div>
+                  <h4 className="modal-title fw-semibold">
+                    {modalId.startsWith("add") ? "Add Fee Configuration" : "Edit Fee Configuration"}
+                  </h4>
+                  <p className="text-muted small mb-0">Set up fees for a class and academic year</p>
+                </div>
+                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal">
+                  <i className="ti ti-x" />
+                </button>
+              </div>
+              <form onSubmit={handleSaveFeeConfig}>
+                <div className="modal-body pt-3">
+
+                  {/* ─ Section 1: Basic Info ─ */}
+                  <div className="bg-light rounded-2 p-3 mb-3">
+                    <p className="text-uppercase fw-semibold text-muted small mb-3" style={{ letterSpacing: "0.06em" }}>
+                      Basic Information
+                    </p>
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label fw-medium">
+                          Class <span className="text-danger">*</span>
+                        </label>
+                        {editFeeData?.id ? (
+                          <input className="form-control" value={editFeeData.class_name ?? ""} disabled />
+                        ) : (
+                          <div className="w-100">
+                            <div className="dropdown w-100">
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center justify-content-between gap-2"
+                                data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside"
+                                aria-expanded="false"
+                              >
+                                <span className="text-truncate">{addModeClassSummary}</span>
+                              </button>
+                              <div
+                                className="dropdown-menu shadow w-100 p-3 mt-1"
+                                style={{
+                                  maxHeight: "min(280px, 45vh)",
+                                  overflowY: "auto",
+                                  zIndex: 1060,
+                                }}
+                                onClick={(ev) => ev.stopPropagation()}
+                              >
+                                <div className="form-check mb-2 pb-2 border-bottom">
+                                  <input
+                                    className="form-check-input"
+                                    type="checkbox"
+                                    id="fee-class-all"
+                                    checked={allClassesSelected}
+                                    onChange={(e) => {
+                                      const c = e.target.checked;
+                                      setAllClassesSelected(c);
+                                      if (c) setFeeClassIds([]);
+                                    }}
+                                  />
+                                  <label className="form-check-label fw-medium ms-2" htmlFor="fee-class-all">
+                                    All classes
+                                  </label>
+                                </div>
+                                {sortedFeeClasses.map((c: any) => (
+                                  <div key={c.id} className="form-check mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      id={`fee-class-${c.id}`}
+                                      disabled={allClassesSelected}
+                                      checked={
+                                        allClassesSelected || feeClassIds.includes(Number(c.id))
+                                      }
+                                      onChange={(e) => {
+                                        if (allClassesSelected) return;
+                                        const idNum = Number(c.id);
+                                        const checked = e.target.checked;
+                                        setFeeClassIds((prev) =>
+                                          checked
+                                            ? [...new Set([...prev, idNum])]
+                                            : prev.filter((x) => x !== idNum)
+                                        );
+                                      }}
+                                    />
+                                    <label
+                                      className="form-check-label ms-2"
+                                      htmlFor={`fee-class-${c.id}`}
+                                    >
+                                      {c.class_name}
+                                    </label>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label fw-medium">Default Due Date</label>
+                        <input
+                          type="date"
+                          className="form-control"
+                          value={feeDueDate}
+                          onChange={(e) => setFeeDueDate(e.target.value)}
                         />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">Fees Type</label>
-                      <CommonSelect
-                        className="select"
-                        options={types.map(t => ({ value: t.id.toString(), label: t.name }))}
-                        value={masterTypeId?.toString()}
-                        onChange={(val: any) => setMasterTypeId(Number(val))}
+                      </div>
+                      <div className="col-md-12">
+                        <label className="form-label fw-medium">Description <span className="text-muted fw-normal">(optional)</span></label>
+                        <textarea
+                          className="form-control"
+                          rows={2}
+                          placeholder="Any notes about this fee structure..."
+                          value={feeDescription}
+                          onChange={(e) => setFeeDescription(e.target.value)}
                         />
+                      </div>
                     </div>
                   </div>
-                  <div className="col-md-12">
-                    <div className="mb-3">
-                        <label className="form-label">Amount</label>
-                        <input type="text" className="form-control" placeholder="Enter Amount" value={masterAmount} onChange={(e) => setMasterAmount(e.target.value)} />
+
+                  {/* ─ Section 2: Late Fee ─ */}
+                  <div className="bg-light rounded-2 p-3 mb-3">
+                    <p className="text-uppercase fw-semibold text-muted small mb-3" style={{ letterSpacing: "0.06em" }}>
+                      Late Fee Settings
+                    </p>
+                    <div className="row g-3">
+                      <div className="col-md-4">
+                        <label className="form-label fw-medium">Late Fee Type</label>
+                        <CommonSelect
+                          className="select"
+                          options={[
+                            { value: "none", label: "None" },
+                            { value: "fixed", label: "Fixed Amount (₹)" },
+                            { value: "percentage", label: "Percentage (%)" }
+                          ]}
+                          value={feeLateType}
+                          onChange={(val: any) => setFeeLateType(val?.value ?? val)}
+                        />
+                      </div>
+                      {feeLateType !== "none" && (
+                        <>
+                          <div className="col-md-4">
+                            <label className="form-label fw-medium">
+                              {feeLateType === "percentage" ? "Late Fee %" : "Late Fee Amount (₹)"}
+                            </label>
+                            <div className="input-group">
+                              <span className="input-group-text">
+                                {feeLateType === "percentage" ? "%" : "₹"}
+                              </span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="form-control"
+                                placeholder="0"
+                                value={feeLateCharge}
+                                onChange={(e) => setFeeLateCharge(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="col-md-4">
+                            <label className="form-label fw-medium">Frequency</label>
+                            <CommonSelect
+                              className="select"
+                              options={[
+                                { value: "once", label: "Once" },
+                                { value: "daily", label: "Daily" },
+                                { value: "weekly", label: "Weekly" },
+                                { value: "monthly", label: "Monthly" }
+                              ]}
+                              value={feeLateFreq}
+                              onChange={(val: any) => setFeeLateFreq(val?.value ?? val)}
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="mb-3">
-                        <label className="form-label">Due Date</label>
-                        <input type="date" className="form-control" value={masterDueDate} onChange={(e) => setMasterDueDate(e.target.value)} />
+                  </div>
+
+                  {/* ─ Section 3: Fee Items ─ */}
+                  <div className="bg-light rounded-2 p-3">
+                    <div className="d-flex align-items-center justify-content-between mb-3">
+                      <p className="text-uppercase fw-semibold text-muted small mb-0" style={{ letterSpacing: "0.06em" }}>
+                        Fee Items <span className="text-danger">*</span>
+                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary d-flex align-items-center gap-1"
+                        onClick={addFeeItem}
+                      >
+                        <i className="ti ti-plus" /> Add Item
+                      </button>
                     </div>
-                    <div className="mb-3">
-                      <label className="form-label">Fine Type</label>
-                      <div className="d-flex align-items-center check-radio-group">
-                        <label className="custom-radio">
-                          <input type="radio" name="radio-mf-add" value="None" checked={activeContent === 'None'} onChange={() => setActiveContent('None')} />
-                          <span className="checkmark" /> None
-                        </label>
-                        <label className="custom-radio ms-2">
-                          <input type="radio" name="radio-mf-add" value="percentage" checked={activeContent === 'percentage'} onChange={() => setActiveContent('percentage')} />
-                          <span className="checkmark" /> Percentage
-                        </label>
-                        <label className="custom-radio ms-2">
-                          <input type="radio" name="radio-mf-add" value="fixed" checked={activeContent === 'fixed'} onChange={() => setActiveContent('fixed')} />
-                          <span className="checkmark" /> Fixed
-                        </label>
+
+                    <div className="d-flex flex-column gap-2">
+                      {feeItems.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white border rounded-2 p-3 d-flex align-items-center gap-3"
+                        >
+                          {/* Index badge */}
+                          <span
+                            className="d-flex align-items-center justify-content-center rounded-circle text-white fw-bold flex-shrink-0"
+                            style={{ width: 28, height: 28, fontSize: 12, background: "var(--bs-primary, #6366f1)" }}
+                          >
+                            {idx + 1}
+                          </span>
+
+                          {/* Fee Type — native select avoids dropdown overflow */}
+                          <div className="flex-grow-1">
+                            <label className="form-label small fw-medium mb-1">Fee Type</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={item.fee_type_id > 0 ? item.fee_type_id.toString() : ""}
+                              onChange={(e) => updateFeeItem(idx, "fee_type_id", Number(e.target.value))}
+                            >
+                              <option value="">-- Select type --</option>
+                              {feeTypes
+                                .filter((t: any) => t.is_active !== false)
+                                .map((t: any) => (
+                                  <option key={t.id} value={t.id.toString()}>
+                                    {t.name}{t.code ? ` (${t.code})` : ""}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+
+                          {/* Amount */}
+                          <div style={{ width: 130 }}>
+                            <label className="form-label small fw-medium mb-1">Amount</label>
+                            <div className="input-group input-group-sm">
+                              <span className="input-group-text">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="form-control"
+                                placeholder="0.00"
+                                value={item.amount}
+                                onChange={(e) => updateFeeItem(idx, "amount", e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Optional toggle */}
+                          <div className="text-center flex-shrink-0">
+                            <label className="form-label small fw-medium mb-1 d-block">Optional?</label>
+                            <div className="form-check form-switch d-flex justify-content-center mb-0">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                role="switch"
+                                checked={item.is_optional}
+                                onChange={(e) => updateFeeItem(idx, "is_optional", e.target.checked)}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Remove */}
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger flex-shrink-0"
+                            onClick={() => removeFeeItem(idx)}
+                            disabled={feeItems.length <= 1}
+                            title="Remove item"
+                          >
+                            <i className="ti ti-trash" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Running total */}
+                    <div className="mt-3 pt-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+                      {/* Sub-totals */}
+                      <div className="d-flex gap-3">
+                        <div className="text-center px-3 py-2 rounded-2 border bg-white">
+                          <div className="text-muted small mb-1">Compulsory</div>
+                          <div className="fw-semibold text-primary">
+                            ₹{feeItems.filter(i => !i.is_optional).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0).toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="text-center px-3 py-2 rounded-2 border bg-white">
+                          <div className="text-muted small mb-1">Optional</div>
+                          <div className="fw-semibold text-info">
+                            ₹{feeItems.filter(i => i.is_optional).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0).toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Grand Total — prominent */}
+                      <div
+                        className="d-flex align-items-center gap-2 px-4 py-2 rounded-2 text-white fw-bold"
+                        style={{ background: "var(--bs-primary, #6366f1)" }}
+                      >
+                        <i className="ti ti-currency-rupee fs-5" />
+                        <div>
+                          <div style={{ fontSize: 11, opacity: 0.85, letterSpacing: "0.04em" }}>GRAND TOTAL</div>
+                          <div style={{ fontSize: 22, lineHeight: 1.1 }}>
+                            ₹{feeItems.reduce((s, i) => s + (parseFloat(i.amount) || 0), 0).toFixed(2)}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    {activeContent === 'percentage' && (
-                      <div className="mb-3">
-                          <label className="form-label">Fine Percentage (%)</label>
-                          <input type="text" className="form-control" placeholder="Enter Percentage" value={masterFinePercentage} onChange={(e) => setMasterFinePercentage(e.target.value)} />
-                      </div>
-                    )}
-                    {activeContent === 'fixed' && (
-                      <div className="mb-3">
-                          <label className="form-label">Fine Amount (Fixed)</label>
-                          <input type="text" className="form-control" placeholder="Enter Fine Amount" value={masterFineAmount} onChange={(e) => setMasterFineAmount(e.target.value)} />
-                      </div>
-                    )}
+                  </div>
+
+                </div>
+                <div className="modal-footer border-0 pt-0">
+                  <button type="button" className="btn btn-light px-4" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" className="btn btn-primary px-4">
+                    <i className={`ti ${editFeeData?.id ? "ti-device-floppy" : "ti-circle-plus"} me-2`} />
+                    {editFeeData?.id ? "Save Changes" : "Create Fee Config"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ))}
+
+
+      {/* ── Add / Edit Fee Type Modal ── */}
+      {["add_fees_Type", "edit_fees_Type"].map((modalId) => (
+        <div className="modal fade" id={modalId} key={modalId}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h4 className="modal-title">
+                  {modalId.startsWith("add") ? "Add Fee Type" : "Edit Fee Type"}
+                </h4>
+                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal">
+                  <i className="ti ti-x" />
+                </button>
+              </div>
+              <form onSubmit={handleSaveFeeType}>
+                <div className="modal-body">
+                  <div className="mb-3">
+                    <label className="form-label">Name <span className="text-danger">*</span></label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Tuition Fee, Library Fee"
+                      value={typeName}
+                      onChange={(e) => setTypeName(e.target.value)}
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label">Code</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. TUI, LIB"
+                      value={typeCode}
+                      onChange={(e) => setTypeCode(e.target.value)}
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label">Description</label>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={typeDescription}
+                      onChange={(e) => setTypeDescription(e.target.value)}
+                    />
                   </div>
                   <div className="d-flex align-items-center justify-content-between">
-                    <div className="status-title"><h5>Status</h5><p>{masterStatus ? "Active" : "Inactive"}</p></div>
+                    <div>
+                      <h5 className="mb-0">Active</h5>
+                      <p className="text-muted small mb-0">{typeIsActive ? "Visible in fee configs" : "Hidden"}</p>
+                    </div>
                     <div className="form-check form-switch">
-                      <input className="form-check-input" type="checkbox" checked={masterStatus} onChange={(e) => setMasterStatus(e.target.checked)} />
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        checked={typeIsActive}
+                        onChange={(e) => setTypeIsActive(e.target.checked)}
+                      />
                     </div>
                   </div>
                 </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <div className="modal fade" id="edit_fees_master">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Edit Fees Master</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" className="btn btn-primary">
+                    {editTypeData?.id ? "Save Changes" : "Add Fee Type"}
+                  </button>
+                </div>
+              </form>
             </div>
-            <form onSubmit={handleAddFeesMaster}>
-              <div className="modal-body">
-                <div className="row">
-                    <div className="col-md-12">
-                        <div className="mb-3">
-                            <label className="form-label">Fees Group</label>
-                            <input type="text" className="form-control" value={groups.find(g => g.id === masterGroupId)?.name || ""} disabled />
-                        </div>
-                        <div className="mb-3">
-                            <label className="form-label">Fees Type</label>
-                            <input type="text" className="form-control" value={types.find(t => t.id === masterTypeId)?.name || ""} disabled />
-                        </div>
-                    </div>
-                  <div className="col-md-12">
-                    <div className="mb-3">
-                        <label className="form-label">Amount</label>
-                        <input type="text" className="form-control" value={masterAmount} onChange={(e) => setMasterAmount(e.target.value)} />
-                    </div>
-                    <div className="mb-3">
-                        <label className="form-label">Due Date</label>
-                        <input type="date" className="form-control" value={masterDueDate} onChange={(e) => setMasterDueDate(e.target.value)} />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">Fine Type</label>
-                      <div className="d-flex align-items-center check-radio-group">
-                        <label className="custom-radio">
-                          <input type="radio" name="radio-mf-edit" value="None" checked={activeContent === 'None'} onChange={() => setActiveContent('None')} />
-                          <span className="checkmark" /> None
-                        </label>
-                        <label className="custom-radio ms-2">
-                          <input type="radio" name="radio-mf-edit" value="percentage" checked={activeContent === 'percentage'} onChange={() => setActiveContent('percentage')} />
-                          <span className="checkmark" /> Percentage
-                        </label>
-                        <label className="custom-radio ms-2">
-                          <input type="radio" name="radio-mf-edit" value="fixed" checked={activeContent === 'fixed'} onChange={() => setActiveContent('fixed')} />
-                          <span className="checkmark" /> Fixed
-                        </label>
-                      </div>
-                    </div>
-                    {activeContent === 'percentage' && (
-                      <div className="mb-3">
-                          <label className="form-label">Fine Percentage (%)</label>
-                          <input type="text" className="form-control" value={masterFinePercentage} onChange={(e) => setMasterFinePercentage(e.target.value)} />
-                      </div>
-                    )}
-                    {activeContent === 'fixed' && (
-                      <div className="mb-3">
-                          <label className="form-label">Fine Amount (Fixed)</label>
-                          <input type="text" className="form-control" value={masterFineAmount} onChange={(e) => setMasterFineAmount(e.target.value)} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="d-flex align-items-center justify-content-between">
-                    <div className="status-title"><h5>Status</h5><p>{masterStatus ? "Active" : "Inactive"}</p></div>
-                    <div className="form-check form-switch">
-                      <input className="form-check-input" type="checkbox" checked={masterStatus} onChange={(e) => setMasterStatus(e.target.checked)} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
-              </div>
-            </form>
           </div>
         </div>
-      </div>
+      ))}
 
-      {/* Fees Type Modals */}
-      <div className="modal fade" id="add_fees_Type">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Add Fees Type</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
-            </div>
-            <form onSubmit={handleAddFeesType}>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Name</label>
-                  <input type="text" className="form-control" placeholder="Enter Name" value={typeName} onChange={(e) => setTypeName(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Fees Code</label>
-                  <input type="text" className="form-control" placeholder="Enter Code" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                  <div className="d-flex justify-content-between align-items-center">
-                    <label className="form-label">Fees Group</label>
-                    <Link to="#" className="text-primary mb-2" data-bs-toggle="modal" data-bs-target="#add_fees_group">
-                        <i className="ti ti-square-rounded-plus-filled me-1" /> Add New
-                    </Link>
-                  </div>
-                  <CommonSelect
-                    className="select"
-                    options={groups.map(g => ({ value: g.id.toString(), label: g.name }))}
-                    value={masterGroupId?.toString()}
-                    onChange={(val: any) => setMasterGroupId(Number(val.value))}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-control" rows={3} placeholder="Add Description" value={typeDescription} onChange={(e) => setTypeDescription(e.target.value)} />
-                </div>
-                <div className="d-flex align-items-center justify-content-between">
-                  <h5>Status</h5>
-                  <div className="form-check form-switch">
-                    <input className="form-check-input" type="checkbox" checked={typeStatus} onChange={(e) => setTypeStatus(e.target.checked)} />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Add Fees Type</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <div className="modal fade" id="edit_fees_Type">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Edit Fees Type</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
-            </div>
-            <form onSubmit={handleAddFeesType}>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Name</label>
-                  <input type="text" className="form-control" placeholder="Enter Name" value={typeName} onChange={(e) => setTypeName(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Fees Code</label>
-                  <input type="text" className="form-control" placeholder="Enter Code" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                   <div className="d-flex justify-content-between align-items-center">
-                    <label className="form-label">Fees Group</label>
-                    <Link to="#" className="text-primary mb-2" data-bs-toggle="modal" data-bs-target="#add_fees_group">
-                        <i className="ti ti-square-rounded-plus-filled me-1" /> Add New
-                    </Link>
-                  </div>
-                  <CommonSelect
-                    className="select"
-                    options={groups.map(g => ({ value: g.id.toString(), label: g.name }))}
-                    value={masterGroupId?.toString()}
-                    onChange={(val: any) => setMasterGroupId(Number(val.value))}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-control" rows={3} placeholder="Add Description" value={typeDescription} onChange={(e) => setTypeDescription(e.target.value)} />
-                </div>
-                <div className="d-flex align-items-center justify-content-between">
-                  <h5>Status</h5>
-                  <div className="form-check form-switch">
-                    <input className="form-check-input" type="checkbox" checked={typeStatus} onChange={(e) => setTypeStatus(e.target.checked)} />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      {/* Fees Group Modals */}
-      <div className="modal fade" id="add_fees_group">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Add Fees Group</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
-            </div>
-            <form onSubmit={handleAddFeesGroup}>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Name</label>
-                  <input type="text" className="form-control" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-control" rows={3} value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} />
-                </div>
-                <div className="d-flex align-items-center justify-content-between">
-                  <h5>Status</h5>
-                  <div className="form-check form-switch">
-                    <input className="form-check-input" type="checkbox" checked={groupStatus} onChange={(e) => setGroupStatus(e.target.checked)} />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Add Group</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <div className="modal fade" id="edit_fees_group">
-        <div className="modal-dialog modal-dialog-centered">
-          <div className="modal-content">
-            <div className="modal-header">
-                <h4 className="modal-title">Edit Fees Group</h4>
-                <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button>
-            </div>
-            <form onSubmit={handleAddFeesGroup}>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label">Name</label>
-                  <input type="text" className="form-control" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-control" rows={3} value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} />
-                </div>
-                <div className="d-flex align-items-center justify-content-between">
-                  <h5>Status</h5>
-                  <div className="form-check form-switch">
-                    <input className="form-check-input" type="checkbox" checked={groupStatus} onChange={(e) => setGroupStatus(e.target.checked)} />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Modal */}
+      {/* ── Delete Confirmation Modal ── */}
       <div className="modal fade" id="delete-modal">
         <div className="modal-dialog modal-dialog-centered">
           <div className="modal-content">
             <form onSubmit={handleDelete}>
-              <div className="modal-body text-center">
-                <span className="delete-icon"><i className="ti ti-trash-x" /></span>
+              <div className="modal-body text-center py-4">
+                <span className="delete-icon mb-3 d-block">
+                  <i className="ti ti-trash-x fs-1 text-danger" />
+                </span>
                 <h4>Confirm Deletion</h4>
-                <p>You want to delete this item, this cannot be undone.</p>
-                <div className="d-flex justify-content-center">
-                  <button type="button" className="btn btn-light me-3" data-bs-dismiss="modal">Cancel</button>
+                <p className="text-muted">This action cannot be undone.</p>
+                <div className="d-flex justify-content-center gap-2">
+                  <button type="button" className="btn btn-light" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" className="btn btn-danger">Yes, Delete</button>
                 </div>
               </div>
@@ -619,4 +704,3 @@ const FeesModal = ({ onSuccess, editGroupData, editTypeData, editMasterData, del
 };
 
 export default FeesModal;
-

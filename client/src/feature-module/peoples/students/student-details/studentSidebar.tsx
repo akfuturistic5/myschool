@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentSidebarProps {
   student?: {
@@ -80,6 +81,7 @@ const toDisplayValue = (value: unknown) => {
 
 const StudentSidebar = ({ student }: StudentSidebarProps) => {
   const currentUser = useSelector(selectUser);
+  const isTeacher = isTeacherRole(currentUser);
   const role = String(currentUser?.role || "").trim().toLowerCase();
   const canCollectFees = role === "admin" || role === "administrative";
   const displayName = student
@@ -212,16 +214,6 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
               <dt className="col-6 fw-medium text-dark mb-3">Class &amp; Section</dt>
               <dd className="col-6 mb-3">{classSection}</dd>
             </dl>
-            {canCollectFees && (
-              <Link
-                to="#"
-                data-bs-toggle="modal"
-                data-bs-target="#add_fees_collect"
-                className="btn btn-primary btn-sm w-100"
-              >
-                Add Fees
-              </Link>
-            )}
           </div>
           {/* /Basic Information */}
         </div>
@@ -336,26 +328,30 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
                           <p className="text-dark">{student.vehicle_number ?? 'N/A'}</p>
                         </div>
                       </div>
-                      <div className="col-sm-6">
-                        <div className="mb-3">
-                          <span className="fs-12 mb-1">Plan</span>
-                          <p className="text-dark">
-                            {student.transport_is_free
-                              ? "Free Allocation"
-                              : (student.transport_fee_plan_name ?? "N/A")}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="col-sm-6">
-                        <div className="mb-3">
-                          <span className="fs-12 mb-1">Assigned Amount</span>
-                          <p className="text-dark">
-                            {student.transport_is_free
-                              ? "0"
-                              : (student.transport_assigned_fee_amount != null ? String(student.transport_assigned_fee_amount) : "N/A")}
-                          </p>
-                        </div>
-                      </div>
+                      {!isTeacher && (
+                        <>
+                          <div className="col-sm-6">
+                            <div className="mb-3">
+                              <span className="fs-12 mb-1">Plan</span>
+                              <p className="text-dark">
+                                {student.transport_is_free
+                                  ? "Free Allocation"
+                                  : (student.transport_fee_plan_name ?? "N/A")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="col-sm-6">
+                            <div className="mb-3">
+                              <span className="fs-12 mb-1">Assigned Amount</span>
+                              <p className="text-dark">
+                                {student.transport_is_free
+                                  ? "0"
+                                  : (student.transport_assigned_fee_amount != null ? String(student.transport_assigned_fee_amount) : "N/A")}
+                              </p>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </>
                 ) : (

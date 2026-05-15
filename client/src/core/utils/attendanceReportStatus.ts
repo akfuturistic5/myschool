@@ -1,8 +1,16 @@
 /** API: calendar holiday + recorded attendance same day (`getAttendanceReport` in studentController). */
 export const HOLIDAY_ATTENDANCE_PREFIX = "holiday_";
 
+function normalizeAttendanceToken(status: string | null | undefined): string {
+  return String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_–—−]+/g, "_")
+    .replace(/^halfday$/, "half_day");
+}
+
 export function isHolidayAttendanceCompound(status: string | null | undefined): boolean {
-  const s = String(status || "").trim().toLowerCase();
+  const s = normalizeAttendanceToken(status);
   if (!s.startsWith(HOLIDAY_ATTENDANCE_PREFIX)) return false;
   const rest = s.slice(HOLIDAY_ATTENDANCE_PREFIX.length);
   return Boolean(rest && rest !== "holiday");
@@ -10,14 +18,14 @@ export function isHolidayAttendanceCompound(status: string | null | undefined): 
 
 export function getCompoundHolidayAttendancePart(status: string | null | undefined): string {
   if (!isHolidayAttendanceCompound(status)) return "";
-  return String(status).trim().toLowerCase().slice(HOLIDAY_ATTENDANCE_PREFIX.length);
+  return normalizeAttendanceToken(status).slice(HOLIDAY_ATTENDANCE_PREFIX.length);
 }
 
 export type DailyAttendanceBucket = "present_side" | "absent_side" | "none";
 
 /** Used by section/day summaries: present+late vs absent+half_day; holiday-only counts toward total only. */
 export function getDailyAttendancePresentAbsentBucket(status: string | null | undefined): DailyAttendanceBucket {
-  const s = String(status || "").trim().toLowerCase();
+  const s = normalizeAttendanceToken(status);
   if (!s) return "none";
   if (s === "holiday" || s === "weekly_holiday") return "none";
   if (isHolidayAttendanceCompound(s)) {
@@ -35,7 +43,7 @@ export function tallyMonthAttendanceDay(
   status: string | null | undefined,
   totals: { present: number; late: number; absent: number; half_day: number; holiday: number }
 ): void {
-  const s = String(status || "").trim().toLowerCase();
+  const s = normalizeAttendanceToken(status);
   if (isHolidayAttendanceCompound(s)) {
     totals.holiday += 1;
     const rest = getCompoundHolidayAttendancePart(s);
@@ -65,7 +73,7 @@ const SUB_LABEL: Record<string, string> = {
 };
 
 export function formatAttendanceDayHumanLabel(status: string | null | undefined): string {
-  const s = String(status || "").trim().toLowerCase();
+  const s = normalizeAttendanceToken(status);
   if (!s) return "Not Marked";
   if (s === "weekly_holiday") return "Weekly holiday";
   if (isHolidayAttendanceCompound(s)) {
@@ -78,7 +86,7 @@ export function formatAttendanceDayHumanLabel(status: string | null | undefined)
 }
 
 export function formatAttendanceDayShort(status: string | null | undefined): string {
-  const s = String(status || "").trim().toLowerCase();
+  const s = normalizeAttendanceToken(status);
   if (!s) return "";
   if (s === "weekly_holiday") return "H";
   if (isHolidayAttendanceCompound(s)) {

@@ -14,6 +14,9 @@ import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
 import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { apiService } from "../../../../core/services/apiService";
+import { useSelector } from "react-redux";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -67,6 +70,8 @@ const StudentLeaves = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
+  const user = useSelector(selectUser);
+  const isTeacher = isTeacherRole(user);
   const initialTab: "leave" | "attendance" = state?.activeTab === "attendance" ? "attendance" : "leave";
   const [activeTab, setActiveTab] = useState<"leave" | "attendance">(initialTab);
   const { studentId, student, loading, role, isStudentRole, isParentLeaveViewer, isGuardianViewer } = useLinkedStudentContext({
@@ -115,7 +120,7 @@ const StudentLeaves = () => {
     limit: 50,
     studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
-  const { leaveTypes } = useLeaveTypes();
+  const { leaveTypes } = useLeaveTypes({ applicableFor: "student" });
   const leaveTypesList = Array.isArray(leaveTypes) ? (leaveTypes as any[]) : [];
 
   const data = useMemo(() => {
@@ -702,16 +707,18 @@ const StudentLeaves = () => {
                         Leave &amp; Attendance
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
+                    {!isTeacher && (
+                      <li>
+                        <Link
+                          to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
+                          className="nav-link"
+                          state={student ? { studentId: student.id, student } : undefined}
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Fees
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}

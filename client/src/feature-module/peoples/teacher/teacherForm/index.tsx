@@ -27,12 +27,9 @@ import { selectUser } from "../../../../core/data/redux/authSlice";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSubjects } from "../../../../core/hooks/useSubjects";
 import { useBloodGroups } from "../../../../core/hooks/useBloodGroups";
-import { useTransportRoutes } from "../../../../core/hooks/useTransportRoutes";
-import { useTransportPickupPoints } from "../../../../core/hooks/useTransportPickupPoints";
-import { useTransportVehicles } from "../../../../core/hooks/useTransportVehicles";
-import { useTransportFees } from "../../../../core/hooks/useTransportFees";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
+import { useSalaryComponents } from "../../../../core/hooks/useSalaryComponents";
 import {
   validateField,
   validateTeacherFormSync,
@@ -161,12 +158,6 @@ const TeacherForm = () => {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
   const [selectedContractType, setSelectedContractType] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
-  const [selectedPickupPointId, setSelectedPickupPointId] = useState<string | null>(null);
-  const [selectedFeeId, setSelectedFeeId] = useState<string | null>(null);
-  const [isTransportRequired, setIsTransportRequired] = useState(false);
-  const [transportIsFree, setTransportIsFree] = useState(false);
   const [fatherName, setFatherName] = useState("");
   const [motherName, setMotherName] = useState("");
   const [panNumber, setPanNumber] = useState("");
@@ -198,6 +189,8 @@ const TeacherForm = () => {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [asyncErrors, setAsyncErrors] = useState<Partial<Record<"phone" | "email", string>>>({});
   const [checkingUnique, setCheckingUnique] = useState(false);
+  const [assignedComponents, setAssignedComponents] = useState<Array<{ component_id: number; amount: string }>>([]);
+  const { salaryComponents, loading: loadingComponents } = useSalaryComponents();
   const [formBanner, setFormBanner] = useState<{ title: string; message: string } | null>(null);
   const [resumeFileError, setResumeFileError] = useState<string | null>(null);
   const [joiningLetterFileError, setJoiningLetterFileError] = useState<string | null>(null);
@@ -237,7 +230,6 @@ const TeacherForm = () => {
       newPassword,
       confirmPassword,
       epfNo,
-      selectedPickupPointId,
       fatherName,
       motherName,
       panNumber,
@@ -357,78 +349,6 @@ const TeacherForm = () => {
   const { classes, loading: classesLoading, error: classesError } = useClasses(academicYearId);
   const { subjects, loading: subjectsLoading, error: subjectsError } = useSubjects();
   const { bloodGroups, loading: bloodGroupsLoading, error: bloodGroupsError } = useBloodGroups();
-  const { data: transportRoutes, loading: routesLoading, error: routesError } = useTransportRoutes({
-    academic_year_id: academicYearId ?? undefined,
-  });
-  const { data: pickupPoints, loading: pickupLoading, error: pickupError } = useTransportPickupPoints({
-    academic_year_id: academicYearId ?? undefined,
-  });
-  const { data: vehicles, loading: vehiclesLoading, error: vehiclesError, setParams: setVehicleParams } = useTransportVehicles({
-    academic_year_id: academicYearId ?? undefined,
-  });
-  const { data: transportFees, loading: feesLoading, error: feesError } = useTransportFees({
-    limit: 1000,
-    status: "active",
-    academic_year_id: academicYearId ?? undefined,
-  });
-  const pickupPointOptions = useMemo(
-    () =>
-      (pickupPoints || [])
-        .map((p: any) => ({
-          value: String((p.originalData?.id ?? p.id) ?? ""),
-          label: p.pickupPoint ?? p.originalData?.point_name ?? p.originalData?.address ?? "N/A",
-          original: p,
-        }))
-        .filter((o: { value: string }) => o.value),
-    [pickupPoints]
-  );
-  const routeOptionsRaw = useMemo(
-    () =>
-      (transportRoutes || [])
-        .map((r: any) => ({
-          value: String((r.originalData?.id ?? r.id) ?? ""),
-          label: r.routes ?? r.originalData?.route_name ?? "N/A",
-          original: r,
-        }))
-        .filter((o: { value: string }) => o.value),
-    [transportRoutes]
-  );
-  const routeOptions = useMemo(() => {
-    if (!selectedPickupPointId) return routeOptionsRaw;
-    const selectedPickup = pickupPointOptions.find((p: any) => String(p.value) === String(selectedPickupPointId));
-    const rr = String(selectedPickup?.original?.route_id ?? "");
-    if (!rr) return routeOptionsRaw;
-    return routeOptionsRaw.filter((r: any) => String(r.value) === rr);
-  }, [routeOptionsRaw, pickupPointOptions, selectedPickupPointId]);
-  const feeOptions = useMemo(
-    () =>
-      (transportFees || [])
-        .filter((f: any) => String(f.pickup_point_id ?? f.originalData?.pickup_point_id ?? "") === String(selectedPickupPointId ?? ""))
-        .map((f: any) => {
-          const row = f.originalData ?? f;
-          const amt = row.staff_amount ?? row.amount ?? 0;
-          return {
-            value: String(row.id ?? ""),
-            label: `${row.plan_name ?? "Plan"} — Staff: ${amt}`,
-          };
-        })
-        .filter((o: { value: string }) => o.value),
-    [transportFees, selectedPickupPointId]
-  );
-  const vehicleOptions = useMemo(
-    () =>
-      (vehicles || []).map((v: any) => {
-        const vehicleId = String(v.originalData?.id ?? v.id ?? "");
-        const vehicleNo = v.vehicleNo ?? v.originalData?.vehicle_number ?? "N/A";
-        return { value: vehicleId, label: vehicleNo };
-      }).filter((o: { value: string }) => o.value),
-    [vehicles]
-  );
-
-  useEffect(() => {
-    if (setVehicleParams) setVehicleParams({ route_id: selectedRouteId || "all" });
-  }, [selectedRouteId, setVehicleParams]);
-
   const { departments, loading: departmentsLoading, error: departmentsError } = useDepartments();
   const { designations, loading: designationsLoading, error: designationsError } = useDesignations();
 
@@ -464,12 +384,6 @@ const TeacherForm = () => {
       setSelectedDepartmentId(null);
       setSelectedContractType(null);
       setSelectedShift(null);
-      setSelectedRouteId(null);
-      setSelectedVehicleId(null);
-      setSelectedPickupPointId(null);
-      setSelectedFeeId(null);
-      setIsTransportRequired(false);
-      setTransportIsFree(false);
       setSelectedStatus("Active");
       setOwner(["English"]);
       setDobDate(null);
@@ -596,14 +510,6 @@ const TeacherForm = () => {
       setSelectedShift(
         resolveSelectValue(Shift as Array<{ value: string; label: string }>, [teacherData.shift])
       );
-      setSelectedRouteId(teacherData.route_id ? String(teacherData.route_id) : null);
-      setSelectedVehicleId(teacherData.vehicle_id ? String(teacherData.vehicle_id) : null);
-      setSelectedPickupPointId(teacherData.pickup_point_id ? String(teacherData.pickup_point_id) : null);
-      setSelectedFeeId(
-        teacherData.transport_assigned_fee_id != null ? String(teacherData.transport_assigned_fee_id) : null
-      );
-      setIsTransportRequired(!!teacherData.is_transport_required);
-      setTransportIsFree(!!teacherData.transport_is_free);
       setFirstName(teacherData.first_name ?? "");
       setLastName(teacherData.last_name ?? "");
       setPhone(teacherData.phone ?? "");
@@ -615,6 +521,14 @@ const TeacherForm = () => {
       setIdNumber(teacherData.id_number ?? "");
       setPrevSchoolPhone(teacherData.previous_school_phone ?? "");
       setEpfNo(teacherData.epf_no ?? "");
+      if (teacherData.salary_components && Array.isArray(teacherData.salary_components)) {
+        setAssignedComponents(teacherData.salary_components.map((sc: any) => ({
+          component_id: sc.component_id,
+          amount: sc.amount?.toString() || ""
+        })));
+      } else {
+        setAssignedComponents([]);
+      }
       setTouched({});
       setSubmitAttempted(false);
       setFormBanner(null);
@@ -822,89 +736,8 @@ const TeacherForm = () => {
                             )}
                           </div>
                         </div>
-                        {isEdit && (
-                          <>
-                            <div className="col-xxl col-xl-3 col-md-6" data-validation-field="class_id">
-                              <div
-                                className={`mb-3 teacher-form-select-wrap ${
-                                  showFieldError("class_id") ? "is-invalid" : ""
-                                } ${touched.class_id && !mergedErrors.class_id && selectedClassId ? "is-valid" : ""}`}
-                              >
-                                <label className="form-label">Class</label>
-                                {classesLoading ? (
-                                  <div className="form-control">
-                                    <i className="ti ti-loader ti-spin me-2" />
-                                    Loading classes...
-                                  </div>
-                                ) : classesError ? (
-                                  <div className="form-control text-danger">
-                                    <i className="ti ti-alert-circle me-2" />
-                                    Error: {classesError}
-                                  </div>
-                                ) : (
-                                  <CommonSelect
-                                    className="select"
-                                    options={(classes || []).map((cls: any) => ({
-                                      value: String(cls.id),
-                                      label: cls.class_name ?? ''
-                                    }))}
-                                    value={selectedClassId}
-                                    onChange={(value) => {
-                                      setSelectedClassId(value);
-                                      setSelectedSubjectId(null);
-                                      setFormBanner(null);
-                                    }}
-                                    onBlur={() => touchField("class_id")}
-                                  />
-                                )}
-                                {showFieldError("class_id") && mergedErrors.class_id && (
-                                  <div className="field-hint-error">{mergedErrors.class_id}</div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="col-xxl col-xl-3 col-md-6" data-validation-field="subject_id">
-                              <div
-                                className={`mb-3 teacher-form-select-wrap ${
-                                  showFieldError("subject_id") ? "is-invalid" : ""
-                                } ${touched.subject_id && !mergedErrors.subject_id && selectedSubjectId ? "is-valid" : ""}`}
-                              >
-                                <label className="form-label">Subject</label>
-                                {subjectsLoading ? (
-                                  <div className="form-control">
-                                    <i className="ti ti-loader ti-spin me-2" />
-                                    Loading subjects...
-                                  </div>
-                                ) : subjectsError ? (
-                                  <div className="form-control text-danger">
-                                    <i className="ti ti-alert-circle me-2" />
-                                    Error: {subjectsError}
-                                  </div>
-                                ) : (
-                                  <CommonSelect
-                                    className="select"
-                                    options={(subjects || [])
-                                      .filter((sub: any) =>
-                                        selectedClassId ? String(sub.class_id) === selectedClassId : true
-                                      )
-                                      .map((sub: any) => ({
-                                        value: String(sub.id),
-                                        label: sub.subject_name ?? ''
-                                      }))}
-                                    value={selectedSubjectId}
-                                    onChange={(value) => {
-                                      setSelectedSubjectId(value);
-                                      setFormBanner(null);
-                                    }}
-                                    onBlur={() => touchField("subject_id")}
-                                  />
-                                )}
-                                {showFieldError("subject_id") && mergedErrors.subject_id && (
-                                  <div className="field-hint-error">{mergedErrors.subject_id}</div>
-                                )}
-                              </div>
-                            </div>
-                          </>
-                        )}
+
+
                         <div className="col-xxl col-xl-3 col-md-6">
                           <div className="mb-3">
                             <label className="form-label">Gender</label>
@@ -1519,166 +1352,120 @@ const TeacherForm = () => {
                     </div>
                   </div>
                   {/* /Bank Details */}
+                  {/* Salary Components Assignment */}
+                  <div className="card">
+                    <div className="card-header bg-light">
+                      <div className="d-flex align-items-center">
+                        <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
+                          <i className="ti ti-cash fs-16" />
+                        </span>
+                        <h4 className="text-dark">Salary Components Assignment</h4>
+                      </div>
+                    </div>
+                    <div className="card-body pb-1">
+                      <p className="text-muted small mb-3">
+                        Assign standard earnings and deductions for this teacher. These will be used for monthly payroll generation.
+                      </p>
+                      {loadingComponents ? (
+                        <div className="p-3 text-center">
+                          <i className="ti ti-loader ti-spin me-2" /> Loading components…
+                        </div>
+                      ) : (
+                        <div className="row">
+                          {/* Earnings */}
+                          <div className="col-md-6 border-end">
+                            <h6 className="mb-3 text-success">Earnings (Allowances)</h6>
+                            {salaryComponents?.filter(c => c.type === 'allowance' || c.type === 'earning').map(comp => {
+                              const assigned = assignedComponents.find(ac => ac.component_id === comp.id);
+                              return (
+                                <div key={comp.id} className="mb-3 p-2 border-bottom">
+                                  <div className="form-check form-switch mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      checked={!!assigned}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setAssignedComponents([...assignedComponents, { component_id: comp.id, amount: "" }]);
+                                        } else {
+                                          setAssignedComponents(assignedComponents.filter(ac => ac.component_id !== comp.id));
+                                        }
+                                      }}
+                                    />
+                                    <label className="form-check-label fw-bold">{comp.component_name}</label>
+                                  </div>
+                                  {assigned && (
+                                    <div className="input-group input-group-sm">
+                                      <span className="input-group-text">Monthly Amount</span>
+                                      <input
+                                        type="number"
+                                        className="form-control"
+                                        value={assigned.amount}
+                                        placeholder="0.00"
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAssignedComponents(assignedComponents.map(ac => 
+                                            ac.component_id === comp.id ? { ...ac, amount: val } : ac
+                                          ));
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {/* Deductions */}
+                          <div className="col-md-6">
+                            <h6 className="mb-3 text-danger">Deductions</h6>
+                            {salaryComponents?.filter(c => c.type === 'deduction').map(comp => {
+                              const assigned = assignedComponents.find(ac => ac.component_id === comp.id);
+                              return (
+                                <div key={comp.id} className="mb-3 p-2 border-bottom">
+                                  <div className="form-check form-switch mb-2">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      checked={!!assigned}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setAssignedComponents([...assignedComponents, { component_id: comp.id, amount: "" }]);
+                                        } else {
+                                          setAssignedComponents(assignedComponents.filter(ac => ac.component_id !== comp.id));
+                                        }
+                                      }}
+                                    />
+                                    <label className="form-check-label fw-bold">{comp.component_name}</label>
+                                  </div>
+                                  {assigned && (
+                                    <div className="input-group input-group-sm">
+                                      <span className="input-group-text">Monthly Amount</span>
+                                      <input
+                                        type="number"
+                                        className="form-control"
+                                        value={assigned.amount}
+                                        placeholder="0.00"
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setAssignedComponents(assignedComponents.map(ac => 
+                                            ac.component_id === comp.id ? { ...ac, amount: val } : ac
+                                          ));
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* /Salary Components Assignment */}
                 </>
 
-                {/* Transport Information */}
-                <div className="card">
-                  <div className="card-header bg-light d-flex align-items-center justify-content-between">
-                    <div className="d-flex align-items-center">
-                      <span className="bg-white avatar avatar-sm me-2 text-gray-7 flex-shrink-0">
-                        <i className="ti ti-bus-stop fs-16" />
-                      </span>
-                      <h4 className="text-dark">Transport Information</h4>
-                    </div>
-                    <div className="form-check form-switch">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                        checked={isTransportRequired}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setIsTransportRequired(on);
-                          if (!on) {
-                            setSelectedPickupPointId(null);
-                            setSelectedRouteId(null);
-                            setSelectedVehicleId(null);
-                            setSelectedFeeId(null);
-                            setTransportIsFree(false);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="card-body pb-1">
-                    <div className="row">
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Pickup Point</label>
-                          {pickupLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading pickup points...
-                            </div>
-                          ) : pickupError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {pickupError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={pickupPointOptions.map((p) => ({ value: p.value, label: p.label }))}
-                              value={selectedPickupPointId}
-                              isDisabled={!isTransportRequired}
-                              onChange={(value) => {
-                                setSelectedPickupPointId(value);
-                                setSelectedRouteId(null);
-                                setSelectedVehicleId(null);
-                                setSelectedFeeId(null);
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Route</label>
-                          {routesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading routes...
-                            </div>
-                          ) : routesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {routesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={routeOptions.map((r) => ({ value: r.value, label: r.label }))}
-                              value={selectedRouteId}
-                              isDisabled={!isTransportRequired}
-                              onChange={(value) => {
-                                setSelectedRouteId(value);
-                                setSelectedVehicleId(null);
-                              }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Vehicle</label>
-                          {vehiclesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading vehicles...
-                            </div>
-                          ) : vehiclesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {vehiclesError}
-                            </div>
-                          ) : (
-                            <CommonSelect
-                              className="select"
-                              options={vehicleOptions.map((v) => ({ value: v.value, label: v.label }))}
-                              value={selectedVehicleId}
-                              isDisabled={!isTransportRequired}
-                              onChange={(value) => setSelectedVehicleId(value)}
-                            />
-                          )}
-                        </div>
-                      </div>
-                      <div className="col-lg-4 col-md-6">
-                        <div className="mb-3">
-                          <label className="form-label">Transport Plan</label>
-                          {feesLoading ? (
-                            <div className="form-control">
-                              <i className="ti ti-loader ti-spin me-2" />
-                              Loading plans...
-                            </div>
-                          ) : feesError ? (
-                            <div className="form-control text-danger">
-                              <i className="ti ti-alert-circle me-2" />
-                              Error: {feesError}
-                            </div>
-                          ) : (
-                            <>
-                              <div className="form-check mb-2">
-                                <input
-                                  className="form-check-input"
-                                  type="checkbox"
-                                  id="teacher_transport_free"
-                                  checked={transportIsFree}
-                                  disabled={!isTransportRequired}
-                                  onChange={(e) => {
-                                    const c = e.target.checked;
-                                    setTransportIsFree(c);
-                                    if (c) setSelectedFeeId(null);
-                                  }}
-                                />
-                                <label className="form-check-label" htmlFor="teacher_transport_free">
-                                  Free allocation (no fee plan)
-                                </label>
-                              </div>
-                              <CommonSelect
-                                className="select"
-                                options={feeOptions}
-                                value={transportIsFree ? null : selectedFeeId}
-                                isDisabled={!isTransportRequired || transportIsFree}
-                                onChange={(value) => setSelectedFeeId(value)}
-                              />
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* /Transport Information */}
+                {/* Hostel Information - temporarily disabled until hostel workflow redesign (same as student form) */}
                 {/* Hostel Information - temporarily disabled until hostel workflow redesign (same as student form) */}
                 {/* <div className="card"> ... </div> */}
                 {/* /Hostel Information */}
@@ -1954,7 +1741,7 @@ const TeacherForm = () => {
                         const getNum = (name: string) => { const v = get(name); return v ? parseInt(v, 10) : undefined; };
                         setIsUpdating(true);
                         try {
-                          const bgRow = (bloodGroups || []).find(
+                          const bgRow: any = (bloodGroups as any[] || []).find(
                             (bg: any) => String(bg.id) === selectedBloodGroupId
                           );
                           const updateData: Record<string, any> = {
@@ -2012,21 +1799,11 @@ const TeacherForm = () => {
                                 ? dayjs(teacherData.joining_date).format('YYYY-MM-DD')
                                 : undefined),
                             academic_year_id: academicYearId ?? undefined,
-                            is_transport_required: isTransportRequired,
-                            route_id:
-                              isTransportRequired && selectedRouteId ? parseInt(selectedRouteId, 10) : undefined,
-                            pickup_point_id:
-                              isTransportRequired && selectedPickupPointId
-                                ? parseInt(selectedPickupPointId, 10)
-                                : undefined,
-                            vehicle_id:
-                              isTransportRequired && selectedVehicleId ? parseInt(selectedVehicleId, 10) : undefined,
-                            assigned_fee_id:
-                              isTransportRequired && !transportIsFree && selectedFeeId
-                                ? parseInt(selectedFeeId, 10)
-                                : undefined,
-                            is_free: isTransportRequired ? transportIsFree : false,
                             is_hostel_required: false,
+                            salary_components: assignedComponents.map(ac => ({
+                              component_id: ac.component_id,
+                              amount: parseFloat(ac.amount) || 0
+                            })),
                           };
                           Object.keys(updateData).forEach(k => { if (updateData[k] === undefined) delete updateData[k]; });
                           const response = await apiService.updateTeacher(teacherId, updateData);
@@ -2104,7 +1881,7 @@ const TeacherForm = () => {
                         };
                         const phoneDigits = phone.replace(/\D/g, "");
                         const pw = newPassword;
-                        const bgRow = (bloodGroups || []).find(
+                        const bgRow: any = (bloodGroups as any[] || []).find(
                           (bg: any) => String(bg.id) === selectedBloodGroupId
                         );
                         setIsCreating(true);
@@ -2164,21 +1941,11 @@ const TeacherForm = () => {
                             emergency_contact_name: get("emergency_contact_name") || undefined,
                             emergency_contact_phone: get("emergency_contact_phone") || undefined,
                             academic_year_id: academicYearId ?? undefined,
-                            is_transport_required: isTransportRequired,
-                            route_id:
-                              isTransportRequired && selectedRouteId ? parseInt(selectedRouteId, 10) : undefined,
-                            pickup_point_id:
-                              isTransportRequired && selectedPickupPointId
-                                ? parseInt(selectedPickupPointId, 10)
-                                : undefined,
-                            vehicle_id:
-                              isTransportRequired && selectedVehicleId ? parseInt(selectedVehicleId, 10) : undefined,
-                            assigned_fee_id:
-                              isTransportRequired && !transportIsFree && selectedFeeId
-                                ? parseInt(selectedFeeId, 10)
-                                : undefined,
-                            is_free: isTransportRequired ? transportIsFree : false,
                             is_hostel_required: false,
+                            salary_components: assignedComponents.map(ac => ({
+                              component_id: ac.component_id,
+                              amount: parseFloat(ac.amount) || 0
+                            })),
                           };
                           Object.keys(payload).forEach((k) => {
                             if (payload[k] === undefined)

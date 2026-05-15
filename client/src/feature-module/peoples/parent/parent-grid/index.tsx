@@ -36,7 +36,7 @@ const ParentGrid = () => {
   // shape expected by this grid and the View Details modal.
   // Re-mapping here would lose data (because raw API fields are no longer present),
   // so we just pass the hook data through.
-  const data = parents ?? [];
+  const data: any[] = parents ?? [];
   const exportColumns = useMemo(
     () => [
       { title: "ID", dataKey: "id" },
@@ -279,7 +279,9 @@ const ParentGrid = () => {
                       className="link-primary fw-semibold"
                       onClick={() => handleViewParent(parent)}
                     >
-                      {parent.student_admission_number ? `Admission# ${parent.student_admission_number}` : `Parent #${parent.id}`}
+                      {parent.all_children && parent.all_children.length > 1 
+                        ? `Family of ${parent.all_children.length} Students` 
+                        : (parent.student_admission_number ? `Admission# ${parent.student_admission_number}` : `Parent #${parent.id}`)}
                     </Link>
                     <div className="d-flex align-items-center">
                       <div className="dropdown">
@@ -361,7 +363,7 @@ const ParentGrid = () => {
                         <div className="d-flex align-items-center mt-2 pt-2 border-top">
                           <span className="avatar avatar-md flex-shrink-0">
                             <ImageWithBasePath
-                              src="assets/img/parents/parent-02.jpg"
+                              src={parent.MotherImage}
                               className="img-fluid rounded-circle"
                               alt="mother"
                             />
@@ -390,19 +392,32 @@ const ParentGrid = () => {
                   </div>
                   <div className="card-footer d-flex align-items-center justify-content-between">
                     <div className="d-flex align-items-center">
-                      <div className="d-flex align-items-center">
-                        <Link
-                          to={routes.studentDetail}
-                          state={parent.student_id != null ? { studentId: parent.student_id } : undefined}
-                          className="avatar avatar-md flex-shrink-0 p-0 me-2"
-                        >
-                          <ImageWithBasePath
-                            src={parent.ChildImage}
-                            alt="img"
-                            className="img-fluid rounded-circle"
-                          />
-                        </Link>
-                        <p className="text-dark">{parent.Child}</p>
+                      <div className="avatar-list-stacked">
+                        {(parent.all_children || []).slice(0, 3).map((child: any) => (
+                          <Link
+                            key={child.id}
+                            to={routes.studentDetail}
+                            state={{ studentId: child.id }}
+                            className="avatar avatar-md border border-white flex-shrink-0 p-0"
+                            title={child.name}
+                          >
+                            <ImageWithBasePath
+                              src={child.photo_url}
+                              alt="img"
+                              className="img-fluid rounded-circle"
+                            />
+                          </Link>
+                        ))}
+                        {parent.all_children && parent.all_children.length > 3 && (
+                          <span className="avatar avatar-md border border-white bg-light text-primary flex-shrink-0 fs-12 d-flex align-items-center justify-content-center rounded-circle">
+                            +{parent.all_children.length - 3}
+                          </span>
+                        )}
+                      </div>
+                      <div className="ms-2">
+                        <p className="text-dark mb-0 fs-12 text-truncate" style={{ maxWidth: '150px' }}>
+                          {parent.Child}
+                        </p>
                       </div>
                     </div>
                     <Link
@@ -476,7 +491,7 @@ const ParentGrid = () => {
                   <div className="border rounded p-3 h-100">
                     <div className="d-flex align-items-center mb-2">
                       <span className="avatar avatar-lg me-2">
-                        <ImageWithBasePath src="assets/img/parents/parent-02.jpg" alt="mother" />
+                        <ImageWithBasePath src={selectedParent.MotherImage} alt="mother" />
                       </span>
                       <div>
                         <span className="badge badge-soft-success mb-1">Mother</span>
@@ -496,10 +511,10 @@ const ParentGrid = () => {
             </div>
           )}
           <h5 className="mb-3">Children Details</h5>
-          {selectedParent && (
-            <div className="border rounded p-4 pb-1 mb-3">
+          {selectedParent && (selectedParent.all_children || []).map((child: any) => (
+            <div key={child.id} className="border rounded p-3 pb-1 mb-3">
               <div className="d-flex align-items-center justify-content-between flex-wrap pb-1 mb-3 border-bottom">
-                <span className="link-primary mb-2">{selectedParent.student_admission_number}</span>
+                <span className="link-primary mb-2">Admission# {child.admission_number}</span>
                 <span className="badge badge-soft-success badge-md mb-2">
                   <i className="ti ti-circle-filled me-2" />
                   Active
@@ -509,11 +524,11 @@ const ParentGrid = () => {
                 <div className="d-flex align-items-center mb-3">
                   <Link
                     to={routes.studentDetail}
-                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                    state={{ studentId: child.id }}
                     className="avatar"
                   >
                     <ImageWithBasePath
-                      src={selectedParent.ChildImage}
+                      src={child.photo_url}
                       className="img-fluid rounded-circle"
                       alt="img"
                     />
@@ -522,35 +537,18 @@ const ParentGrid = () => {
                     <p className="mb-0">
                       <Link
                         to={routes.studentDetail}
-                        state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                        state={{ studentId: child.id }}
                       >
-                        {selectedParent.Child}
+                        {child.name}
                       </Link>
                     </p>
-                    <span>{selectedParent.class}</span>
+                    <span>{child.class_name} {child.section_name ? `, ${child.section_name}` : ''}</span>
                   </div>
                 </div>
-                <ul className="d-flex align-items-center flex-wrap">
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Roll No</p>
-                    <h6 className="fw-normal">{selectedParent.student_roll_number}</h6>
-                  </li>
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Father's Occupation</p>
-                    <h6 className="fw-normal">{selectedParent.father_occupation || 'N/A'}</h6>
-                  </li>
-                  <li className="mb-3">
-                    <p className="mb-1">Mother's Name</p>
-                    <h6 className="fw-normal">{selectedParent.mother_name || 'N/A'}</h6>
-                  </li>
-                </ul>
                 <div className="d-flex align-items-center">
-                  <Link to="#" className="btn btn-light mb-3 me-3">
-                    Add Fees
-                  </Link>
                   <Link
                     to={routes.studentDetail}
-                    state={selectedParent.student_id != null ? { studentId: selectedParent.student_id } : undefined}
+                    state={{ studentId: child.id }}
                     className="btn btn-primary mb-3"
                   >
                     View Details
@@ -558,7 +556,7 @@ const ParentGrid = () => {
                 </div>
               </div>
             </div>
-          )}
+          ))}
         </div>
       </Modal>
     </>

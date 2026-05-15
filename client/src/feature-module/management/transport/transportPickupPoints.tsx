@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -7,7 +7,6 @@ import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import TransportModal from "./transportModal";
 import { useTransportPickupPoints } from "../../../core/hooks/useTransportPickupPoints";
-import { apiService } from "../../../core/services/apiService";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 
@@ -53,11 +52,9 @@ const TransportPickupPoints = () => {
     const exportData = (data as any[]).map((item: any) => ({
       ID: item.id,
       "Pickup Point": item.pickupPoint,
-      "Route": item.routeName,
       "Address": item.address,
       "Landmark": item.landmark || "N/A",
-      "Pickup Time": item.pickupTime,
-      "Drop Time": item.dropTime,
+      "Sequence Order": item.sequenceOrder === '' || item.sequenceOrder === null || item.sequenceOrder === undefined ? "N/A" : item.sequenceOrder,
       "Distance From School": item.distanceFromSchool || "N/A",
       Status: item.status,
       "Added On": item.addedOn
@@ -69,7 +66,12 @@ const TransportPickupPoints = () => {
     const cols = [
       { title: "ID", dataKey: "id" },
       { title: "Pickup Point", dataKey: "pickupPoint" },
+      { title: "Address", dataKey: "address" },
+      { title: "Landmark", dataKey: "landmark" },
+      { title: "Sequence Order", dataKey: "sequenceOrder" },
+      { title: "Distance (KM)", dataKey: "distanceFromSchool" },
       { title: "Status", dataKey: "status" },
+      { title: "Added On", dataKey: "addedOn" },
     ];
     exportToPDF(data, "Pickup Points List", `Pickup_Points_${new Date().toISOString().split('T')[0]}`, cols);
   };
@@ -78,6 +80,10 @@ const TransportPickupPoints = () => {
     const cols = [
       { title: "ID", dataKey: "id" },
       { title: "Pickup Point", dataKey: "pickupPoint" },
+      { title: "Address", dataKey: "address" },
+      { title: "Landmark", dataKey: "landmark" },
+      { title: "Sequence Order", dataKey: "sequenceOrder" },
+      { title: "Distance (KM)", dataKey: "distanceFromSchool" },
       { title: "Status", dataKey: "status" },
     ];
     printData("Pickup Points List", cols, data);
@@ -100,11 +106,6 @@ const TransportPickupPoints = () => {
       sorter: true,
     },
     {
-      title: "Route",
-      dataIndex: "routeName",
-      sorter: true,
-    },
-    {
       title: "Address",
       dataIndex: "address",
       render: (text: string) => text || "N/A",
@@ -115,15 +116,9 @@ const TransportPickupPoints = () => {
       render: (text: string) => text || "N/A",
     },
     {
-      title: "Pickup Time",
-      dataIndex: "pickupTime",
-      render: (text: string) => text || "N/A",
-      sorter: true,
-    },
-    {
-      title: "Drop Time",
-      dataIndex: "dropTime",
-      render: (text: string) => text || "N/A",
+      title: "Sequence Order",
+      dataIndex: "sequenceOrder",
+      render: (text: string | number) => (text === '' || text === null || text === undefined ? "N/A" : text),
       sorter: true,
     },
     {

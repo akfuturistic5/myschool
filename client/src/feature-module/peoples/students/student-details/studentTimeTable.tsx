@@ -8,6 +8,8 @@ import StudentBreadcrumb from "./studentBreadcrumb";
 import { useClassSchedules } from "../../../../core/hooks/useClassSchedules";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../../core/data/redux/authSlice";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -21,55 +23,104 @@ function parsePositiveId(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
+function normalizeText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 const StudentTimeTable = () => {
   const routes = all_routes;
   const location = useLocation();
   const state = location.state as StudentDetailsLocationState | null;
+  const user = useSelector(selectUser);
+  const isTeacher = isTeacherRole(user);
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { student, loading, role } = useLinkedStudentContext({
+  const { student, loading, parentPlacementForWard, isParentRole } = useLinkedStudentContext({
     locationState: state,
   });
   const effectiveStudentId = parsePositiveId(student?.id);
 
+  /**
+   * Parent/guardian portal: same placement rules server-side as GET /students/:id + /parents/me.
+   * Timetable must use GET /class-schedules (scoped list) like the student tab — not /timetable/class with
+   * sections.id, which returns empty when class_sections cannot be resolved for that year.
+   */
   const classIdForSchedule = parsePositiveId(
-    student?.class_id ?? (student as { classId?: unknown })?.classId
+    isParentRole
+      ? parentPlacementForWard?.class_id ??
+          student?.class_id ??
+          (student as { classId?: unknown })?.classId
+      : student?.class_id ??
+          (student as { classId?: unknown })?.classId ??
+          parentPlacementForWard?.class_id
   );
   const sectionIdForSchedule = parsePositiveId(
-    student?.section_id ?? (student as { sectionId?: unknown })?.sectionId
+    isParentRole
+      ? parentPlacementForWard?.section_id ??
+          student?.section_id ??
+          (student as { sectionId?: unknown })?.sectionId
+      : student?.section_id ??
+          (student as { sectionId?: unknown })?.sectionId ??
+          parentPlacementForWard?.section_id
+  );
+  const sectionNameForSchedule = normalizeText(
+    student?.section_name ??
+      (student as { sectionName?: unknown })?.sectionName ??
+      parentPlacementForWard?.section_name
   );
 
-  /** Parents/guardians should default to the child's enrolled year to avoid empty timetable on header-year mismatch. */
   const studentAcademicYearId = parsePositiveId(
-    student?.academic_year_id ?? (student as { academicYearId?: unknown })?.academicYearId
+    isParentRole
+      ? parentPlacementForWard?.academic_year_id ??
+          student?.academic_year_id ??
+          (student as { academicYearId?: unknown })?.academicYearId
+      : student?.academic_year_id ??
+          (student as { academicYearId?: unknown })?.academicYearId ??
+          parentPlacementForWard?.academic_year_id
   );
-  const normalizedRole = String(role || "").trim().toLowerCase();
-  const isParentViewer =
-    normalizedRole === "parent" ||
-    normalizedRole === "guardian" ||
-    normalizedRole === "father" ||
-    normalizedRole === "mother" ||
-    normalizedRole.includes("parent") ||
-    normalizedRole.includes("guardian");
-  const academicYearForSchedules = isParentViewer
-    ? studentAcademicYearId ?? headerAcademicYearId ?? undefined
-    : headerAcademicYearId ?? studentAcademicYearId ?? undefined;
+  const academicYearForSchedules =
+    studentAcademicYearId ?? headerAcademicYearId ?? undefined;
 
   const { data: scheduleData, loading: scheduleLoading, error: scheduleError } = useClassSchedules({
     academicYearId: academicYearForSchedules,
     classId: classIdForSchedule ?? undefined,
-    sectionId: sectionIdForSchedule ?? undefined,
+    sectionId: undefined,
+    relaxClientFilters: isParentRole,
     skip: !classIdForSchedule,
   });
 
+  const filteredScheduleData = useMemo(() => {
+    const list = Array.isArray(scheduleData) ? scheduleData : [];
+    if (!classIdForSchedule) return [];
+    return list.filter((item: any) => {
+      const rowClassId = parsePositiveId(item?.originalData?.class_id);
+      if (rowClassId !== classIdForSchedule) return false;
+      // Parent/guardian: API is already scoped server-side to this ward's class/section; do not re-filter by
+      // section name (labels often differ from /parents/me) or by section id (class_sections.id vs sections.id).
+      if (isParentRole) return true;
+      if (!sectionIdForSchedule && !sectionNameForSchedule) return true;
+      const rowSectionId = parsePositiveId(
+        item?.originalData?.section_id ?? item?.originalData?.class_section_id
+      );
+      const rowSectionName = normalizeText(item?.section);
+      return (
+        rowSectionId == null ||
+        (sectionIdForSchedule != null && rowSectionId === sectionIdForSchedule) ||
+        (!!sectionNameForSchedule && rowSectionName === sectionNameForSchedule)
+      );
+    });
+  }, [scheduleData, classIdForSchedule, sectionIdForSchedule, sectionNameForSchedule, isParentRole]);
+
   const weeklySchedule = useMemo(() => {
-    if (!Array.isArray(scheduleData)) {
+    if (!Array.isArray(filteredScheduleData)) {
       return DAY_ORDER.map((day) => ({ day, classes: [] as any[] }));
     }
     return DAY_ORDER.map((day) => ({
       day,
-      classes: scheduleData.filter((item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()),
+      classes: filteredScheduleData.filter(
+        (item: any) => String(item.day || "").trim().toLowerCase() === day.toLowerCase()
+      ),
     }));
-  }, [scheduleData]);
+  }, [filteredScheduleData]);
 
   const totalClasses = useMemo(
     () => weeklySchedule.reduce((sum, entry) => sum + entry.classes.length, 0),
@@ -148,16 +199,18 @@ const StudentTimeTable = () => {
                         Leave &amp; Attendance
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
-                        className="nav-link"
-                        state={student ? { studentId: student.id, student } : undefined}
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
+                    {!isTeacher && (
+                      <li>
+                        <Link
+                          to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
+                          className="nav-link"
+                          state={student ? { studentId: student.id, student } : undefined}
+                        >
+                          <i className="ti ti-report-money me-2" />
+                          Fees
+                        </Link>
+                      </li>
+                    )}
                     <li>
                       <Link
                         to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
@@ -197,13 +250,6 @@ const StudentTimeTable = () => {
                         </div>
                       )}
 
-                      {!headerAcademicYearId && studentAcademicYearId && !scheduleError ? (
-                        <div className="alert alert-light border small mb-3" role="status">
-                          Timetable is loaded using this student&apos;s academic year. Choose a year in the header to
-                          switch when viewing as staff.
-                        </div>
-                      ) : null}
-
                       {scheduleLoading && (
                         <div className="d-flex justify-content-center align-items-center p-4">
                           <div className="spinner-border text-primary" role="status" />
@@ -214,7 +260,11 @@ const StudentTimeTable = () => {
                       {!scheduleLoading && totalClasses === 0 && (
                         <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
                           <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No timetable is available for your class and section yet.</span>
+                          <span>
+                            {isParentRole
+                              ? "No timetable is published for this child's class (and section) for the selected year yet."
+                              : "No timetable is available for your class and section yet."}
+                          </span>
                         </div>
                       )}
 
@@ -233,24 +283,28 @@ const StudentTimeTable = () => {
                                   {entry.classes.length === 0 ? (
                                     <p className="text-muted mb-0">No classes scheduled.</p>
                                   ) : (
-                                    <div className="d-flex flex-column gap-3">
+                                    <div className="row g-2">
                                       {entry.classes.map((cls: any) => (
-                                        <div key={cls.id} className="bg-light rounded p-3">
-                                          <div className="d-flex align-items-start justify-content-between gap-3">
-                                            <div>
-                                              <h6 className="mb-1">{cls.subject || "Subject"}</h6>
-                                              <p className="mb-1 text-dark">
+                                        <div key={cls.id} className="col-6 d-flex">
+                                          <div className="bg-light rounded p-2 w-100 h-100">
+                                            <div className="min-w-0">
+                                              <h6 className="mb-1 text-truncate">{cls.subject || "Subject"}</h6>
+                                              <p className="mb-1 text-dark small text-truncate">
                                                 <i className="ti ti-clock me-1" />
                                                 {cls.startTime || "N/A"} - {cls.endTime || "N/A"}
                                               </p>
-                                              <p className="mb-0 text-muted">
+                                              <p className="mb-1 text-muted small text-truncate">
                                                 <i className="ti ti-user me-1" />
                                                 {cls.teacher || "Teacher not assigned"}
                                               </p>
+                                              <p
+                                                className="mb-0 text-muted small text-truncate"
+                                                title={cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
+                                              >
+                                                <i className="ti ti-building me-1" />
+                                                {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
+                                              </p>
                                             </div>
-                                            <span className="badge badge-soft-secondary">
-                                              {cls.classRoom && cls.classRoom !== "N/A" ? `Room ${cls.classRoom}` : "Room TBA"}
-                                            </span>
                                           </div>
                                         </div>
                                       ))}

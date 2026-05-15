@@ -1,205 +1,227 @@
-const { query, pool } = require('../config/database');
+/**
+ * Fees Assign Controller
+ *
+ * In the new schema, "assigning fees" means creating/managing the
+ * fees_paids record for each student — the per-student ledger entry.
+ *
+ * fees_paids → one row per student per academic year (their fee summary)
+ *
+ * When a student is assigned fees, we:
+ * 1. Look up the fee config (fees + fees_class_types) for their class & year
+ * 2. Create (or update) their fees_paids row with total_payable
+ */
+
+const { query, executeTransaction } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getAuthContext, isAdmin } = require('../utils/accessControl');
 
+// ─── ASSIGN FEES TO STUDENTS ──────────────────────────────────────────────────
+// Body: { student_ids: [1,2,3], academic_year_id: 1 }
+// Looks up each student's current class from the lifecycle ledger,
+// finds the fee config for that class+year, and upserts fees_paids.
 const assignFees = async (req, res) => {
-    const client = await pool.connect();
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            return errorResponse(res, 403, 'Access denied');
         }
 
-        const { student_ids, fees_master_ids, academic_year_id } = req.body;
-        if (!fees_master_ids || !Array.isArray(fees_master_ids) || !student_ids || !Array.isArray(student_ids) || !academic_year_id) {
-            return res.status(400).json({ status: 'ERROR', message: 'student_ids, fees_master_ids and academic_year_id are required' });
+        const { student_ids, academic_year_id } = req.body;
+        if (!Array.isArray(student_ids) || student_ids.length === 0 || !academic_year_id) {
+            return errorResponse(res, 400, 'student_ids (array) and academic_year_id are required');
         }
 
-        await client.query('BEGIN');
+        const createdBy = req.user?.id || null;
 
-        for (const studentId of student_ids) {
-            // Group the master fees by their group_id to ensure we handle the assign header correctly
-            const masterFeesInfo = await client.query(
-                'SELECT id, fees_group_id, amount FROM fees_master WHERE id = ANY($1)',
-                [fees_master_ids]
-            );
+        const result = await executeTransaction(async (client) => {
+            const assigned = [];
+            const skipped = [];
 
-            for (const master of masterFeesInfo.rows) {
-                // Check if Fees Assign header exists for this student, group, and year
-                let assignHeader = await client.query(
-                    'SELECT id FROM fees_assign WHERE student_id = $1 AND fees_group_id = $2 AND academic_year_id = $3',
-                    [studentId, master.fees_group_id, academic_year_id]
+            for (const studentId of student_ids) {
+                // 1. Get student's current class for this academic year via lifecycle ledger
+                const enrollmentResult = await client.query(
+                    `SELECT sll.to_class_id AS class_id
+                     FROM student_lifecycle_ledger sll
+                     WHERE sll.student_id = $1
+                       AND sll.to_academic_year_id = $2
+                       AND sll.event_type IN ('ADMISSION', 'PROMOTE', 'REJOIN')
+                     ORDER BY sll.id DESC
+                     LIMIT 1`,
+                    [studentId, academic_year_id]
                 );
 
-                let assignId;
-                if (assignHeader.rowCount === 0) {
-                    // Create new header
-                    // We need to know which class the student belongs to for historical reporting
-                    const studentInfo = await client.query('SELECT class_id FROM students WHERE id = $1', [studentId]);
-                    const classId = studentInfo.rows[0]?.class_id;
-
-                    const newHeader = await client.query(
-                        'INSERT INTO fees_assign (student_id, class_id, fees_group_id, academic_year_id) VALUES ($1, $2, $3, $4) RETURNING id',
-                        [studentId, classId || null, master.fees_group_id, academic_year_id]
-                    );
-                    assignId = newHeader.rows[0].id;
-                } else {
-                    assignId = assignHeader.rows[0].id;
+                if (enrollmentResult.rowCount === 0) {
+                    skipped.push({ studentId, reason: 'No enrollment found for this academic year' });
+                    continue;
                 }
 
-                // Check if this specific master entry is already in details
-                const checkDetail = await client.query(
-                    'SELECT id FROM fees_assign_details WHERE fees_assign_id = $1 AND fees_master_id = $2',
-                    [assignId, master.id]
+                const { class_id } = enrollmentResult.rows[0];
+
+                // 2. Find the fee configuration for this class + year
+                const feeConfig = await client.query(
+                    `SELECT f.id AS fee_id,
+                            COALESCE(SUM(fct.amount) FILTER (WHERE fct.is_optional = false), 0) AS total_compulsory
+                     FROM fees f
+                     LEFT JOIN fees_class_types fct ON fct.fee_id = f.id
+                         AND fct.class_id = f.class_id
+                         AND fct.academic_year_id = f.academic_year_id
+                     WHERE f.class_id = $1
+                       AND f.academic_year_id = $2
+                       AND f.deleted_at IS NULL
+                     GROUP BY f.id`,
+                    [class_id, academic_year_id]
                 );
 
-                if (checkDetail.rowCount === 0) {
-                    await client.query(
-                        'INSERT INTO fees_assign_details (fees_assign_id, fees_master_id, amount, academic_year_id) VALUES ($1, $2, $3, $4)',
-                        [assignId, master.id, master.amount, academic_year_id]
-                    );
+                if (feeConfig.rowCount === 0) {
+                    skipped.push({ studentId, reason: `No fee configuration found for class ${class_id}` });
+                    continue;
                 }
+
+                const { total_compulsory } = feeConfig.rows[0];
+                const totalPayable = parseFloat(total_compulsory);
+
+                // 3. Upsert the student's fees_paids ledger row
+                const upsertResult = await client.query(
+                    `INSERT INTO fees_paids
+                        (student_id, class_id, academic_year_id, total_payable,
+                         total_paid, balance_amount, status, created_by)
+                     VALUES ($1, $2, $3, $4, 0, $4, 'pending', $5)
+                     ON CONFLICT (student_id, academic_year_id)
+                     DO UPDATE SET
+                         total_payable = EXCLUDED.total_payable,
+                         balance_amount = EXCLUDED.total_payable - fees_paids.total_paid,
+                         status = CASE
+                             WHEN fees_paids.total_paid >= EXCLUDED.total_payable THEN 'paid'
+                             WHEN fees_paids.total_paid > 0 THEN 'partial'
+                             ELSE 'pending'
+                         END,
+                         updated_at = NOW()
+                     RETURNING *`,
+                    [studentId, class_id, academic_year_id, totalPayable, createdBy]
+                );
+
+                assigned.push(upsertResult.rows[0]);
             }
-        }
 
-        await client.query('COMMIT');
-
-        res.status(200).json({
-            status: 'SUCCESS',
-            message: `Fees assigned successfully to ${student_ids.length} students`
+            return { assigned, skipped };
         });
+
+        return success(res, 200,
+            `Fees assigned to ${result.assigned.length} student(s). ${result.skipped.length} skipped.`,
+            result
+        );
     } catch (error) {
-        if (client) await client.query('ROLLBACK');
         console.error('Error in assignFees:', error);
-
-        if (error.code === '23505') {
-            return res.status(409).json({ 
-                status: 'ERROR', 
-                message: 'This fee group has already been assigned to one or more selected students for this academic year.' 
-            });
-        }
-
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
-    } finally {
-        if (client) client.release();
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
+// ─── LIST ASSIGNMENTS ─────────────────────────────────────────────────────────
+// Returns all fees_paids rows for a given academic year with student details.
+const getFeesAssignments = async (req, res) => {
+    try {
+        const { academic_year_id, class_id, status } = req.query;
+
+        if (!academic_year_id) {
+            return errorResponse(res, 400, 'academic_year_id is required');
+        }
+
+        let whereClause = 'WHERE fp.academic_year_id = $1';
+        const params = [academic_year_id];
+
+        if (class_id && class_id !== 'All') {
+            whereClause += ` AND fp.class_id = $${params.length + 1}`;
+            params.push(parseInt(class_id, 10));
+        }
+
+        if (status && status !== 'All') {
+            whereClause += ` AND fp.status = $${params.length + 1}`;
+            params.push(status.toLowerCase());
+        }
+
+        const result = await query(
+            `SELECT
+                fp.*,
+                u.first_name || ' ' || COALESCE(u.last_name, '') AS student_name,
+                u.avatar AS student_image,
+                s.admission_number,
+                c.class_name,
+                c.class_name AS fees_group_name,
+                (
+                    SELECT string_agg(sub.name, ', ' ORDER BY sub.name)
+                    FROM (
+                        SELECT DISTINCT ft.name AS name
+                        FROM fees_class_types fct2
+                        JOIN fees f2 ON f2.id = fct2.fee_id
+                            AND f2.class_id = fct2.class_id
+                            AND f2.academic_year_id = fct2.academic_year_id
+                            AND f2.deleted_at IS NULL
+                        JOIN fees_types ft ON ft.id = fct2.fee_type_id
+                        WHERE f2.class_id = fp.class_id
+                          AND f2.academic_year_id = fp.academic_year_id
+                    ) sub
+                ) AS fees_type_name,
+                -- Section from lifecycle ledger
+                (
+                    SELECT sec.section_name
+                    FROM student_lifecycle_ledger sll
+                    LEFT JOIN sections sec ON sll.to_section_id = sec.id
+                    WHERE sll.student_id = fp.student_id
+                      AND sll.to_academic_year_id = fp.academic_year_id
+                      AND sll.event_type IN ('ADMISSION', 'PROMOTE', 'REJOIN')
+                    ORDER BY sll.id DESC LIMIT 1
+                ) AS section_name,
+                u.gender,
+                COALESCE(cast_t.cast_name, '-') AS category
+             FROM fees_paids fp
+             JOIN students s ON fp.student_id = s.id
+             JOIN users u ON s.user_id = u.id
+             JOIN classes c ON fp.class_id = c.id
+             LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
+             ${whereClause}
+             ORDER BY c.class_name ASC, u.first_name ASC`,
+            params
+        );
+
+        return success(res, 200, 'Fee assignments retrieved successfully', result.rows);
+    } catch (error) {
+        console.error('Error in getFeesAssignments:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+// ─── DELETE ASSIGNMENT ────────────────────────────────────────────────────────
 const deleteFeesAssignment = async (req, res) => {
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            return errorResponse(res, 403, 'Access denied');
         }
 
         const { id } = req.params;
 
-        // Note: CASCADE should ideally handle fees_assign_details deletion in the schema.
-        // If not, we should delete them manually first.
-        // Assuming CASCADE is set.
-        const result = await query('DELETE FROM fees_assign WHERE id = $1 RETURNING *', [id]);
-
-        if (result.rowCount === 0) {
-            return res.status(404).json({ status: 'ERROR', message: 'Assignment not found' });
-        }
-
-        res.status(200).json({
-            status: 'SUCCESS',
-            message: 'Fees assignment deleted successfully'
-        });
-    } catch (error) {
-        console.error('Error in deleteFeesAssignment:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
-    }
-};
-
-const getFeesAssignments = async (req, res) => {
-    try {
-        const academicYearId = parseInt(req.query.academic_year_id, 10);
-        const classId = req.query.class_id;
-
-        if (isNaN(academicYearId)) {
-            return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required and must be a number' });
-        }
-
-        let whereClause = 'WHERE fa.academic_year_id = $1';
-        let params = [academicYearId];
-
-        if (classId && classId !== 'All') {
-            whereClause += ' AND fa.class_id = $2';
-            params.push(parseInt(classId, 10));
+        // Block if any payments have been made
+        const paymentCheck = await query(
+            `SELECT 1 FROM fees_paids WHERE id = $1 AND total_paid > 0 LIMIT 1`,
+            [id]
+        );
+        if (paymentCheck.rowCount > 0) {
+            return errorResponse(res, 400, 'Cannot delete a fee assignment with payment history');
         }
 
         const result = await query(
-            `WITH detail_paid AS (
-                SELECT
-                    fcd.fees_assign_details_id,
-                    COALESCE(SUM(fcd.paid_amount::numeric), 0) AS paid_amount
-                FROM fees_collect_details fcd
-                GROUP BY fcd.fees_assign_details_id
-            ),
-            detail_status AS (
-                SELECT
-                    fa.id AS fees_assign_id,
-                    fad.id AS fees_assign_details_id,
-                    fm.fees_type_id,
-                    COALESCE(fad.amount::numeric, 0) AS assigned_amount,
-                    COALESCE(dp.paid_amount, 0) AS paid_amount,
-                    GREATEST(COALESCE(fad.amount::numeric, 0) - COALESCE(dp.paid_amount, 0), 0) AS pending_amount
-                FROM fees_assign fa
-                INNER JOIN fees_assign_details fad ON fad.fees_assign_id = fa.id
-                LEFT JOIN detail_paid dp ON dp.fees_assign_details_id = fad.id
-                LEFT JOIN fees_master fm ON fm.id = fad.fees_master_id
-                ${whereClause}
-            ),
-            assign_rollup AS (
-                SELECT
-                    ds.fees_assign_id,
-                    COALESCE(SUM(ds.assigned_amount), 0) AS total_assigned_amount,
-                    COALESCE(SUM(ds.paid_amount), 0) AS total_paid_amount,
-                    COALESCE(SUM(ds.pending_amount), 0) AS total_pending_amount,
-                    STRING_AGG(DISTINCT ft.name, ', ' ORDER BY ft.name)
-                        FILTER (WHERE ds.pending_amount > 0) AS pending_fees_type_name
-                FROM detail_status ds
-                LEFT JOIN fees_types ft ON ft.id = ds.fees_type_id
-                GROUP BY ds.fees_assign_id
-            )
-            SELECT
-                fa.*,
-                COALESCE(s.first_name || ' ' || COALESCE(s.last_name, ''), 'Unknown Student') as student_name,
-                s.admission_number,
-                COALESCE(c.class_name, 'No Class') as class_name,
-                s.section_id,
-                COALESCE(sec.section_name, '-') as section_name,
-                COALESCE(fg.name, 'Unknown Group') as fees_group_name,
-                COALESCE(s.gender, 'All') as gender,
-                COALESCE(cast_t.cast_name, 'All') as category,
-                COALESCE(ar.total_pending_amount, 0) AS total_amount,
-                COALESCE(ar.total_assigned_amount, 0) AS total_assigned_amount,
-                COALESCE(ar.total_paid_amount, 0) AS total_paid_amount,
-                COALESCE(ar.pending_fees_type_name, 'Unknown Type') AS fees_type_name
-            FROM fees_assign fa
-            INNER JOIN assign_rollup ar ON ar.fees_assign_id = fa.id
-            LEFT JOIN students s ON fa.student_id = s.id
-            LEFT JOIN classes c ON fa.class_id = c.id
-            LEFT JOIN sections sec ON s.section_id = sec.id
-            LEFT JOIN fees_groups fg ON fa.fees_group_id = fg.id
-            LEFT JOIN casts cast_t ON s.cast_id = cast_t.id
-            WHERE ar.total_pending_amount > 0
-            ORDER BY c.class_name ASC, s.first_name ASC`,
-            params
+            'DELETE FROM fees_paids WHERE id = $1 RETURNING *',
+            [id]
         );
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            data: result.rows
-        });
+        if (result.rowCount === 0) {
+            return errorResponse(res, 404, 'Fee assignment not found');
+        }
+
+        return success(res, 200, 'Fee assignment deleted successfully');
     } catch (error) {
-        console.error('Error in getFeesAssignments:', error);
-        res.status(500).json({ 
-            status: 'ERROR', 
-            message: 'Internal server error',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        console.error('Error in deleteFeesAssignment:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 

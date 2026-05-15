@@ -46,6 +46,53 @@ const FeesMaster = () => {
   // Modal States
   const [selectedMaster, setSelectedMaster] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<any[]>([]);
+
+  const onSelectionChange = (newSelectedRowKeys: any[]) => {
+    setSelectedRowKeys(newSelectedRowKeys);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedRowKeys.length === 0) return;
+
+    const result = await Swal.fire({
+      title: 'Bulk Delete?',
+      text: `Are you sure you want to delete ${selectedRowKeys.length} items? This cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Yes, delete them!'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        const res = await apiService.bulkDeleteFeesMaster(selectedRowKeys);
+        if (res.status === "SUCCESS") {
+          Swal.fire('Deleted!', res.message, 'success');
+          setSelectedRowKeys([]);
+          fetchFeesMaster();
+        }
+      } catch (err: any) {
+        Swal.fire('Error', err.message || 'Failed to delete items', 'error');
+      }
+    }
+  };
+
+  const handleBulkStatusUpdate = async (status: string) => {
+    if (selectedRowKeys.length === 0) return;
+
+    try {
+      const res = await apiService.bulkUpdateFeesMasterStatus(selectedRowKeys, status);
+      if (res.status === "SUCCESS") {
+        Swal.fire('Updated!', res.message, 'success');
+        setSelectedRowKeys([]);
+        fetchFeesMaster();
+      }
+    } catch (err: any) {
+      Swal.fire('Error', err.message || 'Failed to update status', 'error');
+    }
+  };
 
   const fetchFeesMaster = async (isManualRefresh = false) => {
     try {
@@ -105,11 +152,11 @@ const FeesMaster = () => {
     let filtered = [...data];
 
     if (selectedGroup !== "All") {
-      filtered = filtered.filter(item => item.fees_group_id === Number(selectedGroup));
+      filtered = filtered.filter(item => Number(item.fee_id) === Number(selectedGroup));
     }
 
     if (selectedType !== "All") {
-      filtered = filtered.filter(item => item.fees_type_id === Number(selectedType));
+      filtered = filtered.filter(item => Number(item.fee_type_id) === Number(selectedType));
     }
 
     if (filterStatus !== "All") {
@@ -365,6 +412,26 @@ const FeesMaster = () => {
             </div>
           </div>
           {/* /Page Header */}
+          {selectedRowKeys.length > 0 && (
+            <div className="d-flex align-items-center mb-3 bg-white p-3 rounded shadow-sm border border-primary-light animate__animated animate__fadeIn">
+              <span className="me-3 fw-bold text-primary">
+                <i className="ti ti-check me-1" />
+                {selectedRowKeys.length} Items Selected
+              </span>
+              <button className="btn btn-soft-success me-2" onClick={() => handleBulkStatusUpdate('Active')}>
+                <i className="ti ti-circle-check me-1" />
+                Mark Active
+              </button>
+              <button className="btn btn-soft-warning me-2" onClick={() => handleBulkStatusUpdate('Inactive')}>
+                <i className="ti ti-circle-x me-1" />
+                Mark Inactive
+              </button>
+              <button className="btn btn-soft-danger" onClick={handleBulkDelete}>
+                <i className="ti ti-trash me-1" />
+                Bulk Delete
+              </button>
+            </div>
+          )}
           {/* Students List */}
           <div className="card">
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
@@ -400,7 +467,10 @@ const FeesMaster = () => {
                                 className="select"
                                 options={[
                                   { value: "All", label: "All Groups" },
-                                  ...groups.map(g => ({ value: g.id.toString(), label: g.name }))
+                                  ...groups.map((g: any) => ({
+                                    value: String(g.id),
+                                    label: g.class_name ?? g.name ?? (g.description ? String(g.description).slice(0, 80) : `Fee config #${g.id}`),
+                                  }))
                                 ]}
                                 defaultValue={{ value: "All", label: "All Groups" }}
                                 value={selectedGroup}
@@ -475,7 +545,13 @@ const FeesMaster = () => {
               </div>
             </div>
             <div className="card-body p-0 py-3">
-              <Table dataSource={filteredData} columns={columns} Selection={true} />
+              <Table 
+                dataSource={filteredData} 
+                columns={columns} 
+                Selection={true} 
+                onSelectionChange={onSelectionChange}
+                selectedRowKeys={selectedRowKeys}
+              />
             </div>
           </div>
           {/* /Students List */}

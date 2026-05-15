@@ -1677,3 +1677,40 @@ body.app-chat {
     }
   }
 }
+
+.avatar-list-stacked {
+  display: flex;
+  align-items: center;
+  padding-left: 0;
+
+  .avatar {
+    margin-right: -12px;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+    border: 2px solid #fff;
+
+    &:hover {
+      z-index: 10 !important;
+      transform: translateY(-2px);
+    }
+
+    &:last-child {
+      margin-right: 0;
+    }
+  }
+
+  .avatar-md {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+

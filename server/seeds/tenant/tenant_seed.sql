@@ -21,7 +21,9 @@ INSERT INTO public.user_roles (role_name, description) VALUES
 ('Administrative', 'Staff managing enquiries and front-desk tasks'),       -- ID: 6
 ('Accountant', 'Financial staff managing fees and payroll'),
 ('Librarian', 'Staff managing library assets and circulation'),
-('Receptionist', 'Staff managing enquiries and front-desk tasks')
+('Receptionist', 'Staff managing enquiries and front-desk tasks'),
+('Driver', 'Staff responsible for vehicle operation and student transport'),
+('Conductor', 'Staff assisting with student transport and vehicle supervision')
 ON CONFLICT (role_name) DO NOTHING;
 
 -- 3. Blood Groups
@@ -122,16 +124,12 @@ WHERE NOT EXISTS (
     SELECT 1 FROM public.document_types WHERE document_type = d.type
 );
 
--- 12. Room Types
-INSERT INTO public.room_types (room_type, max_occupancy) VALUES
-('Classroom', 40),
-('Science Lab', 30),
-('Computer Lab', 30),
-('Library Hall', 100),
-('Staff Room', 20),
-('Office', 5),
-('Meeting Room', 15)
-ON CONFLICT (room_type) DO NOTHING;
+-- 12. Room Types (Optional - used for Hostels)
+-- INSERT INTO public.room_types (room_type, max_occupancy) VALUES
+-- ('Single Sharing', 1),
+-- ('Double Sharing', 2),
+-- ('Triple Sharing', 3)
+-- ON CONFLICT (room_type) DO NOTHING;
 
 -- 13. Time Slots
 INSERT INTO public.timetable_time_slots (slot_name, start_time, end_time, is_break)

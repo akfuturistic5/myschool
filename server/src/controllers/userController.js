@@ -96,22 +96,28 @@ const getAllUsers = async (req, res) => {
             sched_sec.section_name
           ) AS section_name
         FROM staff st
-        INNER JOIN teachers t ON t.staff_id = st.id
-        LEFT JOIN classes c ON c.id = t.class_id
-        LEFT JOIN sections sec
-          ON sec.section_teacher_id = st.id
-         AND (t.class_id IS NULL OR sec.class_id = t.class_id)
+        LEFT JOIN LATERAL (
+          SELECT c.class_name, sec.section_name
+          FROM class_teachers ct
+          LEFT JOIN classes c ON c.id = ct.class_id
+          LEFT JOIN class_sections csec ON csec.id = ct.class_section_id
+          LEFT JOIN sections sec ON sec.id = csec.section_id
+          WHERE ct.staff_id = st.id
+            AND ct.deleted_at IS NULL
+          ORDER BY ct.id DESC
+          LIMIT 1
+        ) AS teacher_ctx_base ON TRUE
         LEFT JOIN LATERAL (
           SELECT sec2.section_name
           FROM class_schedules cs
-          INNER JOIN sections sec2 ON sec2.id = cs.section_id
-          WHERE cs.teacher_id = t.id
+          LEFT JOIN class_sections csec2 ON csec2.id = cs.class_section_id
+          LEFT JOIN sections sec2 ON sec2.id = csec2.section_id
+          WHERE cs.teacher_id = st.id
           ORDER BY cs.id DESC
           LIMIT 1
         ) AS sched_sec ON TRUE
         WHERE st.user_id = u.id
           AND st.status = \'Active\'
-        ORDER BY t.id DESC
         LIMIT 1
       ) AS teacher_ctx ON TRUE
       LEFT JOIN LATERAL (

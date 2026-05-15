@@ -19,7 +19,7 @@ const Holiday = () => {
   const routes = all_routes;
   const user = useSelector(selectUser);
   const role = String(user?.role || "").trim().toLowerCase();
-  const roleId = Number(user?.user_role_id ?? user?.role_id);
+  const roleId = Number(user?.user_role_id);
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const canManage = roleId === 1 || roleId === 6 || role === "admin" || role === "administrative" || role === "headmaster";
   const [rows, setRows] = useState<any[]>([]);
@@ -63,14 +63,14 @@ const Holiday = () => {
         setError("Select an academic year before creating/updating holidays.");
         return;
       }
-      if (editingId) {
+      if (editingId !== null) {
         await apiService.updateHoliday(editingId, { ...form, academic_year_id: academicYearId ?? null });
       } else {
         await apiService.createHoliday({ ...form, academic_year_id: academicYearId ?? null });
       }
       setForm(defaultForm);
       setEditingId(null);
-      setMessage(editingId ? "Holiday updated." : "Holiday created.");
+      setMessage(editingId !== null ? "Holiday updated." : "Holiday created.");
       await load();
     } catch (err: any) {
       setError(getReadableError(err, "Failed to save holiday"));
@@ -78,7 +78,12 @@ const Holiday = () => {
   };
 
   const startEdit = (row: any) => {
-    setEditingId(Number(row.id));
+    const id = Number(row?.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      setError("Unable to edit this holiday: invalid holiday id.");
+      return;
+    }
+    setEditingId(id);
     setForm({
       title: row.title || "",
       description: row.description || "",
@@ -86,6 +91,7 @@ const Holiday = () => {
       end_date: String(row.end_date || "").slice(0, 10),
       holiday_type: row.holiday_type || "school",
     });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const removeHoliday = async (id: number) => {
@@ -128,15 +134,29 @@ const Holiday = () => {
 
         {canManage && (
           <div className="card mb-3">
-            <div className="card-header"><h5 className="mb-0">{editingId ? "Edit Holiday" : "Add Holiday"}</h5></div>
+            <div className="card-header"><h5 className="mb-0">{editingId !== null ? "Edit Holiday" : "Add Holiday"}</h5></div>
             <div className="card-body">
               <form onSubmit={onSubmit}>
                 <div className="row g-2">
-                  <div className="col-md-4"><input className="form-control" placeholder="Title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} required /></div>
-                  <div className="col-md-2"><input type="date" className="form-control" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} required /></div>
-                  <div className="col-md-2"><input type="date" className="form-control" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} required /></div>
+                  <div className="col-md-4">
+                    <label className="form-label">Title</label>
+                    <input className="form-control" placeholder="Title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} required />
+                  </div>
                   <div className="col-md-2">
-                    <select className="form-select" value={form.holiday_type} onChange={(e) => setForm((p) => ({ ...p, holiday_type: e.target.value }))}>
+                    <label className="form-label">From Date</label>
+                    <input type="date" className="form-control" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} required />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">To Date</label>
+                    <input type="date" className="form-control" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} required />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">Type</label>
+                    <select
+                      className="form-select"
+                      value={form.holiday_type}
+                      onChange={(e) => setForm((p) => ({ ...p, holiday_type: e.target.value }))}
+                    >
                       <option value="public">Public</option>
                       <option value="school">School</option>
                       <option value="custom">Custom</option>
@@ -144,8 +164,8 @@ const Holiday = () => {
                   </div>
                   <div className="col-md-12"><textarea className="form-control" rows={2} placeholder="Description (optional)" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div>
                   <div className="col-md-12 d-flex gap-2">
-                    <button type="submit" className="btn btn-primary">{editingId ? "Update" : "Create"}</button>
-                    {editingId ? <button type="button" className="btn btn-light" onClick={() => { setEditingId(null); setForm(defaultForm); }}>Cancel Edit</button> : null}
+                    <button type="submit" className="btn btn-primary">{editingId !== null ? "Update" : "Create"}</button>
+                    {editingId !== null ? <button type="button" className="btn btn-light" onClick={() => { setEditingId(null); setForm(defaultForm); }}>Cancel Edit</button> : null}
                   </div>
                 </div>
               </form>
@@ -173,8 +193,8 @@ const Holiday = () => {
                         <td>{row.description || "—"}</td>
                         {canManage ? (
                           <td>
-                            <button className="btn btn-sm btn-outline-primary me-2" onClick={() => startEdit(row)}>Edit</button>
-                            <button className="btn btn-sm btn-outline-danger" onClick={() => removeHoliday(Number(row.id))}>Delete</button>
+                            <button type="button" className="btn btn-sm btn-outline-primary me-2" onClick={() => startEdit(row)}>Edit</button>
+                            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeHoliday(Number(row.id))}>Delete</button>
                           </td>
                         ) : null}
                       </tr>

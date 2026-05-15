@@ -167,7 +167,23 @@ export const SidebarData = [
         submenu: true,
         showSubRoute: false,
 
-        submenuItems: [{ label: "All Classes", link: routes.classes }],
+        submenuItems: [
+          { label: "Class Room", link: routes.classRoom },
+          { label: "Section", link: routes.classSection },
+          { label: "Classes", link: routes.classes },
+          { label: "Class Sections", link: routes.classSections },
+        ],
+      },
+      {
+        label: "Subjects",
+        icon: "ti ti-book",
+        submenu: true,
+        showSubRoute: false,
+        submenuItems: [
+          { label: "Subject List", link: routes.subjects },
+          { label: "Class Subjects", link: routes.classSubject },
+          { label: "Curriculum Mapping", link: routes.curriculumMapping },
+        ],
       },
       {
         label: "Timetable",
@@ -180,34 +196,13 @@ export const SidebarData = [
           { label: "Section routine", link: routes.sectionRoutine },
         ],
       },
-      {
-        label: "Class Room",
-        link: routes.classRoom,
-        icon: "ti ti-building",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Section",
-        link: routes.classSection,
-        icon: "ti ti-square-rotated-forbid-2",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Subject",
-        link: routes.classSubject,
-        icon: "ti ti-book",
-        showSubRoute: false,
-        submenu: false,
-      },
-      {
-        label: "Syllabus",
-        link: routes.classSyllabus,
-        icon: "ti ti-book-upload",
-        showSubRoute: false,
-        submenu: false,
-      },
+      // {
+      //   label: "Syllabus",
+      //   link: routes.classSyllabus,
+      //   icon: "ti ti-book-upload",
+      //   showSubRoute: false,
+      //   submenu: false,
+      // },
       {
         label: "Home Work",
         link: routes.classHomeWork,
@@ -223,6 +218,7 @@ export const SidebarData = [
 
         submenuItems: [
           { label: "Exams", link: routes.exam },
+          { label: "Exam Types", link: routes.examTypes },
           { label: "Schedule", link: routes.examAttendance },
           { label: "Exam Result", link: routes.examResult },
           { label: "Top Performers", link: routes.examTopPerformers },
@@ -275,8 +271,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "Fees Group", link: routes.feesGroup },
           { label: "Fees Type", link: routes.feesType },
-          { label: "Fees Master", link: routes.feesMaster },
-          { label: "Fees Assign", link: routes.feesAssign },
+          // { label: "Assign Fees", link: routes.feesAssign },
           { label: "Collect Fees", link: routes.collectFees },
         ],
       },
@@ -288,9 +283,12 @@ export const SidebarData = [
 
         submenuItems: [
           { label: "Library Members", link: routes.libraryMembers },
-          { label: "Books", link: routes.libraryBooks },
+          { label: "Categories", link: routes.libraryCategories },
+          { label: "Policies", link: routes.libraryPolicies },
+          { label: "Books", link: routes.libraryBooks, subLink1: routes.libraryBookCopies },
           { label: "Issue Book", link: routes.libraryIssueBook },
           { label: "Return", link: routes.libraryReturn },
+          { label: "Reservations", link: routes.libraryReservations },
         ],
       },
       {
@@ -300,9 +298,12 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
+          { label: "Hostel Assignments", link: routes.hostelAssignments },
           { label: "Hostel List", link: routes.hostelList },
-          { label: "Hostel Rooms", link: routes.hostelRoom },
+          { label: "Hostel Floors", link: routes.hostelFloors },
           { label: "Room Type", link: routes.hostelType },
+          { label: "Hostel Rooms", link: routes.hostelRoom },
+          { label: "Hostel Beds", link: routes.hostelBeds },
         ],
       },
       {
@@ -373,6 +374,7 @@ export const SidebarData = [
         submenuItems: [
           { label: "List of leaves", link: routes.listLeaves },
           { label: "Approve Request", link: routes.approveRequest },
+          { label: "Leave Types", link: routes.leaveTypesManage },
         ],
       },
       {
@@ -388,42 +390,6 @@ export const SidebarData = [
         icon: "ti ti-moneybag",
         showSubRoute: false,
         submenu: false,
-      },
-    ],
-  },
-  {
-    label: "Settings",
-    submenuOpen: true,
-    showSubRoute: false,
-    submenuHdr: "Settings",
-    submenuItems: [
-      {
-        label: "Houses",
-        icon: "ti ti-home",
-        link: routes.settingsHouses,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Blood Groups",
-        icon: "ti ti-droplet",
-        link: routes.settingsBloodGroups,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Mother Tongues",
-        icon: "ti ti-language",
-        link: routes.settingsMotherTongues,
-        submenu: false,
-        showSubRoute: false,
-      },
-      {
-        label: "Casts",
-        icon: "ti ti-users-group",
-        link: routes.settingsCasts,
-        submenu: false,
-        showSubRoute: false,
       },
     ],
   },
@@ -597,6 +563,49 @@ export const SidebarData = [
       },
     ],
   }, */
+  {
+    label: "Settings",
+    submenuOpen: true,
+    showSubRoute: false,
+    submenuHdr: "Settings",
+    submenuItems: [
+      {
+        label: "Houses",
+        icon: "ti ti-home",
+        link: routes.settingsHouses,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Blood Groups",
+        icon: "ti ti-droplet",
+        link: routes.settingsBloodGroups,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Mother Tongues",
+        icon: "ti ti-language",
+        link: routes.settingsMotherTongues,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Casts",
+        icon: "ti ti-users-group",
+        link: routes.settingsCasts,
+        submenu: false,
+        showSubRoute: false,
+      },
+      {
+        label: "Payment Modes",
+        icon: "ti ti-credit-card",
+        link: routes.paymentModes,
+        submenu: false,
+        showSubRoute: false,
+      },
+    ],
+  },
   {
     label: "REMOVE",
     submenuOpen: false,
@@ -967,7 +976,7 @@ export const SidebarData = [
                 link: routes.fantawesome,
                 showSubRoute: false,
               },
-              
+
               {
                 label: "Ionic Icons",
                 link: routes.iconicIcon,
@@ -979,7 +988,7 @@ export const SidebarData = [
                 showSubRoute: false,
               },
               { label: "Pe7 Icons", link: routes.pe7icon, showSubRoute: false },
-             
+
               {
                 label: "Themify Icons",
                 link: routes.themifyIcon,

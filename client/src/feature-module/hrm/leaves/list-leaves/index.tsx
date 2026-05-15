@@ -20,26 +20,37 @@ import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSections } from "../../../../core/hooks/useSections";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
-import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole, isTeacherRole } from "../../../../core/utils/roleUtils";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
+import TeacherModal from "../../../peoples/teacher/teacherModal";
+import { apiService } from "../../../../core/services/apiService";
 
-/** Default: show decided leaves only (excludes pending & cancelled). Must match server status tokens. */
-const DEFAULT_LIST_LEAVE_STATUSES = "approved,rejected";
+/** Default: show all leaves including pending. Must match server status tokens. */
+const DEFAULT_LIST_LEAVE_STATUSES = "pending,approved,rejected";
 
 const LEAVE_STATUS_OPTIONS = [
-  { value: DEFAULT_LIST_LEAVE_STATUSES, label: "Approved & Rejected" },
+  { value: "pending", label: "Pending only" },
   { value: "approved", label: "Approved only" },
   { value: "rejected", label: "Rejected only" },
 ];
 
+const APPLICANT_TYPE_OPTIONS = [
+  { value: "both", label: "Both" },
+  { value: "staff", label: "Staff" },
+  { value: "student", label: "Student" },
+];
+
 const ListLeaves = () => {
   const routes = all_routes;
-  const { user: currentUser } = useCurrentUser();
+  const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
-  const roleId = Number(currentUser?.user_role_id ?? currentUser?.role_id);
-  const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
-  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
-  const isOwnLeavesOnly = false;
+  const roleId = Number(currentUser?.user_role_id);
+  const isTeacher = isTeacherRole(currentUser);
+  const isAdmin = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const canUseAdminList = isAdmin || isTeacher;
+  const isOwnLeavesOnly = isTeacher && !isAdmin;
+  const { teacher: currentTeacher } = useCurrentTeacher() as any;
   const [filterStatus, setFilterStatus] = useState<string | null>(DEFAULT_LIST_LEAVE_STATUSES);
   const [datePreset, setDatePreset] = useState<LeaveListDatePreset>("all");
   const [customDateRange, setCustomDateRange] = useState(() => defaultCustomDateRange());
@@ -48,6 +59,7 @@ const ListLeaves = () => {
     [datePreset, customDateRange]
   );
   const [filterLeaveTypeId, setFilterLeaveTypeId] = useState<string | null>(null);
+  const [filterApplicantType, setFilterApplicantType] = useState<string>("both");
   const [filterDepartmentId, setFilterDepartmentId] = useState<string | null>(null);
   const [filterDesignationId, setFilterDesignationId] = useState<string | null>(null);
   const [filterClassId, setFilterClassId] = useState<string | null>(null);
@@ -85,10 +97,11 @@ const ListLeaves = () => {
   );
   const leaveTypeOptions = useMemo(() => {
     const source = leaveTypes.length > 0 ? leaveTypes : leaveType;
-    return (Array.isArray(source) ? source : []).map((item: any) => ({
+    const mapped = (Array.isArray(source) ? source : []).map((item: any) => ({
       value: String(item.value ?? item.id ?? ""),
       label: String(item.label ?? item.leave_type ?? item.name ?? "Leave Type"),
     }));
+    return [{ value: "all", label: "All" }, ...mapped];
   }, [leaveTypes]);
   const departmentOptions = useMemo(
     () =>
@@ -106,7 +119,7 @@ const ListLeaves = () => {
       })),
     [designations]
   );
-  const { leaveApplications, loading: leaveLoading, error: leaveError } = useLeaveApplications({
+  const { leaveApplications, loading: leaveLoading, error: leaveError, refetch: refetchLeaves } = useLeaveApplications({
     limit: 200,
     page: 1,
     pageSize: 200,
@@ -114,6 +127,7 @@ const ListLeaves = () => {
     studentOnly: isOwnLeavesOnly,
     status: filterStatus != null && String(filterStatus).trim() !== "" ? String(filterStatus).toLowerCase() : null,
     leaveTypeId: Number.isFinite(selectedLeaveTypeId) && selectedLeaveTypeId > 0 ? selectedLeaveTypeId : null,
+    applicantType: filterApplicantType === "both" ? null : filterApplicantType,
     departmentId: Number.isFinite(selectedDepartmentId) && selectedDepartmentId > 0 ? selectedDepartmentId : null,
     designationId: Number.isFinite(selectedDesignationId) && selectedDesignationId > 0 ? selectedDesignationId : null,
     classId: Number.isFinite(selectedClassId) && selectedClassId > 0 ? selectedClassId : null,
@@ -125,11 +139,25 @@ const ListLeaves = () => {
     // (sorting only by start_date desc surfaces far-future dates first and drops past rows).
     sortBy: "created_at",
     sortOrder,
-  });
+  }) as any;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const handleApplyClick = () => {
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
+    }
+  };
+
+  const handleCancelLeave = async (id: number) => {
+    if (!window.confirm("Are you sure you want to cancel this leave application?")) return;
+    try {
+      const res = await apiService.cancelLeaveApplication(id);
+      if (res?.status === "SUCCESS") {
+        refetchLeaves();
+      } else {
+        alert(res?.message || "Failed to cancel leave application.");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel leave application.");
     }
   };
 
@@ -202,7 +230,81 @@ const ListLeaves = () => {
       },
       sorter: (a: any, b: any) => String(a?.status ?? "").length - String(b?.status ?? "").length,
     },
+    {
+      title: "Action",
+      dataIndex: "action",
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          {record.status === "pending" && 
+           isTeacher && 
+           Number(record.staffId) === Number(currentTeacher?.id || currentUser?.staff_id) && (
+            <Link
+              to="#"
+              className="btn btn-icon btn-sm btn-soft-danger"
+              onClick={(e) => {
+                e.preventDefault();
+                handleCancelLeave(record.id);
+              }}
+              title="Cancel Leave"
+            >
+              <i className="ti ti-trash" />
+            </Link>
+          )}
+        </div>
+      ),
+    },
   ];
+
+  const exportHeaders = ["ID", "Submitted By", "Leave Type", "Role", "Leave Date", "No of Days", "Applied On", "Status"];
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => [
+        row.id ?? "—",
+        row.submittedBy ?? "—",
+        row.leaveType ?? "—",
+        row.role ?? "—",
+        row.leaveDate ?? "—",
+        row.noofDays ?? "—",
+        row.appliedOn ?? "—",
+        row.status ?? "—",
+      ]),
+    [data]
+  );
+
+  const downloadCsv = (filename: string) => {
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [exportHeaders, ...exportRows].map((r) => r.map(escape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printTable = () => {
+    const htmlRows = exportRows
+      .map((r) => `<tr>${r.map((c) => `<td>${String(c ?? "")}</td>`).join("")}</tr>`)
+      .join("");
+    const printWindow = window.open("", "_blank", "width=1200,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>List of Leaves</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:16px}
+        table{border-collapse:collapse;width:100%}
+        th,td{border:1px solid #ddd;padding:8px;font-size:12px;text-align:left}
+        th{background:#f5f5f5}
+      </style></head><body>
+      <h3>List of Leaves</h3>
+      <table><thead><tr>${exportHeaders.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${htmlRows}</tbody></table>
+      </body></html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
   return (
     <div>
       <>
@@ -228,7 +330,23 @@ const ListLeaves = () => {
                 </nav>
               </div>
               <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-                <TooltipOption />
+                <TooltipOption
+                  onRefresh={() => refetchLeaves()}
+                  onPrint={printTable}
+                  onExportPdf={printTable}
+                  onExportExcel={() => downloadCsv("list-of-leaves.csv")}
+                />
+                {isTeacher && (
+                  <Link
+                    to="#"
+                    className="btn btn-primary d-flex align-items-center ms-2"
+                    data-bs-toggle="modal"
+                    data-bs-target="#apply_leave_teacher"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Apply Leave
+                  </Link>
+                )}
               </div>
             </div>
             {/* /Page Header */}
@@ -268,8 +386,19 @@ const ListLeaves = () => {
                                 <CommonSelect
                                   className="select"
                                   options={leaveTypeOptions}
-                                  value={filterLeaveTypeId}
-                                  onChange={(value) => setFilterLeaveTypeId(value)}
+                                  value={filterLeaveTypeId ?? "all"}
+                                  onChange={(value) => setFilterLeaveTypeId(value === "all" ? null : value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="col-md-12">
+                              <div className="mb-3">
+                                <label className="form-label">Applicant</label>
+                                <CommonSelect
+                                  className="select"
+                                  options={APPLICANT_TYPE_OPTIONS}
+                                  value={filterApplicantType}
+                                  onChange={(value) => setFilterApplicantType(value || "both")}
                                 />
                               </div>
                             </div>
@@ -341,6 +470,7 @@ const ListLeaves = () => {
                             className="btn btn-light me-3"
                             onClick={() => {
                               setFilterLeaveTypeId(null);
+                              setFilterApplicantType("both");
                               setFilterStatus(DEFAULT_LIST_LEAVE_STATUSES);
                               setFilterDepartmentId(null);
                               setFilterDesignationId(null);
@@ -432,157 +562,10 @@ const ListLeaves = () => {
           </div>
         </div>
         {/* /Page Wrapper */}
-        {/* Add Leaves */}
-        <div className="modal fade" id="add_leaves">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add Leave Type</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Leave Type</label>
-                        <input type="text" className="form-control" />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Leave Type
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Add Leaves */}
-        {/* Edit Leaves */}
-        <div className="modal fade" id="edit_leaves">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit Leave Type</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Leave Type</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Leave Type"
-                          defaultValue="Medical Leave"
-                        />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm2"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Edit Leaves */}
-        {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form >
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Delete Modal */}
+        <TeacherModal
+          staffId={currentTeacher?.id || currentUser?.staff_id}
+          onLeaveApplied={() => refetchLeaves()}
+        />
       </>
     </div>
   );

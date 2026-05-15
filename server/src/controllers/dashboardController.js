@@ -1,6 +1,8 @@
 const { query } = require('../config/database');
 const { getAuthContext, isAdmin, resolveTeacherStaffIdForUser, resolveStudentScopeForUser, resolveWardStudentIdsForUser, parseId } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
+const { getExamSchemaFlags } = require('./examModuleController');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 // Parse academic_year_id from query (optional - when set, filter year-specific data)
 function parseAcademicYearId(req) {
@@ -280,7 +282,9 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
          COUNT(*) FILTER (WHERE LOWER(TRIM(sa.status::text)) IN ('half-day', 'half_day'))::int AS half_day,
          COUNT(*)::int AS total_marked
        FROM staff_attendance sa
-       ${where}`,
+       INNER JOIN staff s ON s.id = sa.staff_id
+       INNER JOIN users u ON u.id = s.user_id
+       ${where ? where + ' AND' : 'WHERE'} u.role_id NOT IN (2, 3, 4, 5)`,
       params
     );
     const row = marks.rows[0] || {};
@@ -356,64 +360,23 @@ const getDashboardStats = async (req, res) => {
       console.warn('Dashboard: students count failed', e.message);
     }
 
-    // Teachers: school-wide when no year; with year = linked to that year via timetable OR class teacher OR assigned class.
-    // If year-scoped mapping is empty but teachers exist, fallback to school-wide counts to avoid misleading 0 cards.
+    // Teachers: total, active, inactive (school-wide headcount)
     try {
-      const fetchSchoolWideTeacherCounts = async () => {
-        const totalRes = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS total 
-           FROM staff s 
-           INNER JOIN users u ON u.id = s.user_id 
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.role_id = 2`
-        );
-        const activeRes = await query(`
-          SELECT COUNT(DISTINCT s.id)::int AS active
-          FROM staff s
-          INNER JOIN users u ON u.id = s.user_id
-          WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL 
-            AND s.status = 'Active' AND u.role_id = 2
-        `);
-        return {
-          total: parseInt(totalRes.rows[0]?.total, 10) || 0,
-          active: parseInt(activeRes.rows[0]?.active, 10) || 0,
-        };
-      };
-
-      if (hasYearFilter) {
-        const yearTeacherScope = sqlTeacherInAcademicYear('s', 1);
-        const teachersTotal = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS total
-           FROM staff s
-           INNER JOIN users u ON u.id = s.user_id
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-             AND u.role_id = 2
-             AND ${yearTeacherScope}`,
-          [academicYearId]
-        );
-        stats.teachers.total = parseInt(teachersTotal.rows[0]?.total, 10) || 0;
-        const teachersActive = await query(
-          `SELECT COUNT(DISTINCT s.id)::int AS active
-           FROM staff s
-           INNER JOIN users u ON u.id = s.user_id
-           WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-             AND u.role_id = 2
-             AND s.status = 'Active'
-             AND ${yearTeacherScope}`,
-          [academicYearId]
-        );
-        stats.teachers.active = parseInt(teachersActive.rows[0]?.active, 10) || 0;
-
-        if (stats.teachers.total === 0) {
-          const fallback = await fetchSchoolWideTeacherCounts();
-          stats.teachers.total = fallback.total;
-          stats.teachers.active = fallback.active;
-        }
-      } else {
-        const schoolWide = await fetchSchoolWideTeacherCounts();
-        stats.teachers.total = schoolWide.total;
-        stats.teachers.active = schoolWide.active;
+      const teachersCount = await query(`
+        SELECT
+          COUNT(DISTINCT s.id)::int as total,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'Active')::int as active,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status != 'Active')::int as inactive
+        FROM staff s
+        INNER JOIN users u ON u.id = s.user_id
+        WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
+          AND u.role_id = 2
+      `);
+      if (teachersCount.rows[0]) {
+        stats.teachers.total = parseInt(teachersCount.rows[0].total, 10) || 0;
+        stats.teachers.active = parseInt(teachersCount.rows[0].active, 10) || 0;
+        stats.teachers.inactive = parseInt(teachersCount.rows[0].inactive, 10) || 0;
       }
-      stats.teachers.inactive = Math.max(0, stats.teachers.total - stats.teachers.active);
     } catch (e) {
       console.warn('Dashboard: teachers count failed', e.message);
     }
@@ -428,7 +391,7 @@ const getDashboardStats = async (req, res) => {
         FROM staff s
         INNER JOIN users u ON u.id = s.user_id
         WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-          AND u.role_id NOT IN (3, 4)
+          AND u.role_id NOT IN (2, 3, 4, 5)
       `);
       if (staffCount.rows[0]) {
         stats.staff.total = parseInt(staffCount.rows[0].total, 10) || 0;
@@ -794,7 +757,7 @@ const getClassRoutineForDashboard = async (req, res) => {
             where = ` WHERE cs.class_id = $${params.length + 1}`;
             params.push(scope.classId);
             if (scope.sectionId) {
-              where += ` AND (cs.section_id = $${params.length + 1} OR cs.section_id IS NULL)`;
+              where += ` AND (csec.section_id = $${params.length + 1} OR cs.class_section_id IS NULL)`;
               params.push(scope.sectionId);
             }
           }
@@ -816,7 +779,7 @@ const getClassRoutineForDashboard = async (req, res) => {
               where = ` WHERE cs.class_id = ANY($${params.length + 1})`;
               params.push(classIds);
               if (sectionIds.length > 0) {
-                where += ` AND (cs.section_id IS NULL OR cs.section_id = ANY($${params.length + 1}))`;
+                where += ` AND (cs.class_section_id IS NULL OR csec.section_id = ANY($${params.length + 1}))`;
                 params.push(sectionIds);
               }
             }
@@ -829,26 +792,21 @@ const getClassRoutineForDashboard = async (req, res) => {
         }
       }
 
-      if (hasYearFilter) {
-        const r = await query(
-          `SELECT cs.id, cs.class_id, cs.section_id, cs.subject_id, cs.teacher_id, cs.class_room_id, cs.day_of_week, cs.day, cs.weekday, cs.room_number, cs.room_id, cs.class_room
-           FROM class_schedules cs
-           INNER JOIN classes c ON cs.class_id = c.id
-           ${where ? where + ' AND c.academic_year_id = $' + (params.length + 1) : 'WHERE c.academic_year_id = $1'}
-           ORDER BY cs.id DESC LIMIT $${params.length + 2}`,
-          where ? [...params, academicYearId, limit] : [academicYearId, limit]
-        );
-        rows = r.rows;
-      } else {
-        const r = await query(
-          `SELECT id, class_id, section_id, subject_id, teacher_id, class_room_id, day_of_week, day, weekday, room_number, room_id, class_room
-           FROM class_schedules cs
-           ${where}
-           ORDER BY id DESC LIMIT $${params.length + 1}`,
-          [...params, limit]
-        );
-        rows = r.rows;
-      }
+      const finalWhere = hasYearFilter
+        ? (where ? `${where} AND cs.academic_year_id = $${params.length + 1}` : ` WHERE cs.academic_year_id = $1`)
+        : (where || '');
+      const finalParams = hasYearFilter ? [...params, academicYearId, limit] : [...params, limit];
+      const limitParam = hasYearFilter ? params.length + 2 : params.length + 1;
+
+      const r = await query(
+        `SELECT cs.id, cs.class_id, csec.section_id, cs.class_subject_id AS subject_id, cs.teacher_id, cs.class_room_id, cs.day_of_week
+         FROM class_schedules cs
+         LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+         ${finalWhere}
+         ORDER BY cs.id DESC LIMIT $${limitParam}`,
+        finalParams
+      );
+      rows = r.rows;
     } catch (e) {
       try {
         const r = await query(
@@ -996,10 +954,12 @@ const getStarStudents = async (req, res) => {
     const classNameFilter = parseTextQueryParam(req, 'class_name');
     const sectionNameFilter = parseTextQueryParam(req, 'section_name');
     const timeRange = parseStarStudentsTimeRange(req);
-    const [{ totalMarksExpr, joinExamSubjectsSql }, { examDateExpr, requiresExamSubjectsJoinForDate }] = await Promise.all([
-      buildExamResultTotalMarksSpec(),
-      buildExamResultExamDateSpec(),
-    ]);
+    const [{ totalMarksExpr, joinExamSubjectsSql }, { examDateExpr, requiresExamSubjectsJoinForDate }, schema] =
+      await Promise.all([
+        buildExamResultTotalMarksSpec(),
+        buildExamResultExamDateSpec(),
+        getExamSchemaFlags(),
+      ]);
     const joinExamSubjectsDateSql = requiresExamSubjectsJoinForDate
       ? 'LEFT JOIN exam_subjects es ON es.id = er.exam_subject_id'
       : '';
@@ -1084,6 +1044,36 @@ const getStarStudents = async (req, res) => {
     }
     const classSectionFilterSql = extraFilters.join('\n            ');
 
+    const useLedgerEnrollment = schema.hasStudentLifecycleLedger;
+    const scheduleBackedStar =
+      schema.examResultsHasExamScheduleIdColumn &&
+      !schema.examResultsHasSubjectIdColumn &&
+      schema.hasExamSchedulesTable &&
+      (useLedgerEnrollment || schema.studentsHasLegacyClassColumns);
+
+    const legacySubjectsStar =
+      !scheduleBackedStar &&
+      schema.hasExamSubjectsTable &&
+      schema.examResultsHasExamIdColumn &&
+      schema.examResultsHasSubjectIdColumn &&
+      (useLedgerEnrollment || schema.studentsHasLegacyClassColumns);
+
+    const teacherScopeWhereStar = isTeacherUser
+      ? useLedgerEnrollment
+        ? ` AND EXISTS (
+        SELECT 1
+        FROM teacher_scope ts
+        WHERE ts.class_id = enr.class_id
+          AND (ts.section_id IS NULL OR ts.section_id = enr.section_id)
+      )`
+        : ` AND EXISTS (
+        SELECT 1
+        FROM teacher_scope ts
+        WHERE ts.class_id = st.class_id
+          AND (ts.section_id IS NULL OR ts.section_id = st.section_id)
+      )`
+      : '';
+
     const latestExamResult = await query(
       `WITH ${teacherScopeCte}
         latest_exam AS (
@@ -1134,7 +1124,174 @@ const getStarStudents = async (req, res) => {
     const topParams = [...baseParams, ...extraParams, latestExam.exam_id, limit];
     const topExamIdParam = p + extraParams.length;
     const topLimitParam = p + extraParams.length + 1;
-    const rowsResult = await query(
+    const yearFilterForTopExam = hasYearFilter
+      ? ` AND EXISTS (SELECT 1 FROM exams exyf WHERE exyf.id = $${topExamIdParam} AND exyf.academic_year_id = $1)`
+      : '';
+
+    const rosterJoinSchedulePlan = useLedgerEnrollment
+      ? `${lateralCurrentEnrollment('st.id')}
+         INNER JOIN subject_plan sp
+           ON sp.class_id::integer = enr.class_id::integer
+          AND sp.section_id::integer = enr.section_id::integer`
+      : `INNER JOIN subject_plan sp
+           ON sp.class_id::integer = st.class_id::integer
+          AND sp.section_id::integer = st.section_id::integer`;
+
+    const rosterJoinLegacySubjects = useLedgerEnrollment
+      ? `${lateralCurrentEnrollment('st.id')}
+         INNER JOIN subject_plan sp
+           ON sp.class_id::text = enr.class_id::text
+          AND sp.section_id::text = enr.section_id::text`
+      : `INNER JOIN subject_plan sp
+           ON sp.class_id::text = st.class_id::text
+          AND sp.section_id::text = st.section_id::text`;
+
+    const enrolClassSql = useLedgerEnrollment ? 'enr.class_id' : 'st.class_id';
+    const enrolSectionSql = useLedgerEnrollment ? 'enr.section_id' : 'st.section_id';
+    const enrolNotNullSql = useLedgerEnrollment
+      ? 'enr.class_id IS NOT NULL AND enr.section_id IS NOT NULL'
+      : 'st.class_id IS NOT NULL AND st.section_id IS NOT NULL';
+
+    const scoredOuterSelect = `
+       SELECT
+         id,
+         first_name,
+         last_name,
+         photo_url,
+         class_name,
+         section_name,
+         marks_obtained,
+         total_marks,
+         ROUND(
+           CASE
+             WHEN total_marks > 0 THEN (marks_obtained / total_marks) * 100
+             ELSE 0
+           END::numeric,
+           1
+         ) AS percentage,
+         exam_name,
+         exam_date
+       FROM scored
+       ORDER BY percentage DESC NULLS LAST, marks_obtained DESC NULLS LAST, first_name ASC, last_name ASC
+       LIMIT $${topLimitParam}`;
+
+    let rowsResult;
+    if (scheduleBackedStar) {
+      rowsResult = await query(
+        `WITH ${teacherScopeCte}
+         subject_plan AS (
+           SELECT esch.class_id,
+                  csec.section_id,
+                  esch.id AS exam_schedule_id,
+                  COALESCE(esch.max_marks, 100)::numeric AS max_marks
+           FROM exam_schedules esch
+           INNER JOIN class_sections csec
+             ON csec.id = esch.class_section_id
+            AND csec.class_id = esch.class_id
+            AND csec.academic_year_id = esch.academic_year_id
+           WHERE esch.exam_id = $${topExamIdParam}
+         ),
+         scored AS (
+           SELECT
+             st.id,
+             u.first_name,
+             u.last_name,
+             u.avatar AS photo_url,
+             c.class_name,
+             sec.section_name,
+             COALESCE(SUM(
+               CASE WHEN COALESCE(er.is_absent, false) THEN 0::numeric
+               ELSE COALESCE(er.marks_obtained, 0)::numeric END
+             ), 0) AS marks_obtained,
+             COALESCE(SUM(sp.max_marks), 0)::numeric AS total_marks,
+             COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+             MAX(${examDateExpr}) AS exam_date
+           FROM students st
+           INNER JOIN users u ON u.id = st.user_id
+           ${rosterJoinSchedulePlan}
+           LEFT JOIN classes c ON c.id = ${enrolClassSql}
+           LEFT JOIN sections sec ON sec.id = ${enrolSectionSql}
+           LEFT JOIN exam_results er
+             ON er.exam_schedule_id = sp.exam_schedule_id
+            AND er.student_id = st.id
+           LEFT JOIN exam_schedules esc ON esc.id = sp.exam_schedule_id
+           LEFT JOIN exams e ON e.id = esc.exam_id
+           ${joinExamSubjectsForScoredSql}
+           WHERE st.status = 'Active'
+             AND ${enrolNotNullSql}
+             AND EXISTS (
+               SELECT 1 FROM exam_results erx
+               INNER JOIN exam_schedules esx ON esx.id = erx.exam_schedule_id
+               WHERE erx.student_id = st.id
+                 AND esx.exam_id = $${topExamIdParam}
+                 AND COALESCE(erx.is_absent, false) = false
+             )
+             ${examYearClause}
+             ${teacherScopeWhereStar}
+             ${classSectionFilterSql}
+           GROUP BY
+             st.id, u.first_name, u.last_name, u.avatar,
+             c.class_name, sec.section_name
+         )
+         ${scoredOuterSelect}`,
+        topParams
+      );
+    } else if (legacySubjectsStar) {
+      rowsResult = await query(
+        `WITH ${teacherScopeCte}
+         subject_plan AS (
+           SELECT es.class_id, es.section_id, es.subject_id,
+                  COALESCE(es.max_marks, 100)::numeric AS max_marks
+           FROM exam_subjects es
+           WHERE es.exam_id = $${topExamIdParam}
+         ),
+         scored AS (
+           SELECT
+             st.id,
+             u.first_name,
+             u.last_name,
+             u.avatar AS photo_url,
+             c.class_name,
+             sec.section_name,
+             COALESCE(SUM(
+               CASE WHEN COALESCE(er.is_absent, false) THEN 0::numeric
+               ELSE COALESCE(er.marks_obtained, 0)::numeric END
+             ), 0) AS marks_obtained,
+             COALESCE(SUM(sp.max_marks), 0)::numeric AS total_marks,
+             COALESCE(MAX(e.exam_name), 'Exam') AS exam_name,
+             MAX(${examDateExpr}) AS exam_date
+           FROM students st
+           INNER JOIN users u ON u.id = st.user_id
+           ${rosterJoinLegacySubjects}
+           LEFT JOIN classes c ON c.id = ${enrolClassSql}
+           LEFT JOIN sections sec ON sec.id = ${enrolSectionSql}
+           LEFT JOIN exam_results er
+             ON er.exam_id = $${topExamIdParam}
+            AND er.student_id = st.id
+            AND er.subject_id = sp.subject_id
+           LEFT JOIN exam_schedules esc ON esc.id = er.exam_schedule_id
+           LEFT JOIN exams e ON e.id = $${topExamIdParam}
+           ${joinExamSubjectsForScoredSql}
+           WHERE st.status = 'Active'
+             AND ${enrolNotNullSql}
+             AND EXISTS (
+               SELECT 1 FROM exam_results erx
+               WHERE erx.exam_id = $${topExamIdParam}
+                 AND erx.student_id = st.id
+                 AND COALESCE(erx.is_absent, false) = false
+             )
+             ${yearFilterForTopExam}
+             ${teacherScopeWhereStar}
+             ${classSectionFilterSql}
+           GROUP BY
+             st.id, u.first_name, u.last_name, u.avatar,
+             c.class_name, sec.section_name
+         )
+         ${scoredOuterSelect}`,
+        topParams
+      );
+    } else {
+      rowsResult = await query(
       `WITH ${teacherScopeCte}
        scored AS (
          SELECT
@@ -1197,6 +1354,7 @@ const getStarStudents = async (req, res) => {
        LIMIT $${topLimitParam}`,
       topParams
     );
+    }
 
     const data = rowsResult.rows.map((r) => ({
       id: r.id,

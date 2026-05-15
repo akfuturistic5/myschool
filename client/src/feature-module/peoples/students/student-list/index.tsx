@@ -19,7 +19,7 @@ import TooltipOption from "../../../../core/common/tooltipOption";
 import { useStudents } from "../../../../core/hooks/useStudents";
 import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
 import { selectUser } from "../../../../core/data/redux/authSlice";
-import { getDashboardForRole } from "../../../../core/utils/roleUtils";
+import { getDashboardForRole, isTeacherRole } from "../../../../core/utils/roleUtils";
 import { exportToExcel, exportToPDF, printData } from "../../../../core/utils/exportUtils";
 
 const transformStudentToRow = (student: any) => ({
@@ -43,6 +43,7 @@ const StudentList = () => {
   const routes = all_routes;
   const navigate = useNavigate();
   const user = useSelector(selectUser);
+  const isTeacher = isTeacherRole(user);
   const role = (user?.role || "").toLowerCase();
   const isStudentRole = role === "student";
 
@@ -246,14 +247,7 @@ const StudentList = () => {
             >
               <i className="ti ti-mail" />
             </Link>
-            <Link
-              to="#"
-              data-bs-toggle="modal"
-              data-bs-target="#add_fees_collect"
-              className="btn btn-light fs-12 fw-semibold me-3"
-            >
-              Collect Fees
-            </Link>
+
             <div className="dropdown">
               <Link
                 to="#"
@@ -274,15 +268,17 @@ const StudentList = () => {
                     View Student
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to={`${routes.editStudent}/${record.studentId}`}
-                  >
-                    <i className="ti ti-edit-circle me-2" />
-                    Edit
-                  </Link>
-                </li>
+                {!isTeacher && (
+                  <li>
+                    <Link
+                      className="dropdown-item rounded-1"
+                      to={`${routes.editStudent}/${record.studentId}`}
+                    >
+                      <i className="ti ti-edit-circle me-2" />
+                      Edit
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link
                     className="dropdown-item rounded-1"
@@ -294,33 +290,39 @@ const StudentList = () => {
                     Login Details
                   </Link>
                 </li>
-                <li>
-                  <Link className="dropdown-item rounded-1" to="#">
-                    <i className="ti ti-toggle-right me-2" />
-                    Disable
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="student-promotion"
-                  >
-                    <i className="ti ti-arrow-ramp-right-2 me-2" />
-                    Promote Student
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    className="dropdown-item rounded-1"
-                    to="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete-modal"
-                    onClick={() => setSelectedStudent(record.student)}
-                  >
-                    <i className="ti ti-trash-x me-2" />
-                    Delete
-                  </Link>
-                </li>
+                {!isTeacher && (
+                  <>
+                    <li>
+                      <Link className="dropdown-item rounded-1" to="#">
+                        <i className="ti ti-toggle-right me-2" />
+                        Disable
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        className="dropdown-item rounded-1"
+                        to="student-promotion"
+                      >
+                        <i className="ti ti-arrow-ramp-right-2 me-2" />
+                        Promote Student
+                      </Link>
+                    </li>
+                  </>
+                )}
+                {!isTeacher && (
+                  <li>
+                    <Link
+                      className="dropdown-item rounded-1"
+                      to="#"
+                      data-bs-toggle="modal"
+                      data-bs-target="#delete-modal"
+                      onClick={() => setSelectedStudent(record.student)}
+                    >
+                      <i className="ti ti-trash-x me-2" />
+                      Delete
+                    </Link>
+                  </li>
+                )}
               </ul>
             </div>
           </div>
@@ -365,15 +367,17 @@ const StudentList = () => {
                 onExportExcel={handleExportExcel}
               />
 
-              <div className="mb-2">
-                <Link
-                  to={routes.addStudent}
-                  className="btn btn-primary d-flex align-items-center"
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Student
-                </Link>
-              </div>
+              {!isTeacher && (
+                <div className="mb-2">
+                  <Link
+                    to={routes.addStudent}
+                    className="btn btn-primary d-flex align-items-center"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Add Student
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
           {/* /Page Header */}

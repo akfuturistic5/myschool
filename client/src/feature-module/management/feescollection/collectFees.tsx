@@ -82,37 +82,51 @@ const CollectFees = () => {
   useEffect(() => {
     let filtered = [...data];
 
-    if (searchAdmNo) {
-      filtered = filtered.filter((item: any) => 
-        item.admNo.toLowerCase().includes(searchAdmNo.toLowerCase())
+    const admQ = String(searchAdmNo ?? "").trim().toLowerCase();
+    if (admQ) {
+      filtered = filtered.filter((item: any) =>
+        String(item.admNo ?? "")
+          .toLowerCase()
+          .includes(admQ)
       );
     }
-    if (searchRollNo) {
-      filtered = filtered.filter((item: any) => 
-        item.rollNo.toLowerCase().includes(searchRollNo.toLowerCase())
+    const rollQ = String(searchRollNo ?? "").trim().toLowerCase();
+    if (rollQ) {
+      filtered = filtered.filter((item: any) =>
+        String(item.rollNo ?? "")
+          .toLowerCase()
+          .includes(rollQ)
       );
     }
     if (selectedClass !== "All") {
-      filtered = filtered.filter((item: any) => 
-        item.class === selectedClass
+      filtered = filtered.filter(
+        (item: any) => String(item.class ?? "").trim() === String(selectedClass ?? "").trim()
       );
     }
     if (selectedSection !== "All") {
-      filtered = filtered.filter((item: any) => 
-        item.section === selectedSection
+      filtered = filtered.filter(
+        (item: any) => String(item.section ?? "").trim() === String(selectedSection ?? "").trim()
       );
     }
     if (filterStatus !== "All") {
-      filtered = filtered.filter((item: any) => item.status === filterStatus);
+      const want = String(filterStatus ?? "").toLowerCase();
+      filtered = filtered.filter(
+        (item: any) => String(item.status ?? "").toLowerCase() === want
+      );
     }
 
-    if (dateRange) {
-      const start = dateRange[0].startOf('day');
-      const end = dateRange[1].endOf('day');
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      const start = dateRange[0].startOf("day");
+      const end = dateRange[1].endOf("day");
       filtered = filtered.filter((item: any) => {
-        if (!item.lastDate || item.lastDate === '-') return false;
-        const d = dayjs(item.lastDate, "DD MMM YYYY");
-        return (d.isSame(start) || d.isAfter(start)) && (d.isSame(end) || d.isBefore(end));
+        const raw = item.lastDate;
+        if (raw == null || raw === "-" || String(raw).trim() === "") return true;
+        const d = dayjs(raw, "DD MMM YYYY", true);
+        if (!d.isValid()) return true;
+        return (
+          (d.isSame(start, "day") || d.isAfter(start)) &&
+          (d.isSame(end, "day") || d.isBefore(end))
+        );
       });
     }
 
@@ -137,7 +151,7 @@ const CollectFees = () => {
       Class: item.class,
       Section: item.section,
       Amount: item.amount,
-      "Last Date": item.lastDate,
+      "Due Date": item.lastDate,
       Status: item.status
     }));
     exportToExcel(exportData, `FeeCollections_${new Date().toISOString().split('T')[0]}`);
@@ -151,7 +165,7 @@ const CollectFees = () => {
       { title: "Class", dataKey: "class" },
       { title: "Section", dataKey: "section" },
       { title: "Amount", dataKey: "amount" },
-      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Due Date", dataKey: "lastDate" },
       { title: "Status", dataKey: "status" },
     ];
     exportToPDF(filteredData, "Fee Collection List", `FeeCollections_${new Date().toISOString().split('T')[0]}`, cols);
@@ -165,7 +179,7 @@ const CollectFees = () => {
       { title: "Class", dataKey: "class" },
       { title: "Section", dataKey: "section" },
       { title: "Amount", dataKey: "amount" },
-      { title: "Last Date", dataKey: "lastDate" },
+      { title: "Due Date", dataKey: "lastDate" },
       { title: "Status", dataKey: "status" },
     ];
     printData("Fee Collection List", cols, filteredData);
@@ -239,43 +253,61 @@ const CollectFees = () => {
     },
 
     {
-      title: "Last Date",
+      title: "Due Date",
       dataIndex: "lastDate",
       sorter: (a: TableData, b: TableData) =>
         dayjs(a.lastDate, "DD MMM YYYY").unix() - dayjs(b.lastDate, "DD MMM YYYY").unix(),
+    },
+    {
+      title: "Balance",
+      dataIndex: "balance",
+      sorter: (a: TableData, b: TableData) => (a.balance || 0) - (b.balance || 0),
+      render: (text: number) => <span className={text > 0 ? "text-danger" : ""}>{text.toLocaleString()}</span>
     },
 
     {
       title: "Status",
       dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Paid" ? (
+      render: (text: string) => {
+        const status = text?.toLowerCase();
+        if (status === "paid") {
+          return (
             <span className="badge badge-soft-success d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
+              Paid
             </span>
-          ) : (
+          );
+        } else if (status === "partial") {
+          return (
+            <span className="badge badge-soft-warning d-inline-flex align-items-center">
+              <i className="ti ti-circle-filled fs-5 me-1"></i>
+              Partial
+            </span>
+          );
+        } else {
+          return (
             <span className="badge badge-soft-danger d-inline-flex align-items-center">
               <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
+              {text === "unpaid" ? "Unpaid" : text}
             </span>
-          )}
-        </>
-      ),
+          );
+        }
+      },
       sorter: (a: TableData, b: TableData) => (a.status || "").localeCompare(b.status || ""),
     },
     {
       title: "Action",
       dataIndex: "status",
-      render: (text: string, record: any) => (
-        <>
-          {text === "Paid" ? (
-            <Link to={routes.studentFees} state={record.id ? { studentId: record.id } : undefined} className="btn btn-light">
-              View Details
-            </Link>
-          ) : (
-            <button
+      render: (text: string, record: any) => {
+        const balance = parseFloat(record.balance || 0);
+        return (
+          <>
+            {balance <= 0 ? (
+              <Link to={routes.studentFees} state={record.id ? { studentId: record.id } : undefined} className="btn btn-light">
+                View Details
+              </Link>
+            ) : (
+              <button
               type="button"
               className="btn btn-light"
               onClick={() => {
@@ -300,8 +332,9 @@ const CollectFees = () => {
               Collect Fees
             </button>
           )}
-        </>
-      ),
+          </>
+        );
+      },
     },
   ];
   return (
@@ -401,7 +434,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Classes" }}
                                 value={selectedClass}
-                                onChange={(val: any) => setSelectedClass(val)}
+                                onChange={(val: any) => setSelectedClass(val ?? "All")}
                               />
                             </div>
                           </div>
@@ -416,7 +449,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Sections" }}
                                 value={selectedSection}
-                                onChange={(val: any) => setSelectedSection(val)}
+                                onChange={(val: any) => setSelectedSection(val ?? "All")}
                               />
                             </div>
                           </div>
@@ -434,7 +467,7 @@ const CollectFees = () => {
                                 ]}
                                 defaultValue={{ value: "All", label: "All Status" }}
                                 value={filterStatus}
-                                onChange={(val: any) => setFilterStatus(val)}
+                                onChange={(val: any) => setFilterStatus(val ?? "All")}
                               />
                             </div>
                           </div>

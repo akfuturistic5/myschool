@@ -34,9 +34,10 @@ export const useParents = (options = {}) => {
             const resolvedName = parent.father_name || '';
             const resolvedEmail = parent.father_email || '';
             const resolvedPhone = parent.father_phone || '';
-            const [resolvedImage, resolvedChildImage] = await Promise.all([
+            const [resolvedImage, resolvedChildImage, resolvedMotherImage] = await Promise.all([
               parent.father_image_url ? apiService.resolveAvatarUrl(parent.father_image_url) : Promise.resolve(''),
               parent.student_image_url ? apiService.resolveAvatarUrl(parent.student_image_url) : Promise.resolve(''),
+              parent.mother_image_url ? apiService.resolveAvatarUrl(parent.mother_image_url) : Promise.resolve(''),
             ]);
             let addedon = 'N/A';
             try {
@@ -44,18 +45,28 @@ export const useParents = (options = {}) => {
                 addedon = `Added on ${new Date(parent.created_at).toLocaleDateString('en-GB')}`;
               }
             } catch (_) {}
+            const childrenWithResolvedImages = await Promise.all(
+              (parent.all_children || []).map(async (child) => {
+                const img = child.photo_url ? await apiService.resolveAvatarUrl(child.photo_url) : "assets/img/profiles/avatar-27.jpg";
+                return { ...child, photo_url: img };
+              })
+            );
+            const childNames = childrenWithResolvedImages.map(c => c.name).join(', ');
+
             return {
               key: parent.id,
               id: parent.id,
               name: resolvedName,
               Addedon: addedon,
-              Child: `${parent.student_first_name || ''} ${parent.student_last_name || ''}`.trim() || '',
+              Child: childNames || `${parent.student_first_name || ''} ${parent.student_last_name || ''}`.trim() || '',
+              all_children: childrenWithResolvedImages,
               class: `${parent.class_name || ''}, ${parent.section_name || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, '') || '',
               class_name: parent.class_name || null,
               section_name: parent.section_name || null,
               phone: resolvedPhone,
               email: resolvedEmail,
               ParentImage: resolvedImage || "assets/img/profiles/avatar-27.jpg",
+              MotherImage: resolvedMotherImage || "assets/img/profiles/avatar-27.jpg",
               ChildImage: resolvedChildImage || "assets/img/profiles/avatar-27.jpg",
               student_admission_number: parent.admission_number,
               student_roll_number: parent.roll_number,

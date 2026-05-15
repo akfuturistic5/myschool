@@ -7,6 +7,9 @@ import StudentSidebar from './studentSidebar'
 import StudentBreadcrumb from './studentBreadcrumb'
 import { useLinkedStudentContext } from '../../../../core/hooks/useLinkedStudentContext'
 import { apiService } from '../../../../core/services/apiService'
+import { useSelector } from 'react-redux'
+import { selectUser } from '../../../../core/data/redux/authSlice'
+import { isTeacherRole } from '../../../../core/utils/roleUtils'
 
 interface StudentDetailsLocationState {
   studentId?: number
@@ -29,6 +32,8 @@ const StudentDetails = () => {
     locationState: state,
     routeStudentId: paramId,
   })
+  const user = useSelector(selectUser)
+  const isTeacher = isTeacherRole(user)
   const [promotionRows, setPromotionRows] = useState<any[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -41,20 +46,12 @@ const StudentDetails = () => {
     mother: null,
     guardian: null,
   })
+  const [medicalDocumentUrl, setMedicalDocumentUrl] = useState<string | null>(null)
 
   useEffect(() => {
     if (!student?.id) {
       setPromotionRows([])
       setHistoryError(null)
-      return
-    }
-    const canAccessPromotionHistory =
-      role === 'admin' || role === 'headmaster' || role === 'administrative' || role === 'teacher'
-    if (!canAccessPromotionHistory) {
-      // Only admin/administrative/teacher scopes can access full promotions endpoint.
-      setPromotionRows([])
-      setHistoryError(null)
-      setHistoryLoading(false)
       return
     }
     let cancelled = false
@@ -91,6 +88,14 @@ const StudentDetails = () => {
       const motherRaw = student?.mother_image_url
       const guardianRaw = student?.guardian_image_url
 
+      if (student?.medical_document_path) {
+        apiService.resolveAvatarUrl(student.medical_document_path).then(url => {
+          if (!cancelled) setMedicalDocumentUrl(url)
+        })
+      } else {
+        setMedicalDocumentUrl(null)
+      }
+
       if (!fatherRaw && !motherRaw && !guardianRaw) {
         setParentImageUrls({ father: null, mother: null, guardian: null })
         return
@@ -117,18 +122,21 @@ const StudentDetails = () => {
       }
     })
 
+
+
     return () => {
       cancelled = true
     }
-  }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url])
+  }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url, student?.medical_document_path])
   const historyTableRows = useMemo(
     () =>
       promotionRows.map((row: any) => ({
         key: String(row.id),
+        eventType: row.event_type || (row.from_class_id ? 'PROMOTE' : 'ADMISSION'),
         date: formatDate(row.promotion_date),
-        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : 'N/A'),
-        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : 'N/A'),
-        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : 'N/A'),
+        fromClass: row.from_class_name || (row.from_class_id != null ? `Class #${row.from_class_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
+        fromSection: row.from_section_name || (row.from_section_id != null ? `Section #${row.from_section_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
+        fromYear: row.from_academic_year_name || (row.from_academic_year_id != null ? `Year #${row.from_academic_year_id}` : (row.event_type === 'ADMISSION' ? '—' : 'N/A')),
         toClass: row.to_class_name || (row.to_class_id != null ? `Class #${row.to_class_id}` : 'N/A'),
         toSection: row.to_section_name || (row.to_section_id != null ? `Section #${row.to_section_id}` : 'N/A'),
         toYear: row.to_academic_year_name || (row.to_academic_year_id != null ? `Year #${row.to_academic_year_id}` : 'N/A'),
@@ -259,16 +267,18 @@ const StudentDetails = () => {
                     Leave &amp; Attendance
                   </Link>
                 </li>
-                <li>
-                  <Link
-                    to={routes.studentFees}
-                    className="nav-link"
-                    state={{ studentId: student.id, student }}
-                  >
-                    <i className="ti ti-report-money me-2" />
-                    Fees
-                  </Link>
-                </li>
+                {!isTeacher && (
+                  <li>
+                    <Link
+                      to={routes.studentFees}
+                      className="nav-link"
+                      state={{ studentId: student.id, student }}
+                    >
+                      <i className="ti ti-report-money me-2" />
+                      Fees
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link
                     to={routes.studentResult}
@@ -494,6 +504,7 @@ const StudentDetails = () => {
                         <thead>
                           <tr>
                             <th>Date</th>
+                            <th>Event</th>
                             <th>From Class</th>
                             <th>From Section</th>
                             <th>From Academic Year</th>
@@ -506,9 +517,26 @@ const StudentDetails = () => {
                           {historyTableRows.map((r) => (
                             <tr key={r.key}>
                               <td>{r.date}</td>
-                              <td>{r.fromClass}</td>
-                              <td>{r.fromSection}</td>
-                              <td>{r.fromYear}</td>
+                              <td>
+                                {r.eventType === 'ADMISSION' ? (
+                                  <span className="badge badge-soft-info">
+                                    <i className="ti ti-user-plus me-1"></i>Admission
+                                  </span>
+                                ) : (
+                                  <span className="badge badge-soft-success">
+                                    <i className="ti ti-trending-up me-1"></i>Promotion
+                                  </span>
+                                )}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? <small>New Entry</small> : r.fromClass}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? '—' : r.fromSection}
+                              </td>
+                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                {r.eventType === 'ADMISSION' ? '—' : r.fromYear}
+                              </td>
                               <td>{r.toClass}</td>
                               <td>{r.toSection}</td>
                               <td>{r.toYear}</td>
@@ -647,6 +675,22 @@ const StudentDetails = () => {
                         <p>{medicalCondition ?? 'N/A'}</p>
                       </div>
                     </div>
+                    {student.medical_document_path && (
+                      <div className="col-md-6">
+                        <div className="mb-3">
+                          <p className="text-dark fw-medium mb-1">Medical Document</p>
+                          <a 
+                            href={medicalDocumentUrl || '#'} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="btn btn-outline-primary btn-sm"
+                          >
+                            <i className="ti ti-file-text me-1"></i>
+                            View Document
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

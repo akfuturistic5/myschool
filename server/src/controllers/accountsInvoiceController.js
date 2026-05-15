@@ -120,11 +120,69 @@ const getInvoice = async (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ status: 'ERROR', message: 'Invalid id' });
     }
-    const r = await query(`SELECT * FROM accounts_invoices WHERE id = $1`, [id]);
-    if (r.rows.length === 0) {
-      return res.status(404).json({ status: 'ERROR', message: 'Invoice not found' });
+    
+    // First try accounts_invoices
+    let r = await query(`SELECT * FROM accounts_invoices WHERE id = $1`, [id]);
+    
+    if (r.rows.length > 0) {
+      return res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapInvoiceRow(r.rows[0]) });
     }
-    res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mapInvoiceRow(r.rows[0]) });
+
+    // If not found, try staff_payslips (as the UI uses Invoice component for both)
+    r = await query(`
+      SELECT 
+        p.id,
+        p.basic_salary_snapshot,
+        p.allowances_snapshot,
+        p.deductions_snapshot,
+        p.net_amount,
+        p.status,
+        p.salary_period,
+        p.payment_date,
+        u.first_name || ' ' || u.last_name AS customer_name,
+        s.employee_code AS employee_code,
+        d.department_name AS department,
+        des.designation_name AS designation,
+        'Payslip' AS invoice_type
+      FROM staff_payslips p
+      JOIN staff s ON s.id = p.staff_id
+      JOIN users u ON u.id = s.user_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN designations des ON des.id = s.designation_id
+      WHERE p.id = $1
+    `, [id]);
+
+    if (r.rows.length > 0) {
+      const row = r.rows[0];
+      // Map payslip fields to invoice fields for the generic Invoice component
+      const mappedData = {
+        id: row.id,
+        invoice_type: row.invoice_type,
+        invoice_number: `PAY-${row.id}`,
+        customer_name: row.customer_name,
+        employee_code: row.employee_code,
+        department: row.department,
+        designation: row.designation,
+        invoice_date: row.salary_period ? String(row.salary_period).split(',')[0].replace(/[\[\]\(\)]/g, '') : null,
+        due_date: row.payment_date || row.salary_period,
+        total_amount: row.net_amount,
+        status: row.status,
+        items: [
+          { description: 'Basic Salary', amount: row.basic_salary_snapshot },
+          ...(row.allowances_snapshot || []).map((a) => ({ 
+            description: a.component_name || a.name || 'Allowance', 
+            amount: a.amount 
+          })),
+          ...(row.deductions_snapshot || []).map((d) => ({ 
+            description: d.component_name || d.name || 'Deduction', 
+            amount: -d.amount 
+          }))
+        ]
+      };
+      return res.status(200).json({ status: 'SUCCESS', message: 'OK', data: mappedData });
+    }
+
+    return res.status(404).json({ status: 'ERROR', message: 'Invoice not found' });
   } catch (e) {
     console.error('accounts invoices get', e);
     res.status(500).json({ status: 'ERROR', message: 'Failed to get invoice' });

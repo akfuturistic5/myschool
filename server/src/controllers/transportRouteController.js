@@ -8,8 +8,8 @@ function mapRouteRow(row, stops = []) {
     id: row.id,
     route_name: row.route_name || '',
     route_code: row.route_code || null,
-    start_point: row.start_point || null,
-    end_point: row.end_point || null,
+    start_time: row.start_time || row.start_point || null,
+    end_time: row.end_time || row.end_point || null,
     distance_km: row.distance_km ?? row.total_distance ?? 0,
     total_distance: row.total_distance ?? row.distance_km ?? 0,
     estimated_time: row.estimated_time ?? null,
@@ -32,6 +32,8 @@ const getAllRoutes = async (req, res) => {
     const hasDeletedAt = await hasColumn('routes', 'deleted_at');
     const hasRouteStops = await hasTable('route_stops');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartTime = await hasColumn('routes', 'start_time');
+    const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
     const hasEndPoint = await hasColumn('routes', 'end_point');
     const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
@@ -50,6 +52,8 @@ const getAllRoutes = async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const validSortFields = ['route_name', 'distance_km', 'created_at', 'id'];
     if (hasRouteCode) validSortFields.push('route_code');
+    if (hasStartTime) validSortFields.push('start_time');
+    if (hasEndTime) validSortFields.push('end_time');
     if (hasStartPoint) validSortFields.push('start_point');
     if (hasEndPoint) validSortFields.push('end_point');
     if (hasEstimatedTime) validSortFields.push('estimated_time');
@@ -72,6 +76,8 @@ const getAllRoutes = async (req, res) => {
       params.push(`%${search}%`);
       const searchParts = [`r.route_name ILIKE $${params.length}`];
       if (hasRouteCode) searchParts.push(`r.route_code ILIKE $${params.length}`);
+      if (hasStartTime) searchParts.push(`CAST(r.start_time AS TEXT) ILIKE $${params.length}`);
+      if (hasEndTime) searchParts.push(`CAST(r.end_time AS TEXT) ILIKE $${params.length}`);
       if (hasStartPoint) searchParts.push(`r.start_point ILIKE $${params.length}`);
       if (hasEndPoint) searchParts.push(`r.end_point ILIKE $${params.length}`);
       sqlFilters += ` AND (${searchParts.join(' OR ')})`;
@@ -229,6 +235,8 @@ const createRoute = async (req, res) => {
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartTime = await hasColumn('routes', 'start_time');
+    const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
     const hasEndPoint = await hasColumn('routes', 'end_point');
     const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
@@ -238,8 +246,8 @@ const createRoute = async (req, res) => {
       distance_km, 
       total_distance,
       route_code,
-      start_point,
-      end_point,
+      start_time,
+      end_time,
       estimated_time,
       is_active,
       stops = [] 
@@ -266,13 +274,19 @@ const createRoute = async (req, res) => {
         insertCols.push('route_code');
         insertVals.push(route_code ? String(route_code).trim() : null);
       }
-      if (hasStartPoint) {
+      if (hasStartTime) {
+        insertCols.push('start_time');
+        insertVals.push(start_time ? String(start_time).trim() : null);
+      } else if (hasStartPoint) {
         insertCols.push('start_point');
-        insertVals.push(start_point ? String(start_point).trim() : null);
+        insertVals.push(start_time ? String(start_time).trim() : null);
       }
-      if (hasEndPoint) {
+      if (hasEndTime) {
+        insertCols.push('end_time');
+        insertVals.push(end_time ? String(end_time).trim() : null);
+      } else if (hasEndPoint) {
         insertCols.push('end_point');
-        insertVals.push(end_point ? String(end_point).trim() : null);
+        insertVals.push(end_time ? String(end_time).trim() : null);
       }
       if (hasEstimatedTime) {
         insertCols.push('estimated_time');
@@ -295,9 +309,9 @@ const createRoute = async (req, res) => {
           const stop = stops[i];
           if (hasRouteStops) {
             await client.query(
-              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [newRoute.id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
+              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index, created_by, updated_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [newRoute.id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i, req.user?.id || null, req.user?.id || null]
             );
           } else {
             await client.query(
@@ -332,6 +346,8 @@ const updateRoute = async (req, res) => {
     const hasDistanceKm = await hasColumn('routes', 'distance_km');
     const hasTotalDistance = await hasColumn('routes', 'total_distance');
     const hasRouteCode = await hasColumn('routes', 'route_code');
+    const hasStartTime = await hasColumn('routes', 'start_time');
+    const hasEndTime = await hasColumn('routes', 'end_time');
     const hasStartPoint = await hasColumn('routes', 'start_point');
     const hasEndPoint = await hasColumn('routes', 'end_point');
     const hasEstimatedTime = await hasColumn('routes', 'estimated_time');
@@ -349,8 +365,8 @@ const updateRoute = async (req, res) => {
       distance_km, 
       total_distance,
       route_code,
-      start_point,
-      end_point,
+      start_time,
+      end_time,
       estimated_time,
       is_active,
       stops = []
@@ -384,13 +400,19 @@ const updateRoute = async (req, res) => {
         updates.push(`route_code = $${i++}`);
         values.push(route_code ? String(route_code).trim() : null);
       }
-      if (start_point !== undefined && hasStartPoint) {
+      if (start_time !== undefined && hasStartTime) {
+        updates.push(`start_time = $${i++}`);
+        values.push(start_time ? String(start_time).trim() : null);
+      } else if (start_time !== undefined && hasStartPoint) {
         updates.push(`start_point = $${i++}`);
-        values.push(start_point ? String(start_point).trim() : null);
+        values.push(start_time ? String(start_time).trim() : null);
       }
-      if (end_point !== undefined && hasEndPoint) {
+      if (end_time !== undefined && hasEndTime) {
+        updates.push(`end_time = $${i++}`);
+        values.push(end_time ? String(end_time).trim() : null);
+      } else if (end_time !== undefined && hasEndPoint) {
         updates.push(`end_point = $${i++}`);
-        values.push(end_point ? String(end_point).trim() : null);
+        values.push(end_time ? String(end_time).trim() : null);
       }
       if (estimated_time !== undefined && hasEstimatedTime) {
         updates.push(`estimated_time = $${i++}`);
@@ -427,9 +449,9 @@ const updateRoute = async (req, res) => {
           const stop = stops[i];
           if (hasRouteStops) {
             await client.query(
-              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i]
+              `INSERT INTO route_stops (route_id, pickup_point_id, pickup_time, drop_time, order_index, created_by, updated_by)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [id, stop.pickup_point_id, stop.pickup_time, stop.drop_time, i, req.user?.id || null, req.user?.id || null]
             );
           } else {
             await client.query(

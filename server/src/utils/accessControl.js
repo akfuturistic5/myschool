@@ -11,8 +11,9 @@ function parseId(value) {
 function getAuthContext(req) {
   const u = req?.user || {};
   const userId = parseId(u.id);
-  const roleId = u.role_id != null ? parseId(u.role_id) : null;
-  const roleName = (u.role_name || '').toString().trim().toLowerCase();
+  const roleId =
+    u.role_id != null ? parseId(u.role_id) : u.user_role_id != null ? parseId(u.user_role_id) : null;
+  const roleName = (u.role_name || u.role || '').toString().trim().toLowerCase();
   return { userId, roleId, roleName, staffId: parseId(u.staff_id) };
 }
 
@@ -90,22 +91,6 @@ async function canAccessStudent(req, studentId) {
     const studentSectionId = parseId(stud.section_id);
 
     if (studentClassId && staffIds.length > 0) {
-      const cs = await query(
-        `SELECT 1
-         FROM class_schedules cs
-         WHERE cs.teacher_id = ANY($1::int[])
-           AND cs.class_id = $2
-           AND ($3::int IS NULL OR EXISTS (
-             SELECT 1 FROM class_sections csec
-             WHERE csec.id = cs.class_section_id AND csec.section_id = $3
-           ) OR $3::int IS NULL)
-         LIMIT 1`,
-        [staffIds, studentClassId, studentSectionId]
-      ).catch(() => ({ rows: [] }));
-      if (cs.rows && cs.rows.length > 0) return { ok: true };
-    }
-
-    if (studentClassId && staffIds.length > 0) {
       const ct = await query(
         `SELECT 1
          FROM class_teachers ct
@@ -132,12 +117,13 @@ async function canAccessStudent(req, studentId) {
     return { ok: false, status: 403, message: 'Access denied' };
   }
 
-  // Guardian: must have guardian row tied to this user + student
+  // Guardian: must have guardian row tied to this user + student (wards live on student_guardian_links)
   if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
     const gCheck = await query(
       `SELECT 1
        FROM guardians g
-       WHERE g.user_id = $1 AND g.student_id = $2
+       INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+       WHERE g.user_id = $1 AND sgl.student_id = $2 AND COALESCE(g.is_active, true) = true
        LIMIT 1`,
       [ctx.userId, sid]
     );
@@ -197,9 +183,10 @@ async function resolveWardStudentIdsForUser(req) {
 
   if (isGuardianPortalRole(ctx)) {
     const g = await query(
-      `SELECT g.student_id
+      `SELECT sgl.student_id
        FROM guardians g
-       WHERE g.user_id = $1`,
+       INNER JOIN student_guardian_links sgl ON sgl.guardian_id = g.id
+       WHERE g.user_id = $1 AND COALESCE(g.is_active, true) = true`,
       [ctx.userId]
     );
     return (g.rows || []).map((r) => parseId(r.student_id)).filter(Boolean);
@@ -239,16 +226,6 @@ async function canAccessClass(req, classId) {
       [cid, staffIds]
     ).catch(() => ({ rows: [] }));
     if (ct.rows && ct.rows.length > 0) return { ok: true };
-
-    const cs = await query(
-      `SELECT 1
-       FROM class_schedules cs
-       WHERE cs.class_id = $2
-         AND cs.teacher_id = ANY($1::int[])
-       LIMIT 1`,
-      [staffIds, cid]
-    ).catch(() => ({ rows: [] }));
-    if (cs.rows && cs.rows.length > 0) return { ok: true };
 
     return { ok: false, status: 403, message: 'Access denied' };
   }

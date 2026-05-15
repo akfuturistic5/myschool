@@ -12,9 +12,10 @@ import { apiService } from "../../../core/services/apiService";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
-import { exportRowsToPdf, exportRowsToXlsx } from "./libraryTableExport";
+import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
 import { getLibraryErrorMessage } from "./libraryApiErrors";
 import { getFilterDropdownPopupContainer } from "./libraryFilterDatePicker";
+import { LibrarySearchableSelect } from "./librarySearchableSelect";
 
 const ReturnBook = () => {
   const routes = all_routes;
@@ -28,7 +29,12 @@ const ReturnBook = () => {
   const [selected, setSelected] = useState<any | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [returnForm, setReturnForm] = useState({ fine_amount: "", remarks: "" });
+  const [returnForm, setReturnForm] = useState({
+    fine_amount: "",
+    remarks: "",
+    status: "Returned",
+    condition_on_return: "",
+  });
   const [appliedFilters, setAppliedFilters] = useState({
     book_id: "",
     member_id: "",
@@ -42,7 +48,7 @@ const ReturnBook = () => {
       const ay = academicYearId != null ? { academic_year_id: academicYearId } : {};
       const [bRes, mRes] = await Promise.all([
         apiService.getLibraryBooks(ay),
-        apiService.getLibraryMembers(ay),
+        apiService.getLibraryMembers({ ...ay, status: "active" }),
       ]);
       const bl = (bRes as any)?.data || [];
       setBooks(
@@ -53,10 +59,14 @@ const ReturnBook = () => {
       );
       const ml = (mRes as any)?.data || [];
       setMembers(
-        ml.map((m: any) => ({
-          value: String(m.id),
-          label: `${m.card_number || m.cardNo || m.id} — ${m.name || m.member_name || "Member"} (${m.member_type})`,
-        }))
+        ml.map((m: any) => {
+          const kind =
+            String(m.member_type || "").toLowerCase() === "staff" ? "Staff" : "Student";
+          return {
+            value: String(m.id),
+            label: `${m.card_number || m.cardNo || m.id} — ${m.name || m.member_name || "Member"} (${kind})`,
+          };
+        })
       );
     } catch {
       /* ignore */
@@ -68,7 +78,7 @@ const ReturnBook = () => {
     setLoadError(null);
     try {
       const res = await apiService.getLibraryIssues({
-        status: "issued",
+        status: "Issued",
         book_id: appliedFilters.book_id || undefined,
         member_id: appliedFilters.member_id || undefined,
         issue_date_from: appliedFilters.issue_date_from || undefined,
@@ -135,6 +145,10 @@ const ReturnBook = () => {
     exportRowsToPdf("Library — Return (open issues)", returnExportHeaders, buildReturnExportRows());
   };
 
+  const handlePrint = () => {
+    printRowsToPage("Library — Return (open issues)", returnExportHeaders, buildReturnExportRows());
+  };
+
   const showModal = (id: string) => {
     const el = document.getElementById(id);
     const bootstrap = (window as any).bootstrap;
@@ -154,7 +168,12 @@ const ReturnBook = () => {
     const r = record.raw || record;
     setSelected(r);
     setFormError(null);
-    setReturnForm({ fine_amount: "", remarks: "" });
+    setReturnForm({
+      fine_amount: "",
+      remarks: "",
+      status: "Returned",
+      condition_on_return: "",
+    });
     setTimeout(() => showModal("library_return_modal"), 0);
   };
 
@@ -167,7 +186,11 @@ const ReturnBook = () => {
       await apiService.returnLibraryIssue(selected.id, {
         fine_amount: returnForm.fine_amount === "" ? 0 : Number(returnForm.fine_amount),
         remarks: returnForm.remarks || null,
-        status: "returned",
+        status: returnForm.status,
+        condition_on_return:
+          returnForm.condition_on_return && returnForm.condition_on_return.trim() !== ""
+            ? returnForm.condition_on_return.trim()
+            : null,
       });
       hideModal("library_return_modal");
       await load();
@@ -279,11 +302,12 @@ const ReturnBook = () => {
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
+            <div className="d-flex my-xl-auto right-content align-items-center justify-content-end flex-wrap gap-2">
               <LibraryToolbar
                 onRefresh={load}
                 onExportExcel={handleExportXlsx}
                 onExportPdf={handleExportPdf}
+                onPrint={handlePrint}
               />
             </div>
           </div>
@@ -324,39 +348,25 @@ const ReturnBook = () => {
                           <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Book</label>
-                              <select
-                                className="form-select"
+                              <LibrarySearchableSelect
+                                allowClear
+                                options={books}
                                 value={filterDraft.book_id}
-                                onChange={(e) =>
-                                  setFilterDraft((f) => ({ ...f, book_id: e.target.value }))
-                                }
-                              >
-                                <option value="">All</option>
-                                {books.map((b) => (
-                                  <option key={b.value} value={b.value}>
-                                    {b.label}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => setFilterDraft((f) => ({ ...f, book_id: v }))}
+                                placeholder="All books — search…"
+                              />
                             </div>
                           </div>
                           <div className="col-md-12">
                             <div className="mb-3">
                               <label className="form-label">Library member</label>
-                              <select
-                                className="form-select"
+                              <LibrarySearchableSelect
+                                allowClear
+                                options={members}
                                 value={filterDraft.member_id}
-                                onChange={(e) =>
-                                  setFilterDraft((f) => ({ ...f, member_id: e.target.value }))
-                                }
-                              >
-                                <option value="">Any</option>
-                                {members.map((s) => (
-                                  <option key={s.value} value={s.value}>
-                                    {s.label}
-                                  </option>
-                                ))}
-                              </select>
+                                onChange={(v) => setFilterDraft((f) => ({ ...f, member_id: v }))}
+                                placeholder="Any member — search…"
+                              />
                             </div>
                           </div>
                           <div className="col-md-6">
@@ -455,6 +465,35 @@ const ReturnBook = () => {
                 <p className="small text-muted mb-3">
                   Issue #{selected?.id} — {selected?.booksIssued || selected?.book_title}
                 </p>
+                <div className="mb-3">
+                  <label className="form-label">Outcome</label>
+                  <select
+                    className="form-select"
+                    value={returnForm.status}
+                    onChange={(e) => setReturnForm((f) => ({ ...f, status: e.target.value }))}
+                  >
+                    <option value="Returned">Returned</option>
+                    <option value="Lost">Lost</option>
+                    <option value="Damaged">Damaged</option>
+                  </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label">Condition on return</label>
+                  <select
+                    className="form-select"
+                    value={returnForm.condition_on_return}
+                    onChange={(e) =>
+                      setReturnForm((f) => ({ ...f, condition_on_return: e.target.value }))
+                    }
+                  >
+                    <option value="">Not specified</option>
+                    <option value="New">New</option>
+                    <option value="Good">Good</option>
+                    <option value="Damaged">Damaged</option>
+                    <option value="Lost">Lost</option>
+                    <option value="Maintenance">Maintenance</option>
+                  </select>
+                </div>
                 <div className="mb-3">
                   <label className="form-label">Fine (if any)</label>
                   <input

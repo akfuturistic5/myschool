@@ -399,9 +399,11 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
     }
   }
 
-  // Nullify current link first to avoid FK constraint on delete
-  await client.query(`UPDATE students SET guardian_id = NULL WHERE id = $1`, [studentId]);
-  await client.query(`DELETE FROM guardians WHERE student_id = $1`, [studentId]);
+  if (slim) {
+    await client.query(`DELETE FROM student_guardian_links WHERE student_id = $1`, [studentId]);
+  } else {
+    await client.query(`DELETE FROM guardians WHERE student_id = $1`, [studentId]);
+  }
 
   const rows = [];
   if (fatherUserId) {
@@ -433,13 +435,21 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
     const isPrimary = primaryType ? row.type === primaryType : rows.length === 1;
     let ins;
     if (slim) {
-      ins = await client.query(
+      const insG = await client.query(
         `INSERT INTO guardians (
-          student_id, user_id, guardian_type, relation,
-          is_primary_contact, is_emergency_contact, is_active, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+          user_id, annual_income, is_active, created_at, updated_at
+        ) VALUES ($1, $2, true, NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
         RETURNING id`,
-        [studentId, row.uid, row.type, row.rel, isPrimary, false]
+        [row.uid, null]
+      );
+      const gid = insG.rows[0].id;
+      ins = await client.query(
+        `INSERT INTO student_guardian_links (
+          student_id, guardian_id, relation, is_primary_contact, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+        RETURNING id`,
+        [studentId, gid, row.rel, isPrimary]
       );
     } else {
       const userRes = await client.query(
@@ -513,19 +523,10 @@ async function syncStudentGuardians(client, studentId, payload, warnings) {
     primaryId = firstG.rows[0]?.id || null;
   }
 
-  if (primaryId) {
-    await client.query(
-      `UPDATE students SET guardian_id = $1, updated_at = NOW() WHERE id = $2`,
-      [primaryId, studentId]
-    );
+  if (primaryId && !slim) {
     await client.query(
       `UPDATE guardians SET is_primary_contact = (id = $1), updated_at = NOW() WHERE student_id = $2`,
       [primaryId, studentId]
-    );
-  } else {
-    await client.query(
-      `UPDATE students SET guardian_id = NULL, updated_at = NOW() WHERE id = $1`,
-      [studentId]
     );
   }
 

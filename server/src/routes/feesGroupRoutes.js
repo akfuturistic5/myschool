@@ -3,6 +3,7 @@ const { requireRole } = require('../middleware/rbacMiddleware');
 const { FEE_MANAGER_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
 const {
     getFeesGroups,
+    getFeesGroupById,
     createFeesGroup,
     updateFeesGroup,
     deleteFeesGroup
@@ -12,6 +13,7 @@ const router = express.Router();
 
 router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), getFeesGroups);
 router.post('/', requireRole(FEE_MANAGER_ROLES), createFeesGroup);
+router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getFeesGroupById);
 router.put('/:id', requireRole(FEE_MANAGER_ROLES), updateFeesGroup);
 router.delete('/:id', requireRole(FEE_MANAGER_ROLES), deleteFeesGroup);
 

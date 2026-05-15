@@ -21,6 +21,7 @@ const {
   STUDENT_CONTACT_LATERAL_SELECT,
   STUDENT_CONTACT_LATERAL_JOINS,
 } = require('../utils/studentContactSync');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 function isBlankValue(value) {
   return value == null || (typeof value === 'string' && value.trim() === '');
@@ -95,16 +96,18 @@ async function fetchParentRowByStudentId(studentId, client = null) {
       ${STUDENT_CONTACT_LATERAL_SELECT},
       s.created_at,
       s.updated_at AS updated_at,
-      s.first_name AS student_first_name,
-      s.last_name AS student_last_name,
-      NULLIF(TRIM(s.photo_url), '') AS student_image_url,
+      u.first_name AS student_first_name,
+      u.last_name AS student_last_name,
+      NULLIF(TRIM(u.avatar), '') AS student_image_url,
       s.admission_number,
       s.roll_number,
       c.class_name,
       sec.section_name
     FROM students s
-    LEFT JOIN classes c ON s.class_id = c.id
-    LEFT JOIN sections sec ON s.section_id = sec.id
+    LEFT JOIN users u ON s.user_id = u.id
+    ${lateralCurrentEnrollment('s.id')}
+    LEFT JOIN classes c ON enr.class_id = c.id
+    LEFT JOIN sections sec ON enr.section_id = sec.id
     ${STUDENT_CONTACT_LATERAL_JOINS}
     WHERE s.id = $1 AND s.status = \'Active\'
     LIMIT 1`;
@@ -227,7 +230,7 @@ const updateParent = async (req, res) => {
         err.statusCode = 503;
         throw err;
       }
-      const chk = await client.query('SELECT id FROM students WHERE id = $1 AND s.status = \'Active\' LIMIT 1', [studentId]);
+      const chk = await client.query('SELECT id FROM students s WHERE s.id = $1 AND s.status = \'Active\' LIMIT 1', [studentId]);
       if (chk.rows.length === 0) {
         const err = new Error('Student not found');
         err.statusCode = 404;
@@ -343,6 +346,7 @@ const updateParent = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to update parent',
+      error: error.message,
     });
   }
 };
@@ -381,26 +385,25 @@ const parentListSelectSql = `
         ${STUDENT_CONTACT_LATERAL_SELECT},
         s.created_at,
         s.updated_at AS updated_at,
-        s.first_name AS student_first_name,
-        s.last_name AS student_last_name,
-        NULLIF(TRIM(s.photo_url), '') AS student_image_url,
+        u.first_name AS student_first_name,
+        u.last_name AS student_last_name,
+        NULLIF(TRIM(u.avatar), '') AS student_image_url,
         s.admission_number,
         s.roll_number,
         c.class_name,
         sec.section_name,
-        (SELECT g.user_id FROM guardians g
-          LEFT JOIN users u ON u.id = g.user_id
-          WHERE g.student_id = s.id AND g.status = \'Active\'
+        (SELECT g.user_id FROM student_guardian_links sgl
+          JOIN guardians g ON g.id = sgl.guardian_id
+          LEFT JOIN users u2 ON u2.id = g.user_id
+          WHERE sgl.student_id = s.id AND g.is_active = true
             AND (
-              LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-              OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-              OR u.role_id = ${ROLES.PARENT}
+              LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
+              OR u2.role_id = ${ROLES.PARENT}
             )
           ORDER BY
             CASE
-              WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
-              WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
-              WHEN u.role_id = ${ROLES.PARENT} THEN 2
+              WHEN LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
+              WHEN u2.role_id = ${ROLES.PARENT} THEN 2
               ELSE 9
             END,
             g.id ASC
@@ -408,8 +411,10 @@ const parentListSelectSql = `
 
 const parentListJoins = `
         FROM students s
-        LEFT JOIN classes c ON s.class_id = c.id
-        LEFT JOIN sections sec ON s.section_id = sec.id
+        LEFT JOIN users u ON s.user_id = u.id
+        ${lateralCurrentEnrollment('s.id')}
+        LEFT JOIN classes c ON enr.class_id = c.id
+        LEFT JOIN sections sec ON enr.section_id = sec.id
         ${STUDENT_CONTACT_LATERAL_JOINS}`;
 
 const getAllParents = async (req, res) => {
@@ -418,173 +423,128 @@ const getAllParents = async (req, res) => {
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
     const ctx = getAuthContext(req);
-    const isTeacherRole = ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher';
+    const isTeacher = ctx.roleId === ROLES.TEACHER || ctx.roleName === 'teacher';
+    const isAdm = isAdmin(ctx);
 
-    if (isTeacherRole) {
-      if (!ctx.userId) {
-        return res.status(401).json({
-          status: 'ERROR',
-          message: 'Not authenticated',
-        });
-      }
+    if (!isTeacher && !isAdm) {
+      return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+    }
 
+    let scopingSql = '';
+    let queryParams = [];
+
+    if (isTeacher) {
       const teacherCheck = await query(
-        `SELECT t.id, t.staff_id
-         FROM teachers t
-         INNER JOIN staff st ON t.staff_id = st.id
-         WHERE st.user_id = $1 AND st.status = 'Active'`,
+        `SELECT st.id AS staff_id FROM staff st WHERE st.user_id = $1 AND st.status = 'Active'`,
         [ctx.userId]
       );
-
-      if (!teacherCheck.rows.length) {
-        return res.status(403).json({
-          status: 'ERROR',
-          message: 'Access denied. User is not an active teacher.',
-        });
-      }
-
-      const teacherIds = [...new Set(teacherCheck.rows.map((row) => parseId(row.id)).filter(Boolean))];
       const teacherStaffIds = [...new Set(teacherCheck.rows.map((row) => parseId(row.staff_id)).filter(Boolean))];
-      if (!teacherIds.length || !teacherStaffIds.length) {
-        return res.status(403).json({
-          status: 'ERROR',
-          message: 'Access denied. User is not an active teacher.',
-        });
+      if (!teacherStaffIds.length) {
+        return res.status(403).json({ status: 'ERROR', message: 'Access denied. User is not an active teacher.' });
       }
-
-      const teacherParams = [teacherIds, teacherStaffIds];
-      const academicYearClause = hasYearFilter ? ` AND s.academic_year_id = $${teacherParams.length + 1}` : '';
-      if (hasYearFilter) teacherParams.push(academicYearId);
-
-      const result = await query(
-        `SELECT ${parentListSelectSql}
-        ${parentListJoins}
-        WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')
-          AND (
-            EXISTS (
-              SELECT 1 FROM class_schedules cs
-              WHERE cs.teacher_id = ANY($1::int[])
-                AND cs.class_id = s.class_id
-                AND (cs.section_id = s.section_id OR cs.section_id IS NULL)
-            )
-            OR EXISTS (
-              SELECT 1 FROM teachers t
-              WHERE t.id = ANY($1::int[]) AND t.class_id = s.class_id
-            )
-            OR EXISTS (
-              SELECT 1 FROM sections sec_map
-              WHERE sec_map.id = s.section_id
-                AND sec_map.section_teacher_id = ANY($2::int[])
-            )
-            OR EXISTS (
-              SELECT 1 FROM classes c_map
-              WHERE c_map.id = s.class_id
-                AND (c_map.class_teacher_id = ANY($1::int[]) OR c_map.class_teacher_id = ANY($2::int[]))
-            )
-          )${academicYearClause}
-        ORDER BY s.first_name ASC, s.last_name ASC`,
-        teacherParams
-      );
-
-      const enrichedRows = await enrichRowsWithLegacyParentContacts(result.rows);
-      return res.status(200).json({
-        status: 'SUCCESS',
-        message: 'Parents fetched successfully',
-        data: enrichedRows,
-        count: enrichedRows.length,
-        pagination: { page: 1, limit: enrichedRows.length, total: enrichedRows.length, totalPages: 1 },
-      });
+      queryParams = [teacherStaffIds];
+      scopingSql = `
+        AND EXISTS (
+          SELECT 1 FROM class_teachers ct
+          LEFT JOIN class_sections csec2 ON csec2.id = ct.class_section_id
+          WHERE ct.staff_id = ANY($1::int[])
+            AND ct.class_id = enr.class_id
+            AND (ct.class_section_id IS NULL OR csec2.section_id = enr.section_id)
+            AND ct.deleted_at IS NULL
+        )`;
     }
 
-    if (!isAdmin(ctx)) {
-      return res.status(403).json({
-        status: 'ERROR',
-        message: 'Access denied',
-      });
-    }
+    const yearIdx = queryParams.length + 1;
+    const yearWhere = hasYearFilter ? ` AND enr.academic_year_id = $${yearIdx}` : '';
+    const countParams = hasYearFilter ? [...queryParams, academicYearId] : queryParams;
+    const listParams = hasYearFilter ? [...queryParams, academicYearId, limit, offset] : [...queryParams, limit, offset];
+    const limitOffsetIdx = hasYearFilter ? [yearIdx + 1, yearIdx + 2] : [yearIdx, yearIdx + 1];
 
-    const yearWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
-    const countParams = hasYearFilter ? [academicYearId] : [];
-    const listParams = hasYearFilter ? [academicYearId, limit, offset] : [limit, offset];
-    const limitOffsetPlaceholders = hasYearFilter ? 'LIMIT $2 OFFSET $3' : 'LIMIT $1 OFFSET $2';
+    const countResult = await query(
+      `SELECT COUNT(*)::int as total
+       FROM students s
+       ${lateralCurrentEnrollment('s.id')}
+       WHERE s.status = 'Active'
+         AND EXISTS (SELECT 1 FROM student_guardian_links sgl2 WHERE sgl2.student_id = s.id)
+         ${scopingSql}${yearWhere}`,
+      countParams
+    );
 
-    let countResult;
-    let result;
-    try {
-      countResult = await query(
-        `SELECT COUNT(*)::int as total
-        FROM students s
-        WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
-        countParams
-      );
-      result = await query(
-        `SELECT ${parentListSelectSql}
-        ${parentListJoins}
-        WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
-        ORDER BY s.first_name ASC, s.last_name ASC
-        ${limitOffsetPlaceholders}`,
-        listParams
-      );
-    } catch (queryErr) {
-      console.warn('Parent list full query failed, using fallback:', queryErr.message);
-      countResult = await query(
-        `SELECT COUNT(*)::int as total
-        FROM students s
-        WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = 'Active')${yearWhere}`,
-        countParams
-      );
-      result = await query(
-        `SELECT
-          s.id,
-          s.id AS student_id,
-          ${STUDENT_CONTACT_LATERAL_SELECT},
-          s.created_at,
-          s.updated_at AS updated_at,
-          s.first_name AS student_first_name,
-          s.last_name AS student_last_name,
-          NULLIF(TRIM(s.photo_url), '') AS student_image_url,
-          s.admission_number,
-          s.roll_number,
-          NULL::text AS class_name,
-          NULL::text AS section_name,
-          (SELECT g.user_id FROM guardians g
-            LEFT JOIN users u ON u.id = g.user_id
-            WHERE g.student_id = s.id AND g.status = \'Active\'
-              AND (
-                LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-                OR LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu')
-                OR u.role_id = ${ROLES.PARENT}
-              )
-            ORDER BY
-              CASE
-                WHEN LOWER(BTRIM(COALESCE(g.guardian_type::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 0
-                WHEN LOWER(BTRIM(COALESCE(g.relation::text, ''))) IN ('father', 'dad', 'papa', 'abbu') THEN 1
-                WHEN u.role_id = ${ROLES.PARENT} THEN 2
-                ELSE 9
-              END,
-              g.id ASC
-            LIMIT 1) AS father_user_id
-        FROM students s
-        ${STUDENT_CONTACT_LATERAL_JOINS}
-        WHERE s.status = \'Active\'
-          AND EXISTS (SELECT 1 FROM guardians g WHERE g.student_id = s.id AND g.status = \'Active\')${yearWhere}
-        ORDER BY s.first_name ASC, s.last_name ASC
-        ${limitOffsetPlaceholders}`,
-        listParams
-      );
-    }
+    const result = await query(
+      `SELECT ${parentListSelectSql}
+       ${parentListJoins}
+       WHERE s.status = 'Active'
+         AND EXISTS (SELECT 1 FROM student_guardian_links sgl2 WHERE sgl2.student_id = s.id)
+         ${scopingSql}${yearWhere}
+       ORDER BY u.first_name ASC, u.last_name ASC
+       LIMIT $${limitOffsetIdx[0]} OFFSET $${limitOffsetIdx[1]}`,
+      listParams
+    );
 
     const enrichedRows = await enrichRowsWithLegacyParentContacts(result.rows);
-    const total = countResult.rows[0].total;
+
+    // Group by family identity to avoid duplicate cards for the same parents
+    const grouped = [];
+    const familyMap = new Map();
+
+    for (const row of enrichedRows) {
+      const familyKey = [
+        row.father_user_id,
+        row.father_email,
+        row.mother_person_id,
+        row.mother_email
+      ].filter(Boolean).join('|') || `fallback-s-${row.student_id}`;
+
+      if (familyMap.has(familyKey)) {
+        const existing = familyMap.get(familyKey);
+        if (!Array.isArray(existing.all_children)) {
+          existing.all_children = [
+            {
+              id: existing.student_id,
+              name: `${existing.student_first_name} ${existing.student_last_name}`.trim(),
+              admission_number: existing.admission_number,
+              class_name: existing.class_name,
+              section_name: existing.section_name,
+              photo_url: existing.student_image_url
+            }
+          ];
+        }
+        const alreadyIn = existing.all_children.some(c => String(c.id) === String(row.student_id));
+        if (!alreadyIn) {
+          existing.all_children.push({
+            id: row.student_id,
+            name: `${row.student_first_name} ${row.student_last_name}`.trim(),
+            admission_number: row.admission_number,
+            class_name: row.class_name,
+            section_name: row.section_name,
+            photo_url: row.student_image_url
+          });
+        }
+      } else {
+        const entry = {
+          ...row,
+          all_children: [
+            {
+              id: row.student_id,
+              name: `${row.student_first_name} ${row.student_last_name}`.trim(),
+              admission_number: row.admission_number,
+              class_name: row.class_name,
+              section_name: row.section_name,
+              photo_url: row.student_image_url
+            }
+          ]
+        };
+        familyMap.set(familyKey, entry);
+        grouped.push(entry);
+      }
+    }
+
+    const total = parseInt(countResult.rows[0].total, 10) || 0;
     res.status(200).json({
       status: 'SUCCESS',
       message: 'Parents fetched successfully',
-      data: enrichedRows,
-      count: enrichedRows.length,
+      data: grouped,
+      count: grouped.length,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -592,6 +552,7 @@ const getAllParents = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to fetch parents',
+      error: error.message,
     });
   }
 };

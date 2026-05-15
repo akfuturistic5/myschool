@@ -284,10 +284,6 @@ class ApiService {
     return this.makeRequest(`/sections/${id}`);
   }
 
-  async getSectionsByClass(classId) {
-    return this.makeRequest(`/sections/class/${classId}`);
-  }
-
   async updateSection(id, sectionData) {
     return this.makeRequest(`/sections/${id}`, {
       method: 'PUT',
@@ -299,6 +295,44 @@ class ApiService {
   }
   async deleteSection(id) {
     return this.makeRequest(`/sections/${id}`, { method: 'DELETE' });
+  }
+
+  // Class Section Assignments
+  /**
+   * @param {number|string|null} [academicYearId=null]
+   */
+  async getClassSectionsSummary(academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-sections/summary${qs}`);
+  }
+
+  /**
+   * @param {number|string} classId
+   * @param {number|string|null} [academicYearId=null]
+   */
+  async getClassSections(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-sections/class/${classId}${qs}`);
+  }
+
+  async assignSectionsToClass(data) {
+    return this.makeRequest('/class-sections/assign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateClassSectionAssignment(id, data) {
+    return this.makeRequest(`/class-sections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeSectionFromClass(id) {
+    return this.makeRequest(`/class-sections/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   // Class Rooms
@@ -377,6 +411,24 @@ class ApiService {
   async deleteClassSchedule(id) {
     return this.makeRequest(`/class-schedules/${id}`, { method: 'DELETE' });
   }
+  async bulkUpdateClassSchedules(payload) {
+    return this.makeRequest('/class-schedules/bulk', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async copyClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/copy', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+  async resetClassSchedule(payload) {
+    return this.makeRequest('/class-schedules/reset', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
 
   // Schedules (time_slots / schedule table - ID, Type, Start Time, End Time, Status)
   async getSchedules() {
@@ -399,11 +451,30 @@ class ApiService {
   async deleteSchedule(id) {
     return this.makeRequest(`/schedules/${id}`, { method: 'DELETE' });
   }
+  async bulkDeleteSchedules(ids) {
+    return this.makeRequest('/schedules/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) });
+  }
+  async generateSchedules(data) {
+    return this.makeRequest('/schedules/generate', { method: 'POST', body: JSON.stringify(data) });
+  }
 
   // Students
-  async getStudents(academicYearId = null) {
-    const qs = academicYearId != null ? `?academic_year_id=${academicYearId}` : '';
-    return this.makeRequest(`/students${qs}`);
+  /**
+   * @param {number|string|null|{ academic_year_id?: number|string, limit?: number, page?: number }} [params]
+   */
+  async getStudents(params = null) {
+    const q = new URLSearchParams();
+    if (params != null && typeof params === 'object' && !Array.isArray(params)) {
+      if (params.academic_year_id != null && params.academic_year_id !== '') {
+        q.set('academic_year_id', String(params.academic_year_id));
+      }
+      if (params.limit != null && params.limit !== '') q.set('limit', String(params.limit));
+      if (params.page != null && params.page !== '') q.set('page', String(params.page));
+    } else if (params != null && params !== '') {
+      q.set('academic_year_id', String(params));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/students${qs ? `?${qs}` : ''}`);
   }
 
   async getTeacherStudents(academicYearId = null) {
@@ -559,9 +630,34 @@ class ApiService {
     return this.makeRequest(`/exams${qs ? `?${qs}` : ''}`);
   }
 
+  // Curriculum Mapping & Electives
+  async getElectiveSubjects(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/curriculum/electives?${search.toString()}`);
+  }
+
+  async getCurriculumMap(params = {}) {
+    const search = new URLSearchParams(params);
+    return this.makeRequest(`/curriculum/map?${search.toString()}`);
+  }
+
+  async assignElectives(payload) {
+    return this.makeRequest('/curriculum/assign', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
   async createExam(payload) {
     return this.makeRequest('/exams', {
       method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateExam(examId, payload) {
+    return this.makeRequest(`/exams/${examId}`, {
+      method: 'PATCH',
       body: JSON.stringify(payload),
     });
   }
@@ -577,17 +673,32 @@ class ApiService {
   }
 
   async listExamSubjectsQuery(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exams/subjects/list?${search.toString()}`);
   }
 
   async getExamSubjectOptions(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exams/subjects/options?${search.toString()}`);
   }
 
   async getExamSubjectsContext(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/context?${search.toString()}`);
   }
 
@@ -606,13 +717,24 @@ class ApiService {
   }
 
   async viewExamSchedule(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/schedule?${search.toString()}`);
   }
 
   async viewExamResults(params = {}) {
-    const search = new URLSearchParams(params);
-    return this.makeRequest(`/exam-subjects/results?${search.toString()}`);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/exam-subjects/results${qs ? `?${qs}` : ""}`);
   }
 
   async getExamTopPerformers(params = {}) {
@@ -625,13 +747,24 @@ class ApiService {
   }
 
   async listSelfExams(params = {}) {
-    const search = new URLSearchParams(params);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
     return this.makeRequest(`/exam-subjects/self-exams?${search.toString()}`);
   }
 
   async getExamMarksContext(params = {}) {
-    const search = new URLSearchParams(params);
-    return this.makeRequest(`/exam-subjects/marks-context?${search.toString()}`);
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        search.set(key, String(val));
+      }
+    });
+    const qs = search.toString();
+    return this.makeRequest(`/exam-subjects/marks-context${qs ? `?${qs}` : ""}`);
   }
 
   async getExamGradeScale() {
@@ -677,13 +810,7 @@ class ApiService {
   }
 
   async getAttendanceReport(params = {}) {
-    const search = new URLSearchParams();
-    if (params.classId != null) search.set('class_id', String(params.classId));
-    if (params.sectionId != null) search.set('section_id', String(params.sectionId));
-    if (params.academicYearId != null) search.set('academic_year_id', String(params.academicYearId));
-    if (params.month) search.set('month', String(params.month));
-    const qs = search.toString();
-    return this.makeRequest(`/students/reports/attendance${qs ? `?${qs}` : ''}`);
+    return this.getEntityAttendanceReport("student", params);
   }
 
   async getAttendanceMarkingRoster(entityType, params = {}) {
@@ -749,6 +876,49 @@ class ApiService {
 
   async createEnquiry(payload) {
     return this.makeRequest('/enquiries', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateEnquiry(id, payload) {
+    return this.makeRequest(`/enquiries/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteEnquiry(id) {
+    return this.makeRequest(`/enquiries/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async patchEnquiryStatus(id, payload) {
+    return this.makeRequest(`/enquiries/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getEnquiryFollowUpCounselors() {
+    return this.makeRequest('/enquiries/follow-up/counselors');
+  }
+
+  async getEnquiryFollowUpActivity(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null) search.set('academic_year_id', String(params.academic_year_id));
+    if (params.limit != null) search.set('limit', String(params.limit));
+    const qs = search.toString();
+    return this.makeRequest(`/enquiries/follow-up/activity${qs ? `?${qs}` : ''}`);
+  }
+
+  async getEnquiryFollowUps(enquiryId) {
+    return this.makeRequest(`/enquiries/${enquiryId}/follow-ups`);
+  }
+
+  async createEnquiryFollowUp(enquiryId, payload) {
+    return this.makeRequest(`/enquiries/${enquiryId}/follow-ups`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -1002,6 +1172,45 @@ class ApiService {
     });
   }
 
+  // Exam Types
+  async getExamTypes(options = {}) {
+    const search = new URLSearchParams();
+    if (options.includeInactive) search.set('include_inactive', '1');
+    const qs = search.toString();
+    return this.makeRequest(`/exam-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getExamTypeById(id) {
+    return this.makeRequest(`/exam-types/${id}`);
+  }
+
+  async createExamType(payload) {
+    return this.makeRequest('/exam-types', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateExamType(id, payload) {
+    return this.makeRequest(`/exam-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async toggleExamTypeStatus(id) {
+    return this.makeRequest(`/exam-types/${id}/toggle-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async deleteExamType(id) {
+    return this.makeRequest(`/exam-types/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Parents
   async getParents(params = {}) {
     const searchParams = new URLSearchParams();
@@ -1121,9 +1330,19 @@ class ApiService {
 
   async getTeacherClassAttendance(teacherId, params = {}) {
     const searchParams = new URLSearchParams();
-    if (params.days != null) searchParams.set('days', params.days);
-    if (params.offset != null) searchParams.set('offset', params.offset);
-    if (params.academicYearId != null) searchParams.set('academic_year_id', params.academicYearId);
+    // Never send days=/offset= empty (URLSearchParams coerces ''; backend gets '' and NaN / odd states).
+    const d = params.days;
+    if (d !== '' && d != null && Number.isFinite(Number(d))) {
+      searchParams.set('days', String(Number(d)));
+    }
+    const o = params.offset;
+    if (o !== '' && o != null && Number.isFinite(Number(o))) {
+      searchParams.set('offset', String(Math.max(0, Number(o))));
+    }
+    const ay = params.academicYearId;
+    if (ay !== '' && ay != null && Number.isFinite(Number(ay))) {
+      searchParams.set('academic_year_id', String(Number(ay)));
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/teachers/${teacherId}/class-attendance${qs ? `?${qs}` : ''}`);
   }
@@ -1143,35 +1362,68 @@ class ApiService {
   }
 
   /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
-  async getTeacherAssignments(params = {}) {
+  async getClassTeacherAssignments(params = {}) {
     const q = new URLSearchParams();
     if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
     if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
     if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
     const qs = q.toString();
-    return this.makeRequest(`/teacher-assignments${qs ? `?${qs}` : ''}`);
+    return this.makeRequest(`/teacher-assignments/class-teachers${qs ? `?${qs}` : ''}`);
   }
 
-  async getTeacherAssignmentClassMeta(classId) {
-    return this.makeRequest(`/teacher-assignments/class/${classId}/meta`);
-  }
-
-  async createTeacherAssignment(body) {
-    return this.makeRequest('/teacher-assignments', {
+  async createClassTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments/class-teachers', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   }
 
-  async updateTeacherAssignment(id, body) {
-    return this.makeRequest(`/teacher-assignments/${id}`, {
+  async updateClassTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/class-teachers/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });
   }
 
-  async deleteTeacherAssignment(id) {
-    return this.makeRequest(`/teacher-assignments/${id}`, { method: 'DELETE' });
+  async deleteClassTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/class-teachers/${id}`, { method: 'DELETE' });
+  }
+
+  /** @param {{ teacherId?: number|string, classId?: number|string, academicYearId?: number|string }} [params] */
+  async getSubjectTeacherAssignments(params = {}) {
+    const q = new URLSearchParams();
+    if (params.teacherId != null && params.teacherId !== '') q.set('teacherId', String(params.teacherId));
+    if (params.classId != null && params.classId !== '') q.set('classId', String(params.classId));
+    if (params.academicYearId != null && params.academicYearId !== '') q.set('academicYearId', String(params.academicYearId));
+    const qs = q.toString();
+    return this.makeRequest(`/teacher-assignments/subject-teachers${qs ? `?${qs}` : ''}`);
+  }
+
+  async createSubjectTeacherAssignment(body) {
+    return this.makeRequest('/teacher-assignments/subject-teachers', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateSubjectTeacherAssignment(id, body) {
+    return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteSubjectTeacherAssignment(id) {
+    return this.makeRequest(`/teacher-assignments/subject-teachers/${id}`, { method: 'DELETE' });
+  }
+
+  /**
+   * @param {number|string} classId
+   * @param {number|null} [academicYearId]
+   */
+  async getTeacherAssignmentClassMeta(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academicYearId=${academicYearId}` : '';
+    return this.makeRequest(`/teacher-assignments/class/${classId}/meta${qs}`);
   }
 
   /**
@@ -1269,6 +1521,81 @@ class ApiService {
     return this.makeRequest(`/staff/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async uploadStaffDocuments(staffId, formData) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/documents`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload staff documents (${response.status}): ${errorText}`);
+    }
+    return response.json();
+  }
+
+  async fetchStaffDocumentBlob(staffId, docType) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/documents/${docType}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/pdf',
+      },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to load staff document (${response.status}): ${errorText}`);
+    }
+    return response.blob();
+  }
+
+  async uploadStaffPhoto(staffId, file) {
+    const fd = new FormData();
+    fd.append("photo", file);
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/photo`;
+    const headers = { Accept: 'application/json' };
+    const tb = getTenantBearerToken();
+    if (tb) headers['Authorization'] = `Bearer ${tb}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: fd,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to upload staff photo (${response.status}): ${errorText}`);
+    }
+    return response.json();
+  }
+
+  async fetchStaffPhotoBlob(staffId, filename) {
+    const base = await getApiBaseUrl();
+    const url = `${base}/staff/${staffId}/photo/${filename}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to load staff photo (${response.status}): ${errorText}`);
+    }
+    return response.blob();
   }
 
   // Departments
@@ -1601,6 +1928,18 @@ class ApiService {
       method: 'DELETE',
     });
   }
+  async bulkDeleteFeesMaster(ids) {
+    return this.makeRequest('/fees-master/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdateFeesMasterStatus(ids, status) {
+    return this.makeRequest('/fees-master/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
 
   // Fees Assign
   async getFeesAssignments(params = {}) {
@@ -1633,6 +1972,27 @@ class ApiService {
       body: JSON.stringify(data),
     });
   }
+  async getPaymentModes(activeOnly = true) {
+    return this.makeRequest(`/payment-modes${activeOnly ? '?activeOnly=true' : ''}`);
+  }
+  async createPaymentMode(data) {
+    return this.makeRequest('/payment-modes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePaymentMode(id, data) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+  async deletePaymentMode(id) {
+    return this.makeRequest(`/payment-modes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getStudentFeeDetailedStatus(studentId, academicYearId) {
     return this.makeRequest(`/fees-collect/student/${studentId}/${academicYearId}`);
   }
@@ -1644,6 +2004,7 @@ class ApiService {
   async getNoticeBoard(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.include_expired != null) searchParams.set('include_expired', params.include_expired);
     const qs = searchParams.toString();
     return this.makeRequest(`/notice-board${qs ? `?${qs}` : ''}`);
   }
@@ -1672,8 +2033,42 @@ class ApiService {
     });
   }
 
-  async getLeaveTypes() {
-    return this.makeRequest('/leave-applications/leave-types');
+  async getLeaveTypes(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.applicable_for) {
+      searchParams.set('applicable_for', String(params.applicable_for));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLeaveTypesAdmin(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.include_inactive != null) {
+      searchParams.set('include_inactive', String(params.include_inactive));
+    }
+    const qs = searchParams.toString();
+    return this.makeRequest(`/leave-applications/leave-types/admin${qs ? `?${qs}` : ''}`);
+  }
+
+  async createLeaveType(data) {
+    return this.makeRequest('/leave-applications/leave-types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeaveType(id, data) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLeaveType(id) {
+    return this.makeRequest(`/leave-applications/leave-types/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getLeaveApplications(params = {}) {
@@ -2055,6 +2450,48 @@ class ApiService {
       body: JSON.stringify(subjectData),
     });
   }
+  async getElectiveGroups(classId = "") {
+    const qs = classId ? `?class_id=${classId}` : '';
+    return this.makeRequest(`/elective-groups${qs}`);
+  }
+  async createElectiveGroup(data) {
+    return this.makeRequest('/elective-groups', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateElectiveGroup(id, data) {
+    return this.makeRequest(`/elective-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteElectiveGroup(id) {
+    return this.makeRequest(`/elective-groups/${id}`, { method: 'DELETE' });
+  }
+  async getClassSubjects(params = {}) {
+    const search = new URLSearchParams();
+    if (params.class_id) search.set('class_id', params.class_id);
+    if (params.academic_year_id) search.set('academic_year_id', params.academic_year_id);
+    const qs = search.toString();
+    return this.makeRequest(`/class-subjects${qs ? `?${qs}` : ''}`);
+  }
+  async getSubjectsByClass(classId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/class-subjects/class/${classId}${qs}`);
+  }
+  async assignSubjectToClass(data) {
+    return this.makeRequest('/class-subjects', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async getSubjectTeacherAssignments(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.classId) params.append('classId', filters.classId);
+    if (filters.academicYearId) params.append('academicYearId', filters.academicYearId);
+    if (filters.teacherId) params.append('teacherId', filters.teacherId);
+    const qs = params.toString();
+    return this.makeRequest(`/teacher-assignments/subject-teachers${qs ? `?${qs}` : ''}`);
+  }
+  async updateClassSubject(id, data) {
+    return this.makeRequest(`/class-subjects/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async removeClassSubject(id) {
+    return this.makeRequest(`/class-subjects/${id}`, { method: 'DELETE' });
+  }
   async createSubject(subjectData) {
     return this.makeRequest('/subjects', { method: 'POST', body: JSON.stringify(subjectData) });
   }
@@ -2067,6 +2504,9 @@ class ApiService {
     const search = new URLSearchParams();
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       search.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
     }
     const qs = search.toString();
     return this.makeRequest(`/hostels${qs ? `?${qs}` : ''}`);
@@ -2094,6 +2534,12 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       search.set('academic_year_id', String(params.academic_year_id));
     }
+    if (params.hostel_id != null && params.hostel_id !== '') {
+      search.set('hostel_id', String(params.hostel_id));
+    }
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
+    }
     const qs = search.toString();
     return this.makeRequest(`/hostel-rooms${qs ? `?${qs}` : ''}`);
   }
@@ -2118,6 +2564,160 @@ class ApiService {
 
   async deleteHostelRoom(id) {
     return this.makeRequest(`/hostel-rooms/${id}`, { method: 'DELETE' });
+  }
+
+  async getHostelRoomBeds(roomId) {
+    return this.getHostelBeds(roomId);
+  }
+
+  /** Beds CRUD — pass `{ room_id, include_inactive }` or legacy numeric `roomId` */
+  async getHostelBeds(roomIdOrParams) {
+    const q = new URLSearchParams();
+    if (
+      roomIdOrParams != null &&
+      typeof roomIdOrParams === 'object' &&
+      !Array.isArray(roomIdOrParams)
+    ) {
+      const p = roomIdOrParams;
+      if (p.room_id != null && p.room_id !== '') q.set('room_id', String(p.room_id));
+      if (p.include_inactive === true || p.include_inactive === 'true') {
+        q.set('include_inactive', 'true');
+      }
+    } else if (roomIdOrParams != null && roomIdOrParams !== '') {
+      q.set('room_id', String(roomIdOrParams));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/hostel-beds${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelBedById(id) {
+    return this.makeRequest(`/hostel-beds/${id}`);
+  }
+
+  async createHostelBed(body) {
+    return this.makeRequest('/hostel-beds', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async updateHostelBed(id, body) {
+    return this.makeRequest(`/hostel-beds/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  }
+
+  async deleteHostelBed(id) {
+    return this.makeRequest(`/hostel-beds/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel floors
+  /** Pass `{ hostel_id, include_inactive }` or legacy numeric hostelId */
+  async getHostelFloors(hostelIdOrParams) {
+    const q = new URLSearchParams();
+    if (
+      hostelIdOrParams != null &&
+      typeof hostelIdOrParams === 'object' &&
+      !Array.isArray(hostelIdOrParams)
+    ) {
+      const p = hostelIdOrParams;
+      if (p.hostel_id != null && p.hostel_id !== '') q.set('hostel_id', String(p.hostel_id));
+      if (p.include_inactive === true || p.include_inactive === 'true') {
+        q.set('include_inactive', 'true');
+      }
+    } else if (hostelIdOrParams != null && hostelIdOrParams !== '') {
+      q.set('hostel_id', String(hostelIdOrParams));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/hostel-floors${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelFloorById(id) {
+    return this.makeRequest(`/hostel-floors/${id}`);
+  }
+
+  async createHostelFloor(data) {
+    return this.makeRequest('/hostel-floors', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelFloor(id, data) {
+    return this.makeRequest(`/hostel-floors/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteHostelFloor(id) {
+    return this.makeRequest(`/hostel-floors/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel room types (inventory taxonomy — not classroom room_types)
+  async getHostelRoomTypes(params = {}) {
+    const search = new URLSearchParams();
+    if (params.include_inactive === true || params.include_inactive === 'true') {
+      search.set('include_inactive', 'true');
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostel-room-types${qs ? `?${qs}` : ''}`);
+  }
+
+  async getHostelRoomTypeById(id) {
+    return this.makeRequest(`/hostel-room-types/${id}`);
+  }
+
+  async createHostelRoomType(data) {
+    return this.makeRequest('/hostel-room-types', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelRoomType(id, data) {
+    return this.makeRequest(`/hostel-room-types/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteHostelRoomType(id) {
+    return this.makeRequest(`/hostel-room-types/${id}`, { method: 'DELETE' });
+  }
+
+  // Hostel assignments
+  async getHostelAssignments(params = {}) {
+    const search = new URLSearchParams();
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      search.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.hostel_id != null && params.hostel_id !== '') {
+      search.set('hostel_id', String(params.hostel_id));
+    }
+    if (params.student_id != null && params.student_id !== '') {
+      search.set('student_id', String(params.student_id));
+    }
+    if (params.status != null && params.status !== '') {
+      search.set('status', String(params.status));
+    }
+    const qs = search.toString();
+    return this.makeRequest(`/hostel-assignments${qs ? `?${qs}` : ''}`);
+  }
+
+  async createHostelAssignment(data) {
+    return this.makeRequest('/hostel-assignments', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateHostelAssignment(id, data) {
+    return this.makeRequest(`/hostel-assignments/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async checkoutHostelAssignment(id, data = {}) {
+    return this.makeRequest(`/hostel-assignments/${id}/checkout`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelHostelAssignment(id) {
+    return this.makeRequest(`/hostel-assignments/${id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({}),
+    });
+  }
+
+  async getHostelAssignmentById(id) {
+    return this.makeRequest(`/hostel-assignments/${id}`);
   }
 
   // Room Types
@@ -2614,6 +3214,34 @@ class ApiService {
     });
   }
 
+  async getLibraryPolicies() {
+    return this.makeRequest('/library/policies');
+  }
+
+  async getLibraryPolicyById(id) {
+    return this.makeRequest(`/library/policies/${id}`);
+  }
+
+  async createLibraryPolicy(data) {
+    return this.makeRequest('/library/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryPolicy(id, data) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryPolicy(id) {
+    return this.makeRequest(`/library/policies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getLibraryBooks(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2624,8 +3252,20 @@ class ApiService {
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
     }
+    if (
+      params.include_pending_reservations === true ||
+      params.include_pending_reservations === 1 ||
+      params.include_pending_reservations === '1' ||
+      String(params.include_pending_reservations || '').toLowerCase() === 'true'
+    ) {
+      q.set('include_pending_reservations', '1');
+    }
     const qs = q.toString();
     return this.makeRequest(`/library/books${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryNextBookAccessionNumber() {
+    return this.makeRequest('/library/book-copies/next-accession-number');
   }
 
   async importLibraryBooks(payload) {
@@ -2659,6 +3299,43 @@ class ApiService {
     });
   }
 
+  async getLibraryBookCopies(params = {}) {
+    const q = new URLSearchParams();
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.accession_number) q.set('accession_number', String(params.accession_number));
+    if (params.condition) q.set('condition', String(params.condition));
+    const qs = q.toString();
+    return this.makeRequest(`/library/book-copies${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryBookCopyById(id) {
+    return this.makeRequest(`/library/book-copies/${id}`);
+  }
+
+  async createLibraryBookCopy(data) {
+    return this.makeRequest('/library/book-copies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryBookCopy(id, data) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLibraryBookCopy(id) {
+    return this.makeRequest(`/library/book-copies/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getLibraryNextCardNumber() {
+    return this.makeRequest('/library/members/next-card-number');
+  }
+
   async getLibraryMembers(params = {}) {
     const q = new URLSearchParams();
     if (params.search) q.set('search', params.search);
@@ -2668,6 +3345,9 @@ class ApiService {
     if (params.date_to) q.set('date_to', String(params.date_to));
     if (params.academic_year_id != null && params.academic_year_id !== '') {
       q.set('academic_year_id', String(params.academic_year_id));
+    }
+    if (params.status != null && params.status !== '') {
+      q.set('status', String(params.status));
     }
     const qs = q.toString();
     return this.makeRequest(`/library/members${qs ? `?${qs}` : ''}`);
@@ -2727,6 +3407,37 @@ class ApiService {
 
   async returnLibraryIssue(id, data) {
     return this.makeRequest(`/library/issues/${id}/return`, {
+      method: 'PATCH',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async getLibraryReservations(params = {}) {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.book_id != null && params.book_id !== '') q.set('book_id', String(params.book_id));
+    if (params.member_id != null && params.member_id !== '') q.set('member_id', String(params.member_id));
+    if (params.search) q.set('search', String(params.search));
+    if (params.academic_year_id != null && params.academic_year_id !== '') {
+      q.set('academic_year_id', String(params.academic_year_id));
+    }
+    const qs = q.toString();
+    return this.makeRequest(`/library/reservations${qs ? `?${qs}` : ''}`);
+  }
+
+  async getLibraryReservationById(id) {
+    return this.makeRequest(`/library/reservations/${id}`);
+  }
+
+  async createLibraryReservation(data) {
+    return this.makeRequest('/library/reservations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLibraryReservation(id, data) {
+    return this.makeRequest(`/library/reservations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data || {}),
     });
@@ -3114,6 +3825,69 @@ class ApiService {
     if (params.excludeId != null) search.set('excludeId', String(params.excludeId));
     const qs = search.toString();
     return this.makeRequest(`/users/check-unique?${qs}`);
+  }
+  async getNextAdmissionNumber() {
+    return this.makeRequest('/students/next-admission-number');
+  }
+
+  // Salary Components
+  async getSalaryComponents() {
+    return this.makeRequest('/salary-components');
+  }
+
+  async createSalaryComponent(data) {
+    return this.makeRequest('/salary-components', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSalaryComponent(id, data) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSalaryComponent(id) {
+    return this.makeRequest(`/salary-components/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Payroll
+  async getPayrollList(params = {}) {
+    const search = new URLSearchParams();
+    if (params.month) search.set('month', params.month);
+    if (params.year) search.set('year', params.year);
+    if (params.status) search.set('status', params.status);
+    const qs = search.toString();
+    return this.makeRequest(`/payroll${qs ? `?${qs}` : ''}`);
+  }
+
+  async processPayroll(data) {
+    return this.makeRequest('/payroll/generate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  async updatePayslipStatus(id, status) {
+    return this.makeRequest(`/payroll/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+  async bulkDeletePayslips(ids) {
+    return this.makeRequest('/payroll/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+  async bulkUpdatePayslipStatus(ids, status) {
+    return this.makeRequest('/payroll/bulk-status-update', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
   }
 }
 

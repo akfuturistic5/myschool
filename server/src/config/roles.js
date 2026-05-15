@@ -57,13 +57,13 @@ const USER_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
 const STUDENT_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
 /** Roles that can list all teachers */
-const TEACHER_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+const TEACHER_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
 /** Roles that can list parents. Teachers are server-scoped to only their own students' parents. */
 const PARENT_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
 /** Roles that can list all guardians */
-const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+const GUARDIAN_LIST_ALL_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE, ROLES.TEACHER];
 
 /** Roles that can create/update/delete school events (Headmaster + Administrative) */
 const EVENT_MANAGER_ROLES = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];

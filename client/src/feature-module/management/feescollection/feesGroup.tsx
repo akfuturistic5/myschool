@@ -1,18 +1,9 @@
 import { useRef, useState, useEffect } from "react";
 import { useSelector } from "react-redux";
-import dayjs from "dayjs";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
-import PredefinedDateRanges from "../../../core/common/datePicker";
-import CommonSelect from "../../../core/common/commonSelect";
-import {
-  ids,
-  names,
-  status,
-} from "../../../core/common/selectoption/selectoption";
-import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import FeesModal from "./feesModal";
 import TooltipOption from "../../../core/common/tooltipOption";
@@ -22,173 +13,140 @@ import Swal from "sweetalert2";
 const FeesGroup = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  
+
   const [data, setData] = useState<any[]>([]);
   const [filteredData, setFilteredData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter States
-  const [filterStatus, setFilterStatus] = useState<string>("All");
-  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
-
-  // Modal States
-  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [selectedFee, setSelectedFee] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const fetchFeesGroups = async (isManualRefresh = false) => {
+    if (!academicYearId) return;
     try {
       setLoading(true);
       setError(null);
-      if (!academicYearId) return;
-      
       const res = await apiService.getFeesGroups({ academic_year_id: academicYearId });
       if (res.status === "SUCCESS") {
-        const mappedData = res.data.map((item: any) => ({
+        const mapped = (res.data ?? []).map((item: any) => ({
           ...item,
           key: item.id,
-          feesGroup: item.name, // Mapping for existing UI columns
-          status: item.status?.charAt(0).toUpperCase() + item.status?.slice(1).toLowerCase() // Normalize status
         }));
-        setData(mappedData);
-        setFilteredData(mappedData);
+        setData(mapped);
+        setFilteredData(mapped);
         if (isManualRefresh) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Refreshed',
-            text: 'Data updated successfully',
-            timer: 1500,
-            showConfirmButton: false
-          });
+          Swal.fire({ icon: "success", title: "Refreshed", timer: 1200, showConfirmButton: false });
         }
       }
     } catch (err: any) {
-      setError(err.message || "Failed to fetch fees groups");
+      setError(err.message || "Failed to fetch fee configurations");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchFeesGroups();
-  }, [academicYearId]);
+  useEffect(() => { fetchFeesGroups(); }, [academicYearId]);
 
-  const handleApplyClick = (e: any) => {
-    e.preventDefault();
-    let filtered = [...data];
-
-    if (filterStatus !== "All") {
-      filtered = filtered.filter(item => item.status === filterStatus);
-    }
-
-    if (dateRange) {
-      const start = dateRange[0].startOf('day');
-      const end = dateRange[1].endOf('day');
-      filtered = filtered.filter(item => {
-        if (!item.created_at) return true; // Keep items without dates or use a different field
-        const d = dayjs(item.created_at);
-        return (d.isSame(start) || d.isAfter(start)) && (d.isSame(end) || d.isBefore(end));
-      });
-    }
-
-    setFilteredData(filtered);
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
-    }
-  };
-
-  const handleReset = () => {
-    setFilterStatus("All");
-    setDateRange(null);
-    setFilteredData(data);
-  };
+  const handleEdit = (record: any) => setSelectedFee(record);
+  const handleDeleteClick = (id: number) => setDeleteId(id);
+  const handleDeleteSuccess = () => { fetchFeesGroups(); setDeleteId(null); };
 
   const handleExportExcel = () => {
     const exportData = filteredData.map(item => ({
       ID: item.id,
-      "Fees Group": item.name,
-      Description: item.description || "",
-      Status: item.status
+      Class: item.class_name,
+      "Fee Items": item.fee_items?.length ?? 0,
+      "Total Amount": item.total_amount,
+      "Compulsory": item.total_compulsory,
+      "Optional": item.total_optional,
+      "Due Date": item.due_date ?? "—",
     }));
-    exportToExcel(exportData, `FeesGroups_${new Date().toISOString().split('T')[0]}`);
+    exportToExcel(exportData, `FeeConfigs_${new Date().toISOString().split("T")[0]}`);
   };
 
   const handleExportPDF = () => {
     const columns = [
-      { title: "ID", dataKey: "id" },
-      { title: "Fees Group", dataKey: "name" },
-      { title: "Description", dataKey: "description" },
-      { title: "Status", dataKey: "status" },
+      { title: "Class", dataKey: "class_name" },
+      { title: "Fee Items", dataKey: "fee_items_count" },
+      { title: "Total (₹)", dataKey: "total_amount" },
+      { title: "Due Date", dataKey: "due_date" },
     ];
-    exportToPDF(filteredData, "Fees Group List", `FeesGroups_${new Date().toISOString().split('T')[0]}`, columns);
+    const rows = filteredData.map(r => ({
+      ...r,
+      fee_items_count: r.fee_items?.length ?? 0,
+      due_date: r.due_date ?? "—",
+    }));
+    exportToPDF(rows, "Fee Configurations", `FeeConfigs_${new Date().toISOString().split("T")[0]}`, columns);
   };
 
   const handlePrint = () => {
     const columns = [
-      { title: "ID", dataKey: "id" },
-      { title: "Fees Group", dataKey: "name" },
-      { title: "Description", dataKey: "description" },
-      { title: "Status", dataKey: "status" },
+      { title: "Class", dataKey: "class_name" },
+      { title: "Fee Items", dataKey: "fee_items_count" },
+      { title: "Total (₹)", dataKey: "total_amount" },
     ];
-    printData("Fees Group List", columns, filteredData);
-  };
-
-  const handleEdit = (group: any) => {
-    setSelectedGroup(group);
-    // Modal will be triggered by data-bs-target in the Link
-  };
-
-  const handleDeleteClick = (id: number) => {
-    setDeleteId(id);
-    // Modal will be triggered by data-bs-target in the Link
-  };
-
-  const handleDeleteSuccess = () => {
-    fetchFeesGroups();
-    setDeleteId(null);
+    const rows = filteredData.map(r => ({ ...r, fee_items_count: r.fee_items?.length ?? 0 }));
+    printData("Fee Configurations", columns, rows);
   };
 
   const columns = [
     {
-      title: "ID",
-      dataIndex: "id",
-      render: (text: string) => (
-        <Link to="#" className="link-primary">
-          {text}
-        </Link>
-      ),
-      sorter: (a: any, b: any) => Number(a.id) - Number(b.id),
+      title: "Class",
+      dataIndex: "class_name",
+      sorter: (a: any, b: any) => (a.class_name ?? "").localeCompare(b.class_name ?? ""),
+      render: (text: string) => <span className="fw-medium">{text}</span>
     },
     {
-      title: "Fees Group",
-      dataIndex: "feesGroup",
-      sorter: (a: any, b: any) => (a.feesGroup || "").localeCompare(b.feesGroup || ""),
-    },
-    {
-      title: "Description",
-      dataIndex: "description",
-      sorter: (a: any, b: any) => (a.description || "").localeCompare(b.description || ""),
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      render: (text: string) => (
-        <>
-          {text === "Active" ? (
-            <span className="badge badge-soft-success d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
+      title: "Fee Items",
+      dataIndex: "fee_items",
+      render: (items: any[]) => (
+        <div>
+          {Array.isArray(items) && items.length > 0 ? (
+            <ul className="list-unstyled mb-0 small">
+              {items.map((i: any, idx: number) => (
+                <li key={idx} className="d-flex justify-content-between gap-3">
+                  <span>{i.fee_type_name}{i.is_optional ? <span className="badge badge-soft-info ms-1 py-0">optional</span> : null}</span>
+                  <strong>₹{parseFloat(i.amount).toFixed(2)}</strong>
+                </li>
+              ))}
+            </ul>
           ) : (
-            <span className="badge badge-soft-danger d-inline-flex align-items-center">
-              <i className="ti ti-circle-filled fs-5 me-1"></i>
-              {text}
-            </span>
+            <span className="text-muted small">No items</span>
           )}
-        </>
-      ),
-      sorter: (a: any, b: any) => (a.status || "").localeCompare(b.status || ""),
+        </div>
+      )
+    },
+    {
+      title: "Total (₹)",
+      dataIndex: "total_amount",
+      sorter: (a: any, b: any) => Number(a.total_amount) - Number(b.total_amount),
+      render: (val: any) => (
+        <span className="fw-medium text-primary">₹{parseFloat(val || 0).toFixed(2)}</span>
+      )
+    },
+    {
+      title: "Late Fee",
+      dataIndex: "late_fee_type",
+      render: (_: any, record: any) => {
+        if (!record.late_fee_charge || Number(record.late_fee_charge) === 0) {
+          return <span className="text-muted">None</span>;
+        }
+        return (
+          <span className="badge badge-soft-warning">
+            {record.late_fee_type === "percentage"
+              ? `${record.late_fee_charge}% / ${record.late_fee_frequency}`
+              : `₹${record.late_fee_charge} / ${record.late_fee_frequency}`}
+          </span>
+        );
+      }
+    },
+    {
+      title: "Due Date",
+      dataIndex: "due_date",
+      render: (val: string) => val
+        ? new Date(val).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : <span className="text-muted">—</span>
     },
     {
       title: "Action",
@@ -213,20 +171,18 @@ const FeesGroup = () => {
                   data-bs-target="#edit_fees_group"
                   onClick={() => handleEdit(record)}
                 >
-                  <i className="ti ti-edit-circle me-2" />
-                  Edit
+                  <i className="ti ti-edit-circle me-2" />Edit
                 </Link>
               </li>
               <li>
                 <Link
-                  className="dropdown-item rounded-1"
+                  className="dropdown-item rounded-1 text-danger"
                   to="#"
                   data-bs-toggle="modal"
                   data-bs-target="#delete-modal"
                   onClick={() => handleDeleteClick(record.id)}
                 >
-                  <i className="ti ti-trash-x me-2" />
-                  Delete
+                  <i className="ti ti-trash-x me-2" />Delete
                 </Link>
               </li>
             </ul>
@@ -235,127 +191,81 @@ const FeesGroup = () => {
       ),
     },
   ];
+
   return (
     <>
-      {/* Page Wrapper */}
       <div className="page-wrapper">
         <div className="content">
-          {/* Page Header */}
+          {/* Header */}
           <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
             <div className="my-auto mb-2">
-              <h3 className="page-title mb-1">Fees Collection</h3>
+              <h3 className="page-title mb-1">Fee Configurations</h3>
               <nav>
                 <ol className="breadcrumb mb-0">
-                  <li className="breadcrumb-item">
-                    <Link to={routes.adminDashboard}>Dashboard</Link>
-                  </li>
-                  <li className="breadcrumb-item">
-                    <Link to="#">Fees Collection</Link>
-                  </li>
-                  <li className="breadcrumb-item active" aria-current="page">
-                    Fees Group
-                  </li>
+                  <li className="breadcrumb-item"><Link to={routes.adminDashboard}>Dashboard</Link></li>
+                  <li className="breadcrumb-item"><Link to="#">Fees Collection</Link></li>
+                  <li className="breadcrumb-item active" aria-current="page">Fee Groups</li>
                 </ol>
               </nav>
             </div>
-            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption 
+            <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
+              <TooltipOption
                 onRefresh={() => fetchFeesGroups(true)}
                 onPrint={handlePrint}
                 onExportExcel={handleExportExcel}
                 onExportPdf={handleExportPDF}
               />
-              <div className="mb-2">
-                <Link
-                  to="#"
-                  className="btn btn-primary"
-                  data-bs-toggle="modal"
-                  data-bs-target="#add_fees_group"
-                  onClick={() => setSelectedGroup(null)}
-                >
-                  <i className="ti ti-square-rounded-plus me-2" />
-                  Add Fees Group
-                </Link>
-              </div>
+              <Link
+                to="#"
+                className="btn btn-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#add_fees_group"
+                onClick={() => setSelectedFee(null)}
+              >
+                <i className="ti ti-square-rounded-plus me-2" />
+                Add Fee Configuration
+              </Link>
             </div>
           </div>
-          {/* /Page Header */}
-          {/* Students List */}
+
+          {/* Table Card */}
           <div className="card">
-            <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-              <h4 className="mb-3">Fees Group List</h4>
-              <div className="d-flex align-items-center flex-wrap">
-                  {/* <div className="mb-3 me-2">
-                    <PredefinedDateRanges onChange={(range: [any, any]) => setDateRange(range)} />
-                  </div> */}
-                  <div className="dropdown mb-3 me-2">
-                    <Link
-                      to="#"
-                      className="btn btn-outline-light bg-white dropdown-toggle"
-                      data-bs-toggle="dropdown"
-                      data-bs-auto-close="outside"
-                    >
-                      <i className="ti ti-filter me-2" />
-                      Filter
-                    </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
-                    <form onSubmit={handleApplyClick}>
-                      <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
-                      </div>
-                      <div className="p-3 border-bottom">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-0">
-                              <label className="form-label">Status</label>
-                              <CommonSelect
-                                className="select"
-                                options={[
-                                  { value: "All", label: "All Status" },
-                                  { value: "Active", label: "Active" },
-                                  { value: "Inactive", label: "Inactive" }
-                                ]}
-                                defaultValue={{ value: "All", label: "All Status" }}
-                                value={filterStatus}
-                                onChange={(val: any) => setFilterStatus(val)}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 d-flex align-items-center justify-content-end">
-                        <button type="button" className="btn btn-light me-3" onClick={handleReset}>
-                          Reset
-                        </button>
-                        <button
-                          type="submit"
-                          className="btn btn-primary"
-                        >
-                          Apply
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
+            <div className="card-header d-flex align-items-center justify-content-between pb-0">
+              <h4 className="mb-3">Fee Configurations</h4>
+              {!academicYearId && (
+                <span className="badge bg-warning text-dark">Select an Academic Year to view</span>
+              )}
             </div>
             <div className="card-body p-0 py-3">
-              {/* Student List */}
-              <Table dataSource={filteredData} columns={columns} Selection={true} />
-              {/* /Student List */}
+              {loading ? (
+                <div className="text-center py-5">
+                  <div className="spinner-border text-primary" role="status" />
+                  <p className="mt-2 text-muted">Loading fee configurations...</p>
+                </div>
+              ) : error ? (
+                <div className="alert alert-danger mx-3">{error}</div>
+              ) : filteredData.length === 0 ? (
+                <div className="text-center py-5 text-muted">
+                  <i className="ti ti-file-description fs-1 mb-2 d-block" />
+                  No fee configurations found for this academic year.
+                  <br />
+                  <Link to="#" className="btn btn-sm btn-primary mt-3" data-bs-toggle="modal" data-bs-target="#add_fees_group">
+                    Create First Configuration
+                  </Link>
+                </div>
+              ) : (
+                <Table dataSource={filteredData} columns={columns} Selection={true} />
+              )}
             </div>
           </div>
-          {/* /Students List */}
         </div>
       </div>
-      {/* /Page Wrapper */}
-      <FeesModal 
-        onSuccess={fetchFeesGroups} 
-        editGroupData={selectedGroup} 
+
+      <FeesModal
+        onSuccess={fetchFeesGroups}
+        editFeeData={selectedFee}
         deleteId={deleteId}
+        deleteContext="fee"
         onDeleteSuccess={handleDeleteSuccess}
       />
     </>
@@ -363,4 +273,3 @@ const FeesGroup = () => {
 };
 
 export default FeesGroup;
-

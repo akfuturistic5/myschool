@@ -2,10 +2,25 @@ const express = require('express');
 const { protectApi } = require('../middleware/authMiddleware');
 const { requireRole } = require('../middleware/rbacMiddleware');
 const { validate } = require('../utils/validate');
-const { createLeaveApplicationSchema, updateLeaveStatusSchema, cancelLeaveSchema } = require('../validations/leaveValidation');
-const { LEAVE_APPROVER_ROLES, LEAVE_LIST_ALL_ROLES, ALL_AUTHENTICATED_ROLES } = require('../config/roles');
+const {
+  createLeaveApplicationSchema,
+  updateLeaveStatusSchema,
+  cancelLeaveSchema,
+  createLeaveTypeSchema,
+  updateLeaveTypeSchema,
+} = require('../validations/leaveValidation');
+const {
+  LEAVE_APPROVER_ROLES,
+  LEAVE_LIST_ALL_ROLES,
+  ALL_AUTHENTICATED_ROLES,
+  ADMIN_DASHBOARD_ROLES,
+} = require('../config/roles');
 const {
   getLeaveTypes,
+  getLeaveTypesAdmin,
+  createLeaveType,
+  updateLeaveType,
+  deleteLeaveType,
   createLeaveApplication,
   updateLeaveApplicationStatus,
   cancelLeaveApplication,
@@ -19,6 +34,10 @@ const router = express.Router();
 
 // GET /api/leave-applications/leave-types - all leave types (public for dropdown)
 router.get('/leave-types', requireRole(ALL_AUTHENTICATED_ROLES), getLeaveTypes);
+router.get('/leave-types/admin', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), getLeaveTypesAdmin);
+router.post('/leave-types', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), validate(createLeaveTypeSchema), createLeaveType);
+router.put('/leave-types/:id', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), validate(updateLeaveTypeSchema, 'body'), updateLeaveType);
+router.delete('/leave-types/:id', protectApi, requireRole(ADMIN_DASHBOARD_ROLES), deleteLeaveType);
 
 // POST /api/leave-applications - create leave (requires auth)
 router.post('/', protectApi, requireRole(ALL_AUTHENTICATED_ROLES), validate(createLeaveApplicationSchema), createLeaveApplication);

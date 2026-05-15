@@ -144,27 +144,33 @@ const GuardianList = () => {
     {
       title: "Child",
       dataIndex: "Child",
-      render: (text: string, record: any) => (
+      render: (_text: string, record: any) => (
         <div className="d-flex align-items-center">
-          <Link
-            to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.guardiansList}
-            state={record.student_id != null ? { studentId: record.student_id } : undefined}
-            className="avatar avatar-md"
-          >
-            <ImageWithBasePath
-              src={record.ChildImage}
-              className="img-fluid rounded-circle"
-              alt="img"
-            />
-          </Link>
-          <div className="ms-2">
-            <p className="text-dark mb-0">
+          <div className="avatar-list-stacked">
+            {(record.all_children || []).slice(0, 2).map((child: any) => (
               <Link
-                to={record.student_id != null ? `${routes.studentDetail}/${record.student_id}` : routes.guardiansList}
-                state={record.student_id != null ? { studentId: record.student_id } : undefined}
+                key={child.id}
+                to={routes.studentDetail}
+                state={{ studentId: child.id }}
+                className="avatar avatar-sm border border-white flex-shrink-0 p-0"
+                title={child.name}
               >
-                {text}
+                <ImageWithBasePath
+                  src={child.photo_url}
+                  className="img-fluid rounded-circle"
+                  alt="img"
+                />
               </Link>
+            ))}
+            {record.all_children && record.all_children.length > 2 && (
+              <span className="avatar avatar-sm border border-white bg-light text-primary flex-shrink-0 fs-10 d-flex align-items-center justify-content-center rounded-circle">
+                +{record.all_children.length - 2}
+              </span>
+            )}
+          </div>
+          <div className="ms-2">
+            <p className="text-dark mb-0 fs-13 text-truncate" style={{ maxWidth: '120px' }}>
+              {record.Child}
             </p>
             <span className="fs-12">{record.class}</span>
           </div>
@@ -496,10 +502,10 @@ const GuardianList = () => {
             </div>
           )}
           <h5 className="mb-3">Children Details</h5>
-          {selectedGuardian && (
-            <div className="border rounded p-4 pb-1 mb-3">
+          {selectedGuardian && (selectedGuardian.all_children || []).map((child: any) => (
+            <div key={child.id} className="border rounded p-3 pb-1 mb-3">
               <div className="d-flex align-items-center justify-content-between flex-wrap pb-1 mb-3 border-bottom">
-                <span className="link-primary mb-2">{selectedGuardian.student_admission_number}</span>
+                <span className="link-primary mb-2">Admission# {child.admission_number}</span>
                 <span className="badge badge-soft-success badge-md mb-2">
                   <i className="ti ti-circle-filled me-2" />
                   Active
@@ -509,11 +515,11 @@ const GuardianList = () => {
                 <div className="d-flex align-items-center mb-3">
                   <Link
                     to={routes.studentDetail}
-                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    state={{ studentId: child.id }}
                     className="avatar"
                   >
                     <ImageWithBasePath
-                      src={selectedGuardian.ChildImage}
+                      src={child.photo_url}
                       className="img-fluid rounded-circle"
                       alt="img"
                     />
@@ -521,36 +527,19 @@ const GuardianList = () => {
                   <div className="ms-2">
                     <p className="mb-0">
                       <Link
-                        to={selectedGuardian.student_id != null ? `${routes.studentDetail}/${selectedGuardian.student_id}` : routes.guardiansList}
-                        state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                        to={routes.studentDetail}
+                        state={{ studentId: child.id }}
                       >
-                        {selectedGuardian.Child}
+                        {child.name}
                       </Link>
                     </p>
-                    <span>{selectedGuardian.class}</span>
+                    <span>{child.class_name} {child.section_name ? `, ${child.section_name}` : ''}</span>
                   </div>
                 </div>
-                <ul className="d-flex align-items-center flex-wrap">
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Roll No</p>
-                    <h6 className="fw-normal">{selectedGuardian.student_roll_number}</h6>
-                  </li>
-                  <li className="mb-3 me-4">
-                    <p className="mb-1">Guardian Type</p>
-                    <h6 className="fw-normal">{selectedGuardian.guardian_type || 'N/A'}</h6>
-                  </li>
-                  <li className="mb-3">
-                    <p className="mb-1">Relation</p>
-                    <h6 className="fw-normal">{selectedGuardian.relation || 'N/A'}</h6>
-                  </li>
-                </ul>
                 <div className="d-flex align-items-center">
-                  <Link to="#" className="btn btn-light mb-3 me-3">
-                    Add Fees
-                  </Link>
                   <Link
-                    to={selectedGuardian.student_id != null ? `${routes.studentDetail}/${selectedGuardian.student_id}` : routes.guardiansList}
-                    state={selectedGuardian.student_id != null ? { studentId: selectedGuardian.student_id } : undefined}
+                    to={routes.studentDetail}
+                    state={{ studentId: child.id }}
                     className="btn btn-primary mb-3"
                   >
                     View Details
@@ -558,7 +547,7 @@ const GuardianList = () => {
                 </div>
               </div>
             </div>
-          )}
+          ))}
         </div>
       </Modal>
     </>

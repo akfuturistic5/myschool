@@ -7,8 +7,20 @@ import { apiService } from '../services/apiService';
  * @param {number|null} teacherId - Teacher ID (from useCurrentTeacher)
  * @param {{ days?: number; offset?: number }} options - days (7=This Week, 30=Last Month), offset (7=Last Week only)
  */
+function finiteNum(v, fallback) {
+  if (v === '' || v === null || v === undefined) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function useTeacherClassAttendance(teacherId, options = {}) {
-  const { days, offset, academicYearId } = options;
+  // Coerce bad/empty values so refetch/effect never call the API with days=&offset=.
+  const days = finiteNum(options.days, 7);
+  const offset = Math.max(0, finiteNum(options.offset, 0));
+  const academicYearId =
+    options.academicYearId === '' || options.academicYearId == null
+      ? undefined
+      : finiteNum(options.academicYearId, undefined);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

@@ -48,6 +48,8 @@ import ClassHomeWork from "../academic/class-home-work";
 import ClassRoom from "../academic/class-room";
 import ClassSection from "../academic/class-section";
 import ClassSubject from "../academic/class-subject";
+import SubjectList from "../academic/subjects";
+import ClassSectionsAssignment from "../academic/class-sections";
 import ClassSyllabus from "../academic/class-syllabus";
 import ClassTimetable from "../academic/class-timetable";
 import SectionRoutine from "../academic/section-routine";
@@ -55,6 +57,7 @@ import Classes from "../academic/classes";
 import AcademicYearsList from "../academic/academic-years";
 import AcademicYearCreate from "../academic/academic-years/create";
 import AcademicYearDetail from "../academic/academic-years/detail";
+import CurriculumMapping from "../academic/curriculum-mapping";
 import Exam from "../academic/examinations/exam";
 import ExamAttendance from "../academic/examinations/exam-attendance";
 import ExamResult from "../academic/examinations/exam-results";
@@ -92,7 +95,9 @@ import Designation from "../hrm/designation";
 import Holiday from "../hrm/holidays";
 import ApproveRequest from "../hrm/leaves/approve-request";
 import ListLeaves from "../hrm/leaves/list-leaves";
+import LeaveTypesPage from "../hrm/leaves/leave-types";
 import Payroll from "../hrm/payroll";
+import SalarySettings from "../hrm/salarySettings";
 import AddStaff from "../hrm/staff-list/add-staff";
 import EditStaff from "../hrm/staff-list/edit-staff";
 import Staff from "../hrm/staff-list/staff";
@@ -103,15 +108,21 @@ import StaffsAttendance from "../hrm/staff-list/staffs-attendance";
 import CollectFees from "../management/feescollection/collectFees";
 import FeesAssign from "../management/feescollection/feesAssign";
 import FeesGroup from "../management/feescollection/feesGroup";
-import FeesMaster from "../management/feescollection/feesMaster";
 import FeesTypes from "../management/feescollection/feesTypes";
 import HostelList from "../management/hostel/hostelList";
 import HostelRooms from "../management/hostel/hostelRooms";
 import HostelType from "../management/hostel/hostelType";
+import HostelFloors from "../management/hostel/hostelFloors";
+import HostelBeds from "../management/hostel/hostelBeds";
+import HostelAssignments from "../management/hostel/hostelAssignments";
 import Books from "../management/library/books";
+import LibraryBookCopies from "../management/library/libraryBookCopies";
+import LibraryCategory from "../management/library/libraryCategory";
+import LibraryPolicy from "../management/library/libraryPolicy.tsx";
 import IssueBook from "../management/library/issuesBook";
 import LibraryMember from "../management/library/libraryMember";
 import ReturnBook from "../management/library/returnBook";
+import LibraryReservations from "../management/library/libraryReservations";
 import PlayersList from "../management/sports/playersList";
 import SportsList from "../management/sports/sportsList";
 import TransportAssignVehicle from "../management/transport/transportAssignVehicle";
@@ -168,10 +179,12 @@ import TeacherReport from "../report/teacher-report/teacherReport";
 import Religion from "../settings/academicSettings/religion";
 import SchoolSettings from "../settings/academicSettings/schoolSettings";
 import SchoolMasterSettingsPage from "../settings/settingsMasters/SchoolMasterSettingsPage";
+import ExamTypeManagement from "../settings/academicSettings/examType";
 import CustomFields from "../settings/appSettings/customFields";
 import InvoiceSettings from "../settings/appSettings/invoiceSettings";
 import PaymentGateways from "../settings/financialSettings/paymentGateways";
 import TaxRates from "../settings/financialSettings/taxRates";
+import PaymentModes from "../settings/financialSettings/paymentModes";
 
 import ConnectedApps from "../settings/generalSettings/connectedApps";
 import Notificationssettings from "../settings/generalSettings/notifications";
@@ -851,6 +864,16 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.subjects,
+    element: <SubjectList />,
+    route: Route,
+  },
+  {
+    path: routes.classSections,
+    element: <ClassSectionsAssignment />,
+    route: Route,
+  },
+  {
     path: routes.classSection,
     element: <ClassSection />,
     route: Route,
@@ -917,6 +940,11 @@ export const publicRoutes = [
   {
     path: routes.examResult,
     element: <ExamResult />,
+    route: Route,
+  },
+  {
+    path: routes.curriculumMapping,
+    element: <CurriculumMapping />,
     route: Route,
   },
   {
@@ -1015,6 +1043,11 @@ export const publicRoutes = [
     route: Route,
   },
   {
+    path: routes.salarySettings,
+    element: <SalarySettings />,
+    route: Route,
+  },
+  {
     path: routes.holidays,
     element: <Holiday />,
     route: Route,
@@ -1027,6 +1060,11 @@ export const publicRoutes = [
   {
     path: routes.listLeaves,
     element: <ListLeaves />,
+    route: Route,
+  },
+  {
+    path: routes.leaveTypesManage,
+    element: <LeaveTypesPage />,
     route: Route,
   },
   {
@@ -1091,8 +1129,8 @@ export const publicRoutes = [
     route: Route,
   },
   {
-    path: routes.feesMaster,
-    element: <FeesMaster />,
+    path: routes.collectFees,
+    element: <CollectFees />,
     route: Route,
   },
   {
@@ -1101,18 +1139,28 @@ export const publicRoutes = [
     route: Route,
   },
   {
-    path: routes.collectFees,
-    element: <CollectFees />,
-    route: Route,
-  },
-  {
     path: routes.libraryMembers,
     element: <LibraryMember />,
     route: Route,
   },
   {
+    path: routes.libraryCategories,
+    element: <LibraryCategory />,
+    route: Route,
+  },
+  {
+    path: routes.libraryPolicies,
+    element: <LibraryPolicy />,
+    route: Route,
+  },
+  {
     path: routes.libraryBooks,
     element: <Books />,
+    route: Route,
+  },
+  {
+    path: routes.libraryBookCopies,
+    element: <LibraryBookCopies />,
     route: Route,
   },
   {
@@ -1123,6 +1171,11 @@ export const publicRoutes = [
   {
     path: routes.libraryReturn,
     element: <ReturnBook />,
+    route: Route,
+  },
+  {
+    path: routes.libraryReservations,
+    element: <LibraryReservations />,
     route: Route,
   },
   {
@@ -1138,6 +1191,21 @@ export const publicRoutes = [
   {
     path: routes.hostelRoom,
     element: <HostelRooms />,
+    route: Route,
+  },
+  {
+    path: routes.hostelFloors,
+    element: <HostelFloors />,
+    route: Route,
+  },
+  {
+    path: routes.hostelBeds,
+    element: <HostelBeds />,
+    route: Route,
+  },
+  {
+    path: routes.hostelAssignments,
+    element: <HostelAssignments />,
     route: Route,
   },
   {
@@ -1376,10 +1444,20 @@ export const publicRoutes = [
     element: <TaxRates />,
     route: Route,
   },
+  {
+    path: routes.paymentModes,
+    element: <PaymentModes />,
+    route: Route,
+  },
 
   {
     path: routes.schoolSettings,
     element: <SchoolSettings />,
+    route: Route,
+  },
+  {
+    path: routes.examTypes,
+    element: <ExamTypeManagement />,
     route: Route,
   },
   {

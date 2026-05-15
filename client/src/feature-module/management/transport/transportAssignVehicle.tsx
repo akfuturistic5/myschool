@@ -18,8 +18,6 @@ const TransportAssignVehicle = () => {
   const [params, setParams] = useState({
     page: 1,
     limit: 10,
-    search: "",
-    status: "",
     route_id: "all",
     sortField: "id",
     sortOrder: "ASC",
@@ -36,7 +34,6 @@ const TransportAssignVehicle = () => {
   const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
   const [routesData, setRoutesData] = useState<any[]>([]);
   const [draftRouteId, setDraftRouteId] = useState("all");
-  const [draftStatus, setDraftStatus] = useState("all");
 
   // Fetch routes for filter
   useEffect(() => {
@@ -51,35 +48,30 @@ const TransportAssignVehicle = () => {
     fetchFilters();
   }, []);
 
-  const handleSearch = (val: string) => {
-    setParams((prev) => ({ ...prev, search: val, page: 1 }));
-  };
-
-  const handleFilterApply = () => {
-    setParams((prev) => ({
-      ...prev,
+  const handleFilterApply = async () => {
+    const nextParams = {
+      ...params,
       route_id: draftRouteId,
-      status: draftStatus === "all" ? "" : draftStatus,
       page: 1
-    }));
+    };
+    setParams(nextParams);
+    await refetch(nextParams);
     if (dropdownMenuRef.current) {
       dropdownMenuRef.current.classList.remove("show");
     }
   };
 
-  const handleResetFilters = () => {
-    setParams((prev) => ({
-      ...prev,
+  const handleResetFilters = async () => {
+    const nextParams = {
       page: 1,
       limit: 10,
-      search: "",
-      status: "",
       route_id: "all",
       sortField: "id",
       sortOrder: "ASC",
-    }));
+    };
+    setParams(nextParams);
     setDraftRouteId("all");
-    setDraftStatus("all");
+    await refetch(nextParams);
   };
 
   const handleRefresh = () => {
@@ -97,7 +89,6 @@ const TransportAssignVehicle = () => {
       pickupPoint: "point_name",
       vehicle: "vehicle_number",
       name: "driver_name",
-      status: "is_active",
     };
     setParams((prev) => ({
       ...prev,
@@ -149,17 +140,6 @@ const TransportAssignVehicle = () => {
             <span className="fs-12 text-muted">{record.phone}</span>
           </div>
         </div>
-      ),
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      sorter: true,
-      render: (text: string) => (
-        <span className={`badge ${text === "Active" ? "badge-soft-success" : "badge-soft-danger"} d-inline-flex align-items-center`}>
-          <i className="ti ti-circle-filled fs-5 me-1"></i>
-          {text}
-        </span>
       ),
     },
     {
@@ -282,18 +262,6 @@ const TransportAssignVehicle = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Assign Vehicle List</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="input-icon-start mb-3 me-2 position-relative">
-                  <span className="input-icon-addon">
-                    <i className="ti ti-search" />
-                  </span>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search Vehicle/Route"
-                    value={params.search}
-                    onChange={(e) => handleSearch(e.target.value)}
-                  />
-                </div>
                 <div className="dropdown mb-3 me-2">
                   <Link
                     to="#"
@@ -318,21 +286,6 @@ const TransportAssignVehicle = () => {
                               options={[{ value: "all", label: "All Routes" }, ...routesData.map(r => ({ value: r.id.toString(), label: r.route_name }))]}
                               value={draftRouteId}
                               onChange={(val: string | null) => setDraftRouteId(val || "all")}
-                            />
-                          </div>
-                        </div>
-                        <div className="col-md-12">
-                          <div className="mb-0">
-                            <label className="form-label">Status</label>
-                            <CommonSelect
-                              className="select"
-                              options={[
-                                { value: "all", label: "All Status" },
-                                { value: "active", label: "Active" },
-                                { value: "inactive", label: "Inactive" },
-                              ]}
-                              value={draftStatus}
-                              onChange={(val: string | null) => setDraftStatus(val || "all")}
                             />
                           </div>
                         </div>

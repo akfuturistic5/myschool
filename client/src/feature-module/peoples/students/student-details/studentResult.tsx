@@ -12,6 +12,7 @@ import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudent
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { getSchoolLogoSrc } from "../../../../core/utils/schoolLogo";
 import { apiService } from "../../../../core/services/apiService";
+import { isTeacherRole } from "../../../../core/utils/roleUtils";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -29,6 +30,7 @@ const StudentResult = () => {
   });
   const { user } = useCurrentUser();
   const currentUser = user as any;
+  const isTeacher = isTeacherRole(currentUser);
   const returnToExamResult = typeof state?.returnTo === "string" ? state.returnTo : "";
   const forwardedState = student
     ? {
@@ -373,99 +375,76 @@ const StudentResult = () => {
             <div className="col-xxl-9 col-xl-8">
               <div className="row">
                 <div className="col-md-12">
-                  <ul className="nav nav-tabs nav-tabs-bottom mb-4">
-                    {returnToExamResult && (
-                      <li className="me-2">
-                        <Link to={returnToExamResult} className="btn btn-outline-primary btn-sm">
-                          <i className="ti ti-arrow-left me-1" />
-                          Back to Exam Result
-                        </Link>
-                      </li>
-                    )}
-                    <li>
-                      <Link
-                        to={routes.studentDetail}
-                        className="nav-link"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-school me-2" />
-                        Student Details
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable}
-                        className="nav-link"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-table-options me-2" />
-                        Time Table
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves}
-                        className="nav-link"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-calendar-due me-2" />
-                        Leave &amp; Attendance
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees}
-                        className="nav-link"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-report-money me-2" />
-                        Fees
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult}
-                        className="nav-link active"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-bookmark-edit me-2" />
-                        Exam &amp; Results
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary}
-                        className="nav-link"
-                        state={forwardedState}
-                      >
-                        <i className="ti ti-books me-2" />
-                        Library
-                      </Link>
-                    </li>
-                  </ul>
+                  <div className="card border-0 shadow-sm mb-4">
+                    <div className="card-body p-0">
+                      <ul className="nav nav-tabs nav-tabs-bottom mb-0">
+                        {returnToExamResult && (
+                          <li className="nav-item">
+                            <Link to={returnToExamResult} className="nav-link py-3 px-4 border-0 text-primary fw-bold">
+                              <i className="ti ti-arrow-left me-2" />
+                              Back to Directory
+                            </Link>
+                          </li>
+                        )}
+                        <li className="nav-item">
+                          <Link to={routes.studentDetail} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                            <i className="ti ti-school me-2" /> Details
+                          </Link>
+                        </li>
+                        <li className="nav-item">
+                          <Link to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                            <i className="ti ti-table-options me-2" /> Timetable
+                          </Link>
+                        </li>
+                        <li className="nav-item">
+                          <Link to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                            <i className="ti ti-calendar-due me-2" /> Attendance
+                          </Link>
+                        </li>
+                        {!isTeacher && (
+                          <li className="nav-item">
+                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                              <i className="ti ti-report-money me-2" /> Fees
+                            </Link>
+                          </li>
+                        )}
+                        <li className="nav-item">
+                          <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                            <i className="ti ti-bookmark-edit me-2" /> Performance
+                          </Link>
+                        </li>
+                        <li className="nav-item">
+                          <Link to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                            <i className="ti ti-books me-2" /> Library
+                          </Link>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
 
-                  <div className="row g-3 mb-3">
-                    <div className="col-md-4 d-flex">
-                      <div className="card flex-fill mb-0">
-                        <div className="card-body">
-                          <p className="text-muted mb-1">Total Exams</p>
-                          <h4 className="mb-0">{overallSummary.totalExams}</h4>
+                  {/* Achievement Summary Cards */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-md-4">
+                      <div className="card border-0 shadow-sm bg-soft-primary h-100">
+                        <div className="card-body p-3">
+                          <div className="small text-muted mb-1 text-uppercase fw-bold">Total Exams</div>
+                          <h4 className="fw-bold mb-0 text-primary">{overallSummary.totalExams}</h4>
                         </div>
                       </div>
                     </div>
-                    <div className="col-md-4 d-flex">
-                      <div className="card flex-fill mb-0">
-                        <div className="card-body">
-                          <p className="text-muted mb-1">Passed Exams</p>
-                          <h4 className="mb-0">{overallSummary.passCount}</h4>
+                    <div className="col-md-4">
+                      <div className="card border-0 shadow-sm bg-soft-success h-100">
+                        <div className="card-body p-3">
+                          <div className="small text-muted mb-1 text-uppercase fw-bold">Passed Exams</div>
+                          <h4 className="fw-bold mb-0 text-success">{overallSummary.passCount}</h4>
                         </div>
                       </div>
                     </div>
-                    <div className="col-md-4 d-flex">
-                      <div className="card flex-fill mb-0">
-                        <div className="card-body">
-                          <p className="text-muted mb-1">Average Percentage</p>
-                          <h4 className="mb-0">
+                    <div className="col-md-4">
+                      <div className="card border-0 shadow-sm bg-soft-info h-100">
+                        <div className="card-body p-3">
+                          <div className="small text-muted mb-1 text-uppercase fw-bold">Avg. Percentage</div>
+                          <h4 className="fw-bold mb-0 text-info">
                             {overallSummary.averagePercentage != null ? `${overallSummary.averagePercentage}%` : "N/A"}
                           </h4>
                         </div>
@@ -473,63 +452,73 @@ const StudentResult = () => {
                     </div>
                   </div>
 
-                  <div className="card">
-                    <div className="card-header d-flex align-items-center justify-content-between">
-                      <h4 className="mb-0">Exam &amp; Results</h4>
+                  <div className="card border-0 shadow-sm overflow-hidden">
+                    <div className="card-header bg-white py-3 border-bottom-0">
+                      <h4 className="fw-bold mb-0 text-dark">Examination History</h4>
                     </div>
-                    <div className="card-body">
+                    <div className="card-body p-0">
                       {examError && (
-                        <div className="alert alert-warning d-flex align-items-center mb-3" role="alert">
-                          <i className="ti ti-alert-circle me-2 fs-18" />
-                          <span>{examError}</span>
+                        <div className="p-4">
+                          <div className="alert alert-soft-danger border-0 d-flex align-items-center mb-0" role="alert">
+                            <i className="ti ti-alert-circle me-2 fs-18" />
+                            <span>{examError}</span>
+                          </div>
                         </div>
                       )}
 
                       {examLoading && (
-                        <div className="d-flex justify-content-center align-items-center p-4">
+                        <div className="text-center py-5">
                           <div className="spinner-border text-primary" role="status" />
-                          <span className="ms-2">Loading exam results...</span>
+                          <p className="mt-2 text-muted">Analyzing performance data...</p>
                         </div>
                       )}
 
                       {!examLoading && exams.length === 0 && (
-                        <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
-                          <i className="ti ti-info-circle me-2 fs-18" />
-                          <span>No exam results are available yet.</span>
+                        <div className="text-center py-5">
+                          <div className="mb-3 text-muted opacity-25">
+                            <i className="ti ti-notes-off fs-1"></i>
+                          </div>
+                          <h5 className="fw-bold">No Records Found</h5>
+                          <p className="text-muted small">Academic performance metrics will appear here once examinations are concluded.</p>
                         </div>
                       )}
 
                       {!examLoading && exams.length > 0 && (
-                        <div className="accordion accordions-items-seperate" id="student-exam-results">
+                        <div className="accordion accordions-items-seperate p-4 pt-0" id="student-exam-results">
                           {exams.map((exam: any, index: number) => {
                             const collapseId = `student-exam-${exam.examId ?? index}`;
                             const summary = exam.summary || {};
                             const isPass = String(summary.overallResult || "").toLowerCase() === "pass";
                             return (
-                              <div className="accordion-item" key={collapseId}>
+                              <div className="accordion-item border-0 shadow-sm mb-3 rounded overflow-hidden" key={collapseId}>
                                 <h2 className="accordion-header">
                                   <button
-                                    className={`accordion-button ${index === 0 ? "" : "collapsed"}`}
+                                    className={`accordion-button ${index === 0 ? "" : "collapsed"} py-3 px-4`}
                                     type="button"
                                     data-bs-toggle="collapse"
                                     data-bs-target={`#${collapseId}`}
                                     aria-expanded={index === 0}
                                     aria-controls={collapseId}
                                   >
-                                    <span className={`avatar avatar-sm ${isPass ? "bg-success" : "bg-danger"} me-2`}>
-                                      <i className={`ti ${isPass ? "ti-checks" : "ti-x"}`} />
-                                    </span>
-                                    <span className="me-3">{exam.examLabel || exam.examName || `Exam ${index + 1}`}</span>
-                                    <span className="text-muted small">
-                                      {exam.examDate
-                                        ? new Date(exam.examDate).toLocaleDateString("en-GB", {
-                                            day: "2-digit",
-                                            month: "short",
-                                            year: "numeric",
-                                          })
-                                        : "Date not available"}
-                                    </span>
-                                    <span className="text-muted small ms-3">Class / Section: {displayClassSection}</span>
+                                    <div className="d-flex flex-wrap align-items-center gap-3 w-100 pe-4">
+                                      <span className={`badge badge-soft-${isPass ? "success" : "danger"} rounded-circle p-2 d-flex align-items-center justify-content-center`} style={{ width: 32, height: 32 }}>
+                                        <i className={`ti ${isPass ? "ti-checks" : "ti-x"} fs-14`} />
+                                      </span>
+                                      <span className="fw-bold text-dark me-auto">{exam.examLabel || exam.examName || `Exam ${index + 1}`}</span>
+                                      <span className="badge badge-soft-secondary small px-3 py-2">
+                                        <i className="ti ti-calendar me-1"></i>
+                                        {exam.examDate
+                                          ? new Date(exam.examDate).toLocaleDateString("en-GB", {
+                                              day: "2-digit",
+                                              month: "short",
+                                              year: "numeric",
+                                            })
+                                          : "N/A"}
+                                      </span>
+                                      <span className="badge badge-soft-primary small px-3 py-2">
+                                        <i className="ti ti-users me-1"></i> {displayClassSection}
+                                      </span>
+                                    </div>
                                   </button>
                                 </h2>
                                 <div
@@ -537,59 +526,45 @@ const StudentResult = () => {
                                   className={`accordion-collapse collapse ${index === 0 ? "show" : ""}`}
                                   data-bs-parent="#student-exam-results"
                                 >
-                                  <div className="accordion-body">
-                                    <div className="d-flex justify-content-end mb-3">
-                                      <div className="dropdown">
-                                        <button
-                                          type="button"
-                                          className="btn btn-primary btn-sm dropdown-toggle"
-                                          data-bs-toggle="dropdown"
-                                          disabled={
-                                            examLoading ||
-                                            exportingPdfExamId === Number(exam.examId ?? -1) ||
-                                            exportingExcelExamId === Number(exam.examId ?? -1)
-                                          }
-                                        >
-                                          {exportingPdfExamId === Number(exam.examId ?? -1) ||
-                                          exportingExcelExamId === Number(exam.examId ?? -1)
-                                            ? "Exporting..."
-                                            : "Export"}
-                                        </button>
-                                        <ul className="dropdown-menu dropdown-menu-end">
-                                          <li>
-                                            <button
-                                              type="button"
-                                              className="dropdown-item"
-                                              onClick={() => handleExportPdf(exam)}
-                                            >
-                                              <i className="ti ti-file-type-pdf me-2" />
-                                              Export PDF
-                                            </button>
-                                          </li>
-                                          <li>
-                                            <button
-                                              type="button"
-                                              className="dropdown-item"
-                                              onClick={() => handleExportExcel(exam)}
-                                            >
-                                              <i className="ti ti-file-type-xls me-2" />
-                                              Export Excel
-                                            </button>
-                                          </li>
-                                        </ul>
-                                      </div>
+                                  <div className="accordion-body p-0 border-top border-light">
+                                    <div className="p-3 bg-light-50 d-flex justify-content-end gap-2">
+                                      <button
+                                        type="button"
+                                        className="btn btn-soft-primary btn-sm d-flex align-items-center"
+                                        onClick={() => handleExportPdf(exam)}
+                                        disabled={exportingPdfExamId === Number(exam.examId ?? -1)}
+                                      >
+                                        {exportingPdfExamId === Number(exam.examId ?? -1) ? (
+                                          <span className="spinner-border spinner-border-sm me-1"></span>
+                                        ) : (
+                                          <i className="ti ti-file-type-pdf me-1" />
+                                        )}
+                                        Export PDF
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-soft-success btn-sm d-flex align-items-center"
+                                        onClick={() => handleExportExcel(exam)}
+                                        disabled={exportingExcelExamId === Number(exam.examId ?? -1)}
+                                      >
+                                        {exportingExcelExamId === Number(exam.examId ?? -1) ? (
+                                          <span className="spinner-border spinner-border-sm me-1"></span>
+                                        ) : (
+                                          <i className="ti ti-file-type-xls me-1" />
+                                        )}
+                                        Export Excel
+                                      </button>
                                     </div>
                                     <div className="table-responsive">
-                                      <table className="table">
-                                        <thead className="thead-light">
+                                      <table className="table table-hover align-middle mb-0">
+                                        <thead className="bg-light-50">
                                           <tr>
-                                            <th>Subject</th>
-                                            <th>Code</th>
-                                            <th>Mode</th>
-                                            <th>Max Marks</th>
-                                            <th>Min Marks</th>
-                                            <th>Marks Obtained</th>
-                                            <th className="text-end">Result</th>
+                                            <th className="ps-4 py-3 fw-bold text-dark border-0">Subject</th>
+                                            <th className="py-3 fw-bold text-dark border-0 text-center">Code</th>
+                                            <th className="py-3 fw-bold text-dark border-0 text-center">Mode</th>
+                                            <th className="py-3 fw-bold text-dark border-0 text-center">Marks Obtained</th>
+                                            <th className="py-3 fw-bold text-dark border-0 text-center">Max / Pass</th>
+                                            <th className="pe-4 py-3 fw-bold text-dark border-0 text-end">Result</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -597,35 +572,36 @@ const StudentResult = () => {
                                             const subjectPass = String(subject.result || "").toLowerCase() === "pass";
                                             return (
                                               <tr key={`${collapseId}-subject-${subject.subjectId ?? subjectIndex}`}>
-                                                <td>{subject.subjectName || "Subject"}</td>
-                                                <td>{subject.subjectCode || "-"}</td>
-                                                <td>{subject.subjectMode || "-"}</td>
-                                                <td>{subject.maxMarks ?? "N/A"}</td>
-                                                <td>{subject.minMarks ?? "N/A"}</td>
-                                                <td>{subject.isAbsent ? "ABSENT" : (subject.marksObtained ?? "N/A")}</td>
-                                                <td className="text-end">
-                                                  <span
-                                                    className={`badge ${subjectPass ? "badge-soft-success" : "badge-soft-danger"} d-inline-flex align-items-center`}
-                                                  >
-                                                    <i className="ti ti-circle-filled fs-5 me-1" />
+                                                <td className="ps-4 border-light fw-bold text-dark">{subject.subjectName || "Subject"}</td>
+                                                <td className="border-light text-center small text-muted">{subject.subjectCode || "-"}</td>
+                                                <td className="border-light text-center">
+                                                  <span className="badge badge-soft-secondary px-2">{subject.subjectMode || "-"}</span>
+                                                </td>
+                                                <td className="border-light text-center fw-bold text-dark">
+                                                  {subject.isAbsent ? <span className="text-danger">ABSENT</span> : (subject.marksObtained ?? "N/A")}
+                                                </td>
+                                                <td className="border-light text-center small text-muted">
+                                                  {subject.maxMarks ?? "N/A"} / {subject.minMarks ?? "N/A"}
+                                                </td>
+                                                <td className="pe-4 border-light text-end">
+                                                  <span className={`badge badge-soft-${subjectPass ? "success" : "danger"} rounded-pill px-3`}>
                                                     {subject.result || "N/A"}
                                                   </span>
                                                 </td>
                                               </tr>
                                             );
                                           })}
-                                          <tr>
-                                            <td className="bg-dark text-white">Subjects : {exam.subjects.length}</td>
-                                            <td className="bg-dark text-white">-</td>
-                                            <td className="bg-dark text-white">-</td>
-                                            <td className="bg-dark text-white">Total : {summary.totalMax ?? "N/A"}</td>
-                                            <td className="bg-dark text-white">Passing : {summary.totalMin ?? "N/A"}</td>
-                                            <td className="bg-dark text-white">Obtained : {summary.totalObtained ?? "N/A"}</td>
-                                            <td className="bg-dark text-white text-end">
+                                          <tr className="bg-dark">
+                                            <td className="ps-4 text-white border-0 py-3">Summary Metrics</td>
+                                            <td className="text-center text-white-50 border-0">-</td>
+                                            <td className="text-center text-white-50 border-0">-</td>
+                                            <td className="text-center text-white border-0 fw-bold">Obtained: {summary.totalObtained ?? "N/A"}</td>
+                                            <td className="text-center text-white border-0 small">Total Max: {summary.totalMax ?? "N/A"}</td>
+                                            <td className="pe-4 text-end text-white border-0">
                                               <div className="d-flex align-items-center justify-content-end gap-2">
-                                                <span>{summary.percentage != null ? `${summary.percentage}%` : "N/A"}</span>
-                                                <span className="text-warning">{summary.grade || "N/A"}</span>
-                                                <span className={isPass ? "text-success" : "text-danger"}>
+                                                <span className="badge bg-white text-dark fw-bold">{summary.percentage != null ? `${summary.percentage}%` : "N/A"}</span>
+                                                <span className="badge bg-warning text-dark fw-bold">{summary.grade || "N/A"}</span>
+                                                <span className={`badge bg-${isPass ? "success" : "danger"} fw-bold`}>
                                                   {summary.overallResult || "N/A"}
                                                 </span>
                                               </div>

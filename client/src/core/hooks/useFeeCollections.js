@@ -23,8 +23,13 @@ export function useFeeCollections(options = {}) {
       const rows = await Promise.all(raw.map(async (r, idx) => {
         const amount = parseFloat(r.amount ?? r.total_assigned ?? 0) || 0;
         const paid = parseFloat(r.paid ?? r.total_paid ?? 0) || 0;
-        const balance = Math.max(amount - paid, 0);
-        const statusText = r.status || (balance <= 0 && amount > 0 ? 'Paid' : paid > 0 ? 'Partial' : amount <= 0 ? 'No Fees' : 'Unpaid');
+        const balRaw = r.balance != null ? parseFloat(r.balance) : NaN;
+        const balance = Number.isFinite(balRaw) ? Math.max(balRaw, 0) : Math.max(amount - paid, 0);
+        /** Match list API CASE + UI filter options (Title Case) */
+        let statusText = 'Unpaid';
+        if (balance <= 0 && amount > 0) statusText = 'Paid';
+        else if (paid > 0 && balance > 0) statusText = 'Partial';
+        else if (amount <= 0 && paid <= 0) statusText = 'No Fees';
         const last = r.last_payment_date;
         const rawStudentImage = r.studentImage || r.photo_url || '';
         const studentImage = rawStudentImage ? await apiService.resolveAvatarUrl(rawStudentImage) : '';
@@ -44,8 +49,14 @@ export function useFeeCollections(options = {}) {
           balance,
           status: statusText,
           lastPaymentRaw: last ? dayjs(last).format('YYYY-MM-DD') : '',
-          lastDate: last ? dayjs(last).format('DD MMM YYYY') : '-',
-          statusClass: statusText === 'Paid' ? 'badge badge-soft-success' : 'badge badge-soft-danger',
+          dueDate: r.due_date ? dayjs(r.due_date).format('DD MMM YYYY') : '-',
+          lastDate: r.due_date ? dayjs(r.due_date).format('DD MMM YYYY') : '-', // Keep lastDate for compat or rename
+          statusClass:
+            statusText === 'Paid'
+              ? 'badge badge-soft-success'
+              : statusText === 'Partial'
+                ? 'badge badge-soft-warning'
+                : 'badge badge-soft-danger',
           view: statusText === 'Paid' ? 'View Details' : 'Collect Fees',
         };
       }));

@@ -327,6 +327,39 @@ const TeacherDetails = () => {
                   </div>
                 </div>
               </div>
+
+              <div className="card">
+                <div className="card-header">
+                  <h5>Subject Assignments</h5>
+                </div>
+                <div className="card-body">
+                  {Array.isArray(teacher.subject_assignments) && teacher.subject_assignments.length > 0 ? (
+                    <div className="border rounded p-3">
+                      <div className="row g-3">
+                        {teacher.subject_assignments.map((item: any) => (
+                          <div key={item.id} className="col-12 col-md-6 col-xl-4">
+                            <div className="bg-light-300 border rounded p-2">
+                              <div className="d-flex justify-content-between align-items-center mb-1">
+                                <p className="text-dark fw-medium mb-0">{item.subjectName}</p>
+                                {item.subject_type && (
+                                  <span className={`badge ${item.subject_type === 'Practical' ? 'bg-info' : 'bg-warning-light text-warning'}`}>
+                                    {item.subject_type}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="small text-muted mb-0">
+                                {item.class_name || item.className} {(item.section_name || item.sectionName) ? ` - ${(item.section_name || item.sectionName)}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="alert alert-light border mb-0">No subject teacher assignments found.</div>
+                  )}
+                </div>
+              </div>
             </div>
             {/* Documents */}
             <div className="col-xxl-6 d-flex">

@@ -28,7 +28,8 @@ const compareNumber = (left: unknown, right: unknown) =>
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
   late: "bg-pending",
-  half_day: "bg-dark",
+  half_day: "bg-purple",
+  halfday: "bg-purple",
   absent: "bg-danger",
   leaved: "bg-secondary",
   holiday: "bg-info",
@@ -40,9 +41,16 @@ const statusTextMap: Record<string, string> = {
   leaved: "LV",
   holiday: "H",
   half_day: "HD",
+  halfday: "HD",
 };
 
 const formatStatusLabel = (status: string | null | undefined) => formatAttendanceDayHumanLabel(status);
+const normalizeAttendanceStatusKey = (status: string | null | undefined) =>
+  String(status || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_–—−]+/g, "_")
+    .replace(/^halfday$/, "half_day");
 
 const AttendanceReport = () => {
   const routes = all_routes;
@@ -198,8 +206,9 @@ const AttendanceReport = () => {
         ),
         key: day.date,
         render: (_text: any, record: any) => {
-          const status = record.daily?.[day.date];
-          const hasStatus = Boolean(status);
+          const rawStatus = record.daily?.[day.date];
+          const status = normalizeAttendanceStatusKey(rawStatus);
+          const hasStatus = Boolean(String(rawStatus || "").trim());
           if (status === "leaved") {
             return (
               <span
@@ -231,21 +240,18 @@ const AttendanceReport = () => {
                 className="attendance-range"
                 style={{
                   display: "inline-flex",
-                  minWidth: 14,
+                  minWidth: 22,
                   justifyContent: "center",
-                  color: "#6c757d",
-                  fontWeight: 600,
                 }}
                 title={`${day.date}: Not Marked`}
-              >
-                -
-              </span>
+              />
             );
           }
           if (isHolidayAttendanceCompound(status)) {
             const rest = getCompoundHolidayAttendancePart(status);
             const subText = statusTextMap[rest] || "?";
             const subCls = statusClassMap[rest] || "bg-light";
+            const isHalfDaySub = rest === "half_day" || rest === "halfday";
             return (
               <span
                 style={{ display: "inline-flex", gap: 3, alignItems: "center" }}
@@ -254,18 +260,22 @@ const AttendanceReport = () => {
                 <span className={`attendance-range ${statusClassMap.holiday}`.trim()} style={pillStyle}>
                   H
                 </span>
-                <span className={`attendance-range ${subCls}`.trim()} style={pillStyle}>
+                <span
+                  className={`attendance-range ${subCls}`.trim()}
+                  style={isHalfDaySub ? { ...pillStyle, backgroundColor: "#7b2cbf" } : pillStyle}
+                >
                   {subText}
                 </span>
               </span>
             );
           }
           const cls = statusClassMap[status] || "bg-light";
+          const isHalfDay = status === "half_day" || status === "halfday";
           return (
             <span
               className={`attendance-range ${cls}`.trim()}
-              style={pillStyle}
-              title={`${day.date}: ${formatAttendanceDayHumanLabel(status)}`}
+              style={isHalfDay ? { ...pillStyle, backgroundColor: "#7b2cbf" } : pillStyle}
+              title={`${day.date}: ${formatAttendanceDayHumanLabel(rawStatus)}`}
             >
               {statusTextMap[status] || "-"}
             </span>

@@ -1,8 +1,6 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useSelector } from 'react-redux'
 import { Link } from 'react-router-dom'
-import ImageWithBasePath from '../../../core/common/imageWithBasePath'
-import { all_routes } from '../../router/all_routes'
 import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice'
 import { apiService } from '../../../core/services/apiService'
 import CommonSelect from '../../../core/common/commonSelect'
@@ -10,7 +8,6 @@ import { Modal } from "react-bootstrap";
 import Swal from 'sweetalert2'
 
 const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId, onDeleteSuccess }: any) => {
-    const routes = all_routes
     const academicYearId = useSelector(selectSelectedAcademicYearId);
     
     const [feesMaster, setFeesMaster] = useState<any[]>([]);
@@ -24,7 +21,16 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
     // Dynamic Options
     const [groups, setGroups] = useState<any[]>([]);
     const [types, setTypes] = useState<any[]>([]);
-    const [classes, setClasses] = useState<any[]>([]);
+
+    /** Class names that have at least one fee configuration for this academic year */
+    const configuredClassNames = useMemo(() => {
+      const set = new Set<string>();
+      for (const g of groups || []) {
+        const n = String(g?.class_name ?? g?.name ?? "").trim();
+        if (n) set.add(n);
+      }
+      return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    }, [groups]);
 
     // Filter States
     const [filterGroup, setFilterGroup] = useState<string>("All");
@@ -41,24 +47,21 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
         const fmRes = await apiService.getFeesMaster({ academic_year_id: academicYearId });
         if (fmRes.status === "SUCCESS") {
           setFeesMaster(fmRes.data);
-          setFilteredFees(fmRes.data);
-        }
-
-        // Fetch Students (available students to assign to)
-        const sRes = await apiService.getStudents(academicYearId);
-        if (sRes.status === "SUCCESS") {
-          setStudents(sRes.data);
-          setFilteredStudents(sRes.data);
+          setFilteredFees([]);
         }
 
         const gRes = await apiService.getFeesGroups({ academic_year_id: academicYearId });
         if (gRes.status === "SUCCESS") setGroups(gRes.data);
-        
+
+        // Fetch Students (filtered & shown only after Apply + configured class chosen)
+        const sRes = await apiService.getStudents(academicYearId);
+        if (sRes.status === "SUCCESS") {
+          setStudents(sRes.data ?? []);
+          setFilteredStudents([]);
+        }
+
         const tRes = await apiService.getFeesTypes();
         if (tRes.status === "SUCCESS") setTypes(tRes.data);
-        
-        const cRes = await apiService.getClasses();
-        if (cRes.status === "SUCCESS") setClasses(cRes.data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -72,6 +75,26 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
       }
     }, [addModal, editModal, academicYearId]);
 
+    const studentSelectAllRef = useRef<HTMLInputElement | null>(null);
+    useEffect(() => {
+      const el = studentSelectAllRef.current;
+      if (!el) return;
+      el.indeterminate =
+        filteredStudents.length > 0 &&
+        selectedStudents.length > 0 &&
+        selectedStudents.length < filteredStudents.length;
+    }, [filteredStudents, selectedStudents]);
+
+    const normalizeClassLabel = (s: string) => String(s ?? "").trim().toLowerCase();
+
+    const resolveGroupIdForSelectedClass = (classLabel: string) => {
+      const want = normalizeClassLabel(classLabel);
+      const g = (groups || []).find(
+        (x: any) => normalizeClassLabel(String(x?.class_name ?? x?.name ?? "")) === want
+      );
+      return g?.id != null ? String(g.id) : null;
+    };
+
     const handleAssign = async () => {
       try {
         if (selectedFees.length === 0 || selectedStudents.length === 0) {
@@ -83,7 +106,7 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
         const res = await apiService.assignFees({
           academic_year_id: academicYearId,
           fees_master_ids: selectedFees,
-          student_ids: selectedStudents
+          student_ids: selectedStudents,
         });
 
         if (res.status === "SUCCESS") {
@@ -98,25 +121,75 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
     };
 
     const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-    const dropdownMenuRef2 = useRef<HTMLDivElement | null>(null);
+
+    const rowMatchesConfiguredClass = (rowClassLabel: unknown, selectedClassDisplay: string) =>
+      normalizeClassLabel(String(rowClassLabel ?? "")) ===
+      normalizeClassLabel(String(selectedClassDisplay ?? ""));
 
     const handleApplyFilter = (e: any) => {
       e.preventDefault();
-      
-      // Filter Fees
+
+      const wantClass =
+        filterClass !== "All" ? String(filterClass ?? "").trim() : "";
+
+      if (!wantClass || filterClass === "All") {
+        setFilteredFees([]);
+        setFilteredStudents([]);
+        setSelectedFees([]);
+        setSelectedStudents([]);
+        if (dropdownMenuRef.current) dropdownMenuRef.current.classList.remove("show");
+        return;
+      }
+
+      const configured = configuredClassNames.some(
+        (c) => normalizeClassLabel(c) === normalizeClassLabel(wantClass)
+      );
+      if (!configured) {
+        setFilteredFees([]);
+        setFilteredStudents([]);
+        setSelectedFees([]);
+        setSelectedStudents([]);
+        Swal.fire({
+          icon: "warning",
+          title: "No fee configuration",
+          text: `Class "${wantClass}" has no fee setup for this academic year. Use Fee Groups → Add Fee Configuration first.`,
+        });
+        if (dropdownMenuRef.current) dropdownMenuRef.current.classList.remove("show");
+        return;
+      }
+
+      let gid = filterGroup !== "All" ? String(filterGroup) : null;
+      const expectedGroup = resolveGroupIdForSelectedClass(wantClass);
+      if (gid && expectedGroup && gid !== expectedGroup) {
+        gid = expectedGroup;
+        setFilterGroup(expectedGroup);
+      }
+
       let fFees = [...feesMaster];
-      if (filterGroup !== "All") fFees = fFees.filter(f => f.fees_group_id === Number(filterGroup));
-      if (filterType !== "All") fFees = fFees.filter(f => f.fees_type_id === Number(filterType));
+      fFees = fFees.filter((f) =>
+        rowMatchesConfiguredClass(
+          (f.class_name ?? f.fees_group_name) as unknown,
+          wantClass
+        )
+      );
+      if (gid != null && gid !== "All") {
+        fFees = fFees.filter((f) => Number(f.fee_id) === Number(gid));
+      }
+      if (filterType !== "All") {
+        fFees = fFees.filter((f) => Number(f.fee_type_id) === Number(filterType));
+      }
       setFilteredFees(fFees);
 
-      // Filter Students
-      let fStuds = [...students];
-      if (filterClass !== "All") fStuds = fStuds.filter(s => s.class_name === filterClass);
-      if (filterGender !== "All") fStuds = fStuds.filter(s => s.gender === filterGender);
+      let fStuds = [...(students ?? [])];
+      fStuds = fStuds.filter((s) => rowMatchesConfiguredClass(s.class_name, wantClass));
+      if (filterGender !== "All") {
+        fStuds = fStuds.filter((s) => s.gender === filterGender);
+      }
       setFilteredStudents(fStuds);
+      setSelectedFees((prev) => prev.filter((id) => fFees.some((r) => r.id === id)));
+      setSelectedStudents((prev) => prev.filter((id) => fStuds.some((r) => r.id === id)));
 
       if (dropdownMenuRef.current) dropdownMenuRef.current.classList.remove("show");
-      if (dropdownMenuRef2.current) dropdownMenuRef2.current.classList.remove("show");
     };
 
     const handleReset = () => {
@@ -124,8 +197,10 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
       setFilterType("All");
       setFilterClass("All");
       setFilterGender("All");
-      setFilteredFees(feesMaster);
-      setFilteredStudents(students);
+      setFilteredFees([]);
+      setFilteredStudents([]);
+      setSelectedFees([]);
+      setSelectedStudents([]);
     };
 
     const handleClose = () => {
@@ -133,6 +208,12 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
       setEditModal(false);
       setSelectedFees([]);
       setSelectedStudents([]);
+      setFilterGroup("All");
+      setFilterType("All");
+      setFilterClass("All");
+      setFilterGender("All");
+      setFilteredFees([]);
+      setFilteredStudents([]);
     };
 
     const handleDelete = async () => {
@@ -182,7 +263,13 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
                           <label className="form-label">Fees Group</label>
                           <CommonSelect
                             className="select"
-                            options={[{ value: "All", label: "All Groups" }, ...groups.map(g => ({ value: g.id.toString(), label: g.name }))]}
+                            options={[
+                              { value: "All", label: "All Groups" },
+                              ...groups.map((g: any) => ({
+                                value: String(g.id),
+                                label: g.class_name ?? g.name ?? (g.description ? String(g.description).slice(0, 80) : `Fee config #${g.id}`),
+                              })),
+                            ]}
                             value={filterGroup}
                             onChange={(val: any) => setFilterGroup(val || "All")}
                           />
@@ -200,10 +287,24 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
                           <label className="form-label">Class</label>
                           <CommonSelect
                             className="select"
-                            options={[{ value: "All", label: "All Classes" }, ...classes.map(c => ({ value: c.name, label: c.name }))]}
+                            options={[
+                              {
+                                value: "All",
+                                label: configuredClassNames.length
+                                  ? "Choose class… (required)"
+                                  : "No classes with fee setup this year",
+                              },
+                              ...configuredClassNames.map((name) => ({
+                                value: name,
+                                label: name,
+                              })),
+                            ]}
                             value={filterClass}
                             onChange={(val: any) => setFilterClass(val || "All")}
                           />
+                          <small className="text-muted">
+                            Only classes with an active fee configuration for this year are listed.
+                          </small>
                         </div>
                         <div className="col-md-6 mb-3">
                           <label className="form-label">Gender</label>
@@ -266,8 +367,8 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
                               }}
                             />
                           </td>
-                          <td>{fm.fees_group_name}</td>
-                          <td>{fm.fees_type_name}</td>
+                          <td>{fm.fees_group_name ?? fm.class_name}</td>
+                          <td>{fm.fees_type_name ?? fm.fee_type_name}</td>
                           <td>{fm.amount}</td>
                         </tr>
                       ))}
@@ -280,23 +381,31 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
               <div className="modal-card-table">
                 <div className="modal-table-head d-flex align-items-center justify-content-between">
                   <h4>Student Details</h4>
-                  <div className="form-check">
-                    <input 
-                      type="checkbox" 
-                      className="form-check-input" 
-                      checked={filteredStudents.length > 0 && selectedStudents.length === filteredStudents.length}
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedStudents(filteredStudents.map(s => s.id));
-                        else setSelectedStudents([]);
-                      }}
-                    />
-                  </div>
                 </div>
                 <div className="table-responsive custom-table" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                   <table className="table">
                     <thead className="thead-light">
                       <tr>
-                        <th></th>
+                        <th className="align-middle" style={{ width: 42 }} scope="col" title="Select all">
+                          <div className="form-check mb-0 d-flex justify-content-center">
+                            <input
+                              ref={studentSelectAllRef}
+                              type="checkbox"
+                              className="form-check-input cursor-pointer"
+                              aria-label="Select all students"
+                              disabled={filteredStudents.length === 0}
+                              checked={
+                                filteredStudents.length > 0 &&
+                                selectedStudents.length === filteredStudents.length
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked)
+                                  setSelectedStudents(filteredStudents.map((s: any) => s.id));
+                                else setSelectedStudents([]);
+                              }}
+                            />
+                          </div>
+                        </th>
                         <th>Student</th>
                         <th>Class</th>
                         <th>Gen</th>
@@ -307,14 +416,17 @@ const AssignModal = ({ addModal, setAddModal, editModal, setEditModal, deleteId,
                       {filteredStudents.map((student) => (
                         <tr key={student.id}>
                           <td>
-                            <input 
-                              type="checkbox" 
-                              checked={selectedStudents.includes(student.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) setSelectedStudents([...selectedStudents, student.id]);
-                                else setSelectedStudents(selectedStudents.filter(id => id !== student.id));
-                              }}
-                            />
+                            <div className="form-check mb-0 d-flex justify-content-center">
+                              <input 
+                                type="checkbox" 
+                                className="form-check-input cursor-pointer"
+                                checked={selectedStudents.includes(student.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) setSelectedStudents([...selectedStudents, student.id]);
+                                  else setSelectedStudents(selectedStudents.filter(id => id !== student.id));
+                                }}
+                              />
+                            </div>
                           </td>
                           <td>{student.first_name} {student.last_name}</td>
                           <td>{student.class_name}</td>

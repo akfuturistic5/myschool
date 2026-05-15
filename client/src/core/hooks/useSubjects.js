@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/apiService';
 
+/**
+ * Hook to fetch subjects, optionally filtered by class and academic year.
+ * @param {number|string|null} classId 
+ * @param {object} options 
+ * @param {number|string|null} options.academicYearId
+ * @param {boolean} [options.fetchAllWhenNoClass=true]
+ */
 export const useSubjects = (classId = null, options = {}) => {
   const fetchAllWhenNoClass = options.fetchAllWhenNoClass !== false;
   const [subjects, setSubjects] = useState([]);
@@ -11,12 +18,12 @@ export const useSubjects = (classId = null, options = {}) => {
     try {
       setLoading(true);
       setError(null);
+      setSubjects([]); // Clear previous data to prevent stale dropdowns
       if (!fetchAllWhenNoClass && (classId == null || classId === '')) {
-        setSubjects([]);
         return;
       }
       const response = classId
-        ? await apiService.getSubjectsByClass(classId)
+        ? await apiService.getSubjectsByClass(classId, options.academicYearId)
         : await apiService.getSubjects();
       
       if (response.status === 'SUCCESS') {
@@ -34,7 +41,7 @@ export const useSubjects = (classId = null, options = {}) => {
 
   useEffect(() => {
     fetchSubjects();
-  }, [classId, fetchAllWhenNoClass]);
+  }, [classId, fetchAllWhenNoClass, options.academicYearId]);
 
   return {
     subjects,

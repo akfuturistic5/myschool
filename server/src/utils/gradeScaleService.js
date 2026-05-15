@@ -11,22 +11,49 @@ const DEFAULT_GRADE_SCALE = [
 
 function isMissingTableError(err) {
   const msg = String(err?.message || '').toLowerCase();
-  return msg.includes('relation') && msg.includes('exam_grade');
+  return msg.includes('relation') && (msg.includes('exam_grade') || msg.includes('exam_grades'));
+}
+
+async function resolveGradeScaleTable() {
+  const res = await query(
+    `SELECT
+       to_regclass('public.exam_grade') AS exam_grade_table,
+       to_regclass('public.exam_grades') AS exam_grades_table`
+  );
+  const row = res.rows?.[0] || {};
+  if (row.exam_grade_table) return 'exam_grade';
+  if (row.exam_grades_table) return 'exam_grades';
+  return null;
 }
 
 async function loadActiveGradeScale() {
   try {
-    const res = await query(
-      `SELECT
-         id,
-         grad AS grade,
-         min_precentage AS min_percentage,
-         max_precentage AS max_percentage,
-         is_active
-       FROM exam_grade
-       WHERE is_active = true
-       ORDER BY min_precentage DESC, id ASC`
-    );
+    const table = await resolveGradeScaleTable();
+    if (!table) return DEFAULT_GRADE_SCALE;
+    const res =
+      table === 'exam_grade'
+        ? await query(
+            `SELECT
+               id,
+               grad AS grade,
+               min_precentage AS min_percentage,
+               max_precentage AS max_percentage,
+               is_active
+             FROM exam_grade
+             WHERE is_active = true
+             ORDER BY min_precentage DESC, id ASC`
+          )
+        : await query(
+            `SELECT
+               id,
+               grade_name AS grade,
+               min_percentage AS min_percentage,
+               max_percentage AS max_percentage,
+               is_active
+             FROM exam_grades
+             WHERE is_active = true
+             ORDER BY min_percentage DESC, id ASC`
+          );
     if (!res.rows.length) return DEFAULT_GRADE_SCALE;
     return res.rows.map((r) => ({
       id: Number(r.id),
@@ -59,6 +86,7 @@ function getGradeFromScale(percentage, scaleRows = DEFAULT_GRADE_SCALE) {
 module.exports = {
   DEFAULT_GRADE_SCALE,
   loadActiveGradeScale,
+  resolveGradeScaleTable,
   getGradeFromScale,
   isMissingTableError,
 };

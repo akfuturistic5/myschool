@@ -15,7 +15,7 @@ const TopPerformers = () => {
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const { user, loading: userLoading } = useCurrentUser();
 
-  const roleTokens = [user?.role_name, user?.role, (user as any)?.display_role]
+  const roleTokens = [(user as any)?.role_name, (user as any)?.role, (user as any)?.display_role]
     .map((v) => String(v || "").trim().toLowerCase())
     .filter(Boolean);
   const teacherOnly = roleTokens.some((r) => r === "teacher" || r.includes("teacher"));

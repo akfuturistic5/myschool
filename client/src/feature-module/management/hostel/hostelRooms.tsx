@@ -6,9 +6,10 @@ import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import TooltipOption from "../../../core/common/tooltipOption";
 import HostelModal from "./hostelModal";
+import { ActiveInactiveBadge } from "./hostelUiUtils";
 import { useHostelRooms } from "../../../core/hooks/useHostelRooms";
 import { useHostels } from "../../../core/hooks/useHostels";
-import { useRoomTypes } from "../../../core/hooks/useRoomTypes";
+import { useHostelRoomTypes } from "../../../core/hooks/useHostelRoomTypes";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Swal from "sweetalert2";
 import { apiService } from "../../../core/services/apiService";
@@ -16,9 +17,9 @@ import { apiService } from "../../../core/services/apiService";
 const HostelRooms = () => {
   const routes = all_routes;
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { hostelRooms, loading, error, refetch } = useHostelRooms();
+  const { hostelRooms, loading, error, refetch } = useHostelRooms(undefined, { includeInactive: true });
   const { hostels } = useHostels();
-  const { roomTypes } = useRoomTypes();
+  const { roomTypes } = useHostelRoomTypes();
   const [selectedRoom, setSelectedRoom] = useState<any>(null);
   const [formResetKey, setFormResetKey] = useState(0);
   const [draftHostelId, setDraftHostelId] = useState<string | null>("all");
@@ -65,7 +66,8 @@ const HostelRooms = () => {
         if (String(od.hostel_id) !== filterHostelId) return false;
       }
       if (filterRoomTypeId && filterRoomTypeId !== "all") {
-        if (String(od.room_type_id) !== filterRoomTypeId) return false;
+        const tid = od.hostel_room_type_id ?? od.room_type_id;
+        if (String(tid) !== filterRoomTypeId) return false;
       }
       const q = filterSearch.trim().toLowerCase();
       if (q) {
@@ -95,9 +97,15 @@ const HostelRooms = () => {
         id: r.id,
         roomNo: r.roomNo,
         hostelName: r.hostelName,
+        floorName: r.floorName,
         roomType: r.roomType,
         noofBed: r.noofBed,
+        occupancyShort: r.occupancyShort,
+        roomStatus: r.roomStatus,
+        notesShort: r.notesShort,
         amount: r.amount,
+        addedOn: r.addedOn,
+        recordStatus: r.isActive === true ? "Active" : r.isActive === false ? "Inactive" : "—",
       })),
     [filtered]
   );
@@ -108,9 +116,15 @@ const HostelRooms = () => {
         ID: r.id,
         "Room No": r.roomNo,
         Hostel: r.hostelName,
+        Floor: r.floorName,
         "Room Type": r.roomType,
-        Beds: r.noofBed,
-        "Monthly fee": r.amount,
+        Capacity: r.noofBed,
+        Occupied: r.occupancyShort,
+        "Room status": r.roomStatus,
+        Notes: r.notesShort,
+        "Monthly rent": r.amount,
+        "Add On": r.addedOn,
+        Status: r.recordStatus,
       })),
       `Hostel_Rooms_${new Date().toISOString().split("T")[0]}`
     );
@@ -120,9 +134,15 @@ const HostelRooms = () => {
     { title: "ID", dataKey: "id" },
     { title: "Room No", dataKey: "roomNo" },
     { title: "Hostel", dataKey: "hostelName" },
+    { title: "Floor", dataKey: "floorName" },
     { title: "Room Type", dataKey: "roomType" },
-    { title: "Beds", dataKey: "noofBed" },
-    { title: "Monthly fee", dataKey: "amount" },
+    { title: "Capacity", dataKey: "noofBed" },
+    { title: "Occ.", dataKey: "occupancyShort" },
+    { title: "Room status", dataKey: "roomStatus" },
+    { title: "Notes", dataKey: "notesShort" },
+    { title: "Monthly rent", dataKey: "amount" },
+    { title: "Add On", dataKey: "addedOn" },
+    { title: "Status", dataKey: "recordStatus" },
   ];
 
   const handleExportPDF = () => {
@@ -180,19 +200,51 @@ const HostelRooms = () => {
         String(a.hostelName || "").localeCompare(String(b.hostelName || "")),
     },
     {
+      title: "Floor",
+      dataIndex: "floorName",
+      sorter: (a: any, b: any) => String(a.floorName || "").localeCompare(String(b.floorName || "")),
+    },
+    {
       title: "Room Type",
       dataIndex: "roomType",
       sorter: (a: TableData, b: TableData) => String(a.roomType || "").localeCompare(String(b.roomType || "")),
     },
     {
-      title: "No Of Bed",
+      title: "Capacity",
       dataIndex: "noofBed",
       sorter: (a: TableData, b: TableData) => String(a.noofBed || "").localeCompare(String(b.noofBed || "")),
     },
     {
-      title: "Cost Per Bed",
+      title: "Occupied",
+      dataIndex: "occupancyShort",
+      sorter: (a: any, b: any) =>
+        String(a.occupancyShort || "").localeCompare(String(b.occupancyShort || "")),
+    },
+    {
+      title: "Room status",
+      dataIndex: "roomStatus",
+      sorter: (a: any, b: any) => String(a.roomStatus || "").localeCompare(String(b.roomStatus || "")),
+    },
+    {
+      title: "Notes",
+      dataIndex: "notesShort",
+      sorter: (a: any, b: any) => String(a.notesShort || "").localeCompare(String(b.notesShort || "")),
+    },
+    {
+      title: "Monthly rent",
       dataIndex: "amount",
       sorter: (a: TableData, b: TableData) => String(a.amount || "").localeCompare(String(b.amount || "")),
+    },
+    {
+      title: "Add On",
+      dataIndex: "addedOn",
+      sorter: (a: any, b: any) => String(a.addedOn || "").localeCompare(String(b.addedOn || "")),
+    },
+    {
+      title: "Status",
+      dataIndex: "isActive",
+      render: (_: unknown, record: any) => <ActiveInactiveBadge isActive={record.isActive} />,
+      sorter: (a: any, b: any) => Number(a.isActive === true) - Number(b.isActive === true),
     },
     {
       title: "Action",
@@ -306,12 +358,16 @@ const HostelRooms = () => {
                   <div className="dropdown-menu drop-width" ref={dropdownMenuRef}>
                     <form onSubmit={(e) => e.preventDefault()}>
                       <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
+                        <h4 className="mb-0">Filter</h4>
                       </div>
                       <div className="p-3 border-bottom">
+                        <p className="text-muted small mb-3">
+                          Hostels are school-wide. Assignments still filter by the academic year in the app header when set.
+                        </p>
                         <div className="row">
-                          <div className="col-md-4">
+                          <div className="col-md-6">
                             <div className="mb-3">
+
                               <label className="form-label">Hostel</label>
                               <CommonSelect
                                 className="select"
@@ -321,7 +377,7 @@ const HostelRooms = () => {
                               />
                             </div>
                           </div>
-                          <div className="col-md-4">
+                          <div className="col-md-6">
                             <div className="mb-3">
                               <label className="form-label">Room type</label>
                               <CommonSelect
@@ -332,7 +388,7 @@ const HostelRooms = () => {
                               />
                             </div>
                           </div>
-                          <div className="col-md-4">
+                          <div className="col-12">
                             <div className="mb-0">
                               <label className="form-label">Search</label>
                               <input

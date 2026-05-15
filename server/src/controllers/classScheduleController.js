@@ -12,6 +12,7 @@ const {
   parseId,
 } = require('../utils/accessControl');
 const { ROLES } = require('../config/roles');
+const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAY_TO_INT = {
@@ -82,10 +83,12 @@ function normalizeDayOfWeek(day) {
 
 async function resolveTeacherToStaffId(teacherId) {
   if (!teacherId) return null;
-  const staffTry = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
-  if (staffTry.rows.length) return staffTry.rows[0].id;
-  const teacherTry = await query('SELECT staff_id FROM teachers WHERE id = $1 LIMIT 1', [teacherId]);
-  if (teacherTry.rows.length) return teacherTry.rows[0].staff_id;
+  // Support case where input might already be a staff ID
+  try {
+    const staffTry = await query('SELECT id FROM staff WHERE id = $1 LIMIT 1', [teacherId]);
+    if (staffTry.rows.length) return staffTry.rows[0].id;
+  } catch (e) { }
+
   return null;
 }
 
@@ -114,20 +117,40 @@ function mapScheduleRow(row, classMap, sectionMap, subjectMap, timeSlotMap, teac
   const slotKey = row.time_slot_id ?? row.time_slot ?? row.period_id;
   const slot = timeSlotMap[slotKey] ?? timeSlotMap[Number(slotKey)] ?? timeSlotMap[String(slotKey)];
   const cls = classMap[row.class_id] ?? classMap[row.class];
-  const sec = sectionMap[row.section_id] ?? sectionMap[row.section];
-  const subj = subjectMap[row.subject_id] ?? subjectMap[row.subject];
+  const sec = sectionMap[row.class_section_id] ?? sectionMap[row.section_id] ?? sectionMap[row.section];
+  const subj = subjectMap[row.class_subject_id] ?? subjectMap[row.subject_id] ?? subjectMap[row.subject];
   const teacher = teacherMap[row.teacher_id] ?? teacherMap[row.teacher];
   const teacherName = teacher
-    ? (teacher.name ?? ([teacher.first_name, teacher.last_name].filter(Boolean).join(' ').trim() || null))
+    ? (
+      teacher.name ??
+      [teacher.first_name, teacher.last_name].filter(Boolean).join(' ').trim() ??
+      teacher.username ??
+      teacher.email ??
+      null
+    )
     : null;
-  const roomFromFk = row.class_room_id != null ? roomMap[row.class_room_id] ?? roomMap[Number(row.class_room_id)] : null;
-  const roomLabel = roomFromFk?.room_no ?? roomFromFk?.name ?? row.room_number ?? row.room ?? row.class_room ?? row.class_room_number ?? null;
+  const roomKey = row.class_room_id ?? row.room_id ?? row.class_room;
+  const roomFromFk =
+    roomKey != null
+      ? roomMap[roomKey] ?? roomMap[Number(roomKey)] ?? roomMap[String(roomKey)]
+      : null;
+  const roomLabel =
+    roomFromFk?.room_number ??
+    roomFromFk?.room_no ??
+    roomFromFk?.name ??
+    row.room_number ??
+    row.room ??
+    row.class_room ??
+    row.class_room_number ??
+    null;
 
   return {
     id: row.id,
     class_id: row.class_id ?? null,
-    section_id: row.section_id ?? null,
-    subject_id: row.subject_id ?? null,
+    section_id: row.class_section_id ?? row.section_id ?? null,
+    class_section_id: row.class_section_id ?? row.section_id ?? null,
+    subject_id: row.class_subject_id ?? row.subject_id ?? null,
+    class_subject_id: row.class_subject_id ?? row.subject_id ?? null,
     teacher_id: row.teacher_id ?? null,
     time_slot_id: row.time_slot_id ?? row.time_slot ?? row.period_id ?? null,
     academic_year_id: row.academic_year_id ?? null,
@@ -149,7 +172,7 @@ async function buildTimeSlotMap(timeSlotIds) {
   const timeSlotMap = {};
   if (timeSlotIds.length === 0) return timeSlotMap;
   try {
-    const r = await query('SELECT * FROM time_slots');
+    const r = await query('SELECT * FROM timetable_time_slots');
     r.rows.forEach((t) => {
       const id = t.id;
       const passKey = t.pass_key ?? t.passkey ?? t.period_key ?? id;
@@ -159,7 +182,7 @@ async function buildTimeSlotMap(timeSlotIds) {
     });
   } catch (e) {
     try {
-      const r = await query('SELECT * FROM time_slots WHERE id = ANY($1)', [timeSlotIds]);
+      const r = await query('SELECT * FROM timetable_time_slots WHERE id = ANY($1)', [timeSlotIds]);
       r.rows.forEach((t) => {
         timeSlotMap[t.id] = t;
         timeSlotMap[Number(t.id)] = t;
@@ -169,82 +192,140 @@ async function buildTimeSlotMap(timeSlotIds) {
           timeSlotMap[String(t.pass_key)] = t;
         }
       });
-      } catch (e2) {
-      console.error('time_slots fetch failed:', e2.message);
-      }
+    } catch (e2) {
+      console.error('timetable_time_slots fetch failed:', e2.message);
     }
+  }
   return timeSlotMap;
 }
 
 async function enrichScheduleRows(rows) {
-    const classIds = [...new Set(rows.map((r) => r.class_id ?? r.class).filter(Boolean))];
-    const sectionIds = [...new Set(rows.map((r) => r.section_id ?? r.section).filter(Boolean))];
-    const subjectIds = [...new Set(rows.map((r) => r.subject_id ?? r.subject).filter(Boolean))];
-    const timeSlotIds = [...new Set(rows.map((r) => r.time_slot_id ?? r.time_slot ?? r.period_id).filter(Boolean))];
-    const teacherIds = [...new Set(rows.map((r) => r.teacher_id ?? r.teacher).filter(Boolean))];
-  const roomIds = [...new Set(rows.map((r) => r.class_room_id).filter(Boolean))];
+  const classIds = [...new Set(rows.map((r) => r.class_id).filter(Boolean))];
+  const sectionIds = [...new Set(rows.map((r) => r.class_section_id).filter(Boolean))];
+  const classSubjectIds = [...new Set(rows.map((r) => r.class_subject_id).filter(Boolean))];
+  const timeSlotIds = [...new Set(rows.map((r) => r.time_slot_id).filter(Boolean))];
+  const teacherIds = [
+    ...new Set(
+      rows
+        .map((r) => r.teacher_id ?? r.teacher)
+        .filter((v) => v != null && v !== '')
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
+  const roomIds = [
+    ...new Set(
+      rows
+        .map((r) => r.class_room_id ?? r.room_id ?? r.class_room)
+        .filter((v) => v != null && v !== '')
+        .map((v) => Number(v))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    ),
+  ];
 
-    let classMap = {};
-    if (classIds.length > 0) {
-      try {
-        const r = await query('SELECT * FROM classes WHERE id = ANY($1)', [classIds]);
-        r.rows.forEach((c) => {
-          classMap[c.id] = c;
-          classMap[Number(c.id)] = c;
-          classMap[String(c.id)] = c;
-        });
-      } catch (e) {
-        console.error('classes fetch for schedules:', e.message);
-      }
+  let classMap = {};
+  if (classIds.length > 0) {
+    try {
+      const r = await query('SELECT * FROM classes WHERE id = ANY($1)', [classIds]);
+      r.rows.forEach((c) => {
+        classMap[c.id] = c;
+        classMap[Number(c.id)] = c;
+        classMap[String(c.id)] = c;
+      });
+    } catch (e) {
+      console.error('classes fetch for schedules:', e.message);
     }
-    let sectionMap = {};
-    if (sectionIds.length > 0) {
-      try {
-        const r = await query('SELECT * FROM sections WHERE id = ANY($1)', [sectionIds]);
-        r.rows.forEach((s) => {
-          sectionMap[s.id] = s;
-          sectionMap[Number(s.id)] = s;
-          sectionMap[String(s.id)] = s;
-        });
-      } catch (e) {
-        console.error('sections fetch for schedules:', e.message);
-      }
+  }
+  let sectionMap = {};
+  if (sectionIds.length > 0) {
+    try {
+      const r = await query(
+        `SELECT cs.id, sec.section_name 
+           FROM class_sections cs 
+           JOIN sections sec ON sec.id = cs.section_id 
+           WHERE cs.id = ANY($1)`,
+        [sectionIds]
+      );
+      r.rows.forEach((s) => {
+        sectionMap[s.id] = s;
+        sectionMap[Number(s.id)] = s;
+        sectionMap[String(s.id)] = s;
+      });
+    } catch (e) {
+      console.error('sections fetch for schedules:', e.message);
     }
-    let subjectMap = {};
-    if (subjectIds.length > 0) {
-      try {
-        const r = await query('SELECT * FROM subjects WHERE id = ANY($1)', [subjectIds]);
-        r.rows.forEach((s) => {
-          subjectMap[s.id] = s;
-          subjectMap[Number(s.id)] = s;
-          subjectMap[String(s.id)] = s;
-        });
-      } catch (e) {
-        console.error('subjects fetch for schedules:', e.message);
-      }
+  }
+  let subjectMap = {};
+  if (classSubjectIds.length > 0) {
+    try {
+      const r = await query(
+        `SELECT cs.id as class_subject_id, s.*, s.subject_type as subject_mode
+           FROM class_subjects cs
+           JOIN subjects s ON cs.subject_id = s.id
+           WHERE cs.id = ANY($1)`,
+        [classSubjectIds]
+      );
+      r.rows.forEach((s) => {
+        subjectMap[s.class_subject_id] = s;
+        subjectMap[Number(s.class_subject_id)] = s;
+        subjectMap[String(s.class_subject_id)] = s;
+      });
+    } catch (e) {
+      console.error('subjects fetch for schedules:', e.message);
     }
+  }
   const timeSlotMap = await buildTimeSlotMap(timeSlotIds);
 
-    let teacherMap = {};
-    if (teacherIds.length > 0) {
-      try {
-        const r = await query('SELECT * FROM staff WHERE id = ANY($1)', [teacherIds]);
-        r.rows.forEach((t) => {
-          teacherMap[t.id] = t;
-          teacherMap[Number(t.id)] = t;
-          teacherMap[String(t.id)] = t;
-        });
-      } catch (e) {
-        try {
-          const r = await query('SELECT * FROM teachers WHERE id = ANY($1)', [teacherIds]);
-          r.rows.forEach((t) => {
-            teacherMap[t.id] = t;
-            teacherMap[Number(t.id)] = t;
-            teacherMap[String(t.id)] = t;
-          });
-        } catch (e2) {}
-      }
+  let teacherMap = {};
+  if (teacherIds.length > 0) {
+    try {
+      const r = await query(
+        `SELECT
+           st.id,
+           NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
+           u.username,
+           u.email,
+           u.avatar AS photo_url
+           FROM staff st
+           JOIN users u ON u.id = st.user_id
+           WHERE st.id = ANY($1)`,
+        [teacherIds]
+      );
+      r.rows.forEach((t) => {
+        teacherMap[t.id] = t;
+        teacherMap[Number(t.id)] = t;
+        teacherMap[String(t.id)] = t;
+      });
+
+      // Backward compatibility: legacy rows might have different IDs but mapping should be consistent in staff.
+      const legacyTeacherRows = await query(
+        `SELECT
+           st.id AS staff_id,
+           NULLIF(TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))), '') AS name,
+           u.username,
+           u.email,
+           u.avatar AS photo_url
+         FROM staff st
+         JOIN users u ON u.id = st.user_id
+         WHERE st.id = ANY($1)`,
+        [teacherIds]
+      );
+      legacyTeacherRows.rows.forEach((t) => {
+        const normalized = {
+          id: t.staff_id,
+          name: t.name,
+          username: t.username,
+          email: t.email,
+          photo_url: t.photo_url,
+        };
+        teacherMap[t.staff_id] = normalized;
+        teacherMap[Number(t.staff_id)] = normalized;
+        teacherMap[String(t.staff_id)] = normalized;
+      });
+    } catch (e) {
+      console.error('teacher fetch for schedules:', e.message);
     }
+  }
 
   let roomMap = {};
   if (roomIds.length > 0) {
@@ -294,7 +375,7 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
       params.push(classIdFilter);
     }
     if (sectionIdFilter) {
-      where += ` AND section_id = $${p++}`;
+      where += ` AND class_section_id = $${p++}`;
       params.push(sectionIdFilter);
     }
     return { where, params, ctx };
@@ -312,7 +393,7 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
       params.push(classIdFilter);
     }
     if (sectionIdFilter) {
-      where += ` AND section_id = $${p++}`;
+      where += ` AND class_section_id = $${p++}`;
       params.push(sectionIdFilter);
     }
     return { where, params, ctx };
@@ -326,8 +407,17 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
     where += ` AND class_id = $${p++}`;
     params.push(scope.classId);
     if (scope.sectionId) {
-      where += ` AND (section_id = $${p++} OR section_id IS NULL)`;
+      where += ` AND (
+        class_section_id IS NULL
+        OR EXISTS (
+          SELECT 1 FROM class_sections cs_scope
+          WHERE cs_scope.id = class_schedules.class_section_id
+            AND cs_scope.class_id = class_schedules.class_id
+            AND cs_scope.section_id = $${p}
+        )
+      )`;
       params.push(scope.sectionId);
+      p += 1;
     }
     if (classIdFilter && classIdFilter !== scope.classId) {
       return { forbidden: true };
@@ -343,12 +433,27 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
     if (!wardIds.length) {
       return { where: `${where} AND 1=0`, params, ctx };
     }
+    // Class/section live on student_lifecycle_ledger (enr.*), not on students.* (cast_id is unrelated).
+    // Use latest enrollment (no to_academic_year_id filter), same as resolveStudentScopeForUser / canAccessClass for parents.
+    // Timetable rows are already restricted by class_schedules.academic_year_id = $1 above.
     where += ` AND EXISTS (
       SELECT 1 FROM students s
+      ${lateralCurrentEnrollment('s.id')}
       WHERE s.id = ANY($${p}::int[])
-        AND s.is_active = true
-        AND s.class_id = class_schedules.class_id
-        AND (class_schedules.section_id IS NULL OR s.section_id IS NULL OR class_schedules.section_id = s.section_id)
+        AND s.deleted_at IS NULL
+        AND COALESCE(s.is_active, true) = true
+        AND enr.class_id IS NOT NULL
+        AND enr.class_id = class_schedules.class_id
+        AND (
+          class_schedules.class_section_id IS NULL
+          OR enr.section_id IS NULL
+          OR EXISTS (
+            SELECT 1 FROM class_sections cs_scope
+            WHERE cs_scope.id = class_schedules.class_section_id
+              AND cs_scope.class_id = class_schedules.class_id
+              AND cs_scope.section_id = enr.section_id
+          )
+        )
     )`;
     params.push(wardIds);
     p += 1;
@@ -357,7 +462,7 @@ async function buildScopedWhere(req, academicYearId, extraFilters = {}) {
       params.push(classIdFilter);
     }
     if (sectionIdFilter) {
-      where += ` AND section_id = $${p++}`;
+      where += ` AND class_section_id = $${p++}`;
       params.push(sectionIdFilter);
     }
     return { where, params, ctx };
@@ -390,13 +495,30 @@ async function assertCanReadScheduleRow(req, row) {
   if (isParentOrGuardianPortalRole(ctx)) {
     const wardIds = await resolveWardStudentIdsForUser(req);
     if (!wardIds.length) return { ok: false, status: 403, message: 'Access denied' };
+    const classIdRow = parseId(row.class_id);
+    const classSectionId = parseId(row.class_section_id);
+    if (!classIdRow) return { ok: false, status: 403, message: 'Access denied' };
+
     const r2 = await query(
       `SELECT 1 FROM students s
-       WHERE s.id = ANY($1::int[]) AND s.is_active = true
-         AND s.class_id = $2
-         AND ($3::int IS NULL OR s.section_id IS NOT DISTINCT FROM $3)
+       ${lateralCurrentEnrollment('s.id')}
+       WHERE s.id = ANY($1::int[])
+         AND s.deleted_at IS NULL
+         AND COALESCE(s.is_active, true) = true
+         AND enr.class_id IS NOT NULL
+         AND enr.class_id = $2
+         AND (
+           $3::int IS NULL
+           OR enr.section_id IS NULL
+           OR EXISTS (
+             SELECT 1 FROM class_sections cs2
+             WHERE cs2.id = $3
+               AND cs2.class_id = enr.class_id
+               AND cs2.section_id = enr.section_id
+           )
+         )
        LIMIT 1`,
-      [wardIds, classId, sectionId]
+      [wardIds, classIdRow, classSectionId]
     ).catch(() => ({ rows: [] }));
     if (r2.rows && r2.rows.length) return { ok: true };
     return { ok: false, status: 403, message: 'Access denied' };
@@ -421,19 +543,15 @@ function toPgTime(val) {
   return `${hh}:${mm}:${ss}`;
 }
 
-async function resolveSectionRoomFields(client, sectionId) {
-  if (sectionId == null || sectionId === '') return { roomNumber: null, classRoomId: null };
-  const sid = parseId(sectionId);
-  if (!sid) return { roomNumber: null, classRoomId: null };
+async function resolveSectionRoomFields(client, classSectionId) {
+  if (classSectionId == null || classSectionId === '') return { roomNumber: null, classRoomId: null };
+  const csid = parseId(classSectionId);
+  if (!csid) return { roomNumber: null, classRoomId: null };
   const r = await qexec(
     client,
-    `SELECT NULLIF(TRIM(sec.room_number), '') AS room_number,
-            (SELECT cr.id FROM class_rooms cr
-             WHERE LOWER(TRIM(BOTH FROM cr.room_no)) = LOWER(TRIM(BOTH FROM sec.room_number))
-               AND (cr.status IS NULL OR cr.status ILIKE 'active')
-             ORDER BY cr.id ASC LIMIT 1) AS class_room_id
-     FROM sections sec WHERE sec.id = $1 LIMIT 1`,
-    [sid]
+    `SELECT NULLIF(TRIM(room_number), '') AS room_number, class_room_id
+     FROM class_sections WHERE id = $1 LIMIT 1`,
+    [csid]
   );
   const row = r.rows[0];
   if (!row) return { roomNumber: null, classRoomId: null };
@@ -470,33 +588,32 @@ async function findTeacherOverlappingConflictRow(client, {
   newStart,
   newEnd,
   teacherStaffId,
-  forClassId,
-  forSectionId,
   excludeId,
 }) {
-  const cid = parseId(forClassId);
-  const sid = forSectionId != null && forSectionId !== '' ? parseId(forSectionId) : null;
-  const params = [academicYearId, dayOfWeek, teacherStaffId, newStart, newEnd, cid, sid];
+  const params = [academicYearId, dayOfWeek, teacherStaffId, newStart, newEnd];
   let sql = `
     SELECT cs.id,
-      TRIM(CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))) AS teacher_name,
+      TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS teacher_name,
       ts.slot_name,
       c.class_name,
       sec.section_name
     FROM class_schedules cs
-    INNER JOIN time_slots ts ON ts.id = cs.time_slot_id
+    INNER JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
     LEFT JOIN staff st ON st.id = cs.teacher_id
+    LEFT JOIN users u ON u.id = st.user_id
     LEFT JOIN classes c ON c.id = cs.class_id
-    LEFT JOIN sections sec ON sec.id = cs.section_id
+    LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+    LEFT JOIN sections sec ON sec.id = csec.section_id
     WHERE cs.academic_year_id = $1
       AND cs.day_of_week = $2
       AND cs.teacher_id = $3
       AND ts.start_time IS NOT NULL
       AND ts.end_time IS NOT NULL
       AND ($4::time < ts.end_time AND ts.start_time < $5::time)
-      AND NOT (cs.class_id = $6 AND cs.section_id IS NOT DISTINCT FROM $7)`;
+      AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity')) && daterange(CURRENT_DATE, 'infinity')
+`;
   if (excludeId) {
-    sql += ' AND cs.id <> $8';
+    sql += ' AND cs.id <> $6';
     params.push(excludeId);
   }
   sql += ' LIMIT 1';
@@ -521,23 +638,70 @@ async function findClassSectionOverlappingConflictRow(client, {
       sec.section_name,
       sub.subject_name,
       ts.slot_name,
-      TRIM(CONCAT(COALESCE(st.first_name, ''), ' ', COALESCE(st.last_name, ''))) AS teacher_name
+      TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) AS teacher_name
     FROM class_schedules cs
-    INNER JOIN time_slots ts ON ts.id = cs.time_slot_id
+    INNER JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
     LEFT JOIN classes c ON c.id = cs.class_id
-    LEFT JOIN sections sec ON sec.id = cs.section_id
-    LEFT JOIN subjects sub ON sub.id = cs.subject_id
+    LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+    LEFT JOIN sections sec ON sec.id = csec.section_id
+    LEFT JOIN class_subjects csub ON csub.id = cs.class_subject_id
+    LEFT JOIN subjects sub ON sub.id = csub.subject_id
     LEFT JOIN staff st ON st.id = cs.teacher_id
+    LEFT JOIN users u ON u.id = st.user_id
     WHERE cs.academic_year_id = $1
       AND cs.day_of_week = $2
       AND cs.class_id = $3
-      AND (cs.section_id IS NOT DISTINCT FROM $4)
+      AND (cs.class_section_id IS NOT DISTINCT FROM $4)
       AND ts.start_time IS NOT NULL
       AND ts.end_time IS NOT NULL
       AND ($5::time < ts.end_time AND ts.start_time < $6::time)
-      AND cs.teacher_id IS DISTINCT FROM $7`;
+      AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity')) && daterange(CURRENT_DATE, 'infinity')
+      AND cs.teacher_id IS DISTINCT FROM $7
+`;
   if (excludeId) {
     sql += ' AND cs.id <> $8';
+    params.push(excludeId);
+  }
+  sql += ' LIMIT 1';
+  const r = await qexec(client, sql, params);
+  return r.rows[0] || null;
+}
+
+async function findRoomOverlappingConflictRow(client, {
+  academicYearId,
+  dayOfWeek,
+  newStart,
+  newEnd,
+  roomId,
+  excludeId,
+}) {
+  if (!roomId) return null;
+  const params = [academicYearId, dayOfWeek, roomId, newStart, newEnd];
+  let sql = `
+    SELECT cs.id,
+      c.class_name,
+      sec.section_name,
+      sub.subject_name,
+      ts.slot_name,
+      rm.room_number
+    FROM class_schedules cs
+    INNER JOIN timetable_time_slots ts ON ts.id = cs.time_slot_id
+    LEFT JOIN class_rooms rm ON rm.id = cs.class_room_id
+    LEFT JOIN classes c ON c.id = cs.class_id
+    LEFT JOIN class_sections csec ON csec.id = cs.class_section_id
+    LEFT JOIN sections sec ON sec.id = csec.section_id
+    LEFT JOIN class_subjects csub ON csub.id = cs.class_subject_id
+    LEFT JOIN subjects sub ON sub.id = csub.subject_id
+    WHERE cs.academic_year_id = $1
+      AND cs.day_of_week = $2
+      AND cs.class_room_id = $3
+      AND ts.start_time IS NOT NULL
+      AND ts.end_time IS NOT NULL
+      AND ($4::time < ts.end_time AND ts.start_time < $5::time)
+      AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity')) && daterange(CURRENT_DATE, 'infinity')
+`;
+  if (excludeId) {
+    sql += ' AND cs.id <> $6';
     params.push(excludeId);
   }
   sql += ' LIMIT 1';
@@ -566,11 +730,19 @@ function buildClassConflictMessage(row, dayInt, slotName) {
   return `${cls}${sec} already has a timetable entry on ${day} (${slot}).${sub}`;
 }
 
+function buildRoomConflictMessage(row, dayInt, slotName) {
+  const room = row.room_number || 'This room';
+  const slot = row.slot_name || slotName || 'this period';
+  const day = dayLabel(dayInt);
+  const grp = [row.class_name, row.section_name].filter(Boolean).join('-') || 'another class';
+  return `${room} is already booked for ${grp} on ${day} (${slot}).`;
+}
+
 async function assertValidTimeSlotId(client, timeSlotId) {
   const r = await qexec(
     client,
     `SELECT id, slot_name, start_time, end_time, COALESCE(is_break, false) AS is_break
-     FROM time_slots WHERE id = $1 LIMIT 1`,
+     FROM timetable_time_slots WHERE id = $1 LIMIT 1`,
     [timeSlotId]
   );
   if (!r.rows.length) {
@@ -581,11 +753,11 @@ async function assertValidTimeSlotId(client, timeSlotId) {
   return r.rows[0];
 }
 
-async function assertSubjectAllowedForClass(client, subjectId, classId) {
-  if (subjectId == null || subjectId === '') return;
-  const sid = parseId(subjectId);
-  if (!sid) {
-    const err = new Error('Invalid subject_id');
+async function assertSubjectAllowedForClass(client, classSubjectId, classId, academicYearId = null) {
+  if (classSubjectId == null || classSubjectId === '') return;
+  const csid = parseId(classSubjectId);
+  if (!csid) {
+    const err = new Error('Invalid class_subject_id');
     err.code = 'TIMETABLE_VALIDATION';
     throw err;
   }
@@ -595,43 +767,23 @@ async function assertSubjectAllowedForClass(client, subjectId, classId) {
     err.code = 'TIMETABLE_VALIDATION';
     throw err;
   }
-  const r = await qexec(
-    client,
-    `SELECT id FROM subjects
-     WHERE id = $1 AND class_id = $2 AND (is_active IS DISTINCT FROM false)
-     LIMIT 1`,
-    [sid, cid]
-  );
+
+  const params = [csid, cid];
+  let sql = 'SELECT id FROM class_subjects WHERE id = $1 AND class_id = $2 AND (deleted_at IS NULL)';
+  if (academicYearId) {
+    sql += ' AND academic_year_id = $3';
+    params.push(academicYearId);
+  }
+
+  const r = await qexec(client, sql + ' LIMIT 1', params);
   if (!r.rows.length) {
-    const err = new Error('This subject is not linked to the selected class.');
+    const err = new Error('This subject mapping is not linked to the selected class/academic year.');
     err.code = 'TIMETABLE_VALIDATION';
     throw err;
   }
 }
 
-async function syncTeacherRoutineLink(client, row) {
-  if (!row?.id || !row.teacher_id || !row.academic_year_id) return;
-  try {
-    await qexec(client, 'DELETE FROM teacher_routines WHERE class_schedule_id = $1', [row.id]);
-    await qexec(
-      client,
-      `INSERT INTO teacher_routines (teacher_id, class_schedule_id, academic_year_id, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, true, NOW(), NOW())`,
-      [row.teacher_id, row.id, row.academic_year_id]
-    );
-  } catch (e) {
-    console.warn('teacher_routines sync skipped:', e.message);
-  }
-}
-
-async function removeTeacherRoutineLink(client, scheduleId) {
-  if (!scheduleId) return;
-  try {
-    await qexec(client, 'DELETE FROM teacher_routines WHERE class_schedule_id = $1', [scheduleId]);
-  } catch (e) {
-    console.warn('teacher_routines delete skipped:', e.message);
-  }
-}
+// teacher_routines table is deprecated in new schema. Logic removed.
 
 const getAllClassSchedules = async (req, res) => {
   try {
@@ -662,9 +814,62 @@ const getTimetableClass = async (req, res) => {
   try {
     const academicYearId = parseId(req.query.academic_year_id);
     const classId = parseId(req.query.class_id);
-    const sectionId = parseId(req.query.section_id);
+    const requestedSectionId = parseId(req.query.section_id);
     if (!academicYearId || !classId) {
       return errorResponse(res, 400, 'academic_year_id and class_id are required');
+    }
+
+    let sectionMasterId = null; // sections.id
+    let classSectionId = null; // class_sections.id
+    if (requestedSectionId) {
+      // 1. Try strict lookup by class_sections.id
+      const byClassSectionId = await query(
+        `SELECT id, section_id
+         FROM class_sections
+         WHERE id = $1 AND class_id = $2 AND academic_year_id = $3
+         LIMIT 1`,
+        [requestedSectionId, classId, academicYearId]
+      );
+      if (byClassSectionId.rows.length > 0) {
+        classSectionId = parseId(byClassSectionId.rows[0].id);
+        sectionMasterId = parseId(byClassSectionId.rows[0].section_id);
+      } else {
+        // 2. Try lookup by sections.id (master)
+        const bySectionId = await query(
+          `SELECT id, section_id
+           FROM class_sections
+           WHERE class_id = $1 AND section_id = $2 AND academic_year_id = $3
+           ORDER BY id DESC
+           LIMIT 1`,
+          [classId, requestedSectionId, academicYearId]
+        );
+        if (bySectionId.rows.length > 0) {
+          classSectionId = parseId(bySectionId.rows[0].id);
+          sectionMasterId = parseId(bySectionId.rows[0].section_id);
+        } else {
+          // 3. Robust fallback: Maybe it's a class_sections.id from another year?
+          const fromOtherYear = await query(
+            `SELECT section_id FROM class_sections WHERE id = $1 LIMIT 1`,
+            [requestedSectionId]
+          );
+          if (fromOtherYear.rows.length > 0) {
+            const masterId = fromOtherYear.rows[0].section_id;
+            const currentMapping = await query(
+              `SELECT id, section_id FROM class_sections 
+               WHERE class_id = $1 AND section_id = $2 AND academic_year_id = $3 LIMIT 1`,
+              [classId, masterId, academicYearId]
+            );
+            if (currentMapping.rows.length > 0) {
+              classSectionId = parseId(currentMapping.rows[0].id);
+              sectionMasterId = parseId(currentMapping.rows[0].section_id);
+            } else {
+              // Valid master section but no mapping for this year. 
+              // We set sectionMasterId to allow access control checks, but classSectionId remains null.
+              sectionMasterId = parseId(masterId);
+            }
+          }
+        }
+      }
     }
 
     const acc = await canAccessClass(req, classId);
@@ -673,20 +878,25 @@ const getTimetableClass = async (req, res) => {
     }
 
     const ctx = getAuthContext(req);
-    if (!isAdmin(ctx) && sectionId) {
+    if (!isAdmin(ctx) && sectionMasterId) {
       if (ctx.roleId === ROLES.STUDENT || ctx.roleName === 'student') {
         const scope = await resolveStudentScopeForUser(ctx.userId);
-        if (scope?.sectionId && scope.sectionId !== sectionId) {
+        if (scope?.sectionId && scope.sectionId !== sectionMasterId) {
           return errorResponse(res, 403, 'Access denied');
         }
       } else if (isParentOrGuardianPortalRole(ctx)) {
         const wardIds = await resolveWardStudentIdsForUser(req);
         const secOk = await query(
           `SELECT 1 FROM students s
-           WHERE s.id = ANY($1::int[]) AND s.is_active = true
-             AND s.class_id = $2 AND s.section_id IS NOT DISTINCT FROM $3
+           ${lateralCurrentEnrollment('s.id')}
+           WHERE s.id = ANY($1::int[])
+             AND s.deleted_at IS NULL
+             AND COALESCE(s.is_active, true) = true
+             AND enr.class_id IS NOT NULL
+             AND enr.class_id = $2
+             AND enr.section_id IS NOT DISTINCT FROM $3
            LIMIT 1`,
-          [wardIds, classId, sectionId]
+          [wardIds, classId, sectionMasterId]
         ).catch(() => ({ rows: [] }));
         if (!secOk.rows?.length) {
           return errorResponse(res, 403, 'Access denied');
@@ -694,7 +904,10 @@ const getTimetableClass = async (req, res) => {
       }
     }
 
-    const scoped = await buildScopedWhere(req, academicYearId, { class_id: classId, section_id: sectionId || undefined });
+    // Keep scoped builder section-agnostic here.
+    // We apply exact class_section_id filtering below after resolving section id type,
+    // otherwise admin flow may incorrectly compare class_section_id with sections.id.
+    const scoped = await buildScopedWhere(req, academicYearId, { class_id: classId });
     if (scoped.forbidden) {
       return errorResponse(res, 403, 'Access denied');
     }
@@ -704,9 +917,13 @@ const getTimetableClass = async (req, res) => {
     let p = params.length + 1;
     where += ` AND class_id = $${p++}`;
     params.push(classId);
-    if (sectionId) {
-      where += ` AND (section_id = $${p++} OR section_id IS NULL)`;
-      params.push(sectionId);
+    if (classSectionId) {
+      where += ` AND (class_section_id = $${p++} OR class_section_id IS NULL)`;
+      params.push(classSectionId);
+    } else if (requestedSectionId) {
+      // If a section was explicitly requested but no mapping was found for this year,
+      // we must ensure we don't return entries from other sections.
+      where += ` AND class_section_id = -1`;
     }
 
     const rows = await loadSchedulesFromDb(where, params);
@@ -714,7 +931,7 @@ const getTimetableClass = async (req, res) => {
 
     let slots = [];
     try {
-      const sr = await query('SELECT id, slot_name, start_time, end_time, duration, is_break, is_active FROM time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC');
+      const sr = await query('SELECT id, slot_name, start_time, end_time, duration, is_break FROM timetable_time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC');
       slots = sr.rows || [];
     } catch (e) {
       slots = [];
@@ -723,7 +940,7 @@ const getTimetableClass = async (req, res) => {
     return success(res, 200, 'Class timetable fetched successfully', { entries: data, slots }, { count: data.length });
   } catch (error) {
     console.error('Error fetching class timetable:', error);
-    return errorResponse(res, 500, 'Failed to fetch class timetable');
+    return errorResponse(res, 500, 'Failed to fetch class timetable', error.message);
   }
 };
 
@@ -770,7 +987,7 @@ const getTimetableTeacher = async (req, res) => {
 
     let slots = [];
     try {
-      const sr = await query('SELECT id, slot_name, start_time, end_time, duration, is_break, is_active FROM time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC');
+      const sr = await query('SELECT id, slot_name, start_time, end_time, duration, is_break FROM timetable_time_slots WHERE is_active IS DISTINCT FROM false ORDER BY start_time ASC NULLS LAST, id ASC');
       slots = sr.rows || [];
     } catch (e) {
       slots = [];
@@ -808,11 +1025,14 @@ const getClassScheduleById = async (req, res) => {
 function uniqueViolationUserMessage(err) {
   const c = String(err?.constraint || '');
   const d = String(err?.detail || '');
-  if (c === 'uq_class_schedules_teacher_year_day_slot' || d.includes('uq_class_schedules_teacher_year_day_slot')) {
-    return 'This teacher is already booked in that period (database constraint).';
+  if (c === 'uq_timetable_teacher_no_overlap' || d.includes('uq_timetable_teacher_no_overlap')) {
+    return 'This teacher is already booked in that period (temporal overlap).';
   }
-  if (c === 'uq_class_schedules_class_year_day_slot' || d.includes('uq_class_schedules_class_year_day_slot')) {
-    return 'This class and section already have an entry in that period (database constraint).';
+  if (c === 'uq_timetable_section_no_overlap' || d.includes('uq_timetable_section_no_overlap')) {
+    return 'This class and section already have an entry in that period (temporal overlap).';
+  }
+  if (c === 'uq_timetable_room_no_overlap' || d.includes('uq_timetable_room_no_overlap')) {
+    return 'This room is already occupied in that period (temporal overlap).';
   }
   return 'This timetable change conflicts with an existing entry. Refresh and try again.';
 }
@@ -821,12 +1041,12 @@ const createClassSchedule = async (req, res) => {
   try {
     const {
       teacher_id, class_id, section_id, subject_id, day_of_week,
-      time_slot_id, academic_year_id,
+      time_slot_id, academic_year_id, room_id,
     } = req.body;
 
     let slotId = time_slot_id || null;
     if (!slotId) {
-      const slotRes = await query('SELECT id FROM time_slots ORDER BY id ASC LIMIT 1');
+      const slotRes = await query('SELECT id FROM timetable_time_slots ORDER BY id ASC LIMIT 1');
       slotId = slotRes.rows.length > 0 ? slotRes.rows[0].id : null;
     }
     if (!slotId) {
@@ -835,14 +1055,17 @@ const createClassSchedule = async (req, res) => {
 
     const dayInt = normalizeDayOfWeek(day_of_week);
     if (!dayInt) return errorResponse(res, 400, 'Invalid day_of_week. Use 1-7 or day name');
+
+    // Resolve teacher_id (which might be staff_id or legacy teacher_id)
     const teacherStaffId = await resolveTeacherToStaffId(teacher_id);
     if (!teacherStaffId) return errorResponse(res, 400, 'Invalid teacher_id');
-    let academicYearId = academic_year_id || null;
-    if (!academicYearId) {
+
+    let ayId = academic_year_id || null;
+    if (!ayId) {
       const classRes = await query('SELECT academic_year_id FROM classes WHERE id = $1 LIMIT 1', [class_id]);
-      academicYearId = classRes.rows[0]?.academic_year_id || null;
+      ayId = classRes.rows[0]?.academic_year_id || null;
     }
-    if (!academicYearId) return errorResponse(res, 400, 'academic_year_id is required');
+    if (!ayId) return errorResponse(res, 400, 'academic_year_id is required');
 
     const created = await executeTransaction(async (client) => {
       const slotMeta = await assertValidTimeSlotId(client, slotId);
@@ -850,16 +1073,14 @@ const createClassSchedule = async (req, res) => {
       assertSlotTimesForOverlap(slotMeta);
       const newStart = toPgTime(slotMeta.start_time);
       const newEnd = toPgTime(slotMeta.end_time);
-      await assertSubjectAllowedForClass(client, subject_id, class_id);
+      await assertSubjectAllowedForClass(client, subject_id, class_id, ayId);
 
       const tRow = await findTeacherOverlappingConflictRow(client, {
-        academicYearId,
+        academicYearId: ayId,
         dayOfWeek: dayInt,
         newStart,
         newEnd,
         teacherStaffId,
-        forClassId: class_id,
-        forSectionId: section_id ?? null,
         excludeId: null,
       });
       if (tRow) {
@@ -868,7 +1089,7 @@ const createClassSchedule = async (req, res) => {
         throw err;
       }
       const cRow = await findClassSectionOverlappingConflictRow(client, {
-        academicYearId,
+        academicYearId: ayId,
         dayOfWeek: dayInt,
         newStart,
         newEnd,
@@ -884,54 +1105,57 @@ const createClassSchedule = async (req, res) => {
       }
 
       const secRoom = await resolveSectionRoomFields(client, section_id);
+      const effectiveRoomId = room_id || secRoom.classRoomId;
+
+      const rRow = await findRoomOverlappingConflictRow(client, {
+        academicYearId: ayId,
+        dayOfWeek: dayInt,
+        newStart,
+        newEnd,
+        roomId: effectiveRoomId,
+        excludeId: null,
+      });
+      if (rRow) {
+        const err = new Error(buildRoomConflictMessage(rRow, dayInt, slotMeta.slot_name));
+        err.code = 'TIMETABLE_CONFLICT';
+        throw err;
+      }
 
       const ins = await client.query(
-        `INSERT INTO class_schedules (teacher_id, class_id, section_id, subject_id, time_slot_id, day_of_week, room_number, class_room_id, academic_year_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `INSERT INTO class_schedules (teacher_id, class_id, class_section_id, class_subject_id, time_slot_id, day_of_week, class_room_id, academic_year_id, valid_from)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE)
          RETURNING *`,
         [
-      teacherStaffId,
-      class_id,
-      section_id || null,
-      subject_id || null,
-      slotId,
-      dayInt,
-          secRoom.roomNumber,
-          secRoom.classRoomId,
-          academicYearId,
+          teacherStaffId,
+          class_id,
+          section_id || null,
+          subject_id || null,
+          slotId,
+          dayInt,
+          room_id || secRoom.classRoomId,
+          ayId,
         ]
       );
       const row = ins.rows[0];
-      await syncTeacherRoutineLink(client, row);
       return row;
     });
 
     return success(res, 201, 'Class routine added successfully', created);
   } catch (error) {
     console.error('Error creating class schedule:', error);
-    if (error.code === 'TIMETABLE_CONFLICT') {
-      return errorResponse(res, 409, error.message);
+    if (error.code === 'TIMETABLE_CONFLICT' || error.code === 'TIMETABLE_VALIDATION') {
+      return res.status(200).json({ success: false, status: 'ERROR', message: error.message });
     }
-    if (error.code === 'TIMETABLE_VALIDATION') {
-      if (error.message === 'INVALID_TIME_SLOT') {
-        return errorResponse(res, 400, 'Invalid time_slot_id: period does not exist');
-      }
-      if (error.message === 'INVALID_SUBJECT') {
-        return errorResponse(res, 400, 'Invalid subject_id');
-      }
-      return errorResponse(res, 400, error.message || 'Validation failed');
+    if (error.code === '409') {
+       return res.status(200).json({ success: false, status: 'ERROR', message: error.message });
     }
     if (error.code === '23505') {
-      return errorResponse(res, 409, uniqueViolationUserMessage(error));
+      return res.status(200).json({ success: false, status: 'ERROR', message: uniqueViolationUserMessage(error) });
     }
     if (error.code === '23P01') {
-      return errorResponse(res, 409, timetableExclusionUserMessage(error));
+      return res.status(200).json({ success: false, status: 'ERROR', message: timetableExclusionUserMessage(error) });
     }
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
-    if (String(error.message || '').includes('class_room_id')) {
-      return errorResponse(res, 400, 'class_room_id column missing — run migration 039_timetable_class_schedules_hardening.sql');
-    }
-    return errorResponse(res, 500, 'Failed to add class routine');
+    return errorResponse(res, 500, 'Failed to add class routine', error.message);
   }
 };
 
@@ -951,13 +1175,13 @@ const updateClassSchedule = async (req, res) => {
       }
       const cur = lock.rows[0];
 
-    const teacherId = payload.teacher_id ? await resolveTeacherToStaffId(payload.teacher_id) : cur.teacher_id;
+      const teacherId = payload.teacher_id ? await resolveTeacherToStaffId(payload.teacher_id) : cur.teacher_id;
       if (!teacherId) {
         const err = new Error('Invalid teacher_id');
         err.code = 'TIMETABLE_VALIDATION';
         throw err;
       }
-    const dayInt = payload.day_of_week !== undefined ? normalizeDayOfWeek(payload.day_of_week) : cur.day_of_week;
+      const dayInt = payload.day_of_week !== undefined ? normalizeDayOfWeek(payload.day_of_week) : cur.day_of_week;
       if (!dayInt) {
         const err = new Error('Invalid day_of_week');
         err.code = 'TIMETABLE_VALIDATION';
@@ -975,7 +1199,7 @@ const updateClassSchedule = async (req, res) => {
       const newStart = toPgTime(slotMeta.start_time);
       const newEnd = toPgTime(slotMeta.end_time);
       if (payload.subject_id !== undefined) {
-        await assertSubjectAllowedForClass(client, payload.subject_id, nextClass);
+        await assertSubjectAllowedForClass(client, payload.subject_id, nextClass, nextYear);
       }
 
       const tRow = await findTeacherOverlappingConflictRow(client, {
@@ -984,8 +1208,6 @@ const updateClassSchedule = async (req, res) => {
         newStart,
         newEnd,
         teacherStaffId: teacherId,
-        forClassId: nextClass,
-        forSectionId: nextSection ?? null,
         excludeId: sid,
       });
       if (tRow) {
@@ -1010,21 +1232,35 @@ const updateClassSchedule = async (req, res) => {
       }
 
       const secRoom = await resolveSectionRoomFields(client, nextSection);
+      const effectiveRoomId = payload.room_id || payload.class_room_id || secRoom.classRoomId;
+
+      const rRow = await findRoomOverlappingConflictRow(client, {
+        academicYearId: nextYear,
+        dayOfWeek: dayInt,
+        newStart,
+        newEnd,
+        roomId: effectiveRoomId,
+        excludeId: sid,
+      });
+      if (rRow) {
+        const err = new Error(buildRoomConflictMessage(rRow, dayInt, slotMeta.slot_name));
+        err.code = 'TIMETABLE_CONFLICT';
+        throw err;
+      }
 
       const result = await client.query(
-      `UPDATE class_schedules SET
-        teacher_id = $1, class_id = $2, section_id = $3, subject_id = $4, time_slot_id = $5,
-        day_of_week = $6, room_number = $7, class_room_id = $8, academic_year_id = $9, updated_at = NOW()
-      WHERE id = $10 RETURNING *`,
-      [
-        teacherId,
+        `UPDATE class_schedules SET
+        teacher_id = $1, class_id = $2, class_section_id = $3, class_subject_id = $4, time_slot_id = $5,
+        day_of_week = $6, class_room_id = $7, academic_year_id = $8, updated_at = NOW()
+      WHERE id = $9 RETURNING *`,
+        [
+          teacherId,
           nextClass,
-          nextSection,
-          payload.subject_id !== undefined ? payload.subject_id : cur.subject_id,
+          nextSection || null,
+          payload.subject_id !== undefined ? payload.subject_id : cur.class_subject_id,
           nextSlot,
-        dayInt,
-          secRoom.roomNumber,
-          secRoom.classRoomId,
+          dayInt,
+          payload.room_id || payload.class_room_id || secRoom.classRoomId,
           nextYear,
           sid,
         ]
@@ -1038,19 +1274,15 @@ const updateClassSchedule = async (req, res) => {
   } catch (error) {
     console.error('Error updating class schedule:', error);
     if (error.code === 'NOT_FOUND') return errorResponse(res, 404, 'Class schedule not found');
-    if (error.code === 'TIMETABLE_CONFLICT') {
-      return errorResponse(res, 409, error.message);
-    }
-    if (error.code === 'TIMETABLE_VALIDATION') {
-      return errorResponse(res, 400, error.message || 'Validation failed');
+    if (error.code === 'TIMETABLE_CONFLICT' || error.code === 'TIMETABLE_VALIDATION') {
+      return res.status(200).json({ success: false, status: 'ERROR', message: error.message });
     }
     if (error.code === '23505') {
-      return errorResponse(res, 409, uniqueViolationUserMessage(error));
+      return res.status(200).json({ success: false, status: 'ERROR', message: uniqueViolationUserMessage(error) });
     }
     if (error.code === '23P01') {
-      return errorResponse(res, 409, timetableExclusionUserMessage(error));
+      return res.status(200).json({ success: false, status: 'ERROR', message: timetableExclusionUserMessage(error) });
     }
-    if (error.code === '23503') return errorResponse(res, 400, 'Invalid references in routine payload');
     return errorResponse(res, 500, 'Failed to update class routine');
   }
 };
@@ -1101,11 +1333,11 @@ const getClassSchedulesDebug = async (req, res) => {
       out.errors.push(`class_schedules: ${e?.message || String(e)}`);
     }
     try {
-      const r = await query('SELECT * FROM time_slots ORDER BY id ASC LIMIT 10');
+      const r = await query('SELECT * FROM timetable_time_slots ORDER BY id ASC LIMIT 10');
       out.time_slots_count = r.rows.length;
       out.sample_time_slots = r.rows;
     } catch (e) {
-      out.errors.push(`time_slots: ${e?.message || String(e)}`);
+      out.errors.push(`timetable_time_slots: ${e?.message || String(e)}`);
     }
     try {
       const r = await query('SELECT COUNT(*) AS c FROM classes');
@@ -1119,6 +1351,227 @@ const getClassSchedulesDebug = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/timetable/bulk — Save multiple rows in one transaction.
+ */
+const bulkUpdateClassSchedules = async (req, res) => {
+  try {
+    const { assignments } = req.body;
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      return errorResponse(res, 400, "assignments array is required");
+    }
+
+    const academicYearId = parseId(req.body.academic_year_id);
+    const classId = parseId(req.body.class_id);
+    const sectionId = parseId(req.body.section_id);
+
+    if (!academicYearId || !classId) {
+      return errorResponse(res, 400, "academic_year_id and class_id are required");
+    }
+
+    const result = await executeTransaction(async (client) => {
+      const roomFields = await resolveSectionRoomFields(client, sectionId);
+      const savedIds = [];
+
+      // Internal overlap check for the current bulk request
+      for (let i = 0; i < assignments.length; i++) {
+        for (let j = i + 1; j < assignments.length; j++) {
+          const a1 = assignments[i];
+          const a2 = assignments[j];
+          if (Number(a1.day_of_week) === Number(a2.day_of_week)) {
+            const s1 = await assertValidTimeSlotId(client, a1.time_slot_id);
+            const s2 = await assertValidTimeSlotId(client, a2.time_slot_id);
+            const st1 = toPgTime(s1.start_time);
+            const en1 = toPgTime(s1.end_time);
+            const st2 = toPgTime(s2.start_time);
+            const en2 = toPgTime(s2.end_time);
+
+            if (st1 < en2 && st2 < en1) {
+              if (String(a1.teacher_id) === String(a2.teacher_id)) {
+                throw new Error(`Teacher conflict in bulk request: Same teacher assigned to multiple slots on Day ${a1.day_of_week} at ${s1.slot_name} and ${s2.slot_name}.`);
+              }
+              if (String(a1.room_id || roomFields.classRoomId) === String(a2.room_id || roomFields.classRoomId)) {
+                throw new Error(`Room conflict in bulk request: Same room assigned to multiple slots on Day ${a1.day_of_week} at ${s1.slot_name} and ${s2.slot_name}.`);
+              }
+            }
+          }
+        }
+      }
+
+      for (const item of assignments) {
+        const { id, subject_id, teacher_id, day_of_week, time_slot_id } = item;
+        const dayInt = normalizeDayOfWeek(day_of_week);
+        if (!dayInt) throw new Error("Invalid day_of_week: " + day_of_week);
+
+        const teacherStaffId = await resolveTeacherToStaffId(teacher_id);
+        if (!teacherStaffId) throw new Error("Invalid teacher_id: " + teacher_id);
+
+        const slotMeta = await assertValidTimeSlotId(client, time_slot_id);
+        assertSlotNotBreak(slotMeta);
+        assertSlotTimesForOverlap(slotMeta);
+
+        const st = toPgTime(slotMeta.start_time);
+        const en = toPgTime(slotMeta.end_time);
+
+        // Conflict check: Teacher
+        const tConflict = await findTeacherOverlappingConflictRow(client, {
+          academicYearId,
+          dayOfWeek: dayInt,
+          newStart: st,
+          newEnd: en,
+          teacherStaffId,
+          excludeId: id ? parseId(id) : null
+        });
+        if (tConflict) throw new Error(buildTeacherConflictMessage(tConflict, dayInt, slotMeta.slot_name));
+
+        // Conflict check: Class/Section
+        const cConflict = await findClassSectionOverlappingConflictRow(client, {
+          academicYearId,
+          dayOfWeek: dayInt,
+          newStart: st,
+          newEnd: en,
+          classId,
+          sectionId,
+          forTeacherStaffId: teacherStaffId,
+          excludeId: id ? parseId(id) : null
+        });
+        if (cConflict) throw new Error(buildClassConflictMessage(cConflict, dayInt, slotMeta.slot_name));
+
+        const effectiveRoomId = item.room_id || roomFields.classRoomId;
+        const rConflict = await findRoomOverlappingConflictRow(client, {
+          academicYearId,
+          dayOfWeek: dayInt,
+          newStart: st,
+          newEnd: en,
+          roomId: effectiveRoomId,
+          excludeId: id ? parseId(id) : null
+        });
+        if (rConflict) throw new Error(buildRoomConflictMessage(rConflict, dayInt, slotMeta.slot_name));
+
+        if (id) {
+          const r = await client.query(
+            "UPDATE class_schedules SET class_subject_id = $1, teacher_id = $2, day_of_week = $3, time_slot_id = $4, class_room_id = $5, updated_at = NOW() WHERE id = $6 RETURNING *",
+            [subject_id, teacherStaffId, dayInt, time_slot_id, effectiveRoomId, id]
+          );
+          if (r.rows[0]) {
+            savedIds.push(r.rows[0].id);
+          }
+        } else {
+          const r = await client.query(
+            "INSERT INTO class_schedules (class_id, class_section_id, class_subject_id, teacher_id, day_of_week, time_slot_id, academic_year_id, class_room_id, valid_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE) RETURNING *",
+            [classId, sectionId, subject_id, teacherStaffId, dayInt, time_slot_id, academicYearId, effectiveRoomId]
+          );
+          if (r.rows[0]) {
+            savedIds.push(r.rows[0].id);
+          }
+        }
+      }
+      return savedIds;
+    });
+
+    return success(res, 200, "Successfully saved " + result.length + " timetable entries", { ids: result });
+  } catch (err) {
+    console.error("Bulk update error:", err.message);
+    return res.status(200).json({ success: false, status: 'ERROR', message: err.message });
+  }
+};
+
+/**
+ * POST /api/timetable/copy — Clone routine from one section to another.
+ */
+const copyClassSchedule = async (req, res) => {
+  try {
+    const { source_class_id, source_section_id, target_class_id, target_section_id, academic_year_id } = req.body;
+
+    if (!source_class_id || !target_class_id || !academic_year_id) {
+      return errorResponse(res, 400, "source_class_id, target_class_id, and academic_year_id are required");
+    }
+
+    const sourceRows = await query(
+      "SELECT * FROM class_schedules WHERE class_id = $1 AND (class_section_id = $2 OR class_section_id IS NULL) AND academic_year_id = $3",
+      [source_class_id, source_section_id || null, academic_year_id]
+    );
+
+    if (sourceRows.rows.length === 0) {
+      return errorResponse(res, 404, "Source timetable is empty");
+    }
+
+    const result = await executeTransaction(async (client) => {
+      const roomFields = await resolveSectionRoomFields(client, target_section_id);
+      let copiedCount = 0;
+      let skipCount = 0;
+
+      for (const row of sourceRows.rows) {
+        try {
+          const slotMeta = await assertValidTimeSlotId(client, row.time_slot_id);
+          const st = toPgTime(slotMeta.start_time);
+          const en = toPgTime(slotMeta.end_time);
+
+          const tConflict = await findTeacherOverlappingConflictRow(client, {
+            academicYearId: academic_year_id,
+            dayOfWeek: row.day_of_week,
+            newStart: st,
+            newEnd: en,
+            teacherStaffId: row.teacher_id,
+            forClassId: target_class_id,
+            forSectionId: target_section_id
+          });
+          if (tConflict) { skipCount++; continue; }
+
+          const cConflict = await findClassSectionOverlappingConflictRow(client, {
+            academicYearId: academic_year_id,
+            dayOfWeek: row.day_of_week,
+            newStart: st,
+            newEnd: en,
+            classId: target_class_id,
+            sectionId: target_section_id,
+            forTeacherStaffId: row.teacher_id
+          });
+          if (cConflict) { skipCount++; continue; }
+
+          const ins = await client.query(
+            "INSERT INTO class_schedules (class_id, class_section_id, class_subject_id, teacher_id, day_of_week, time_slot_id, academic_year_id, class_room_id, valid_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE) RETURNING *",
+            [target_class_id, target_section_id, row.class_subject_id, row.teacher_id, row.day_of_week, row.time_slot_id, academic_year_id, roomFields.classRoomId]
+          );
+          if (ins.rows[0]) {
+            copiedCount++;
+          }
+        } catch (e) {
+          skipCount++;
+        }
+      }
+      return { copiedCount, skipCount };
+    });
+
+    return success(res, 200, "Copied " + result.copiedCount + " entries, skipped " + result.skipCount + " due to conflicts.", result);
+  } catch (error) {
+    console.error("Copy timetable error:", error);
+    return errorResponse(res, 500, "Failed to copy timetable");
+  }
+};
+
+/**
+ * DELETE /api/timetable/reset — Clear timetable for a section.
+ */
+const resetClassSchedule = async (req, res) => {
+  try {
+    const { class_id, section_id, academic_year_id } = req.body;
+    if (!class_id || !academic_year_id) {
+      return errorResponse(res, 400, "class_id and academic_year_id are required");
+    }
+
+    await query(
+      "DELETE FROM class_schedules WHERE class_id = $1 AND (class_section_id = $2 OR class_section_id IS NULL) AND academic_year_id = $3",
+      [class_id, section_id || null, academic_year_id]
+    );
+
+    return success(res, 200, "Timetable reset successfully");
+  } catch (error) {
+    console.error("Reset timetable error:", error);
+    return errorResponse(res, 500, "Failed to reset timetable");
+  }
+};
+
 module.exports = {
   getAllClassSchedules,
   getClassScheduleById,
@@ -1128,4 +1581,7 @@ module.exports = {
   updateClassSchedule,
   deleteClassSchedule,
   getClassSchedulesDebug,
+  bulkUpdateClassSchedules,
+  copyClassSchedule,
+  resetClassSchedule,
 };

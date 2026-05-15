@@ -1,122 +1,322 @@
-const { query } = require('../config/database');
+/**
+ * Fees Master Controller → now maps to fees_class_types + fees_installments
+ *
+ * In the new schema there is no standalone "fees_master" table.
+ * The equivalent is:
+ *   fees_class_types  → defines what fees (type + amount) belong to a class/year fee config
+ *   fees_installments → defines the payment schedule for a fee config
+ *
+ * This controller manages both.
+ */
+
+const { query, executeTransaction } = require('../config/database');
+const { success, error: errorResponse } = require('../utils/responseHelper');
 const { getAuthContext, isAdmin } = require('../utils/accessControl');
 
+// ─── LIST FEE ITEMS (fees_class_types) ───────────────────────────────────────
 const getFeesMaster = async (req, res) => {
     try {
-        const academicYearId = req.query.academic_year_id;
-        if (!academicYearId) {
-            return res.status(400).json({ status: 'ERROR', message: 'academic_year_id is required' });
+        const { academic_year_id, class_id, fee_id } = req.query;
+
+        if (!academic_year_id) {
+            return errorResponse(res, 400, 'academic_year_id is required');
+        }
+
+        let whereClause = 'WHERE fct.academic_year_id = $1';
+        const params = [academic_year_id];
+
+        if (class_id) {
+            whereClause += ` AND fct.class_id = $${params.length + 1}`;
+            params.push(class_id);
+        }
+        if (fee_id) {
+            whereClause += ` AND fct.fee_id = $${params.length + 1}`;
+            params.push(fee_id);
         }
 
         const result = await query(
-            `SELECT fm.*, fg.name as fees_group_name, ft.name as fees_type_name
-             FROM fees_master fm
-             JOIN fees_groups fg ON fm.fees_group_id = fg.id
-             JOIN fees_types ft ON fm.fees_type_id = ft.id
-             WHERE fm.academic_year_id = $1
-             ORDER BY fg.name ASC, ft.name ASC`,
-            [academicYearId]
+            `SELECT
+                fct.*,
+                ft.name AS fee_type_name,
+                ft.name AS fees_type_name,
+                ft.code AS fee_type_code,
+                c.class_name,
+                c.class_name AS fees_group_name,
+                f.due_date AS fee_due_date,
+                f.late_fee_type,
+                f.late_fee_charge,
+                f.late_fee_frequency
+             FROM fees_class_types fct
+             JOIN fees_types ft ON fct.fee_type_id = ft.id
+             JOIN classes c ON fct.class_id = c.id
+             JOIN fees f ON fct.fee_id = f.id AND f.deleted_at IS NULL
+             ${whereClause}
+             ORDER BY c.class_name ASC, ft.name ASC`,
+            params
         );
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            data: result.rows
-        });
+        return success(res, 200, 'Fee items retrieved successfully', result.rows);
     } catch (error) {
         console.error('Error in getFeesMaster:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
+// ─── ADD FEE ITEM to an existing fee config ───────────────────────────────────
 const createFeesMaster = async (req, res) => {
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            return errorResponse(res, 403, 'Access denied');
         }
 
-        const { fees_group_id, fees_type_id, amount, academic_year_id, status, due_date, fine_type, fine_amount, fine_percentage } = req.body;
-        if (!fees_group_id || !fees_type_id || amount === undefined || !academic_year_id) {
-            return res.status(400).json({ status: 'ERROR', message: 'fees_group_id, fees_type_id, amount, and academic_year_id are required' });
+        const { fee_id, fee_type_id, amount, is_optional } = req.body;
+
+        if (!fee_id || !fee_type_id || amount == null) {
+            return errorResponse(res, 400, 'fee_id, fee_type_id, and amount are required');
         }
+
+        if (parseFloat(amount) < 0) {
+            return errorResponse(res, 400, 'Amount cannot be negative');
+        }
+
+        const createdBy = req.user?.id || null;
+
+        // Get fee header to extract class_id and academic_year_id for triple-key
+        const feeHeader = await query(
+            'SELECT id, class_id, academic_year_id FROM fees WHERE id = $1 AND deleted_at IS NULL',
+            [fee_id]
+        );
+        if (feeHeader.rowCount === 0) {
+            return errorResponse(res, 404, 'Fee configuration not found');
+        }
+
+        const { class_id, academic_year_id } = feeHeader.rows[0];
 
         const result = await query(
-            'INSERT INTO fees_master (fees_group_id, fees_type_id, amount, academic_year_id, status, due_date, fine_type, fine_amount, fine_percentage) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-            [fees_group_id, fees_type_id, amount, academic_year_id, status || 'Active', due_date || null, fine_type || 'None', fine_amount || 0, fine_percentage || 0]
+            `INSERT INTO fees_class_types
+                (fee_id, class_id, academic_year_id, fee_type_id, amount, is_optional, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING *`,
+            [fee_id, class_id, academic_year_id, fee_type_id, parseFloat(amount), is_optional ?? false, createdBy]
         );
 
-        res.status(201).json({
-            status: 'SUCCESS',
-            message: 'Fees master entry created successfully',
-            data: result.rows[0]
-        });
+        return success(res, 201, 'Fee item added successfully', result.rows[0]);
     } catch (error) {
-        if (error.code === '23505') { // Unique violation
-            return res.status(400).json({ status: 'ERROR', message: 'This Fees Type is already mapped to this Fees Group for this Academic Year' });
+        if (error.code === '23505') {
+            return errorResponse(res, 409, 'This fee type is already added to this fee configuration');
         }
         console.error('Error in createFeesMaster:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
+// ─── UPDATE FEE ITEM ──────────────────────────────────────────────────────────
 const updateFeesMaster = async (req, res) => {
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            return errorResponse(res, 403, 'Access denied');
         }
 
         const { id } = req.params;
-        const { amount, status, due_date, fine_type, fine_amount, fine_percentage } = req.body;
+        const { amount, is_optional } = req.body;
+
+        if (amount != null && parseFloat(amount) < 0) {
+            return errorResponse(res, 400, 'Amount cannot be negative');
+        }
+
+        const updatedBy = req.user?.id || null;
 
         const result = await query(
-            'UPDATE fees_master SET amount = $1, status = $2, due_date = $3, fine_type = $4, fine_amount = $5, fine_percentage = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7 RETURNING *',
-            [amount, status || 'Active', due_date || null, fine_type || 'None', fine_amount || 0, fine_percentage || 0, id]
+            `UPDATE fees_class_types SET
+                amount = COALESCE($1, amount),
+                is_optional = COALESCE($2, is_optional),
+                updated_at = NOW(),
+                updated_by = $3
+             WHERE id = $4
+             RETURNING *`,
+            [amount != null ? parseFloat(amount) : null, is_optional ?? null, updatedBy, id]
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ status: 'ERROR', message: 'Fees master entry not found' });
+            return errorResponse(res, 404, 'Fee item not found');
         }
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            message: 'Fees master entry updated successfully',
-            data: result.rows[0]
-        });
+        return success(res, 200, 'Fee item updated successfully', result.rows[0]);
     } catch (error) {
         console.error('Error in updateFeesMaster:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
+// ─── DELETE FEE ITEM ─────────────────────────────────────────────────────────
 const deleteFeesMaster = async (req, res) => {
     try {
         const ctx = getAuthContext(req);
         if (!isAdmin(ctx)) {
-            return res.status(403).json({ status: 'ERROR', message: 'Access denied' });
+            return errorResponse(res, 403, 'Access denied');
         }
 
         const { id } = req.params;
 
-        // Check if master entry is assigned
-        const checkAssign = await query('SELECT id FROM fees_assign_details WHERE fees_master_id = $1 LIMIT 1', [id]);
-        if (checkAssign.rowCount > 0) {
-            return res.status(400).json({ status: 'ERROR', message: 'Cannot delete Fees Master entry that is already assigned to students' });
+        // Block if any payment exists for this fee type
+        const paymentCheck = await query(
+            `SELECT 1 FROM compulsory_fees cf
+             JOIN fees f ON cf.fee_id = f.id
+             JOIN fees_class_types fct ON fct.fee_id = f.id AND fct.id = $1
+             LIMIT 1`,
+            [id]
+        );
+        if (paymentCheck.rowCount > 0) {
+            return errorResponse(res, 400, 'Cannot delete a fee item that has payment records');
         }
 
-        const result = await query('DELETE FROM fees_master WHERE id = $1 RETURNING *', [id]);
+        const result = await query(
+            'DELETE FROM fees_class_types WHERE id = $1 RETURNING *',
+            [id]
+        );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ status: 'ERROR', message: 'Fees master entry not found' });
+            return errorResponse(res, 404, 'Fee item not found');
         }
 
-        res.status(200).json({
-            status: 'SUCCESS',
-            message: 'Fees master entry deleted successfully'
-        });
+        return success(res, 200, 'Fee item deleted successfully');
     } catch (error) {
         console.error('Error in deleteFeesMaster:', error);
-        res.status(500).json({ status: 'ERROR', message: 'Internal server error' });
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+// ─── BULK DELETE ──────────────────────────────────────────────────────────────
+const bulkDeleteFeesMaster = async (req, res) => {
+    try {
+        const ctx = getAuthContext(req);
+        if (!isAdmin(ctx)) {
+            return errorResponse(res, 403, 'Access denied');
+        }
+
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return errorResponse(res, 400, 'ids array is required');
+        }
+
+        const result = await query(
+            'DELETE FROM fees_class_types WHERE id = ANY($1) RETURNING id',
+            [ids]
+        );
+
+        return success(res, 200, `${result.rowCount} fee item(s) deleted successfully`);
+    } catch (error) {
+        console.error('Error in bulkDeleteFeesMaster:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+// ─── INSTALLMENTS ─────────────────────────────────────────────────────────────
+const getInstallments = async (req, res) => {
+    try {
+        const { fee_id } = req.params;
+
+        const result = await query(
+            `SELECT fi.*
+             FROM fees_installments fi
+             JOIN fees f ON fi.fee_id = f.id AND f.deleted_at IS NULL
+             WHERE fi.fee_id = $1
+             ORDER BY fi.due_date ASC`,
+            [fee_id]
+        );
+
+        return success(res, 200, 'Installments retrieved successfully', result.rows);
+    } catch (error) {
+        console.error('Error in getInstallments:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+const createInstallment = async (req, res) => {
+    try {
+        const ctx = getAuthContext(req);
+        if (!isAdmin(ctx)) {
+            return errorResponse(res, 403, 'Access denied');
+        }
+
+        const { fee_id } = req.params;
+        const { installment_name, due_date, amount, late_fee_type, late_fee_charge, late_fee_frequency } = req.body;
+
+        if (!installment_name || !due_date || amount == null) {
+            return errorResponse(res, 400, 'installment_name, due_date, and amount are required');
+        }
+
+        if (parseFloat(amount) < 0) {
+            return errorResponse(res, 400, 'Amount cannot be negative');
+        }
+
+        const feeHeader = await query(
+            'SELECT id, class_id, academic_year_id FROM fees WHERE id = $1 AND deleted_at IS NULL',
+            [fee_id]
+        );
+        if (feeHeader.rowCount === 0) {
+            return errorResponse(res, 404, 'Fee configuration not found');
+        }
+
+        const { class_id, academic_year_id } = feeHeader.rows[0];
+        const createdBy = req.user?.id || null;
+
+        const result = await query(
+            `INSERT INTO fees_installments
+                (fee_id, class_id, academic_year_id, installment_name, due_date, amount,
+                 late_fee_type, late_fee_charge, late_fee_frequency, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING *`,
+            [
+                fee_id, class_id, academic_year_id, installment_name, due_date,
+                parseFloat(amount),
+                late_fee_type || 'fixed',
+                late_fee_charge || 0,
+                late_fee_frequency || 'once',
+                createdBy
+            ]
+        );
+
+        return success(res, 201, 'Installment created successfully', result.rows[0]);
+    } catch (error) {
+        console.error('Error in createInstallment:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
+    }
+};
+
+const deleteInstallment = async (req, res) => {
+    try {
+        const ctx = getAuthContext(req);
+        if (!isAdmin(ctx)) {
+            return errorResponse(res, 403, 'Access denied');
+        }
+
+        const { id } = req.params;
+
+        // Block if payments reference this installment
+        const paymentCheck = await query(
+            'SELECT 1 FROM compulsory_fees WHERE fee_installment_id = $1 LIMIT 1',
+            [id]
+        );
+        if (paymentCheck.rowCount > 0) {
+            return errorResponse(res, 400, 'Cannot delete an installment that has payment records');
+        }
+
+        const result = await query(
+            'DELETE FROM fees_installments WHERE id = $1 RETURNING *',
+            [id]
+        );
+
+        if (result.rowCount === 0) {
+            return errorResponse(res, 404, 'Installment not found');
+        }
+
+        return success(res, 200, 'Installment deleted successfully');
+    } catch (error) {
+        console.error('Error in deleteInstallment:', error);
+        return errorResponse(res, 500, error.message || 'Internal server error');
     }
 };
 
@@ -124,5 +324,9 @@ module.exports = {
     getFeesMaster,
     createFeesMaster,
     updateFeesMaster,
-    deleteFeesMaster
+    deleteFeesMaster,
+    bulkDeleteFeesMaster,
+    getInstallments,
+    createInstallment,
+    deleteInstallment
 };
