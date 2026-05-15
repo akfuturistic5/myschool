@@ -10,6 +10,8 @@ const { ROLE_NAMES } = require('../config/roles');
 const { parseRelativeKey } = require('../storage/LocalFilesystemStorageProvider');
 const { getSchoolIdFromRequest } = require('../utils/schoolContext');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
+const { issueTenantSessionForUser } = require('../services/tenantSessionIssueService');
+const { getEffectiveSchoolModules } = require('../services/saasSchoolModulesService');
 
 function displayRoleFromRoleRow(user) {
   const rn = (user?.role_name || '').toString().trim();
@@ -70,9 +72,6 @@ const getCsrfCookieOptions = () => {
   };
 };
 
-function newOpaqueSessionToken() {
-  return crypto.randomBytes(32).toString('base64url');
-}
 function sha256Hex(s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex');
 }
@@ -320,31 +319,6 @@ const login = async (req, res) => {
         userId: user.id,
       });
 
-      const payload = {
-        id: user.id,
-        username: user.username,
-        role_id: user.role_id,
-        role_name: user.role_name || 'User',
-        // NOTE: db_name is kept for backward compatibility but MUST NOT be trusted
-        // for tenant selection. Tenant selection is bound to the server-side session.
-        db_name: targetDbName,
-        school_id: school.id,
-        school_name: school.school_name,
-        school_type: school.type,
-        school_logo: school.logo || null,
-        institute_number: school.institute_number,
-      };
-
-      const token = jwt.sign(
-        payload,
-        serverConfig.jwtUserSecret,
-        { expiresIn: serverConfig.jwtExpiresIn || '7d' }
-      );
-
-      const displayName = (user.staff_first_name || user.first_name)
-        ? `${user.staff_first_name || user.first_name} ${user.staff_last_name || user.last_name}`.trim()
-        : user.username;
-
       let accountDisabled = false;
       try {
         const accCheck = await query(
@@ -369,61 +343,17 @@ const login = async (req, res) => {
         // ignore; accountDisabled stays false
       }
 
-      res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
-
-      // Bind tenant context to an opaque server-side session (prevents tenant switching with forged JWT).
-      const sessionToken = newOpaqueSessionToken();
-      const sessionHash = sha256Hex(sessionToken);
-      const now = Date.now();
-      const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
-      const expiresAt = new Date(now + maxAgeMs);
+      let responseData;
       try {
-        await masterQuery(
-          `
-          INSERT INTO tenant_sessions (session_hash, school_id, institute_number, db_name, tenant_user_id, expires_at, user_agent, ip_address)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          `,
-          [
-            sessionHash,
-            school.id,
-            school.institute_number,
-            targetDbName,
-            user.id,
-            expiresAt,
-            String(req.headers['user-agent'] || '').slice(0, 2000) || null,
-            String(req.headers['x-forwarded-for'] || req.ip || '').slice(0, 100) || null,
-          ]
-        );
-      } catch (e) {
-        console.error('Failed to create tenant session in master_db:', e);
-        return errorResponse(res, 500, 'Login failed');
-      }
-      res.cookie(SESSION_COOKIE_NAME, sessionToken, getSessionCookieOptions());
-
-      // Ensure CSRF cookie exists for SPA; token is validated via header on unsafe methods.
-      const csrfToken = crypto.randomBytes(16).toString('base64url');
-      res.cookie('XSRF-TOKEN', csrfToken, getCsrfCookieOptions());
-
-      const responseData = {
-        csrfToken,
-        user: {
-          id: user.id,
-          username: user.username,
-          avatar: user.avatar ?? null,
-          displayName,
-          role: user.role_name || 'User',
-          role_id: user.role_id,
-          staff_id: user.staff_id,
+        responseData = await issueTenantSessionForUser(req, res, {
+          school,
+          user,
+          targetDbName,
           accountDisabled,
-          school_name: school.school_name,
-          school_type: school.type,
-          school_logo: school.logo || null,
-          institute_number: school.institute_number,
-        },
-      };
-      // Split SPA/API: client sends Authorization Bearer when cookies do not cross origins.
-      if (serverConfig.tenantBearerAuthInProduction || serverConfig.allowLegacyBearerAuth) {
-        responseData.accessToken = token;
+        });
+      } catch (e) {
+        console.error('Failed to issue tenant session:', e);
+        return errorResponse(res, 500, 'Login failed');
       }
       success(res, 200, 'Login successful', responseData);
     });
@@ -536,6 +466,14 @@ const login = async (req, res) => {
       school_logo: schoolLogo,
       institute_number: tokenUser.institute_number,
     };
+    if (tokenUser.school_id != null) {
+      try {
+        const eff = await getEffectiveSchoolModules(tokenUser.school_id);
+        userData.saas_modules = eff.modules;
+      } catch (e) {
+        console.warn('getMe: saas_modules unavailable:', e.message);
+      }
+    }
     success(res, 200, 'User fetched', userData);
   } catch (err) {
     console.error('GetMe error:', err);

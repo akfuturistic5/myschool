@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../data/redux/authSlice";
 import { getSidebarDataForRole } from "../../data/json/sidebarDataUtils";
+import { filterSidebarBySaasModules } from "../../utils/saasSidebarFilter";
 import SchoolLogoImage from "../schoolLogoImage";
 import "../../../style/icon/tabler-icons/webfont/tabler-icons.css";
 import { setExpandMenu } from "../../data/redux/sidebarSlice";
@@ -25,7 +26,10 @@ const Sidebar = () => {
   const Location = useLocation();
   const user = useSelector(selectUser);
   const role = user?.role || "Admin";
-  const SidebarData = useMemo(() => getSidebarDataForRole(role), [role]);
+  const SidebarData = useMemo(() => {
+    const base = getSidebarDataForRole(role);
+    return filterSidebarBySaasModules(base, user?.saas_modules ?? undefined);
+  }, [role, user?.saas_modules]);
 
   const schoolLogoSrc = useMemo(() => getSchoolLogoSrc(user), [user?.school_logo, user?.school_name]);
   const isMillatLogo = isMillatStyleLogoPath(schoolLogoSrc);

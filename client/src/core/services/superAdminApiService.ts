@@ -192,9 +192,12 @@ class SuperAdminApiService {
   }
 
   // Schools
-  async listSchools(status?: string) {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-    return this.makeRequest(`/schools${qs}`);
+  async listSchools(status?: string, q?: string) {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (q && q.trim()) qs.set('q', q.trim());
+    const s = qs.toString();
+    return this.makeRequest(`/schools${s ? `?${s}` : ''}`);
   }
 
   async updateSchoolStatus(id: number, status: 'active' | 'disabled') {
@@ -258,7 +261,93 @@ class SuperAdminApiService {
   async getPlatformStats() {
     return this.makeRequest('/stats/platform');
   }
+
+  async impersonateSchool(id: number) {
+    return this.makeRequest(`/schools/${id}/impersonate`, { method: 'POST', body: JSON.stringify({}) });
+  }
+
+  async updateSchoolPlan(id: number, plan_id: number | null) {
+    return this.makeRequest(`/schools/${id}/plan`, {
+      method: 'PATCH',
+      body: JSON.stringify({ plan_id }),
+    });
+  }
+
+  async getSchoolModules(id: number) {
+    return this.makeRequest(`/schools/${id}/modules`);
+  }
+
+  async putSchoolModuleOverrides(id: number, overrides: { module_key: string; show_in_menu: boolean; route_accessible: boolean }[]) {
+    return this.makeRequest(`/schools/${id}/modules/overrides`, {
+      method: 'PUT',
+      body: JSON.stringify({ overrides }),
+    });
+  }
+
+  async listPlans() {
+    return this.makeRequest('/plans');
+  }
+
+  async createPlan(payload: {
+    name: string;
+    slug: string;
+    description?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+    price_amount?: number;
+    billing_interval?: string;
+    setup_fee?: number;
+    trial_days?: number;
+  }) {
+    return this.makeRequest('/plans', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async updatePlan(id: number, payload: {
+    name?: string;
+    description?: string | null;
+    sort_order?: number;
+    is_active?: boolean;
+    price_amount?: number;
+    billing_interval?: string;
+    setup_fee?: number;
+    trial_days?: number;
+  }) {
+    return this.makeRequest(`/plans/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  }
+
+  async getPlanModules(id: number) {
+    return this.makeRequest(`/plans/${id}/modules`);
+  }
+
+  async putPlanModules(id: number, modules: Record<string, { show_in_menu: boolean; route_accessible: boolean }>) {
+    return this.makeRequest(`/plans/${id}/modules`, {
+      method: 'PUT',
+      body: JSON.stringify({ modules }),
+    });
+  }
+
+  async listEnquiries(status?: string) {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.makeRequest(`/enquiries${qs}`);
+  }
+
+  async createEnquiry(payload: {
+    contact_name: string;
+    organization_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    message?: string | null;
+  }) {
+    return this.makeRequest('/enquiries', { method: 'POST', body: JSON.stringify(payload) });
+  }
+
+  async patchEnquiry(id: number, status: 'new' | 'contacted' | 'converted' | 'dismissed') {
+    return this.makeRequest(`/enquiries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
 }
 
-export const superAdminApiService = new SuperAdminApiService();
-
+const superAdminApiService = new SuperAdminApiService();
+export { superAdminApiService };

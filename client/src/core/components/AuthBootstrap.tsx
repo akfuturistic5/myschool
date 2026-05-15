@@ -58,6 +58,8 @@ export const AuthBootstrap = () => {
                 school_type: d.school_type,
                 school_logo: d.school_logo ?? null,
                 institute_number: d.institute_number,
+                saas_modules:
+                  d.saas_modules && typeof d.saas_modules === 'object' ? d.saas_modules : undefined,
               },
             })
           );

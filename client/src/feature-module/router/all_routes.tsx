@@ -360,5 +360,8 @@ export const all_routes = {
   superAdminLogin: "/super-admin/login",
   superAdminDashboard: "/super-admin/dashboard",
   superAdminSchools: "/super-admin/schools",
+  superAdminSchoolList: "/super-admin/schools/list",
+  superAdminSchoolPermissions: "/super-admin/schools/permissions",
+  superAdminPlans: "/super-admin/plans",
+  superAdminEnquiries: "/super-admin/enquiries",
 };
-

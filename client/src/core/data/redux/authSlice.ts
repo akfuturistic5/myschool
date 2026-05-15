@@ -1,6 +1,8 @@
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 
+import type { SaasModulesMap } from '../../utils/saasModuleKeys';
+
 interface AuthUser {
   id: number;
   username: string;
@@ -15,6 +17,8 @@ interface AuthUser {
   /** Public URL or app-relative path from master_db.schools.logo */
   school_logo?: string | null;
   institute_number?: string;
+  /** Per-tenant SaaS module visibility (from login / auth/me) */
+  saas_modules?: SaasModulesMap | null;
 }
 
 interface AuthState {

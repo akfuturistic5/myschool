@@ -7,7 +7,13 @@ import SuperAdminProtectedRoute from "../../core/components/SuperAdminProtectedR
 import SuperAdminLayout from "../superAdmin/SuperAdminLayout";
 import SuperAdminLogin from "../superAdmin/SuperAdminLogin";
 import SuperAdminDashboard from "../superAdmin/SuperAdminDashboard";
+import SuperAdminSchoolList from "../superAdmin/SuperAdminSchoolList";
+import SuperAdminSchoolPermissions from "../superAdmin/SuperAdminSchoolPermissions";
+import SuperAdminSchoolsRedirect from "../superAdmin/SuperAdminSchoolsRedirect";
 import SuperAdminSchoolEdit from "../superAdmin/SuperAdminSchoolEdit";
+import SuperAdminSchoolModules from "../superAdmin/SuperAdminSchoolModules";
+import SuperAdminPlans from "../superAdmin/SuperAdminPlans";
+import SuperAdminEnquiries from "../superAdmin/SuperAdminEnquiries";
 import Login from "../auth/login/login";
 
 const ALLRoutes: React.FC = () => {
@@ -20,7 +26,13 @@ const ALLRoutes: React.FC = () => {
         <Route element={<SuperAdminProtectedRoute />}>
           <Route element={<SuperAdminLayout />}>
             <Route path="/super-admin/dashboard" element={<SuperAdminDashboard />} />
+            <Route path="/super-admin/plans" element={<SuperAdminPlans />} />
+            <Route path="/super-admin/enquiries" element={<SuperAdminEnquiries />} />
+            <Route path="/super-admin/schools/list" element={<SuperAdminSchoolList />} />
+            <Route path="/super-admin/schools/permissions" element={<SuperAdminSchoolPermissions />} />
+            <Route path="/super-admin/schools/:id/modules" element={<SuperAdminSchoolModules />} />
             <Route path="/super-admin/schools/:id" element={<SuperAdminSchoolEdit />} />
+            <Route path="/super-admin/schools" element={<SuperAdminSchoolsRedirect />} />
           </Route>
         </Route>
         <Route element={<AuthFeature />}>
