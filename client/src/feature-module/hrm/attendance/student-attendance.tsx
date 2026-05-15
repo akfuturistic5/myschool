@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
@@ -13,12 +13,22 @@ import { useDesignations } from "../../../core/hooks/useDesignations";
 import { apiService } from "../../../core/services/apiService";
 import Table from "../../../core/common/dataTable/index";
 import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
+import { printData } from "../../../core/utils/exportUtils";
 import {
   formatAttendanceDayHumanLabel,
   formatAttendanceDayShort,
   getCompoundHolidayAttendancePart,
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
+import {
+  applyHolidayDatesToMonthlyGrid,
+  normalizeMonthlyAttendanceGridRows,
+} from "../../../core/utils/attendanceReportUtils";
+import {
+  buildClassOptionsFromSectionAssignments,
+  buildSectionOptionsFromSectionAssignments,
+  filterSectionTeacherAssignments,
+} from "./sectionTeacherScope";
 
 type RosterRow = {
   entity_id: number;
@@ -113,7 +123,6 @@ const StudentAttendance = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [teacherScopeRows, setTeacherScopeRows] = useState<any[]>([]);
   const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, half_day: 0 });
   const [studentSearch, setStudentSearch] = useState("");
@@ -155,21 +164,6 @@ const StudentAttendance = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const loadTeacherScope = async () => {
-      if (!isTeacher) {
-        setTeacherScopeRows([]);
-        return;
-      }
-      try {
-        const response = await (apiService as any).getTeacherStudents(academicYearId);
-        const scoped = Array.isArray(response?.data) ? response.data : [];
-        if (!cancelled) setTeacherScopeRows(scoped);
-      } catch {
-        if (!cancelled) setTeacherScopeRows([]);
-      }
-    };
-    loadTeacherScope();
-    
     const loadTeacherAssignments = async () => {
       if (!isTeacher || !user) return;
       try {
@@ -195,6 +189,11 @@ const StudentAttendance = () => {
 
   const fetchRoster = async () => {
     if (!canEditStudentAttendance) return;
+    if (isTeacher && (classId == null || sectionId == null)) {
+      setRows([]);
+      setRowState({});
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -232,70 +231,60 @@ const StudentAttendance = () => {
   }, [attendanceDate, classId, sectionId, academicYearId, canEditStudentAttendance]);
 
 
-  useEffect(() => {
-    if (!canEditStudentAttendance && reportViewType !== "student") return;
-    let cancelled = false;
-    const fetchReport = async () => {
-      try {
-        setReportLoading(true);
-        setReportError(null);
-        const res = await apiService.getEntityAttendanceReport("student", {
-          classId,
-          sectionId,
-          academicYearId,
-          month: attendanceMonth,
-        });
-        if (!cancelled) {
-          setReportData(res?.data || { month: attendanceMonth, days: [], rows: [] });
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setReportData({ month: attendanceMonth, days: [], rows: [] });
-          setReportError(err?.message || "Failed to load attendance report");
-        }
-      } finally {
-        if (!cancelled) setReportLoading(false);
-      }
-    };
-    fetchReport();
-    return () => {
-      cancelled = true;
-    };
-  }, [canEditStudentAttendance, reportViewType, classId, sectionId, academicYearId, attendanceMonth]);
+  const loadStudentReport = useCallback(async () => {
+    if (canEditStudentAttendance) return;
+    try {
+      setReportLoading(true);
+      setReportError(null);
+      const res = await apiService.getEntityAttendanceReport("student", {
+        classId,
+        sectionId,
+        academicYearId,
+        month: attendanceMonth,
+      });
+      setReportData(res?.data || { month: attendanceMonth, days: [], rows: [] });
+    } catch (err: any) {
+      setReportData({ month: attendanceMonth, days: [], rows: [] });
+      setReportError(err?.message || "Failed to load attendance report");
+    } finally {
+      setReportLoading(false);
+    }
+  }, [canEditStudentAttendance, classId, sectionId, academicYearId, attendanceMonth]);
+
+  const loadStaffReport = useCallback(async () => {
+    if (canEditStudentAttendance) return;
+    try {
+      setReportLoading(true);
+      setReportError(null);
+      const res = await apiService.getEntityAttendanceReport("staff", {
+        month: attendanceMonth,
+        departmentId,
+        designationId,
+        academicYearId,
+      });
+      const nextRows = Array.isArray(res?.data?.rows) ? res.data.rows : [];
+      setStaffReportRows(nextRows);
+      setStaffHolidayDates(Array.isArray(res?.data?.holiday_dates) ? res.data.holiday_dates : []);
+    } catch (err: any) {
+      setStaffReportRows([]);
+      setStaffHolidayDates([]);
+      setReportError(err?.message || "Failed to load staff attendance report");
+    } finally {
+      setReportLoading(false);
+    }
+  }, [canEditStudentAttendance, attendanceMonth, departmentId, designationId, academicYearId]);
 
   useEffect(() => {
-    if (canEditStudentAttendance || reportViewType !== "staff") return;
-    let cancelled = false;
-    const fetchStaffReport = async () => {
-      try {
-        setReportLoading(true);
-        setReportError(null);
-        const res = await apiService.getEntityAttendanceReport("staff", {
-          month: attendanceMonth,
-          departmentId,
-          designationId,
-          academicYearId,
-        });
-        if (!cancelled) {
-          const nextRows = Array.isArray(res?.data?.rows) ? res.data.rows : [];
-          setStaffReportRows(nextRows);
-          setStaffHolidayDates(Array.isArray(res?.data?.holiday_dates) ? res.data.holiday_dates : []);
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setStaffReportRows([]);
-          setStaffHolidayDates([]);
-          setReportError(err?.message || "Failed to load staff attendance report");
-        }
-      } finally {
-        if (!cancelled) setReportLoading(false);
-      }
-    };
-    fetchStaffReport();
-    return () => {
-      cancelled = true;
-    };
-  }, [canEditStudentAttendance, reportViewType, attendanceMonth, departmentId, designationId, academicYearId]);
+    if (!canEditStudentAttendance && reportViewType === "student") {
+      void loadStudentReport();
+    }
+  }, [canEditStudentAttendance, reportViewType, loadStudentReport]);
+
+  useEffect(() => {
+    if (!canEditStudentAttendance && reportViewType === "staff") {
+      void loadStaffReport();
+    }
+  }, [canEditStudentAttendance, reportViewType, loadStaffReport]);
 
   const departmentOptions = useMemo(
     () => (departments || []).map((d: any) => ({ id: d.originalData?.id ?? d.key, label: d.department })),
@@ -306,63 +295,20 @@ const StudentAttendance = () => {
     [designations]
   );
 
+  const sectionTeacherAssignments = useMemo(
+    () => filterSectionTeacherAssignments(teacherAssignments),
+    [teacherAssignments]
+  );
+
   const classOptions = useMemo(() => {
     if (!isTeacher) return classes || [];
-    const map = new Map<number, any>();
-    
-    // Add classes from students
-    (teacherScopeRows || []).forEach((row: any) => {
-      const cid = Number(row?.class_id);
-      if (!Number.isFinite(cid) || map.has(cid)) return;
-      map.set(cid, {
-        id: cid,
-        class_name: row?.class_name || `Class ${cid}`,
-        class_code: row?.class_code || "",
-      });
-    });
-
-    // Add classes from direct assignments (handles empty classes)
-    (teacherAssignments || []).forEach((a: any) => {
-      const cid = Number(a?.classId);
-      if (!Number.isFinite(cid) || map.has(cid)) return;
-      map.set(cid, {
-        id: cid,
-        class_name: a?.className || `Class ${cid}`,
-        class_code: "",
-      });
-    });
-
-    return Array.from(map.values());
-  }, [isTeacher, classes, teacherScopeRows, teacherAssignments]);
+    return buildClassOptionsFromSectionAssignments(sectionTeacherAssignments);
+  }, [isTeacher, classes, sectionTeacherAssignments]);
 
   const sectionOptions = useMemo(() => {
     if (!isTeacher) return sections || [];
-    const map = new Map<number, any>();
-
-    // Add sections from students
-    (teacherScopeRows || [])
-      .filter((row: any) => (classId == null ? true : Number(row?.class_id) === Number(classId)))
-      .forEach((row: any) => {
-        const sid = Number(row?.section_id);
-        if (!Number.isFinite(sid) || map.has(sid)) return;
-        map.set(sid, { id: sid, section_name: row?.section_name || `Section ${sid}` });
-      });
-
-    // Add sections from assignments
-    (teacherAssignments || [])
-      .filter((a: any) => (classId == null ? true : Number(a?.classId) === Number(classId)))
-      .forEach((a: any) => {
-        const sid = Number(a?.sectionId || a?.classSectionId); // Fallback to classSectionId if needed
-        if (!Number.isFinite(sid) || map.has(sid)) return;
-        
-        // If we have a section name from assignments, use it
-        if (a.sectionName) {
-           map.set(sid, { id: sid, section_name: a.sectionName });
-        }
-      });
-
-    return Array.from(map.values());
-  }, [isTeacher, sections, teacherScopeRows, teacherAssignments, classId]);
+    return buildSectionOptionsFromSectionAssignments(sectionTeacherAssignments, classId);
+  }, [isTeacher, sections, sectionTeacherAssignments, classId]);
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -370,6 +316,13 @@ const StudentAttendance = () => {
       setClassId(Number(classOptions[0].id));
     }
   }, [isTeacher, classId, classOptions]);
+
+  useEffect(() => {
+    if (!isTeacher) return;
+    if (sectionId != null && !sectionOptions.some((s: any) => Number(s.id) === Number(sectionId))) {
+      setSectionId(null);
+    }
+  }, [isTeacher, sectionOptions, sectionId]);
 
   useEffect(() => {
     if (!isTeacher) return;
@@ -398,14 +351,16 @@ const StudentAttendance = () => {
     setStats(s);
   }, [visibleRows, rowState]);
 
-  const reportRows = useMemo(
-    () =>
-      (Array.isArray(reportData?.rows) ? reportData.rows : []).map((row: any, index: number) => ({
-        key: row.studentId ?? `attendance-report-${index}`,
-        ...row,
-      })),
-    [reportData]
-  );
+  const studentReportData = useMemo(() => {
+    const days = Array.isArray(reportData?.days) ? reportData.days : [];
+    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
+    const rows = applyHolidayDatesToMonthlyGrid(
+      normalizeMonthlyAttendanceGridRows(reportData?.rows),
+      days,
+      holidayDates
+    );
+    return { days, rows };
+  }, [reportData]);
 
   const staffReportData = useMemo(() => {
     const safeMonth = /^\d{4}-\d{2}$/.test(attendanceMonth) ? attendanceMonth : getTodayLocalYMD().slice(0, 7);
@@ -423,51 +378,56 @@ const StudentAttendance = () => {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    const grouped = new Map<number, any>();
-    (Array.isArray(staffReportRows) ? staffReportRows : []).forEach((row: StaffReportRow) => {
-      const id = Number(row.entity_id);
-      if (!Number.isFinite(id)) return;
-      if (!grouped.has(id)) {
-        grouped.set(id, {
-          key: id,
-          entityId: id,
-          name: row.entity_name || "Staff",
-          summary: { present: 0, late: 0, absent: 0, halfDay: 0, holiday: 0, percentage: 0 },
-          daily: {} as Record<string, string>,
-        });
-      }
-      const attendanceDate = toDateKey(row.attendance_date);
-      if (!attendanceDate) return;
-      grouped.get(id).daily[attendanceDate] = normalizeStatusKey(row.status);
-    });
-
     const holidaySet = new Set((Array.isArray(staffHolidayDates) ? staffHolidayDates : []).map((d) => toDateKey(d)));
-    const rows = Array.from(grouped.values()).map((row) => {
+    const rows = normalizeMonthlyAttendanceGridRows(staffReportRows).map((row) => {
+      const daily = { ...row.daily };
       days.forEach((d) => {
-        if (!row.daily[d.date] && holidaySet.has(d.date)) {
-          row.daily[d.date] = "holiday";
+        if (!daily[d.date] && holidaySet.has(d.date)) {
+          daily[d.date] = "holiday";
         }
       });
+      const summary = { ...row.summary, present: 0, late: 0, absent: 0, halfDay: 0, holiday: 0, percentage: 0 };
       days.forEach((d) => {
-        const status = row.daily[d.date];
-        if (status === "present") row.summary.present += 1;
-        else if (status === "late") row.summary.late += 1;
-        else if (status === "absent") row.summary.absent += 1;
-        else if (status === "half_day" || status === "halfday") row.summary.halfDay += 1;
-        else if (status === "holiday") row.summary.holiday += 1;
+        const status = normalizeStatusKey(daily[d.date]);
+        if (status === "present") summary.present += 1;
+        else if (status === "late") summary.late += 1;
+        else if (status === "absent") summary.absent += 1;
+        else if (status === "half_day") summary.halfDay += 1;
+        else if (status === "holiday" || status === "weekly_holiday") summary.holiday += 1;
       });
-      const workedDays = row.summary.present + row.summary.late + row.summary.absent + row.summary.halfDay;
-      const effectivePresent = row.summary.present + row.summary.late + row.summary.halfDay * 0.5;
-      row.summary.percentage = workedDays > 0 ? Number(((effectivePresent / workedDays) * 100).toFixed(2)) : 0;
-      return row;
+      const workedDays = summary.present + summary.late + summary.absent + summary.halfDay;
+      const effectivePresent = summary.present + summary.late + summary.halfDay * 0.5;
+      summary.percentage = workedDays > 0 ? Number(((effectivePresent / workedDays) * 100).toFixed(2)) : 0;
+      return { ...row, daily, summary };
     });
 
     return { days, rows };
   }, [attendanceMonth, staffReportRows, staffHolidayDates]);
 
-  const activeReportDays = !canEditStudentAttendance && reportViewType === "staff"
-    ? staffReportData.days
-    : (Array.isArray(reportData?.days) ? reportData.days : []);
+  const activeReportRows =
+    !canEditStudentAttendance && reportViewType === "staff"
+      ? staffReportData.rows
+      : studentReportData.rows;
+
+  const activeReportDays =
+    !canEditStudentAttendance && reportViewType === "staff"
+      ? staffReportData.days
+      : studentReportData.days;
+
+  const displayStats = useMemo(() => {
+    if (canEditStudentAttendance) return stats;
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    let half_day = 0;
+    activeReportRows.forEach((row) => {
+      present += row.summary?.present ?? 0;
+      absent += row.summary?.absent ?? 0;
+      late += row.summary?.late ?? 0;
+      half_day += row.summary?.halfDay ?? 0;
+    });
+    return { total: activeReportRows.length, present, absent, late, half_day };
+  }, [canEditStudentAttendance, stats, activeReportRows]);
 
   const activeReportDayColumns = useMemo(
     () =>
@@ -626,7 +586,7 @@ const StudentAttendance = () => {
     const sourceRows =
       !canEditStudentAttendance && reportViewType === "staff"
         ? staffReportData.rows
-        : reportRows;
+        : studentReportData.rows;
 
     return (Array.isArray(sourceRows) ? sourceRows : []).map((row: any) => {
       const base: Record<string, any> = {
@@ -644,11 +604,24 @@ const StudentAttendance = () => {
       });
       return base;
     });
-  }, [activeReportDays, canEditStudentAttendance, reportViewType, staffReportData.rows, reportRows]);
+  }, [activeReportDays, canEditStudentAttendance, reportViewType, staffReportData.rows, studentReportData.rows]);
+
+  const handleRefresh = () => {
+    if (!isReadOnlyViewer) return;
+    if (reportViewType === "staff") {
+      void loadStaffReport();
+      return;
+    }
+    void loadStudentReport();
+  };
 
   const handleExportPdf = () => {
     try {
-      const typeLabel = (!canEditStudentAttendance && reportViewType === "staff") ? "Staff" : "Student";
+      if (!exportRows.length) {
+        setReportError("No data available for PDF export.");
+        return;
+      }
+      const typeLabel = reportViewType === "staff" ? "Staff" : "Student";
       exportAttendancePdf(
         `${typeLabel} Attendance Report (${attendanceMonth})`,
         `${typeLabel.toLowerCase()}-attendance-report-${attendanceMonth}`,
@@ -661,26 +634,108 @@ const StudentAttendance = () => {
 
   const handleExportExcel = () => {
     try {
-      const typeLabel = (!canEditStudentAttendance && reportViewType === "staff") ? "Staff" : "Student";
+      if (!exportRows.length) {
+        setReportError("No data available for Excel export.");
+        return;
+      }
+      const typeLabel = reportViewType === "staff" ? "Staff" : "Student";
       exportAttendanceExcel(`${typeLabel.toLowerCase()}-attendance-report-${attendanceMonth}`, exportRows);
     } catch (err: any) {
       setReportError(err?.message || "Export failed");
     }
   };
 
-  useEffect(() => {
-    if (!isTeacher) return;
-    if (classId == null && classOptions.length > 0) {
-      setClassId(Number(classOptions[0].id));
+  const handlePrint = () => {
+    try {
+      if (!exportRows.length) {
+        setReportError("No data available to print.");
+        return;
+      }
+      const typeLabel = reportViewType === "staff" ? "Staff" : "Student";
+      const keys = Object.keys(exportRows[0]);
+      const columns = keys.map((key) => ({ title: key, dataKey: key }));
+      printData(
+        `${typeLabel} Attendance Report (${attendanceMonth})`,
+        columns,
+        exportRows,
+        { singleHeaderOnPrint: true }
+      );
+    } catch (err: any) {
+      setReportError(err?.message || "Print failed");
     }
-  }, [isTeacher, classId, classOptions]);
+  };
 
-  useEffect(() => {
-    if (!isTeacher) return;
-    if (sectionId != null && !sectionOptions.some((s: any) => Number(s.id) === Number(sectionId))) {
-      setSectionId(null);
+  const markingExportRows = useMemo(() => {
+    const list = studentSearch.trim() ? visibleRows : rows;
+    return list.map((r) => {
+      const state = rowState[r.entity_id];
+      const statusRaw = state?.status || r.status || "";
+      return {
+        Name: r.entity_name || "",
+        RollNo: r.roll_number || "",
+        Status: formatStatusLabel(statusRaw) || "—",
+        CheckIn: state?.checkInTime || "—",
+        CheckOut: state?.checkOutTime || "—",
+        Remark: state?.remark || "—",
+      };
+    });
+  }, [visibleRows, rows, rowState, studentSearch]);
+
+  const markingPrintColumns = useMemo(
+    () => [
+      { title: "Name", dataKey: "Name" },
+      { title: "Roll No", dataKey: "RollNo" },
+      { title: "Status", dataKey: "Status" },
+      { title: "Check In", dataKey: "CheckIn" },
+      { title: "Check Out", dataKey: "CheckOut" },
+      { title: "Remark", dataKey: "Remark" },
+    ],
+    []
+  );
+
+  const handleMarkingRefresh = () => {
+    void fetchRoster();
+  };
+
+  const handleMarkingExportPdf = () => {
+    try {
+      if (!markingExportRows.length) {
+        setError("No data available for PDF export.");
+        return;
+      }
+      exportAttendancePdf(
+        `Student Attendance (${attendanceDate})`,
+        `student-attendance-marking-${attendanceDate}`,
+        markingExportRows
+      );
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
     }
-  }, [isTeacher, sectionOptions, sectionId]);
+  };
+
+  const handleMarkingExportExcel = () => {
+    try {
+      if (!markingExportRows.length) {
+        setError("No data available for Excel export.");
+        return;
+      }
+      exportAttendanceExcel(`student-attendance-marking-${attendanceDate}`, markingExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
+  const handleMarkingPrint = () => {
+    try {
+      if (!markingExportRows.length) {
+        setError("No data available to print.");
+        return;
+      }
+      printData(`Student Attendance (${attendanceDate})`, markingPrintColumns, markingExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Print failed");
+    }
+  };
 
   const handleSave = async () => {
     if (!canEditStudentAttendance) return;
@@ -689,11 +744,12 @@ const StudentAttendance = () => {
       setSaving(true);
       setError(null);
       setMessage(null);
+      const rowsToSave = studentSearch.trim() ? visibleRows : rows;
       await apiService.saveAttendance({
         entityType: "student",
         attendanceDate,
         academicYearId,
-        records: rows.map((r) => ({
+        records: rowsToSave.map((r) => ({
           entityId: r.entity_id,
           status: rowState[r.entity_id]?.status || "present",
           remark: rowState[r.entity_id]?.remark || "",
@@ -737,7 +793,12 @@ const StudentAttendance = () => {
               </ol>
             </nav>
           </div>
-          <TooltipOption onExportPdf={handleExportPdf} onExportExcel={handleExportExcel} />
+          <TooltipOption
+            onRefresh={canEditStudentAttendance ? handleMarkingRefresh : handleRefresh}
+            onPrint={canEditStudentAttendance ? handleMarkingPrint : handlePrint}
+            onExportPdf={canEditStudentAttendance ? handleMarkingExportPdf : handleExportPdf}
+            onExportExcel={canEditStudentAttendance ? handleMarkingExportExcel : handleExportExcel}
+          />
         </div>
 
         <div className="row mb-4">
@@ -748,8 +809,10 @@ const StudentAttendance = () => {
                   <i className="ti ti-users text-primary fs-3"></i>
                 </div>
                 <div>
-                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Students</p>
-                  <h4 className="mb-0 fw-bold">{stats.total}</h4>
+                  <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>
+                    {!canEditStudentAttendance && reportViewType === "staff" ? "Staff" : "Students"}
+                  </p>
+                  <h4 className="mb-0 fw-bold">{displayStats.total}</h4>
                 </div>
               </div>
             </div>
@@ -762,7 +825,7 @@ const StudentAttendance = () => {
                 </div>
                 <div>
                   <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Present</p>
-                  <h4 className="mb-0 fw-bold text-success">{stats.present}</h4>
+                  <h4 className="mb-0 fw-bold text-success">{displayStats.present}</h4>
                 </div>
               </div>
             </div>
@@ -775,7 +838,7 @@ const StudentAttendance = () => {
                 </div>
                 <div>
                   <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Absent</p>
-                  <h4 className="mb-0 fw-bold text-danger">{stats.absent}</h4>
+                  <h4 className="mb-0 fw-bold text-danger">{displayStats.absent}</h4>
                 </div>
               </div>
             </div>
@@ -788,7 +851,7 @@ const StudentAttendance = () => {
                 </div>
                 <div>
                   <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Others</p>
-                  <h4 className="mb-0 fw-bold text-warning">{stats.late + stats.half_day}</h4>
+                  <h4 className="mb-0 fw-bold text-warning">{displayStats.late + displayStats.half_day}</h4>
                 </div>
               </div>
             </div>
@@ -905,7 +968,13 @@ const StudentAttendance = () => {
                     disabled={!shouldEnableSectionSelect}
                     onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}
                   >
-                    <option value="">{shouldEnableSectionSelect ? "All Sections" : "Select class first"}</option>
+                    {!isTeacher && (
+                      <option value="">{shouldEnableSectionSelect ? "All Sections" : "Select class first"}</option>
+                    )}
+                    {isTeacher && !shouldEnableSectionSelect && <option value="">Select class first</option>}
+                    {isTeacher && shouldEnableSectionSelect && sectionOptions.length === 0 && (
+                      <option value="">No section assigned</option>
+                    )}
                     {sectionOptions.map((s: any) => <option key={s.id} value={s.id}>{s.section_name || s.name || `Section ${s.id}`}</option>)}
                   </select>
                 </div>
@@ -944,7 +1013,8 @@ const StudentAttendance = () => {
               </div>
             )}
 
-            {loading ? (
+            {canEditStudentAttendance ? (
+              loading ? (
               <div className="p-5 text-center">
                 <div className="spinner-border text-primary" role="status"></div>
                 <p className="text-muted mt-2">Loading roster...</p>
@@ -955,7 +1025,7 @@ const StudentAttendance = () => {
                 <p className="text-muted h6">No students found.</p>
                 <p className="text-muted small">Select a class and section to load students.</p>
               </div>
-            ) : canEditStudentAttendance ? (
+            ) : (
               <div className="table-responsive">
                 <table className="table table-hover align-middle mb-0 custom-attendance-table">
                   <thead className="bg-light">
@@ -1045,17 +1115,36 @@ const StudentAttendance = () => {
                   </tbody>
                 </table>
               </div>
+            )
+            ) : reportLoading ? (
+              <div className="p-5 text-center">
+                <div className="spinner-border text-primary" role="status"></div>
+                <p className="text-muted mt-2">Loading attendance report...</p>
+              </div>
+            ) : reportError ? (
+              <div className="p-5 text-center">
+                <i className="ti ti-alert-circle fs-1 text-danger mb-3 d-block"></i>
+                <p className="text-muted h6">{reportError}</p>
+              </div>
+            ) : activeReportRows.length === 0 ? (
+              <div className="p-5 text-center">
+                <i className="ti ti-database-off fs-1 text-muted mb-3 d-block"></i>
+                <p className="text-muted h6">
+                  {reportViewType === "staff" ? "No staff found." : "No students found."}
+                </p>
+                <p className="text-muted small">
+                  {reportViewType === "staff"
+                    ? "Try another month or clear department/designation filters."
+                    : "Select a class and section, or try another month."}
+                </p>
+              </div>
             ) : (
               <div className="p-4">
-                 {reportLoading ? (
-                    <div className="text-center py-4"><div className="spinner-border text-primary"></div></div>
-                 ) : (
-                   <Table
-                     dataSource={!canEditStudentAttendance && reportViewType === "staff" ? staffReportData.rows : reportRows}
-                     columns={reportColumns as any}
-                     Selection={false}
-                   />
-                 )}
+                <Table
+                  dataSource={activeReportRows}
+                  columns={reportColumns as any}
+                  Selection={false}
+                />
               </div>
             )}
           </div>

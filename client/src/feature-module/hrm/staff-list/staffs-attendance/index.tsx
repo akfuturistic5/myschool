@@ -12,6 +12,7 @@ import { useStaffProfileLoader } from "../useStaffProfileLoader";
 import { StaffProfileSidebar } from "../StaffProfileSidebar";
 import { StaffProfilePageHeader } from "../StaffProfilePageHeader";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
+import { flattenEntityAttendanceReportRows } from "../../../../core/utils/attendanceReportUtils";
 
 function normalizeStatus(s: string) {
   const v = String(s || "")
@@ -64,7 +65,7 @@ const StaffsAttendance = () => {
         academicYearId,
       });
       const all = Array.isArray(res?.data?.rows) ? res.data.rows : [];
-      const mine = all.filter((r: any) => Number(r?.entity_id) === Number(pk));
+      const mine = flattenEntityAttendanceReportRows(all, pk);
       mine.sort((a: any, b: any) =>
         String(a?.attendance_date || "").localeCompare(
           String(b?.attendance_date || "")
