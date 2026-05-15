@@ -6,7 +6,7 @@ import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { useParents } from "../../../core/hooks/useParents";
 import { useLeaveApplications } from "../../../core/hooks/useLeaveApplications";
 import { useStudentFees } from "../../../core/hooks/useStudentFees";
-import { useStudentExamResults } from "../../../core/hooks/useStudentExamResults";
+import { useStudentExamResults, type StudentExamRow } from "../../../core/hooks/useStudentExamResults";
 import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
 import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
 import { useAcademicYears } from "../../../core/hooks/useAcademicYears";
@@ -21,6 +21,14 @@ import HolidayDashboardCard from "../shared/HolidayDashboardCard";
 type StatsRangeKey = "thisMonth" | "thisYear" | "lastWeek";
 type LeaveRangeKey = "thisMonth" | "thisYear" | "lastWeek";
 
+interface LinkedChild {
+  student_id: number;
+  Child?: string;
+  ChildImage?: string;
+  class?: string;
+  [key: string]: any;
+}
+
 const getDateRange = (key: StatsRangeKey | LeaveRangeKey) => {
   const now = new Date();
   const startOfWeek = new Date(now);
@@ -33,7 +41,7 @@ const getDateRange = (key: StatsRangeKey | LeaveRangeKey) => {
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
   const startOfYear = new Date(now.getFullYear(), 0, 1);
   const endOfYear = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
-  if (key === "thisWeek") return { start: startOfWeek, end: endOfWeek };
+  // Removed "thisWeek" check to match updated type definitions
   if (key === "lastWeek") {
     const lastWeekStart = new Date(startOfWeek);
     lastWeekStart.setDate(lastWeekStart.getDate() - 7);
@@ -76,7 +84,7 @@ const ParentDashboard = () => {
   const { parents, loading: parentLoading, error: parentError } = useParents({ forCurrentUser: true });
   const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
 
-  const children = useMemo(() => parents || [], [parents]);
+  const children = useMemo<LinkedChild[]>(() => (parents as LinkedChild[]) || [], [parents]);
   const firstParent = children[0];
   const [activeStudentId, setActiveStudentId] = useState<string | null>(() => {
     try {
@@ -130,8 +138,8 @@ const ParentDashboard = () => {
   // Filtered exam results by date range for Statistics
   const filteredExamStats = useMemo(() => {
     if (!examResultsData?.exams?.length) return null;
-    const examsInRange = examResultsData.exams.filter((exam: { examDate?: string; exam_date?: string; date?: string }) => {
-      const d = exam.examDate || exam.exam_date || exam.date;
+    const examsInRange = examResultsData.exams.filter((exam: StudentExamRow) => {
+      const d = (exam.examDate || exam.exam_date || exam.date) as string | undefined;
       return !d || isDateInRange(d, statisticsRange);
     });
     if (examsInRange.length === 0) return null;
@@ -174,7 +182,7 @@ const ParentDashboard = () => {
 
   // Leave counts by type (from real leave data - use filtered for selected child)
   const leaveCounts = useMemo(() => {
-    const t = (s: string) => String(s || "").toLowerCase();
+    const t = (s?: string) => String(s || "").toLowerCase();
     const approvedLeaves = myLeaves.filter((l: { status?: string }) => t(l.status || "") === "approved");
     const sumDays = (rows: Array<{ noOfDays?: string | number }>) =>
       rows.reduce((sum, row) => {
@@ -693,11 +701,11 @@ const ParentDashboard = () => {
                         </p>
                         <p className="mb-0">
                           <strong>Outstanding:</strong>{" "}
-                          <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
+                          <span className={(feeData.totalOutstanding ?? 0) > 0 ? "text-danger" : "text-success"}>
                             ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                           </span>
                         </p>
-                        {feeData.totalOutstanding > 0 && (
+                        {(feeData.totalOutstanding ?? 0) > 0 && (
                           <div className="alert alert-warning mt-2 mb-0 py-2" role="alert">
                             <i className="ti ti-alert-circle me-2" />
                             Please pay outstanding amount for {selectedChild?.Child || "your child"}.
