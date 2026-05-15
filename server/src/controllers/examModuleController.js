@@ -1651,14 +1651,28 @@ async function viewExamTopPerformers(req, res) {
          WHERE es.exam_id = $1
            AND es.class_id IS NOT NULL
            AND es.class_section_id IS NOT NULL
-           AND EXISTS (
-             SELECT 1 FROM class_teachers ct
-             WHERE ct.staff_id = $2
-               AND ct.class_id = es.class_id
-               AND (ct.class_section_id IS NULL OR ct.class_section_id = es.class_section_id)
-               AND ct.deleted_at IS NULL
+           AND (
+             EXISTS (
+               SELECT 1 FROM class_teachers ct
+               WHERE ct.staff_id = ANY($2::int[])
+                 AND ct.class_id = es.class_id
+                 AND (ct.class_section_id IS NULL OR ct.class_section_id = es.class_section_id)
+                 AND ct.deleted_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM class_schedules cs
+               WHERE cs.teacher_id = ANY($2::int[])
+                 AND cs.class_id = es.class_id
+                 AND cs.deleted_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM subject_teacher_assignments sta
+               WHERE sta.staff_id = ANY($2::int[])
+                 AND sta.class_id = es.class_id
+                 AND sta.deleted_at IS NULL
+             )
            )`,
-        [examId, ctx.userId]
+        [examId, staffIds]
       );
       allowedScopes = (scopeRes.rows || []).map((r) => ({
         class_id: parseId(r.class_id),
@@ -2640,6 +2654,7 @@ module.exports = {
   viewExamSchedule,
   viewExamResults,
   viewExamTopPerformers,
+  getExamSchemaFlags,
   listSelfExamOptions,
   updateExam,
 };
