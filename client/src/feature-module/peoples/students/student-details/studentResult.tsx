@@ -368,59 +368,59 @@ const StudentResult = () => {
       <div className="page-wrapper">
         <div className="content">
           <div className="row">
-            <StudentBreadcrumb />
+            <StudentBreadcrumb studentId={student?.id} />
           </div>
           <div className="row">
             <StudentSidebar student={student} />
             <div className="col-xxl-9 col-xl-8">
               <div className="row">
                 <div className="col-md-12">
-                  <div className="card border-0 shadow-sm mb-4">
-                    <div className="card-body p-0">
-                      <ul className="nav nav-tabs nav-tabs-bottom mb-0">
-                        {returnToExamResult && (
-                          <li className="nav-item">
-                            <Link to={returnToExamResult} className="nav-link py-3 px-4 border-0 text-primary fw-bold">
-                              <i className="ti ti-arrow-left me-2" />
-                              Back to Directory
-                            </Link>
-                          </li>
-                        )}
-                        <li className="nav-item">
-                          <Link to={routes.studentDetail} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-school me-2" /> Details
+                  {returnToExamResult ? (
+                    <div className="mb-3">
+                      <Link to={returnToExamResult} className="text-primary">
+                        <i className="ti ti-arrow-left me-2" />
+                        Back to Directory
+                      </Link>
+                    </div>
+                  ) : null}
+                  <ul className="nav nav-tabs nav-tabs-bottom mb-4">
+                    <li>
+                      <Link
+                        to={student?.id ? `${routes.studentDetail}/${student.id}` : routes.studentDetail}
+                        className="nav-link"
+                        state={forwardedState}
+                      >
+                            <i className="ti ti-school me-2" /> Student Details
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-table-options me-2" /> Timetable
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable} className="nav-link" state={forwardedState}>
+                            <i className="ti ti-table-options me-2" /> Time Table
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-calendar-due me-2" /> Attendance
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves} className="nav-link" state={forwardedState}>
+                            <i className="ti ti-calendar-due me-2" /> Leave &amp; Attendance
                           </Link>
                         </li>
                         {!isTeacher && (
-                          <li className="nav-item">
-                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                          <li>
+                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link" state={forwardedState}>
                               <i className="ti ti-report-money me-2" /> Fees
                             </Link>
                           </li>
                         )}
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-bookmark-edit me-2" /> Performance
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active" state={forwardedState}>
+                            <i className="ti ti-bookmark-edit me-2" /> Exam &amp; Results
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary} className="nav-link" state={forwardedState}>
                             <i className="ti ti-books me-2" /> Library
                           </Link>
                         </li>
-                      </ul>
-                    </div>
-                  </div>
+                  </ul>
 
                   {/* Achievement Summary Cards */}
                   <div className="row g-3 mb-4">

@@ -18,6 +18,10 @@ import {
   getCompoundHolidayAttendancePart,
   isHolidayAttendanceCompound,
 } from "../../../core/utils/attendanceReportStatus";
+import {
+  applyHolidayDatesToMonthlyGrid,
+  normalizeMonthlyAttendanceGridRows,
+} from "../../../core/utils/attendanceReportUtils";
 
 const compareText = (left: unknown, right: unknown) =>
   String(left ?? "").localeCompare(String(right ?? ""));
@@ -186,14 +190,21 @@ const AttendanceReport = () => {
     };
   }, [academicYearId, appliedClassId, appliedSectionId, appliedMonth, refreshTick]);
 
-  const data = useMemo(
-    () =>
-      (Array.isArray(reportData.rows) ? reportData.rows : []).map((row: any, index: number) => ({
-        key: row.studentId ?? `attendance-report-${index}`,
-        ...row,
-      })),
-    [reportData.rows]
-  );
+  const data = useMemo(() => {
+    const days = Array.isArray(reportData?.days) ? reportData.days : [];
+    const holidayDates = Array.isArray(reportData?.holiday_dates) ? reportData.holiday_dates : [];
+    return applyHolidayDatesToMonthlyGrid(
+      normalizeMonthlyAttendanceGridRows(reportData?.rows),
+      days,
+      holidayDates
+    ).map((row) => ({
+      ...row,
+      key: row.studentId ?? row.key,
+      name: row.name,
+      studentId: row.studentId,
+      rollNo: row.rollNo,
+    }));
+  }, [reportData]);
 
   const dayColumns = useMemo(
     () =>
