@@ -91,20 +91,48 @@ async function canAccessStudent(req, studentId) {
     const studentSectionId = parseId(stud.section_id);
 
     if (studentClassId && staffIds.length > 0) {
-      const ct = await query(
+      // Align with exam module teacherCanAccessClassSection: homeroom, whole-class, or subject teacher.
+      const accessCheck = await query(
         `SELECT 1
-         FROM class_teachers ct
-         WHERE ct.staff_id = ANY($1::int[])
-           AND ct.class_id = $2
-           AND ct.deleted_at IS NULL
-           AND ($3::int IS NULL OR EXISTS (
-             SELECT 1 FROM class_sections csec
-             WHERE csec.id = ct.class_section_id AND csec.section_id = $3
-           ) OR (ct.class_section_id IS NULL AND $3::int IS NULL))
+         WHERE
+          EXISTS (
+            SELECT 1 FROM class_sections cs_rel
+            WHERE cs_rel.class_id = $2
+              AND (cs_rel.section_id = $3 OR (cs_rel.section_id IS NULL AND $3 IS NULL))
+              AND cs_rel.deleted_at IS NULL
+              AND EXISTS (
+                SELECT 1 FROM class_teachers ct
+                WHERE ct.class_section_id = cs_rel.id
+                  AND ct.staff_id = ANY($1::int[])
+                  AND ct.deleted_at IS NULL
+              )
+          )
+          OR EXISTS (
+            SELECT 1 FROM class_teachers ct
+            WHERE ct.class_id = $2
+              AND ct.staff_id = ANY($1::int[])
+              AND ct.class_section_id IS NULL
+              AND ct.deleted_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1 FROM subject_teacher_assignments sta
+            WHERE sta.class_id = $2
+              AND sta.staff_id = ANY($1::int[])
+              AND sta.deleted_at IS NULL
+              AND (
+                sta.class_section_id IS NULL
+                OR EXISTS (
+                  SELECT 1 FROM class_sections csec
+                  WHERE csec.id = sta.class_section_id
+                    AND csec.section_id = $3
+                    AND csec.class_id = $2
+                )
+              )
+          )
          LIMIT 1`,
         [staffIds, studentClassId, studentSectionId]
       ).catch(() => ({ rows: [] }));
-      if (ct.rows && ct.rows.length > 0) return { ok: true };
+      if (accessCheck.rows && accessCheck.rows.length > 0) return { ok: true };
     }
 
     return { ok: false, status: 403, message: 'Access denied' };

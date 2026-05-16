@@ -4137,6 +4137,9 @@ const getStudentExamResults = async (req, res) => {
     const absentExpr = erCols.has('is_absent') ? 'COALESCE(er.is_absent, false)' : 'false';
     const maxMarksExpr = coalesceExpr(['max_marks', 'total_marks'], '100');
     const passMarksExpr = coalesceExpr(['min_marks', 'pass_marks', 'min_mark', 'min'], '35');
+    /** exams table has no start_date/end_date in tenant schema; use schedule date + exam timestamps. */
+    const examDateSql = 'COALESCE(es.exam_date, e.updated_at, e.created_at)';
+    const examDateOrderSql = `${examDateSql} DESC NULLS LAST`;
 
     let rows = { rows: [] };
     const uRoleId = req.user?.role_id || req.user?.user_role_id;
@@ -4199,7 +4202,8 @@ const getStudentExamResults = async (req, res) => {
         rows = { rows: [] };
       }
     }
-    if ((!rows.rows || rows.rows.length === 0) && hasExamSubjectsTable) {
+    if ((!rows.rows || rows.rows.length === 0) && hasExamSubjectsTable && erCols.has('exam_id')) {
+      try {
       rows = await query(
         `SELECT
            es.exam_id,
@@ -4230,8 +4234,13 @@ const getStudentExamResults = async (req, res) => {
          ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
         [studentId]
       );
+      } catch (eExamSubjects) {
+        console.warn('getStudentExamResults: exam_subjects query failed:', eExamSubjects.message);
+        rows = { rows: [] };
+      }
     }
     if ((!rows.rows || rows.rows.length === 0) && hasExamSchedulesTable) {
+      try {
       const erJoinSchedule =
         useExamScheduleLinkForResults
           ? `LEFT JOIN exam_results er
@@ -4278,87 +4287,97 @@ const getStudentExamResults = async (req, res) => {
          ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
         [studentId]
       );
+      } catch (eEnroll) {
+        console.warn('getStudentExamResults: enrollment schedule query failed:', eEnroll.message);
+        rows = { rows: [] };
+      }
     }
 
 
-    // Falling back to direct exam_results history if no active schedules found (e.g. for former students).
+    // Falling back to exam_results history when schedule joins return no rows (e.g. former students).
     if (!rows.rows || rows.rows.length === 0) {
-      try {
-        rows = await query(
-        `SELECT
-           er.exam_id,
-           e.exam_name,
-           e.exam_type,
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
-           COALESCE(cs.subject_id, er.subject_id) AS subject_id,
-           s.subject_name,
-           s.subject_code,
-           COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
-           COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
-           ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
-           ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-           ${marksExpr} AS marks_obtained,
-           ${absentExpr} AS is_absent
-         FROM exam_results er
-         INNER JOIN exams e ON e.id = er.exam_id
-         LEFT JOIN exam_schedules es ON es.id = er.exam_schedule_id
-         LEFT JOIN class_subjects cs ON cs.id = es.class_subject_id
-         LEFT JOIN subjects s ON s.id = COALESCE(cs.subject_id, er.subject_id)
-         WHERE er.student_id = $1
-           AND er.exam_id IS NOT NULL ${publishFilter}
-         ORDER BY
-           COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
-           er.exam_id DESC,
-           s.subject_name ASC`,
-        [studentId]
-      );
-      } catch (eFb) {
-        console.warn('getStudentExamResults: exam_results history fallback failed:', eFb.message);
-        rows = { rows: [] };
-      }
-      if (!rows.rows || rows.rows.length === 0) {
-        if (useExamScheduleLinkForResults && hasExamSchedulesTable) {
+      if (useExamScheduleLinkForResults && hasExamSchedulesTable) {
+        try {
           rows = await query(
-          `SELECT
-             es.exam_id,
-             e.exam_name,
-             e.exam_type,
-             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
-             csu.subject_id,
-             s.subject_name,
-             s.subject_code,
-             COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
-             COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
-             ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
-             ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-             ${marksExpr} AS marks_obtained,
-             ${absentExpr} AS is_absent
-           FROM exam_results er
-           INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id
-           LEFT JOIN exams e ON e.id = es.exam_id
-           INNER JOIN class_subjects csu
-             ON csu.id = es.class_subject_id
-            AND csu.class_id = es.class_id
-            AND csu.academic_year_id = es.academic_year_id
-           LEFT JOIN subjects s ON s.id = csu.subject_id
-           WHERE er.student_id = $1
-             AND er.exam_schedule_id IS NOT NULL ${publishFilter}
-           ORDER BY
-             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
-             es.exam_id DESC,
-             s.subject_name ASC`,
-          [studentId]
-        );
-        } else {
-          if (!erCols.has('exam_id')) {
-            rows = { rows: [] };
-          } else {
-            const subjectPlanJoin = hasExamSubjectsTable
+            `SELECT
+               es.exam_id,
+               e.exam_name,
+               e.exam_type,
+               ${examDateSql} AS exam_date,
+               csu.subject_id,
+               s.subject_name,
+               s.subject_code,
+               COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+               COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+               ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+               ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+               ${marksExpr} AS marks_obtained,
+               ${absentExpr} AS is_absent
+             FROM exam_results er
+             INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id
+             LEFT JOIN exams e ON e.id = es.exam_id
+             INNER JOIN class_subjects csu
+               ON csu.id = es.class_subject_id
+              AND csu.class_id = es.class_id
+              AND csu.academic_year_id = es.academic_year_id
+             LEFT JOIN subjects s ON s.id = csu.subject_id
+             WHERE er.student_id = $1
+               AND er.exam_schedule_id IS NOT NULL ${publishFilter}
+             ORDER BY
+               ${examDateOrderSql},
+               es.exam_id DESC,
+               s.subject_name ASC`,
+            [studentId]
+          );
+        } catch (eSched) {
+          console.warn('getStudentExamResults: schedule-linked history fallback failed:', eSched.message);
+          rows = { rows: [] };
+        }
+      }
+
+      if ((!rows.rows || rows.rows.length === 0) && erCols.has('exam_id')) {
+        try {
+          rows = await query(
+            `SELECT
+               er.exam_id,
+               e.exam_name,
+               e.exam_type,
+               ${examDateSql} AS exam_date,
+               COALESCE(cs.subject_id, er.subject_id) AS subject_id,
+               s.subject_name,
+               s.subject_code,
+               COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+               COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+               ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+               ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+               ${marksExpr} AS marks_obtained,
+               ${absentExpr} AS is_absent
+             FROM exam_results er
+             INNER JOIN exams e ON e.id = er.exam_id
+             LEFT JOIN exam_schedules es ON es.id = er.exam_schedule_id
+             LEFT JOIN class_subjects cs ON cs.id = es.class_subject_id
+             LEFT JOIN subjects s ON s.id = COALESCE(cs.subject_id, er.subject_id)
+             WHERE er.student_id = $1
+               AND er.exam_id IS NOT NULL ${publishFilter}
+             ORDER BY
+               ${examDateOrderSql},
+               er.exam_id DESC,
+               s.subject_name ASC`,
+            [studentId]
+          );
+        } catch (eFb) {
+          console.warn('getStudentExamResults: exam_results history fallback failed:', eFb.message);
+          rows = { rows: [] };
+        }
+      }
+
+      if ((!rows.rows || rows.rows.length === 0) && erCols.has('exam_id')) {
+        const subjectPlanJoin = hasExamSubjectsTable
           ? `LEFT JOIN exam_subjects es
              ON es.exam_id = er.exam_id
             AND es.subject_id = er.subject_id
             ${hasErComponent && hasEsComponent ? "AND COALESCE(es.exam_component,'theory') = COALESCE(er.exam_component,'theory')" : ''}`
-          : hasExamSchedulesTable && erCols.has('exam_id')
+          : hasExamSchedulesTable
             ? `LEFT JOIN exam_schedules es
                ON es.exam_id = er.exam_id
              LEFT JOIN class_subjects csu
@@ -4372,37 +4391,39 @@ const getStudentExamResults = async (req, res) => {
                    NULL::numeric AS max_marks,
                    NULL::numeric AS passing_marks
                ) es ON false`;
-            rows = await query(
-          `SELECT
-             er.exam_id,
-             e.exam_name,
-             e.exam_type,
-             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) AS exam_date,
-             er.subject_id,
-             s.subject_name,
-             s.subject_code,
-             COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
-             COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
-             ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
-             ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
-             ${marksExpr} AS marks_obtained,
-             ${absentExpr} AS is_absent
-           FROM exam_results er
-           LEFT JOIN exams e ON e.id = er.exam_id
-           LEFT JOIN subjects s ON s.id = er.subject_id
-           ${subjectPlanJoin}
-           WHERE er.student_id = $1
-             AND er.exam_id IS NOT NULL ${publishFilter}
-           ORDER BY
-             COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
-             er.exam_id DESC,
-             s.subject_name ASC`,
-          [studentId]
-        );
-          }
+        try {
+          rows = await query(
+            `SELECT
+               er.exam_id,
+               e.exam_name,
+               e.exam_type,
+               ${examDateSql} AS exam_date,
+               er.subject_id,
+               s.subject_name,
+               s.subject_code,
+               COALESCE(es.max_marks, ${maxMarksExpr}) AS max_marks,
+               COALESCE(es.passing_marks, ${passMarksExpr}) AS passing_marks,
+               ${hasErComponent ? 'er.exam_component' : "NULL::text AS exam_component"},
+               ${hasPracticalHours ? 'COALESCE(s.practical_hours, 0)' : '0'} AS practical_hours,
+               ${marksExpr} AS marks_obtained,
+               ${absentExpr} AS is_absent
+             FROM exam_results er
+             LEFT JOIN exams e ON e.id = er.exam_id
+             LEFT JOIN subjects s ON s.id = er.subject_id
+             ${subjectPlanJoin}
+             WHERE er.student_id = $1
+               AND er.exam_id IS NOT NULL ${publishFilter}
+             ORDER BY
+               ${examDateOrderSql},
+               er.exam_id DESC,
+               s.subject_name ASC`,
+            [studentId]
+          );
+        } catch (eLegacy) {
+          console.warn('getStudentExamResults: legacy exam_id fallback failed:', eLegacy.message);
+          rows = { rows: [] };
         }
       }
-
     }
 
     if (!rows.rows || rows.rows.length === 0) {
