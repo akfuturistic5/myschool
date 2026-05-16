@@ -9,7 +9,7 @@ import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
 import { apiService } from "../../../core/services/apiService";
-import { formatDateDMY } from "../../../core/utils/dateDisplay";
+import { formatDateDMY, formatUsdDisplay } from "../../../core/utils/dateDisplay";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import LibraryToolbar from "./LibraryToolbar";
 import { exportRowsToPdf, exportRowsToXlsx, printRowsToPage } from "./libraryTableExport";
@@ -144,7 +144,7 @@ const IssueBook = () => {
     setAppliedFilters(empty);
   };
 
-  const issueExportHeaders = ["ID", "Issued", "Due", "Borrower", "Book", "Returned", "Status"];
+  const issueExportHeaders = ["ID", "Issued", "Due", "Borrower", "Book", "Returned", "Fine", "Status"];
   const buildIssueExportRows = () =>
     rows.map((r) => [
       r.id,
@@ -153,6 +153,7 @@ const IssueBook = () => {
       r.issueTo,
       r.booksIssued || r.book_title,
       r.bookReturned,
+      r.fine_amount || 0,
       r.status,
     ]);
 
@@ -321,6 +322,13 @@ const IssueBook = () => {
       dataIndex: "bookReturned",
       sorter: (a: TableData, b: TableData) =>
         String((a as any).bookReturned || "").localeCompare(String((b as any).bookReturned || "")),
+    },
+    {
+      title: "Fine",
+      dataIndex: "fine_amount",
+      render: (text: number) => <span>{text ? formatUsdDisplay(text) : "—"}</span>,
+      sorter: (a: TableData, b: TableData) =>
+        Number((a as any).fine_amount || 0) - Number((b as any).fine_amount || 0),
     },
     {
       title: "Remarks",

@@ -9,6 +9,7 @@ import { useCurrentStudent } from "../../../../core/hooks/useCurrentStudent";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { isTeacherRole } from "../../../../core/utils/roleUtils";
+import { formatUsdDisplay } from "../../../../core/utils/dateDisplay";
 
 interface StudentDetailsLocationState {
   studentId?: number;
@@ -245,6 +246,7 @@ const StudentLibrary = () => {
                                 <th>Issued</th>
                                 <th>Due</th>
                                 <th>Returned</th>
+                                <th>Fine</th>
                                 <th>Status</th>
                                 <th>Remarks</th>
                               </tr>
@@ -256,6 +258,7 @@ const StudentLibrary = () => {
                                   <td>{row.dateofIssue || "—"}</td>
                                   <td>{row.dueDate || "—"}</td>
                                   <td>{row.return_date || "—"}</td>
+                                  <td>{row.fine_amount ? formatUsdDisplay(row.fine_amount) : "—"}</td>
                                   <td className="text-capitalize">{row.status || "—"}</td>
                                   <td>{row.issueRemarks || row.remarks || "—"}</td>
                                 </tr>
