@@ -8,6 +8,7 @@ import TeacherModal from "../teacherModal";
 import TeacherSidebar from "./teacherSidebar";
 import TeacherBreadcrumb from "./teacherBreadcrumb";
 import { apiService } from "../../../../core/services/apiService";
+import { formatUsdDisplay } from "../../../../core/utils/dateDisplay";
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -210,6 +211,18 @@ const TeacherLibrary = () => {
                                       <div className="mb-3">
                                         <span className="fs-12 mb-1">Due date</span>
                                         <p className="text-dark">{row.dueDate || "—"}</p>
+                                      </div>
+                                    </div>
+                                    <div className="col-sm-6">
+                                      <div className="mb-3">
+                                        <span className="fs-12 mb-1">Returned</span>
+                                        <p className="text-dark">{row.return_date || "—"}</p>
+                                      </div>
+                                    </div>
+                                    <div className="col-sm-6">
+                                      <div className="mb-3">
+                                        <span className="fs-12 mb-1">Fine</span>
+                                        <p className="text-dark">{row.fine_amount ? formatUsdDisplay(row.fine_amount) : "—"}</p>
                                       </div>
                                     </div>
                                   </div>
