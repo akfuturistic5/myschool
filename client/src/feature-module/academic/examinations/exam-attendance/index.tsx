@@ -15,21 +15,21 @@ const ExamAttendance = () => {
     .map((v) => String(v || "").trim().toLowerCase())
     .filter(Boolean);
   const canonicalRoleId = Number((user as any)?.role_id ?? (user as any)?.user_role_id);
+  const isStudent = canonicalRoleId === 3 || roleTokens.includes("student");
+  const isParent = canonicalRoleId === 4 || roleTokens.includes("parent");
+  const isTeacher = canonicalRoleId === 2 || roleTokens.includes("teacher");
   const selfOnly =
-    canonicalRoleId === 3 ||
-    canonicalRoleId === 4 ||
+    isStudent ||
+    isParent ||
     canonicalRoleId === 5 ||
-    roleTokens.some(
-      (r) =>
-        r === "student" ||
-        r === "parent" ||
-        r === "guardian" ||
-        r === "father" ||
-        r === "mother" ||
-        r.includes("student") ||
-        r.includes("parent") ||
-        r.includes("guardian")
-    );
+    roleTokens.some((r) => r === "guardian" || r.includes("guardian"));
+  const dashboardLink = isStudent
+    ? routes.studentDashboard
+    : isParent
+    ? routes.parentDashboard
+    : isTeacher
+    ? routes.teacherDashboard
+    : routes.adminDashboard;
 
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>("");
@@ -48,7 +48,8 @@ const ExamAttendance = () => {
         if (selfOnly) {
           const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
           if (cancelled) return;
-          const nextExams = (res as any)?.data || [];
+          const raw = (res as any)?.data;
+          const nextExams = Array.isArray(raw?.exams) ? raw.exams : (Array.isArray(raw) ? raw : []);
           setExams(nextExams);
           if (nextExams.length > 0) {
             setSelectedExamId(String(nextExams[0].id));
@@ -161,7 +162,7 @@ const ExamAttendance = () => {
   );
 
   const selectedExamLabel = useMemo(() => {
-    const selected = exams.find((ex: any) => String(ex.id) === String(selectedExamId));
+    const selected = Array.isArray(exams) ? exams.find((ex: any) => String(ex.id) === String(selectedExamId)) : null;
     if (!selected) return "Exam Timetable";
     return `${selected.exam_name || "Exam"}${selected.exam_type ? ` (${selected.exam_type})` : ""}`;
   }, [exams, selectedExamId]);
@@ -260,7 +261,7 @@ const ExamAttendance = () => {
             <h3 className="page-title mb-1">Exam Timetable</h3>
             <nav>
               <ol className="breadcrumb mb-0">
-                <li className="breadcrumb-item"><Link to={routes.adminDashboard}>Dashboard</Link></li>
+                <li className="breadcrumb-item"><Link to={dashboardLink}>Dashboard</Link></li>
                 <li className="breadcrumb-item">Academic</li>
                 <li className="breadcrumb-item active" aria-current="page">Exam Timetable</li>
               </ol>
@@ -297,9 +298,11 @@ const ExamAttendance = () => {
                 </ul>
               </div>
             )}
-            <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
-              <i className="ti ti-checklist me-2"></i> Manage Exams
-            </Link>
+            {!selfOnly && (
+              <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
+                <i className="ti ti-checklist me-2"></i> Manage Exams
+              </Link>
+            )}
           </div>
         </div>
 
@@ -326,7 +329,7 @@ const ExamAttendance = () => {
                   }}
                 >
                   <option value="">Select Exam</option>
-                  {exams.map((ex: any) => (
+                  {Array.isArray(exams) && exams.map((ex: any) => (
                     <option key={ex.id} value={ex.id}>
                       {ex.exam_name} ({ex.exam_type})
                     </option>

@@ -10,7 +10,7 @@ function formatDate(val) {
 }
 
 export const useNoticeBoard = (options = {}) => {
-  const { limit = 100, includeExpired = false } = options;
+  const { limit = 100, includeExpired = false, academicYearId = null } = options;
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -23,6 +23,7 @@ export const useNoticeBoard = (options = {}) => {
       const res = await apiService.getNoticeBoard({
         limit,
         include_expired: includeExpired ? 'true' : undefined,
+        academic_year_id: academicYearId,
       });
       if (res.status === 'SUCCESS' && Array.isArray(res.data)) {
         setNotices(
@@ -51,7 +52,7 @@ export const useNoticeBoard = (options = {}) => {
     } finally {
       setLoading(false);
     }
-  }, [limit, includeExpired]);
+  }, [limit, includeExpired, academicYearId]);
 
   useEffect(() => {
     fetchNotices();

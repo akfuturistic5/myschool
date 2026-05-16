@@ -21,8 +21,14 @@ export const useEvents = (options = {}) => {
       setError(null);
       if (forDashboard) {
         const [upcomingRes, completedRes] = await Promise.all([
-          apiService.getUpcomingEvents({ limit: limit || 10 }),
-          apiService.getCompletedEvents({ limit: limit || 5 }),
+          apiService.getUpcomingEvents({ 
+            limit: limit || 10, 
+            academic_year_id: params?.academic_year_id ?? params?.academicYearId 
+          }),
+          apiService.getCompletedEvents({ 
+            limit: limit || 5, 
+            academic_year_id: params?.academic_year_id ?? params?.academicYearId 
+          }),
         ]);
         setUpcomingEvents(upcomingRes?.data || []);
         setCompletedEvents(completedRes?.data || []);

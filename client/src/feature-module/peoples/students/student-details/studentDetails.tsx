@@ -28,7 +28,7 @@ const StudentDetails = () => {
   const { id: paramId } = useParams<{ id: string }>()
   const location = useLocation()
   const state = location.state as StudentDetailsLocationState | null
-  const { role, studentId, student, loading, loadError } = useLinkedStudentContext({
+  const { role, studentId, student, loading, loadError, isParentRole, isStudentRole } = useLinkedStudentContext({
     locationState: state,
     routeStudentId: paramId,
   })
@@ -49,7 +49,8 @@ const StudentDetails = () => {
   const [medicalDocumentUrl, setMedicalDocumentUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!student?.id) {
+    // Skip API call for roles not authorized to view promotion history (End users)
+    if (!student?.id || isParentRole || isStudentRole) {
       setPromotionRows([])
       setHistoryError(null)
       return
@@ -488,66 +489,68 @@ const StudentDetails = () => {
               {/* /Section Teacher Information */}
 
               {/* Promotion History */}
-              <div className="card">
-                <div className="card-header">
-                  <h5>Promotion History</h5>
-                </div>
-                <div className="card-body">
-                  {historyLoading && <p className="text-muted mb-0">Loading promotion history...</p>}
-                  {historyError && <div className="alert alert-danger mb-0">{historyError}</div>}
-                  {!historyLoading && !historyError && historyTableRows.length === 0 && (
-                    <p className="text-muted mb-0">No promotion history available for this student.</p>
-                  )}
-                  {!historyLoading && !historyError && historyTableRows.length > 0 && (
-                    <div className="table-responsive">
-                      <table className="table table-bordered align-middle mb-0">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Event</th>
-                            <th>From Class</th>
-                            <th>From Section</th>
-                            <th>From Academic Year</th>
-                            <th>To Class</th>
-                            <th>To Section</th>
-                            <th>To Academic Year</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {historyTableRows.map((r) => (
-                            <tr key={r.key}>
-                              <td>{r.date}</td>
-                              <td>
-                                {r.eventType === 'ADMISSION' ? (
-                                  <span className="badge badge-soft-info">
-                                    <i className="ti ti-user-plus me-1"></i>Admission
-                                  </span>
-                                ) : (
-                                  <span className="badge badge-soft-success">
-                                    <i className="ti ti-trending-up me-1"></i>Promotion
-                                  </span>
-                                )}
-                              </td>
-                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
-                                {r.eventType === 'ADMISSION' ? <small>New Entry</small> : r.fromClass}
-                              </td>
-                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
-                                {r.eventType === 'ADMISSION' ? '—' : r.fromSection}
-                              </td>
-                              <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
-                                {r.eventType === 'ADMISSION' ? '—' : r.fromYear}
-                              </td>
-                              <td>{r.toClass}</td>
-                              <td>{r.toSection}</td>
-                              <td>{r.toYear}</td>
+              {!isParentRole && !isStudentRole && (
+                <div className="card">
+                  <div className="card-header">
+                    <h5>Promotion History</h5>
+                  </div>
+                  <div className="card-body">
+                    {historyLoading && <p className="text-muted mb-0">Loading promotion history...</p>}
+                    {historyError && <div className="alert alert-danger mb-0">{historyError}</div>}
+                    {!historyLoading && !historyError && historyTableRows.length === 0 && (
+                      <p className="text-muted mb-0">No promotion history available for this student.</p>
+                    )}
+                    {!historyLoading && !historyError && historyTableRows.length > 0 && (
+                      <div className="table-responsive">
+                        <table className="table table-bordered align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Event</th>
+                              <th>From Class</th>
+                              <th>From Section</th>
+                              <th>From Academic Year</th>
+                              <th>To Class</th>
+                              <th>To Section</th>
+                              <th>To Academic Year</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                          </thead>
+                          <tbody>
+                            {historyTableRows.map((r) => (
+                              <tr key={r.key}>
+                                <td>{r.date}</td>
+                                <td>
+                                  {r.eventType === 'ADMISSION' ? (
+                                    <span className="badge badge-soft-info">
+                                      <i className="ti ti-user-plus me-1"></i>Admission
+                                    </span>
+                                  ) : (
+                                    <span className="badge badge-soft-success">
+                                      <i className="ti ti-trending-up me-1"></i>Promotion
+                                    </span>
+                                  )}
+                                </td>
+                                <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                  {r.eventType === 'ADMISSION' ? <small>New Entry</small> : r.fromClass}
+                                </td>
+                                <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                  {r.eventType === 'ADMISSION' ? '—' : r.fromSection}
+                                </td>
+                                <td className={r.eventType === 'ADMISSION' ? 'text-muted' : ''}>
+                                  {r.eventType === 'ADMISSION' ? '—' : r.fromYear}
+                                </td>
+                                <td>{r.toClass}</td>
+                                <td>{r.toSection}</td>
+                                <td>{r.toYear}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
               {/* /Promotion History */}
             </div>
             {/* Address */}
