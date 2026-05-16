@@ -290,7 +290,11 @@ const StudentFees = () => {
                                   <>
                                     {feeData.map((row: any) => (
                                       <tr key={row.fees_assign_details_id}>
-                                        <td>{row.fee_group || "-"}</td>
+                                        <td>
+                                          <span className={`badge ${row.is_optional ? "badge-soft-info" : "badge-soft-secondary"}`}>
+                                            {row.is_optional ? "Optional" : "Compulsory"}
+                                          </span>
+                                        </td>
                                         <td>{row.fee_type || "-"}</td>
                                         <td>{parseFloat(row.total_amount || 0).toLocaleString()}</td>
                                         <td>{parseFloat(row.paid_amount || 0).toLocaleString()}</td>

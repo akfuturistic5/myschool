@@ -12,14 +12,6 @@ const {
   isMissingTableError,
 } = require('../utils/gradeScaleService');
 
-const createExamSchema = Joi.object({
-  exam_name: Joi.string().trim().min(2).max(150).required(),
-  exam_type: Joi.string().trim().required(),
-  class_ids: Joi.array().items(Joi.number().integer().positive()).min(1).required(),
-  academic_year_id: Joi.number().integer().positive().allow(null),
-  description: Joi.string().allow('', null),
-});
-
 const saveSubjectsSchema = Joi.object({
   exam_id: Joi.number().integer().positive().required(),
   class_id: Joi.number().integer().positive().required(),
@@ -52,10 +44,31 @@ const saveSubjectSetupSchema = Joi.object({
         exam_date: Joi.date().iso().required(),
         start_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
         end_time: Joi.string().pattern(/^\d{2}:\d{2}$/).required(),
+        room_id: Joi.number().integer().positive().optional().allow(null, ''),
       })
     )
     .min(1)
     .required(),
+});
+
+const createExamSchema = Joi.object({
+  exam_name: Joi.string().trim().min(2).max(100).required(),
+  exam_type: Joi.string()
+    .valid('unit_test', 'monthly', 'quarterly', 'half_yearly', 'annual', 'preboard', 'internal', 'other')
+    .required(),
+  academic_year_id: Joi.number().integer().positive().required(),
+  description: Joi.string().trim().max(500).optional().allow(null, ''),
+  class_ids: Joi.array().items(Joi.number().integer().positive()).min(1).required(),
+  is_published: Joi.boolean().default(false).optional(),
+});
+
+const updateExamSchema = Joi.object({
+  exam_name: Joi.string().trim().min(2).max(100).optional(),
+  exam_type: Joi.string()
+    .valid('unit_test', 'monthly', 'quarterly', 'half_yearly', 'annual', 'preboard', 'internal', 'other')
+    .optional(),
+  description: Joi.string().trim().max(500).optional().allow(null, ''),
+  is_published: Joi.boolean().optional(),
 });
 
 const examMarksContextSchema = Joi.object({
@@ -403,7 +416,7 @@ function validateNoExamSlotCollision(rows = []) {
 }
 
 async function getExamSchemaFlags() {
-  const [tableCheck, colCheck] = await Promise.all([
+  const [tableCheck, colCheck, studentColCheck, promoCheck] = await Promise.all([
     query(
       `SELECT to_regclass('public.exam_classes') AS exam_classes_table`
     ),
@@ -414,15 +427,29 @@ async function getExamSchemaFlags() {
          AND table_name = 'exams'
          AND column_name IN ('is_active', 'class_id', 'created_by', 'is_finalized')`
     ),
+    query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'students'
+         AND column_name IN ('class_id', 'section_id')`
+    ),
+    query(
+      `SELECT to_regclass('public.student_promotions') AS promo_table`
+    ),
   ]);
 
   const cols = new Set((colCheck.rows || []).map((r) => String(r.column_name)));
+  const sCols = new Set((studentColCheck.rows || []).map((r) => String(r.column_name)));
   return {
     hasExamClassesTable: !!tableCheck.rows?.[0]?.exam_classes_table,
     hasIsActiveColumn: cols.has('is_active'),
     hasClassIdColumn: cols.has('class_id'),
     hasCreatedByColumn: cols.has('created_by'),
     hasIsFinalizedColumn: cols.has('is_finalized'),
+    studentHasClassId: sCols.has('class_id'),
+    studentHasSectionId: sCols.has('section_id'),
+    hasStudentPromotionsTable: !!promoCheck.rows?.[0]?.promo_table,
   };
 }
 
@@ -531,6 +558,40 @@ async function listExams(req, res) {
     }
     const where = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
 
+    const marksCompletionSubquery = `
+      (
+        SELECT 
+          JSON_BUILD_OBJECT(
+            'total_expected', COUNT(st_all.id),
+            'total_entered', COUNT(er_all.id),
+            'is_complete', (COUNT(st_all.id) > 0 AND COUNT(st_all.id) = COUNT(er_all.id))
+          )
+        FROM exam_schedules es_all
+        INNER JOIN class_subjects cs_all ON cs_all.id = es_all.class_subject_id
+        CROSS JOIN LATERAL (
+          SELECT st_inner.id
+          FROM students st_inner
+          INNER JOIN student_lifecycle_ledger l_inner ON l_inner.student_id = st_inner.id
+          WHERE l_inner.to_class_id = es_all.class_id
+            AND (es_all.class_section_id IS NULL OR EXISTS (
+              SELECT 1 FROM class_sections cs_m 
+              WHERE cs_m.id = es_all.class_section_id AND cs_m.section_id = l_inner.to_section_id
+            ))
+            AND l_inner.to_academic_year_id = es_all.academic_year_id
+            AND st_inner.status = 'Active'
+            AND (
+              cs_all.is_elective = false 
+              OR EXISTS (
+                SELECT 1 FROM student_subject_choices ssc_inner
+                WHERE ssc_inner.student_id = st_inner.id AND ssc_inner.class_subject_id = cs_all.id AND ssc_inner.deleted_at IS NULL
+              )
+            )
+        ) st_all
+        LEFT JOIN exam_results er_all ON er_all.exam_schedule_id = es_all.id AND er_all.student_id = st_all.id
+        WHERE es_all.exam_id = e.id
+      ) AS marks_completion
+    `;
+
     const baseSelect = schema.hasExamClassesTable
       ? `SELECT
            e.id,
@@ -538,7 +599,9 @@ async function listExams(req, res) {
            e.exam_type,
            e.academic_year_id,
            e.description,
+           e.is_published,
            e.created_at,
+           ${marksCompletionSubquery},
            ARRAY_AGG(DISTINCT c.class_name ORDER BY c.class_name) AS class_names
          FROM exams e
          INNER JOIN exam_classes ec ON ec.exam_id = e.id
@@ -550,7 +613,9 @@ async function listExams(req, res) {
            e.exam_type,
            e.academic_year_id,
            e.description,
+           e.is_published,
            e.created_at,
+           ${marksCompletionSubquery},
            ARRAY_AGG(DISTINCT c.class_name ORDER BY c.class_name) AS class_names
          FROM exams e
          LEFT JOIN classes c ON c.id = e.class_id`
@@ -560,7 +625,9 @@ async function listExams(req, res) {
            e.exam_type,
            e.academic_year_id,
            e.description,
+           e.is_published,
            e.created_at,
+           ${marksCompletionSubquery},
            ARRAY['Unassigned']::text[] AS class_names
          FROM exams e`;
 
@@ -1003,7 +1070,7 @@ async function getExamSubjectsContext(req, res) {
     }
 
     const existing = await query(
-      `SELECT class_subject_id AS subject_id, max_marks, passing_marks, exam_date::TEXT, start_time, end_time
+      `SELECT class_subject_id AS subject_id, max_marks, passing_marks, exam_date::TEXT, start_time, end_time, class_room_id
        FROM exam_schedules
        WHERE exam_id = $1 AND class_id = $2 AND ${classSectionId ? 'class_section_id = $3' : 'class_section_id IS NULL'}`,
       classSectionId ? [examId, classId, classSectionId] : [examId, classId]
@@ -1047,6 +1114,7 @@ async function getExamSubjectsContext(req, res) {
         exam_date: ex?.exam_date || null,
         start_time: ex?.start_time ? String(ex.start_time).slice(0, 5) : null,
         end_time: ex?.end_time ? String(ex.end_time).slice(0, 5) : null,
+        class_room_id: ex?.class_room_id || null,
         is_elective: !!s.is_elective,
         elective_group_id: s.elective_group_id || null,
       };
@@ -1062,7 +1130,9 @@ async function getExamSubjectsContext(req, res) {
   }
 }
 
-async function resolveStudentScopeByUser(ctx) {
+async function resolveStudentScopeByUser(ctx, targetStudentId = null) {
+  const schema = await getExamSchemaFlags();
+
   const resolveLatestLinkedStudentId = async (studentId) => {
     const sid = parseId(studentId);
     if (!sid) return null;
@@ -1080,7 +1150,6 @@ async function resolveStudentScopeByUser(ctx) {
         AND (
           (b.user_id IS NOT NULL AND s2.user_id = b.user_id)
           OR (COALESCE(NULLIF(TRIM(b.admission_number), ''), '') <> '' AND s2.admission_number = b.admission_number)
-          OR (COALESCE(NULLIF(TRIM(b.roll_number), ''), '') <> '' AND s2.roll_number = b.roll_number)
         )
        ORDER BY s2.id DESC
        LIMIT 1`,
@@ -1094,10 +1163,14 @@ async function resolveStudentScopeByUser(ctx) {
     if (!studentId) return row || null;
     const resolvedId = await resolveLatestLinkedStudentId(studentId);
 
+    const cols = ['s2.id AS student_id'];
+    if (schema.studentHasClassId) cols.push('s2.class_id');
+    if (schema.studentHasSectionId) cols.push('s2.section_id');
+
     const latest = await query(
-      `SELECT s2.id AS student_id, s2.class_id, s2.section_id
-       FROM students s2
-       WHERE s2.id = $1
+      `SELECT ${baseCols.join(', ')}
+       ${baseFrom}
+       WHERE s.id = $1
        LIMIT 1`,
       [resolvedId]
     );
@@ -1129,13 +1202,49 @@ async function resolveStudentScopeByUser(ctx) {
     return normalizedRow;
   };
 
+  const baseCols = [
+    's.id AS student_id',
+    's.admission_number',
+    "CONCAT(u.first_name, ' ', u.last_name) AS student_name"
+  ];
+  
+  let enrollmentJoin = '';
+  if (schema.studentHasClassId) {
+    baseCols.push('s.class_id', 'c.class_name');
+    enrollmentJoin += ' LEFT JOIN classes c ON c.id = s.class_id';
+  } else {
+    baseCols.push('enr.to_class_id AS class_id', 'c.class_name');
+    enrollmentJoin += `
+      LEFT JOIN LATERAL (
+        SELECT l.to_class_id, l.to_section_id FROM student_lifecycle_ledger l 
+        WHERE l.student_id = s.id ORDER BY l.event_date DESC NULLS LAST, l.id DESC LIMIT 1
+      ) enr ON true
+      LEFT JOIN classes c ON c.id = enr.to_class_id
+    `;
+  }
+
+  if (schema.studentHasSectionId) {
+    baseCols.push('s.section_id', 'sec.section_name');
+    enrollmentJoin += ' LEFT JOIN sections sec ON sec.id = s.section_id';
+  } else if (!schema.studentHasClassId) {
+    // If we used the ledger for class, we use it for section too
+    baseCols.push('enr.to_section_id AS section_id', 'sec.section_name');
+    enrollmentJoin += ' LEFT JOIN sections sec ON sec.id = enr.to_section_id';
+  }
+  
+  const baseFrom = `
+    FROM students s
+    INNER JOIN users u ON u.id = s.user_id
+    ${enrollmentJoin}
+  `;
+
   if (!ctx?.userId) return null;
   if (ctx.roleId === ROLES.STUDENT || ctx.roleName === 'student') {
     let s = await query(
-      `SELECT id AS student_id, class_id, section_id
-       FROM students
-       WHERE user_id = $1 AND status = 'Active'
-       ORDER BY id DESC
+      `SELECT ${baseCols.join(', ')}
+       ${baseFrom}
+       WHERE s.user_id = $1 AND s.status = 'Active'
+       ORDER BY s.id DESC
        LIMIT 1`,
       [ctx.userId]
     );
@@ -1145,22 +1254,31 @@ async function resolveStudentScopeByUser(ctx) {
     const linked = await getParentsForUser(ctx.userId).catch(() => ({ studentIds: [] }));
     if (!linked.studentIds || linked.studentIds.length === 0) return null;
 
-    const sid = await resolveLatestLinkedStudentId(linked.studentIds[0]);
+    let selectedId = linked.studentIds[0];
+    if (targetStudentId && linked.studentIds.includes(parseId(targetStudentId))) {
+      selectedId = parseId(targetStudentId);
+    }
+
+    const sid = await resolveLatestLinkedStudentId(selectedId);
     if (!sid) return null;
 
     const s = await query(
-      `SELECT id AS student_id, class_id, section_id
-       FROM students
-       WHERE id = $1
-         AND status = 'Active'
+      `SELECT ${baseCols.join(', ')}
+       ${baseFrom}
+       WHERE s.id = $1
+         AND s.status = 'Active'
        LIMIT 1`,
       [sid]
     );
     return enrichScopeFromAttendance(s.rows[0] || null);
   }
   if (ctx.roleId === ROLES.GUARDIAN || ctx.roleName === 'guardian') {
+    const gCols = ['s.id AS student_id'];
+    if (schema.studentHasClassId) gCols.push('s.class_id');
+    if (schema.studentHasSectionId) gCols.push('s.section_id');
+
     let s = await query(
-      `SELECT s.id AS student_id, s.class_id, s.section_id
+      `SELECT ${gCols.join(', ')}
        FROM guardians g
        INNER JOIN students s ON s.id = g.student_id
        WHERE g.user_id = $1
@@ -1174,7 +1292,7 @@ async function resolveStudentScopeByUser(ctx) {
       const sid = await resolveLatestLinkedStudentId(linked.studentIds?.[0]);
       if (sid) {
         s = await query(
-          `SELECT id AS student_id, class_id, section_id
+          `SELECT ${baseCols.join(', ')}
            FROM students
            WHERE id = $1
              AND status = 'Active'
@@ -1257,7 +1375,9 @@ async function viewExamSchedule(req, res) {
          es.start_time,
          es.end_time,
          es.max_marks,
-         es.passing_marks
+         es.passing_marks,
+         cr.room_number,
+         cr.building_name
        FROM exam_schedules es
        INNER JOIN exams e ON e.id = es.exam_id
        INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
@@ -1265,6 +1385,7 @@ async function viewExamSchedule(req, res) {
        LEFT JOIN classes c ON c.id = es.class_id
        LEFT JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
        LEFT JOIN sections sec_ref ON sec_ref.id = cs_rel.section_id
+       LEFT JOIN class_rooms cr ON cr.id = es.class_room_id
        WHERE es.class_id = $1 ${sectionFilter} ${examFilter}
        ORDER BY es.exam_date ASC, es.start_time ASC`,
       params
@@ -1286,22 +1407,21 @@ async function viewExamResults(req, res) {
 
     if (!examId) return error(res, 400, 'exam_id is required');
 
-    const selfStudent = await resolveStudentScopeByUser(ctx);
+    // Check if exam results are published
+    const examCheck = await query('SELECT is_published, academic_year_id FROM exams WHERE id = $1', [examId]);
+    if (!examCheck.rows.length) return error(res, 404, 'Exam not found');
+    const isPublished = !!examCheck.rows[0].is_published;
+    const examYearId = examCheck.rows[0].academic_year_id;
+
+    const selfStudent = await resolveStudentScopeByUser(ctx, req.query.student_id);
+    // Students/Parents only see published results (Admins and Teachers see everything)
+    if (selfStudent && !isPublished && !isAdmin(ctx) && !isTeacherRole(ctx)) {
+      return success(res, 200, 'Results for this exam have not been published yet.', { results: [], has_pending_electives: false });
+    }
+
     if (selfStudent) {
       const studentId = parseId(selfStudent.student_id);
-      if (!studentId) return success(res, 200, 'Result loaded', []);
-
-      classId = parseId(selfStudent.class_id);
-      sectionId = parseId(selfStudent.section_id);
-
-      let classSectionId = null;
-      if (sectionId) {
-        const secRes = await query(
-          'SELECT id FROM class_sections WHERE section_id = $1 AND class_id = $2 AND deleted_at IS NULL LIMIT 1',
-          [sectionId, classId]
-        );
-        classSectionId = secRes.rows[0]?.id || null;
-      }
+      if (!studentId) return success(res, 200, 'Result loaded', { results: [], has_pending_electives: false });
 
       const rows = await query(
         `SELECT
@@ -1318,16 +1438,23 @@ async function viewExamResults(req, res) {
            es.passing_marks
          FROM students st
          INNER JOIN users u ON u.id = st.user_id
+         INNER JOIN student_lifecycle_ledger l ON l.student_id = st.id
          INNER JOIN exam_schedules es
            ON es.exam_id = $1
-          AND es.class_id = $3
-          AND ${classSectionId ? 'es.class_section_id = $4' : 'es.class_section_id IS NULL'}
+          AND es.class_id = l.to_class_id
+          AND es.academic_year_id = l.to_academic_year_id
          INNER JOIN class_subjects cs ON cs.id = es.class_subject_id
          INNER JOIN subjects sb ON sb.id = cs.subject_id
+         LEFT JOIN class_sections cs_match ON cs_match.id = es.class_section_id
          LEFT JOIN exam_results er
            ON er.exam_schedule_id = es.id
           AND er.student_id = st.id
          WHERE st.id = $2
+           AND l.to_academic_year_id = $3
+           AND (
+             es.class_section_id IS NULL 
+             OR cs_match.section_id = l.to_section_id
+           )
            AND (
              cs.is_elective = false 
              OR EXISTS (
@@ -1338,9 +1465,11 @@ async function viewExamResults(req, res) {
              )
            )
          ORDER BY sb.subject_name ASC`,
-        classSectionId ? [examId, studentId, classId, classSectionId] : [examId, studentId, classId]
+        [examId, studentId, examYearId]
       );
 
+      // Resolve current class/section for elective pending check
+      const currentClassId = selfStudent.class_id;
       const pendingCheck = await query(
         `SELECT COUNT(DISTINCT cs.elective_group_id) AS pending_count
          FROM class_subjects cs
@@ -1356,12 +1485,19 @@ async function viewExamResults(req, res) {
                AND cs2.elective_group_id = cs.elective_group_id
                AND ssc.deleted_at IS NULL
            )`,
-        [classId, studentId]
+        [currentClassId, studentId]
       );
 
       return success(res, 200, 'Result loaded', {
+        student: {
+          id: studentId,
+          name: `${selfStudent.student_name || ""}`.trim() || "Student",
+          admission_no: selfStudent.admission_no || selfStudent.admission_number,
+          class_name: selfStudent.class_name,
+          section_name: selfStudent.section_name
+        },
         results: rows.rows,
-        has_pending_electives: parseInt(pendingCheck.rows[0].pending_count) > 0
+        has_pending_electives: parseInt(pendingCheck.rows[0]?.pending_count || 0) > 0
       });
     }
 
@@ -1515,14 +1651,28 @@ async function viewExamTopPerformers(req, res) {
          WHERE es.exam_id = $1
            AND es.class_id IS NOT NULL
            AND es.class_section_id IS NOT NULL
-           AND EXISTS (
-             SELECT 1 FROM class_teachers ct
-             WHERE ct.staff_id = $2
-               AND ct.class_id = es.class_id
-               AND (ct.class_section_id IS NULL OR ct.class_section_id = es.class_section_id)
-               AND ct.deleted_at IS NULL
+           AND (
+             EXISTS (
+               SELECT 1 FROM class_teachers ct
+               WHERE ct.staff_id = ANY($2::int[])
+                 AND ct.class_id = es.class_id
+                 AND (ct.class_section_id IS NULL OR ct.class_section_id = es.class_section_id)
+                 AND ct.deleted_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM class_schedules cs
+               WHERE cs.teacher_id = ANY($2::int[])
+                 AND cs.class_id = es.class_id
+                 AND cs.deleted_at IS NULL
+             )
+             OR EXISTS (
+               SELECT 1 FROM subject_teacher_assignments sta
+               WHERE sta.staff_id = ANY($2::int[])
+                 AND sta.class_id = es.class_id
+                 AND sta.deleted_at IS NULL
+             )
            )`,
-        [examId, ctx.userId]
+        [examId, staffIds]
       );
       allowedScopes = (scopeRes.rows || []).map((r) => ({
         class_id: parseId(r.class_id),
@@ -1695,57 +1845,82 @@ async function viewExamTopPerformers(req, res) {
 async function listSelfExamOptions(req, res) {
   try {
     const ctx = getAuthContext(req);
-    const selfStudent = await resolveStudentScopeByUser(ctx);
-    if (!selfStudent) return success(res, 200, 'Self exams loaded', []);
-    const classId = parseId(selfStudent.class_id);
-    const sectionId = parseId(selfStudent.section_id);
-    if (!classId) return success(res, 200, 'Self exams loaded', []);
-    const academicYearId = req.query.academic_year_id ? parseId(req.query.academic_year_id) : null;
-    const esParams = [classId];
-    let esWhere = 'WHERE es.class_id = $1';
-    if (sectionId) {
-      esParams.push(sectionId);
-      esWhere += ` AND cs_rel.section_id = $${esParams.length}`;
-    }
-    if (academicYearId) {
-      esParams.push(academicYearId);
-      esWhere += ` AND e.academic_year_id = $${esParams.length}`;
-    }
-    const fromExamSubjects = await query(
-      `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
-       FROM exam_schedules es
-       INNER JOIN exams e ON e.id = es.exam_id
-       INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
-       ${esWhere}
-       ORDER BY e.id DESC`,
-      esParams
-    );
-    if (fromExamSubjects.rows.length > 0) {
-      return success(res, 200, 'Self exams loaded', fromExamSubjects.rows);
+    const schema = await getExamSchemaFlags();
+    const selfStudent = await resolveStudentScopeByUser(ctx, req.query.student_id);
+    let availableStudents = [];
+    if (ctx.roleId === ROLES.PARENT || ctx.roleName === 'parent') {
+      const linked = await getParentsForUser(ctx.userId).catch(() => ({ parents: [] }));
+      availableStudents = linked.parents.map(p => ({
+        id: p.student_id,
+        name: `${p.student_first_name} ${p.student_last_name}`.trim(),
+        admission_no: p.admission_number,
+        class_name: p.class_name,
+        section_name: p.section_name
+      }));
     }
 
-    if (academicYearId) {
+    if (!selfStudent) return success(res, 200, 'Self exams loaded', { exams: [], students: availableStudents });
+    const classId = parseId(selfStudent.class_id);
+    const sectionId = parseId(selfStudent.section_id);
+    if (!classId) return success(res, 200, 'Self exams loaded', { exams: [], students: availableStudents });
+    const academicYearId = req.query.academic_year_id ? parseId(req.query.academic_year_id) : null;
+    const isStaff = [ROLES.ADMIN, ROLES.TEACHER, ROLES.ADMINISTRATIVE].includes(ctx.roleId);
+    const publishFilter = isStaff ? "" : "AND e.is_published = true";
+ 
+    const esCaps = await query(`SELECT (to_regclass('public.exam_schedules') IS NOT NULL) AS has_es`);
+    const hasExamSchedules = !!esCaps.rows?.[0]?.has_es;
+ 
+    if (hasExamSchedules) {
+      const esParams = [classId];
+      let esWhere = 'WHERE es.class_id = $1';
+      if (sectionId) {
+        esParams.push(sectionId);
+        esWhere += ` AND (cs_rel.section_id = $${esParams.length} OR es.class_section_id IS NULL)`;
+      } else {
+        esWhere += ` AND es.class_section_id IS NULL`;
+      }
+      if (academicYearId) {
+        esParams.push(academicYearId);
+        esWhere += ` AND e.academic_year_id = $${esParams.length}`;
+      }
+      const fromExamSubjects = await query(
+        `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
+         FROM exam_schedules es
+         INNER JOIN exams e ON e.id = es.exam_id
+         LEFT JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+         ${esWhere} ${publishFilter}
+         ORDER BY e.id DESC`,
+        esParams
+      );
+      if (fromExamSubjects.rows.length > 0) {
+        return success(res, 200, 'Self exams loaded', { exams: fromExamSubjects.rows, students: availableStudents });
+      }
+    }
+
+    if (academicYearId && hasExamSchedules) {
       const retryParams = [classId];
       let retryWhere = 'WHERE es.class_id = $1';
       if (sectionId) {
         retryParams.push(sectionId);
-        retryWhere += ` AND cs_rel.section_id = $${retryParams.length}`;
+        retryWhere += ` AND (cs_rel.section_id = $${retryParams.length} OR es.class_section_id IS NULL)`;
+      } else {
+        retryWhere += ` AND es.class_section_id IS NULL`;
       }
       const retryNoYear = await query(
         `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
          FROM exam_schedules es
          INNER JOIN exams e ON e.id = es.exam_id
-         INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
-         ${retryWhere}
+         LEFT JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+         ${retryWhere} ${publishFilter}
          ORDER BY e.id DESC`,
         retryParams
       );
       if (retryNoYear.rows.length > 0) {
-        return success(res, 200, 'Self exams loaded', retryNoYear.rows);
+        return success(res, 200, 'Self exams loaded', { exams: retryNoYear.rows, students: availableStudents });
       }
     }
 
-    if (parseId(selfStudent.student_id)) {
+    if (parseId(selfStudent.student_id) && hasExamSchedules && schema.hasStudentPromotionsTable) {
       const promotedScope = await query(
         `SELECT to_class_id AS class_id, to_section_id AS section_id
          FROM student_promotions
@@ -1764,7 +1939,7 @@ async function listSelfExamOptions(req, res) {
         (promotedClassId !== classId || promotedSectionId !== sectionId)
       ) {
         const promotedParams = [promotedClassId, promotedSectionId];
-        let promotedWhere = 'WHERE es.class_id = $1 AND cs_rel.section_id = $2';
+        let promotedWhere = 'WHERE es.class_id = $1 AND (cs_rel.section_id = $2 OR es.class_section_id IS NULL)';
         if (academicYearId) {
           promotedParams.push(academicYearId);
           promotedWhere += ` AND e.academic_year_id = $${promotedParams.length}`;
@@ -1773,40 +1948,46 @@ async function listSelfExamOptions(req, res) {
           `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
            FROM exam_schedules es
            INNER JOIN exams e ON e.id = es.exam_id
-           INNER JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
-           ${promotedWhere}
+           LEFT JOIN class_sections cs_rel ON cs_rel.id = es.class_section_id
+           ${promotedWhere} ${publishFilter}
            ORDER BY e.id DESC`,
           promotedParams
         );
         if (promotedRows.rows.length > 0) {
-          return success(res, 200, 'Self exams loaded', promotedRows.rows);
+          return success(res, 200, 'Self exams loaded', { exams: promotedRows.rows, students: availableStudents });
         }
       }
     }
 
-    const schema = await getExamSchemaFlags();
     const params = [classId];
     let yearWhere = '';
     if (academicYearId) {
       params.push(academicYearId);
       yearWhere = ` AND e.academic_year_id = $${params.length}`;
     }
-    const fallbackSql = schema.hasExamClassesTable
-      ? `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
+    let fallbackSql = '';
+    if (schema.hasExamClassesTable) {
+      fallbackSql = `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
          FROM exams e
          INNER JOIN exam_classes ec ON ec.exam_id = e.id
-         WHERE ec.class_id = $1${yearWhere}
-         ORDER BY e.id DESC`
-      : `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
-         FROM exams e
-         WHERE e.class_id = $1${yearWhere}
+         WHERE ec.class_id = $1${yearWhere} ${publishFilter}
          ORDER BY e.id DESC`;
+    } else if (schema.hasClassIdColumn) {
+      fallbackSql = `SELECT DISTINCT e.id, e.exam_name, e.exam_type, e.academic_year_id
+         FROM exams e
+         WHERE e.class_id = $1${yearWhere} ${publishFilter}
+         ORDER BY e.id DESC`;
+    }
+ 
+    if (fallbackSql) {
+      const fallback = await query(fallbackSql, params);
+      return success(res, 200, 'Self exams loaded', { exams: fallback.rows || [], students: availableStudents });
+    }
 
-    const fallback = await query(fallbackSql, params);
-    return success(res, 200, 'Self exams loaded', fallback.rows || []);
+    return success(res, 200, 'Self exams loaded', { exams: [], students: availableStudents });
   } catch (e) {
     console.error('listSelfExamOptions', e);
-    return error(res, 500, 'Failed to load self exams');
+    return error(res, 500, 'Failed to load self exams', e.message);
   }
 }
 
@@ -1880,8 +2061,8 @@ async function saveExamSubjectSetup(req, res) {
       for (const row of value.rows) {
         await client.query(
           `INSERT INTO exam_schedules
-           (exam_id, academic_year_id, class_id, class_section_id, class_subject_id, max_marks, passing_marks, exam_date, start_time, end_time, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+           (exam_id, academic_year_id, class_id, class_section_id, class_subject_id, max_marks, passing_marks, exam_date, start_time, end_time, class_room_id, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
           [
             value.exam_id,
             academicYearId,
@@ -1893,6 +2074,7 @@ async function saveExamSubjectSetup(req, res) {
             row.exam_date || null,
             row.start_time || null,
             row.end_time || null,
+            row.room_id || null,
             parseId(req.user?.id),
           ]
         );
@@ -2325,8 +2507,14 @@ async function createExam(req, res) {
 
     const schema = await getExamSchemaFlags();
     const data = await executeTransaction(async (client) => {
-      const insertCols = ['exam_name', 'exam_type', 'academic_year_id', 'description'];
-      const insertVals = [value.exam_name, value.exam_type, value.academic_year_id || null, value.description || null];
+      const insertCols = ['exam_name', 'exam_type', 'academic_year_id', 'description', 'is_published'];
+      const insertVals = [
+        value.exam_name,
+        value.exam_type,
+        value.academic_year_id || null,
+        value.description || null,
+        value.is_published ?? false,
+      ];
       if (schema.hasCreatedByColumn) {
         insertCols.push('created_by');
         insertVals.push(parseId(req.user?.id));
@@ -2339,7 +2527,7 @@ async function createExam(req, res) {
       const examIns = await client.query(
         `INSERT INTO exams (${insertCols.join(', ')})
          VALUES (${placeholders})
-         RETURNING id, exam_name, exam_type, academic_year_id, description, created_at`,
+         RETURNING id, exam_name, exam_type, academic_year_id, description, is_published, created_at`,
         insertVals
       );
       const exam = examIns.rows[0];
@@ -2398,6 +2586,55 @@ async function deleteExam(req, res) {
   }
 }
 
+async function updateExam(req, res) {
+  try {
+    const examId = parseId(req.params.id);
+    if (!examId) return error(res, 400, 'Invalid exam ID');
+
+    const { error: vErr, value } = updateExamSchema.validate(req.body, { stripUnknown: true });
+    if (vErr) return error(res, 400, vErr.details[0].message);
+
+    const ctx = getAuthContext(req);
+    if (!isAdmin(ctx)) return error(res, 403, 'Permission denied');
+
+    const updates = [];
+    const params = [];
+    let idx = 1;
+
+    if (value.exam_name !== undefined) {
+      updates.push(`exam_name = $${idx++}`);
+      params.push(value.exam_name);
+    }
+    if (value.exam_type !== undefined) {
+      updates.push(`exam_type = $${idx++}`);
+      params.push(value.exam_type);
+    }
+    if (value.description !== undefined) {
+      updates.push(`description = $${idx++}`);
+      params.push(value.description);
+    }
+    if (value.is_published !== undefined) {
+      updates.push(`is_published = $${idx++}`);
+      params.push(value.is_published);
+    }
+
+    if (!updates.length) return error(res, 400, 'No fields to update');
+
+    params.push(examId);
+    const result = await query(
+      `UPDATE exams SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING *`,
+      params
+    );
+
+    if (!result.rows.length) return error(res, 404, 'Exam not found');
+
+    return success(res, 200, 'Exam updated', result.rows[0]);
+  } catch (e) {
+    console.error('updateExam', e);
+    return error(res, 500, 'Failed to update exam');
+  }
+}
+
 module.exports = {
   listExams,
   createExam,
@@ -2417,6 +2654,8 @@ module.exports = {
   viewExamSchedule,
   viewExamResults,
   viewExamTopPerformers,
+  getExamSchemaFlags,
   listSelfExamOptions,
+  updateExam,
 };
 

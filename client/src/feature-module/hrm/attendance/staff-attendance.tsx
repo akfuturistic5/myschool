@@ -6,6 +6,9 @@ import { all_routes } from "../../router/all_routes";
 import TooltipOption from "../../../core/common/tooltipOption";
 import { apiService } from "../../../core/services/apiService";
 import { formatRosterHolidayStatus } from "./rosterHolidayLabels";
+import { exportAttendanceExcel, exportAttendancePdf } from "../../report/attendance-report/exportUtils";
+import { printData } from "../../../core/utils/exportUtils";
+import { formatAttendanceDayHumanLabel } from "../../../core/utils/attendanceReportStatus";
 import { useSelector } from "react-redux";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 
@@ -150,6 +153,80 @@ const StaffAttendance = () => {
     void handleSave();
   };
 
+  const staffExportRows = useMemo(
+    () =>
+      rows.map((r: any) => {
+        const state = rowState[r.entity_id];
+        const statusRaw = state?.status || r.status || "";
+        const statusLabel =
+          formatRosterHolidayStatus(statusRaw) || formatAttendanceDayHumanLabel(statusRaw) || "—";
+        return {
+          Name: r.entity_name || "",
+          Department: r.department_name || "—",
+          Designation: r.designation_name || "—",
+          Status: statusLabel,
+          CheckIn: state?.checkInTime || "—",
+          CheckOut: state?.checkOutTime || "—",
+          Remark: state?.remark || "—",
+        };
+      }),
+    [rows, rowState]
+  );
+
+  const staffPrintColumns = useMemo(
+    () => [
+      { title: "Name", dataKey: "Name" },
+      { title: "Department", dataKey: "Department" },
+      { title: "Designation", dataKey: "Designation" },
+      { title: "Status", dataKey: "Status" },
+      { title: "Check In", dataKey: "CheckIn" },
+      { title: "Check Out", dataKey: "CheckOut" },
+      { title: "Remark", dataKey: "Remark" },
+    ],
+    []
+  );
+
+  const handleRefresh = () => {
+    void fetchRoster();
+  };
+
+  const handleExportPdf = () => {
+    try {
+      if (!staffExportRows.length) {
+        throw new Error("No data available for PDF export.");
+      }
+      exportAttendancePdf(
+        `Staff Attendance (${attendanceDate})`,
+        `staff-attendance-${attendanceDate}`,
+        staffExportRows
+      );
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      if (!staffExportRows.length) {
+        throw new Error("No data available for Excel export.");
+      }
+      exportAttendanceExcel(`staff-attendance-${attendanceDate}`, staffExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Export failed");
+    }
+  };
+
+  const handlePrint = () => {
+    try {
+      if (!staffExportRows.length) {
+        throw new Error("No data available to print.");
+      }
+      printData(`Staff Attendance (${attendanceDate})`, staffPrintColumns, staffExportRows);
+    } catch (err: any) {
+      setError(err?.message || "Print failed");
+    }
+  };
+
   const statusOptions = ["present", "late", "absent", "half_day"];
   return (
     <div>
@@ -174,7 +251,12 @@ const StaffAttendance = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-            <TooltipOption />
+            <TooltipOption
+              onRefresh={handleRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
             </div>
           </div>
           {/* /Page Header */}

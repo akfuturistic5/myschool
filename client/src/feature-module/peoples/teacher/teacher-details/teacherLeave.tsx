@@ -16,6 +16,7 @@ import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academ
 import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
 import { useMyAttendance } from "../../../../core/hooks/useMyAttendance";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
+import { flattenEntityAttendanceReportRows } from "../../../../core/utils/attendanceReportUtils";
 
 interface TeacherDetailsLocationState {
   teacherId?: number;
@@ -113,10 +114,10 @@ const TeacherLeave = () => {
           academicYearId: effectiveAcademicYearId,
         });
         const rows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
-        const filtered = rows
-          .filter((r: any) => Number(r?.entity_id) === staffIdNum)
-          .sort((a: any, b: any) => String(b?.attendance_date || "").localeCompare(String(a?.attendance_date || "")));
-          if (!cancelled) setAttendanceRows(filtered);
+        const filtered = flattenEntityAttendanceReportRows(rows, staffIdNum).sort((a: any, b: any) =>
+          String(b?.attendance_date || "").localeCompare(String(a?.attendance_date || ""))
+        );
+        if (!cancelled) setAttendanceRows(filtered);
       } catch (err: any) {
         if (selfScopeEnabled) {
           const scopedRows = Array.isArray(myAttendanceData?.staff?.rows) ? myAttendanceData.staff.rows : [];

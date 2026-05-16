@@ -1,14 +1,58 @@
 @use "../utils/variables";
 
 .dash-select-student {
-    margin-bottom: 10px;
-    .avatar {
-        border: 1px solid transparent;
+    margin-bottom: 15px;
+
+    .dropdown-toggle {
+        background: #fff;
+        border: 1px solid #e8e8e8;
+        padding: 6px 16px;
+        transition: all 0.2s ease;
+        
         &:hover {
             border-color: variables.$primary;
+            background: rgba(variables.$primary, 0.02);
         }
-        &.active {
-            border-color: variables.$primary;
+
+        &::after {
+            margin-left: 12px;
+            color: #999;
+        }
+
+        .avatar {
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
     }
-}
+
+    .dropdown-menu {
+        min-width: 260px;
+        border-radius: 12px;
+        
+        .dropdown-item {
+            transition: all 0.2s ease;
+            white-space: normal;
+            
+            &:hover {
+                background: rgba(variables.$primary, 0.05);
+            }
+
+            &.active {
+                background: variables.$primary !important;
+                color: #fff !important;
+                
+                .text-muted {
+                    color: rgba(255,255,255,0.7) !important;
+                }
+
+                .ti-check {
+                    color: #fff !important;
+                }
+            }
+
+            .avatar {
+                border: 1px solid #eee;
+            }
+        }
+    }
+}

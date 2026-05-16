@@ -21,25 +21,25 @@ function makePool(dbType, dbOverride) {
 
   const config = {
     host: isMaster
-      ? process.env.DB_MASTER_HOST
-      : process.env.DB_SCHOOL_HOST,
+      ? process.env.DB_MASTER_HOST || process.env.DB_HOST || 'localhost'
+      : process.env.DB_SCHOOL_HOST || process.env.DB_HOST || 'localhost',
     port: parseInt(
-      isMaster
-        ? process.env.DB_MASTER_PORT
-        : process.env.DB_SCHOOL_PORT,
+      (isMaster ? process.env.DB_MASTER_PORT : process.env.DB_SCHOOL_PORT) ||
+        process.env.DB_PORT ||
+        '5432',
       10
     ),
     user: isMaster
-      ? process.env.DB_MASTER_USER
-      : process.env.DB_SCHOOL_USER,
+      ? process.env.DB_MASTER_USER || process.env.DB_USER || 'postgres'
+      : process.env.DB_SCHOOL_USER || process.env.DB_USER || 'postgres',
     password: isMaster
-      ? process.env.DB_MASTER_PASS
-      : process.env.DB_SCHOOL_PASS,
+      ? process.env.DB_MASTER_PASS || process.env.DB_PASSWORD || ''
+      : process.env.DB_SCHOOL_PASS || process.env.DB_PASSWORD || '',
     database:
       dbOverride ||
       (isMaster
-        ? process.env.DB_MASTER_NAME
-        : process.env.DB_SCHOOL_NAME),
+        ? process.env.DB_MASTER_NAME || process.env.DB_NAME || 'master_db'
+        : process.env.DB_SCHOOL_NAME || process.env.DB_NAME || 'schooldb'),
     ssl: sslConfig,
     max: 5,
   };

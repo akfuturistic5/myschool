@@ -32,6 +32,9 @@ const ExamResult = () => {
 
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>("");
+  const [availableStudents, setAvailableStudents] = useState<any[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [activeStudentInfo, setActiveStudentInfo] = useState<any>(null);
   const [classId, setClassId] = useState<string>("");
   const [sectionId, setSectionId] = useState<string>("");
   const [contextRows, setContextRows] = useState<any[]>([]);
@@ -74,17 +77,20 @@ const ExamResult = () => {
       try {
         if (userLoading || !(user as any)?.id) return;
         if (selfOnly) {
-          const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
+          const res = await apiService.listSelfExams({ 
+            academic_year_id: academicYearId || undefined,
+            student_id: selectedStudentId || undefined
+          });
           if (cancelled) return;
           const raw = (res as any)?.data;
-          const nextExams = Array.isArray(raw) ? raw : Array.isArray(raw?.exams) ? raw.exams : [];
+          const nextExams = Array.isArray(raw?.exams) ? raw.exams : (Array.isArray(raw) ? raw : []);
+          const nextStudents = Array.isArray(raw?.students) ? raw.students : [];
+          
           setExams(nextExams);
-          if (nextExams.length > 0) {
-            setSelectedExamId(String(nextExams[0].id));
-            setMessage(null);
-          } else {
-            setMessage("No exam result is assigned for your class and section yet.");
-          }
+          setAvailableStudents(nextStudents);
+          
+          // Removed auto-selection to allow placeholder display
+          setMessage(nextExams.length > 0 ? "Please select a child and an examination to view results." : "No exams found for this session.");
           return;
         }
 
@@ -112,7 +118,7 @@ const ExamResult = () => {
     return () => {
       cancelled = true;
     };
-  }, [academicYearId, selfOnly, userLoading, (user as any)?.id, selectedExamId, queryExamId]);
+  }, [academicYearId, selfOnly, userLoading, (user as any)?.id, selectedExamId, queryExamId, selectedStudentId]);
 
   useEffect(() => {
     if (!selectedExamId || selfOnly) return;
@@ -454,7 +460,7 @@ const ExamResult = () => {
     [contextRows, classId]
   );
 
-  const loadResults = async (examIdOverride?: string) => {
+  const loadResults = async (examIdOverride?: string, studentIdOverride?: string) => {
     const fallbackExamId = exams.length ? normalizeExamId(exams[0]?.id) : "";
     const examIdToUse = normalizeExamId(examIdOverride || selectedExamId || fallbackExamId);
     if (!examIdToUse) {
@@ -492,14 +498,17 @@ const ExamResult = () => {
         exam_id: examIdToUse,
         class_id: selfOnly ? undefined : classId,
         section_id: selfOnly ? undefined : (sectionId || undefined),
+        student_id: selfOnly ? (studentIdOverride || selectedStudentId || undefined) : undefined
       });
       const data = (res as any)?.data;
       if (data && typeof data === "object" && "results" in data) {
         setRows(data.results || []);
         setHasPendingElectives(!!data.has_pending_electives);
+        setActiveStudentInfo(data.student || null);
       } else {
         setRows(data || []);
         setHasPendingElectives(false);
+        setActiveStudentInfo(null);
       }
       if (!data || (Array.isArray(data) && !data.length) || (data.results && !data.results.length)) {
         if (!data?.has_pending_electives) {
@@ -1305,9 +1314,11 @@ const ExamResult = () => {
                 </button>
               </>
             )}
-            <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
-              <i className="ti ti-checklist me-2"></i> Back to Exams
-            </Link>
+            {!selfOnly && (
+              <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
+                <i className="ti ti-checklist me-2"></i> Back to Exams
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1321,25 +1332,80 @@ const ExamResult = () => {
         {/* Filters Card */}
         <div className="card border-0 shadow-sm mb-4 overflow-hidden">
           <div className="card-header bg-white py-3 border-bottom-0">
-            <h5 className="fw-bold mb-3">{selfOnly ? "My Examinations" : "Selection Parameters"}</h5>
+            <h5 className="fw-bold mb-3">
+              {selfOnly ? (activeStudentInfo ? `Results for ${activeStudentInfo.name}` : "My Examinations") : "Selection Parameters"}
+            </h5>
             <div className="row g-3 align-items-end">
-              <div className="col-md-4">
-                <label className="form-label fw-semibold text-muted small text-uppercase">Examination</label>
+              {selfOnly && availableStudents.length > 1 && (
+                <div className="col-md-4">
+                  <label className="form-label text-muted small text-uppercase fw-bold mb-1">Select Child</label>
+                  <select
+                    className="form-select form-select-lg border-2"
+                    value={selectedStudentId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedStudentId(val);
+                      if (selfOnly && val && selectedExamId) {
+                         loadResults(selectedExamId, val);
+                      } else {
+                         setRows([]);
+                         setActiveStudentInfo(null);
+                      }
+                    }}
+                  >
+                    <option value="">Select Child</option>
+                    {availableStudents.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.admission_no})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className={selfOnly && availableStudents.length > 1 ? "col-md-4" : "col-md-4"}>
+                <label className="form-label text-muted small text-uppercase fw-bold mb-1">Examination</label>
                 <select
-                  className="form-select shadow-none border-light"
-                  value={normalizeExamId(selectedExamId)}
+                  className="form-select form-select-lg border-2"
+                  value={selectedExamId}
                   onChange={(e) => {
-                    setSelectedExamId(e.target.value);
-                    if (selfOnly) loadResults(e.target.value);
-                    else setMessage(null);
+                    const val = e.target.value;
+                    setSelectedExamId(val);
+                    if (selfOnly) {
+                      if (val && selectedStudentId) {
+                        loadResults(val, selectedStudentId);
+                      } else {
+                        setRows([]);
+                        setActiveStudentInfo(null);
+                      }
+                    }
                   }}
                 >
                   <option value="">Select Exam</option>
-                  {exams.map((ex: any) => (
-                    <option key={ex.id} value={ex.id}>{ex.exam_name} ({ex.exam_type})</option>
+                  {exams.map((ex) => (
+                    <option key={ex.id} value={ex.id}>
+                      {ex.exam_name} ({ex.exam_type || "N/A"})
+                    </option>
                   ))}
                 </select>
               </div>
+              {selfOnly && activeStudentInfo && (
+                <div className="col-md-4 ms-auto">
+                   <div className="bg-light p-2 rounded border border-dashed border-primary-subtle">
+                      <div className="d-flex align-items-center">
+                         <div className="avatar avatar-sm bg-primary-soft rounded-circle me-2">
+                            <i className="ti ti-user text-primary"></i>
+                         </div>
+                         <div>
+                            <p className="mb-0 small text-muted">Viewing results for:</p>
+                            <h6 className="mb-0 fw-bold">{activeStudentInfo.name}</h6>
+                            <span className="badge badge-soft-info p-1 mt-1" style={{ fontSize: '10px' }}>
+                               Class: {activeStudentInfo.class_name} {activeStudentInfo.section_name ? `(${activeStudentInfo.section_name})` : ''}
+                            </span>
+                         </div>
+                      </div>
+                   </div>
+                </div>
+              )}
               {!selfOnly && (
                 <>
                   <div className="col-md-3">

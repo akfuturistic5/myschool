@@ -2,7 +2,6 @@ import { Link, useLocation } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
 import { all_routes } from "../../../router/all_routes";
 import StudentModals from "../studentModals";
 import StudentSidebar from "./studentSidebar";
@@ -48,7 +47,6 @@ const StudentResult = () => {
         ? Number(student.id)
         : null);
   const [exportingPdfExamId, setExportingPdfExamId] = useState<number | null>(null);
-  const [exportingExcelExamId, setExportingExcelExamId] = useState<number | null>(null);
 
   const exams = useMemo(() => {
     const list = Array.isArray(examResultsData?.exams) ? examResultsData.exams : [];
@@ -138,71 +136,81 @@ const StudentResult = () => {
       };
       const logoDataUrl = await logoToDataUrl();
 
+      // Header Styling
       doc.setFillColor(15, 41, 90);
-      doc.rect(0, 0, pageWidth, 96, "F");
+      doc.rect(0, 0, pageWidth, 100, "F");
+
       if (logoDataUrl) {
         try {
           const format = /data:image\/png/i.test(logoDataUrl) ? "PNG" : "JPEG";
-          doc.addImage(logoDataUrl, format, margin, 18, 56, 56);
-        } catch {
-          // If logo rendering fails, continue PDF export without logo.
+          doc.addImage(logoDataUrl, format, margin, 22, 56, 56);
+        } catch (e) {
+          console.error("PDF Logo render error:", e);
         }
       }
+
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(18);
-      doc.text(String(schoolName), margin + 70, 42);
+      doc.setFontSize(22);
+      const sName = String(schoolName);
+      doc.text(sName, margin + 70, 45);
+      
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      if (schoolAddress) doc.text(String(schoolAddress), margin + 70, 62);
-      doc.text(`Generated: ${new Date().toLocaleString("en-GB")}`, margin + 70, 78);
-      y = 118;
+      doc.setFontSize(10);
+      if (schoolAddress) {
+        doc.text(String(schoolAddress), margin + 70, 65);
+      }
+      doc.setFontSize(9);
+      doc.text(`Academic Report Generated: ${new Date().toLocaleString("en-GB")}`, margin + 70, 82);
 
-      const title = `${student?.first_name || ""} ${student?.last_name || ""}`.trim() || "Student";
+      y = 130;
+
+      // Student Identity Bar
+      const studentName = `${student?.first_name || ""} ${student?.last_name || ""}`.trim() || "Student";
       const classSection = `${student?.class_name || student?.className || student?.class_id || "-"} / ${
         student?.section_name || student?.sectionName || student?.section_id || "-"
       }`;
-      doc.setTextColor(20, 20, 20);
+
+      doc.setFillColor(245, 247, 250);
+      doc.roundedRect(margin, y - 15, pageWidth - margin * 2, 45, 4, 4, "F");
+      
+      doc.setTextColor(15, 41, 90);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
-      doc.text(`Exam Result Report: ${title}`, margin, y);
-      y += 22;
+      doc.text(studentName, margin + 15, y + 12);
 
+      doc.setTextColor(100, 100, 100);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
-      doc.text(`Class / Section: ${classSection}`, margin, y);
-      y += lineHeight;
-      doc.text(`Total Exams: ${overallSummary.totalExams}`, margin, y);
-      y += lineHeight;
-      doc.text(`Passed Exams: ${overallSummary.passCount}`, margin, y);
-      y += lineHeight;
-      doc.text(
-        `Average Percentage: ${overallSummary.averagePercentage != null ? `${overallSummary.averagePercentage}%` : "N/A"}`,
-        margin,
-        y
-      );
-      y += 22;
+      doc.setFontSize(10);
+      doc.text(`Class/Section: ${classSection}`, pageWidth - margin - 15, y + 12, { align: "right" });
+      
+      y += 60;
 
+      y += 20;
+
+      // Exam Details
       [selectedExam].forEach((exam: any, examIdx: number) => {
-        ensureSpace(48);
+        ensureSpace(60);
         doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(15, 41, 90);
         doc.text(
-          `${examIdx + 1}. ${exam.examLabel || exam.examName || "Exam"} (${exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A"})`,
+          `${exam.examLabel || exam.examName || "Exam"} - ${exam.examType || "General"}`,
           margin,
           y
         );
-        y += lineHeight;
+        y += 18;
 
         const summary = exam.summary || {};
         doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
         doc.text(
-          `Exam Type: ${exam.examType || "-"}  Date: ${
-            exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A"
-          }`,
+          `Examination Date: ${exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A"}`,
           margin,
           y
         );
-        y += lineHeight;
+        y += 15;
 
         const bodyRows = (exam.subjects || []).map((s: any) => [
           s.subjectName || "-",
@@ -211,140 +219,78 @@ const StudentResult = () => {
           s.maxMarks ?? "N/A",
           s.minMarks ?? "N/A",
           s.isAbsent ? "ABSENT" : (s.marksObtained ?? "N/A"),
-          s.result || "N/A",
+          String(s.result || "N/A").toUpperCase(),
         ]);
+
         autoTable(doc, {
           startY: y,
           theme: "grid",
-          head: [["Subject", "Code", "Mode", "Max Marks", "Min Marks", "Marks Obtained", "Result"]],
+          head: [["Subject", "Code", "Mode", "Max", "Pass", "Obtained", "Result"]],
           body: bodyRows,
           margin: { left: margin, right: margin },
-          styles: { fontSize: 10, cellPadding: 5, lineColor: [220, 220, 220] },
-          headStyles: { fillColor: [22, 63, 138], textColor: [255, 255, 255] },
-          alternateRowStyles: { fillColor: [247, 249, 252] },
+          styles: { fontSize: 9, cellPadding: 6, lineColor: [230, 230, 230] },
+          headStyles: { fillColor: [15, 41, 90], textColor: [255, 255, 255], fontStyle: "bold" },
+          alternateRowStyles: { fillColor: [250, 251, 253] },
           columnStyles: {
-            6: { halign: "center" },
+            3: { halign: "center" },
+            4: { halign: "center" },
+            5: { halign: "center" },
+            6: { halign: "center", fontStyle: "bold" },
           },
           didParseCell: (data: any) => {
             if (data.section === "body" && data.column.index === 6) {
               const val = String(data.cell.raw || "").toLowerCase();
-              if (val === "pass") data.cell.styles.textColor = [0, 128, 0];
+              if (val === "pass") data.cell.styles.textColor = [0, 120, 0];
               if (val === "fail") data.cell.styles.textColor = [200, 0, 0];
             }
           },
         });
-        y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 14 : y + 14;
+        
+        y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : y + 10;
 
-        // Important summary band (below table): bold + colored + fixed sequence.
-        ensureSpace(30);
-        doc.setFillColor(16, 38, 84);
-        doc.roundedRect(margin, y, pageWidth - margin * 2, 24, 4, 4, "F");
+        // Result Summary Band
+        ensureSpace(40);
+        doc.setFillColor(15, 41, 90);
+        doc.roundedRect(margin, y, pageWidth - margin * 2, 30, 4, 4, "F");
+        
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(11);
-        const summaryLine = [
-          `Total: ${summary.totalMax ?? "N/A"}`,
-          `Passing: ${summary.totalMin ?? "N/A"}`,
-          `Obtained: ${summary.totalObtained ?? "N/A"}`,
-          `Percentage: ${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`,
-          `Grade: ${summary.grade || "N/A"}`,
-          `Result: ${summary.overallResult || "N/A"}`,
-        ].join("    ");
-        doc.text(summaryLine, margin + 10, y + 16);
-        doc.setTextColor(20, 20, 20);
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(11);
-        y += 34;
+        doc.setFontSize(10);
+        const summaryParts = [
+          `TOTAL: ${summary.totalObtained ?? 0}/${summary.totalMax ?? 0}`,
+          `PERCENTAGE: ${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`,
+          `GRADE: ${summary.grade || "N/A"}`,
+          `RESULT: ${String(summary.overallResult || "N/A").toUpperCase()}`
+        ];
+        doc.text(summaryParts.join("    |    "), margin + 15, y + 19);
+        
+        y += 50;
       });
 
-      const safeName = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "student";
-      const safeExamName = String(selectedExam?.examLabel || selectedExam?.examName || "exam")
-        .replace(/[^\w\- ]+/g, "")
-        .trim()
-        .replace(/\s+/g, "_");
-      doc.save(`${safeName}_${safeExamName}_result.pdf`);
-    } finally {
-      setExportingPdfExamId(null);
-    }
-  };
-  const handleExportExcel = async (selectedExam: any) => {
-    if (!selectedExam) return;
-    try {
-      setExportingExcelExamId(Number(selectedExam?.examId ?? -1));
-      const studentName = `${student?.first_name || ""} ${student?.last_name || ""}`.trim() || "Student";
-      const classSection = `${student?.class_name || student?.className || student?.class_id || "-"} / ${
-        student?.section_name || student?.sectionName || student?.section_id || "-"
-      }`;
-      const rows: Record<string, string | number>[] = [];
+      // Disclaimer Footer on all pages
+      const totalPages = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setDrawColor(230, 230, 230);
+        doc.line(margin, pageHeight - 35, pageWidth - margin, pageHeight - 35);
+        
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        const disclaimer = "Note: This is a computer-generated academic report for informational purposes only and is not the original result mark sheet issued by the school.";
+        doc.text(disclaimer, pageWidth / 2, pageHeight - 20, { align: "center" });
+      }
 
-      [selectedExam].forEach((exam: any, examIdx: number) => {
-        const summary = exam.summary || {};
-        const examLabel = exam.examLabel || exam.examName || `Exam ${examIdx + 1}`;
-        const examDate = exam.examDate ? new Date(exam.examDate).toLocaleDateString("en-GB") : "N/A";
-        const examTotal = summary.totalMax ?? "N/A";
-        const examPassing = summary.totalMin ?? "N/A";
-        const examObtained = summary.totalObtained ?? "N/A";
-        const examPercentage = summary.percentage != null ? `${summary.percentage}%` : "N/A";
-        const examGrade = summary.grade || "N/A";
-        const overallResult = summary.overallResult || "N/A";
-
-        (exam.subjects || []).forEach((subject: any) => {
-          rows.push({
-            Student: studentName,
-            ClassSection: classSection,
-            Exam: examLabel,
-            ExamType: exam.examType || "-",
-            ExamDate: examDate,
-            Subject: subject.subjectName || "-",
-            SubjectCode: subject.subjectCode || "-",
-            Mode: subject.subjectMode || "-",
-            MaxMarks: Number(subject.maxMarks ?? 0),
-            MinMarks: Number(subject.minMarks ?? 0),
-            MarksObtained: subject.isAbsent ? "ABSENT" : String(subject.marksObtained ?? "N/A"),
-            SubjectResult: subject.result || "N/A",
-            ExamTotal: "",
-            ExamPassing: "",
-            ExamObtained: "",
-            ExamPercentage: "",
-            ExamGrade: "",
-            OverallResult: "",
-          });
-        });
-
-        rows.push({
-          Student: "",
-          ClassSection: "",
-          Exam: examLabel,
-          ExamType: "",
-          ExamDate: "",
-          Subject: "EXAM SUMMARY",
-          SubjectCode: "",
-          Mode: "",
-          MaxMarks: "",
-          MinMarks: "",
-          MarksObtained: "",
-          SubjectResult: "",
-          ExamTotal: String(examTotal),
-          ExamPassing: String(examPassing),
-          ExamObtained: String(examObtained),
-          ExamPercentage: examPercentage,
-          ExamGrade: examGrade,
-          OverallResult: overallResult,
-        });
-      });
-
-      if (rows.length === 0) return;
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Exam Results");
       const safeName = studentName.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "student";
       const safeExamName = String(selectedExam?.examLabel || selectedExam?.examName || "exam")
         .replace(/[^\w\- ]+/g, "")
         .trim()
         .replace(/\s+/g, "_");
-      XLSX.writeFile(workbook, `${safeName}_${safeExamName}_result.xlsx`);
+      doc.save(`${safeName}_${safeExamName}_result.pdf`);
+    } catch (err) {
+      console.error("PDF Export Error:", err);
     } finally {
-      setExportingExcelExamId(null);
+      setExportingPdfExamId(null);
     }
   };
 
@@ -368,59 +314,59 @@ const StudentResult = () => {
       <div className="page-wrapper">
         <div className="content">
           <div className="row">
-            <StudentBreadcrumb />
+            <StudentBreadcrumb studentId={student?.id} />
           </div>
           <div className="row">
             <StudentSidebar student={student} />
             <div className="col-xxl-9 col-xl-8">
               <div className="row">
                 <div className="col-md-12">
-                  <div className="card border-0 shadow-sm mb-4">
-                    <div className="card-body p-0">
-                      <ul className="nav nav-tabs nav-tabs-bottom mb-0">
-                        {returnToExamResult && (
-                          <li className="nav-item">
-                            <Link to={returnToExamResult} className="nav-link py-3 px-4 border-0 text-primary fw-bold">
-                              <i className="ti ti-arrow-left me-2" />
-                              Back to Directory
-                            </Link>
-                          </li>
-                        )}
-                        <li className="nav-item">
-                          <Link to={routes.studentDetail} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-school me-2" /> Details
+                  {returnToExamResult ? (
+                    <div className="mb-3">
+                      <Link to={returnToExamResult} className="text-primary">
+                        <i className="ti ti-arrow-left me-2" />
+                        Back to Directory
+                      </Link>
+                    </div>
+                  ) : null}
+                  <ul className="nav nav-tabs nav-tabs-bottom mb-4">
+                    <li>
+                      <Link
+                        to={student?.id ? `${routes.studentDetail}/${student.id}` : routes.studentDetail}
+                        className="nav-link"
+                        state={forwardedState}
+                      >
+                            <i className="ti ti-school me-2" /> Student Details
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-table-options me-2" /> Timetable
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentTimeTable}?studentId=${effectiveStudentId}` : routes.studentTimeTable} className="nav-link" state={forwardedState}>
+                            <i className="ti ti-table-options me-2" /> Time Table
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-calendar-due me-2" /> Attendance
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentLeaves}?studentId=${effectiveStudentId}` : routes.studentLeaves} className="nav-link" state={forwardedState}>
+                            <i className="ti ti-calendar-due me-2" /> Leave &amp; Attendance
                           </Link>
                         </li>
                         {!isTeacher && (
-                          <li className="nav-item">
-                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                          <li>
+                            <Link to={effectiveStudentId ? `${routes.studentFees}?studentId=${effectiveStudentId}` : routes.studentFees} className="nav-link" state={forwardedState}>
                               <i className="ti ti-report-money me-2" /> Fees
                             </Link>
                           </li>
                         )}
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active py-3 px-4 border-0 fw-bold" state={forwardedState}>
-                            <i className="ti ti-bookmark-edit me-2" /> Performance
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentResult}?studentId=${effectiveStudentId}` : routes.studentResult} className="nav-link active" state={forwardedState}>
+                            <i className="ti ti-bookmark-edit me-2" /> Exam &amp; Results
                           </Link>
                         </li>
-                        <li className="nav-item">
-                          <Link to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary} className="nav-link py-3 px-4 border-0 fw-bold" state={forwardedState}>
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentLibrary}?studentId=${effectiveStudentId}` : routes.studentLibrary} className="nav-link" state={forwardedState}>
                             <i className="ti ti-books me-2" /> Library
                           </Link>
                         </li>
-                      </ul>
-                    </div>
-                  </div>
+                  </ul>
 
                   {/* Achievement Summary Cards */}
                   <div className="row g-3 mb-4">
@@ -540,19 +486,6 @@ const StudentResult = () => {
                                           <i className="ti ti-file-type-pdf me-1" />
                                         )}
                                         Export PDF
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-soft-success btn-sm d-flex align-items-center"
-                                        onClick={() => handleExportExcel(exam)}
-                                        disabled={exportingExcelExamId === Number(exam.examId ?? -1)}
-                                      >
-                                        {exportingExcelExamId === Number(exam.examId ?? -1) ? (
-                                          <span className="spinner-border spinner-border-sm me-1"></span>
-                                        ) : (
-                                          <i className="ti ti-file-type-xls me-1" />
-                                        )}
-                                        Export Excel
                                       </button>
                                     </div>
                                     <div className="table-responsive">

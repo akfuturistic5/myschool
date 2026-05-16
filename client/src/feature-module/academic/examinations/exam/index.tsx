@@ -7,6 +7,7 @@ import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academ
 import { useCurrentUser } from "../../../../core/hooks/useCurrentUser";
 import { useClasses } from "../../../../core/hooks/useClasses";
 import { all_routes } from "../../../router/all_routes";
+import Swal from "sweetalert2";
 
 const Exam = () => {
   const routes = all_routes;
@@ -29,6 +30,7 @@ const Exam = () => {
     exam_type: "",
     class_ids: [] as number[],
     description: "",
+    is_published: false,
   });
 
   const loadExamTypes = async () => {
@@ -72,8 +74,10 @@ const Exam = () => {
         id: r.id,
         examName: r.exam_name,
         examType: r.exam_type,
+        isPublished: !!r.is_published,
         classes: Array.isArray(r.class_names) ? r.class_names.join(", ") : "—",
         createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString() : "—",
+        marksCompletion: r.marks_completion,
       })),
     [rows]
   );
@@ -99,6 +103,62 @@ const Exam = () => {
     { title: "Exam Name", dataIndex: "examName" },
     { title: "Exam Type", dataIndex: "examType" },
     { title: "Classes", dataIndex: "classes" },
+    {
+      title: "Status",
+      dataIndex: "isPublished",
+      render: (isPublished: boolean, record: any) => (
+        <div className="form-check form-switch mb-0">
+          <input
+            className="form-check-input"
+            type="checkbox"
+            checked={isPublished}
+            disabled={!isAdminLike}
+            onChange={() => handleTogglePublish(record)}
+          />
+          <span className={`badge ${isPublished ? "bg-soft-success text-success" : "bg-soft-secondary text-secondary"}`}>
+            {isPublished ? "Published" : "Draft"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: "Marks Assigned",
+      dataIndex: "marksCompletion",
+      render: (completion: any) => {
+        if (!completion || completion.total_expected === 0) {
+          return <span className="text-muted small">No subjects setup</span>;
+        }
+        const { total_expected, total_entered, is_complete } = completion;
+        const percentage = total_expected > 0 ? Math.round((total_entered / total_expected) * 100) : 0;
+
+        return (
+          <div className="d-flex flex-column" style={{ minWidth: "100px" }}>
+            <div className="d-flex align-items-center gap-2">
+              <span
+                className={`badge ${
+                  is_complete ? "bg-soft-success text-success" : "bg-soft-warning text-warning"
+                }`}
+              >
+                {total_entered} / {total_expected}
+              </span>
+              {!is_complete && (
+                <i
+                  className="ti ti-alert-triangle text-warning animate-pulse"
+                  title="Marks entry pending for some students"
+                />
+              )}
+            </div>
+            <div className="progress mt-1" style={{ height: "4px", width: "80%" }}>
+              <div
+                className={`progress-bar ${is_complete ? "bg-success" : "bg-warning"}`}
+                role="progressbar"
+                style={{ width: `${percentage}%` }}
+              />
+            </div>
+          </div>
+        );
+      },
+    },
     { title: "Created", dataIndex: "createdAt" },
     {
       title: "Action",
@@ -128,23 +188,64 @@ const Exam = () => {
 
   const handleDeleteExam = async (examId: number, examName: string) => {
     if (!Number.isFinite(examId) || examId <= 0) return;
-    const confirmed = window.confirm(
-      `Delete exam "${examName}"?\n\nThis will permanently remove timetable and marks linked to this exam.`
-    );
-    if (!confirmed) return;
+    const result = await Swal.fire({
+      title: "Are you sure?",
+      text: `Delete exam "${examName}"?\nThis will permanently remove the timetable and marks linked to this exam.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#3085d6",
+      cancelButtonColor: "#d33",
+      confirmButtonText: "Yes, delete it!"
+    });
+
+    if (!result.isConfirmed) return;
+
     setDeletingExamId(examId);
     setMessage(null);
     try {
       await apiService.deleteExam(examId);
-      setMessage("Exam deleted successfully.");
+      Swal.fire("Deleted!", "Exam has been deleted.", "success");
       await loadExams();
     } catch (err: any) {
-      setMessage(err?.message || "Failed to delete exam");
+      Swal.fire("Error", err?.message || "Failed to delete exam", "error");
     } finally {
       setDeletingExamId(null);
     }
   };
+ 
+  const handleTogglePublish = async (record: any) => {
+    const examId = record.id;
+    const newStatus = !record.isPublished;
+    const completion = record.marksCompletion;
 
+    if (newStatus && completion && !completion.is_complete && completion.total_expected > 0) {
+      const result = await Swal.fire({
+        title: "Incomplete Marks",
+        text: `Marks entry is still pending (${completion.total_entered} / ${completion.total_expected} assigned). Are you sure you want to publish results for this exam?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#3085d6",
+        cancelButtonColor: "#d33",
+        confirmButtonText: "Yes, publish anyway"
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    try {
+      await apiService.updateExam(examId, { is_published: newStatus });
+      Swal.fire({
+        title: "Updated!",
+        text: `Exam status changed to ${newStatus ? 'Published' : 'Draft'}.`,
+        icon: "success",
+        timer: 1500,
+        showConfirmButton: false
+      });
+      await loadExams();
+    } catch (err: any) {
+      Swal.fire("Error", err?.message || "Failed to update status", "error");
+    }
+  };
+ 
   const toggleClass = (classId: number) => {
     setForm((prev) => {
       const has = prev.class_ids.includes(classId);
@@ -181,9 +282,10 @@ const Exam = () => {
         class_ids: form.class_ids,
         academic_year_id: academicYearId || null,
         description: form.description || null,
+        is_published: form.is_published,
       });
       const createdExamId = Number((res as any)?.data?.id);
-      setForm({ exam_name: "", exam_type: examTypes[0] || "", class_ids: [], description: "" });
+      setForm({ exam_name: "", exam_type: examTypes[0] || "", class_ids: [], description: "", is_published: false });
       setMessage("Exam created successfully.");
       await loadExams();
       if (manageAfterCreate && Number.isFinite(createdExamId) && createdExamId > 0) {
@@ -262,7 +364,22 @@ const Exam = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="col-lg-5 col-12">
+                  <div className="col-lg-2 col-md-6">
+                    <div className="form-check form-switch pt-md-4 mt-md-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id="isPublished"
+                        checked={form.is_published}
+                        onChange={(ev) => setForm((p) => ({ ...p, is_published: ev.target.checked }))}
+                      />
+                      <label className="form-check-label fw-semibold" htmlFor="isPublished">
+                        Publish?
+                      </label>
+                      <i className="ti ti-info-circle ms-1 text-muted" title="If checked, results will be visible to students and parents" />
+                    </div>
+                  </div>
+                  <div className="col-lg-3 col-12">
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <label className="form-label fw-semibold mb-0">
                         Target Classes 

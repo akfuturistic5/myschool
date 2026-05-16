@@ -1539,7 +1539,6 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
     [studentRow.id]
   );
   for (const link of links.rows) {
-    await client.query(`UPDATE guardians SET is_active = false, updated_at = NOW() WHERE id = $1`, [link.id]);
     const uid = link.user_id;
     const stillUsed = await client.query(
       `SELECT 1 FROM student_guardian_links sgl
@@ -1549,6 +1548,7 @@ const deactivateLinkedAccountsForLeftStudent = async (client, studentRow) => {
       [uid, studentRow.id]
     );
     if (stillUsed.rows.length === 0) {
+      await client.query(`UPDATE guardians SET is_active = false, updated_at = NOW() WHERE id = $1`, [link.id]);
       await client.query(`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = $1`, [uid]);
     }
   }
@@ -3946,6 +3946,10 @@ const getStudentExamResults = async (req, res) => {
     const passMarksExpr = coalesceExpr(['min_marks', 'pass_marks', 'min_mark', 'min'], '35');
 
     let rows = { rows: [] };
+    const uRoleId = req.user?.role_id || req.user?.user_role_id;
+    const isStaff = [ROLES.ADMIN, ROLES.TEACHER, ROLES.ADMINISTRATIVE].includes(Number(uRoleId));
+    const publishFilter = isStaff ? "" : "AND e.is_published = true";
+
     if (hasExamSchedulesTable) {
       try {
         rows = await query(
@@ -3984,7 +3988,7 @@ const getStudentExamResults = async (req, res) => {
        LEFT JOIN exam_results er
          ON er.exam_schedule_id = es.id
         AND er.student_id = st.id
-       WHERE st.id = $1
+       WHERE st.id = $1 ${publishFilter}
          AND (
            cs.is_elective = false
            OR EXISTS (
@@ -4029,7 +4033,7 @@ const getStudentExamResults = async (req, res) => {
           AND er.student_id = st.id
           AND er.subject_id = es.subject_id
          ${hasEsComponent && hasErComponent ? "AND COALESCE(er.exam_component,'theory') = COALESCE(es.exam_component,'theory')" : ''}
-         WHERE st.id = $1
+         WHERE st.id = $1 ${publishFilter}
          ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
         [studentId]
       );
@@ -4077,7 +4081,7 @@ const getStudentExamResults = async (req, res) => {
          INNER JOIN exams e ON e.id = es.exam_id
          INNER JOIN subjects s ON s.id = csu.subject_id
          ${erJoinSchedule}
-         WHERE st.id = $1
+         WHERE st.id = $1 ${publishFilter}
          ORDER BY es.exam_id DESC, es.exam_date ASC NULLS LAST, s.subject_name ASC`,
         [studentId]
       );
@@ -4108,7 +4112,7 @@ const getStudentExamResults = async (req, res) => {
          LEFT JOIN class_subjects cs ON cs.id = es.class_subject_id
          LEFT JOIN subjects s ON s.id = COALESCE(cs.subject_id, er.subject_id)
          WHERE er.student_id = $1
-           AND er.exam_id IS NOT NULL
+           AND er.exam_id IS NOT NULL ${publishFilter}
          ORDER BY
            COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
            er.exam_id DESC,
@@ -4145,7 +4149,7 @@ const getStudentExamResults = async (req, res) => {
             AND csu.academic_year_id = es.academic_year_id
            LEFT JOIN subjects s ON s.id = csu.subject_id
            WHERE er.student_id = $1
-             AND er.exam_schedule_id IS NOT NULL
+             AND er.exam_schedule_id IS NOT NULL ${publishFilter}
            ORDER BY
              COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
              es.exam_id DESC,
@@ -4195,7 +4199,7 @@ const getStudentExamResults = async (req, res) => {
            LEFT JOIN subjects s ON s.id = er.subject_id
            ${subjectPlanJoin}
            WHERE er.student_id = $1
-             AND er.exam_id IS NOT NULL
+             AND er.exam_id IS NOT NULL ${publishFilter}
            ORDER BY
              COALESCE(es.exam_date, e.start_date, e.end_date, e.updated_at, e.created_at) DESC NULLS LAST,
              er.exam_id DESC,
@@ -4324,6 +4328,10 @@ const getStudentsLatestExamSummary = async (req, res) => {
       return res.status(400).json({ status: 'ERROR', message: 'student_ids is required' });
     }
 
+    const uRoleId = req.user?.role_id || req.user?.user_role_id;
+    const isStaff = [ROLES.ADMIN, ROLES.TEACHER, ROLES.ADMINISTRATIVE].includes(Number(uRoleId));
+    const publishFilter = isStaff ? "" : "AND e.is_published = true";
+
     const erColsRes = await query(
       `SELECT column_name
        FROM information_schema.columns
@@ -4347,7 +4355,7 @@ const getStudentsLatestExamSummary = async (req, res) => {
            INNER JOIN exam_schedules es ON es.id = er.exam_schedule_id
            LEFT JOIN exams e ON e.id = es.exam_id
            WHERE er.student_id = ANY($1::int[])
-             AND es.exam_id IS NOT NULL
+             AND es.exam_id IS NOT NULL ${publishFilter}
            GROUP BY er.student_id, es.exam_id
          ),
          latest_exam AS (

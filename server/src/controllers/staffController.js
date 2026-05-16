@@ -206,12 +206,15 @@ async function backfillLegacyTeacherStaffAssignments() {
 const getAllStaff = async (req, res) => {
   try {
     await backfillLegacyTeacherStaffAssignments();
-    // List only administrative/non-teaching staff (exclude teachers role_id=2).
+    // All employment rows in `staff` (teachers, administrative, drivers, etc.).
+    // Teacher-only listings use teacherController; this list must match DB so HRM/hostel/library pickers stay complete.
+    // Active rule matches `staff.is_active` generated column: case-insensitive status, not soft-deleted.
     const result = await query(`
       ${STAFF_SELECT_NORMALIZED}
-      WHERE s.deleted_at IS NULL AND s.status = 'Active' AND u.role_id != $1
+      WHERE s.deleted_at IS NULL
+        AND LOWER(TRIM(COALESCE(NULLIF(TRIM(s.status), ''), 'Active'))) = 'active'
       ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
-    `, [ROLES.TEACHER]);
+    `);
 
     return success(res, 200, 'Staff fetched successfully', result.rows, { count: result.rows.length });
   } catch (error) {

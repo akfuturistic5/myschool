@@ -201,8 +201,8 @@ async function getParentsForUser(userId) {
     LEFT JOIN classes c ON c.id = enr.class_id
     LEFT JOIN sections sec ON sec.id = enr.section_id
     WHERE s.is_active = true
-      AND g.is_active = true
       AND u.is_active = true
+      AND (g.is_active IS NOT FALSE OR EXISTS (SELECT 1 FROM students s2 WHERE s2.id = sgl.student_id AND s2.status = 'Active'))
   `;
   const toPayload = (rows, mapper = mapGuardianLinkToLegacyParentRow) => {
     const parents = mergeRowsByStudent(rows.map(mapper));
@@ -263,11 +263,7 @@ async function getParentsForUser(userId) {
       LEFT JOIN classes c ON c.id = enr.class_id
       LEFT JOIN sections sec ON sec.id = enr.section_id
       WHERE s.is_active = true
-        AND (
-          p.user_id = $1
-          OR p.father_user_id = $1
-          OR p.mother_user_id = $1
-        )
+        AND (p.user_id = $1 OR p.father_user_id = $1 OR p.mother_user_id = $1)
       ORDER BY su.first_name ASC, su.last_name ASC`;
     const selectLegacyCols = `
       SELECT
@@ -351,7 +347,7 @@ async function getParentsForUser(userId) {
 
     if (canMatchByEmail || canMatchByPhone) {
       const params = [];
-      const where = ['s.is_active = true', 'g.is_active = true'];
+      const where = ['s.is_active = true'];
 
       if (canMatchByEmail && canMatchByPhone) {
         params.push(emailList);

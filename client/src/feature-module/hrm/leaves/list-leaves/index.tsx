@@ -20,14 +20,17 @@ import { useClasses } from "../../../../core/hooks/useClasses";
 import { useSections } from "../../../../core/hooks/useSections";
 import { useDepartments } from "../../../../core/hooks/useDepartments";
 import { useDesignations } from "../../../../core/hooks/useDesignations";
-import { isAdministrativeRole, isHeadmasterRole } from "../../../../core/utils/roleUtils";
+import { isAdministrativeRole, isHeadmasterRole, isTeacherRole } from "../../../../core/utils/roleUtils";
 import { selectSelectedAcademicYearId } from "../../../../core/data/redux/academicYearSlice";
+import { useCurrentTeacher } from "../../../../core/hooks/useCurrentTeacher";
+import TeacherModal from "../../../peoples/teacher/teacherModal";
+import { apiService } from "../../../../core/services/apiService";
 
-/** Default: show decided leaves only (excludes pending & cancelled). Must match server status tokens. */
-const DEFAULT_LIST_LEAVE_STATUSES = "approved,rejected";
+/** Default: show all leaves including pending. Must match server status tokens. */
+const DEFAULT_LIST_LEAVE_STATUSES = "pending,approved,rejected";
 
 const LEAVE_STATUS_OPTIONS = [
-  { value: DEFAULT_LIST_LEAVE_STATUSES, label: "Approved & Rejected" },
+  { value: "pending", label: "Pending only" },
   { value: "approved", label: "Approved only" },
   { value: "rejected", label: "Rejected only" },
 ];
@@ -43,9 +46,11 @@ const ListLeaves = () => {
   const { user: currentUser } = useCurrentUser() as any;
   const roleName = String(currentUser?.role_name || currentUser?.role || "").toLowerCase();
   const roleId = Number(currentUser?.user_role_id);
-  const isTeacher = roleId === 2 || roleName === "teacher" || roleName.includes("teacher");
-  const canUseAdminList = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser) || isTeacher;
-  const isOwnLeavesOnly = false;
+  const isTeacher = isTeacherRole(currentUser);
+  const isAdmin = isHeadmasterRole(currentUser) || isAdministrativeRole(currentUser);
+  const canUseAdminList = isAdmin || isTeacher;
+  const isOwnLeavesOnly = isTeacher && !isAdmin;
+  const { teacher: currentTeacher } = useCurrentTeacher() as any;
   const [filterStatus, setFilterStatus] = useState<string | null>(DEFAULT_LIST_LEAVE_STATUSES);
   const [datePreset, setDatePreset] = useState<LeaveListDatePreset>("all");
   const [customDateRange, setCustomDateRange] = useState(() => defaultCustomDateRange());
@@ -142,6 +147,20 @@ const ListLeaves = () => {
     }
   };
 
+  const handleCancelLeave = async (id: number) => {
+    if (!window.confirm("Are you sure you want to cancel this leave application?")) return;
+    try {
+      const res = await apiService.cancelLeaveApplication(id);
+      if (res?.status === "SUCCESS") {
+        refetchLeaves();
+      } else {
+        alert(res?.message || "Failed to cancel leave application.");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Failed to cancel leave application.");
+    }
+  };
+
   const data = useMemo(() => {
     if (!Array.isArray(leaveApplications)) return [];
     return leaveApplications.map((row) => ({
@@ -210,6 +229,29 @@ const ListLeaves = () => {
         );
       },
       sorter: (a: any, b: any) => String(a?.status ?? "").length - String(b?.status ?? "").length,
+    },
+    {
+      title: "Action",
+      dataIndex: "action",
+      render: (_: any, record: any) => (
+        <div className="d-flex align-items-center">
+          {record.status === "pending" && 
+           isTeacher && 
+           Number(record.staffId) === Number(currentTeacher?.id || currentUser?.staff_id) && (
+            <Link
+              to="#"
+              className="btn btn-icon btn-sm btn-soft-danger"
+              onClick={(e) => {
+                e.preventDefault();
+                handleCancelLeave(record.id);
+              }}
+              title="Cancel Leave"
+            >
+              <i className="ti ti-trash" />
+            </Link>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -294,6 +336,17 @@ const ListLeaves = () => {
                   onExportPdf={printTable}
                   onExportExcel={() => downloadCsv("list-of-leaves.csv")}
                 />
+                {isTeacher && (
+                  <Link
+                    to="#"
+                    className="btn btn-primary d-flex align-items-center ms-2"
+                    data-bs-toggle="modal"
+                    data-bs-target="#apply_leave_teacher"
+                  >
+                    <i className="ti ti-square-rounded-plus me-2" />
+                    Apply Leave
+                  </Link>
+                )}
               </div>
             </div>
             {/* /Page Header */}
@@ -509,157 +562,10 @@ const ListLeaves = () => {
           </div>
         </div>
         {/* /Page Wrapper */}
-        {/* Add Leaves */}
-        <div className="modal fade" id="add_leaves">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Add Leave Type</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Leave Type</label>
-                        <input type="text" className="form-control" />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Add Leave Type
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Add Leaves */}
-        {/* Edit Leaves */}
-        <div className="modal fade" id="edit_leaves">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <div className="modal-header">
-                <h4 className="modal-title">Edit Leave Type</h4>
-                <button
-                  type="button"
-                  className="btn-close custom-btn-close"
-                  data-bs-dismiss="modal"
-                  aria-label="Close"
-                >
-                  <i className="ti ti-x" />
-                </button>
-              </div>
-              <form >
-                <div className="modal-body">
-                  <div className="row">
-                    <div className="col-md-12">
-                      <div className="mb-3">
-                        <label className="form-label">Leave Type</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Leave Type"
-                          defaultValue="Medical Leave"
-                        />
-                      </div>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="status-title">
-                          <h5>Status</h5>
-                          <p>Change the Status by toggle </p>
-                        </div>
-                        <div className="form-check form-switch">
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id="switch-sm2"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="modal-footer">
-                  <Link
-                    to="#"
-                    className="btn btn-light me-2"
-                    data-bs-dismiss="modal"
-                  >
-                    Cancel
-                  </Link>
-                  <Link to="#" className="btn btn-primary" data-bs-dismiss="modal">
-                    Save Changes
-                  </Link>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* Edit Leaves */}
-        {/* Delete Modal */}
-        <div className="modal fade" id="delete-modal">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content">
-              <form >
-                <div className="modal-body text-center">
-                  <span className="delete-icon">
-                    <i className="ti ti-trash-x" />
-                  </span>
-                  <h4>Confirm Deletion</h4>
-                  <p>
-                    You want to delete all the marked items, this cant be undone
-                    once you delete.
-                  </p>
-                  <div className="d-flex justify-content-center">
-                    <Link
-                      to="#"
-                      className="btn btn-light me-3"
-                      data-bs-dismiss="modal"
-                    >
-                      Cancel
-                    </Link>
-                    <Link to="#" className="btn btn-danger" data-bs-dismiss="modal">
-                      Yes, Delete
-                    </Link>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-        {/* /Delete Modal */}
+        <TeacherModal
+          staffId={currentTeacher?.id || currentUser?.staff_id}
+          onLeaveApplied={() => refetchLeaves()}
+        />
       </>
     </div>
   );

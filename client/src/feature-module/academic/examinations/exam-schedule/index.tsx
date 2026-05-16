@@ -14,6 +14,7 @@ type Row = {
   exam_date: string;
   start_time: string;
   end_time: string;
+  room_id?: number | null;
   is_elective?: boolean;
   elective_group_id?: number | null;
 };
@@ -72,6 +73,8 @@ const ExamSchedule = () => {
   const [sectionId, setSectionId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
 
   useEffect(() => {
     if (!examId) return;
@@ -126,6 +129,23 @@ const ExamSchedule = () => {
       cancelled = true;
     };
   }, [examId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiService.getClassRooms();
+        if (!cancelled) {
+          setRooms((res as any)?.data || []);
+        }
+      } catch (e) {
+        console.error("Failed to load rooms", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const classOptions = useMemo(() => {
     const m = new Map<string, { class_name: string; class_code: string }>();
@@ -196,6 +216,7 @@ const ExamSchedule = () => {
             exam_date: r.exam_date ? String(r.exam_date).slice(0, 10) : "",
             start_time: r.start_time ? String(r.start_time).slice(0, 5) : "",
             end_time: r.end_time ? String(r.end_time).slice(0, 5) : "",
+            room_id: r.class_room_id ? Number(r.class_room_id) : null,
           }))
         );
         if (!ctxRows.length) {
@@ -282,6 +303,7 @@ const ExamSchedule = () => {
       exam_date: r.exam_date,
       start_time: r.start_time,
       end_time: r.end_time,
+      room_id: r.room_id ? Number(r.room_id) : null,
     }));
 
     for (const row of payload) {
@@ -468,6 +490,7 @@ const ExamSchedule = () => {
                       <th className="py-3 px-3 fw-bold text-dark border-0" style={{ width: "180px" }}>Exam Date</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0" style={{ width: "150px" }}>Start</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0" style={{ width: "150px" }}>End</th>
+                      <th className="py-3 px-3 fw-bold text-dark border-0" style={{ width: "180px" }}>Room</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -525,6 +548,20 @@ const ExamSchedule = () => {
                             value={row.end_time}
                             onChange={(e) => updateRow(i, { end_time: e.target.value })}
                           />
+                        </td>
+                        <td className="border-light">
+                          <select
+                            className="form-select form-select-sm border-light shadow-none"
+                            value={row.room_id || ""}
+                            onChange={(e) => updateRow(i, { room_id: e.target.value ? Number(e.target.value) : null })}
+                          >
+                            <option value="">Select Room</option>
+                            {rooms.map((room) => (
+                              <option key={room.id} value={room.id}>
+                                {room.room_number} ({room.building_name || "Main"})
+                              </option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                     ))}

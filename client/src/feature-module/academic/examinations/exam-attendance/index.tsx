@@ -15,21 +15,21 @@ const ExamAttendance = () => {
     .map((v) => String(v || "").trim().toLowerCase())
     .filter(Boolean);
   const canonicalRoleId = Number((user as any)?.role_id ?? (user as any)?.user_role_id);
+  const isStudent = canonicalRoleId === 3 || roleTokens.includes("student");
+  const isParent = canonicalRoleId === 4 || roleTokens.includes("parent");
+  const isTeacher = canonicalRoleId === 2 || roleTokens.includes("teacher");
   const selfOnly =
-    canonicalRoleId === 3 ||
-    canonicalRoleId === 4 ||
+    isStudent ||
+    isParent ||
     canonicalRoleId === 5 ||
-    roleTokens.some(
-      (r) =>
-        r === "student" ||
-        r === "parent" ||
-        r === "guardian" ||
-        r === "father" ||
-        r === "mother" ||
-        r.includes("student") ||
-        r.includes("parent") ||
-        r.includes("guardian")
-    );
+    roleTokens.some((r) => r === "guardian" || r.includes("guardian"));
+  const dashboardLink = isStudent
+    ? routes.studentDashboard
+    : isParent
+    ? routes.parentDashboard
+    : isTeacher
+    ? routes.teacherDashboard
+    : routes.adminDashboard;
 
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>("");
@@ -48,7 +48,8 @@ const ExamAttendance = () => {
         if (selfOnly) {
           const res = await apiService.listSelfExams({ academic_year_id: academicYearId || undefined });
           if (cancelled) return;
-          const nextExams = (res as any)?.data || [];
+          const raw = (res as any)?.data;
+          const nextExams = Array.isArray(raw?.exams) ? raw.exams : (Array.isArray(raw) ? raw : []);
           setExams(nextExams);
           if (nextExams.length > 0) {
             setSelectedExamId(String(nextExams[0].id));
@@ -155,12 +156,13 @@ const ExamAttendance = () => {
       { title: "End", dataKey: "end_time" },
       { title: "Max", dataKey: "max_marks" },
       { title: "Pass", dataKey: "passing_marks" },
+      { title: "Room", dataKey: "room" },
     ],
     []
   );
 
   const selectedExamLabel = useMemo(() => {
-    const selected = exams.find((ex: any) => String(ex.id) === String(selectedExamId));
+    const selected = Array.isArray(exams) ? exams.find((ex: any) => String(ex.id) === String(selectedExamId)) : null;
     if (!selected) return "Exam Timetable";
     return `${selected.exam_name || "Exam"}${selected.exam_type ? ` (${selected.exam_type})` : ""}`;
   }, [exams, selectedExamId]);
@@ -199,6 +201,7 @@ const ExamAttendance = () => {
       end_time: r.end_time ? String(r.end_time).slice(0, 5) : "-",
       max_marks: r.max_marks ?? "-",
       passing_marks: r.passing_marks ?? "-",
+      room: r.room_number ? `${r.room_number}${r.building_name ? ` (${r.building_name})` : ""}` : "-",
     }));
 
   const handleExport = (type: "pdf" | "excel" | "print") => {
@@ -258,7 +261,7 @@ const ExamAttendance = () => {
             <h3 className="page-title mb-1">Exam Timetable</h3>
             <nav>
               <ol className="breadcrumb mb-0">
-                <li className="breadcrumb-item"><Link to={routes.adminDashboard}>Dashboard</Link></li>
+                <li className="breadcrumb-item"><Link to={dashboardLink}>Dashboard</Link></li>
                 <li className="breadcrumb-item">Academic</li>
                 <li className="breadcrumb-item active" aria-current="page">Exam Timetable</li>
               </ol>
@@ -295,9 +298,11 @@ const ExamAttendance = () => {
                 </ul>
               </div>
             )}
-            <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
-              <i className="ti ti-checklist me-2"></i> Manage Exams
-            </Link>
+            {!selfOnly && (
+              <Link to={routes.exam} className="btn btn-primary d-flex align-items-center shadow-sm">
+                <i className="ti ti-checklist me-2"></i> Manage Exams
+              </Link>
+            )}
           </div>
         </div>
 
@@ -324,7 +329,7 @@ const ExamAttendance = () => {
                   }}
                 >
                   <option value="">Select Exam</option>
-                  {exams.map((ex: any) => (
+                  {Array.isArray(exams) && exams.map((ex: any) => (
                     <option key={ex.id} value={ex.id}>
                       {ex.exam_name} ({ex.exam_type})
                     </option>
@@ -416,7 +421,8 @@ const ExamAttendance = () => {
                       <th className="py-3 px-3 fw-bold text-dark border-0">Exam Date</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0">Timing (Start - End)</th>
                       <th className="py-3 px-3 fw-bold text-dark border-0 text-center">Max Marks</th>
-                      <th className="py-3 px-4 fw-bold text-dark border-0 text-center">Passing Marks</th>
+                      <th className="py-3 px-3 fw-bold text-dark border-0 text-center">Passing Marks</th>
+                      <th className="py-3 px-4 fw-bold text-dark border-0">Room</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -440,6 +446,16 @@ const ExamAttendance = () => {
                         </td>
                         <td className="border-light text-center fw-bold text-primary">{r.max_marks}</td>
                         <td className="px-4 border-light text-center fw-bold text-success">{r.passing_marks}</td>
+                        <td className="px-4 border-light">
+                          {r.room_number ? (
+                            <span className="text-dark fw-semibold">
+                              <i className="ti ti-door-enter text-secondary me-1"></i>
+                              {r.room_number} {r.building_name && <small className="text-muted">({r.building_name})</small>}
+                            </span>
+                          ) : (
+                            <span className="text-muted small">-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
