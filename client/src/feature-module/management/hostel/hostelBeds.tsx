@@ -9,6 +9,7 @@ import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { formatDateDMY } from "../../../core/utils/dateDisplay";
 import { ActiveInactiveBadge, HostelRecordStatusToggle } from "./hostelUiUtils";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 type BedRow = {
   key: string;
@@ -314,6 +315,52 @@ const HostelBeds = () => {
     Swal.fire({ icon: "success", title: "Refreshed", timer: 900, showConfirmButton: false });
   };
 
+  const handleExportExcel = () => {
+    exportToExcel(
+      rows.map((r) => ({
+        ID: r.dbId,
+        Hostel: r.hostelName,
+        Floor: r.floorLabel,
+        Room: r.roomNumber,
+        "Bed #": r.bedNumber,
+        Position: r.positionLabel,
+        "Bed status": r.bedStatus,
+        "Add On": r.addedOn,
+        Status: r.isActive ? "Active" : "Inactive",
+      })),
+      `Hostel_Beds_${new Date().toISOString().split("T")[0]}`
+    );
+  };
+
+  const pdfCols = [
+    { title: "ID", dataKey: "dbId" },
+    { title: "Hostel", dataKey: "hostelName" },
+    { title: "Floor", dataKey: "floorLabel" },
+    { title: "Room", dataKey: "roomNumber" },
+    { title: "Bed #", dataKey: "bedNumber" },
+    { title: "Position", dataKey: "positionLabel" },
+    { title: "Bed status", dataKey: "bedStatus" },
+    { title: "Add On", dataKey: "addedOn" },
+    { title: "Status", dataKey: "isActiveStr" },
+  ];
+
+  const handleExportPDF = () => {
+    exportToPDF(
+      rows.map((r) => ({ ...r, isActiveStr: r.isActive ? "Active" : "Inactive" })),
+      "Hostel Beds",
+      `Hostel_Beds_${new Date().toISOString().split("T")[0]}`,
+      pdfCols
+    );
+  };
+
+  const handlePrint = () => {
+    printData(
+      "Hostel Beds",
+      pdfCols,
+      rows.map((r) => ({ ...r, isActiveStr: r.isActive ? "Active" : "Inactive" }))
+    );
+  };
+
   const openAddBedModal = () => {
     setAddBedHostelId(draftHostelId);
     setAddBedFloorId(draftFloorId);
@@ -539,7 +586,12 @@ const HostelBeds = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
-              <TooltipOption onRefresh={onRefresh} />
+              <TooltipOption
+                onRefresh={onRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPDF}
+                onExportExcel={handleExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to="#"

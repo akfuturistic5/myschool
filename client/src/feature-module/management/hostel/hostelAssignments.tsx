@@ -15,6 +15,7 @@ import Swal from "sweetalert2";
 import { formatDateDMY, formatUsdDisplay, toYmdString } from "../../../core/utils/dateDisplay";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { HostelAssignmentStatusBadge, HostelRecordStatusToggle } from "./hostelUiUtils";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const STATUS_FILTER = [
   { value: "all", label: "All statuses" },
@@ -285,6 +286,46 @@ const HostelAssignments = () => {
     setDraftStatus("all");
     setFilterHostel("all");
     setFilterStatus("all");
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(
+      tableRows.map((r) => ({
+        ID: r.dbId,
+        "Student / Staff": r.student,
+        Hostel: r.hostel,
+        Room: r.room,
+        Bed: r.bed,
+        "Assigned Date": r.from,
+        "Expected Checkout": r.expectedOut,
+        Checkout: r.checkout,
+        Deposit: r.deposit,
+        Remarks: r.remarks,
+        Status: r.status,
+      })),
+      `Hostel_Assignments_${new Date().toISOString().split("T")[0]}`
+    );
+  };
+
+  const pdfCols = [
+    { title: "ID", dataKey: "dbId" },
+    { title: "Student / Staff", dataKey: "student" },
+    { title: "Hostel", dataKey: "hostel" },
+    { title: "Room", dataKey: "room" },
+    { title: "Bed", dataKey: "bed" },
+    { title: "Assigned Date", dataKey: "from" },
+    { title: "Expected Checkout", dataKey: "expectedOut" },
+    { title: "Checkout", dataKey: "checkout" },
+    { title: "Deposit", dataKey: "deposit" },
+    { title: "Status", dataKey: "status" },
+  ];
+
+  const handleExportPDF = () => {
+    exportToPDF(tableRows, "Hostel Assignments", `Hostel_Assignments_${new Date().toISOString().split("T")[0]}`, pdfCols);
+  };
+
+  const handlePrint = () => {
+    printData("Hostel Assignments", pdfCols, tableRows);
   };
 
   const openAssignModal = () => {
@@ -659,6 +700,9 @@ const HostelAssignments = () => {
                   await refetch();
                   Swal.fire({ icon: "success", title: "Refreshed", timer: 800, showConfirmButton: false });
                 }}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPDF}
+                onExportExcel={handleExportExcel}
               />
               <div className="mb-2">
                 <Link

@@ -1,0 +1,241 @@
+/* Scoped Super Admin shell — modern layout, works with light/dark body */
+
+.sa-shell {
+  --sa-accent: #4f46e5;
+  --sa-accent-soft: rgba(79, 70, 229, 0.12);
+  --sa-surface: var(--bs-body-bg, #fff);
+  --sa-elevated: color-mix(in srgb, var(--bs-body-bg, #fff) 92%, #6366f1 8%);
+  --sa-border: color-mix(in srgb, var(--bs-border-color, #dee2e6) 85%, transparent);
+  --sa-muted: var(--bs-secondary-color, #6c757d);
+}
+
+.sa-shell .sa-header {
+  background: linear-gradient(135deg, #312e81 0%, #4f46e5 48%, #6366f1 100%);
+  color: #f8fafc;
+  border: none;
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.18);
+}
+
+.sa-shell .sa-header .sa-brand {
+  letter-spacing: -0.02em;
+}
+
+.sa-shell .sa-header .btn-light {
+  --bs-btn-bg: rgba(255, 255, 255, 0.15);
+  --bs-btn-border-color: rgba(255, 255, 255, 0.25);
+  --bs-btn-color: #fff;
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.28);
+  --bs-btn-hover-border-color: rgba(255, 255, 255, 0.35);
+  --bs-btn-hover-color: #fff;
+}
+
+.sa-shell .sa-sidebar {
+  width: 268px;
+  min-height: calc(100vh - 56px);
+  background: var(--sa-surface);
+  border-right: 1px solid var(--sa-border);
+  box-shadow: 4px 0 32px rgba(15, 23, 42, 0.04);
+}
+
+.sa-shell .sa-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.65rem;
+  color: var(--bs-body-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.sa-shell .sa-nav-link:hover {
+  background: var(--sa-accent-soft);
+  color: var(--sa-accent);
+}
+
+.sa-shell .sa-nav-link.active {
+  background: linear-gradient(135deg, var(--sa-accent-soft), transparent);
+  color: var(--sa-accent);
+  box-shadow: inset 3px 0 0 var(--sa-accent);
+}
+
+.sa-shell .sa-nav-link i {
+  font-size: 1.15rem;
+  opacity: 0.9;
+}
+
+.sa-shell .sa-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.sa-shell .sa-nav-parent {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sa-shell .sa-nav-parent__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sa-shell .sa-nav-chevron {
+  font-size: 1rem;
+  opacity: 0.55;
+  margin-left: auto;
+  flex-shrink: 0;
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+
+.sa-shell .sa-nav-parent:hover .sa-nav-chevron,
+.sa-shell .sa-nav-parent.active .sa-nav-chevron {
+  opacity: 0.9;
+}
+
+.sa-shell .sa-nav-chevron--open {
+  transform: rotate(180deg);
+}
+
+.sa-shell .sa-nav-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 0;
+  margin-left: 0.65rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid transparent;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-height 0.28s ease,
+    opacity 0.2s ease,
+    margin 0.2s ease,
+    padding 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.sa-shell .sa-nav-submenu--open {
+  max-height: 7rem;
+  margin-top: 0.1rem;
+  margin-bottom: 0.15rem;
+  opacity: 1;
+  pointer-events: auto;
+  border-left-color: color-mix(in srgb, var(--sa-accent) 28%, var(--sa-border));
+}
+
+.sa-shell .sa-nav-group--active .sa-nav-submenu--open {
+  border-left-color: color-mix(in srgb, var(--sa-accent) 45%, var(--sa-border));
+}
+
+.sa-shell .sa-nav-sublink {
+  padding: 0.55rem 0.85rem 0.55rem 0.65rem;
+  font-size: 0.875rem;
+}
+
+.sa-shell .sa-nav-sublink i {
+  font-size: 1.05rem;
+  opacity: 0.88;
+}
+
+.sa-shell .sa-nav-group .sa-nav-sublink.active {
+  box-shadow: inset 3px 0 0 var(--sa-accent);
+}
+
+.sa-shell .sa-main {
+  min-height: calc(100vh - 56px);
+  background: linear-gradient(180deg, var(--sa-elevated) 0%, var(--bs-body-bg, #f8fafc) 320px, var(--bs-body-bg, #f1f5f9) 100%);
+}
+
+.sa-shell .sa-main-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.sa-shell .sa-mobile-nav {
+  background: var(--sa-surface);
+  border-top: 1px solid var(--sa-border);
+  box-shadow: 0 -4px 24px rgba(15, 23, 42, 0.06);
+}
+
+.sa-stat-card {
+  border: 1px solid var(--sa-border);
+  border-radius: 1rem;
+  background: var(--sa-surface);
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+}
+
+.sa-stat-card:hover {
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+.sa-stat-card--link {
+  display: block;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sa-stat-card--link .sa-stat-card__arrow {
+  font-size: 1rem;
+  opacity: 0.35;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.sa-stat-card--link:hover .sa-stat-card__arrow {
+  opacity: 0.85;
+  transform: translate(2px, -2px);
+}
+
+.sa-stat-card .sa-stat-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+}
+
+.sa-glass-card {
+  border-radius: 1rem;
+  border: 1px solid var(--sa-border);
+  background: color-mix(in srgb, var(--sa-surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+}
+
+.sa-school-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sa-school-row:hover {
+  background: var(--sa-accent-soft) !important;
+}
+
+.sa-school-row.sa-school-row--active {
+  background: color-mix(in srgb, var(--sa-accent) 10%, var(--sa-surface)) !important;
+  box-shadow: inset 3px 0 0 var(--sa-accent);
+}
+
+.sa-perm-panel {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100vh - 100px);
+  overflow: auto;
+}
+
+.sa-perm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  display: inline-block;
+}

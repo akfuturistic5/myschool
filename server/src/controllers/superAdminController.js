@@ -20,6 +20,12 @@ const {
   writeSuperAdminAudit,
   DELETE_TOKEN_TTL_SEC,
 } = require('../utils/superAdminSecurity');
+const { issueTenantSessionForUser } = require('../services/tenantSessionIssueService');
+const {
+  getEffectiveSchoolModules,
+  replaceSchoolOverrides,
+} = require('../services/saasSchoolModulesService');
+const { ROLES } = require('../config/roles');
 
 /**
  * List all schools from master_db.schools.
@@ -27,13 +33,22 @@ const {
  */
 const listSchools = async (req, res) => {
   try {
-    const { status } = req.query || {};
-    const filters = ['deleted_at IS NULL'];
+    const { status, q } = req.query || {};
+    const filters = ['s.deleted_at IS NULL'];
     const params = [];
 
     if (status) {
-      filters.push(`status = $${params.length + 1}`);
+      filters.push(`s.status = $${params.length + 1}`);
       params.push(String(status).trim());
+    }
+
+    if (q && String(q).trim()) {
+      const term = `%${String(q).trim().toLowerCase()}%`;
+      const idx = params.length + 1;
+      filters.push(
+        `(LOWER(s.school_name) LIKE $${idx} OR LOWER(s.institute_number) LIKE $${idx} OR LOWER(s.db_name) LIKE $${idx})`
+      );
+      params.push(term);
     }
 
     const whereClause = `WHERE ${filters.join(' AND ')}`;
@@ -41,16 +56,20 @@ const listSchools = async (req, res) => {
     const result = await masterQuery(
       `
         SELECT
-          id,
-          school_name,
-          type,
-          institute_number,
-          db_name,
-          status,
-          created_at
-        FROM schools
+          s.id,
+          s.school_name,
+          s.type,
+          s.institute_number,
+          s.db_name,
+          s.status,
+          s.created_at,
+          s.plan_id,
+          p.name AS plan_name,
+          p.slug AS plan_slug
+        FROM schools s
+        LEFT JOIN saas_plans p ON p.id = s.plan_id
         ${whereClause}
-        ORDER BY id ASC
+        ORDER BY s.id ASC
       `,
       params
     );
@@ -75,15 +94,19 @@ const getSchoolById = async (req, res) => {
     const result = await masterQuery(
       `
         SELECT
-          id,
-          school_name,
-          type,
-          institute_number,
-          db_name,
-          status,
-          created_at
-        FROM schools
-        WHERE id = $1 AND deleted_at IS NULL
+          s.id,
+          s.school_name,
+          s.type,
+          s.institute_number,
+          s.db_name,
+          s.status,
+          s.created_at,
+          s.plan_id,
+          p.name AS plan_name,
+          p.slug AS plan_slug
+        FROM schools s
+        LEFT JOIN saas_plans p ON p.id = s.plan_id
+        WHERE s.id = $1 AND s.deleted_at IS NULL
         LIMIT 1
       `,
       [id]
@@ -93,7 +116,32 @@ const getSchoolById = async (req, res) => {
       return errorResponse(res, 404, 'School not found');
     }
 
-    return success(res, 200, 'School fetched', result.rows[0]);
+    const row = result.rows[0];
+    let modulesPayload = null;
+    try {
+      modulesPayload = await getEffectiveSchoolModules(id);
+    } catch (e) {
+      console.warn('getSchoolById: modules not loaded:', e.message);
+    }
+
+    let overrides = [];
+    try {
+      const ov = await masterQuery(
+        `SELECT module_key, show_in_menu, route_accessible
+         FROM school_module_overrides WHERE school_id = $1 ORDER BY module_key`,
+        [id]
+      );
+      overrides = ov.rows || [];
+    } catch {
+      /* migration may not be applied */
+    }
+
+    return success(res, 200, 'School fetched', {
+      ...row,
+      saas_plan: modulesPayload?.plan || null,
+      saas_modules: modulesPayload?.modules || null,
+      saas_module_overrides: overrides,
+    });
   } catch (err) {
     console.error('Super Admin getSchoolById error:', err);
     return errorResponse(res, 500, 'Failed to fetch school');
@@ -168,14 +216,39 @@ const getPlatformStats = async (req, res) => {
     const activeRes = await masterQuery(
       `SELECT COUNT(*)::INT AS total_active_schools FROM schools WHERE deleted_at IS NULL AND status = 'active'`
     );
+    const inactiveRes = await masterQuery(
+      `SELECT COUNT(*)::INT AS total_inactive_schools FROM schools WHERE deleted_at IS NULL AND status <> 'active'`
+    );
     const disabledRes = await masterQuery(
       `SELECT COUNT(*)::INT AS total_disabled_schools FROM schools WHERE deleted_at IS NULL AND status = 'disabled'`
     );
 
+    let total_plans = 0;
+    let enquiries_new = 0;
+    try {
+      const plansRes = await masterQuery(
+        `SELECT COUNT(*)::INT AS c FROM saas_plans WHERE is_active = TRUE`
+      );
+      total_plans = plansRes.rows?.[0]?.c ?? 0;
+    } catch {
+      total_plans = 0;
+    }
+    try {
+      const enqRes = await masterQuery(
+        `SELECT COUNT(*)::INT AS c FROM school_enquiries WHERE LOWER(status) = 'new'`
+      );
+      enquiries_new = enqRes.rows?.[0]?.c ?? 0;
+    } catch {
+      enquiries_new = 0;
+    }
+
     const data = {
       total_schools: totalRes.rows?.[0]?.total_schools ?? 0,
       total_active_schools: activeRes.rows?.[0]?.total_active_schools ?? 0,
+      total_inactive_schools: inactiveRes.rows?.[0]?.total_inactive_schools ?? 0,
       total_disabled_schools: disabledRes.rows?.[0]?.total_disabled_schools ?? 0,
+      total_plans,
+      enquiries_new,
     };
 
     return success(res, 200, 'Platform statistics fetched', data);
@@ -259,14 +332,31 @@ const createSchool = async (req, res) => {
 
   let schoolRow;
   try {
-    const insertRes = await masterQuery(
-      `
+    let defaultPlanId = null;
+    try {
+      const pr = await masterQuery(`SELECT id FROM saas_plans WHERE slug = 'full' LIMIT 1`);
+      defaultPlanId = pr.rows?.[0]?.id ?? null;
+    } catch {
+      defaultPlanId = null;
+    }
+
+    const insertRes = defaultPlanId
+      ? await masterQuery(
+          `
+      INSERT INTO schools (school_name, type, institute_number, db_name, status, plan_id)
+      VALUES ($1, $2, $3, $4, 'active', $5)
+      RETURNING id, school_name, type, institute_number, db_name, status, created_at, plan_id
+      `,
+          [name, schoolType, institute, dbName, defaultPlanId]
+        )
+      : await masterQuery(
+          `
       INSERT INTO schools (school_name, type, institute_number, db_name, status)
       VALUES ($1, $2, $3, $4, 'active')
       RETURNING id, school_name, type, institute_number, db_name, status, created_at
       `,
-      [name, schoolType, institute, dbName]
-    );
+          [name, schoolType, institute, dbName]
+        );
     schoolRow = insertRes.rows[0];
   } catch (err) {
     console.error('Super Admin createSchool: failed to insert into master_db.schools, rolling back DB:', err);
@@ -627,6 +717,252 @@ const confirmDeleteSchool = async (req, res) => {
   }
 };
 
+/**
+ * Super Admin: establish tenant session as first active Headmaster (else Administrative).
+ */
+const impersonateSchool = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return errorResponse(res, 400, 'Invalid school id');
+    }
+
+    const schoolRes = await masterQuery(
+      `
+      SELECT id, school_name, type, logo, institute_number, db_name, status, deleted_at
+      FROM schools
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [id]
+    );
+    if (!schoolRes.rows?.length) {
+      return errorResponse(res, 404, 'School not found');
+    }
+    const school = schoolRes.rows[0];
+    if (school.deleted_at) {
+      return errorResponse(res, 400, 'School has been removed');
+    }
+    if (String(school.status || '').toLowerCase() === 'disabled') {
+      return errorResponse(
+        res,
+        403,
+        'School is disabled. Enable the school before using Login as school.'
+      );
+    }
+
+    const adminRoleIds = [ROLES.ADMIN, ROLES.ADMINISTRATIVE];
+    let pickedUser = null;
+    let accountDisabled = false;
+
+    await runWithTenant(school.db_name, async () => {
+      const userResult = await query(
+        `
+        SELECT u.id, u.username, u.first_name, u.last_name, u.role_id, u.phone, u.avatar,
+               ur.role_name,
+               st.id AS staff_id, u.first_name AS staff_first_name, u.last_name AS staff_last_name
+        FROM users u
+        LEFT JOIN user_roles ur ON u.role_id = ur.id
+        LEFT JOIN staff st ON u.id = st.user_id AND (st.deleted_at IS NULL AND LOWER(st.status) = 'active')
+        WHERE u.is_active = true AND u.deleted_at IS NULL
+          AND u.role_id = ANY($1::int[])
+        ORDER BY CASE u.role_id WHEN $2 THEN 0 WHEN $3 THEN 1 ELSE 2 END, u.id ASC
+        LIMIT 1
+        `,
+        [adminRoleIds, ROLES.ADMIN, ROLES.ADMINISTRATIVE]
+      );
+      if (!userResult.rows?.length) {
+        return;
+      }
+      pickedUser = userResult.rows[0];
+
+      try {
+        const accCheck = await query(
+          `SELECT s.id AS student_id, s.is_active AS student_is_active, st.id AS staff_id, (st.deleted_at IS NULL AND LOWER(st.status) = 'active') AS staff_is_active
+           FROM users u
+           LEFT JOIN students s ON u.id = s.user_id
+           LEFT JOIN staff st ON u.id = st.user_id
+           WHERE u.id = $1`,
+          [pickedUser.id]
+        );
+        if (accCheck.rows.length > 0) {
+          const r = accCheck.rows[0];
+          const sid = r.student_id;
+          const sActive = r.student_is_active;
+          const tid = r.staff_id;
+          const tActive = r.staff_is_active;
+          const studentInactive = sid != null && (sActive === false || sActive === 'f' || sActive === 0);
+          const staffInactive = tid != null && (tActive === false || tActive === 'f' || tActive === 0);
+          accountDisabled = !!studentInactive || !!staffInactive;
+        }
+      } catch {
+        accountDisabled = false;
+      }
+    });
+
+    if (!pickedUser) {
+      return errorResponse(
+        res,
+        400,
+        'No active Headmaster or Administrative user found in this school database'
+      );
+    }
+
+    let responseData;
+    try {
+      responseData = await issueTenantSessionForUser(req, res, {
+        school: {
+          id: school.id,
+          school_name: school.school_name,
+          type: school.type,
+          institute_number: school.institute_number,
+          logo: school.logo,
+        },
+        user: pickedUser,
+        targetDbName: school.db_name,
+        accountDisabled,
+      });
+    } catch (e) {
+      console.error('impersonateSchool session issue failed:', e);
+      return errorResponse(res, 500, 'Could not start tenant session');
+    }
+
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin?.id,
+      action: 'school_impersonation',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { target_user_id: pickedUser.id, institute_number: school.institute_number },
+      req,
+    });
+
+    return success(res, 200, 'Logged in as school user', {
+      ...responseData,
+      impersonation: true,
+      institute_number: school.institute_number,
+    });
+  } catch (err) {
+    console.error('Super Admin impersonateSchool error:', err);
+    return errorResponse(res, 500, 'Failed to impersonate school');
+  }
+};
+
+const updateSchoolPlan = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return errorResponse(res, 400, 'Invalid school id');
+    }
+    const { plan_id } = req.body || {};
+    let pid = null;
+    if (plan_id !== undefined && plan_id !== null && String(plan_id).trim() !== '') {
+      pid = parseInt(String(plan_id), 10);
+      if (Number.isNaN(pid)) {
+        return errorResponse(res, 400, 'Invalid plan id');
+      }
+      const pr = await masterQuery(`SELECT id FROM saas_plans WHERE id = $1 AND is_active = TRUE LIMIT 1`, [
+        pid,
+      ]);
+      if (!pr.rows?.length) {
+        return errorResponse(res, 400, 'Plan not found or inactive');
+      }
+    }
+
+    const upd = await masterQuery(
+      `
+      UPDATE schools
+      SET plan_id = $1
+      WHERE id = $2 AND deleted_at IS NULL
+      RETURNING id, school_name, type, institute_number, db_name, status, created_at, plan_id
+      `,
+      [pid, id]
+    );
+    if (!upd.rows?.length) {
+      return errorResponse(res, 404, 'School not found');
+    }
+
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin?.id,
+      action: 'school_plan_updated',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { plan_id: pid },
+      req,
+    });
+
+    return success(res, 200, 'School plan updated', upd.rows[0]);
+  } catch (err) {
+    console.error('Super Admin updateSchoolPlan error:', err);
+    return errorResponse(res, 500, 'Failed to update school plan');
+  }
+};
+
+const getSchoolModuleConfig = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return errorResponse(res, 400, 'Invalid school id');
+    }
+    const eff = await getEffectiveSchoolModules(id);
+    let overrides = [];
+    try {
+      const ov = await masterQuery(
+        `SELECT module_key, show_in_menu, route_accessible FROM school_module_overrides WHERE school_id = $1 ORDER BY module_key`,
+        [id]
+      );
+      overrides = ov.rows || [];
+    } catch {
+      overrides = [];
+    }
+    return success(res, 200, 'School module configuration', {
+      plan: eff.plan,
+      effective: eff.modules,
+      overrides,
+    });
+  } catch (err) {
+    console.error('Super Admin getSchoolModuleConfig error:', err);
+    return errorResponse(res, 500, 'Failed to load module configuration');
+  }
+};
+
+const putSchoolModuleOverrides = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) {
+      return errorResponse(res, 400, 'Invalid school id');
+    }
+    const { overrides } = req.body || {};
+    if (!Array.isArray(overrides)) {
+      return errorResponse(res, 400, 'overrides must be an array');
+    }
+    const sch = await masterQuery(`SELECT id FROM schools WHERE id = $1 AND deleted_at IS NULL LIMIT 1`, [id]);
+    if (!sch.rows?.length) {
+      return errorResponse(res, 404, 'School not found');
+    }
+    await replaceSchoolOverrides(
+      id,
+      overrides.map((r) => ({
+        module_key: r.module_key,
+        show_in_menu: !!r.show_in_menu,
+        route_accessible: !!r.route_accessible,
+      }))
+    );
+    await writeSuperAdminAudit({
+      superAdminId: req.superAdmin?.id,
+      action: 'school_module_overrides_updated',
+      resourceType: 'school',
+      resourceId: String(id),
+      details: { count: overrides.length },
+      req,
+    });
+    const eff = await getEffectiveSchoolModules(id);
+    return success(res, 200, 'Overrides saved', { effective: eff.modules });
+  } catch (err) {
+    console.error('Super Admin putSchoolModuleOverrides error:', err);
+    return errorResponse(res, 500, 'Failed to save overrides');
+  }
+};
+
 module.exports = {
   listSchools,
   getSchoolById,
@@ -636,5 +972,9 @@ module.exports = {
   updateSchoolMetadata,
   requestSchoolDeleteToken,
   confirmDeleteSchool,
+  impersonateSchool,
+  updateSchoolPlan,
+  getSchoolModuleConfig,
+  putSchoolModuleOverrides,
 };
 
