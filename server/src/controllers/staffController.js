@@ -7,6 +7,7 @@ const { createAdministrativeStaffUser, isUserEmailTaken } = require('../utils/cr
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { ensureTenantStaffDocDir, resolveStaffDocumentPath, sanitizeTenant } = require('../utils/staffDocumentStorage');
 const { ensureTenantStaffProfileDir, resolveStaffProfilePath } = require('../utils/staffProfileStorage');
+const { enrichStaffProfileAllocations } = require('../services/profileAllocationDetailsService');
 
 const TEACHER_EMAIL_MAX_LEN = 100;
 const EMAIL_FORMAT_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -244,6 +245,8 @@ const getStaffById = async (req, res) => {
     if (!isAdmin && !isSelf) {
       return errorResponse(res, 403, 'Access denied. Insufficient permissions.');
     }
+
+    await enrichStaffProfileAllocations(row, row.id);
 
     return success(res, 200, 'Staff fetched successfully', row);
   } catch (error) {

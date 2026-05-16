@@ -14,7 +14,7 @@ import { apiService } from "../../../core/services/apiService";
 import Swal from "sweetalert2";
 import { formatDateDMY, formatUsdDisplay, toYmdString } from "../../../core/utils/dateDisplay";
 import { selectUser } from "../../../core/data/redux/authSlice";
-import { HostelAssignmentStatusBadge, HostelRecordStatusToggle } from "./hostelUiUtils";
+import { HostelAssignmentStatusBadge } from "./hostelUiUtils";
 import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const STATUS_FILTER = [
@@ -27,6 +27,12 @@ const STATUS_FILTER = [
 const USER_TYPE_OPTIONS = [
   { value: "student", label: "Student" },
   { value: "staff", label: "Staff" },
+];
+
+const ASSIGNMENT_STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const listFromResponse = (res: unknown): any[] => {
@@ -83,6 +89,7 @@ const HostelAssignments = () => {
   const [modalCheckoutDate, setModalCheckoutDate] = useState("");
   const [modalSecurityDeposit, setModalSecurityDeposit] = useState("");
   const [modalRemarks, setModalRemarks] = useState("");
+  const [modalAssignmentStatus, setModalAssignmentStatus] = useState<"active" | "completed" | "cancelled">("active");
   const [assignmentModalMode, setAssignmentModalMode] = useState<"create" | "edit">("create");
   const [editingAssignmentId, setEditingAssignmentId] = useState<number | null>(null);
   const [editOriginalRoomId, setEditOriginalRoomId] = useState<string | null>(null);
@@ -346,6 +353,7 @@ const HostelAssignments = () => {
     setModalCheckoutDate("");
     setModalSecurityDeposit("");
     setModalRemarks("");
+    setModalAssignmentStatus("active");
     void loadPeopleOptions();
   };
 
@@ -357,14 +365,10 @@ const HostelAssignments = () => {
 
   const openEditModal = async (record: any) => {
     const a = record.originalData;
-    if (String(a.assignment_status || "").toLowerCase() !== "active") {
-      await Swal.fire({
-        icon: "info",
-        title: "Not editable",
-        text: "Only active assignments can be edited.",
-      });
-      return;
-    }
+    const statusRaw = String(a.assignment_status || "active").toLowerCase();
+    const statusNorm =
+      statusRaw === "completed" || statusRaw === "cancelled" ? statusRaw : "active";
+    setModalAssignmentStatus(statusNorm as "active" | "completed" | "cancelled");
     await loadPeopleOptions(
       a.academic_year_id != null && a.academic_year_id !== "" ? Number(a.academic_year_id) : undefined
     );
@@ -419,7 +423,7 @@ const HostelAssignments = () => {
       );
       setModalAssignedDate(toYmdField(a.assigned_date) || toYmdString(new Date()));
       setModalExpectedCheckout(toYmdField(a.expected_checkout_date));
-      setModalCheckoutDate("");
+      setModalCheckoutDate(toYmdField(a.checkout_date));
       setModalSecurityDeposit(a.security_deposit != null ? String(a.security_deposit) : "");
       setModalRemarks(a.remarks != null ? String(a.remarks) : "");
     } catch {
@@ -502,8 +506,11 @@ const HostelAssignments = () => {
           bed_id: Number(modalBed),
           assigned_date: ad,
           expected_checkout_date: exp || null,
+          checkout_date:
+            modalAssignmentStatus === "completed" ? co || ad : modalAssignmentStatus === "active" ? null : co || null,
           security_deposit: Number.isFinite(depNum) && depNum >= 0 ? depNum : 0,
           remarks: modalRemarks.trim() ? modalRemarks.trim() : null,
+          assignment_status: modalAssignmentStatus,
         };
         const res = await apiService.updateHostelAssignment(editingAssignmentId, body);
         if (res?.status === "SUCCESS" || res?.success) {
@@ -525,9 +532,15 @@ const HostelAssignments = () => {
           bed_id: Number(modalBed),
           assigned_date: ad,
           expected_checkout_date: exp || undefined,
-          checkout_date: co || undefined,
+          checkout_date:
+            modalAssignmentStatus === "completed"
+              ? co || ad
+              : modalAssignmentStatus === "active"
+                ? co || undefined
+                : undefined,
           security_deposit: Number.isFinite(depNum) && depNum >= 0 ? depNum : 0,
           remarks: modalRemarks.trim() || undefined,
+          assignment_status: modalAssignmentStatus,
         };
         if (authUser?.id != null) base.assigned_by = authUser.id;
         if (modalUserType === "student") {
@@ -612,9 +625,7 @@ const HostelAssignments = () => {
       dataIndex: "action",
       render: (_: unknown, record: any) => {
         const st = String(record.originalData?.assignment_status || "").toLowerCase();
-        if (st !== "active") {
-          return <span className="text-muted">—</span>;
-        }
+        const isActive = st === "active";
         const id = record.dbId as number;
         return (
           <div className="dropdown">
@@ -640,32 +651,36 @@ const HostelAssignments = () => {
                   Edit
                 </Link>
               </li>
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void doCheckout(id);
-                  }}
-                >
-                  <i className="ti ti-logout me-2" />
-                  Checkout
-                </Link>
-              </li>
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void doCancel(id);
-                  }}
-                >
-                  <i className="ti ti-ban me-2" />
-                  Cancel
-                </Link>
-              </li>
+              {isActive && (
+                <>
+                  <li>
+                    <Link
+                      className="dropdown-item rounded-1"
+                      to="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void doCheckout(id);
+                      }}
+                    >
+                      <i className="ti ti-logout me-2" />
+                      Checkout
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      className="dropdown-item rounded-1"
+                      to="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void doCancel(id);
+                      }}
+                    >
+                      <i className="ti ti-ban me-2" />
+                      Cancel
+                    </Link>
+                  </li>
+                </>
+              )}
             </ul>
           </div>
         );
@@ -932,33 +947,6 @@ const HostelAssignments = () => {
                     }}
                   />
                 </div>
-                {assignmentModalMode === "create" && (
-                  <>
-                    <div className="col-lg-4 col-md-6">
-                      <label className="form-label">Checkout date</label>
-                      <DatePicker
-                        className="form-control datetimepicker w-100"
-                        format="DD/MM/YYYY"
-                        allowClear
-                        placeholder="Optional"
-                        getPopupContainer={(trigger) => trigger.closest(".modal") ?? document.body}
-                        value={modalCheckoutDate ? dayjs(modalCheckoutDate) : null}
-                        onChange={(d) => setModalCheckoutDate(d && d.isValid() ? d.format("YYYY-MM-DD") : "")}
-                        disabledDate={(current) => {
-                          if (!current) return false;
-                          const from = modalAssignedDate ? dayjs(modalAssignedDate) : null;
-                          return Boolean(from && current.isBefore(from, "day"));
-                        }}
-                      />
-                    </div>
-                    <div className="col-12">
-                      <p className="text-muted small mb-0">
-                        If <strong>checkout date</strong> is set, the assignment is saved as <strong>completed</strong> on
-                        that date and the bed is not marked occupied (backdated or no-stay records).
-                      </p>
-                    </div>
-                  </>
-                )}
                 <div className="col-md-6">
                   <label className="form-label">Security deposit</label>
                   <input
@@ -984,25 +972,45 @@ const HostelAssignments = () => {
               </div>
 
               <div className="border-top pt-3 mt-3">
-                <HostelRecordStatusToggle
-                  id="add_hostel_assignment_record_status"
-                  heading="Assignment status"
-                  checked
-                  disabled
-                  onChange={() => {}}
-                />
-                <p className="text-muted small mt-2 mb-0">
-                  {assignmentModalMode === "edit" ? (
-                    <>
-                      This stay remains <strong>Active</strong> until you use <strong>Checkout</strong> or{" "}
-                      <strong>Cancel</strong> from the row actions menu.
-                    </>
-                  ) : (
-                    <>
-                      New stays are <strong>Active</strong>. Use <strong>Checkout</strong> or <strong>Cancel</strong>{" "}
-                      from the row menu to set completed or cancelled.
-                    </>
+                <h6 className="fw-semibold mb-2">Assignment status</h6>
+                <div className="row g-3">
+                  <div className="col-md-6">
+                    <label className="form-label">Status</label>
+                    <CommonSelect
+                      className="select"
+                      options={ASSIGNMENT_STATUS_OPTIONS}
+                      value={modalAssignmentStatus}
+                      onChange={(v) =>
+                        setModalAssignmentStatus(
+                          (v as "active" | "completed" | "cancelled") || "active"
+                        )
+                      }
+                    />
+                  </div>
+                  {modalAssignmentStatus === "completed" && (
+                    <div className="col-md-6">
+                      <label className="form-label">Checkout date</label>
+                      <DatePicker
+                        className="form-control datetimepicker w-100"
+                        format="DD/MM/YYYY"
+                        allowClear
+                        placeholder="Defaults to assigned date"
+                        getPopupContainer={(trigger) => trigger.closest(".modal") ?? document.body}
+                        value={modalCheckoutDate ? dayjs(modalCheckoutDate) : null}
+                        onChange={(d) =>
+                          setModalCheckoutDate(d && d.isValid() ? d.format("YYYY-MM-DD") : "")
+                        }
+                        disabledDate={(current) => {
+                          if (!current || !modalAssignedDate) return false;
+                          return current.isBefore(dayjs(modalAssignedDate), "day");
+                        }}
+                      />
+                    </div>
                   )}
+                </div>
+                <p className="text-muted small mt-2 mb-0">
+                  <strong>Active</strong> occupies the bed. <strong>Completed</strong> records a checkout and frees the
+                  bed. <strong>Cancelled</strong> frees the bed without a stay.
                 </p>
               </div>
             </div>

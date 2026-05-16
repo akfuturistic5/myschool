@@ -23,6 +23,10 @@ const { loadActiveGradeScale, getGradeFromScale } = require('../utils/gradeScale
 const { hasColumn, hasTable } = require('../utils/schemaInspector');
 const { deleteFileIfExist } = require('../utils/fileDeleteHelper');
 const { lateralCurrentEnrollment } = require('../utils/studentEnrollmentSql');
+const {
+  enrichStudentHostel,
+  enrichStudentTransport,
+} = require('../services/profileAllocationDetailsService');
 
 const formatGrNumber = (n) => `GR${String(n).padStart(6, '0')}`;
 
@@ -3036,112 +3040,13 @@ const getStudentById = async (req, res) => {
       console.warn('getStudentById: fallback ID columns fetch', e.message);
     }
 
-    // Hostel details are intentionally paused for redevelopment.
-    studentData.hostel_name = null;
-    studentData.floor = null;
-    studentData.hostel_room_number = null;
-    // Transport: resolve strictly from transport_allocations (academic-year scoped overlap)
-    try {
-      // Start from a clean slate so legacy students-table route fields are never shown.
-      studentData.route_id = null;
-      studentData.pickup_point_id = null;
-      studentData.vehicle_id = null;
-      studentData.route_name = null;
-      studentData.pickup_point_name = null;
-      studentData.vehicle_number = null;
-      studentData.transport_assigned_fee_id = null;
-      studentData.transport_assigned_fee_amount = null;
-      studentData.transport_is_free = false;
-      studentData.transport_fee_plan_name = null;
-
-      let resolvedFromAllocation = false;
-      if (studentData.user_id) {
-        const studentUserId = Number(studentData.user_id);
-        const studentRowId = Number(sid);
-        const studentAcademicYearId =
-          Number.isFinite(Number(studentData.academic_year_id)) && Number(studentData.academic_year_id) > 0
-            ? Number(studentData.academic_year_id)
-            : null;
-        if (Number.isFinite(studentUserId) && studentUserId > 0) {
-          const allocationResult = await query(
-          `SELECT
-             ta.route_id,
-             ta.pickup_point_id,
-             ta.vehicle_id,
-             ta.assigned_fee_id,
-             ta.assigned_fee_amount,
-             ta.is_free,
-             r.route_name AS route_name,
-             COALESCE(pp.point_name, pp.address) AS pickup_point_name,
-             v.vehicle_number,
-             tfm.plan_name AS transport_fee_plan_name
-           FROM transport_allocations ta
-           LEFT JOIN routes r ON r.id = ta.route_id
-           LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-           LEFT JOIN vehicles v ON v.id = ta.vehicle_id
-           LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
-           WHERE (ta.user_id = $1 OR ta.user_id = $3)
-             AND LOWER(COALESCE(ta.user_type, '')) = 'student'
-             AND LOWER(COALESCE(ta.status, '')) = 'active'
-             AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
-           ORDER BY
-             CASE
-               WHEN ta.user_id = $3 THEN 0
-               WHEN ta.user_id = $1 THEN 1
-               ELSE 2
-             END,
-             CASE
-               WHEN $2::int IS NULL THEN 0
-               WHEN ta.academic_year_id = $2 THEN 0
-               WHEN ta.academic_year_id IS NULL THEN 1
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM academic_years ay
-                 WHERE ay.id = $2
-                   AND ta.start_date <= COALESCE(ay.end_date, ta.start_date)
-                   AND COALESCE(ta.end_date, 'infinity'::date) >= COALESCE(ay.start_date, ta.start_date)
-               ) THEN 2
-               ELSE 3
-             END,
-             ta.start_date DESC,
-             ta.id DESC
-           LIMIT 1`,
-            [studentUserId, studentAcademicYearId, studentRowId]
-          );
-          if (allocationResult.rows.length > 0) {
-            const allocation = allocationResult.rows[0];
-            studentData.route_id = allocation.route_id ?? studentData.route_id ?? null;
-            studentData.pickup_point_id = allocation.pickup_point_id ?? studentData.pickup_point_id ?? null;
-            studentData.vehicle_id = allocation.vehicle_id ?? studentData.vehicle_id ?? null;
-            studentData.route_name = allocation.route_name || null;
-            studentData.pickup_point_name = allocation.pickup_point_name || null;
-            studentData.vehicle_number = allocation.vehicle_number || studentData.vehicle_number || null;
-            studentData.transport_assigned_fee_id = allocation.assigned_fee_id ?? null;
-            studentData.transport_assigned_fee_amount = allocation.assigned_fee_amount ?? null;
-            studentData.transport_is_free = allocation.is_free === true;
-            studentData.transport_fee_plan_name = allocation.transport_fee_plan_name || null;
-            resolvedFromAllocation = true;
-          }
-        }
-      }
-
-      if (!resolvedFromAllocation) {
-        // No active allocation for this student + academic year.
-      }
-    } catch (e) {
-      console.error('Error fetching transport names for student', id, ':', e.message);
-      // Never leak old students-table transport values on allocation lookup errors.
-      studentData.route_id = null;
-      studentData.pickup_point_id = null;
-      studentData.vehicle_id = null;
-      studentData.route_name = null;
-      studentData.pickup_point_name = null;
-      studentData.vehicle_number = null;
-      studentData.transport_assigned_fee_id = null;
-      studentData.transport_assigned_fee_amount = null;
-      studentData.transport_is_free = false;
-      studentData.transport_fee_plan_name = null;
-    }
+    await enrichStudentHostel(studentData, sid, studentData.academic_year_id);
+    await enrichStudentTransport(
+      studentData,
+      sid,
+      studentData.academic_year_id,
+      studentData.user_id
+    );
     // Fallback: if phone/email still empty, fetch from users table (safety for JOIN edge cases)
     if (studentData.user_id && (!studentData.phone || !studentData.email)) {
       try {
@@ -3569,111 +3474,13 @@ const getCurrentStudent = async (req, res) => {
         }
       } catch (e) { }
     }
-    // Hostel details are intentionally paused for redevelopment.
-    studentData.hostel_name = null;
-    studentData.floor = null;
-    studentData.hostel_room_number = null;
-    // Transport: resolve strictly from transport_allocations (academic-year scoped overlap)
-    try {
-      // Start from a clean slate so legacy students-table route fields are never shown.
-      studentData.route_id = null;
-      studentData.pickup_point_id = null;
-      studentData.vehicle_id = null;
-      studentData.route_name = null;
-      studentData.pickup_point_name = null;
-      studentData.vehicle_number = null;
-      studentData.transport_assigned_fee_id = null;
-      studentData.transport_assigned_fee_amount = null;
-      studentData.transport_is_free = false;
-      studentData.transport_fee_plan_name = null;
-
-      let resolvedFromAllocation = false;
-      if (studentData.user_id) {
-        const studentUserId = Number(studentData.user_id);
-        const studentRowId = Number(studentId);
-        const studentAcademicYearId =
-          Number.isFinite(Number(studentData.academic_year_id)) && Number(studentData.academic_year_id) > 0
-            ? Number(studentData.academic_year_id)
-            : null;
-        if (Number.isFinite(studentUserId) && studentUserId > 0) {
-          const allocationRes = await query(
-          `SELECT
-             ta.route_id,
-             ta.pickup_point_id,
-             ta.vehicle_id,
-             ta.assigned_fee_id,
-             ta.assigned_fee_amount,
-             ta.is_free,
-             r.route_name AS route_name,
-             COALESCE(pp.point_name, pp.address) AS pickup_point_name,
-             v.vehicle_number,
-             tfm.plan_name AS transport_fee_plan_name
-           FROM transport_allocations ta
-           LEFT JOIN routes r ON r.id = ta.route_id
-           LEFT JOIN pickup_points pp ON pp.id = ta.pickup_point_id
-           LEFT JOIN vehicles v ON v.id = ta.vehicle_id
-           LEFT JOIN transport_fee_master tfm ON tfm.id = ta.assigned_fee_id
-           WHERE (ta.user_id = $1 OR ta.user_id = $3)
-             AND LOWER(COALESCE(ta.user_type, '')) = 'student'
-             AND LOWER(COALESCE(ta.status, '')) = 'active'
-             AND (ta.end_date IS NULL OR ta.end_date >= CURRENT_DATE)
-           ORDER BY
-             CASE
-               WHEN ta.user_id = $3 THEN 0
-               WHEN ta.user_id = $1 THEN 1
-               ELSE 2
-             END,
-             CASE
-               WHEN $2::int IS NULL THEN 0
-               WHEN ta.academic_year_id = $2 THEN 0
-               WHEN ta.academic_year_id IS NULL THEN 1
-               WHEN EXISTS (
-                 SELECT 1
-                 FROM academic_years ay
-                 WHERE ay.id = $2
-                   AND ta.start_date <= COALESCE(ay.end_date, ta.start_date)
-                   AND COALESCE(ta.end_date, 'infinity'::date) >= COALESCE(ay.start_date, ta.start_date)
-               ) THEN 2
-               ELSE 3
-             END,
-             ta.start_date DESC,
-             ta.id DESC
-           LIMIT 1`,
-            [studentUserId, studentAcademicYearId, studentRowId]
-          );
-          if (allocationRes.rows.length > 0) {
-            const row = allocationRes.rows[0];
-            studentData.route_id = row.route_id ?? studentData.route_id ?? null;
-            studentData.pickup_point_id = row.pickup_point_id ?? studentData.pickup_point_id ?? null;
-            studentData.vehicle_id = row.vehicle_id ?? studentData.vehicle_id ?? null;
-            studentData.route_name = row.route_name || null;
-            studentData.pickup_point_name = row.pickup_point_name || null;
-            studentData.vehicle_number = row.vehicle_number || studentData.vehicle_number || null;
-            studentData.transport_assigned_fee_id = row.assigned_fee_id ?? null;
-            studentData.transport_assigned_fee_amount = row.assigned_fee_amount ?? null;
-            studentData.transport_is_free = row.is_free === true;
-            studentData.transport_fee_plan_name = row.transport_fee_plan_name || null;
-            resolvedFromAllocation = true;
-          }
-        }
-      }
-
-      if (!resolvedFromAllocation) {
-        // No active allocation for this student + academic year.
-      }
-    } catch (e) {
-      // Never leak old students-table transport values on allocation lookup errors.
-      studentData.route_id = null;
-      studentData.pickup_point_id = null;
-      studentData.vehicle_id = null;
-      studentData.route_name = null;
-      studentData.pickup_point_name = null;
-      studentData.vehicle_number = null;
-      studentData.transport_assigned_fee_id = null;
-      studentData.transport_assigned_fee_amount = null;
-      studentData.transport_is_free = false;
-      studentData.transport_fee_plan_name = null;
-    }
+    await enrichStudentHostel(studentData, studentId, studentData.academic_year_id);
+    await enrichStudentTransport(
+      studentData,
+      studentId,
+      studentData.academic_year_id,
+      studentData.user_id
+    );
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.status(200).json({
       status: 'SUCCESS',

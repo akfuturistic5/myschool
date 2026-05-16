@@ -1,4 +1,5 @@
 import ImageWithBasePath from "../../../core/common/imageWithBasePath";
+import { ProfileTransportHostelTabs } from "../../../core/common/profile/ProfileTransportHostelTabs";
 
 type StaffRecord = Record<string, unknown>;
 
@@ -107,6 +108,7 @@ export function StaffProfileSidebar({ staff }: { staff: StaffRecord }) {
           </div>
         </div>
       </div>
+      <ProfileTransportHostelTabs profile={staff} />
     </>
   );
 }

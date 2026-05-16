@@ -4,6 +4,7 @@ import ImageWithBasePath from "../../../../core/common/imageWithBasePath";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../../../core/data/redux/authSlice";
 import { isTeacherRole } from "../../../../core/utils/roleUtils";
+import { ProfileTransportHostelTabs } from "../../../../core/common/profile/ProfileTransportHostelTabs";
 
 interface StudentSidebarProps {
   student?: {
@@ -37,6 +38,9 @@ interface StudentSidebarProps {
     hostel_name?: string | null;
     floor?: string | null;
     hostel_room_number?: string | null;
+    hostel_bed_number?: string | null;
+    hostel_assigned_date?: string | null;
+    hostel_academic_year_name?: string | null;
     route_id?: number | null;
     pickup_point_id?: number | null;
     vehicle_id?: number | null;
@@ -155,10 +159,6 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
 
   const displaySiblings = normalizedSiblings.length > 0 ? normalizedSiblings : legacySiblings;
 
-  const hostelName = student?.hostel_name && String(student.hostel_name).trim() ? String(student.hostel_name).trim() : null;
-  const hostelFloor = student?.floor && String(student.floor).trim() ? String(student.floor).trim() : null;
-  const hostelRoomNumber = student?.hostel_room_number && String(student.hostel_room_number).trim() ? String(student.hostel_room_number).trim() : null;
-
   return (
     <div className="col-xxl-3 col-xl-4 theiaStickySidebar">
       <div className="stickybar pb-4">
@@ -274,94 +274,7 @@ const StudentSidebar = ({ student }: StudentSidebarProps) => {
           </div>
         </div>
         {/* /Sibling Information */}
-        {/* Transport Information */}
-        <div className="card border-white mb-0">
-          <div className="card-body pb-1">
-            <ul className="nav nav-tabs nav-tabs-bottom mb-3">
-              <li className="nav-item">
-                <Link
-                  className="nav-link active"
-                  to="#hostel"
-                  data-bs-toggle="tab"
-                >
-                  Hostel
-                </Link>
-              </li>
-              <li className="nav-item">
-                <Link className="nav-link" to="#transport" data-bs-toggle="tab">
-                  Transportation
-                </Link>
-              </li>
-            </ul>
-            <div className="tab-content">
-              <div className="tab-pane fade show active" id="hostel">
-                <p className="text-muted mb-0">Hostel module is in development. Details will be available soon.</p>
-              </div>
-              <div className="tab-pane fade" id="transport">
-                {(student?.route_name ||
-                  student?.pickup_point_name ||
-                  student?.vehicle_number ||
-                  student?.route_id ||
-                  student?.pickup_point_id ||
-                  student?.vehicle_id ||
-                  student?.transport_assigned_fee_id) ? (
-                  <>
-                    <div className="d-flex align-items-center mb-3">
-                      <span className="avatar avatar-md bg-light-300 rounded me-2 flex-shrink-0 text-default">
-                        <i className="ti ti-bus fs-16" />
-                      </span>
-                      <div>
-                        <span className="fs-12 mb-1">Pickup Point</span>
-                        <p className="text-dark">{student.pickup_point_name ?? 'N/A'}</p>
-                      </div>
-                    </div>
-                    <div className="row">
-                      <div className="col-sm-6">
-                        <div className="mb-3">
-                          <span className="fs-12 mb-1">Route</span>
-                          <p className="text-dark">{student.route_name ?? 'N/A'}</p>
-                        </div>
-                      </div>
-                      <div className="col-sm-6">
-                        <div className="mb-3">
-                          <span className="fs-12 mb-1">Bus Number</span>
-                          <p className="text-dark">{student.vehicle_number ?? 'N/A'}</p>
-                        </div>
-                      </div>
-                      {!isTeacher && (
-                        <>
-                          <div className="col-sm-6">
-                            <div className="mb-3">
-                              <span className="fs-12 mb-1">Plan</span>
-                              <p className="text-dark">
-                                {student.transport_is_free
-                                  ? "Free Allocation"
-                                  : (student.transport_fee_plan_name ?? "N/A")}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="col-sm-6">
-                            <div className="mb-3">
-                              <span className="fs-12 mb-1">Assigned Amount</span>
-                              <p className="text-dark">
-                                {student.transport_is_free
-                                  ? "0"
-                                  : (student.transport_assigned_fee_amount != null ? String(student.transport_assigned_fee_amount) : "N/A")}
-                              </p>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-muted mb-0">Transportation is not allocated to this student yet.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* /Transport Information */}
+        <ProfileTransportHostelTabs profile={student ?? {}} hideTransportFees={isTeacher} />
       </div>
     </div>
   );
