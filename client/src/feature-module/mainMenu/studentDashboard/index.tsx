@@ -32,24 +32,52 @@ const parseId = (v: unknown): number | null => {
 const StudentDasboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { academicYears } = useAcademicYears();
+  const { academicYears } = useAcademicYears() as any;
   const currentAcademicYear =
     (academicYears || []).find((y: { is_current?: boolean }) => y?.is_current) ?? (academicYears || [])[0] ?? null;
-  const resolvedAcademicYearId =
-    (headerAcademicYearId != null && Number(headerAcademicYearId) > 0 ? Number(headerAcademicYearId) : null) ??
-    (currentAcademicYear && Number((currentAcademicYear as { id?: number }).id) > 0
-      ? Number((currentAcademicYear as { id: number }).id)
-      : null);
+  const resolvedAcademicYearId = useMemo(() => {
+    // If data is still loading, return null to avoid making API calls with stale fallback IDs
+    if (!academicYears || academicYears.length === 0) return null;
+
+    // For the Student Dashboard, we strongly prefer the "Current" academic year (e.g. ID 3)
+    // to avoid showing future/past year data by mistake if the global session is stale (e.g. ID 10).
+    const currentYear = (academicYears || []).find((y: any) => y?.is_current);
+    if (currentYear?.id) {
+      return Number(currentYear.id);
+    }
+
+    // Otherwise, prioritize the header selection
+    if (headerAcademicYearId != null && Number(headerAcademicYearId) > 0) {
+      return Number(headerAcademicYearId);
+    }
+
+    // Fallback to the first year in the list
+    return academicYears[0]?.id ? Number(academicYears[0].id) : null;
+  }, [academicYears, headerAcademicYearId]);
 
   const { student, loading: studentLoading, error: studentError } = useCurrentStudent();
   const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
-  const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null);
-  const { data: allSchedules, loading: scheduleLoading } = useClassSchedules();
-  const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 50 });
-  const { data: feeData } = useStudentFees(student?.id ?? null, resolvedAcademicYearId);
-  const { data: examResultsData } = useStudentExamResults(student?.id ?? null);
-  const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
-  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 1 });
+  const { data: attendanceData, loading: attendanceLoading, error: attendanceError } = useStudentAttendance(student?.id ?? null, resolvedAcademicYearId);
+  const { data: allSchedules, loading: scheduleLoading } = useClassSchedules({ academicYearId: resolvedAcademicYearId });
+  const { leaveApplications: myLeaves, loading: leaveLoading } = useLeaveApplications({ studentOnly: true, limit: 50, academicYearId: resolvedAcademicYearId });
+  const { data: feeDataRaw, loading: feeLoading } = useStudentFees(student?.id ?? null, resolvedAcademicYearId);
+  const feeData = useMemo(() => {
+    const raw = feeDataRaw as any;
+    if (!raw || !Array.isArray(raw) || raw.length === 0) return null;
+    const first = raw[0];
+    return {
+      totalDue: Number(first.total_payable || 0),
+      totalPaid: Number(first.total_paid || 0),
+      totalOutstanding: Number(first.balance_amount || 0),
+    };
+  }, [feeDataRaw]);
+  const { data: examResultsData } = useStudentExamResults(student?.id ?? null, resolvedAcademicYearId);
+  const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ 
+    forDashboard: true, 
+    limit: 5, 
+    params: { academicYearId: resolvedAcademicYearId } 
+  });
+  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 1, academicYearId: resolvedAcademicYearId });
 
   const today = new Date();
   const year = today.getFullYear();
@@ -577,18 +605,23 @@ const StudentDasboard = () => {
                   </Link>
                 </div>
                 <div className="card-body py-1">
-                  {feeData ? (
+                  {feeLoading ? (
+                    <div className="text-center py-3">
+                      <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                      <span className="ms-2">Loading fees...</span>
+                    </div>
+                  ) : feeData ? (
                     <div>
                       <p className="mb-2">
-                        <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        <strong>Total Due:</strong> ₹{(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </p>
                       <p className="mb-2">
-                        <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        <strong>Total Paid:</strong> ₹{(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                       </p>
                       <p className="mb-0">
                         <strong>Outstanding:</strong>{" "}
                         <span className={Number(feeData.totalOutstanding) > 0 ? "text-danger" : "text-success"}>
-                          ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          ₹{(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </span>
                       </p>
                       {Number(feeData.totalOutstanding) > 0 && (

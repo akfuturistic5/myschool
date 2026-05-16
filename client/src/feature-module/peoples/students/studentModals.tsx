@@ -35,23 +35,23 @@ interface StudentModalsProps {
 }
 
 const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeCollected, onStudentDeleted }: StudentModalsProps) => {
-    const routes = all_routes
-    const academicYearId = useSelector(selectSelectedAcademicYearId);
-    const user = useSelector(selectUser);
-    const isTeacher = isTeacherRole(user);
-    
-    const today = new Date()
+  const routes = all_routes
+  const academicYearId = useSelector(selectSelectedAcademicYearId);
+  const user = useSelector(selectUser);
+  const isTeacher = isTeacherRole(user);
+
+  const today = new Date()
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, '0')
   const day = String(today.getDate()).padStart(2, '0')
   const formattedDate = `${month}-${day}-${year}`
   const defaultValue = dayjs(formattedDate)
 
-  const { leaveTypes } = useLeaveTypes()
+  const { leaveTypes } = useLeaveTypes({ applicableFor: 'student' })
   const { academicYears } = useAcademicYears()
   const leaveTypeOptions = leaveTypes.length > 0 ? leaveTypes : []
   const { feeStructures } = useFeeStructures()
-  
+
   const { data: fetchedFeeData } = useStudentFees(student?.id ?? null, academicYearId)
   const effectiveFeeData = (feeData ?? fetchedFeeData ?? []) as any[]
 
@@ -74,70 +74,70 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [feeSubmitting, setFeeSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
 
-    const [assignedFees, setAssignedFees] = useState<any[]>([]);
-    const [loadingFees, setLoadingFees] = useState(false);
+  const [assignedFees, setAssignedFees] = useState<any[]>([]);
+  const [loadingFees, setLoadingFees] = useState(false);
 
-    useEffect(() => {
-      const fetchFeesStatus = async () => {
-        if (!student?.id || !academicYearId) return;
-        try {
-          setLoadingFees(true);
-          const res = await apiService.getStudentFeeDetailedStatus(student.id, academicYearId);
-          if (res.status === "SUCCESS") {
-            setAssignedFees(res.data);
-          }
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoadingFees(false);
+  useEffect(() => {
+    const fetchFeesStatus = async () => {
+      if (!student?.id || !academicYearId) return;
+      try {
+        setLoadingFees(true);
+        const res = await apiService.getStudentFeeDetailedStatus(student.id, academicYearId);
+        if (res.status === "SUCCESS") {
+          setAssignedFees(res.data);
         }
-      };
-      
-      const fetchPaymentModes = async () => {
-        try {
-          const res = await apiService.getPaymentModes();
-          if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
-            const options = res.data.map(m => ({ value: m.name, label: m.name }));
-            setPaymentOptions(options);
-            if (options.length > 0 && !paymentMethod) {
-              setPaymentMethod(options[0].value);
-            }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingFees(false);
+      }
+    };
+
+    const fetchPaymentModes = async () => {
+      try {
+        const res = await apiService.getPaymentModes();
+        if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
+          const options = res.data.map(m => ({ value: m.name, label: m.name }));
+          setPaymentOptions(options);
+          if (options.length > 0 && !paymentMethod) {
+            setPaymentMethod(options[0].value);
           }
-        } catch (err) {
-          console.error('Failed to fetch payment modes', err);
         }
-      };
-      fetchPaymentModes();
+      } catch (err) {
+        console.error('Failed to fetch payment modes', err);
+      }
+    };
+    fetchPaymentModes();
 
-      if (student?.id && academicYearId) fetchFeesStatus();
-    }, [student?.id, academicYearId]);
+    if (student?.id && academicYearId) fetchFeesStatus();
+  }, [student?.id, academicYearId]);
 
-    const totalCompulsoryBalance = assignedFees
-      .filter(f => !f.is_optional && parseFloat(f.pending_amount) > 0)
-      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
-      
-    const totalBalance = assignedFees
+  const totalCompulsoryBalance = assignedFees
+    .filter(f => !f.is_optional && parseFloat(f.pending_amount) > 0)
+    .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+
+  const totalBalance = assignedFees
+    .filter(f => parseFloat(f.pending_amount) > 0)
+    .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+
+  const feeStructureOptions = useMemo(() => {
+    return assignedFees
       .filter(f => parseFloat(f.pending_amount) > 0)
-      .reduce((sum, f) => sum + (parseFloat(f.pending_amount) || 0), 0);
+      .map((f) => ({
+        value: String(f.fees_assign_details_id),
+        label: `${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
+        balance: parseFloat(f.pending_amount),
+        isOptional: !!f.is_optional,
+        group: f.fee_group,
+        type: f.fee_type
+      }));
+  }, [assignedFees]);
 
-    const feeStructureOptions = useMemo(() => {
-      return assignedFees
-        .filter(f => parseFloat(f.pending_amount) > 0)
-        .map((f) => ({
-          value: String(f.fees_assign_details_id),
-          label: `${f.fee_type} (Bal: ${parseFloat(f.pending_amount).toLocaleString()})`,
-          balance: parseFloat(f.pending_amount),
-          isOptional: !!f.is_optional,
-          group: f.fee_group,
-          type: f.fee_type
-        }));
-    }, [assignedFees]);
-
-    // Virtual options for internal state tracking when bulk buttons are clicked
-    const bulkOptions = [
-      { value: 'ALL_COMPULSORY', label: 'All Compulsory Fees' },
-      { value: 'ALL_TOTAL', label: 'Total Outstanding Balance' }
-    ];
+  // Virtual options for internal state tracking when bulk buttons are clicked
+  const bulkOptions = [
+    { value: 'ALL_COMPULSORY', label: 'All Compulsory Fees' },
+    { value: 'ALL_TOTAL', label: 'Total Outstanding Balance' }
+  ];
 
   // Login details (usernames) for parent & student
   const [loginRows, setLoginRows] = useState<Array<{ userType: string; username: string | null; phone?: string | null; email?: string | null }>>([])
@@ -329,7 +329,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       })
       if (res?.status === 'SUCCESS') {
         Swal.fire("Success", "Fee collected successfully", "success");
-        
+
         // Generate PDF Receipt
         try {
           const schoolRes = await apiService.getSchoolProfile();
@@ -521,9 +521,9 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                                 {totalBalance.toLocaleString()}
                               </p>
                               {totalBalance > 0 && (
-                                <button 
-                                  type="button" 
-                                  className="btn btn-soft-danger btn-xs py-0 px-1" 
+                                <button
+                                  type="button"
+                                  className="btn btn-soft-danger btn-xs py-0 px-1"
                                   style={{ fontSize: '10px' }}
                                   onClick={() => {
                                     setFeeStructureId('ALL_TOTAL');
@@ -544,9 +544,9 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                                 {totalCompulsoryBalance.toLocaleString()}
                               </p>
                               {totalCompulsoryBalance > 0 && totalCompulsoryBalance !== totalBalance && (
-                                <button 
-                                  type="button" 
-                                  className="btn btn-soft-primary btn-xs py-0 px-1" 
+                                <button
+                                  type="button"
+                                  className="btn btn-soft-primary btn-xs py-0 px-1"
                                   style={{ fontSize: '10px' }}
                                   onClick={() => {
                                     setFeeStructureId('ALL_COMPULSORY');
@@ -581,7 +581,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                             onChange={(opt) => {
                               const val = opt?.value ?? '';
                               setFeeStructureId(val);
-                              
+
                               if (val === 'ALL_COMPULSORY') {
                                 setAmountPaid(String(totalCompulsoryBalance));
                               } else if (val === 'ALL_TOTAL') {
@@ -706,12 +706,12 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                   <i className="ti ti-trash-x" />
                 </span>
                 {isTeacher ? (
-                   <h4>Permission Denied</h4>
+                  <h4>Permission Denied</h4>
                 ) : (
                   <h4>Confirm Deletion</h4>
                 )}
                 <p>
-                  {isTeacher 
+                  {isTeacher
                     ? "You do not have permission to delete student records."
                     : "You want to delete all the marked items, this cant be undone once you delete."
                   }

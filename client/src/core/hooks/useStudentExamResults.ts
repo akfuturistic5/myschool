@@ -22,7 +22,7 @@ export interface StudentExamResultsData {
   exams: StudentExamRow[];
 }
 
-export function useStudentExamResults(studentId: number | null) {
+export function useStudentExamResults(studentId: number | null, academicYearId: number | string | null = null) {
   const [data, setData] = useState<StudentExamResultsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function useStudentExamResults(studentId: number | null) {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiService.getStudentExamResults(studentId);
+      const res = await apiService.getStudentExamResults(studentId, academicYearId);
       if (res?.status === 'SUCCESS' && res.data) {
         setData(res.data as StudentExamResultsData);
       } else {
@@ -58,7 +58,7 @@ export function useStudentExamResults(studentId: number | null) {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getStudentExamResults(studentId);
+        const res = await apiService.getStudentExamResults(studentId, academicYearId);
         if (mounted && res?.status === 'SUCCESS' && res.data) {
           setData(res.data as StudentExamResultsData);
         } else if (mounted) {
@@ -76,7 +76,7 @@ export function useStudentExamResults(studentId: number | null) {
     return () => {
       mounted = false;
     };
-  }, [studentId]);
+  }, [studentId, academicYearId]);
 
   return { data, loading, error, refetch };
 }

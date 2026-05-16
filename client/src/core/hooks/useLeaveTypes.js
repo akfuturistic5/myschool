@@ -15,8 +15,14 @@ export const useLeaveTypes = (options = {}) => {
         applicable_for: applicableFor || undefined,
       });
       if (res?.status === 'SUCCESS' && Array.isArray(res.data)) {
+        let filteredData = res.data;
+        if (applicableFor) {
+          filteredData = res.data.filter(lt => 
+            lt.applicable_for === applicableFor || lt.applicable_for === 'both'
+          );
+        }
         setLeaveTypes(
-          res.data.map((lt) => ({
+          filteredData.map((lt) => ({
             value: String(lt.id),
             label: lt.leave_type || lt.leave_type_name || 'Leave',
             id: lt.id,

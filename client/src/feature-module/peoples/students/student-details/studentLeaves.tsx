@@ -354,26 +354,26 @@ const StudentLeaves = () => {
 
   const columns = canCancelPendingLeaves
     ? [
-        ...leaveTableBaseColumns,
-        {
-          title: "Action",
-          dataIndex: "id",
-          render: (_: unknown, record: { id?: number; status?: string }) => {
-            const isPending = String(record?.status || "").toLowerCase() === "pending";
-            if (!isPending || !record?.id) return "—";
-            return (
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-danger"
-                onClick={() => handleCancelLeave(record.id)}
-                disabled={cancelingLeaveId != null}
-              >
-                {cancelingLeaveId === record.id ? "Cancelling..." : "Cancel"}
-              </button>
-            );
-          },
+      ...leaveTableBaseColumns,
+      {
+        title: "Action",
+        dataIndex: "id",
+        render: (_: unknown, record: { id?: number; status?: string }) => {
+          const isPending = String(record?.status || "").toLowerCase() === "pending";
+          if (!isPending || !record?.id) return "—";
+          return (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              onClick={() => handleCancelLeave(record.id)}
+              disabled={cancelingLeaveId != null}
+            >
+              {cancelingLeaveId === record.id ? "Cancelling..." : "Cancel"}
+            </button>
+          );
         },
-      ]
+      },
+    ]
     : leaveTableBaseColumns;
   const attendanceTableColumns = [
     {
@@ -390,9 +390,9 @@ const StudentLeaves = () => {
         const s = (text || "").toLowerCase();
         const badgeClass =
           s === "present" ? "badge-soft-success" :
-          s === "absent" ? "badge-soft-danger" :
-          s === "late" ? "badge-soft-warning" :
-          s === "half_day" || s === "halfday" ? "badge-soft-info" : "badge-soft-secondary";
+            s === "absent" ? "badge-soft-danger" :
+              s === "late" ? "badge-soft-warning" :
+                s === "half_day" || s === "halfday" ? "badge-soft-info" : "badge-soft-secondary";
         const label = s ? s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ") : "—";
         return (
           <span className={`badge ${badgeClass} d-inline-flex align-items-center`}>
@@ -812,15 +812,15 @@ const StudentLeaves = () => {
                             </div>
                           )}
                           {leaveDataLoading && (
-                          <div className="p-4 text-center text-muted">Loading leave data...</div>
-                        )}
-                        {!leaveDataLoading && (
-                          <Table
-                            dataSource={data}
-                            columns={columns}
-                            Selection={false}
-                          />
-                        )}
+                            <div className="p-4 text-center text-muted">Loading leave data...</div>
+                          )}
+                          {!leaveDataLoading && (
+                            <Table
+                              dataSource={data}
+                              columns={columns}
+                              Selection={false}
+                            />
+                          )}
                         </div>
                         {/* /Leaves List */}
                       </div>
@@ -880,60 +880,60 @@ const StudentLeaves = () => {
                             </div>
                           )}
                           {!attendanceLoading && hasAttendance && (
-                          <div className="row">
-                            {/* Total Present */}
-                            <div className="col-md-6 col-xxl-3 d-flex">
-                              <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                                <span className="avatar avatar-lg bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
-                                  <i className="ti ti-user-check fs-24" />
-                                </span>
-                                <div className="ms-2">
-                                  <p className="mb-1">Present</p>
-                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.present : 0}</h5>
+                            <div className="row">
+                              {/* Total Present */}
+                              <div className="col-md-6 col-xxl-3 d-flex">
+                                <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                                  <span className="avatar avatar-lg bg-primary-transparent rounded me-2 flex-shrink-0 text-primary">
+                                    <i className="ti ti-user-check fs-24" />
+                                  </span>
+                                  <div className="ms-2">
+                                    <p className="mb-1">Present</p>
+                                    <h5>{hasFilteredAttendance ? filteredAttendanceSummary.present : 0}</h5>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            {/* /Total Present */}
-                            {/* Total Absent */}
-                            <div className="col-md-6 col-xxl-3 d-flex">
-                              <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                                <span className="avatar avatar-lg bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
-                                  <i className="ti ti-user-check fs-24" />
-                                </span>
-                                <div className="ms-2">
-                                  <p className="mb-1">Absent</p>
-                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.absent : 0}</h5>
+                              {/* /Total Present */}
+                              {/* Total Absent */}
+                              <div className="col-md-6 col-xxl-3 d-flex">
+                                <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                                  <span className="avatar avatar-lg bg-danger-transparent rounded me-2 flex-shrink-0 text-danger">
+                                    <i className="ti ti-user-check fs-24" />
+                                  </span>
+                                  <div className="ms-2">
+                                    <p className="mb-1">Absent</p>
+                                    <h5>{hasFilteredAttendance ? filteredAttendanceSummary.absent : 0}</h5>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            {/* /Total Absent */}
-                            {/* Half Day */}
-                            <div className="col-md-6 col-xxl-3 d-flex">
-                              <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                                <span className="avatar avatar-lg bg-info-transparent rounded me-2 flex-shrink-0 text-info">
-                                  <i className="ti ti-user-check fs-24" />
-                                </span>
-                                <div className="ms-2">
-                                  <p className="mb-1">Half Day</p>
-                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.halfDay : 0}</h5>
+                              {/* /Total Absent */}
+                              {/* Half Day */}
+                              <div className="col-md-6 col-xxl-3 d-flex">
+                                <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                                  <span className="avatar avatar-lg bg-info-transparent rounded me-2 flex-shrink-0 text-info">
+                                    <i className="ti ti-user-check fs-24" />
+                                  </span>
+                                  <div className="ms-2">
+                                    <p className="mb-1">Half Day</p>
+                                    <h5>{hasFilteredAttendance ? filteredAttendanceSummary.halfDay : 0}</h5>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            {/* /Half Day */}
-                            {/* Late to School*/}
-                            <div className="col-md-6 col-xxl-3 d-flex">
-                              <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
-                                <span className="avatar avatar-lg bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
-                                  <i className="ti ti-user-check fs-24" />
-                                </span>
-                                <div className="ms-2">
-                                  <p className="mb-1">Late</p>
-                                  <h5>{hasFilteredAttendance ? filteredAttendanceSummary.late : 0}</h5>
+                              {/* /Half Day */}
+                              {/* Late to School*/}
+                              <div className="col-md-6 col-xxl-3 d-flex">
+                                <div className="d-flex align-items-center rounded border p-3 mb-3 flex-fill">
+                                  <span className="avatar avatar-lg bg-warning-transparent rounded me-2 flex-shrink-0 text-warning">
+                                    <i className="ti ti-user-check fs-24" />
+                                  </span>
+                                  <div className="ms-2">
+                                    <p className="mb-1">Late</p>
+                                    <h5>{hasFilteredAttendance ? filteredAttendanceSummary.late : 0}</h5>
+                                  </div>
                                 </div>
                               </div>
+                              {/* /Late to School*/}
                             </div>
-                            {/* /Late to School*/}
-                          </div>
                           )}
                         </div>
                       </div>

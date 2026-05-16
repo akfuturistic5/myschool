@@ -1663,7 +1663,6 @@ async function viewExamTopPerformers(req, res) {
                SELECT 1 FROM class_schedules cs
                WHERE cs.teacher_id = ANY($2::int[])
                  AND cs.class_id = es.class_id
-                 AND cs.deleted_at IS NULL
              )
              OR EXISTS (
                SELECT 1 FROM subject_teacher_assignments sta
@@ -1838,7 +1837,7 @@ async function viewExamTopPerformers(req, res) {
     });
   } catch (e) {
     console.error('viewExamTopPerformers', e);
-    return error(res, 500, 'Failed to load top performers');
+    return error(res, 500, 'Failed to load top performers', e.message);
   }
 }
 
