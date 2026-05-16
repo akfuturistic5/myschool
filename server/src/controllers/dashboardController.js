@@ -1379,6 +1379,7 @@ const getStarStudents = async (req, res) => {
     res.status(500).json({
       status: 'ERROR',
       message: 'Failed to fetch star students',
+      error: error.message,
     });
   }
 };
