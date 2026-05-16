@@ -289,9 +289,16 @@ const getStudentFeeStatus = async (req, res) => {
         }
         const { studentId, academicYearId } = req.params;
 
-        // 1. Ledger summary
+        // 1. Ledger summary + Optional total for the class
         const ledgerRes = await query(
-            `SELECT fp.*, c.class_name
+            `SELECT fp.*, c.class_name,
+               (SELECT COALESCE(SUM(fct.amount), 0)
+                FROM fees f
+                JOIN fees_class_types fct ON fct.fee_id = f.id
+                WHERE f.class_id = fp.class_id
+                  AND f.academic_year_id = fp.academic_year_id
+                  AND fct.is_optional = true
+                  AND f.deleted_at IS NULL) as optional_payable
              FROM fees_paids fp
              JOIN classes c ON fp.class_id = c.id
              WHERE fp.student_id = $1 AND fp.academic_year_id = $2`,
@@ -308,7 +315,7 @@ const getStudentFeeStatus = async (req, res) => {
         const breakdownRes = await query(
             `SELECT
                 fct.id AS fees_assign_details_id,
-                COALESCE(f.description, 'General Fees') AS fee_group,
+                CASE WHEN fct.is_optional THEN 'Optional' ELSE 'Compulsory' END AS fee_group,
                 ft.name AS fee_type,
                 fct.amount AS total_amount,
                 fct.is_optional
@@ -322,6 +329,7 @@ const getStudentFeeStatus = async (req, res) => {
             [ledger.class_id, ledger.academic_year_id]
         );
 
+
         // 3. Advance balance
         const advanceRes = await query(
             `SELECT amount FROM fees_advance
@@ -331,7 +339,9 @@ const getStudentFeeStatus = async (req, res) => {
         const advanceBal = parseFloat(advanceRes.rows[0]?.amount || 0);
 
         // 4. Virtualize payments across items
-        let remainingPaid = parseFloat(ledger.total_paid || 0);
+        const totalPayableWithOptional = parseFloat(ledger.total_payable || 0) + parseFloat(ledger.optional_payable || 0);
+        const totalPaid = parseFloat(ledger.total_paid || 0);
+        let remainingPaid = totalPaid;
         const finalData = breakdownRes.rows.map(item => {
             const total = parseFloat(item.total_amount || 0);
             let paid = 0;
@@ -339,18 +349,19 @@ const getStudentFeeStatus = async (req, res) => {
             remainingPaid -= paid;
             return {
                 ...item,
-                fee_group: item.fee_group || 'General Fees',
+                fee_group: item.fee_group,
                 paid_amount: paid,
                 pending_amount: total - paid,
                 discount_amount: 0,
                 fine_amount: 0,
                 // Include summary info on each row for frontend compatibility
-                total_payable: ledger.total_payable,
-                total_paid: ledger.total_paid,
-                balance_amount: ledger.balance_amount,
+                total_payable: totalPayableWithOptional,
+                total_paid: totalPaid,
+                balance_amount: Math.max(0, totalPayableWithOptional - totalPaid),
                 advance_balance: advanceBal
             };
         });
+
 
         // Add a hidden property to the array itself for hooks that expect it
         Object.defineProperty(finalData, 'advance_balance', { value: advanceBal, enumerable: true });

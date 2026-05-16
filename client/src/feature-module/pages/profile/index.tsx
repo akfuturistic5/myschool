@@ -27,6 +27,7 @@ const Profile = () => {
   const route = all_routes;
   const dispatch = useDispatch();
   const { user, loading: meLoading, error: meError, refetch } = useCurrentUser();
+  const currentUser = user as any;
 
   const [form, setForm] = useState({
     first_name: "",
@@ -52,35 +53,39 @@ const Profile = () => {
 
   const canEdit = useMemo(() => {
     // Basic guard; if account is disabled we still allow viewing
-    return !!user && user.account_disabled !== true;
-  }, [user]);
+    return !!currentUser && currentUser.account_disabled !== true;
+  }, [currentUser]);
   const hasProfileAvatar = useMemo(() => {
-    return !!String(user?.avatar || "").trim();
-  }, [user?.avatar]);
+    return !!String(currentUser?.avatar || "").trim();
+  }, [currentUser?.avatar]);
+
+  const role = useMemo(() => normalizeAuthRole(currentUser?.role_name, currentUser?.role_id), [currentUser]);
+  /** End-users (Parents/Students) cannot change their official identity (First/Last Name) but can update contact info. */
+  const isEndUser = role === "Parent" || role === "Student" || role === "Guardian";
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUser) return;
     setForm((prev) => ({
       ...prev,
-      first_name: (user.first_name || "").toString(),
-      last_name: (user.last_name || "").toString(),
-      email: (user.email || "").toString(),
-      phone: (user.phone || "").toString(),
-      username: (user.username || "").toString(),
-      current_address: (user.current_address || "").toString(),
-      permanent_address: (user.permanent_address || "").toString(),
+      first_name: (currentUser.first_name || "").toString(),
+      last_name: (currentUser.last_name || "").toString(),
+      email: (currentUser.email || "").toString(),
+      phone: (currentUser.phone || "").toString(),
+      username: (currentUser.username || "").toString(),
+      current_address: (currentUser.current_address || "").toString(),
+      permanent_address: (currentUser.permanent_address || "").toString(),
     }));
-  }, [user?.id]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     let cancelled = false;
     const loadAvatar = async () => {
-      if (!user?.avatar) {
+      if (!currentUser?.avatar) {
         if (!cancelled) setAvatarSrc(DEFAULT_AVATAR_SRC);
         return;
       }
       try {
-        const next = await apiService.resolveAvatarUrl(user.avatar);
+        const next = await apiService.resolveAvatarUrl(currentUser.avatar);
         if (!cancelled) {
           setAvatarSrc(next || DEFAULT_AVATAR_SRC);
         }
@@ -92,7 +97,7 @@ const Profile = () => {
     return () => {
       cancelled = true;
     };
-  }, [user?.avatar]);
+  }, [currentUser?.avatar]);
 
   const setField = (key: keyof typeof form, value: string) => {
     setForm((p) => ({ ...p, [key]: value }));
@@ -370,9 +375,9 @@ const Profile = () => {
                         />
                       </span>
                       <div className="title-upload">
-                        <h5>{user?.display_name || user?.name || "User"}</h5>
+                        <h5>{currentUser?.display_name || currentUser?.name || "User"}</h5>
                         <p className="mb-0 text-primary">
-                          {user?.display_role || user?.role || "User"}
+                          {currentUser?.display_role || currentUser?.role || "User"}
                         </p>
                       </div>
                     </div>
@@ -425,15 +430,17 @@ const Profile = () => {
                       <div className="card">
                         <div className="card-header d-flex justify-content-between align-items-center">
                           <h5>Personal Information</h5>
-                          <Link
-                            to="#"
-                            className="btn btn-primary btn-sm"
-                            data-bs-toggle="modal"
-                            data-bs-target="#edit_personal_information"
-                          >
-                            <i className="ti ti-edit me-2" />
-                            Edit
-                          </Link>
+                          {!isEndUser && (
+                            <Link
+                              to="#"
+                              className="btn btn-primary btn-sm"
+                              data-bs-toggle="modal"
+                              data-bs-target="#edit_personal_information"
+                            >
+                              <i className="ti ti-edit me-2" />
+                              Edit
+                            </Link>
+                          )}
                         </div>
                         <div className="card-body pb-0">
                           <div className="d-block d-xl-flex">
@@ -445,7 +452,7 @@ const Profile = () => {
                                 placeholder="Enter First Name"
                                 value={form.first_name}
                                 onChange={(e) => setField("first_name", e.target.value)}
-                                disabled={!canEdit || saving}
+                                disabled={!canEdit || saving || isEndUser}
                               />
                             </div>
                             <div className="mb-3 flex-fill">
@@ -456,7 +463,7 @@ const Profile = () => {
                                 placeholder="Enter Last Name"
                                 value={form.last_name}
                                 onChange={(e) => setField("last_name", e.target.value)}
-                                disabled={!canEdit || saving}
+                                disabled={!canEdit || saving || isEndUser}
                               />
                             </div>
                           </div>
@@ -468,7 +475,7 @@ const Profile = () => {
                               placeholder="Enter Email"
                               value={form.email}
                               onChange={(e) => setField("email", e.target.value)}
-                              disabled={!canEdit || saving}
+                              disabled={!canEdit || saving || isEndUser}
                             />
                           </div>
                           <div className="d-block d-xl-flex">
@@ -490,34 +497,38 @@ const Profile = () => {
                                 placeholder="Enter Phone Number"
                                 value={form.phone}
                                 onChange={(e) => setField("phone", e.target.value)}
-                                disabled={!canEdit || saving}
+                                disabled={!canEdit || saving || isEndUser}
                               />
                             </div>
                           </div>
-                          <div className="d-flex justify-content-end pb-3">
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={onSave}
-                              disabled={!canEdit || saving || meLoading}
-                            >
-                              Save
-                            </button>
-                          </div>
+                          {!isEndUser && (
+                            <div className="d-flex justify-content-end pb-3">
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={onSave}
+                                disabled={!canEdit || saving || meLoading}
+                              >
+                                Save
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="card">
                         <div className="card-header d-flex justify-content-between align-items-center">
                           <h5>Address Information</h5>
-                          <Link
-                            to="#"
-                            className="btn btn-primary btn-sm"
-                            data-bs-toggle="modal"
-                            data-bs-target="#edit_address_information"
-                          >
-                            <i className="ti ti-edit me-2" />
-                            Edit
-                          </Link>
+                          {!isEndUser && (
+                            <Link
+                              to="#"
+                              className="btn btn-primary btn-sm"
+                              data-bs-toggle="modal"
+                              data-bs-target="#edit_address_information"
+                            >
+                              <i className="ti ti-edit me-2" />
+                              Edit
+                            </Link>
+                          )}
                         </div>
                         <div className="card-body pb-0">
                           <div className="mb-3">
@@ -527,7 +538,7 @@ const Profile = () => {
                               placeholder="Enter Current Address"
                               value={form.current_address}
                               onChange={(e) => setField("current_address", e.target.value)}
-                              disabled={!canEdit || saving}
+                              disabled={!canEdit || saving || isEndUser}
                               rows={3}
                             />
                           </div>
@@ -538,20 +549,22 @@ const Profile = () => {
                               placeholder="Enter Permanent Address"
                               value={form.permanent_address}
                               onChange={(e) => setField("permanent_address", e.target.value)}
-                              disabled={!canEdit || saving}
+                              disabled={!canEdit || saving || isEndUser}
                               rows={3}
                             />
                           </div>
-                          <div className="d-flex justify-content-end pb-3">
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={onSave}
-                              disabled={!canEdit || saving || meLoading}
-                            >
-                              Save
-                            </button>
-                          </div>
+                          {!isEndUser && (
+                            <div className="d-flex justify-content-end pb-3">
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={onSave}
+                                disabled={!canEdit || saving || meLoading}
+                              >
+                                Save
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="card">
@@ -600,6 +613,9 @@ const Profile = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter First Name"
+                          value={form.first_name}
+                          onChange={(e) => setField("first_name", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
                         />
                       </div>
                       <div className="mb-3">
@@ -608,6 +624,9 @@ const Profile = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Last Name"
+                          value={form.last_name}
+                          onChange={(e) => setField("last_name", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
                         />
                       </div>
                       <div className="mb-3">
@@ -616,6 +635,8 @@ const Profile = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter User Name"
+                          value={form.username}
+                          disabled
                         />
                       </div>
                       <div className="mb-3">
@@ -624,6 +645,9 @@ const Profile = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Email"
+                          value={form.email}
+                          onChange={(e) => setField("email", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
                         />
                       </div>
                       <div className="mb-3">
@@ -632,6 +656,9 @@ const Profile = () => {
                           type="text"
                           className="form-control"
                           placeholder="Enter Phone Number"
+                          value={form.phone}
+                          onChange={(e) => setField("phone", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
                         />
                       </div>
                       <div className="mb-0">
@@ -690,43 +717,25 @@ const Profile = () => {
                   <div className="row">
                     <div className="col-md-12">
                       <div className="mb-3">
-                        <label className="form-label">Address</label>
-                        <input
-                          type="text"
+                        <label className="form-label">Current Address</label>
+                        <textarea
                           className="form-control"
-                          placeholder="Enter Address"
+                          placeholder="Enter Current Address"
+                          value={form.current_address}
+                          onChange={(e) => setField("current_address", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
+                          rows={3}
                         />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label">Country</label>
-                        <input
-                          type="text"
+                        <label className="form-label">Permanent Address</label>
+                        <textarea
                           className="form-control"
-                          placeholder="Enter Country"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">State/Province</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter State/Province"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">City</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter City"
-                        />
-                      </div>
-                      <div className="mb-0">
-                        <label className="form-label">Postal Code</label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          placeholder="Enter Postal Code"
+                          placeholder="Enter Permanent Address"
+                          value={form.permanent_address}
+                          onChange={(e) => setField("permanent_address", e.target.value)}
+                          disabled={!canEdit || saving || isEndUser}
+                          rows={3}
                         />
                       </div>
                     </div>

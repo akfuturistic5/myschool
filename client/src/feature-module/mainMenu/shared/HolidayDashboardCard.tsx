@@ -26,8 +26,9 @@ const prettyDate = (d: string) => {
   return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 };
 
-export default function HolidayDashboardCard() {
-  const academicYearId = useSelector(selectSelectedAcademicYearId);
+export default function HolidayDashboardCard({ academicYearId: propId }: { academicYearId?: number | null }) {
+  const reduxAcademicYearId = useSelector(selectSelectedAcademicYearId);
+  const academicYearId = propId !== undefined ? propId : reduxAcademicYearId;
   const [holiday, setHoliday] = useState<HolidayItem | null>(null);
 
   useEffect(() => {

@@ -11,6 +11,7 @@ import { useStudentAttendance } from "../../../core/hooks/useStudentAttendance";
 import { useClassSchedules } from "../../../core/hooks/useClassSchedules";
 import { useAcademicYears } from "../../../core/hooks/useAcademicYears";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import { PARENT_PORTAL_SELECTED_STUDENT_STORAGE_KEY } from "../../../core/hooks/useLinkedStudentContext";
 import { useEvents } from "../../../core/hooks/useEvents";
 import { useNoticeBoard } from "../../../core/hooks/useNoticeBoard";
@@ -72,17 +73,43 @@ const parsePositiveId = (v: unknown): number | null => {
 const ParentDashboard = () => {
   const routes = all_routes;
   const headerAcademicYearId = useSelector(selectSelectedAcademicYearId);
-  const { academicYears } = useAcademicYears();
-  const currentAcademicYear =
-    (academicYears || []).find((y: { is_current?: boolean }) => y?.is_current) ?? (academicYears || [])[0] ?? null;
-  const resolvedAcademicYearId =
-    (headerAcademicYearId != null && Number(headerAcademicYearId) > 0 ? Number(headerAcademicYearId) : null) ??
-    (currentAcademicYear && Number((currentAcademicYear as { id?: number }).id) > 0
-      ? Number((currentAcademicYear as { id: number }).id)
-      : null);
+  const user = useSelector(selectUser);
+  const { academicYears } = useAcademicYears() as { academicYears: any[] };
+
+  const resolvedAcademicYearId = useMemo(() => {
+    // If data is still loading, return null to avoid making API calls with stale fallback IDs
+    if (!academicYears || academicYears.length === 0 || !user) return null;
+
+    // 1. If we are in Parent Panel, we strongly prefer the "Current" academic year.
+    // For parents specifically, we prioritize the active session (is_current)
+    // to avoid showing future/past year data by mistake (e.g. from a stale localStorage value).
+    const currentYear = (academicYears || []).find((y: any) => y?.is_current);
+    const isParent = (user?.role || "").trim().toLowerCase() === "parent";
+
+    if (isParent && currentYear?.id) {
+      return Number(currentYear.id);
+    }
+
+    // 2. Otherwise (Admin/masquerade), prioritize the header selection
+    if (headerAcademicYearId != null && Number(headerAcademicYearId) > 0) {
+      return Number(headerAcademicYearId);
+    }
+
+    // 3. Fallback to current year object or first in list
+    return currentYear?.id
+      ? Number(currentYear.id)
+      : academicYears?.[0]?.id
+        ? Number(academicYears[0].id)
+        : null;
+  }, [academicYears, headerAcademicYearId, user]);
+
 
   const { parents, loading: parentLoading, error: parentError } = useParents({ forCurrentUser: true });
-  const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
+  const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({
+    forDashboard: true,
+    limit: 5,
+    params: { academicYearId: resolvedAcademicYearId }
+  });
 
   const children = useMemo<LinkedChild[]>(() => (parents as LinkedChild[]) || [], [parents]);
   const firstParent = children[0];
@@ -107,13 +134,29 @@ const ParentDashboard = () => {
     limit: 50,
     studentId: selectedChild?.student_id ?? null,
   });
-  const { data: feeData } = useStudentFees(selectedChild?.student_id ?? null, resolvedAcademicYearId);
+  const { data: feeDataRaw, loading: feeLoading } = useStudentFees(selectedChild?.student_id ?? null, resolvedAcademicYearId);
+  const feeData = useMemo(() => {
+    if (!feeDataRaw || !Array.isArray(feeDataRaw) || feeDataRaw.length === 0) return null;
+    const first = feeDataRaw[0] as any;
+    return {
+      totalDue: Number(first.total_payable || 0),
+      totalPaid: Number(first.total_paid || 0),
+      totalOutstanding: Number(first.balance_amount || 0),
+      advanceBalance: Number(first.advance_balance || 0),
+    };
+  }, [feeDataRaw]);
+
   const { data: examResultsData } = useStudentExamResults(selectedChild?.student_id ?? null);
   const { data: attendanceData } = useStudentAttendance(selectedChild?.student_id ?? null);
   const { data: allSchedules } = useClassSchedules({
     academicYearId: resolvedAcademicYearId ?? undefined,
+    skip: resolvedAcademicYearId == null
   });
-  const { notices, loading: noticeLoading } = useNoticeBoard({ limit: 1 });
+
+  const { notices, loading: noticeLoading } = useNoticeBoard({ 
+    limit: 1,
+    academicYearId: resolvedAcademicYearId
+  });
   const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
 
   // Filtered leaves by date range
@@ -241,29 +284,65 @@ const ParentDashboard = () => {
               </nav>
             </div>
             {children.length > 1 && (
-              <div className="dash-select-student d-flex align-items-center mb-2">
-                <h6 className="mb-0">Select Student</h6>
-                <div className="student-active d-flex align-items-center ms-2">
-                  {children.map((child: { student_id?: number; Child?: string; ChildImage?: string }) => (
-                    <Link
-                      key={child.student_id}
-                      to="#"
-                      onClick={() => setActiveStudentId(String(child.student_id))}
-                      className={`avatar avatar-lg p-1 me-2 ${activeStudentId === String(child.student_id) && "active"}`}
-                    >
+              <div className="dash-select-student mb-2">
+                <div className="dropdown">
+                  <button
+                    type="button"
+                    className="btn btn-white border dropdown-toggle d-inline-flex align-items-center rounded-pill"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                  >
+                    <div className="avatar avatar-sm me-2">
                       <ImageWithBasePath
-                        src={child.ChildImage || "assets/img/students/student-01.jpg"}
-                        alt={child.Child || "Child"}
+                        src={selectedChild?.ChildImage || "assets/img/students/student-01.jpg"}
+                        alt={selectedChild?.Child || "Child"}
+                        className="rounded-circle"
                       />
-                    </Link>
-                  ))}
+                    </div>
+                    <div className="text-start me-1">
+                      <p className="small text-muted mb-0" style={{ fontSize: '10px', lineHeight: '1' }}>Current Student</p>
+                      <h6 className="mb-0 text-truncate" style={{ maxWidth: '150px' }}>{selectedChild?.Child || "Student"}</h6>
+                    </div>
+                  </button>
+                  <ul className="dropdown-menu dropdown-menu-end mt-2 p-2 shadow-lg border-0">
+                    <li className="dropdown-header px-3 py-2 text-muted small text-uppercase fw-semibold">
+                      Switch Student
+                    </li>
+                    {children.map((child: LinkedChild) => {
+                      const isActive = activeStudentId === String(child.student_id);
+                      return (
+                        <li key={child.student_id}>
+                          <button
+                            type="button"
+                            className={`dropdown-item rounded-2 p-2 d-flex align-items-center mb-1 ${isActive ? "active" : ""}`}
+                            onClick={() => setActiveStudentId(String(child.student_id))}
+                          >
+                            <div className="avatar avatar-xs me-2">
+                              <ImageWithBasePath
+                                src={child.ChildImage || "assets/img/students/student-01.jpg"}
+                                alt={child.Child || "Child"}
+                                className="rounded-circle"
+                              />
+                            </div>
+                            <div className="flex-fill">
+                              <p className="mb-0 fw-medium small">{child.Child}</p>
+                              <p className="text-muted mb-0" style={{ fontSize: '10px' }}>{child.class || "No Class"}</p>
+                            </div>
+                            {isActive && (
+                              <i className="ti ti-check text-primary ms-2" />
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               </div>
             )}
           </div>
           {/* /Page Header */}
           <div className="row">
-            <HolidayDashboardCard />
+            <HolidayDashboardCard academicYearId={resolvedAcademicYearId} />
           </div>
           <div className="row">
             {/* Profile */}
@@ -694,15 +773,15 @@ const ParentDashboard = () => {
                     feeData ? (
                       <div>
                         <p className="mb-2">
-                          <strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          <strong>Total Due:</strong> ₹{(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </p>
                         <p className="mb-2">
-                          <strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          <strong>Total Paid:</strong> ₹{(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                         </p>
                         <p className="mb-0">
                           <strong>Outstanding:</strong>{" "}
                           <span className={(feeData.totalOutstanding ?? 0) > 0 ? "text-danger" : "text-success"}>
-                            ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                            ₹{(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                           </span>
                         </p>
                         {(feeData.totalOutstanding ?? 0) > 0 && (
@@ -712,10 +791,15 @@ const ParentDashboard = () => {
                           </div>
                         )}
                       </div>
-                    ) : (
+                    ) : feeLoading ? (
                       <div className="alert alert-info d-flex align-items-center mb-0" role="alert">
                         <i className="ti ti-info-circle me-2 fs-18" />
                         <span>Loading fee data...</span>
+                      </div>
+                    ) : (
+                      <div className="text-center py-3 text-muted">
+                        <i className="ti ti-receipt-off fs-24 mb-2 d-block text-info" />
+                        <p className="mb-0 small">No fee records found for this student.</p>
                       </div>
                     )
                   ) : (
