@@ -25,6 +25,7 @@ const {
   getNextAdmissionNumber,
   searchStudents,
   deleteStudent,
+  getStudentSubjects,
 } = require('../controllers/studentController');
 const { downloadBonafide } = require('../controllers/bonafideController');
 const { validate } = require('../utils/validate');
@@ -105,6 +106,9 @@ router.get('/:studentId/exam-results', requireRole(ALL_AUTHENTICATED_ROLES), get
 
 // Get student by ID
 router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getStudentById);
+
+// Get student subjects
+router.get('/:studentId/subjects', requireRole(ALL_AUTHENTICATED_ROLES), getStudentSubjects);
 
 // Create student: Headmaster/Administrative
 router.post('/', requireRole(PEOPLE_MANAGER_ROLES), validate(createStudentSchema), createStudent);

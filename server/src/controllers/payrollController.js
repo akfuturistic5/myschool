@@ -1,9 +1,23 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { getAuthContext, isAdmin, resolveTeacherIdForUser } = require('../utils/accessControl');
 
 const listPayslips = async (req, res) => {
   try {
     const { month, year, status, staff_id } = req.query;
+    const ctx = getAuthContext(req);
+    const isUserAdmin = isAdmin(ctx);
+
+    let targetStaffId = staff_id;
+
+    if (!isUserAdmin) {
+      // Non-admins can only view their own payslips
+      const resolvedStaffId = await resolveTeacherIdForUser(ctx.userId);
+      if (!resolvedStaffId) {
+        return errorResponse(res, 403, 'Access denied. No associated staff record found.');
+      }
+      targetStaffId = resolvedStaffId;
+    }
     
     let sql = `
       SELECT 
@@ -36,9 +50,9 @@ const listPayslips = async (req, res) => {
       sql += ` AND p.status = $${idx++}`;
       params.push(status);
     }
-    if (staff_id) {
+    if (targetStaffId) {
       sql += ` AND p.staff_id = $${idx++}`;
-      params.push(staff_id);
+      params.push(targetStaffId);
     }
 
     sql += ` ORDER BY lower(p.salary_period) DESC, u.first_name ASC`;

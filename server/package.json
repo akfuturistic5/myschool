@@ -8,6 +8,7 @@
     "dev": "node --watch server.js",
     "dev:restart": "node scripts/dev-restart.js",
     "provisioning:template-hash": "node scripts/provisioningTemplateHash.js",
+    "db:master:migrate:all": "node scripts/db-runner.js --db master --sql migrations/master/",
     "db:master:migrate": "node scripts/db-runner.js --db master --sql migrations/master/masters_schema.sql",
     "db:master:migrate:saas": "node scripts/db-runner.js --db master --sql migrations/master/20260514120000_saas_plans_enquiries.sql",
     "db:master:migrate:saas-pricing": "node scripts/db-runner.js --db master --sql migrations/master/20260515120000_saas_plans_pricing.sql",

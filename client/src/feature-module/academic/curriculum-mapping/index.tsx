@@ -248,71 +248,27 @@ const CurriculumMapping = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Student Elective Choices</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="dropdown mb-3 me-2">
-                  <Link
-                    to="#"
-                    className="btn btn-outline-light bg-white dropdown-toggle mb-3 me-2"
-                    data-bs-toggle="dropdown"
-                    data-bs-auto-close="outside"
-                  >
-                    <i className="ti ti-filter me-2" />
-                    Filter
-                  </Link>
-                  <div
-                    className="dropdown-menu drop-width"
-                    ref={dropdownMenuRef}
-                  >
-                    <form onSubmit={handleApplyFilter}>
-                      <div className="d-flex align-items-center border-bottom p-3">
-                        <h4>Filter</h4>
-                      </div>
-                      <div className="p-3 border-bottom">
-                        <div className="row">
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Class</label>
-                              <CommonSelect
-                                className="select"
-                                options={[
-                                  { value: "All", label: "Select Class" },
-                                  ...classes.map(c => ({ value: c.id.toString(), label: c.class_name || c.name }))
-                                ]}
-                                defaultValue={{ value: "All", label: "Select Class" }}
-                                value={selectedClass}
-                                onChange={(val: any) => setSelectedClass(val)}
-                              />
-                            </div>
-                          </div>
-                          <div className="col-md-12">
-                            <div className="mb-3">
-                              <label className="form-label">Section</label>
-                              <CommonSelect
-                                className="select"
-                                options={[
-                                  { value: "All", label: "All Sections" },
-                                  ...sections.map(s => ({ value: s.id.toString(), label: s.section_name || s.name }))
-                                ]}
-                                defaultValue={{ value: "All", label: "All Sections" }}
-                                value={selectedSection}
-                                onChange={(val: any) => setSelectedSection(val)}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="p-3 d-flex align-items-center justify-content-end">
-                        <button type="button" className="btn btn-light me-3" onClick={handleReset}>
-                          Reset
-                        </button>
-                        <button
-                          type="submit"
-                          className="btn btn-primary"
-                        >
-                          Apply
-                        </button>
-                      </div>
-                    </form>
-                  </div>
+                <div className="mb-3 me-2" style={{ minWidth: '200px' }}>
+                  <CommonSelect
+                    className="select"
+                    options={[
+                      { value: "All", label: "Select Class" },
+                      ...classes.map(c => ({ value: c.id.toString(), label: c.class_name || c.name }))
+                    ]}
+                    value={selectedClass}
+                    onChange={(val: any) => setSelectedClass(val || "All")}
+                  />
+                </div>
+                <div className="mb-3 me-2" style={{ minWidth: '200px' }}>
+                  <CommonSelect
+                    className="select"
+                    options={[
+                      { value: "All", label: "All Sections" },
+                      ...sections.map(s => ({ value: s.id.toString(), label: s.section_name || s.name }))
+                    ]}
+                    value={selectedSection}
+                    onChange={(val: any) => setSelectedSection(val || "All")}
+                  />
                 </div>
               </div>
             </div>

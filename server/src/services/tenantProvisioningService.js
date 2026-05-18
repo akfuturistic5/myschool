@@ -8,6 +8,7 @@ const { pipeline, finished } = require('stream/promises');
 const { Readable } = require('stream');
 require('dotenv').config();
 // No longer using legacy migrations script here
+// Trigger server restart
 
 /** Application root (the `server` folder that contains `sql/`). */
 const SERVER_APP_ROOT = path.resolve(__dirname, '../..');
@@ -596,7 +597,6 @@ function resolveProvisioningTemplatePath() {
 }
 
 function getTemplateSql() {
-  if (cachedTemplateSql) return cachedTemplateSql;
   const templatePath = resolveProvisioningTemplatePath();
   let sql;
   try {
@@ -611,8 +611,6 @@ function getTemplateSql() {
     throw new Error('Template SQL file is empty');
   }
 
-  // Git stores LF; Windows checkouts often use CRLF. Hash must match logical content, not raw bytes,
-  // or production (Linux) and local (CRLF) disagree and PROVISIONING_TEMPLATE_SQL_SHA256 always fails.
   sql = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   const expectedSha = (process.env.PROVISIONING_TEMPLATE_SQL_SHA256 || '').toString().trim().toLowerCase();
@@ -637,16 +635,13 @@ function getTemplateSql() {
   }
 
   validateTemplateSql(sql);
-  cachedTemplateSql = sql;
-  return cachedTemplateSql;
+  return sql;
 }
 
 /**
  * Gets the consolidated tenant seed SQL.
  */
-let cachedSeedSql = null;
 function getTenantSeedSql() {
-  if (cachedSeedSql) return cachedSeedSql;
   const seedPath = path.resolve(SERVER_APP_ROOT, 'seeds/tenant/tenant_seed.sql');
   let sql;
   try {
@@ -655,8 +650,7 @@ function getTenantSeedSql() {
     console.error('[provisioning] tenant seed read failed:', e.message);
     throw new Error('Tenant seed SQL file could not be read.');
   }
-  cachedSeedSql = sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  return cachedSeedSql;
+  return sql.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
 async function createTenantDatabase(dbName, schoolName = null) {

@@ -641,7 +641,7 @@ const STUDENT_CONTACT_LATERAL_JOINS = `
         INNER JOIN guardians g ON g.id = sgl.guardian_id AND COALESCE(g.is_active, true) = true
         INNER JOIN users u ON u.id = g.user_id
         WHERE sgl.student_id = s.id
-          AND LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) IN ('guardian', 'legal guardian', 'other')
+          AND LOWER(BTRIM(COALESCE(sgl.relation::text, ''))) NOT IN ('father', 'dad', 'papa', 'abbu', 'mother', 'mom', 'mummy', 'ammi')
         ORDER BY sgl.id ASC
         LIMIT 1
       ) gu_u ON true`;

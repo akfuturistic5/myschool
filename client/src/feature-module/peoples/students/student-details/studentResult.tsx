@@ -366,6 +366,11 @@ const StudentResult = () => {
                             <i className="ti ti-books me-2" /> Library
                           </Link>
                         </li>
+                        <li>
+                          <Link to={effectiveStudentId ? `${routes.studentSubjects}?studentId=${effectiveStudentId}` : routes.studentSubjects} className="nav-link" state={forwardedState}>
+                            <i className="ti ti-book me-2" /> Subjects
+                          </Link>
+                        </li>
                   </ul>
 
                   {/* Achievement Summary Cards */}

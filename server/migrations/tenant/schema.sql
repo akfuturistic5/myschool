@@ -537,6 +537,7 @@ CREATE TABLE IF NOT EXISTS public.hostel_room_types (
 
 CREATE TABLE IF NOT EXISTS public.hostels (
     id SERIAL PRIMARY KEY,
+    academic_year_id integer NOT NULL REFERENCES public.academic_years(id) ON DELETE RESTRICT,
     hostel_name character varying(150) NOT NULL,
     code character varying(50) NOT NULL,
     hostel_category character varying(20) NOT NULL DEFAULT 'student'
@@ -561,8 +562,9 @@ CREATE TABLE IF NOT EXISTS public.hostels (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_code_alive ON public.hostels (code) WHERE deleted_at IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_name_alive
-    ON public.hostels (hostel_name) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_name_alive_per_year
+    ON public.hostels (academic_year_id, hostel_name) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_hostels_year ON public.hostels (academic_year_id);
 CREATE INDEX IF NOT EXISTS idx_hostels_active ON public.hostels (is_active) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS public.hostel_floors (

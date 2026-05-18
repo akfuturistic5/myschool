@@ -115,15 +115,15 @@ const assignSubjectToClass = async (req, res) => {
       return errorResponse(res, 409, 'This subject is already assigned to this class for the selected academic year');
     }
 
-    // Check if group limit is exceeded
+    // Check if group limit is exceeded (scoped per class and academic year)
     if (is_elective && elective_group_id) {
       const groupRes = await query('SELECT max_subjects FROM subject_elective_groups WHERE id = $1', [elective_group_id]);
       const maxSubjects = groupRes.rows[0]?.max_subjects || 0;
       
       if (maxSubjects > 0) {
         const countRes = await query(
-          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND deleted_at IS NULL', 
-          [elective_group_id]
+          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND class_id = $2 AND academic_year_id = $3 AND deleted_at IS NULL', 
+          [elective_group_id, class_id, academic_year_id]
         );
         if (Number(countRes.rows[0].count) >= maxSubjects) {
           return errorResponse(res, 400, `This elective group has reached its maximum capacity of ${maxSubjects} subjects.`);
@@ -150,15 +150,25 @@ const updateClassSubject = async (req, res) => {
     const { is_elective, elective_group_id } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
-    // Check if group limit is exceeded
+    // Fetch class_id and academic_year_id of this class subject to scope the check
+    const subjectInfoRes = await query(
+      'SELECT class_id, academic_year_id FROM class_subjects WHERE id = $1',
+      [id]
+    );
+    if (subjectInfoRes.rows.length === 0) {
+      return errorResponse(res, 404, 'Class subject assignment not found');
+    }
+    const { class_id, academic_year_id } = subjectInfoRes.rows[0];
+
+    // Check if group limit is exceeded (scoped per class and academic year)
     if (is_elective && elective_group_id) {
       const groupRes = await query('SELECT max_subjects FROM subject_elective_groups WHERE id = $1', [elective_group_id]);
       const maxSubjects = groupRes.rows[0]?.max_subjects || 0;
       
       if (maxSubjects > 0) {
         const countRes = await query(
-          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND deleted_at IS NULL AND id != $2', 
-          [elective_group_id, id]
+          'SELECT COUNT(id) FROM class_subjects WHERE elective_group_id = $1 AND class_id = $2 AND academic_year_id = $3 AND deleted_at IS NULL AND id != $4', 
+          [elective_group_id, class_id, academic_year_id, id]
         );
         if (Number(countRes.rows[0].count) >= maxSubjects) {
           return errorResponse(res, 400, `This elective group has reached its maximum capacity of ${maxSubjects} subjects.`);
