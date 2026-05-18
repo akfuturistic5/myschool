@@ -23,8 +23,7 @@ type StatDef = {
   label: string;
   hint?: string;
   icon: string;
-  accent: string;
-  iconBg: string;
+  tone: 'slate' | 'emerald' | 'amber' | 'indigo' | 'blue';
   to: string;
 };
 
@@ -33,16 +32,14 @@ const STAT_ITEMS: StatDef[] = [
     key: 'total_schools',
     label: 'Total schools',
     icon: 'ti-building-community',
-    accent: '#334155',
-    iconBg: 'rgba(51,65,85,0.12)',
+    tone: 'slate',
     to: all_routes.superAdminSchoolList,
   },
   {
     key: 'total_active_schools',
     label: 'Active',
     icon: 'ti-circle-check',
-    accent: '#059669',
-    iconBg: 'rgba(5,150,105,0.12)',
+    tone: 'emerald',
     to: `${all_routes.superAdminSchoolList}?status=active`,
   },
   {
@@ -50,8 +47,7 @@ const STAT_ITEMS: StatDef[] = [
     label: 'Inactive',
     hint: 'Schools not on active status',
     icon: 'ti-alert-circle',
-    accent: '#d97706',
-    iconBg: 'rgba(217,119,6,0.14)',
+    tone: 'amber',
     to: `${all_routes.superAdminSchoolList}?status=disabled`,
   },
   {
@@ -59,8 +55,7 @@ const STAT_ITEMS: StatDef[] = [
     label: 'Plans',
     hint: 'Active subscription tiers',
     icon: 'ti-layers-intersect',
-    accent: '#4f46e5',
-    iconBg: 'rgba(79,70,229,0.14)',
+    tone: 'indigo',
     to: all_routes.superAdminPlans,
   },
   {
@@ -68,8 +63,7 @@ const STAT_ITEMS: StatDef[] = [
     label: 'New leads',
     hint: 'Enquiry status: new',
     icon: 'ti-mail-plus',
-    accent: '#2563eb',
-    iconBg: 'rgba(37,99,235,0.12)',
+    tone: 'blue',
     to: `${all_routes.superAdminEnquiries}?status=new`,
   },
 ];
@@ -133,23 +127,23 @@ const SuperAdminDashboard = () => {
         <div className="row g-3 g-md-4 mb-4">
           {STAT_ITEMS.map((item) => (
             <div key={item.key} className="col-6 col-xl-4">
-              <Link to={item.to} className="sa-stat-card sa-stat-card--link p-4 h-100 text-decoration-none text-body">
+              <Link
+                to={item.to}
+                className={`sa-stat-card sa-stat-card--link sa-stat-card--tone-${item.tone} p-4 h-100 text-decoration-none`}
+              >
                 <div className="d-flex justify-content-between align-items-start gap-2 mb-3">
-                  <div
-                    className="sa-stat-icon flex-shrink-0"
-                    style={{ background: item.iconBg, color: item.accent }}
-                  >
+                  <div className="sa-stat-icon flex-shrink-0">
                     <i className={`ti ${item.icon}`} />
                   </div>
-                  <i className="ti ti-arrow-up-right text-muted sa-stat-card__arrow" aria-hidden />
+                  <i className="ti ti-arrow-up-right sa-stat-card__arrow" aria-hidden />
                 </div>
-                <div className="text-muted small fw-semibold text-uppercase mb-1" style={{ letterSpacing: '0.04em' }}>
+                <div className="small fw-semibold text-uppercase mb-1 sa-stat-card__label" style={{ letterSpacing: '0.04em' }}>
                   {item.label}
                 </div>
-                <div className="display-6 fw-bold lh-sm" style={{ color: item.accent }}>
+                <div className="display-6 fw-bold lh-sm sa-stat-card__value">
                   {stats[item.key]}
                 </div>
-                {item.hint && <div className="small text-muted mt-2">{item.hint}</div>}
+                {item.hint && <div className="small mt-2 sa-stat-card__hint">{item.hint}</div>}
               </Link>
             </div>
           ))}

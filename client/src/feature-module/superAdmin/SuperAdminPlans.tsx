@@ -245,7 +245,7 @@ const SuperAdminPlans = () => {
                   <li
                     key={p.id}
                     className={`list-group-item d-flex justify-content-between align-items-start gap-2${
-                      selectedId === p.id ? ' active' : ''
+                      selectedId === p.id ? ' sa-list-item--selected' : ''
                     }`}
                   >
                     <div className="min-w-0">
