@@ -38,6 +38,98 @@ const validateHostelGender = (hostelGender, userGender) => {
   return false;
 };
 
+const normalizeAssignmentStatus = (value) => {
+  const s = String(value ?? '').trim().toLowerCase();
+  if (s === 'active' || s === 'completed' || s === 'cancelled') return s;
+  return null;
+};
+
+const releaseAssignmentBedTx = async (client, bedId, roomId) => {
+  await client.query(
+    `
+    UPDATE hostel_beds SET bed_status = 'available', updated_at = NOW()
+    WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [bedId]
+  );
+  const capQ = await client.query(
+    `
+    SELECT rt.sharing_capacity AS capacity_effective
+    FROM hostel_rooms r
+    JOIN hostel_room_types rt ON rt.id = r.hostel_room_type_id
+    WHERE r.id = $1
+    `,
+    [roomId]
+  );
+  const cap = Math.max(1, Number(capQ.rows[0]?.capacity_effective) || 1);
+  await client.query(
+    `
+    UPDATE hostel_rooms
+    SET room_status = CASE
+        WHEN (
+          SELECT COUNT(*) FROM hostel_beds bx
+          WHERE bx.room_id = $1 AND bx.deleted_at IS NULL
+            AND bx.bed_status IN ('occupied', 'reserved')
+        ) >= $2 THEN 'full'::character varying
+        ELSE 'available'::character varying
+      END,
+      updated_at = NOW()
+    WHERE id = $1
+    `,
+    [roomId, cap]
+  );
+};
+
+const occupyAssignmentBedTx = async (client, bedId, roomId) => {
+  const bedQ = await client.query(
+    `SELECT bed_status FROM hostel_beds WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+    [bedId]
+  );
+  if (!bedQ.rows.length) {
+    const err = new Error('Bed not found');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (String(bedQ.rows[0].bed_status) !== 'available') {
+    const err = new Error('Bed is not available');
+    err.statusCode = 409;
+    throw err;
+  }
+  await client.query(
+    `
+    UPDATE hostel_beds SET bed_status = 'occupied', updated_at = NOW()
+    WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [bedId]
+  );
+  const capQ = await client.query(
+    `
+    SELECT rt.sharing_capacity AS capacity_effective
+    FROM hostel_rooms r
+    JOIN hostel_room_types rt ON rt.id = r.hostel_room_type_id
+    WHERE r.id = $1
+    `,
+    [roomId]
+  );
+  const cap = Math.max(1, Number(capQ.rows[0]?.capacity_effective) || 1);
+  await client.query(
+    `
+    UPDATE hostel_rooms
+    SET room_status = CASE
+        WHEN (
+          SELECT COUNT(*) FROM hostel_beds bx
+          WHERE bx.room_id = $1 AND bx.deleted_at IS NULL
+            AND bx.bed_status IN ('occupied', 'reserved')
+        ) >= $2 THEN 'full'::character varying
+        ELSE 'available'::character varying
+      END,
+      updated_at = NOW()
+    WHERE id = $1
+    `,
+    [roomId, cap]
+  );
+};
+
 const chainRow = async (hostelId, floorId, roomId, bedId) => {
   const r = await query(
     `
@@ -170,6 +262,7 @@ const createHostelAssignment = async (req, res) => {
       security_deposit,
       remarks,
       assigned_by,
+      assignment_status,
     } = b;
 
     const ut =
@@ -215,13 +308,33 @@ const createHostelAssignment = async (req, res) => {
       );
     }
 
-    if (String(chain.bed_status) !== 'available') {
-      return errorResponse(res, 409, 'Bed is not available');
-    }
-
     let cOut =
       checkout_date != null && checkout_date !== '' ? String(checkout_date).trim() : null;
     if (cOut === '') cOut = null;
+
+    if (
+      assignment_status != null &&
+      String(assignment_status).trim() !== '' &&
+      cOut == null &&
+      !normalizeAssignmentStatus(assignment_status)
+    ) {
+      return errorResponse(
+        res,
+        400,
+        'assignment_status must be active, completed, or cancelled'
+      );
+    }
+
+    let statusIns = normalizeAssignmentStatus(assignment_status) || 'active';
+    if (cOut != null) {
+      statusIns = 'completed';
+    }
+    const occupyBed = statusIns === 'active';
+    const immediateComplete = statusIns === 'completed';
+
+    if (occupyBed && String(chain.bed_status) !== 'available') {
+      return errorResponse(res, 409, 'Bed is not available');
+    }
 
     const occ = await query(
       `
@@ -234,12 +347,11 @@ const createHostelAssignment = async (req, res) => {
     );
     const cap =
       Number(chain.capacity_effective) > 0 ? Number(chain.capacity_effective) : 1;
-    const immediateComplete = cOut != null;
-    if (!immediateComplete && (occ.rows[0]?.c ?? 0) >= cap) {
+    if (occupyBed && !immediateComplete && (occ.rows[0]?.c ?? 0) >= cap) {
       return errorResponse(res, 409, 'Room is at capacity; cannot assign another occupant');
     }
 
-    if (ut === 'student') {
+    if (occupyBed && ut === 'student') {
       const dup = await query(
         `
         SELECT id FROM hostel_assignments
@@ -255,7 +367,7 @@ const createHostelAssignment = async (req, res) => {
       if (!validateHostelGender(String(chain.hostel_gender).toLowerCase(), userGender)) {
         return errorResponse(res, 400, 'Student gender does not match hostel gender rule');
       }
-    } else if (ut === 'staff') {
+    } else if (occupyBed && ut === 'staff') {
       const dup = await query(
         `
         SELECT id FROM hostel_assignments
@@ -300,8 +412,7 @@ const createHostelAssignment = async (req, res) => {
     }
 
     const row = await executeTransaction(async (client) => {
-      const statusIns = immediateComplete ? 'completed' : 'active';
-      const checkoutIns = immediateComplete ? cOut : null;
+      const checkoutIns = statusIns === 'completed' ? cOut || ad : null;
 
       const ins = await client.query(
         `
@@ -334,7 +445,7 @@ const createHostelAssignment = async (req, res) => {
         ]
       );
 
-      if (!immediateComplete) {
+      if (occupyBed) {
         await client.query(
           `
           UPDATE hostel_beds SET bed_status = 'occupied', updated_at = NOW()
@@ -511,10 +622,111 @@ const updateHostelAssignment = async (req, res) => {
         throw err;
       }
       const a = curQ.rows[0];
-      if (String(a.assignment_status) !== 'active') {
-        const err = new Error('Only active assignments can be edited');
+      const prevStatus = String(a.assignment_status || '').toLowerCase();
+      let nextStatus =
+        b.assignment_status !== undefined &&
+        b.assignment_status !== null &&
+        String(b.assignment_status).trim() !== ''
+          ? normalizeAssignmentStatus(b.assignment_status)
+          : prevStatus;
+      if (
+        b.assignment_status !== undefined &&
+        b.assignment_status !== null &&
+        String(b.assignment_status).trim() !== '' &&
+        !nextStatus
+      ) {
+        const err = new Error('assignment_status must be active, completed, or cancelled');
         err.statusCode = 400;
         throw err;
+      }
+
+      const toYmd = (v) => {
+        if (v == null || v === '') return null;
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        const s = String(v).trim();
+        return s.length >= 10 ? s.slice(0, 10) : s || null;
+      };
+
+      if (prevStatus !== 'active') {
+        let ad = toYmd(a.assigned_date);
+        if (
+          b.assigned_date !== undefined &&
+          b.assigned_date !== null &&
+          String(b.assigned_date).trim() !== ''
+        ) {
+          ad = toYmd(b.assigned_date);
+        }
+        if (!ad) {
+          const err = new Error('assigned_date is required');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        let expOut =
+          b.expected_checkout_date !== undefined
+            ? b.expected_checkout_date === '' || b.expected_checkout_date === null
+              ? null
+              : toYmd(b.expected_checkout_date)
+            : toYmd(a.expected_checkout_date);
+
+        let checkoutDt =
+          b.checkout_date !== undefined
+            ? b.checkout_date === '' || b.checkout_date === null
+              ? null
+              : toYmd(b.checkout_date)
+            : toYmd(a.checkout_date);
+
+        let dep =
+          b.security_deposit !== undefined &&
+          b.security_deposit !== null &&
+          b.security_deposit !== ''
+            ? Number(b.security_deposit)
+            : Number(a.security_deposit);
+        if (dep !== dep || dep < 0) dep = 0;
+
+        let remarks =
+          b.remarks !== undefined
+            ? b.remarks === null || b.remarks === ''
+              ? null
+              : String(b.remarks)
+            : a.remarks;
+
+        if (expOut != null && String(expOut) < String(ad)) {
+          const err = new Error('expected_checkout_date must be on or after assigned_date');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (nextStatus === 'completed' && !checkoutDt) {
+          checkoutDt = ad;
+        }
+        if (checkoutDt != null && String(checkoutDt) < String(ad)) {
+          const err = new Error('checkout_date must be on or after assigned_date');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (nextStatus === 'active') {
+          await occupyAssignmentBedTx(client, Number(a.bed_id), Number(a.room_id));
+        }
+
+        const upd = await client.query(
+          `
+          UPDATE hostel_assignments
+          SET
+            assigned_date = $2::date,
+            expected_checkout_date = $3::date,
+            checkout_date = $4::date,
+            security_deposit = $5,
+            remarks = $6,
+            assignment_status = $7,
+            updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+          `,
+          [aid, ad, expOut, checkoutDt, dep, remarks, nextStatus]
+        );
+        return upd.rows[0];
       }
 
       const numOr = (v, fallback) => {
@@ -527,6 +739,13 @@ const updateHostelAssignment = async (req, res) => {
       let fid = numOr(b.floor_id, a.floor_id);
       let rid = numOr(b.room_id, a.room_id);
       let bid = numOr(b.bed_id, a.bed_id);
+
+      if (nextStatus !== 'active') {
+        hid = Number(a.hostel_id);
+        fid = Number(a.floor_id);
+        rid = Number(a.room_id);
+        bid = Number(a.bed_id);
+      }
 
       const chain = await chainRow(hid, fid, rid, bid);
       if (!chain) {
@@ -589,13 +808,6 @@ const updateHostelAssignment = async (req, res) => {
         }
       }
 
-      const toYmd = (v) => {
-        if (v == null || v === '') return null;
-        if (v instanceof Date) return v.toISOString().slice(0, 10);
-        const s = String(v).trim();
-        return s.length >= 10 ? s.slice(0, 10) : s || null;
-      };
-
       let ad =
         b.assigned_date !== undefined && b.assigned_date !== null && String(b.assigned_date).trim() !== ''
           ? toYmd(b.assigned_date)
@@ -632,6 +844,25 @@ const updateHostelAssignment = async (req, res) => {
         throw err;
       }
 
+      let checkoutDt =
+        b.checkout_date !== undefined
+          ? b.checkout_date === '' || b.checkout_date === null
+            ? null
+            : toYmd(b.checkout_date)
+          : toYmd(a.checkout_date);
+      if (nextStatus === 'completed' && !checkoutDt) {
+        checkoutDt = ad;
+      }
+      if (checkoutDt != null && String(checkoutDt) < String(ad)) {
+        const err = new Error('checkout_date must be on or after assigned_date');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (prevStatus === 'active' && nextStatus !== 'active') {
+        await releaseAssignmentBedTx(client, oldBid, oldRid);
+      }
+
       if (locChanged && (rid !== oldRid || bid !== oldBid)) {
         await client.query(
           `
@@ -662,13 +893,15 @@ const updateHostelAssignment = async (req, res) => {
           bed_id = $5,
           assigned_date = $6::date,
           expected_checkout_date = $7::date,
-          security_deposit = $8,
-          remarks = $9,
+          checkout_date = $8::date,
+          security_deposit = $9,
+          remarks = $10,
+          assignment_status = $11,
           updated_at = NOW()
         WHERE id = $1
         RETURNING *
         `,
-        [aid, hid, fid, rid, bid, ad, expOut, dep, remarks]
+        [aid, hid, fid, rid, bid, ad, expOut, checkoutDt, dep, remarks, nextStatus]
       );
       return upd.rows[0];
     });

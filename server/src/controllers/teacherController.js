@@ -6,6 +6,7 @@ const { canAccessClass, parseId, getAuthContext, isAdmin, resolveTeacherIdForUse
 const { createTeacherUser } = require('../utils/createPersonUser');
 const { resolveTeacherDocumentPath, sanitizeTenant } = require('../utils/teacherDocumentStorage');
 const { resolveAcademicYearId } = require('../utils/academicYear');
+const { enrichStaffProfileAllocations } = require('../services/profileAllocationDetailsService');
 
 async function upsertStaffTransportAllocation(client, staffId, staffAcademicYearId, transportPayload) {
   const routeId = Number(transportPayload?.route_id);
@@ -606,6 +607,8 @@ const getTeacherById = async (req, res) => {
         subjectName: item.subject_name,
       })),
     };
+
+    await enrichStaffProfileAllocations(enrichedRow, row.staff_id);
 
     return success(res, 200, 'Teacher fetched successfully', enrichedRow);
   } catch (error) {
