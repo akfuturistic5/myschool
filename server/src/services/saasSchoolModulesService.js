@@ -77,6 +77,14 @@ async function listPlanModuleRows(planId) {
   return r.rows || [];
 }
 
+function normalizeModuleRow(row) {
+  const show = !!row.show_in_menu;
+  return {
+    show_in_menu: show,
+    route_accessible: show ? !!row.route_accessible : false,
+  };
+}
+
 async function replacePlanModules(planId, rows) {
   const pid = parseInt(String(planId), 10);
   if (!Number.isFinite(pid)) throw new Error('Invalid plan id');
@@ -84,10 +92,11 @@ async function replacePlanModules(planId, rows) {
   for (const row of rows) {
     const k = String(row.module_key || '').trim();
     if (!SAAS_MODULE_KEYS.includes(k)) continue;
+    const flags = normalizeModuleRow(row);
     await masterQuery(
       `INSERT INTO saas_plan_modules (plan_id, module_key, show_in_menu, route_accessible)
        VALUES ($1, $2, $3, $4)`,
-      [pid, k, !!row.show_in_menu, !!row.route_accessible]
+      [pid, k, flags.show_in_menu, flags.route_accessible]
     );
   }
 }
@@ -99,10 +108,11 @@ async function replaceSchoolOverrides(schoolId, rows) {
   for (const row of rows) {
     const k = String(row.module_key || '').trim();
     if (!SAAS_MODULE_KEYS.includes(k)) continue;
+    const flags = normalizeModuleRow(row);
     await masterQuery(
       `INSERT INTO school_module_overrides (school_id, module_key, show_in_menu, route_accessible)
        VALUES ($1, $2, $3, $4)`,
-      [sid, k, !!row.show_in_menu, !!row.route_accessible]
+      [sid, k, flags.show_in_menu, flags.route_accessible]
     );
   }
 }

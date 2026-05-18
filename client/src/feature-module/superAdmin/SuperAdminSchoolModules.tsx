@@ -8,6 +8,8 @@ import {
 } from '../../core/data/redux/superAdminAuthSlice';
 import { SAAS_MODULE_CATALOG, type SaasModulesMap } from '../../core/utils/saasModuleKeys';
 import { all_routes } from '../router/all_routes';
+import { patchSaasModuleFlags } from './saasModuleUi';
+import { superAdminToast } from './superAdminToast';
 
 const SuperAdminSchoolModules = () => {
   const { id } = useParams<{ id: string }>();
@@ -54,14 +56,7 @@ const SuperAdminSchoolModules = () => {
   }, [schoolId, authChecked, isAuthenticated]);
 
   const updateFlag = (key: string, field: 'show_in_menu' | 'route_accessible', value: boolean) => {
-    setModules((prev) => {
-      if (!prev) return prev;
-      const cur = prev[key] || { show_in_menu: true, route_accessible: true };
-      return {
-        ...prev,
-        [key]: { ...cur, [field]: value },
-      };
-    });
+    setModules((prev) => (prev ? patchSaasModuleFlags(prev, key, field, value) : prev));
   };
 
   const handleSave = async () => {
@@ -75,11 +70,13 @@ const SuperAdminSchoolModules = () => {
         route_accessible: !!modules[key]?.route_accessible,
       }));
       const res = await superAdminApiService.putSchoolModuleOverrides(schoolId, overrides);
-      if (res.status !== 'SUCCESS') {
-        setError(res.message || 'Save failed');
+      if (res.status === 'SUCCESS') {
+        superAdminToast.success('Module overrides saved successfully');
+      } else {
+        superAdminToast.error(res.message || 'Save failed');
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Save failed');
+      superAdminToast.error(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);
     }
@@ -105,7 +102,7 @@ const SuperAdminSchoolModules = () => {
             Permissions view
           </button>
           <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(`/super-admin/schools/${schoolId}`)}>
-            School details
+            School view
           </button>
           <button type="button" className="btn btn-primary" disabled={saving || !modules} onClick={handleSave}>
             {saving ? 'Saving…' : 'Save overrides'}
@@ -149,6 +146,8 @@ const SuperAdminSchoolModules = () => {
                         className="form-check-input"
                         type="checkbox"
                         checked={!!modules[key]?.route_accessible}
+                        disabled={!modules[key]?.show_in_menu}
+                        title={modules[key]?.show_in_menu ? undefined : 'Enable menu first'}
                         onChange={(e) => updateFlag(key, 'route_accessible', e.target.checked)}
                       />
                     </div>

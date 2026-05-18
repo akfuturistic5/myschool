@@ -238,11 +238,19 @@ const SuperAdminSchoolPermissions = () => {
                 <div className="d-flex flex-wrap gap-2 mb-4">
                   <button
                     type="button"
-                    className="btn btn-sm btn-primary rounded-pill"
+                    className="btn btn-sm btn-outline-secondary rounded-pill"
                     onClick={() => navigate(`/super-admin/schools/${schoolDetail.id}`)}
                   >
-                    <i className="ti ti-settings me-1" />
-                    School settings
+                    <i className="ti ti-eye me-1" />
+                    View school
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary rounded-pill"
+                    onClick={() => navigate(`/super-admin/schools/${schoolDetail.id}/edit`)}
+                  >
+                    <i className="ti ti-edit me-1" />
+                    Edit
                   </button>
                   <button
                     type="button"

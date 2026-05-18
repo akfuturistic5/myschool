@@ -6,6 +6,7 @@ import {
   selectSuperAdminAuthChecked,
   selectSuperAdminIsAuthenticated,
 } from '../../core/data/redux/superAdminAuthSlice';
+import { superAdminToast } from './superAdminToast';
 
 interface Enquiry {
   id: number;
@@ -80,11 +81,12 @@ const SuperAdminEnquiries = () => {
       if (res.status === 'SUCCESS') {
         setForm({ contact_name: '', organization_name: '', email: '', phone: '', message: '' });
         await load();
+        superAdminToast.success('Enquiry added successfully');
       } else {
-        setError(res.message || 'Could not add');
+        superAdminToast.error(res.message || 'Could not add enquiry');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not add');
+      superAdminToast.error(err instanceof Error ? err.message : 'Could not add enquiry');
     } finally {
       setSubmitting(false);
     }
@@ -96,9 +98,14 @@ const SuperAdminEnquiries = () => {
         id,
         status as 'new' | 'contacted' | 'converted' | 'dismissed'
       );
-      if (res.status === 'SUCCESS') await load();
-    } catch {
-      /* ignore */
+      if (res.status === 'SUCCESS') {
+        await load();
+        superAdminToast.success('Enquiry status updated');
+      } else {
+        superAdminToast.error(res.message || 'Could not update status');
+      }
+    } catch (e: unknown) {
+      superAdminToast.error(e instanceof Error ? e.message : 'Could not update status');
     }
   };
 

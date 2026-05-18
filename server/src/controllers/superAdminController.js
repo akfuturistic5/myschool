@@ -881,6 +881,9 @@ const updateSchoolPlan = async (req, res) => {
       return errorResponse(res, 404, 'School not found');
     }
 
+    // Plan change: drop per-school overrides so effective modules match the new plan.
+    await masterQuery(`DELETE FROM school_module_overrides WHERE school_id = $1`, [id]);
+
     await writeSuperAdminAudit({
       superAdminId: req.superAdmin?.id,
       action: 'school_plan_updated',

@@ -156,17 +156,6 @@ const SuperAdminDashboard = () => {
         </div>
       )}
 
-      <div className="row g-3">
-        <div className="col-md-4">
-          <Link to={r.superAdminPlans} className="text-decoration-none">
-            <div className="sa-stat-card p-4 h-100 text-body">
-              <i className="ti ti-adjustments fs-2 mb-3 d-block" style={{ color: '#4f46e5' }} />
-              <div className="fw-semibold mb-1">Plans</div>
-              <p className="small text-muted mb-0">Shape default menus and module access for each subscription tier.</p>
-            </div>
-          </Link>
-        </div>
-      </div>
     </div>
   );
 };
