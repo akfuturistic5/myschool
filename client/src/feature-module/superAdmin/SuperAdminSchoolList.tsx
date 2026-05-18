@@ -15,6 +15,7 @@ import {
 } from '../../core/utils/passwordPolicy';
 import '../../style/icon/tabler-icons/webfont/tabler-icons.css';
 import './superAdminShell.css';
+import { superAdminToast } from './superAdminToast';
 
 interface School {
   id: number;
@@ -137,14 +138,18 @@ const SuperAdminSchoolList = () => {
           admin_email: '',
           admin_password: '',
         });
+        superAdminToast.success('School created successfully');
         if (row?.id) {
-          navigate(`${r.superAdminSchoolPermissions}?school=${row.id}`);
+          navigate(`/super-admin/schools/${row.id}`);
         }
       } else {
+        superAdminToast.error(res.message || 'Failed to create school');
         setCreateError(res.message || 'Failed to create school');
       }
     } catch (e: unknown) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create school');
+      const msg = e instanceof Error ? e.message : 'Failed to create school';
+      superAdminToast.error(msg);
+      setCreateError(msg);
     } finally {
       setCreating(false);
     }
@@ -155,10 +160,16 @@ const SuperAdminSchoolList = () => {
     setUpdatingId(school.id);
     try {
       const res = await superAdminApiService.updateSchoolStatus(school.id, nextStatus as 'active' | 'disabled');
-      if (res.status === 'SUCCESS') await loadSchools();
-      else setError(res.message || 'Failed to update school status');
+      if (res.status === 'SUCCESS') {
+        await loadSchools();
+        superAdminToast.success(
+          nextStatus === 'active' ? 'School enabled successfully' : 'School disabled successfully'
+        );
+      } else {
+        superAdminToast.error(res.message || 'Failed to update school status');
+      }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update school status');
+      superAdminToast.error(e instanceof Error ? e.message : 'Failed to update school status');
     } finally {
       setUpdatingId(null);
     }
@@ -194,7 +205,10 @@ const SuperAdminSchoolList = () => {
         }
       },
     });
-    if (result.isConfirmed) await loadSchools();
+    if (result.isConfirmed) {
+      await loadSchools();
+      superAdminToast.success('School deleted successfully');
+    }
   };
 
   return (
@@ -321,10 +335,18 @@ const SuperAdminSchoolList = () => {
                         <button
                           type="button"
                           className="btn btn-outline-secondary"
-                          title="School record"
+                          title="View school"
                           onClick={() => navigate(`/super-admin/schools/${s.id}`)}
                         >
-                          <i className="ti ti-id" />
+                          <i className="ti ti-eye" />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          title="Edit school"
+                          onClick={() => navigate(`/super-admin/schools/${s.id}/edit`)}
+                        >
+                          <i className="ti ti-edit" />
                         </button>
                         <button
                           type="button"

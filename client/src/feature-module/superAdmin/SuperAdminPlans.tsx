@@ -6,6 +6,8 @@ import {
   selectSuperAdminIsAuthenticated,
 } from '../../core/data/redux/superAdminAuthSlice';
 import { SAAS_MODULE_CATALOG, type SaasModulesMap } from '../../core/utils/saasModuleKeys';
+import { patchSaasModuleFlags } from './saasModuleUi';
+import { superAdminToast } from './superAdminToast';
 
 const BILLING_INTERVALS = [
   { value: 'monthly', label: 'Monthly' },
@@ -146,11 +148,7 @@ const SuperAdminPlans = () => {
   };
 
   const updateFlag = (key: string, field: 'show_in_menu' | 'route_accessible', value: boolean) => {
-    setModules((prev) => {
-      if (!prev) return prev;
-      const cur = prev[key] || { show_in_menu: true, route_accessible: true };
-      return { ...prev, [key]: { ...cur, [field]: value } };
-    });
+    setModules((prev) => (prev ? patchSaasModuleFlags(prev, key, field, value) : prev));
   };
 
   const saveModules = async () => {
@@ -158,11 +156,13 @@ const SuperAdminPlans = () => {
     setSaving(true);
     try {
       const res = await superAdminApiService.putPlanModules(selectedId, modules);
-      if (res.status !== 'SUCCESS') {
-        setError(res.message || 'Failed to save');
+      if (res.status === 'SUCCESS') {
+        superAdminToast.success('Plan modules saved successfully');
+      } else {
+        superAdminToast.error(res.message || 'Failed to save modules');
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save');
+      superAdminToast.error(e instanceof Error ? e.message : 'Failed to save modules');
     } finally {
       setSaving(false);
     }
@@ -181,11 +181,12 @@ const SuperAdminPlans = () => {
       });
       if (res.status === 'SUCCESS') {
         await loadPlans();
+        superAdminToast.success('Plan billing updated successfully');
       } else {
-        setBillingErr(res.message || 'Failed to save billing');
+        superAdminToast.error(res.message || 'Failed to save billing');
       }
     } catch (e: unknown) {
-      setBillingErr(e instanceof Error ? e.message : 'Failed to save billing');
+      superAdminToast.error(e instanceof Error ? e.message : 'Failed to save billing');
     } finally {
       setSavingBilling(false);
     }
@@ -212,11 +213,12 @@ const SuperAdminPlans = () => {
         setNewSlug('');
         setNewBilling(emptyBillingForm());
         await loadPlans();
+        superAdminToast.success('Plan created successfully');
       } else {
-        setCreateErr(res.message || 'Create failed');
+        superAdminToast.error(res.message || 'Create failed');
       }
     } catch (err: unknown) {
-      setCreateErr(err instanceof Error ? err.message : 'Create failed');
+      superAdminToast.error(err instanceof Error ? err.message : 'Create failed');
     }
   };
 
@@ -437,27 +439,32 @@ const SuperAdminPlans = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {SAAS_MODULE_CATALOG.map(({ key, label }) => (
-                          <tr key={key}>
-                            <td>{label}</td>
-                            <td>
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={!!modules[key]?.show_in_menu}
-                                onChange={(e) => updateFlag(key, 'show_in_menu', e.target.checked)}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={!!modules[key]?.route_accessible}
-                                onChange={(e) => updateFlag(key, 'route_accessible', e.target.checked)}
-                              />
-                            </td>
-                          </tr>
-                        ))}
+                        {SAAS_MODULE_CATALOG.map(({ key, label }) => {
+                          const menuOn = !!modules[key]?.show_in_menu;
+                          return (
+                            <tr key={key}>
+                              <td>{label}</td>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  checked={menuOn}
+                                  onChange={(e) => updateFlag(key, 'show_in_menu', e.target.checked)}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  checked={!!modules[key]?.route_accessible}
+                                  disabled={!menuOn}
+                                  title={menuOn ? undefined : 'Enable menu first'}
+                                  onChange={(e) => updateFlag(key, 'route_accessible', e.target.checked)}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
