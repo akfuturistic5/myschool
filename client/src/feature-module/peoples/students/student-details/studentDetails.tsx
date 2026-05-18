@@ -9,7 +9,7 @@ import { useLinkedStudentContext } from '../../../../core/hooks/useLinkedStudent
 import { apiService } from '../../../../core/services/apiService'
 import { useSelector } from 'react-redux'
 import { selectUser } from '../../../../core/data/redux/authSlice'
-import { isTeacherRole } from '../../../../core/utils/roleUtils'
+import { isTeacherRole, isHeadmasterRole, isAdministrativeRole } from '../../../../core/utils/roleUtils'
 
 interface StudentDetailsLocationState {
   studentId?: number
@@ -49,8 +49,10 @@ const StudentDetails = () => {
   const [medicalDocumentUrl, setMedicalDocumentUrl] = useState<string | null>(null)
 
   useEffect(() => {
-    // Skip API call for roles not authorized to view promotion history (End users)
-    if (!student?.id || isParentRole || isStudentRole) {
+    // Only call this API for staff/admin roles. End users (parents/students) are not authorized.
+    const isStaff = isTeacher || isHeadmasterRole(user) || isAdministrativeRole(user);
+    
+    if (!student?.id || !isStaff) {
       setPromotionRows([])
       setHistoryError(null)
       return
@@ -70,6 +72,11 @@ const StudentDetails = () => {
       })
       .catch((err: any) => {
         if (cancelled) return
+        // Don't show error for 403, just hide the section as it means the user isn't authorized despite the frontend check
+        if (err?.response?.status === 403 || err?.status === 403 || String(err?.message).includes('403')) {
+           setPromotionRows([])
+           return;
+        }
         setHistoryError(err?.message || 'Failed to load promotion history')
         setPromotionRows([])
       })
@@ -79,7 +86,8 @@ const StudentDetails = () => {
     return () => {
       cancelled = true
     }
-  }, [student?.id, role])
+  }, [student?.id, isTeacher, user])
+
 
   useEffect(() => {
     let cancelled = false
@@ -129,6 +137,7 @@ const StudentDetails = () => {
       cancelled = true
     }
   }, [student?.father_image_url, student?.mother_image_url, student?.guardian_image_url, student?.medical_document_path])
+
   const historyTableRows = useMemo(
     () =>
       promotionRows.map((row: any) => ({
@@ -488,8 +497,8 @@ const StudentDetails = () => {
               </div>
               {/* /Section Teacher Information */}
 
-              {/* Promotion History */}
-              {!isParentRole && !isStudentRole && (
+              {/* Promotion History - only for staff */}
+              {(isTeacher || isHeadmasterRole(user) || isAdministrativeRole(user)) && (promotionRows.length > 0 || historyLoading || historyError) && (
                 <div className="card">
                   <div className="card-header">
                     <h5>Promotion History</h5>
@@ -497,10 +506,7 @@ const StudentDetails = () => {
                   <div className="card-body">
                     {historyLoading && <p className="text-muted mb-0">Loading promotion history...</p>}
                     {historyError && <div className="alert alert-danger mb-0">{historyError}</div>}
-                    {!historyLoading && !historyError && historyTableRows.length === 0 && (
-                      <p className="text-muted mb-0">No promotion history available for this student.</p>
-                    )}
-                    {!historyLoading && !historyError && historyTableRows.length > 0 && (
+                    {!historyLoading && !historyError && promotionRows.length > 0 && (
                       <div className="table-responsive">
                         <table className="table table-bordered align-middle mb-0">
                           <thead>
@@ -551,7 +557,7 @@ const StudentDetails = () => {
                   </div>
                 </div>
               )}
-              {/* /Promotion History */}
+
             </div>
             {/* Address */}
             <div className="col-xxl-12 d-flex">

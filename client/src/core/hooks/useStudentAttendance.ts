@@ -17,7 +17,7 @@ export interface StudentAttendanceData {
   };
 }
 
-export function useStudentAttendance(studentId: number | null) {
+export function useStudentAttendance(studentId: number | null, academicYearId: number | string | null = null) {
   const [data, setData] = useState<StudentAttendanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function useStudentAttendance(studentId: number | null) {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiService.getStudentAttendance(studentId);
+      const res = await apiService.getStudentAttendance(studentId, academicYearId);
       if (res?.status === 'SUCCESS' && res.data) {
         const payload = res.data as { records?: unknown; summary?: StudentAttendanceData['summary'] } | unknown[];
         const records = Array.isArray((payload as { records?: unknown })?.records)
@@ -61,7 +61,7 @@ export function useStudentAttendance(studentId: number | null) {
       try {
         setLoading(true);
         setError(null);
-        const res = await apiService.getStudentAttendance(studentId);
+        const res = await apiService.getStudentAttendance(studentId, academicYearId);
         if (mounted && res?.status === 'SUCCESS' && res.data) {
           const payload = res.data as { records?: unknown; summary?: StudentAttendanceData['summary'] } | unknown[];
           const records = Array.isArray((payload as { records?: unknown })?.records)
@@ -88,7 +88,7 @@ export function useStudentAttendance(studentId: number | null) {
     return () => {
       mounted = false;
     };
-  }, [studentId]);
+  }, [studentId, academicYearId]);
 
   return { data, loading, error, refetch };
 }

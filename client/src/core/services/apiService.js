@@ -88,8 +88,8 @@ class ApiService {
     const method = (options.method || 'GET').toUpperCase();
     const bodyKey = options.body
       ? (typeof options.body === 'string'
-          ? options.body
-          : JSON.stringify(options.body)).substring(0, 120)
+        ? options.body
+        : JSON.stringify(options.body)).substring(0, 120)
       : '';
     const requestKey = `${method}:${endpoint}:${bodyKey}`;
 
@@ -162,7 +162,7 @@ class ApiService {
 
       if (!response.ok) {
         if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
-          this.logout().catch(() => {});
+          this.logout().catch(() => { });
           window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
         }
         // Handle rate limiting (429) specifically
@@ -606,12 +606,22 @@ class ApiService {
     return this.makeRequest(`/students/${studentId}/login-details`);
   }
 
-  async getStudentAttendance(studentId) {
-    return this.makeRequest(`/students/${studentId}/attendance`);
+  /**
+   * @param {number|string} studentId
+   * @param {number|string|null} [academicYearId]
+   */
+  async getStudentAttendance(studentId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/students/${studentId}/attendance${qs}`);
   }
 
-  async getStudentExamResults(studentId) {
-    return this.makeRequest(`/students/${studentId}/exam-results`);
+  /**
+   * @param {number|string} studentId
+   * @param {number|string|null} [academicYearId]
+   */
+  async getStudentExamResults(studentId, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/students/${studentId}/exam-results${qs}`);
   }
 
   async getStudentsLatestExamSummary(studentIds) {
@@ -1448,7 +1458,7 @@ class ApiService {
     });
     if (!response.ok) {
       if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
-        this.logout().catch(() => {});
+        this.logout().catch(() => { });
         window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
       }
       const errorText = await response.text();
@@ -1485,7 +1495,7 @@ class ApiService {
     });
     if (!response.ok) {
       if (response.status === 401 && shouldGlobalSessionExpireOn401(url)) {
-        this.logout().catch(() => {});
+        this.logout().catch(() => { });
         window.dispatchEvent(new CustomEvent('auth:sessionExpired'));
       }
       const errorText = await response.text();
@@ -2128,6 +2138,9 @@ class ApiService {
   async getMyLeaveApplications(params = {}) {
     const searchParams = new URLSearchParams();
     if (params.limit != null) searchParams.set('limit', params.limit);
+    if (params.academic_year_id != null || params.academicYearId != null) {
+      searchParams.set('academic_year_id', params.academic_year_id || params.academicYearId);
+    }
     const qs = searchParams.toString();
     return this.makeRequest(`/leave-applications/me${qs ? `?${qs}` : ''}`);
   }
@@ -2158,7 +2171,7 @@ class ApiService {
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
-    
+
     const qs = searchParams.toString();
     return this.makeRequest(`/transport/routes${qs ? `?${qs}` : ''}`);
   }
@@ -2197,7 +2210,7 @@ class ApiService {
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
-    
+
     const qs = searchParams.toString();
     return this.makeRequest(`/transport/pickup-points${qs ? `?${qs}` : ''}`);
   }
@@ -2233,7 +2246,7 @@ class ApiService {
     if (params.academic_year_id != null) searchParams.set('academic_year_id', params.academic_year_id);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
-    
+
     const qs = searchParams.toString();
     return this.makeRequest(`/transport/vehicles${qs ? `?${qs}` : ''}`);
   }
@@ -2268,7 +2281,7 @@ class ApiService {
     if (params.status) searchParams.set('status', params.status);
     if (params.sortField) searchParams.set('sortField', params.sortField);
     if (params.sortOrder) searchParams.set('sortOrder', params.sortOrder);
-    
+
     const qs = searchParams.toString();
     return this.makeRequest(`/transport/drivers${qs ? `?${qs}` : ''}`);
   }

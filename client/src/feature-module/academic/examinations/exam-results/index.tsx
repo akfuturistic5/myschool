@@ -29,6 +29,8 @@ const ExamResult = () => {
       r.includes("guardian")
   );
   const teacherOnly = roleTokens.some((r) => r === "teacher" || r.includes("teacher"));
+  const isStudent = roleTokens.some((r) => r === "student" || r.includes("student"));
+  const isParent = roleTokens.some((r) => r === "parent" || r.includes("parent") || r === "guardian" || r.includes("guardian"));
 
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>("");
@@ -88,9 +90,36 @@ const ExamResult = () => {
           
           setExams(nextExams);
           setAvailableStudents(nextStudents);
+
+          const hasMultipleChildren = nextStudents.length > 1;
+
+          // Auto-select if there is only one student
+          if (nextStudents.length === 1 && !selectedStudentId) {
+             const onlyStudentId = String(nextStudents[0].id);
+             setSelectedStudentId(onlyStudentId);
+             // If we already have an exam selected (e.g. from query or state), load results
+             if (selectedExamId) {
+               loadResults(selectedExamId, onlyStudentId);
+             }
+          } else if (isStudent && nextStudents.length === 0 && selectedExamId) {
+             // For students, even if students array is empty, try to load if exam is selected
+             loadResults(selectedExamId);
+          }
           
-          // Removed auto-selection to allow placeholder display
-          setMessage(nextExams.length > 0 ? "Please select a child and an examination to view results." : "No exams found for this session.");
+          let selectMsg = "";
+          if (nextExams.length > 0) {
+            if (isStudent) {
+              selectMsg = "Please select an examination to view your results.";
+            } else if (hasMultipleChildren) {
+              selectMsg = "Please select a child and an examination to view results.";
+            } else {
+              selectMsg = "Please select an examination to view results.";
+            }
+          } else {
+            selectMsg = "No exams found for this session.";
+          }
+
+          setMessage(selectMsg);
           return;
         }
 
@@ -1338,7 +1367,9 @@ const ExamResult = () => {
             <div className="row g-3 align-items-end">
               {selfOnly && availableStudents.length > 1 && (
                 <div className="col-md-4">
-                  <label className="form-label text-muted small text-uppercase fw-bold mb-1">Select Child</label>
+                  <label className="form-label text-muted small text-uppercase fw-bold mb-1">
+                    {roleTokens.some((r) => r === "student" || r.includes("student")) ? "Select Student" : "Select Child"}
+                  </label>
                   <select
                     className="form-select form-select-lg border-2"
                     value={selectedStudentId}
@@ -1346,14 +1377,19 @@ const ExamResult = () => {
                       const val = e.target.value;
                       setSelectedStudentId(val);
                       if (selfOnly && val && selectedExamId) {
-                         loadResults(selectedExamId, val);
+                        loadResults(selectedExamId, val);
+                      } else if (selfOnly && !val && isStudent && selectedExamId) {
+                        // For students, even if student selector is empty/hidden, we can load if exam is selected
+                        loadResults(selectedExamId);
                       } else {
-                         setRows([]);
-                         setActiveStudentInfo(null);
+                        setRows([]);
+                        setActiveStudentInfo(null);
                       }
                     }}
                   >
-                    <option value="">Select Child</option>
+                    <option value="">
+                      {roleTokens.some((r) => r === "student" || r.includes("student")) ? "Select Student" : "Select Child"}
+                    </option>
                     {availableStudents.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} ({s.admission_no})
@@ -1371,7 +1407,7 @@ const ExamResult = () => {
                     const val = e.target.value;
                     setSelectedExamId(val);
                     if (selfOnly) {
-                      if (val && selectedStudentId) {
+                      if (val && (selectedStudentId || isStudent)) {
                         loadResults(val, selectedStudentId);
                       } else {
                         setRows([]);

@@ -93,7 +93,7 @@ export const useLeaveApplications = (options = {}) => {
           student_id: studentId != null ? studentId : undefined,
         });
       } else if (studentOnly) {
-        response = await apiService.getMyLeaveApplications({ limit });
+        response = await apiService.getMyLeaveApplications({ limit, academicYearId });
       } else if (studentId != null) {
         // Admin-only endpoint - only call when role is confirmed (avoids 403 when role loading)
         if (!canUseAdminList) {

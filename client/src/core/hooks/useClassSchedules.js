@@ -67,15 +67,15 @@ export const useClassSchedules = (params = {}) => {
 
       const response = useClassEndpoint
         ? await apiService.getTimetableForClass({
-            academicYearId,
-            classId: Number(classId),
-            sectionId: Number(sectionId),
-          })
+          academicYearId,
+          classId: Number(classId),
+          sectionId: Number(sectionId),
+        })
         : await apiService.getClassSchedulesScoped({
-            academicYearId,
-            classId: classId != null ? Number(classId) : undefined,
-            sectionId: sectionId != null ? Number(sectionId) : undefined,
-          });
+          academicYearId,
+          classId: classId != null ? Number(classId) : undefined,
+          sectionId: sectionId != null ? Number(sectionId) : undefined,
+        });
 
       let list = [];
       let slotList = [];

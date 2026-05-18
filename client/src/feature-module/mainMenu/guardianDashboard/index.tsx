@@ -17,10 +17,20 @@ const GuardianDashboard = () => {
   const { leaveApplications: wardLeaves, loading: leaveLoading } = useGuardianWardLeaves({ limit: 20 });
   const { upcomingEvents, completedEvents, loading: eventsLoading } = useEvents({ forDashboard: true, limit: 5 });
 
-  const wards = guardians ?? [];
+  const wards = (guardians as any[]) ?? [];
   const firstWard = wards[0];
   const activeWard = firstWard ?? null;
-  const { data: feeData } = useStudentFees(activeWard?.student_id ?? null);
+  const { data: feeDataRaw } = useStudentFees(activeWard?.student_id ?? null);
+  const feeData = useMemo(() => {
+    const raw = feeDataRaw as any;
+    if (!raw || !Array.isArray(raw) || raw.length === 0) return null;
+    const first = raw[0];
+    return {
+      totalDue: Number(first.total_payable || 0),
+      totalPaid: Number(first.total_paid || 0),
+      totalOutstanding: Number(first.balance_amount || 0),
+    };
+  }, [feeDataRaw]);
   const { avatarSrc: authAvatarSrc, hasAvatar: hasAuthAvatar } = useAuthAvatar();
 
   const displayGuardian = activeWard ?? firstWard;
@@ -279,12 +289,12 @@ const GuardianDashboard = () => {
                       <div className="card-body py-1">
                         {feeData ? (
                           <div>
-                            <p className="mb-2"><strong>Total Due:</strong> ${(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
-                            <p className="mb-2"><strong>Total Paid:</strong> ${(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                            <p className="mb-2"><strong>Total Due:</strong> ₹{(feeData.totalDue ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
+                            <p className="mb-2"><strong>Total Paid:</strong> ₹{(feeData.totalPaid ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</p>
                             <p className="mb-0">
                               <strong>Outstanding:</strong>{" "}
                               <span className={feeData.totalOutstanding > 0 ? "text-danger" : "text-success"}>
-                                ${(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                ₹{(feeData.totalOutstanding ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                               </span>
                             </p>
                             {feeData.totalOutstanding > 0 && (

@@ -387,17 +387,28 @@ const Profile = () => {
                       </span>
                       <div className="drag-upload-btn bg-transparent me-0 border-0">
                         <p className="upload-btn">
-                          <span>Click to Upload</span> or drag and drop
+                          {isEndUser ? (
+                            <span>Official Photo Restricted</span>
+                          ) : (
+                            <><span>Click to Upload</span> or drag and drop</>
+                          )}
                         </p>
-                        <h6>JPG or PNG</h6>
-                        <h6>(Max 450 x 450 px)</h6>
+                        {!isEndUser && (
+                          <>
+                            <h6>JPG or PNG</h6>
+                            <h6>(Max 450 x 450 px)</h6>
+                          </>
+                        )}
+                        {isEndUser && (
+                          <h6 className="text-muted small">Please contact the school office to update your official photo.</h6>
+                        )}
                       </div>
                       <input
                         type="file"
                         className="form-control"
                         accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                         id="image_sign"
-                        disabled={avatarUploading || !canEdit || meLoading}
+                        disabled={avatarUploading || !canEdit || meLoading || isEndUser}
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           e.currentTarget.value = "";
@@ -411,9 +422,9 @@ const Profile = () => {
                       <button
                         type="button"
                         className="profile-avatar-delete-btn"
-                        disabled={!hasProfileAvatar || avatarUploading || !canEdit || meLoading}
+                        disabled={!hasProfileAvatar || avatarUploading || !canEdit || meLoading || isEndUser}
                         onClick={() => {
-                          if (!hasProfileAvatar || avatarUploading || !canEdit || meLoading) return;
+                          if (!hasProfileAvatar || avatarUploading || !canEdit || meLoading || isEndUser) return;
                           onRemoveAvatar();
                         }}
                       >
