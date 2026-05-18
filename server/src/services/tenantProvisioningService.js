@@ -750,8 +750,9 @@ async function createTenantDatabase(dbName, schoolName = null) {
     try {
       await pool.query(`DROP DATABASE IF EXISTS "${dbName}"`);
     } catch { /* ignore */ }
+    const templateLabel = path.basename(resolveProvisioningTemplatePath());
     throw new Error(
-      `Failed to provision tenant database "${dbName}" from template_schema.sql: ${err.message}`
+      `Failed to provision tenant database "${dbName}" (template: ${templateLabel}): ${err.message}`
     );
   } finally {
     await tenantPool.end();
