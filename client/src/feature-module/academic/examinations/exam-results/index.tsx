@@ -266,6 +266,228 @@ const ExamResult = () => {
     return { schoolName, schoolAddress, logoUrl, phone, email };
   };
 
+  const getResultSheetDensityClass = (subjectCount: number) => {
+    if (subjectCount >= 16) return "sheet-ultra-compact";
+    if (subjectCount >= 12) return "sheet-compact";
+    return "";
+  };
+
+  const getResultPrintStyles = (options: { multiSheet?: boolean } = {}) => {
+    const { multiSheet = false } = options;
+    const sheetBreakRule = multiSheet
+      ? "page-break-after: always; break-after: page;"
+      : "page-break-after: auto; break-after: auto;";
+
+    return `
+      @page { size: A4 portrait; margin: 8mm; }
+      html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fb; color: #333; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
+
+      .sheet {
+        background: white;
+        width: 210mm;
+        min-height: 0;
+        margin: 0 auto;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        ${sheetBreakRule}
+      }
+      .sheet:last-child { page-break-after: avoid; break-after: avoid; }
+
+      .header {
+        background: #1a337e;
+        padding: 8mm 12mm 10mm;
+        color: white;
+        flex-shrink: 0;
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .report-content {
+        padding: 8mm 12mm 4mm;
+        flex: 1 1 auto;
+      }
+
+      .logo { height: 72px; width: auto; max-width: 72px; object-fit: contain; }
+      .logo-placeholder { height: 72px; width: 72px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; flex-shrink: 0; }
+
+      .school-info { flex: 1; min-width: 0; }
+      .school-name { margin: 0; font-size: 26px; line-height: 1.15; color: white; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 800; }
+      .school-contact { margin: 4px 0 0; font-size: 12px; line-height: 1.4; color: #cbd5e0; }
+
+      .subtitle-badge {
+        display: inline-block;
+        background: #f8c12e;
+        color: #1a337e;
+        padding: 5px 14px;
+        border-radius: 4px;
+        font-weight: 800;
+        font-size: 11px;
+        margin-top: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .student-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px 18px;
+        background: #f8faff;
+        padding: 16px 18px;
+        border-radius: 12px;
+        margin-bottom: 18px;
+        border: 1px solid #e1e8f5;
+      }
+
+      .meta-item { display: flex; flex-direction: column; min-width: 0; }
+      .meta-item .label { font-size: 10px; font-weight: 800; color: #8898aa; text-transform: uppercase; margin-bottom: 4px; }
+      .meta-item .value { font-size: 14px; font-weight: 600; color: #1a337e; line-height: 1.3; word-break: break-word; }
+
+      .marks-summary-block {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .marks-summary-block .results-table { margin-bottom: 14px; }
+
+      .results-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; table-layout: fixed; }
+      .results-table th {
+        background: #1a337e;
+        color: white;
+        padding: 10px 12px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        text-align: left;
+      }
+      .results-table td {
+        padding: 9px 12px;
+        border-bottom: 1px solid #edf2f9;
+        font-size: 12px;
+        line-height: 1.35;
+        color: #2d3748;
+        word-break: break-word;
+      }
+      .results-table tr:nth-child(even) { background: #fcfdfe; }
+      .results-table tbody tr { break-inside: avoid; page-break-inside: avoid; }
+
+      .text-center { text-align: center; }
+      .text-right { text-align: right; }
+      .fw-bold { font-weight: 700; }
+      .text-success { color: #2dce89; }
+      .text-danger { color: #f5365c; }
+
+      .result-bottom {
+        flex-shrink: 0;
+        padding: 0 12mm 8mm;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .summary-band {
+        display: flex;
+        justify-content: space-between;
+        background: #1a337e;
+        padding: 16px 14px;
+        border-radius: 12px;
+        color: white;
+        margin-bottom: 0;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .summary-item { text-align: center; flex: 1; min-width: 0; }
+      .summary-item .s-label { display: block; font-size: 10px; font-weight: 700; opacity: 0.85; text-transform: uppercase; margin-bottom: 5px; }
+      .summary-item .s-value { font-size: 17px; font-weight: 800; line-height: 1.2; }
+      .summary-item .s-value.highlight { color: #f8c12e; }
+
+      .footer-signatures {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 28px;
+        padding: 0 12px;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .sig-box { text-align: center; flex: 1; max-width: 160px; }
+      .sig-line { border-top: 2px solid #333; margin-bottom: 8px; }
+      .sig-box span { font-size: 11px; font-weight: 700; color: #1a337e; display: block; }
+
+      .print-footer {
+        margin-top: 16px;
+        text-align: center;
+        font-size: 10px;
+        color: #999;
+        border-top: 1px solid #eee;
+        padding-top: 10px;
+        line-height: 1.4;
+      }
+
+      .sheet-compact .header { padding: 6mm 10mm 8mm; }
+      .sheet-compact .logo, .sheet-compact .logo-placeholder { height: 60px; width: 60px; max-width: 60px; }
+      .sheet-compact .school-name { font-size: 22px; }
+      .sheet-compact .school-contact { font-size: 11px; }
+      .sheet-compact .report-content { padding: 6mm 10mm 3mm; }
+      .sheet-compact .student-meta { padding: 12px 14px; margin-bottom: 14px; gap: 10px 14px; }
+      .sheet-compact .meta-item .value { font-size: 13px; }
+      .sheet-compact .results-table th { padding: 8px 10px; font-size: 9px; }
+      .sheet-compact .results-table td { padding: 7px 10px; font-size: 11px; }
+      .sheet-compact .summary-band { padding: 13px 12px; }
+      .sheet-compact .summary-item .s-value { font-size: 15px; }
+      .sheet-compact .footer-signatures { margin-top: 22px; }
+
+      .sheet-ultra-compact .header { padding: 5mm 9mm 7mm; }
+      .sheet-ultra-compact .logo, .sheet-ultra-compact .logo-placeholder { height: 52px; width: 52px; max-width: 52px; }
+      .sheet-ultra-compact .school-name { font-size: 19px; }
+      .sheet-ultra-compact .school-contact { font-size: 10px; }
+      .sheet-ultra-compact .report-content { padding: 5mm 9mm 2mm; }
+      .sheet-ultra-compact .student-meta { padding: 10px 12px; margin-bottom: 12px; }
+      .sheet-ultra-compact .meta-item .label { font-size: 9px; }
+      .sheet-ultra-compact .meta-item .value { font-size: 12px; }
+      .sheet-ultra-compact .results-table { margin-bottom: 12px; }
+      .sheet-ultra-compact .results-table th { padding: 6px 8px; font-size: 8px; }
+      .sheet-ultra-compact .results-table td { padding: 5px 8px; font-size: 10px; }
+      .sheet-ultra-compact .summary-item .s-value { font-size: 14px; }
+      .sheet-ultra-compact .footer-signatures { margin-top: 16px; }
+
+      @media print {
+        html, body { background: white !important; height: auto !important; overflow: visible !important; }
+        .sheet {
+          box-shadow: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          width: 100% !important;
+          min-height: calc(297mm - 16mm) !important;
+          justify-content: flex-start !important;
+        }
+        .report-content {
+          flex: 0 0 auto !important;
+        }
+        .result-bottom {
+          margin-top: auto !important;
+        }
+        .marks-summary-block,
+        .result-bottom,
+        .summary-band,
+        .footer-signatures,
+        .print-footer {
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+        }
+        .results-table thead { display: table-header-group; }
+        .results-table tr { break-inside: avoid; page-break-inside: avoid; }
+      }
+    `;
+  };
+
   const buildPdfStudentPage = (doc: any, row: any, detail: any, schoolInfo: any) => {
     const { schoolName, schoolAddress, logoUrl, phone, email } = schoolInfo;
     const examLabel = detail.examLabel || detail.examName || "Exam";
@@ -275,55 +497,65 @@ const ExamResult = () => {
     const innerWidth = pageWidth - margin * 2;
     let y = 34;
 
+    const subjectRows = detail.subjects || [];
+    const subjectCount = subjectRows.length;
+    const ultraCompact = subjectCount >= 16;
+    const compact = ultraCompact || subjectCount >= 12;
+    const tableFontSize = ultraCompact ? 7.5 : compact ? 8 : 9;
+    const tableCellPadding = ultraCompact ? 3.5 : compact ? 4.5 : 6;
+
     // Header Background - Full Bleed with Top Margin
-    const headerHeight = 110;
-    const headerTop = 15;
+    const headerHeight = ultraCompact ? 95 : compact ? 102 : 108;
+    const headerTop = 14;
     doc.setFillColor(26, 51, 126);
     doc.rect(0, headerTop, pageWidth, headerHeight, "F");
+
+    const logoSize = ultraCompact ? 48 : compact ? 52 : 56;
 
     // School Logo or Placeholder
     if (logoUrl) {
       try {
-        doc.addImage(logoUrl, "PNG", margin, headerTop + 18, 55, 55);
+        doc.addImage(logoUrl, "PNG", margin, headerTop + 14, logoSize, logoSize);
       } catch (e) {
         doc.setFillColor(255, 255, 255, 0.1);
-        doc.roundedRect(margin, headerTop + 18, 55, 55, 5, 5, "F");
+        doc.roundedRect(margin, headerTop + 14, logoSize, logoSize, 5, 5, "F");
         doc.setDrawColor(255, 255, 255, 0.2);
-        doc.roundedRect(margin, headerTop + 18, 55, 55, 5, 5, "S");
+        doc.roundedRect(margin, headerTop + 14, logoSize, logoSize, 5, 5, "S");
       }
     }
 
-    const textStartX = logoUrl ? margin + 80 : margin;
+    const textStartX = logoUrl ? margin + logoSize + 18 : margin;
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.text(String(schoolName || "EDUCATIONAL INSTITUTION").toUpperCase(), textStartX, headerTop + 42);
+    doc.setFontSize(ultraCompact ? 18 : compact ? 20 : 22);
+    doc.text(String(schoolName || "EDUCATIONAL INSTITUTION").toUpperCase(), textStartX, headerTop + 38);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
+    doc.setFontSize(ultraCompact ? 9 : 10);
     doc.setTextColor(200, 210, 255);
     const displayAddr = schoolAddress === "Address Details Not Configured"
       ? "Institutional Address Details | Contact Information Not Configured"
       : schoolAddress;
-    doc.text(String(displayAddr), textStartX, headerTop + 56);
+    doc.text(String(displayAddr), textStartX, headerTop + 48);
 
     if (phone || email) {
-      doc.text(`${phone ? `Phone: ${phone}` : ""} ${email ? ` | Email: ${email}` : ""}`, textStartX, headerTop + 68);
+      doc.text(`${phone ? `Phone: ${phone}` : ""} ${email ? ` | Email: ${email}` : ""}`, textStartX, headerTop + 58);
     }
 
     doc.setFillColor(248, 193, 46); // Gold accent for subtitle
-    doc.roundedRect(textStartX, headerTop + 80, 220, 18, 4, 4, "F");
+    doc.roundedRect(textStartX, headerTop + 66, 210, 16, 4, 4, "F");
     doc.setTextColor(26, 51, 126);
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setFont("helvetica", "bold");
-    doc.text("OFFICIAL STUDENT PROGRESS REPORT", textStartX + 12, headerTop + 92);
+    doc.text("OFFICIAL STUDENT PROGRESS REPORT", textStartX + 10, headerTop + 77);
 
-    y = headerTop + headerHeight + 35;
+    y = headerTop + headerHeight + 26;
 
     // Student Meta Data Box
+    const metaBoxHeight = ultraCompact ? 58 : compact ? 62 : 68;
     doc.setFillColor(248, 250, 255);
     doc.setDrawColor(225, 232, 245);
-    doc.roundedRect(margin, y, pageWidth - margin * 2, 70, 12, 12, "FD");
+    doc.roundedRect(margin, y, pageWidth - margin * 2, metaBoxHeight, 10, 10, "FD");
 
     doc.setTextColor(136, 152, 170);
     doc.setFontSize(9);
@@ -334,28 +566,32 @@ const ExamResult = () => {
     const meta2 = margin + metaColWidth + 15;
     const meta3 = margin + metaColWidth * 2 + 15;
 
-    doc.text("STUDENT NAME", meta1, y + 18);
-    doc.text("ADMISSION NO", meta2, y + 18);
-    doc.text("ROLL NUMBER", meta3, y + 18);
+    const metaLabelRow1 = y + (ultraCompact ? 14 : compact ? 15 : 17);
+    const metaValueRow1 = y + (ultraCompact ? 24 : compact ? 26 : 30);
+    const metaLabelRow2 = y + (ultraCompact ? 38 : compact ? 40 : 44);
+    const metaValueRow2 = y + (ultraCompact ? 50 : compact ? 52 : 58);
 
-    doc.text("EXAMINATION", meta1, y + 48);
-    doc.text("CLASS / SECTION", meta2, y + 48);
-    doc.text("REPORT DATE", meta3, y + 48);
+    doc.text("STUDENT NAME", meta1, metaLabelRow1);
+    doc.text("ADMISSION NO", meta2, metaLabelRow1);
+    doc.text("ROLL NUMBER", meta3, metaLabelRow1);
+
+    doc.text("EXAMINATION", meta1, metaLabelRow2);
+    doc.text("CLASS / SECTION", meta2, metaLabelRow2);
+    doc.text("REPORT DATE", meta3, metaLabelRow2);
 
     doc.setTextColor(26, 51, 126);
-    doc.setFontSize(11);
+    doc.setFontSize(ultraCompact ? 10 : 11);
     doc.setFont("helvetica", "bold");
-    doc.text(String(row.student_name || "-"), meta1, y + 33);
-    doc.text(String(row.admission_no || row.admission_number || "-"), meta2, y + 33);
-    doc.text(String(row.roll_number || "-"), meta3, y + 33);
+    doc.text(String(row.student_name || "-"), meta1, metaValueRow1);
+    doc.text(String(row.admission_no || row.admission_number || "-"), meta2, metaValueRow1);
+    doc.text(String(row.roll_number || "-"), meta3, metaValueRow1);
 
-    doc.text(String(examLabel), meta1, y + 63);
-    doc.text(String(selectedClassSectionLabel), meta2, y + 63);
-    doc.text(formatDate(new Date()), meta3, y + 63);
+    doc.text(String(examLabel), meta1, metaValueRow2);
+    doc.text(String(selectedClassSectionLabel), meta2, metaValueRow2);
+    doc.text(formatDate(new Date()), meta3, metaValueRow2);
 
-    y += 90;
+    y += metaBoxHeight + 18;
 
-    const subjectRows = detail.subjects || [];
     autoTable(doc, {
       startY: y,
       theme: "grid",
@@ -370,21 +606,24 @@ const ExamResult = () => {
         s.isAbsent ? "ABSENT" : (s.marksObtained ?? "-"),
         s.result || "-",
       ]),
-      headStyles: { fillColor: [26, 51, 126], textColor: [255, 255, 255], fontStyle: 'bold' },
-      styles: { fontSize: 8, cellPadding: 6 },
+      headStyles: { fillColor: [26, 51, 126], textColor: [255, 255, 255], fontStyle: "bold", fontSize: tableFontSize },
+      styles: { fontSize: tableFontSize, cellPadding: tableCellPadding, overflow: "linebreak" },
       columnStyles: {
-        3: { halign: 'center' },
-        4: { halign: 'center' },
-        5: { halign: 'center', fontStyle: 'bold' },
-        6: { halign: 'center', fontStyle: 'bold' }
-      }
+        0: { cellWidth: innerWidth * 0.28 },
+        3: { halign: "center" },
+        4: { halign: "center" },
+        5: { halign: "center", fontStyle: "bold" },
+        6: { halign: "center", fontStyle: "bold" },
+      },
     });
 
-    const summaryY = ((doc as any).lastAutoTable?.finalY || y) + 25;
     const summary = detail.summary || {};
+    const summaryBoxHeight = ultraCompact ? 44 : compact ? 48 : 52;
+    const summaryGap = ultraCompact ? 14 : compact ? 16 : 20;
+    let summaryY = ((doc as any).lastAutoTable?.finalY || y) + summaryGap;
 
     doc.setFillColor(26, 51, 126);
-    doc.roundedRect(margin, summaryY, innerWidth, 50, 10, 10, "F");
+    doc.roundedRect(margin, summaryY, innerWidth, summaryBoxHeight, 8, 8, "F");
 
     const colWidth = innerWidth / 4;
     const center1 = margin + colWidth * 0.5;
@@ -395,47 +634,59 @@ const ExamResult = () => {
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
-    doc.text("GRAND TOTAL", center1, summaryY + 18, { align: 'center' });
-    doc.text("PERCENTAGE", center2, summaryY + 18, { align: 'center' });
-    doc.text("GRADE", center3, summaryY + 18, { align: 'center' });
-    doc.text("RESULT", center4, summaryY + 18, { align: 'center' });
+    const summaryLabelY = summaryY + (ultraCompact ? 14 : compact ? 15 : 17);
+    const summaryValueY = summaryY + (ultraCompact ? 30 : compact ? 32 : 36);
+    doc.text("GRAND TOTAL", center1, summaryLabelY, { align: "center" });
+    doc.text("PERCENTAGE", center2, summaryLabelY, { align: "center" });
+    doc.text("GRADE", center3, summaryLabelY, { align: "center" });
+    doc.text("RESULT", center4, summaryLabelY, { align: "center" });
 
-    doc.setFontSize(14);
+    doc.setFontSize(ultraCompact ? 12 : compact ? 13 : 14);
     doc.setFont("helvetica", "bold");
-    doc.text(`${summary.totalObtained ?? 0} / ${summary.totalMax ?? 0}`, center1, summaryY + 38, { align: 'center' });
-    doc.text(`${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`, center2, summaryY + 38, { align: 'center' });
+    doc.text(`${summary.totalObtained ?? 0} / ${summary.totalMax ?? 0}`, center1, summaryValueY, { align: "center" });
+    doc.text(`${summary.percentage != null ? `${summary.percentage}%` : "N/A"}`, center2, summaryValueY, { align: "center" });
 
     doc.setTextColor(248, 193, 46);
-    doc.text(`${summary.grade || "N/A"}`, center3, summaryY + 38, { align: 'center' });
+    doc.text(`${summary.grade || "N/A"}`, center3, summaryValueY, { align: "center" });
 
     doc.setTextColor(255, 255, 255);
-    doc.text(`${summary.overallResult || "N/A"}`, center4, summaryY + 38, { align: 'center' });
+    doc.text(`${summary.overallResult || "N/A"}`, center4, summaryValueY, { align: "center" });
 
-    // Signatures - Precision alignment
-    const sigY = pageHeight - 110;
+    const summaryBottom = summaryY + summaryBoxHeight;
+    const footerReserve = ultraCompact ? 80 : compact ? 86 : 92;
+    const preferredSigY = pageHeight - footerReserve;
+    const minSigAfterSummary = summaryBottom + (ultraCompact ? 24 : compact ? 26 : 32);
+    let sigY = Math.max(minSigAfterSummary, preferredSigY);
+    if (sigY + 42 > pageHeight - 18) {
+      sigY = minSigAfterSummary;
+    }
+
     doc.setDrawColor(51, 51, 51);
-    doc.setLineWidth(1.5);
+    doc.setLineWidth(1.2);
     doc.setTextColor(26, 51, 126);
-    doc.setFontSize(9);
+    doc.setFontSize(ultraCompact ? 8 : 9);
     doc.setFont("helvetica", "bold");
 
-    const sigWidth = 150;
-    // Left
+    const sigWidth = ultraCompact ? 130 : 145;
     doc.line(margin + 5, sigY, margin + sigWidth + 5, sigY);
-    doc.text("Class Teacher", margin + (sigWidth / 2) + 5, sigY + 15, { align: 'center' });
+    doc.text("Class Teacher", margin + (sigWidth / 2) + 5, sigY + 13, { align: "center" });
 
-    // Center
-    doc.line(pageWidth / 2 - (sigWidth / 2), sigY, pageWidth / 2 + (sigWidth / 2), sigY);
-    doc.text("Exam Controller", pageWidth / 2, sigY + 15, { align: 'center' });
+    doc.line(pageWidth / 2 - sigWidth / 2, sigY, pageWidth / 2 + sigWidth / 2, sigY);
+    doc.text("Exam Controller", pageWidth / 2, sigY + 13, { align: "center" });
 
-    // Right
     doc.line(pageWidth - margin - sigWidth - 5, sigY, pageWidth - margin - 5, sigY);
-    doc.text("Principal Signature", pageWidth - margin - (sigWidth / 2) - 5, sigY + 15, { align: 'center' });
+    doc.text("Principal Signature", pageWidth - margin - sigWidth / 2 - 5, sigY + 13, { align: "center" });
 
     doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(150, 150, 150);
-    doc.text("This is a computer generated document. School seal required for official validity.", pageWidth / 2, pageHeight - 35, { align: 'center' });
+    const footerY = Math.min(pageHeight - 22, sigY + 38);
+    doc.text(
+      "Computer generated report. Official signature and school seal required for validity.",
+      pageWidth / 2,
+      footerY,
+      { align: "center", maxWidth: innerWidth }
+    );
   };
 
   const getDetailedRowsForBulk = async () => {
@@ -454,8 +705,12 @@ const ExamResult = () => {
           chunk.map(async (r: any) => {
             const sid = Number(r.student_id);
             if (!Number.isFinite(sid) || sid <= 0) return null;
-            const detail = await getStudentDetailForSelectedExam(sid);
-            return detail ? { row: r, detail } : null;
+            try {
+              const detail = await getStudentDetailForSelectedExam(sid);
+              return detail ? { row: r, detail } : null;
+            } catch {
+              return null;
+            }
           })
         );
         chunkEntries.forEach((entry) => {
@@ -571,6 +826,8 @@ const ExamResult = () => {
         setStudentDetailsById((prev) => ({ ...prev, [studentId]: examDetail }));
       }
       return examDetail;
+    } catch {
+      return null;
     } finally {
       setStudentDetailLoadingById((prev) => {
         const next = { ...prev };
@@ -601,8 +858,10 @@ const ExamResult = () => {
       </tr>
     `).join("");
 
+    const densityClass = getResultSheetDensityClass(subjects.length);
+
     return `
-      <div class="sheet">
+      <div class="sheet ${densityClass}">
         <div class="header">
           <div class="header-inner">
             ${logoUrl ? `<img src="${logoUrl}" class="logo" />` : '<div class="logo-placeholder"></div>'}
@@ -643,6 +902,7 @@ const ExamResult = () => {
           </div>
         </div>
 
+        <div class="marks-summary-block">
         <table class="results-table">
           <thead>
             <tr>
@@ -678,7 +938,10 @@ const ExamResult = () => {
             <span class="s-value ${String(summary.overallResult).toLowerCase() === 'pass' ? 'text-success' : 'text-danger'}">${summary.overallResult || "N/A"}</span>
           </div>
         </div>
+        </div>
+        </div>
 
+        <div class="result-bottom">
         <div class="footer-signatures">
           <div class="sig-box">
             <div class="sig-line"></div>
@@ -693,11 +956,10 @@ const ExamResult = () => {
             <span>Principal Signature</span>
           </div>
         </div>
-        
-        </div>
-        
+
         <div class="print-footer">
           Computer generated report. Official signature and school seal required for validity.
+        </div>
         </div>
       </div>
     `;
@@ -766,138 +1028,19 @@ const ExamResult = () => {
             <meta charset="utf-8" />
             <title>Student Exam Result - ${escapeHtml(row.student_name)}</title>
             <style>
-              @page { size: A4 portrait; margin: 0; }
-              html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fb; color: #333; }
-              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-              
-              .sheet { 
-                background: white; 
-                width: 210mm; 
-                min-height: 297mm; 
-                margin: 0 auto; 
-                position: relative;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-              }
-
-              .header {
-                background: #1a337e;
-                padding: 6mm 15mm 15mm 15mm;
-                color: white;
-                margin-bottom: 0;
-              }
-
-              .header-inner {
-                display: flex;
-                align-items: center;
-                gap: 25px;
-              }
-
-              .report-content {
-                padding: 15mm;
-              }
-
-              .logo { height: 80px; width: auto; object-fit: contain; }
-              .logo-placeholder { height: 80px; width: 80px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; }
-
-              .school-info { flex: 1; }
-              .school-name { margin: 0; font-size: 28px; color: white; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
-              .school-contact { margin: 3px 0 0 0; font-size: 13px; color: #cbd5e0; }
-
-              .subtitle-badge {
-                display: inline-block;
-                background: #f8c12e;
-                color: #1a337e;
-                padding: 4px 15px;
-                border-radius: 4px;
-                font-weight: 800;
-                font-size: 11px;
-                margin-top: 15px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-              }
-
-              .report-title { display: none; } /* Replaced by subtitle-badge */
-
-              .student-meta {
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
-                gap: 20px;
-                background: #f8faff;
-                padding: 20px;
-                border-radius: 12px;
-                margin-bottom: 30px;
-                border: 1px solid #e1e8f5;
-              }
-
-              .meta-item { display: flex; flex-direction: column; }
-              .meta-item .label { font-size: 10px; font-weight: 800; color: #8898aa; text-transform: uppercase; margin-bottom: 4px; }
-              .meta-item .value { font-size: 14px; font-weight: 600; color: #1a337e; }
-
-              .results-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-              .results-table th { 
-                background: #1a337e; 
-                color: white; 
-                padding: 12px 15px; 
-                font-size: 11px; 
-                text-transform: uppercase; 
-                letter-spacing: 1px;
-                text-align: left;
-              }
-              .results-table td { 
-                padding: 12px 15px; 
-                border-bottom: 1px solid #edf2f9; 
-                font-size: 13px; 
-                color: #2d3748;
-              }
-              .results-table tr:nth-child(even) { background: #fcfdfe; }
-
-              .text-center { text-align: center; }
-              .text-right { text-align: right; }
-              .fw-bold { font-weight: 700; }
-              .text-success { color: #2dce89; }
-              .text-danger { color: #f5365c; }
-
-              .summary-band {
-                display: flex;
-                justify-content: space-between;
-                background: #1a337e;
-                padding: 20px;
-                border-radius: 12px;
-                color: white;
-                margin-bottom: 40px;
-              }
-
-              .summary-item { text-align: center; flex: 1; }
-              .summary-item .s-label { display: block; font-size: 10px; font-weight: 700; opacity: 0.8; text-transform: uppercase; margin-bottom: 5px; }
-              .summary-item .s-value { font-size: 18px; font-weight: 800; }
-              .summary-item .s-value.highlight { color: #f8c12e; }
-
-              .footer-signatures {
-                display: flex;
-                justify-content: space-between;
-                margin-top: 60px;
-                padding: 0 20px;
-              }
-
-              .sig-box { text-align: center; width: 150px; }
-              .sig-line { border-top: 2px solid #333; margin-bottom: 8px; }
-              .sig-box span { font-size: 12px; font-weight: 700; color: #1a337e; }
-
-              .print-footer {
-                position: absolute;
-                bottom: 15mm;
-                left: 15mm;
-                right: 15mm;
-                text-align: center;
-                font-size: 10px;
-                color: #999;
-                border-top: 1px solid #eee;
-                padding-top: 10px;
-              }
-
-              @media print {
-                body { background: white; }
-                .sheet { box-shadow: none; margin: 0; padding: 10mm; }
+              ${getResultPrintStyles()}
+              @media screen {
+                .sheet {
+                  box-shadow: 0 0 12px rgba(0, 0, 0, 0.08);
+                  min-height: calc(297mm - 16mm);
+                  justify-content: flex-start;
+                }
+                .report-content {
+                  flex: 0 0 auto;
+                }
+                .result-bottom {
+                  margin-top: auto;
+                }
               }
             </style>
           </head>
@@ -979,140 +1122,7 @@ const ExamResult = () => {
             <meta charset="utf-8" />
             <title>All Students Exam Results</title>
             <style>
-              @page { size: A4 portrait; margin: 0; }
-              html, body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fb; }
-              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-              
-              .sheet { 
-                background: white; 
-                width: 210mm; 
-                min-height: 297mm; 
-                margin: 0 auto; 
-                position: relative;
-                page-break-after: always;
-              }
-              .sheet:last-child { page-break-after: avoid; }
-
-              .header {
-                background: #1a337e;
-                padding: 15mm;
-                color: white;
-                margin-bottom: 0;
-              }
-
-              .header-inner {
-                display: flex;
-                align-items: center;
-                gap: 25px;
-              }
-
-              .report-content {
-                padding: 15mm;
-              }
-
-              .logo { height: 80px; width: auto; object-fit: contain; }
-              .logo-placeholder { height: 80px; width: 80px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; }
-
-              .school-info { flex: 1; }
-              .school-name { margin: 0; font-size: 28px; color: white; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
-              .school-contact { margin: 3px 0 0 0; font-size: 13px; color: #cbd5e0; }
-
-              .subtitle-badge {
-                display: inline-block;
-                background: #f8c12e;
-                color: #1a337e;
-                padding: 4px 15px;
-                border-radius: 4px;
-                font-weight: 800;
-                font-size: 11px;
-                margin-top: 15px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-              }
-
-              .report-title { display: none; }
-
-              .student-meta {
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
-                gap: 20px;
-                background: #f8faff;
-                padding: 20px;
-                border-radius: 12px;
-                margin-bottom: 30px;
-                border: 1px solid #e1e8f5;
-              }
-
-              .meta-item { display: flex; flex-direction: column; }
-              .meta-item .label { font-size: 10px; font-weight: 800; color: #8898aa; text-transform: uppercase; margin-bottom: 4px; }
-              .meta-item .value { font-size: 14px; font-weight: 600; color: #1a337e; }
-
-              .results-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-              .results-table th { 
-                background: #1a337e; 
-                color: white; 
-                padding: 12px 15px; 
-                font-size: 11px; 
-                text-transform: uppercase; 
-                letter-spacing: 1px;
-                text-align: left;
-              }
-              .results-table td { 
-                padding: 12px 15px; 
-                border-bottom: 1px solid #edf2f9; 
-                font-size: 13px; 
-                color: #2d3748;
-              }
-              .results-table tr:nth-child(even) { background: #fcfdfe; }
-
-              .text-center { text-align: center; }
-              .text-right { text-align: right; }
-              .fw-bold { font-weight: 700; }
-              .text-success { color: #2dce89; }
-              .text-danger { color: #f5365c; }
-
-              .summary-band {
-                display: flex;
-                justify-content: space-between;
-                background: #1a337e;
-                padding: 20px;
-                border-radius: 12px;
-                color: white;
-                margin-bottom: 40px;
-              }
-
-              .summary-item { text-align: center; flex: 1; }
-              .summary-item .s-label { display: block; font-size: 10px; font-weight: 700; opacity: 0.8; text-transform: uppercase; margin-bottom: 5px; }
-              .summary-item .s-value { font-size: 18px; font-weight: 800; }
-              .summary-item .s-value.highlight { color: #f8c12e; }
-
-              .footer-signatures {
-                display: flex;
-                justify-content: space-between;
-                margin-top: 60px;
-                padding: 0 20px;
-              }
-
-              .sig-box { text-align: center; width: 150px; }
-              .sig-line { border-top: 2px solid #333; margin-bottom: 8px; }
-              .sig-box span { font-size: 12px; font-weight: 700; color: #1a337e; }
-
-              .print-footer {
-                position: absolute;
-                bottom: 15mm;
-                left: 15mm;
-                right: 15mm;
-                text-align: center;
-                font-size: 10px;
-                color: #999;
-                border-top: 1px solid #eee;
-                padding-top: 10px;
-              }
-
-              @media print {
-                body { background: white; }
-                .sheet { box-shadow: none; margin: 0; }
-              }
+              ${getResultPrintStyles({ multiSheet: true })}
             </style>
           </head>
           <body>
@@ -1319,7 +1329,7 @@ const ExamResult = () => {
                   type="button"
                   className="btn btn-soft-secondary d-flex align-items-center"
                   onClick={handlePrintAllStudents}
-                  disabled={!!actionLoadingKey || detailsLoading || (selectedIds.length === 0 && rows.length > 0)}
+                  disabled={!!actionLoadingKey || detailsLoading}
                 >
                   {actionLoadingKey === "print-all" ? (
                     <span className="spinner-border spinner-border-sm me-2"></span>
@@ -1332,7 +1342,7 @@ const ExamResult = () => {
                   type="button"
                   className="btn btn-soft-primary d-flex align-items-center"
                   onClick={handleExportAllStudentsPdf}
-                  disabled={!!actionLoadingKey || detailsLoading || (selectedIds.length === 0 && rows.length > 0)}
+                  disabled={!!actionLoadingKey || detailsLoading}
                 >
                   {actionLoadingKey === "pdf-all" ? (
                     <span className="spinner-border spinner-border-sm me-2"></span>
