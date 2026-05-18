@@ -1,11 +1,26 @@
 -- =============================================================================
 -- Hostel module — Phase 1 (production-oriented)
--- - Academic year only on hostels + hostel_assignments (not on floors/rooms/beds/types).
+-- - Academic year only on hostel_assignments (hostels are school-wide; not on floors/rooms/beds/types).
 -- - Occupancy derived from hostel_beds.bed_status (+ assignments), not mirrored counts.
 -- - Hostel room taxonomy: hostel_room_types (separate from classroom room_types master).
 -- - hostels: hostel_category (student/staff) + gender (boys/girls/mixed).
 -- Idempotent: safe to re-run on tenants that never had legacy hostel tables.
 -- =============================================================================
+
+-- Hostels are school-wide: remove academic_year_id if an older template/migration added it.
+DO $drop_hostel_year$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'hostels'
+  ) THEN
+    ALTER TABLE public.hostels DROP CONSTRAINT IF EXISTS hostels_academic_year_id_fkey;
+    ALTER TABLE public.hostels DROP COLUMN IF EXISTS academic_year_id;
+  END IF;
+END $drop_hostel_year$;
+DROP INDEX IF EXISTS public.uq_hostels_name_alive_per_year;
+DROP INDEX IF EXISTS public.idx_hostels_year;
+DROP INDEX IF EXISTS public.idx_hostels_academic_year_id;
 
 -- 1) Hostel room types (reuse-friendly, not academic-year scoped)
 CREATE TABLE IF NOT EXISTS public.hostel_room_types (
@@ -24,10 +39,9 @@ CREATE TABLE IF NOT EXISTS public.hostel_room_types (
 
 CREATE INDEX IF NOT EXISTS idx_hostel_room_types_active ON public.hostel_room_types (is_active);
 
--- 2) Hostels (scoped to academic year)
+-- 2) Hostels (school-wide, not scoped to academic year)
 CREATE TABLE IF NOT EXISTS public.hostels (
     id SERIAL PRIMARY KEY,
-    academic_year_id integer NOT NULL REFERENCES public.academic_years(id) ON DELETE RESTRICT,
     hostel_name character varying(150) NOT NULL,
     code character varying(50) NOT NULL,
     hostel_category character varying(20) NOT NULL DEFAULT 'student'
@@ -55,14 +69,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_code_alive
 ON public.hostels (code)
 WHERE deleted_at IS NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_name_alive_per_year
-ON public.hostels (academic_year_id, hostel_name)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_hostels_name_alive
+ON public.hostels (hostel_name)
 WHERE deleted_at IS NULL;
 
-CREATE INDEX IF NOT EXISTS idx_hostels_year ON public.hostels (academic_year_id);
 CREATE INDEX IF NOT EXISTS idx_hostels_active ON public.hostels (is_active) WHERE deleted_at IS NULL;
 
--- 3) Floors (inherit year via hostel → no academic_year_id)
+-- 3) Floors (no academic_year_id)
 CREATE TABLE IF NOT EXISTS public.hostel_floors (
     id SERIAL PRIMARY KEY,
     hostel_id integer NOT NULL REFERENCES public.hostels(id) ON DELETE CASCADE,
