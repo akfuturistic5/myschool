@@ -13,7 +13,7 @@ const {
 
 const router = express.Router();
 
-router.get('/', requireRole(ADMIN_ROLE_IDS), listPayslips);
+router.get('/', requireRole(ALL_AUTHENTICATED_ROLES), listPayslips);
 router.get('/:id', requireRole(ALL_AUTHENTICATED_ROLES), getPayslipById); // Allow staff to see their own payslip (need check in controller if self)
 router.post('/generate', requireRole(ADMIN_ROLE_IDS), generatePayroll);
 router.put('/:id', requireRole(ADMIN_ROLE_IDS), updatePayslipStatus);

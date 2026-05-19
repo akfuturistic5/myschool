@@ -255,6 +255,13 @@ function buildStudentSidebar() {
           showSubRoute: false,
         },
         {
+          label: "Subjects",
+          icon: "ti ti-book",
+          link: routes.studentSubjects,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
           label: "Time Table",
           icon: "ti ti-table",
           link: routes.studentTimeTable,
@@ -354,6 +361,13 @@ function buildParentSidebar() {
           label: "Child Profile",
           icon: "ti ti-user-circle",
           link: routes.studentDetail,
+          submenu: false,
+          showSubRoute: false,
+        },
+        {
+          label: "Subjects",
+          icon: "ti ti-book",
+          link: routes.studentSubjects,
           submenu: false,
           showSubRoute: false,
         },

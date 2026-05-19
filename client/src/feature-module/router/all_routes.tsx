@@ -209,6 +209,7 @@ export const all_routes = {
   studentGrid: "/student/student-grid",
   studentPromotion: "/student/student-promotion",
   studentDetail: "/student/student-details",
+  studentSubjects: "/student/student-subjects",
   studentTimeTable: "/student/student-time-table",
   studentLeaves: "/student/student-leaves",
   studentFees: "/student/student-fees",

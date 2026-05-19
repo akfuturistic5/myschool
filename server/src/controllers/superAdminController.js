@@ -77,7 +77,7 @@ const listSchools = async (req, res) => {
     return success(res, 200, 'Schools fetched', result.rows || []);
   } catch (err) {
     console.error('Super Admin listSchools error:', err);
-    return errorResponse(res, 500, 'Failed to fetch schools');
+    return errorResponse(res, 500, 'Failed to fetch schools', err.message);
   }
 };
 
@@ -653,11 +653,9 @@ const confirmDeleteSchool = async (req, res) => {
 
     const upd = await masterQuery(
       `
-      UPDATE schools
-      SET deleted_at = NOW(),
-          status = 'disabled'
-      WHERE id = $1 AND deleted_at IS NULL
-      RETURNING id, school_name, type, institute_number, db_name, status, created_at, deleted_at
+      DELETE FROM schools
+      WHERE id = $1
+      RETURNING id, school_name, type, institute_number, db_name, status, created_at
       `,
       [id]
     );
@@ -707,6 +705,7 @@ const confirmDeleteSchool = async (req, res) => {
 
     return success(res, 200, message, {
       ...row,
+      deleted_at: new Date(),
       tenant_db_dropped: tenantDbDropped,
       tenant_db_drop_skipped_reason: tenantDbDropSkippedReason,
       tenant_db_drop_error: tenantDbDropError,
@@ -880,6 +879,9 @@ const updateSchoolPlan = async (req, res) => {
     if (!upd.rows?.length) {
       return errorResponse(res, 404, 'School not found');
     }
+
+    // Plan change: drop per-school overrides so effective modules match the new plan.
+    await masterQuery(`DELETE FROM school_module_overrides WHERE school_id = $1`, [id]);
 
     await writeSuperAdminAudit({
       superAdminId: req.superAdmin?.id,

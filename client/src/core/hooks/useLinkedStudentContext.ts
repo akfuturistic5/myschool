@@ -36,13 +36,13 @@ export const useLinkedStudentContext = ({
   locationState,
   routeStudentId,
 }: UseLinkedStudentContextOptions = {}) => {
-  const { user: currentUser } = useCurrentUser();
+  const { user: currentUser, loading: currentUserLoading } = useCurrentUser();
   const { student: currentStudent, loading: currentStudentLoading } = useCurrentStudent();
   const rawRoleId = Number((currentUser as any)?.user_role_id ?? (currentUser as any)?.role_id);
   const roleId = Number.isFinite(rawRoleId) && rawRoleId > 0 ? rawRoleId : null;
 
   const canonicalRole = normalizeAuthRole(
-    (currentUser as any)?.role_name ?? currentUser?.role,
+    (currentUser as any)?.role_name ?? (currentUser as any)?.role,
     (currentUser as any)?.user_role_id ?? (currentUser as any)?.role_id
   )
     .toString()
@@ -111,9 +111,10 @@ export const useLinkedStudentContext = ({
     if (!isParentRole || !Array.isArray(parents) || parents.length === 0) {
       return persistedParentStudentId;
     }
-    const fromParents = parseStudentId(parents[0]?.student_id);
+    const parentsList = parents as any[];
+    const fromParents = parseStudentId(parentsList[0]?.student_id);
     if (persistedParentStudentId != null) {
-      const match = parents.some((p: any) => parseStudentId(p?.student_id) === persistedParentStudentId);
+      const match = parentsList.some((p: any) => parseStudentId(p?.student_id) === persistedParentStudentId);
       if (match) return persistedParentStudentId;
     }
     return fromParents ?? persistedParentStudentId;
@@ -160,6 +161,9 @@ export const useLinkedStudentContext = ({
     };
   }, [isParentRole, resolvedStudentId, parents]);
 
+  const currentStudentId = parseStudentId(currentStudent?.id);
+  const locationStateStudentId = parseStudentId(locationState?.student?.id);
+
   const [student, setStudent] = useState<any>(() => {
     if (locationState?.student) return locationState.student;
     if (isStudentRole && currentStudent) return currentStudent;
@@ -169,6 +173,11 @@ export const useLinkedStudentContext = ({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (currentUserLoading) {
+      setLoading(true);
+      return;
+    }
+
     if (isParentRole && parentChildrenLoading && !resolvedStudentId) {
       setLoading(true);
       return;
@@ -181,11 +190,22 @@ export const useLinkedStudentContext = ({
       return;
     }
 
-    if (locationState?.student && parseStudentId(locationState.student.id) === resolvedStudentId) {
+    // Resolve pre-fill candidate source
+    const preFilledStudent =
+      (locationState?.student && locationStateStudentId === resolvedStudentId ? locationState.student : null) ??
+      (isStudentRole && currentStudentId === resolvedStudentId ? currentStudent : null);
+
+    const hasPreFilledStudent = !!(
+      preFilledStudent &&
+      typeof preFilledStudent === "object" &&
+      parseStudentId(preFilledStudent.id) === resolvedStudentId
+    );
+
+    if (locationState?.student && locationStateStudentId === resolvedStudentId) {
       setStudent(locationState.student);
     }
 
-    if (isStudentRole && parseStudentId(currentStudent?.id) === resolvedStudentId) {
+    if (isStudentRole && currentStudentId === resolvedStudentId) {
       // Pre-fill quickly for UX, then continue and fetch full student details (class teacher, lookups, etc.)
       // from /students/:id, which applies ownership checks server-side.
       setStudent(currentStudent);
@@ -193,7 +213,11 @@ export const useLinkedStudentContext = ({
     }
 
     let cancelled = false;
-    setLoading(true);
+    if (!hasPreFilledStudent) {
+      setLoading(true);
+    } else {
+      setLoading(false);
+    }
     setLoadError(null);
 
     apiService
@@ -217,12 +241,15 @@ export const useLinkedStudentContext = ({
     };
   }, [
     resolvedStudentId,
-    locationState,
+    locationStateStudentId,
+    currentStudentId,
     isStudentRole,
     isParentRole,
-    currentStudent,
     currentStudentLoading,
     parentChildrenLoading,
+    currentUserLoading,
+    currentStudent,
+    locationState,
   ]);
 
   useEffect(() => {

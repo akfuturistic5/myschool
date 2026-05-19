@@ -21,6 +21,8 @@ Run these commands in order for a fresh setup, or use the **Full Setup** command
   - **Full Automated Demo Setup**. Executes the entire sequence: Master Migration -> Admin Seeding -> School Registration -> Infrastructure Provisioning -> Tenant Migration -> Tenant Seeding -> Demo Data Injection.
 
 #### **Step 1: Platform Setup (Master DB)**
+- `npm run db:master:migrate:all`
+  - Runs all master migrations in the master migrations directory, applying the initial schema and subsequent updates.
 - `npm run db:master:migrate`
   - Initializes the 5 global management tables (Schools, Super Admins, Sessions, etc.).
 - `npm run db:master:seed:admin`

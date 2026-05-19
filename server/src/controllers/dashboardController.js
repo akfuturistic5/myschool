@@ -284,7 +284,7 @@ async function buildAttendanceSnapshot(academicYearId, attendanceDate = null, sc
        FROM staff_attendance sa
        INNER JOIN staff s ON s.id = sa.staff_id
        INNER JOIN users u ON u.id = s.user_id
-       ${where ? where + ' AND' : 'WHERE'} u.role_id NOT IN (2, 3, 4, 5)`,
+       ${where ? where + ' AND' : 'WHERE'} u.role_id NOT IN (1, 2, 3, 4, 5)`,
       params
     );
     const row = marks.rows[0] || {};
@@ -391,7 +391,7 @@ const getDashboardStats = async (req, res) => {
         FROM staff s
         INNER JOIN users u ON u.id = s.user_id
         WHERE s.deleted_at IS NULL AND u.deleted_at IS NULL
-          AND u.role_id NOT IN (2, 3, 4, 5)
+          AND u.role_id NOT IN (1, 2, 3, 4, 5)
       `);
       if (staffCount.rows[0]) {
         stats.staff.total = parseInt(staffCount.rows[0].total, 10) || 0;

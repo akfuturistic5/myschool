@@ -219,10 +219,16 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
                           </td>
                           <td>
                             <div className="d-flex flex-column">
-                              <span className="badge badge-soft-info mb-1">{e.elective_group_name}</span>
-                              {Number(e.selectable_subjects) > 0 && (
+                              <span className={`badge ${e.elective_group_name ? 'badge-soft-info' : 'badge-soft-warning'} mb-1`}>
+                                {e.elective_group_name || "Ungrouped"}
+                              </span>
+                              {Number(e.selectable_subjects) > 0 ? (
                                 <small className="text-primary fw-bold" style={{ fontSize: '10px' }}>
                                   Pick {e.selectable_subjects} of {electives.filter(el => el.elective_group_id === e.elective_group_id).length}
+                                </small>
+                              ) : (
+                                <small className="text-muted" style={{ fontSize: '10px' }}>
+                                  No Limit
                                 </small>
                               )}
                             </div>

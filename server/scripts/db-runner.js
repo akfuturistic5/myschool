@@ -235,7 +235,38 @@ async function main() {
   const args = process.argv.slice(2);
 
   const dbType = args[args.indexOf('--db') + 1];
-  const sqlFiles = args[args.indexOf('--sql') + 1].split(',');
+  const rawEntries = args[args.indexOf('--sql') + 1].split(',').map((f) => f.trim());
+  const sqlFiles = [];
+
+  for (const entry of rawEntries) {
+    const absoluteEntry = path.isAbsolute(entry)
+      ? entry
+      : path.resolve(process.cwd(), entry);
+
+    if (fs.existsSync(absoluteEntry)) {
+      const stats = fs.statSync(absoluteEntry);
+      if (stats.isDirectory()) {
+        const allFiles = fs.readdirSync(absoluteEntry)
+          .filter((f) => f.toLowerCase().endsWith('.sql'))
+          .sort();
+
+        const schemaIdx = allFiles.findIndex((f) =>
+          f.toLowerCase().endsWith('schema.sql')
+        );
+        if (schemaIdx > -1) {
+          const [schemaFile] = allFiles.splice(schemaIdx, 1);
+          allFiles.unshift(schemaFile);
+        }
+
+        const files = allFiles.map((f) => path.join(entry, f));
+        sqlFiles.push(...files);
+      } else {
+        sqlFiles.push(entry);
+      }
+    } else {
+      sqlFiles.push(entry);
+    }
+  }
 
   const dbNameIdx = args.indexOf('--dbname');
   const dbOverride =

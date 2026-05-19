@@ -548,6 +548,16 @@ class ApiService {
   }
 
   /**
+   * @param {number|string} id
+   * @param {number|string|null} [academicYearId]
+   */
+  async getStudentSubjects(id, academicYearId = null) {
+    const qs = academicYearId ? `?academic_year_id=${academicYearId}` : '';
+    return this.makeRequest(`/students/${id}/subjects${qs}`);
+  }
+
+
+  /**
    * Duplicate check for admission number (form UX). excludeId = student id when editing.
    */
   async checkAdmissionNumberUnique(admissionNumber, excludeId = null) {
@@ -3874,6 +3884,7 @@ class ApiService {
     if (params.month) search.set('month', params.month);
     if (params.year) search.set('year', params.year);
     if (params.status) search.set('status', params.status);
+    if (params.staff_id) search.set('staff_id', params.staff_id);
     const qs = search.toString();
     return this.makeRequest(`/payroll${qs ? `?${qs}` : ''}`);
   }
