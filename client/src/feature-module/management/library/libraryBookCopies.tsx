@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
 import { all_routes } from "../../router/all_routes";
@@ -14,6 +14,7 @@ const conditionOptions = ["New", "Good", "Damaged", "Lost", "Maintenance"];
 
 const LibraryBookCopies = () => {
   const routes = all_routes;
+  const [searchParams, setSearchParams] = useSearchParams();
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
   const [rows, setRows] = useState<any[]>([]);
   const [books, setBooks] = useState<{ value: string; label: string }[]>([]);
@@ -22,7 +23,8 @@ const LibraryBookCopies = () => {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [appliedFilters, setAppliedFilters] = useState({ book_id: "", accession_number: "", condition: "" });
+  const initialBookId = searchParams.get("book_id") || "";
+  const [appliedFilters, setAppliedFilters] = useState({ book_id: initialBookId, accession_number: "", condition: "" });
   const [filterDraft, setFilterDraft] = useState({ ...appliedFilters });
   const [addForm, setAddForm] = useState({
     book_id: "",
@@ -30,6 +32,7 @@ const LibraryBookCopies = () => {
     book_location: "",
     condition: "New",
     copy_price: "" as string | number,
+    quantity: 1,
   });
   const [editForm, setEditForm] = useState({
     book_id: "",
@@ -38,6 +41,125 @@ const LibraryBookCopies = () => {
     condition: "New",
     copy_price: "" as string | number,
   });
+
+  const [bulkCopies, setBulkCopies] = useState<any[]>([]);
+
+  const adjustBulkCopies = (
+    qty: number,
+    baseAccession: string,
+    baseLocation: string,
+    baseCondition: string,
+    basePrice: string | number
+  ) => {
+    let prefix = '';
+    let suffixNum = null;
+    let paddingLen = 0;
+
+    const match = /^(.*?)(\d+)$/.exec(baseAccession);
+    if (match) {
+      prefix = match[1];
+      suffixNum = parseInt(match[2], 10);
+      paddingLen = match[2].length;
+    }
+
+    setBulkCopies((prev) => {
+      const result = [...prev];
+      if (result.length > qty) {
+        return result.slice(0, qty);
+      }
+      while (result.length < qty) {
+        const i = result.length;
+        let accNum = baseAccession;
+        if (suffixNum !== null) {
+          accNum = prefix + String(suffixNum + i).padStart(paddingLen, '0');
+        } else {
+          accNum = i > 0 ? `${baseAccession}-${i + 1}` : baseAccession;
+        }
+        result.push({
+          accession_number: accNum,
+          book_location: baseLocation,
+          condition: baseCondition,
+          copy_price: basePrice
+        });
+      }
+      return result;
+    });
+  };
+
+  const handleBulkCopyChange = (index: number, field: string, value: any) => {
+    setBulkCopies((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  const handleQuantityChange = (qty: number) => {
+    const q = Math.max(1, qty);
+    setAddForm((f) => {
+      const nextForm = { ...f, quantity: q };
+      adjustBulkCopies(q, nextForm.accession_number, nextForm.book_location, nextForm.condition, nextForm.copy_price);
+      return nextForm;
+    });
+  };
+
+  const handleStartingAccessionChange = (acc: string) => {
+    setAddForm((f) => {
+      const nextForm = { ...f, accession_number: acc };
+      if (f.quantity === 1) {
+        setBulkCopies([{
+          accession_number: acc,
+          book_location: f.book_location,
+          condition: f.condition,
+          copy_price: f.copy_price
+        }]);
+      } else {
+        let prefix = '';
+        let suffixNum = null;
+        let paddingLen = 0;
+
+        const match = /^(.*?)(\d+)$/.exec(acc);
+        if (match) {
+          prefix = match[1];
+          suffixNum = parseInt(match[2], 10);
+          paddingLen = match[2].length;
+        }
+
+        setBulkCopies((prev) =>
+          prev.map((item, i) => {
+            let accNum = acc;
+            if (i > 0) {
+              if (suffixNum !== null) {
+                accNum = prefix + String(suffixNum + i).padStart(paddingLen, '0');
+              } else {
+                accNum = `${acc}-${i + 1}`;
+              }
+            }
+            return {
+              ...item,
+              accession_number: accNum
+            };
+          })
+        );
+      }
+      return nextForm;
+    });
+  };
+
+  const handleBaseFieldChange = (field: string, value: any) => {
+    setAddForm((f) => {
+      const nextForm = { ...f, [field]: value };
+      setBulkCopies((prev) =>
+        prev.map((item, i) => {
+          if (i === 0 || item[field] === (f as any)[field]) {
+            return { ...item, [field]: value };
+          }
+          return item;
+        })
+      );
+      return nextForm;
+    });
+  };
 
   const showModal = (id: string) => {
     const el = document.getElementById(id);
@@ -97,7 +219,7 @@ const LibraryBookCopies = () => {
     [rows]
   );
 
-  const openAdd = () => {
+  const openAdd = (bookId?: string) => {
     setFormError(null);
     void (async () => {
       let acc = "";
@@ -113,15 +235,33 @@ const LibraryBookCopies = () => {
         acc = `ACC-${String(maxSeq + 1).padStart(5, "0")}`;
       }
       setAddForm({
-        book_id: "",
+        book_id: bookId || "",
         accession_number: acc,
         book_location: "",
         condition: "New",
         copy_price: "",
+        quantity: 1,
       });
+      setBulkCopies([
+        {
+          accession_number: acc,
+          book_location: "",
+          condition: "New",
+          copy_price: "",
+        },
+      ]);
       setTimeout(() => showModal("add_library_book_copy"), 0);
     })();
   };
+
+  useEffect(() => {
+    const targetBookId = searchParams.get("book_id");
+    const shouldAddCopy = searchParams.get("add_copy") === "true";
+    if (targetBookId && shouldAddCopy && !loading && books.length > 0) {
+      setSearchParams({ book_id: targetBookId }, { replace: true });
+      openAdd(targetBookId);
+    }
+  }, [searchParams, loading, books, setSearchParams]);
 
   const openEdit = (record: any) => {
     const r = record.raw || record;
@@ -153,16 +293,28 @@ const LibraryBookCopies = () => {
     setSaving(true);
     setFormError(null);
     try {
-      await apiService.createLibraryBookCopy({
+      let payload: any = {
         book_id: Number(addForm.book_id),
-        accession_number: addForm.accession_number.trim(),
-        book_location: addForm.book_location || null,
-        condition: addForm.condition,
-        copy_price:
-          addForm.copy_price === "" || addForm.copy_price === undefined
+      };
+      if (addForm.quantity > 1) {
+        payload.copies = bulkCopies.map((item) => ({
+          accession_number: item.accession_number.trim(),
+          book_location: item.book_location || null,
+          condition: item.condition || "New",
+          copy_price: item.copy_price === "" || item.copy_price === undefined
             ? null
-            : (Number.isFinite(Number(addForm.copy_price)) ? Number(addForm.copy_price) : null),
-      });
+            : (Number.isFinite(Number(item.copy_price)) ? Number(item.copy_price) : null),
+        }));
+      } else {
+        payload.accession_number = addForm.accession_number.trim();
+        payload.book_location = addForm.book_location || null;
+        payload.condition = addForm.condition;
+        payload.copy_price = addForm.copy_price === "" || addForm.copy_price === undefined
+          ? null
+          : (Number.isFinite(Number(addForm.copy_price)) ? Number(addForm.copy_price) : null);
+      }
+
+      await apiService.createLibraryBookCopy(payload);
       hideModal("add_library_book_copy");
       await load();
     } catch (e: unknown) {
@@ -334,16 +486,157 @@ const LibraryBookCopies = () => {
       </div>
 
       <div className="modal fade" id="add_library_book_copy" tabIndex={-1}>
-        <div className="modal-dialog modal-dialog-centered"><div className="modal-content"><div className="modal-header"><h4 className="modal-title">Add Book Copy</h4><button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal"><i className="ti ti-x" /></button></div>
-          <form onSubmit={submitAdd}><div className="modal-body">
-            {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
-            <div className="mb-3"><label className="form-label">Book <span className="text-danger">*</span></label><LibrarySearchableSelect options={books} value={addForm.book_id} onChange={(v) => setAddForm((f) => ({ ...f, book_id: v }))} placeholder="Search book…" /></div>
-            <div className="mb-3"><label className="form-label">Accession number <span className="text-danger">*</span></label><input required className="form-control" value={addForm.accession_number} onChange={(e) => setAddForm((f) => ({ ...f, accession_number: e.target.value }))} /><small className="text-muted">Suggested serial (ACC-00001); you may change it.</small></div>
-            <div className="mb-3"><label className="form-label">Book Location</label><input className="form-control" value={addForm.book_location} onChange={(e) => setAddForm((f) => ({ ...f, book_location: e.target.value }))} /></div>
-            <div className="mb-3"><label className="form-label">Price</label><input type="number" min={0} step="0.01" className="form-control" value={addForm.copy_price} onChange={(e) => setAddForm((f) => ({ ...f, copy_price: e.target.value }))} placeholder="Optional" /></div>
-            <div className="mb-0"><label className="form-label">Condition</label><select className="form-select" value={addForm.condition} onChange={(e) => setAddForm((f) => ({ ...f, condition: e.target.value }))}>{conditionOptions.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
-          </div><div className="modal-footer"><button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button><button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Saving..." : "Save"}</button></div></form>
-        </div></div>
+        <div className={`modal-dialog modal-dialog-centered ${addForm.quantity > 1 ? "modal-lg" : ""}`}>
+          <div className="modal-content">
+            <div className="modal-header">
+              <h4 className="modal-title">Add Book Copy</h4>
+              <button type="button" className="btn-close custom-btn-close" data-bs-dismiss="modal">
+                <i className="ti ti-x" />
+              </button>
+            </div>
+            <form onSubmit={submitAdd}>
+              <div className="modal-body">
+                {formError && <div className="alert alert-danger py-2 small">{formError}</div>}
+                
+                <div className="mb-3">
+                  <label className="form-label">Book <span className="text-danger">*</span></label>
+                  <LibrarySearchableSelect
+                    options={books}
+                    value={addForm.book_id}
+                    onChange={(v) => handleBaseFieldChange("book_id", v)}
+                    placeholder="Search book…"
+                  />
+                </div>
+
+                <div className="row mb-3">
+                  <div className="col-md-6">
+                    <label className="form-label">Accession number <span className="text-danger">*</span></label>
+                    <input
+                      required
+                      className="form-control"
+                      value={addForm.accession_number}
+                      onChange={(e) => handleStartingAccessionChange(e.target.value)}
+                    />
+                    <small className="text-muted text-truncate d-block">Suggested starting serial.</small>
+                  </div>
+                  <div className="col-md-6">
+                    <label className="form-label">Number of Copies <span className="text-danger">*</span></label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={100}
+                      className="form-control"
+                      value={addForm.quantity}
+                      onChange={(e) => handleQuantityChange(parseInt(e.target.value, 10) || 1)}
+                    />
+                    <small className="text-muted d-block">Copies to create (1-100).</small>
+                  </div>
+                </div>
+
+                {addForm.quantity === 1 ? (
+                  <>
+                    <div className="mb-3">
+                      <label className="form-label">Book Location</label>
+                      <input
+                        className="form-control"
+                        value={addForm.book_location}
+                        onChange={(e) => handleBaseFieldChange("book_location", e.target.value)}
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Price</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="form-control"
+                        value={addForm.copy_price}
+                        onChange={(e) => handleBaseFieldChange("copy_price", e.target.value)}
+                        placeholder="Optional"
+                      />
+                    </div>
+                    <div className="mb-0">
+                      <label className="form-label">Condition</label>
+                      <select
+                        className="form-select"
+                        value={addForm.condition}
+                        onChange={(e) => handleBaseFieldChange("condition", e.target.value)}
+                      >
+                        {conditionOptions.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-4 border rounded p-3 bg-light">
+                    <h5 className="mb-3">Configure Individual Copies</h5>
+                    <div style={{ maxHeight: "300px", overflowY: "auto", overflowX: "hidden" }}>
+                      {bulkCopies.map((item, idx) => (
+                        <div key={idx} className="row g-2 align-items-center mb-3 pb-3 border-bottom">
+                          <div className="col-12 col-md-1 text-muted fw-bold text-center">
+                            #{idx + 1}
+                          </div>
+                          <div className="col-12 col-md-3">
+                            <label className="form-label small mb-1 text-secondary">Accession No *</label>
+                            <input
+                              required
+                              className="form-control form-control-sm"
+                              value={item.accession_number}
+                              onChange={(e) => handleBulkCopyChange(idx, "accession_number", e.target.value)}
+                            />
+                          </div>
+                          <div className="col-12 col-md-3">
+                            <label className="form-label small mb-1 text-secondary">Condition</label>
+                            <select
+                              className="form-select form-select-sm"
+                              value={item.condition}
+                              onChange={(e) => handleBulkCopyChange(idx, "condition", e.target.value)}
+                            >
+                              {conditionOptions.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-12 col-md-3">
+                            <label className="form-label small mb-1 text-secondary">Location</label>
+                            <input
+                              className="form-control form-control-sm"
+                              placeholder="Location"
+                              value={item.book_location}
+                              onChange={(e) => handleBulkCopyChange(idx, "book_location", e.target.value)}
+                            />
+                          </div>
+                          <div className="col-12 col-md-2">
+                            <label className="form-label small mb-1 text-secondary">Price</label>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              className="form-control form-control-sm"
+                              placeholder="Price"
+                              value={item.copy_price}
+                              onChange={(e) => handleBulkCopyChange(idx, "copy_price", e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-light me-2" data-bs-dismiss="modal">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
 
       <div className="modal fade" id="edit_library_book_copy" tabIndex={-1}>

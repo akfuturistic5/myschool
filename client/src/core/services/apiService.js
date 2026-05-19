@@ -2134,6 +2134,9 @@ class ApiService {
       body: JSON.stringify({
         status,
         ...(options.rejection_reason ? { rejection_reason: options.rejection_reason } : {}),
+        ...(options.total_days ? { total_days: options.total_days } : {}),
+        ...(options.start_date ? { start_date: options.start_date } : {}),
+        ...(options.end_date ? { end_date: options.end_date } : {}),
       })
     });
   }

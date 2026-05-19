@@ -42,16 +42,17 @@ const StaffLeave = () => {
     (l: any) => ({ ...l, leaveDate: l.leaveRange })
   );
   const { leaveTypes } = useLeaveTypes({ applicableFor: "staff" });
-  const [applyType, setApplyType] = useState<SingleValue<{ value: string; label: string }>>(null);
+  const [applyType, setApplyType] = useState<any>(null);
   const [applyFrom, setApplyFrom] = useState<Dayjs | null>(null);
   const [applyTo, setApplyTo] = useState<Dayjs | null>(null);
   const [applyReason, setApplyReason] = useState("");
+  const [applyDocument, setApplyDocument] = useState<File | null>(null);
   const [applySubmitting, setApplySubmitting] = useState(false);
   const [cancelingLeaveId, setCancelingLeaveId] = useState<number | null>(null);
 
   const leaveSummary = useMemo(() => {
     const leaves = Array.isArray(leaveApplications) ? leaveApplications : [];
-    const source = Array.isArray(leaveTypes) ? [...leaveTypes] : [];
+    const source: any[] = Array.isArray(leaveTypes) ? [...leaveTypes] : [];
     const seen = new Set<string>();
     source.forEach((t: any) => {
       const tid = Number(t?.id ?? t?.value);
@@ -120,6 +121,11 @@ const StaffLeave = () => {
       alert("Select Leave Type");
       return;
     }
+    const isDocRequired = (applyType as any)?.requires_medical_certificate;
+    if (isDocRequired && !applyDocument) {
+      alert("An attachment/document is required for this leave type.");
+      return;
+    }
     if (!applyFrom || !applyTo) {
       alert("Select From and To dates");
       return;
@@ -136,11 +142,24 @@ const StaffLeave = () => {
     }
     setApplySubmitting(true);
     try {
+      let document_url = null;
+      if (applyDocument) {
+        const uploadRes = await apiService.uploadSchoolStorageFile(applyDocument, 'documents');
+        if (uploadRes?.status === 'SUCCESS' && uploadRes?.data?.url) {
+          document_url = uploadRes.data.url;
+        } else {
+          alert('Failed to upload document.');
+          setApplySubmitting(false);
+          return;
+        }
+      }
+
       const res = await apiService.createLeaveApplication({
         leave_type_id: Number(typeId),
         start_date: fromStr,
         end_date: toStr,
         reason: applyReason.trim(),
+        document_url,
       });
       if (res?.status === "SUCCESS") {
         refetch();
@@ -149,6 +168,7 @@ const StaffLeave = () => {
         setApplyFrom(null);
         setApplyTo(null);
         setApplyReason("");
+        setApplyDocument(null);
       } else alert(res?.message || "Failed to apply leave");
     } catch (err: any) {
       alert(err?.message || "Failed to apply leave");
@@ -485,6 +505,22 @@ const StaffLeave = () => {
                         placeholder="Required"
                         value={applyReason}
                         onChange={(e) => setApplyReason(e.target.value)}
+                      />
+                    </div>
+                    <div className="mb-0 mt-3">
+                      <label className="form-label">
+                        Attachment { (applyType as any)?.requires_medical_certificate ? <span className="text-danger">(Required) *</span> : '(Optional)' }
+                      </label>
+                      <input
+                        type="file"
+                        className="form-control"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) {
+                            setApplyDocument(e.target.files[0])
+                          } else {
+                            setApplyDocument(null)
+                          }
+                        }}
                       />
                     </div>
                   </div>

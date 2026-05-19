@@ -249,6 +249,7 @@ export const useLeaveApplications = (options = {}) => {
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
             rejectionReason: row.rejection_reason ?? null,
+            document_url: row.document_url || null,
             approvedBy,
             approvedDate: row.approved_date ?? null,
             statusBadgeClass:

@@ -134,36 +134,89 @@ const createBookCopy = async (req, res) => {
     if (!Number.isFinite(bookId)) {
       return res.status(400).json({ status: 'ERROR', message: 'book_id is required' });
     }
-    const accessionNumber = String(body.accession_number || '').trim();
-    if (!accessionNumber) {
-      return res.status(400).json({ status: 'ERROR', message: 'accession_number is required' });
-    }
-    const condition = body.condition != null && String(body.condition).trim() !== '' ? String(body.condition).trim() : 'New';
-    const location = body.book_location != null ? String(body.book_location).trim() : null;
-    const copyPrice =
-      body.copy_price != null && body.copy_price !== ''
-        ? parseFloat(String(body.copy_price))
-        : null;
 
     const book = await query(`SELECT id FROM library_books WHERE id = $1 AND deleted_at IS NULL`, [bookId]);
     if (!book.rows.length) {
       return res.status(404).json({ status: 'ERROR', message: 'Book not found' });
     }
 
-    const r = await query(
-      `INSERT INTO library_book_copies (
-         book_id, accession_number, book_location, condition, copy_price, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-       RETURNING *`,
-      [bookId, accessionNumber, location || null, condition, Number.isFinite(copyPrice) ? copyPrice : null]
-    );
-    return res.status(201).json({ status: 'SUCCESS', message: 'Book copy created', data: r.rows[0] });
+    let copies = [];
+    if (Array.isArray(body.copies)) {
+      copies = body.copies;
+    } else {
+      const accessionNumber = String(body.accession_number || '').trim();
+      if (!accessionNumber) {
+        return res.status(400).json({ status: 'ERROR', message: 'accession_number is required' });
+      }
+      copies.push({
+        accession_number: accessionNumber,
+        condition: body.condition != null && String(body.condition).trim() !== '' ? String(body.condition).trim() : 'New',
+        book_location: body.book_location != null ? String(body.book_location).trim() : null,
+        copy_price: body.copy_price != null && body.copy_price !== '' ? parseFloat(String(body.copy_price)) : null
+      });
+    }
+
+    if (copies.length === 0) {
+      return res.status(400).json({ status: 'ERROR', message: 'No copies provided' });
+    }
+    if (copies.length > 100) {
+      return res.status(400).json({ status: 'ERROR', message: 'Cannot create more than 100 copies at once' });
+    }
+
+    const accessionSet = new Set();
+    for (const copy of copies) {
+      const acc = String(copy.accession_number || '').trim();
+      if (!acc) {
+        return res.status(400).json({ status: 'ERROR', message: 'accession_number is required for all copies' });
+      }
+      if (accessionSet.has(acc)) {
+        return res.status(400).json({ status: 'ERROR', message: `Duplicate accession number '${acc}' in submission.` });
+      }
+      accessionSet.add(acc);
+    }
+
+    for (const acc of accessionSet) {
+      const dup = await query(
+        `SELECT 1 FROM library_book_copies WHERE accession_number = $1 AND deleted_at IS NULL`,
+        [acc]
+      );
+      if (dup.rows.length) {
+        return res.status(409).json({
+          status: 'ERROR',
+          message: `Accession number '${acc}' is already in use.`
+        });
+      }
+    }
+
+    const createdRows = [];
+    for (const copy of copies) {
+      const acc = String(copy.accession_number || '').trim();
+      const condition = copy.condition != null && String(copy.condition).trim() !== '' ? String(copy.condition).trim() : 'New';
+      const location = copy.book_location != null ? String(copy.book_location).trim() : null;
+      const copyPrice = copy.copy_price != null && copy.copy_price !== '' ? parseFloat(String(copy.copy_price)) : null;
+
+      const r = await query(
+        `INSERT INTO library_book_copies (
+           book_id, accession_number, book_location, condition, copy_price, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         RETURNING *`,
+        [bookId, acc, location || null, condition, Number.isFinite(copyPrice) ? copyPrice : null]
+      );
+      createdRows.push(r.rows[0]);
+    }
+
+    return res.status(201).json({
+      status: 'SUCCESS',
+      message: `${createdRows.length} book copies created`,
+      data: createdRows[0],
+      all_created: createdRows
+    });
   } catch (e) {
     if (e.code === '23505') {
       return res.status(409).json({ status: 'ERROR', message: 'Duplicate accession number' });
     }
-    console.error('library copy create', e);
-    return res.status(500).json({ status: 'ERROR', message: 'Failed to create book copy' });
+    console.error('library copy create bulk', e);
+    return res.status(500).json({ status: 'ERROR', message: 'Failed to create book copies' });
   }
 };
 

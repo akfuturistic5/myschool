@@ -10,7 +10,7 @@ const SUBMENU_ITEM_MODULE: Record<string, string> = {
 function sectionModuleKey(sectionLabel: string): string | null {
   const map: Record<string, string> = {
     MAIN: 'main',
-    Peoples: 'peoples',
+    People: 'peoples',
     Academic: 'academic',
     MANAGEMENT: 'management',
     HRM: 'hrm',

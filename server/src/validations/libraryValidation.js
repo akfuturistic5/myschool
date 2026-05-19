@@ -49,10 +49,18 @@ const updateBookSchema = Joi.object({
 
 const createBookCopySchema = Joi.object({
   book_id: Joi.number().integer().required(),
-  accession_number: Joi.string().trim().max(50).required(),
+  accession_number: Joi.string().trim().max(50).optional(),
   book_location: Joi.string().trim().max(100).allow(null, ''),
   condition: Joi.string().trim().valid('New', 'Good', 'Damaged', 'Lost', 'Maintenance').optional(),
   copy_price: Joi.number().allow(null),
+  copies: Joi.array().items(
+    Joi.object({
+      accession_number: Joi.string().trim().max(50).required(),
+      book_location: Joi.string().trim().max(100).allow(null, ''),
+      condition: Joi.string().trim().valid('New', 'Good', 'Damaged', 'Lost', 'Maintenance').optional(),
+      copy_price: Joi.number().allow(null),
+    })
+  ).optional(),
 });
 
 const updateBookCopySchema = Joi.object({

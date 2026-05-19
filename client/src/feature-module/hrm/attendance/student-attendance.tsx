@@ -49,13 +49,16 @@ type StaffReportRow = {
   status?: string | null;
 };
 
-const STATUS_OPTIONS = ["present", "late", "absent", "half_day"];
-const normalizeStatusKey = (status: unknown): string =>
-  String(status || "")
+const STATUS_OPTIONS = ["present", "late", "absent", "half_day", "on_leave"];
+const normalizeStatusKey = (status: unknown): string => {
+  const s = String(status || "")
     .trim()
     .toLowerCase()
     .replace(/[\s\-_–—−]+/g, "_")
     .replace(/^halfday$/, "half_day");
+  if (s === "excused") return "on_leave";
+  return s;
+};
 const statusClassMap: Record<string, string> = {
   present: "bg-success",
   late: "bg-pending",
@@ -64,6 +67,8 @@ const statusClassMap: Record<string, string> = {
   absent: "bg-danger",
   holiday: "bg-info",
   weekly_holiday: "bg-info",
+  on_leave: "bg-warning",
+  excused: "bg-warning",
 };
 const statusTextMapDay: Record<string, string> = {
   present: "P",
@@ -124,7 +129,7 @@ const StudentAttendance = () => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [teacherAssignments, setTeacherAssignments] = useState<any[]>([]);
-  const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, half_day: 0 });
+  const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, half_day: 0, on_leave: 0 });
   const [studentSearch, setStudentSearch] = useState("");
   const [reportData, setReportData] = useState<any>({ month: attendanceMonth, days: [], rows: [] });
   const [reportLoading, setReportLoading] = useState(false);
@@ -209,7 +214,7 @@ const StudentAttendance = () => {
       const nextState: Record<number, { status: string; remark: string; checkInTime: string; checkOutTime: string }> = {};
       roster.forEach((r: RosterRow) => {
         nextState[r.entity_id] = {
-          status: r.status || "",
+          status: normalizeStatusKey(r.status) || "present",
           remark: r.remark || "",
           checkInTime: r.check_in_time ? String(r.check_in_time).slice(0, 5) : "",
           checkOutTime: r.check_out_time ? String(r.check_out_time).slice(0, 5) : "",
@@ -340,13 +345,14 @@ const StudentAttendance = () => {
   }, [rows, studentSearch]);
 
   useEffect(() => {
-    const s = { total: visibleRows.length, present: 0, absent: 0, late: 0, half_day: 0 };
+    const s = { total: visibleRows.length, present: 0, absent: 0, late: 0, half_day: 0, on_leave: 0 };
     visibleRows.forEach(r => {
       const status = rowState[r.entity_id]?.status || "present";
       if (status === 'present') s.present++;
       else if (status === 'absent') s.absent++;
       else if (status === 'late') s.late++;
       else if (status === 'half_day') s.half_day++;
+      else if (status === 'on_leave') s.on_leave++;
     });
     setStats(s);
   }, [visibleRows, rowState]);
@@ -420,13 +426,15 @@ const StudentAttendance = () => {
     let absent = 0;
     let late = 0;
     let half_day = 0;
+    let on_leave = 0;
     activeReportRows.forEach((row) => {
       present += row.summary?.present ?? 0;
       absent += row.summary?.absent ?? 0;
       late += row.summary?.late ?? 0;
       half_day += row.summary?.halfDay ?? 0;
+      on_leave += row.summary?.onLeave ?? 0;
     });
-    return { total: activeReportRows.length, present, absent, late, half_day };
+    return { total: activeReportRows.length, present, absent, late, half_day, on_leave };
   }, [canEditStudentAttendance, stats, activeReportRows]);
 
   const activeReportDayColumns = useMemo(
@@ -851,7 +859,7 @@ const StudentAttendance = () => {
                 </div>
                 <div>
                   <p className="text-muted mb-0 small fw-bold text-uppercase" style={{ letterSpacing: '0.5px' }}>Others</p>
-                  <h4 className="mb-0 fw-bold text-warning">{displayStats.late + displayStats.half_day}</h4>
+                  <h4 className="mb-0 fw-bold text-warning">{displayStats.late + displayStats.half_day + (displayStats.on_leave || 0)}</h4>
                 </div>
               </div>
             </div>

@@ -1371,6 +1371,8 @@ async function viewExamSchedule(req, res) {
          es.class_subject_id AS subject_id,
          s.subject_name,
          s.subject_code,
+         s.theory_hours,
+         s.practical_hours,
          es.exam_date::TEXT,
          es.start_time,
          es.end_time,
@@ -1391,7 +1393,26 @@ async function viewExamSchedule(req, res) {
       params
     );
 
-    return success(res, 200, 'Exam schedule loaded', r.rows);
+    const mapped = (r.rows || []).map((row) => {
+      const theoryHours = Number(row.theory_hours || 0);
+      const practicalHours = Number(row.practical_hours || 0);
+      const code = String(row.subject_code || '').toLowerCase();
+      const name = String(row.subject_name || '').toLowerCase();
+      let subjectMode = 'Theory';
+
+      if (practicalHours > 0) subjectMode = 'Practical';
+      else if (/(practical|lab|prac)\b/.test(name) || /(practical|lab|prac|_p|\/p|\-p)\b/.test(code)) {
+        subjectMode = 'Practical';
+      } else if (/(theory|th)\b/.test(name) || /(theory|th|_t|\/t|\-t)\b/.test(code)) {
+        subjectMode = 'Theory';
+      }
+      return {
+        ...row,
+        subject_mode: subjectMode
+      };
+    });
+
+    return success(res, 200, 'Exam schedule loaded', mapped);
   } catch (e) {
     console.error('viewExamSchedule', e);
     return error(res, 500, 'Failed to load exam schedule');
@@ -1432,6 +1453,8 @@ async function viewExamResults(req, res) {
            es.class_subject_id AS subject_id,
            sb.subject_name,
            sb.subject_code,
+           sb.theory_hours,
+           sb.practical_hours,
            er.marks_obtained,
            COALESCE(er.is_absent, false) AS is_absent,
            es.max_marks,
@@ -1488,6 +1511,36 @@ async function viewExamResults(req, res) {
         [currentClassId, studentId]
       );
 
+      const mappedResults = (rows.rows || []).map((r) => {
+        const theoryHours = Number(r.theory_hours || 0);
+        const practicalHours = Number(r.practical_hours || 0);
+        const code = String(r.subject_code || '').toLowerCase();
+        const name = String(r.subject_name || '').toLowerCase();
+        let subjectMode = 'Theory';
+
+        if (practicalHours > 0) subjectMode = 'Practical';
+        else if (/(practical|lab|prac)\b/.test(name) || /(practical|lab|prac|_p|\/p|\-p)\b/.test(code)) {
+          subjectMode = 'Practical';
+        } else if (/(theory|th)\b/.test(name) || /(theory|th|_t|\/t|\-t)\b/.test(code)) {
+          subjectMode = 'Theory';
+        }
+
+        return {
+          student_id: r.student_id,
+          admission_no: r.admission_no,
+          roll_number: r.roll_number,
+          student_name: r.student_name,
+          subject_id: r.subject_id,
+          subject_name: r.subject_name,
+          subject_code: r.subject_code,
+          subject_mode: subjectMode,
+          marks_obtained: r.marks_obtained,
+          is_absent: r.is_absent,
+          max_marks: r.max_marks,
+          passing_marks: r.passing_marks,
+        };
+      });
+
       return success(res, 200, 'Result loaded', {
         student: {
           id: studentId,
@@ -1496,7 +1549,7 @@ async function viewExamResults(req, res) {
           class_name: selfStudent.class_name,
           section_name: selfStudent.section_name
         },
-        results: rows.rows,
+        results: mappedResults,
         has_pending_electives: parseInt(pendingCheck.rows[0]?.pending_count || 0) > 0
       });
     }

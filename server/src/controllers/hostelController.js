@@ -202,7 +202,7 @@ const createHostel = async (req, res) => {
     if (error.code === '23505') {
       return errorResponse(res, 409, 'Hostel name or code already exists');
     }
-    return errorResponse(res, 500, 'Failed to create hostel');
+    return errorResponse(res, 500, 'Failed to create hostel', error.message);
   }
 };
 

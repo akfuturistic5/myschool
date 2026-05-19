@@ -1,7 +1,7 @@
 const Joi = require('joi');
 
 const ENTITY_TYPES = ['student', 'staff'];
-const STATUS_TYPES = ['present', 'absent', 'late', 'half_day', 'holiday'];
+const STATUS_TYPES = ['present', 'absent', 'late', 'half_day', 'holiday', 'on_leave', 'excused'];
 
 const parseDate = Joi.string()
   .pattern(/^\d{4}-\d{2}-\d{2}$/)
