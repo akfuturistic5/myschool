@@ -89,71 +89,113 @@ const assignElectives = async (req, res) => {
     const { student_ids, class_subject_ids, academic_year_id } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
-    if (!student_ids?.length || !class_subject_ids?.length || !academic_year_id) {
+    if (!student_ids?.length || !academic_year_id) {
       return errorResponse(res, 400, 'Missing required fields');
     }
 
-    // 0. Validate selection limits for each group in the request
-    const groupValidation = await query(
-      `SELECT eg.id, eg.group_name, eg.selectable_subjects, COUNT(cs.id) as subjects_in_request
-       FROM class_subjects cs
-       JOIN subject_elective_groups eg ON cs.elective_group_id = eg.id
-       WHERE cs.id = ANY($1::int[])
-       GROUP BY eg.id, eg.group_name, eg.selectable_subjects`,
-      [class_subject_ids]
-    );
-
-    for (const row of groupValidation.rows) {
-      const limit = Number(row.selectable_subjects || 0);
-      if (limit > 0 && Number(row.subjects_in_request) > limit) {
-        return errorResponse(res, 400, `Selection limit exceeded for group "${row.group_name}". Maximum allowed: ${limit}`);
+    // Block students, parents, and guardians from editing their selections once saved
+    const roleName = String(req.user?.role_name || req.user?.role || '').trim().toLowerCase();
+    if (roleName === 'student' || roleName === 'parent' || roleName === 'guardian') {
+      const existingChoices = await query(
+        `SELECT id FROM student_subject_choices 
+         WHERE student_id = $1 AND academic_year_id = $2 AND deleted_at IS NULL LIMIT 1`,
+        [student_ids[0], academic_year_id]
+      );
+      if (existingChoices.rows.length > 0) {
+        return errorResponse(res, 403, 'You have already saved your elective choices and they cannot be modified. Please contact the administrator for any changes.');
       }
     }
 
-    // Fetch class_id from one of the class_subjects (they all belong to the same class)
-    const classIdRes = await query('SELECT class_id FROM class_subjects WHERE id = $1', [class_subject_ids[0]]);
-    const classId = classIdRes.rows[0]?.class_id;
+    // 0. Validate selection limits for each group in the request
+    if (class_subject_ids?.length > 0) {
+      const groupValidation = await query(
+        `SELECT eg.id, eg.group_name, eg.selectable_subjects, COUNT(cs.id) as subjects_in_request
+         FROM class_subjects cs
+         JOIN subject_elective_groups eg ON cs.elective_group_id = eg.id
+         WHERE cs.id = ANY($1::int[])
+         GROUP BY eg.id, eg.group_name, eg.selectable_subjects`,
+        [class_subject_ids]
+      );
+
+      for (const row of groupValidation.rows) {
+        const limit = Number(row.selectable_subjects || 0);
+        if (limit > 0 && Number(row.subjects_in_request) > limit) {
+          return errorResponse(res, 400, `Selection limit exceeded for group "${row.group_name}". Maximum allowed: ${limit}`);
+        }
+      }
+    }
+
+    // Fetch class_id from one of the class_subjects if provided,
+    // otherwise fetch it from the student's current enrollment in the ledger
+    let classId;
+    if (class_subject_ids?.length > 0) {
+      const classIdRes = await query('SELECT class_id FROM class_subjects WHERE id = $1', [class_subject_ids[0]]);
+      classId = classIdRes.rows[0]?.class_id;
+    } else {
+      const classIdRes = await query(
+        `SELECT to_class_id AS class_id 
+         FROM student_lifecycle_ledger 
+         WHERE student_id = $1 AND to_academic_year_id = $2
+         ORDER BY event_date DESC NULLS LAST, id DESC
+         LIMIT 1`,
+        [student_ids[0], academic_year_id]
+      );
+      classId = classIdRes.rows[0]?.class_id;
+    }
 
     if (!classId) {
-      return errorResponse(res, 400, 'Invalid class subject selected');
+      return errorResponse(res, 400, 'Invalid class or student enrollment not found');
     }
 
     // Process each student
     for (const studentId of student_ids) {
-      // 1. Identify which elective groups these subjects belong to
-      const groupsResult = await query(
-        `SELECT DISTINCT elective_group_id FROM class_subjects WHERE id = ANY($1::int[])`,
-        [class_subject_ids]
-      );
-      const groupIds = groupsResult.rows.map(r => r.elective_group_id).filter(id => id != null);
+      if (class_subject_ids?.length > 0) {
+        // 1. Identify which elective groups these subjects belong to
+        const groupsResult = await query(
+          `SELECT DISTINCT elective_group_id FROM class_subjects WHERE id = ANY($1::int[])`,
+          [class_subject_ids]
+        );
+        const groupIds = groupsResult.rows.map(r => r.elective_group_id).filter(id => id != null);
 
-      // 2. Remove existing choices for this student in these groups (to allow re-assignment/replacement)
-      if (groupIds.length > 0) {
+        // 2. Remove existing choices for this student in these groups (to allow re-assignment/replacement)
+        if (groupIds.length > 0) {
+          await query(
+            `DELETE FROM student_subject_choices 
+             WHERE student_id = $1 
+               AND academic_year_id = $2
+               AND class_subject_id IN (
+                 SELECT id FROM class_subjects WHERE elective_group_id = ANY($3::int[])
+               )`,
+            [studentId, academic_year_id, groupIds]
+          );
+        } else {
+          // Fallback for electives without groups? (Though they should have them)
+          await query(
+            `DELETE FROM student_subject_choices 
+             WHERE student_id = $1 AND academic_year_id = $2 AND class_subject_id = ANY($3::int[])`,
+            [studentId, academic_year_id, class_subject_ids]
+          );
+        }
+
+        // 3. Insert new choices
+        for (const subjectId of class_subject_ids) {
+          await query(
+            `INSERT INTO student_subject_choices (student_id, class_id, class_subject_id, academic_year_id, created_by)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (student_id, class_subject_id, academic_year_id) WHERE (deleted_at IS NULL) DO NOTHING`,
+            [studentId, classId, subjectId, academic_year_id, userId]
+          );
+        }
+      } else {
+        // If class_subject_ids is empty, remove ALL elective choices for this student in this class and year
         await query(
           `DELETE FROM student_subject_choices 
            WHERE student_id = $1 
              AND academic_year_id = $2
              AND class_subject_id IN (
-               SELECT id FROM class_subjects WHERE elective_group_id = ANY($3::int[])
+               SELECT id FROM class_subjects WHERE class_id = $3 AND is_elective = true
              )`,
-          [studentId, academic_year_id, groupIds]
-        );
-      } else {
-        // Fallback for electives without groups? (Though they should have them)
-        await query(
-          `DELETE FROM student_subject_choices 
-           WHERE student_id = $1 AND academic_year_id = $2 AND class_subject_id = ANY($3::int[])`,
-          [studentId, academic_year_id, class_subject_ids]
-        );
-      }
-
-      // 3. Insert new choices
-      for (const subjectId of class_subject_ids) {
-        await query(
-          `INSERT INTO student_subject_choices (student_id, class_id, class_subject_id, academic_year_id, created_by)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (student_id, class_subject_id, academic_year_id) WHERE (deleted_at IS NULL) DO NOTHING`,
-          [studentId, classId, subjectId, academic_year_id, userId]
+          [studentId, academic_year_id, classId]
         );
       }
     }

@@ -31,8 +31,12 @@ const listClassTeacherAssignments = async (req, res) => {
     let teacherId = teacherIdRaw;
     const academicYearId = req.query.academicYearId != null ? parseId(req.query.academicYearId) : null;
 
-    // Fallback: If no teacherId provided but user is logged in, try to resolve their staff record
-    if (!teacherId && req.user?.id) {
+    // Fallback: If no teacherId provided but user is logged in as a Teacher, try to resolve their staff record
+    const isTeacher =
+      req.user?.role_id === 2 ||
+      String(req.user?.role_name || req.user?.role || '').trim().toLowerCase() === 'teacher';
+
+    if (!teacherId && req.user?.id && isTeacher) {
       const staffCheck = await query(
         'SELECT id FROM staff WHERE user_id = $1 AND status = \'Active\' AND deleted_at IS NULL LIMIT 1',
         [req.user.id]

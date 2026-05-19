@@ -2817,6 +2817,79 @@ const getTeacherStudents = async (req, res) => {
 };
 
 // Get student by ID (with blood_group, religion, cast, mother_tongue names from lookup tables)
+const getStudentSubjects = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const academicYearId = req.query.academic_year_id || req.headers['x-academic-year-id'];
+
+    if (!studentId || !academicYearId) {
+      return res.status(400).json({ status: 'ERROR', message: 'Student ID and Academic Year ID are required' });
+    }
+
+    const enrollmentRes = await query(`
+      SELECT to_class_id, to_section_id
+      FROM student_lifecycle_ledger
+      WHERE student_id = $1 AND to_academic_year_id = $2
+      ORDER BY id DESC LIMIT 1
+    `, [studentId, academicYearId]);
+
+    if (enrollmentRes.rows.length === 0) {
+      return res.status(404).json({ status: 'ERROR', message: 'Student not enrolled in this academic year' });
+    }
+
+    const { to_class_id: classId, to_section_id: sectionId } = enrollmentRes.rows[0];
+
+    const subjectsQuery = `
+      SELECT 
+        cs.id as class_subject_id,
+        s.subject_name,
+        s.subject_code,
+        s.subject_type,
+        cs.is_elective,
+        u.first_name as teacher_first_name,
+        u.last_name as teacher_last_name
+      FROM class_subjects cs
+      JOIN subjects s ON cs.subject_id = s.id
+      LEFT JOIN student_subject_choices ssc 
+        ON ssc.class_subject_id = cs.id 
+        AND ssc.student_id = $1 
+        AND ssc.academic_year_id = $2
+        AND ssc.deleted_at IS NULL
+      LEFT JOIN subject_teacher_assignments sta 
+        ON sta.class_id = cs.class_id 
+        AND sta.class_subject_id = cs.id
+        AND sta.academic_year_id = $2
+        AND sta.deleted_at IS NULL
+        AND (
+          sta.class_section_id IS NULL OR 
+          EXISTS (
+            SELECT 1 FROM class_sections cs_inner 
+            WHERE cs_inner.id = sta.class_section_id 
+              AND cs_inner.section_id = $3
+          )
+        )
+      LEFT JOIN staff st ON sta.staff_id = st.id
+      LEFT JOIN users u ON u.id = st.user_id
+      WHERE cs.class_id = $4
+        AND (cs.is_elective = false OR ssc.id IS NOT NULL)
+        AND cs.deleted_at IS NULL
+        AND s.deleted_at IS NULL
+        AND cs.academic_year_id = $2
+      ORDER BY cs.is_elective ASC, s.subject_name ASC
+    `;
+
+    const subjectsRes = await query(subjectsQuery, [studentId, academicYearId, sectionId, classId]);
+
+    res.status(200).json({
+      status: 'SUCCESS',
+      data: subjectsRes.rows
+    });
+  } catch (error) {
+    console.error('Error fetching student subjects:', error);
+    res.status(500).json({ status: 'ERROR', message: 'Failed to fetch student subjects', error: error.message });
+  }
+};
+
 const getStudentById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -5286,4 +5359,5 @@ module.exports = {
   searchStudents,
   deleteStudent,
   getNextAdmissionNumber,
+  getStudentSubjects,
 };

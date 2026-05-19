@@ -39,7 +39,6 @@ function formatSlotTime(t: unknown): string {
   return `${h}:${min} ${ap}`;
 }
 
-/** Sort key from DB time (HH:MM or HH:MM:SS); avoids broken ordering from 12h display strings. */
 function timeSortKey(t: unknown): string {
   const s = String(t ?? "").trim();
   const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -50,7 +49,6 @@ function timeSortKey(t: unknown): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-/** Dropdown label: name + Theory / Practical when the same subject exists in both forms. */
 function formatSubjectOptionLabel(s: Record<string, unknown>): string {
   const name = String(s.subject_name ?? "");
   const mode = String(s.subject_mode ?? "").trim();
@@ -75,8 +73,8 @@ function slotIsBreakFromApi(s: Record<string, unknown>): boolean {
   return false;
 }
 
-function findCellForSlot(routineData: any[], dayLabel: string, slotId: number) {
-  return (routineData || []).find((r: any) => {
+function findAllCellsForSlot(routineData: any[], dayLabel: string, slotId: number) {
+  return (routineData || []).filter((r: any) => {
     const d = String(r.day || "").toLowerCase();
     const od = r.originalData || {};
     return d === dayLabel.toLowerCase() && Number(od.time_slot_id) === slotId;
@@ -106,124 +104,6 @@ const options = (arr: any[], valueKey = "id", labelKey = "name"): Opt[] => {
   return [{ value: "", label: "Select" }, ...deduped.map((x: any) => ({ value: String(x[valueKey]), label: String(x[labelKey] ?? x[valueKey]) }))];
 };
 
-type CellProps = {
-  dayLabel: string;
-  dayNum: number;
-  slot: PeriodCol;
-  subjectId: string;
-  teacherId: string;
-  dirty: boolean;
-  busy: boolean;
-  subjectOptions: Opt[];
-  teacherOptions: Opt[];
-  subjectToTeachersMap: Record<string, string[]>;
-  subjectTeacherMap: Record<string, string>;
-  sectionRoomLabel: string;
-  onSubjectChange: (value: string | null) => void;
-  onTeacherChange: (value: string | null) => void;
-  onSave: () => void;
-  onDelete: () => void;
-  canDelete: boolean;
-  roomId: string;
-  roomOptions: Opt[];
-  onRoomChange: (value: string | null) => void;
-};
-
-function TimetableCell({
-  dayLabel,
-  slot,
-  subjectId,
-  teacherId,
-  dirty,
-  busy,
-  subjectOptions,
-  teacherOptions,
-  subjectToTeachersMap,
-  subjectTeacherMap,
-  sectionRoomLabel,
-  onSubjectChange,
-  onTeacherChange,
-  onSave,
-  onDelete,
-  canDelete,
-  roomId,
-  roomOptions,
-  onRoomChange,
-}: CellProps) {
-  const filteredTeacherOptions = useMemo(() => {
-    if (!subjectId) return teacherOptions;
-    const allowed = subjectToTeachersMap[subjectId] || [];
-    // Fallback to full list when assignment map is unavailable/misaligned.
-    if (allowed.length === 0) return teacherOptions;
-    return teacherOptions.filter((opt) => !opt.value || allowed.includes(opt.value));
-  }, [subjectId, teacherOptions, subjectToTeachersMap]);
-
-  const handleSubjectChange = (v: string | null) => {
-    const nextSubjectId = v || "";
-    onSubjectChange(nextSubjectId);
-    if (!nextSubjectId) return;
-    const mappedTeacherId = subjectTeacherMap[nextSubjectId];
-    if (mappedTeacherId) {
-      onTeacherChange(mappedTeacherId);
-    }
-  };
-
-  if (slot.isBreak) {
-    return (
-      <td className="bg-light align-top text-center py-3">
-        <small className="text-muted">Break</small>
-      </td>
-    );
-  }
-
-  return (
-    <td className="align-top" style={{ minWidth: 200, maxWidth: 260 }}>
-      <div className="small text-muted mb-1">
-        {slot.start}
-        {slot.end ? ` – ${slot.end}` : ""}
-      </div>
-      <div className="mb-1">
-        <CommonSelect
-          className="select select-sm"
-          options={subjectOptions}
-          value={subjectId || null}
-          placeholder="Subject"
-          onChange={handleSubjectChange}
-        />
-      </div>
-      <div className="mb-1">
-        <CommonSelect
-          className="select select-sm"
-          options={filteredTeacherOptions}
-          value={teacherId || null}
-          placeholder="Teacher"
-          onChange={(v) => onTeacherChange(v || "")}
-        />
-      </div>
-      <div className="mb-1">
-        <CommonSelect
-          className="select select-sm"
-          options={roomOptions}
-          value={roomId || null}
-          placeholder="Room"
-          onChange={(v) => onRoomChange(v || "")}
-        />
-      </div>
-      {dirty ? <div className="small text-warning mb-1">Unsaved change</div> : null}
-      <div className="d-flex flex-wrap gap-1">
-        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={onSave}>
-          {busy ? "…" : canDelete ? "Update" : "Add"}
-        </button>
-        {canDelete ? (
-          <button type="button" className="btn btn-sm btn-outline-danger" disabled={busy} onClick={onDelete}>
-            Remove
-          </button>
-        ) : null}
-      </div>
-    </td>
-  );
-}
-
 type CellDraft = {
   existingId: number | null;
   dayLabel: string;
@@ -234,7 +114,162 @@ type CellDraft = {
   teacherId: string;
   roomId: string;
   dirty: boolean;
+  isOpenedByUser?: boolean;
 };
+
+type CellProps = {
+  dayLabel: string;
+  dayNum: number;
+  slot: PeriodCol;
+  drafts: CellDraft[];
+  subjectOptions: Opt[];
+  teacherOptions: Opt[];
+  roomOptions: Opt[];
+  onEditClick: () => void;
+};
+
+function TimetableCell({
+  dayLabel,
+  slot,
+  drafts = [],
+  subjectOptions,
+  teacherOptions,
+  roomOptions,
+  onEditClick,
+}: CellProps) {
+  if (slot.isBreak) {
+    return (
+      <td className="bg-light align-top text-center py-3">
+        <small className="text-muted fw-bold">Break</small>
+      </td>
+    );
+  }
+
+  const activeDrafts = drafts.filter((d) => d.subjectId || d.teacherId || d.existingId);
+  const isEmpty = activeDrafts.length === 0 || (
+    activeDrafts.length === 1 &&
+    !activeDrafts[0].existingId &&
+    !activeDrafts[0].subjectId
+  );
+
+  const getSubjectLabel = (id: string) => {
+    const opt = subjectOptions.find((o) => String(o.value) === String(id));
+    return opt && opt.value ? opt.label : "";
+  };
+
+  const getTeacherLabel = (id: string) => {
+    const opt = teacherOptions.find((o) => String(o.value) === String(id));
+    return opt && opt.value ? opt.label : "";
+  };
+
+  const getRoomLabel = (id: string) => {
+    const opt = roomOptions.find((o) => String(o.value) === String(id));
+    return opt && opt.value ? opt.label : "";
+  };
+
+  if (isEmpty) {
+    return (
+      <td className="align-top p-2" style={{ minWidth: 200, maxWidth: 280 }}>
+        <div className="small text-muted mb-2 border-bottom pb-1">
+          <span>{slot.start}{slot.end ? ` – ${slot.end}` : ""}</span>
+        </div>
+        <div 
+          className="d-flex align-items-center justify-content-center rounded p-3 text-muted border border-dashed"
+          style={{ 
+            height: 85, 
+            backgroundColor: "#f8f9fa",
+            cursor: "pointer", 
+            transition: "all 0.2s ease-in-out" 
+          }}
+          onClick={onEditClick}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = "#0d6efd";
+            e.currentTarget.style.backgroundColor = "#f0f5ff";
+            e.currentTarget.style.color = "#0d6efd";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = "#dee2e6";
+            e.currentTarget.style.backgroundColor = "#f8f9fa";
+            e.currentTarget.style.color = "#6c757d";
+          }}
+        >
+          <div className="text-center">
+            <i className="ti ti-plus fs-6 mb-1 d-block"></i>
+            <span className="small fw-semibold">Add Class</span>
+          </div>
+        </div>
+      </td>
+    );
+  }
+
+  return (
+    <td 
+      className="align-top p-2" 
+      style={{ 
+        minWidth: 200, 
+        maxWidth: 280, 
+        backgroundColor: drafts.some((d) => d.dirty) ? "#fffdf5" : undefined,
+        cursor: "pointer",
+        transition: "all 0.15s"
+      }}
+      onClick={onEditClick}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.boxShadow = "inset 0 0 0 1px #0d6efd";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      <div className="small text-muted mb-2 border-bottom pb-1 d-flex justify-content-between align-items-center">
+        <span>{slot.start}{slot.end ? ` – ${slot.end}` : ""}</span>
+        <span className="badge bg-light text-muted border px-1 py-0 fs-9 fw-normal">Edit</span>
+      </div>
+      <div className="d-flex flex-column gap-2">
+        {activeDrafts.map((d, index) => {
+          const sLabel = getSubjectLabel(d.subjectId);
+          const tLabel = getTeacherLabel(d.teacherId);
+          const rLabel = getRoomLabel(d.roomId);
+
+          return (
+            <div 
+              key={index} 
+              className="p-2 border rounded bg-white shadow-sm position-relative" 
+              style={{ borderLeft: d.dirty ? "3px solid #ffc107" : "3px solid #0d6efd" }}
+            >
+              <div className="fw-bold text-dark fs-12 text-truncate" title={sLabel || "Unassigned"}>
+                {sLabel || "Unassigned Subject"}
+              </div>
+              <div className="text-muted fs-11 mt-1 d-flex align-items-center text-truncate" title={tLabel}>
+                <i className="ti ti-user me-1 text-secondary"></i>
+                {tLabel || "No Teacher Assigned"}
+              </div>
+              {rLabel && (
+                <div className="text-muted fs-10 mt-1 d-flex align-items-center text-truncate" title={rLabel}>
+                  <i className="ti ti-map-pin me-1 text-secondary"></i>
+                  Room {rLabel}
+                </div>
+              )}
+              <div className="mt-2 d-flex justify-content-between align-items-center">
+                <span className="small text-muted fs-9">
+                  {!d.existingId ? (
+                    <span className="badge bg-light text-warning border border-warning fs-9 px-1 py-0">Draft</span>
+                  ) : d.dirty ? (
+                    <span className="badge bg-light text-warning border border-warning fs-9 px-1 py-0">Unsaved</span>
+                  ) : (
+                    <span className="badge bg-light text-success border border-success fs-9 px-1 py-0">Saved</span>
+                  )}
+                </span>
+                {activeDrafts.length > 1 && (
+                  <span className="badge bg-secondary fs-9">#{index + 1}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </td>
+  );
+}
 
 const ClassTimetable = () => {
   const routes = all_routes;
@@ -302,8 +337,6 @@ const ClassTimetable = () => {
     }
   }, [filterClassId, academicYearId, selectionReady]);
 
-
-
   const classOptions: Opt[] = useMemo(
     () => [{ value: "", label: "Select" }, ...classes.map((c: any) => ({ value: String(c.id), label: formatClassLabel(c) }))],
     [classes]
@@ -316,7 +349,6 @@ const ClassTimetable = () => {
     const rows = Array.isArray(subjects) ? subjects : [];
     const seen = new Set<string>();
     const filtered = rows.filter((s: Record<string, unknown>) => {
-      // Dedup by actual subject and mode, not just mapping ID
       const mode = String(s.subject_mode ?? "").trim();
       const masterId = String(s.subject_id ?? s.master_subject_id ?? s.id ?? "");
       const dedupKey = `${masterId}-${mode}`;
@@ -337,14 +369,14 @@ const ClassTimetable = () => {
     ];
   }, [subjects, filterClassId]);
 
-  const teacherOptions: Opt[] = [
+  const teacherOptions: Opt[] = useMemo(() => [
     { value: "", label: "Select" },
     ...teachers.map((t: any) => {
       const sid = t.staff_id != null ? String(t.staff_id) : String(t.id);
       const name = `${t.first_name || ""} ${t.last_name || ""}`.trim() || sid;
       return { value: sid, label: name };
     }),
-  ];
+  ], [teachers]);
 
   const subjectAliasMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -373,11 +405,9 @@ const ClassTimetable = () => {
       const tid = String(a.teacherId || a.teacher_id || a.staff_id || "");
       if (!tid || !validTeacherIds.has(tid)) return;
 
-      // Preferred key: class_subject_id (matches subject dropdown value).
       const classSubjectKey = String(a.classSubjectId || a.class_subject_id || "").trim();
       if (classSubjectKey) pushTeacher(classSubjectKey, tid);
 
-      // Compatibility key: subject_id (master subject) -> one or more class_subject ids.
       const masterSubjectKey = String(a.subjectId || a.subject_id || "").trim();
       if (masterSubjectKey) {
         (subjectAliasMap[masterSubjectKey] || []).forEach((classSubjectId) => {
@@ -505,8 +535,8 @@ const ClassTimetable = () => {
     printData("Class timetable", exportColumns, exportRows);
   }, [exportRows, exportColumns]);
 
-  const [cellDrafts, setCellDrafts] = useState<Record<string, CellDraft>>({});
-  const [initialCellDrafts, setInitialCellDrafts] = useState<Record<string, CellDraft>>({});
+  const [cellDrafts, setCellDrafts] = useState<Record<string, CellDraft[]>>({});
+  const [initialCellDrafts, setInitialCellDrafts] = useState<Record<string, CellDraft[]>>({});
   const [savingByKey, setSavingByKey] = useState<Record<string, boolean>>({});
   const [bulkSaving, setBulkSaving] = useState(false);
 
@@ -518,200 +548,259 @@ const ClassTimetable = () => {
       setInitialCellDrafts({});
       return;
     }
-    const next: Record<string, CellDraft> = {};
+    const next: Record<string, CellDraft[]> = {};
     WEEK_DAYS.forEach(({ label, dow }) => {
       periodColumns.forEach((col) => {
         if (col.isBreak) return;
-        const entry = findCellForSlot(routineData, label, col.id);
-        const od = entry?.originalData ?? {};
-        const existingId = od.id != null && Number.isFinite(Number(od.id)) ? Number(od.id) : null;
+        const entries = findAllCellsForSlot(routineData, label, col.id);
         const key = makeCellKey(dow, col.id);
-        next[key] = {
-          existingId,
-          dayLabel: label,
-          dayNum: dow,
-          slotId: col.id,
-          slotLabel: col.label,
-          subjectId: String(od.class_subject_id || od.subject_id || ""),
-          teacherId: String(od.teacher_id || od.staff_id || ""),
-          roomId: String(od.class_room_id || od.room_id || ""),
-          dirty: false,
-        };
+        
+        if (entries.length === 0) {
+          next[key] = [{
+            existingId: null,
+            dayLabel: label,
+            dayNum: dow,
+            slotId: col.id,
+            slotLabel: col.label,
+            subjectId: "",
+            teacherId: "",
+            roomId: "",
+            dirty: false,
+          }];
+        } else {
+          next[key] = entries.map((entry) => {
+            const od = entry.originalData || {};
+            const existingId = od.id != null && Number.isFinite(Number(od.id)) ? Number(od.id) : null;
+            return {
+              existingId,
+              dayLabel: label,
+              dayNum: dow,
+              slotId: col.id,
+              slotLabel: col.label,
+              subjectId: String(od.class_subject_id || od.subject_id || ""),
+              teacherId: String(od.teacher_id || od.staff_id || ""),
+              roomId: String(od.class_room_id || od.room_id || ""),
+              dirty: false,
+            };
+          });
+        }
       });
     });
     setCellDrafts(next);
     setInitialCellDrafts(next);
   }, [selectionReady, loading, periodColumns, routineData, makeCellKey]);
 
-  const updateCellDraft = useCallback(
-    (key: string, patch: Partial<CellDraft>) => {
-      setCellDrafts((prev) => {
-        const current = prev[key];
-        if (!current) return prev;
-        const next = { ...current, ...patch };
-        const base = initialCellDrafts[key];
-        const dirty = !!base && (next.subjectId !== base.subjectId || next.teacherId !== base.teacherId || next.roomId !== base.roomId);
-        return { ...prev, [key]: { ...next, dirty } };
-      });
-    },
-    [initialCellDrafts]
-  );
+  // Modal Editing State Hooks
+  const [editingCellKey, setEditingCellKey] = useState<string | null>(null);
+  const [editingCellLabel, setEditingCellLabel] = useState<string>("");
+  const [editingCellSlotLabel, setEditingCellSlotLabel] = useState<string>("");
+  const [modalDrafts, setModalDrafts] = useState<CellDraft[]>([]);
+  const [modalError, setModalError] = useState<string>("");
 
-  const handleBulkSave = useCallback(async () => {
-    const dirtyKeys = Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty);
-    if (!dirtyKeys.length) return;
+  const validateElectiveGroupConflict = useCallback((draftsList: CellDraft[]): { valid: boolean; reason: string } => {
+    if (draftsList.length <= 1) return { valid: true, reason: "" };
 
-    for (const key of dirtyKeys) {
-      const d = cellDrafts[key];
-      if (!d.subjectId) {
-        void Swal.fire({
-          icon: "warning",
-          title: "Incomplete assignment",
-          text: `Please select a subject for ${d.dayLabel} (${d.slotLabel}).`,
-        });
-        return;
-      }
-      if (!d.teacherId) {
-        void Swal.fire({
-          icon: "warning",
-          title: "Incomplete assignment",
-          text: `Please select a teacher for ${d.dayLabel} (${d.slotLabel}).`,
-        });
-        return;
-      }
+    const cardSubjects = draftsList.map((d) => {
+      const subId = Number(d.subjectId);
+      if (!subId) return null;
+      return (subjects as any[]).find((s: any) => Number(s.id) === subId);
+    }).filter((s): s is any => s != null);
+
+    if (cardSubjects.length <= 1) return { valid: true, reason: "" };
+
+    const hasCompulsory = cardSubjects.some((s) => !s.is_elective || !s.elective_group_id);
+    if (hasCompulsory) {
+      return {
+        valid: false,
+        reason: "Compulsory subjects cannot be scheduled parallely with other subjects.",
+      };
     }
 
-    setBulkSaving(true);
-    try {
-      const assignments = dirtyKeys.map((key) => {
-        const d = cellDrafts[key];
-        return {
-          id: d.existingId,
-          subject_id: d.subjectId ? Number(d.subjectId) : null,
-          teacher_id: Number(d.teacherId),
-          room_id: d.roomId ? Number(d.roomId) : null,
-          day_of_week: d.dayNum,
-          time_slot_id: d.slotId,
-        };
-      });
-
-      const res = await apiService.bulkUpdateClassSchedules({
-        academic_year_id: academicYearId,
-        class_id: Number(filterClassId),
-        section_id: filterSectionId ? Number(filterSectionId) : null,
-        room_id: null, // Global room override not used when selecting per period
-        assignments,
-      });
-
-      if (res.success === false) {
-        void Swal.fire({
-          icon: "warning",
-          title: "Scheduling Conflict",
-          text: res.message || "A conflict was detected in your routine.",
-        });
-        return;
-      }
-
-      await refetch();
-      void Swal.fire({
-        icon: "success",
-        title: "Saved successfully",
-        text: `Updated ${assignments.length} timetable entries.`,
-        timer: 2000,
-        showConfirmButton: false,
-      });
-    } catch (e: any) {
-      void Swal.fire({
-        icon: "error",
-        title: "Save failed",
-        text: httpErrorMessage(e, "Could not save timetable."),
-      });
-    } finally {
-      setBulkSaving(false);
+    const firstGroupId = cardSubjects[0].elective_group_id;
+    const groupMismatch = cardSubjects.some((s) => s.elective_group_id !== firstGroupId);
+    if (groupMismatch) {
+      return {
+        valid: false,
+        reason: "Parallel optional subjects must belong to the exact same elective group.",
+      };
     }
-  }, [cellDrafts, academicYearId, filterClassId, filterSectionId, refetch]);
 
-  const handleSingleSave = useCallback(
-    async (key: string) => {
-      const draft = cellDrafts[key];
-      if (!draft) return;
-      if (!draft.subjectId) {
-        void Swal.fire({ icon: "warning", title: "Subject required", text: "Select a subject before saving." });
-        return;
-      }
-      if (!draft.teacherId) {
-        void Swal.fire({ icon: "warning", title: "Teacher required", text: "Select a teacher before saving." });
-        return;
-      }
-      setSavingByKey((prev) => ({ ...prev, [key]: true }));
-      try {
-        const payload = {
-          class_id: Number(filterClassId),
-          section_id: filterSectionId ? Number(filterSectionId) : null,
-          subject_id: Number(draft.subjectId),
-          teacher_id: Number(draft.teacherId),
-          room_id: draft.roomId ? Number(draft.roomId) : null,
-          day_of_week: draft.dayNum,
-          time_slot_id: draft.slotId,
-          academic_year_id: academicYearId,
-        };
-        let res;
-        if (draft.existingId) {
-          res = await apiService.updateClassSchedule(draft.existingId, payload);
+    return { valid: true, reason: "" };
+  }, [subjects]);
+
+  const openEditModal = useCallback((key: string, dayLabel: string, slotLabel: string) => {
+    setEditingCellKey(key);
+    setEditingCellLabel(dayLabel);
+    setEditingCellSlotLabel(slotLabel);
+    setModalError("");
+    
+    const current = cellDrafts[key] || [];
+    setModalDrafts(JSON.parse(JSON.stringify(current)));
+
+    const el = document.getElementById("edit_slot_modal");
+    if (el) {
+      const inst = (window as any).bootstrap?.Modal?.getOrCreateInstance(el);
+      inst?.show();
+    }
+  }, [cellDrafts]);
+
+  const updateModalDraft = useCallback((index: number, patch: Partial<CellDraft>) => {
+    setModalDrafts((prev) => {
+      const nextList = [...prev];
+      const current = nextList[index];
+      if (!current) return prev;
+      nextList[index] = { ...current, ...patch, isOpenedByUser: true };
+
+      // Live elective group validation inside modal
+      const cardSubjects = nextList.map((d) => {
+        const subId = Number(d.subjectId);
+        if (!subId) return null;
+        return (subjects as any[]).find((s: any) => Number(s.id) === subId);
+      }).filter((s): s is any => s != null);
+
+      if (cardSubjects.length > 1) {
+        const hasCompulsory = cardSubjects.some((s) => !s.is_elective || !s.elective_group_id);
+        if (hasCompulsory) {
+          setModalError("Compulsory subjects cannot be scheduled parallely with other subjects.");
         } else {
-          res = await apiService.createClassSchedule(payload);
+          const firstGroupId = cardSubjects[0].elective_group_id;
+          const groupMismatch = cardSubjects.some((s) => s.elective_group_id !== firstGroupId);
+          if (groupMismatch) {
+            setModalError("Parallel optional subjects must belong to the exact same elective group.");
+          } else {
+            setModalError("");
+          }
         }
+      } else {
+        setModalError("");
+      }
 
-        if (res && res.success === false) {
+      return nextList;
+    });
+  }, [subjects]);
+
+  const addModalParallelRow = useCallback(() => {
+    setModalDrafts((prev) => {
+      const current = prev[0];
+      if (current && current.subjectId) {
+        const sub = (subjects as any[]).find((s: any) => Number(s.id) === Number(current.subjectId));
+        if (sub && (!sub.is_elective || !sub.elective_group_id)) {
           void Swal.fire({
             icon: "warning",
-            title: "Conflict",
-            text: res.message || "This slot is already occupied.",
+            title: "Cannot schedule parallel",
+            text: "Parallel subjects can only be added for optional/elective subjects of the same group. The current subject is compulsory.",
           });
-          return;
+          return prev;
         }
-
-        await refetch();
-      } catch (e: any) {
-        void Swal.fire({
-          icon: "error",
-          title: "Save failed",
-          text: httpErrorMessage(e, "Could not save timetable."),
-        });
-      } finally {
-        setSavingByKey((prev) => ({ ...prev, [key]: false }));
       }
-    },
-    [cellDrafts, filterClassId, filterSectionId, academicYearId, refetch]
-  );
 
-  const handleDelete = useCallback(
-    async (key: string) => {
-      const draft = cellDrafts[key];
-      if (!draft?.existingId) return;
+      if (modalError) return prev;
+
+      const newRow: CellDraft = {
+        existingId: null,
+        dayLabel: editingCellLabel,
+        dayNum: current?.dayNum ?? 0,
+        slotId: current?.slotId ?? 0,
+        slotLabel: editingCellSlotLabel,
+        subjectId: "",
+        teacherId: "",
+        roomId: "",
+        dirty: true,
+        isOpenedByUser: true,
+      };
+      return [...prev, newRow];
+    });
+  }, [subjects, editingCellLabel, editingCellSlotLabel, modalError]);
+
+  const removeModalRow = useCallback(async (index: number) => {
+    const target = modalDrafts[index];
+    if (!target) return;
+
+    if (target.existingId) {
       const confirm = await Swal.fire({
         title: "Remove entry?",
-        text: `Remove this timetable entry for ${draft.dayLabel}?`,
+        text: "This entry is already saved. Remove it permanently from the database?",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonText: "Yes, remove",
-        cancelButtonText: "Cancel",
+        confirmButtonText: "Yes, delete",
         confirmButtonColor: "#dc3545",
       });
       if (!confirm.isConfirmed) return;
-      setSavingByKey((prev) => ({ ...prev, [key]: true }));
+
       try {
-        await apiService.deleteClassSchedule(draft.existingId);
+        await apiService.deleteClassSchedule(target.existingId);
         await refetch();
-        void Swal.fire({ icon: "success", title: "Removed", timer: 1600, showConfirmButton: false });
+        void Swal.fire({ icon: "success", title: "Removed from database", timer: 1500, showConfirmButton: false });
       } catch (e) {
         void Swal.fire({ icon: "error", title: "Delete failed", text: httpErrorMessage(e, "Could not delete.") });
-      } finally {
-        setSavingByKey((prev) => ({ ...prev, [key]: false }));
+        return;
       }
-    },
-    [cellDrafts, refetch]
-  );
+    }
+
+    setModalDrafts((prev) => {
+      const nextList = [...prev];
+      nextList.splice(index, 1);
+      if (nextList.length === 0) {
+        nextList.push({
+          existingId: null,
+          dayLabel: editingCellLabel,
+          dayNum: target?.dayNum ?? 0,
+          slotId: target?.slotId ?? 0,
+          slotLabel: editingCellSlotLabel,
+          subjectId: "",
+          teacherId: "",
+          roomId: "",
+          dirty: false,
+          isOpenedByUser: false,
+        });
+      }
+      return nextList;
+    });
+    setModalError("");
+  }, [editingCellLabel, editingCellSlotLabel, modalDrafts, refetch]);
+
+  const applyModalChanges = useCallback(() => {
+    if (modalError) {
+      void Swal.fire({
+        icon: "warning",
+        title: "Group Conflict",
+        text: modalError,
+      });
+      return;
+    }
+
+    const incomplete = modalDrafts.some((d) => (d.subjectId || d.teacherId) && (!d.subjectId || !d.teacherId));
+    if (incomplete) {
+      void Swal.fire({
+        icon: "warning",
+        title: "Incomplete Card",
+        text: "Please select both a subject and a teacher for all scheduled classes.",
+      });
+      return;
+    }
+
+    if (!editingCellKey) return;
+
+    setCellDrafts((prev) => {
+      const baseList = initialCellDrafts[editingCellKey] || [];
+      const updatedList = modalDrafts.map((d, index) => {
+        const base = baseList[index];
+        if (!d.existingId && !d.subjectId && !d.teacherId && !d.roomId) {
+          return { ...d, dirty: false };
+        }
+        const dirty = !base || (d.subjectId !== base.subjectId || d.teacherId !== base.teacherId || d.roomId !== base.roomId);
+        return { ...d, dirty };
+      });
+
+      return { ...prev, [editingCellKey]: updatedList };
+    });
+
+    const el = document.getElementById("edit_slot_modal");
+    if (el) {
+      const inst = (window as any).bootstrap?.Modal?.getInstance(el);
+      inst?.hide();
+    }
+  }, [editingCellKey, modalDrafts, modalError, initialCellDrafts]);
 
   const handleResetRoutine = async () => {
     if (!selectionReady) return;
@@ -753,7 +842,6 @@ const ClassTimetable = () => {
         academic_year_id: academicYearId,
       });
 
-      // Close modal manually via Bootstrap
       const el = document.getElementById("copy_routine_modal");
       if (el) {
         const inst = (window as any).bootstrap?.Modal?.getInstance(el);
@@ -773,8 +861,100 @@ const ClassTimetable = () => {
     }
   };
 
+  const handleBulkSave = useCallback(async () => {
+    const assignments: any[] = [];
+    try {
+      Object.keys(cellDrafts).forEach((key) => {
+        const list = cellDrafts[key] || [];
+        
+        const { valid, reason } = validateElectiveGroupConflict(list);
+        if (!valid) {
+          void Swal.fire({
+            icon: "warning",
+            title: "Group Conflict",
+            text: `Conflict in ${list[0]?.dayLabel} (${list[0]?.slotLabel}): ${reason}`,
+          });
+          throw new Error("VALIDATION_FAILED");
+        }
+
+        list.forEach((d) => {
+          if (d.dirty) {
+            if (d.subjectId || d.teacherId) {
+              if (!d.subjectId) {
+                void Swal.fire({
+                  icon: "warning",
+                  title: "Incomplete assignment",
+                  text: `Please select a subject for ${d.dayLabel} (${d.slotLabel}).`,
+                });
+                throw new Error("VALIDATION_FAILED");
+              }
+              if (!d.teacherId) {
+                void Swal.fire({
+                  icon: "warning",
+                  title: "Incomplete assignment",
+                  text: `Please select a teacher for ${d.dayLabel} (${d.slotLabel}).`,
+                });
+                throw new Error("VALIDATION_FAILED");
+              }
+              assignments.push({
+                id: d.existingId,
+                subject_id: Number(d.subjectId),
+                teacher_id: Number(d.teacherId),
+                room_id: d.roomId ? Number(d.roomId) : null,
+                day_of_week: d.dayNum,
+                time_slot_id: d.slotId,
+              });
+            }
+          }
+        });
+      });
+    } catch (e: any) {
+      if (e.message === "VALIDATION_FAILED") return;
+      throw e;
+    }
+
+    if (assignments.length === 0) return;
+
+    setBulkSaving(true);
+    try {
+      const res = await apiService.bulkUpdateClassSchedules({
+        academic_year_id: academicYearId,
+        class_id: Number(filterClassId),
+        section_id: filterSectionId ? Number(filterSectionId) : null,
+        room_id: null,
+        assignments,
+      });
+
+      if (res.success === false) {
+        void Swal.fire({
+          icon: "warning",
+          title: "Scheduling Conflict",
+          text: res.message || "A conflict was detected in your routine.",
+        });
+        return;
+      }
+
+      await refetch();
+      void Swal.fire({
+        icon: "success",
+        title: "Saved successfully",
+        text: `Updated ${assignments.length} timetable entries.`,
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    } catch (e: any) {
+      void Swal.fire({
+        icon: "error",
+        title: "Save failed",
+        text: httpErrorMessage(e, "Could not save timetable."),
+      });
+    } finally {
+      setBulkSaving(false);
+    }
+  }, [cellDrafts, academicYearId, filterClassId, filterSectionId, refetch, validateElectiveGroupConflict]);
+
   const pendingKeys = useMemo(
-    () => Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.dirty),
+    () => Object.keys(cellDrafts).filter((key) => cellDrafts[key]?.some((draft) => draft.dirty)),
     [cellDrafts]
   );
 
@@ -919,30 +1099,18 @@ const ClassTimetable = () => {
                           <th className="table-light">{label}</th>
                           {periodColumns.map((col) => {
                             const key = makeCellKey(dow, col.id);
-                            const draft = cellDrafts[key];
+                            const drafts = cellDrafts[key] || [];
                             return (
                               <TimetableCell
                                 key={`${label}-${col.id}`}
                                 dayLabel={label}
                                 dayNum={dow}
                                 slot={col}
-                                subjectId={draft?.subjectId ?? ""}
-                                teacherId={draft?.teacherId ?? ""}
-                                dirty={Boolean(draft?.dirty)}
-                                busy={Boolean(savingByKey[key]) || bulkSaving}
+                                drafts={drafts}
                                 subjectOptions={subjectOptions}
                                 teacherOptions={teacherOptions}
-                                roomId={draft?.roomId ?? ""}
                                 roomOptions={roomOptions}
-                                subjectToTeachersMap={subjectToTeachersMap}
-                                subjectTeacherMap={subjectTeacherMap}
-                                sectionRoomLabel={sectionRoomLabel}
-                                onSubjectChange={(v) => updateCellDraft(key, { subjectId: v || "" })}
-                                onTeacherChange={(v) => updateCellDraft(key, { teacherId: v || "" })}
-                                onRoomChange={(v) => updateCellDraft(key, { roomId: v || "" })}
-                                onSave={() => void handleSingleSave(key)}
-                                onDelete={() => void handleDelete(key)}
-                                canDelete={Boolean(draft?.existingId)}
+                                onEditClick={() => openEditModal(key, label, col.label)}
                               />
                             );
                           })}
@@ -956,6 +1124,136 @@ const ClassTimetable = () => {
               {!selectionReady && academicYearId ? (
                 <div className="alert alert-light border">Select <strong>class</strong> and <strong>section</strong> to edit the weekly timetable.</div>
               ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Slot Modal */}
+      <div className="modal fade" id="edit_slot_modal" tabIndex={-1} aria-hidden="true" data-bs-backdrop="static" style={{ overflow: "visible" }}>
+        <div className="modal-dialog modal-dialog-centered modal-lg" style={{ overflow: "visible" }}>
+          <div className="modal-content border-0 shadow-lg" style={{ overflow: "visible" }}>
+            <div className="modal-header bg-primary text-white py-3">
+              <h5 className="modal-title text-white fw-bold d-flex align-items-center">
+                <i className="ti ti-calendar-event me-2 fs-4"></i>
+                Schedule Slot: {editingCellLabel} – {editingCellSlotLabel}
+              </h5>
+              <button 
+                type="button" 
+                className="btn-close btn-close-white" 
+                data-bs-dismiss="modal" 
+                aria-label="Close"
+              ></button>
+            </div>
+            <div className="modal-body p-4 bg-light-subtle" style={{ overflow: "visible" }}>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <span className="text-secondary small fw-semibold">
+                  Configure classes or parallel elective subjects running in this slot.
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary d-flex align-items-center"
+                  onClick={addModalParallelRow}
+                >
+                  <i className="ti ti-plus me-1"></i>Parallel Elective
+                </button>
+              </div>
+
+              {modalError ? (
+                <div className="alert alert-soft-danger py-2 px-3 border border-danger-subtle rounded mb-3 d-flex align-items-center fs-13">
+                  <i className="ti ti-alert-triangle text-danger me-2 fs-5"></i>
+                  <div><strong>Conflict: </strong>{modalError}</div>
+                </div>
+              ) : null}
+
+              <div className="d-flex flex-column gap-3" style={{ overflow: "visible" }}>
+                {modalDrafts.map((d, index) => {
+                  const subjectId = d.subjectId;
+                  const allowed = subjectToTeachersMap[subjectId] || [];
+                  const filteredTeacherOptions = teacherOptions.filter((opt) => !opt.value || allowed.includes(opt.value));
+
+                  const handleSubjectSelect = (v: string | null) => {
+                    const nextSubId = v || "";
+                    updateModalDraft(index, { subjectId: nextSubId });
+                    if (nextSubId) {
+                      const mappedTeacherId = subjectTeacherMap[nextSubId];
+                      if (mappedTeacherId) {
+                        updateModalDraft(index, { teacherId: mappedTeacherId });
+                      }
+                    }
+                  };
+
+                  return (
+                    <div 
+                      key={index} 
+                      className="card border shadow-sm mb-0"
+                      style={{ borderLeft: "4px solid #0d6efd", overflow: "visible" }}
+                    >
+                      <div className="card-header bg-light py-2 px-3 d-flex justify-content-between align-items-center">
+                        <span className="fw-semibold text-secondary small">
+                          Subject #{index + 1}
+                        </span>
+                        {(modalDrafts.length > 1 || d.existingId || d.isOpenedByUser) && (
+                          <button
+                            type="button"
+                            className="btn btn-link text-danger p-0 m-0 text-decoration-none fs-12 d-flex align-items-center"
+                            onClick={() => removeModalRow(index)}
+                          >
+                            <i className="ti ti-trash me-1"></i>Delete Card
+                          </button>
+                        )}
+                      </div>
+                      <div className="card-body p-3" style={{ overflow: "visible" }}>
+                        <div className="row g-2">
+                          <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted mb-1">Subject</label>
+                            <CommonSelect
+                              options={subjectOptions}
+                              value={d.subjectId || null}
+                              placeholder="Select subject"
+                              onChange={handleSubjectSelect}
+                            />
+                          </div>
+                          <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted mb-1">Teacher</label>
+                            <CommonSelect
+                              options={filteredTeacherOptions}
+                              value={d.teacherId || null}
+                              placeholder="Select teacher"
+                              onChange={(v) => updateModalDraft(index, { teacherId: v || "" })}
+                            />
+                          </div>
+                          <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-muted mb-1">Room</label>
+                            <CommonSelect
+                              options={roomOptions}
+                              value={d.roomId || null}
+                              placeholder="Select classroom"
+                              onChange={(v) => updateModalDraft(index, { roomId: v || "" })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="modal-footer bg-light p-3">
+              <button 
+                type="button" 
+                className="btn btn-light border" 
+                data-bs-dismiss="modal"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={applyModalChanges}
+              >
+                Apply to Timetable
+              </button>
             </div>
           </div>
         </div>
@@ -1012,8 +1310,3 @@ const ClassTimetable = () => {
 };
 
 export default ClassTimetable;
-
-
-
-
-

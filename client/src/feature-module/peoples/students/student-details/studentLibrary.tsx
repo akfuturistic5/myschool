@@ -194,6 +194,16 @@ const StudentLibrary = () => {
                         Library
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        to={studentId ? `${routes.studentSubjects}?studentId=${studentId}` : routes.studentSubjects}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-book me-2" />
+                        Subjects
+                      </Link>
+                    </li>
                   </ul>
 
                   <div className="card">

@@ -151,6 +151,7 @@ import StudentLeaves from "../peoples/students/student-details/studentLeaves";
 import StudentLibrary from "../peoples/students/student-details/studentLibrary";
 import StudentResult from "../peoples/students/student-details/studentResult";
 import StudentTimeTable from "../peoples/students/student-details/studentTimeTable";
+import StudentSubjects from "../peoples/students/student-subjects";
 import StudentList from "../peoples/students/student-list";
 import StudentPromotion from "../peoples/students/student-promotion";
 import TeacherDetails from "../peoples/teacher/teacher-details/teacherDetails";
@@ -791,6 +792,11 @@ export const publicRoutes = [
   {
     path: `${routes.editStudent}/:id`,
     element: <AddStudent />,
+    route: Route,
+  },
+  {
+    path: routes.studentSubjects,
+    element: <StudentSubjects />,
     route: Route,
   },
   {

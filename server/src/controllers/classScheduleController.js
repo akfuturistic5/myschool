@@ -589,7 +589,14 @@ async function findTeacherOverlappingConflictRow(client, {
   newEnd,
   teacherStaffId,
   excludeId,
+  classId,
+  sectionId,
+  forClassId,
+  forSectionId,
 }) {
+  const targetClassId = classId || forClassId;
+  const targetSectionId = sectionId !== undefined ? sectionId : forSectionId;
+
   const params = [academicYearId, dayOfWeek, teacherStaffId, newStart, newEnd];
   let sql = `
     SELECT cs.id,
@@ -611,10 +618,19 @@ async function findTeacherOverlappingConflictRow(client, {
       AND ts.end_time IS NOT NULL
       AND ($4::time < ts.end_time AND ts.start_time < $5::time)
       AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity')) && daterange(CURRENT_DATE, 'infinity')
-`;
+  `;
+  if (targetClassId) {
+    params.push(targetClassId);
+    sql += ` AND (cs.class_id <> $${params.length}`;
+    if (targetSectionId !== undefined) {
+      params.push(targetSectionId);
+      sql += ` OR cs.class_section_id IS DISTINCT FROM $${params.length}`;
+    }
+    sql += `)`;
+  }
   if (excludeId) {
-    sql += ' AND cs.id <> $6';
     params.push(excludeId);
+    sql += ` AND cs.id <> $${params.length}`;
   }
   sql += ' LIMIT 1';
   const r = await qexec(client, sql, params);
@@ -628,10 +644,22 @@ async function findClassSectionOverlappingConflictRow(client, {
   newEnd,
   classId,
   sectionId,
-  forTeacherStaffId,
+  classSubjectId,
   excludeId,
 }) {
-  const params = [academicYearId, dayOfWeek, classId, sectionId, newStart, newEnd, forTeacherStaffId];
+  let newIsElective = false;
+  let newElectiveGroupId = null;
+  if (classSubjectId) {
+    try {
+      const res = await client.query('SELECT COALESCE(is_elective, false) AS is_elective, elective_group_id FROM class_subjects WHERE id = $1', [classSubjectId]);
+      if (res.rows.length) {
+        newIsElective = res.rows[0].is_elective;
+        newElectiveGroupId = res.rows[0].elective_group_id;
+      }
+    } catch (e) { }
+  }
+
+  const params = [academicYearId, dayOfWeek, classId, sectionId, newStart, newEnd, classSubjectId, newIsElective, newElectiveGroupId];
   let sql = `
     SELECT cs.id,
       c.class_name,
@@ -656,14 +684,27 @@ async function findClassSectionOverlappingConflictRow(client, {
       AND ts.end_time IS NOT NULL
       AND ($5::time < ts.end_time AND ts.start_time < $6::time)
       AND daterange(cs.valid_from, COALESCE(cs.valid_to, 'infinity')) && daterange(CURRENT_DATE, 'infinity')
-      AND cs.teacher_id IS DISTINCT FROM $7
-`;
+      AND (
+        -- Conflict case 1: Existing entry is compulsory (non-elective)
+        COALESCE(csub.is_elective, false) = false
+        -- Conflict case 2: The new entry being scheduled is compulsory (non-elective)
+        OR $8 = false
+        -- Conflict case 3: Existing entry doesn't have an elective group
+        OR csub.elective_group_id IS NULL
+        -- Conflict case 4: The new entry doesn't have an elective group
+        OR $9::int IS NULL
+        -- Conflict case 5: Mismatched elective groups
+        OR csub.elective_group_id <> $9::int
+        -- Conflict case 6: It is the exact same subject
+        OR cs.class_subject_id = $7
+      )
+  `;
   if (excludeId) {
-    sql += ' AND cs.id <> $8';
+    sql += ' AND cs.id <> $10';
     params.push(excludeId);
   }
   sql += ' LIMIT 1';
-  const r = await qexec(client, sql, params);
+  const r = await client.query(sql, params);
   return r.rows[0] || null;
 }
 
@@ -1082,6 +1123,8 @@ const createClassSchedule = async (req, res) => {
         newEnd,
         teacherStaffId,
         excludeId: null,
+        classId: class_id,
+        sectionId: section_id ?? null,
       });
       if (tRow) {
         const err = new Error(buildTeacherConflictMessage(tRow, dayInt, slotMeta.slot_name));
@@ -1095,7 +1138,7 @@ const createClassSchedule = async (req, res) => {
         newEnd,
         classId: class_id,
         sectionId: section_id ?? null,
-        forTeacherStaffId: teacherStaffId,
+        classSubjectId: subject_id,
         excludeId: null,
       });
       if (cRow) {
@@ -1209,6 +1252,8 @@ const updateClassSchedule = async (req, res) => {
         newEnd,
         teacherStaffId: teacherId,
         excludeId: sid,
+        classId: nextClass,
+        sectionId: nextSection ?? null,
       });
       if (tRow) {
         const err = new Error(buildTeacherConflictMessage(tRow, dayInt, slotMeta.slot_name));
@@ -1222,7 +1267,7 @@ const updateClassSchedule = async (req, res) => {
         newEnd,
         classId: nextClass,
         sectionId: nextSection ?? null,
-        forTeacherStaffId: teacherId,
+        classSubjectId: payload.subject_id !== undefined ? payload.subject_id : cur.class_subject_id,
         excludeId: sid,
       });
       if (cRow) {
@@ -1266,7 +1311,6 @@ const updateClassSchedule = async (req, res) => {
         ]
       );
       const row = result.rows[0];
-      await syncTeacherRoutineLink(client, row);
       return row;
     });
 
@@ -1283,7 +1327,7 @@ const updateClassSchedule = async (req, res) => {
     if (error.code === '23P01') {
       return res.status(200).json({ success: false, status: 'ERROR', message: timetableExclusionUserMessage(error) });
     }
-    return errorResponse(res, 500, 'Failed to update class routine');
+    return errorResponse(res, 500, 'Failed to update class routine', error.message);
   }
 };
 
@@ -1300,7 +1344,6 @@ const deleteClassSchedule = async (req, res) => {
         err.code = 'NOT_FOUND';
         throw err;
       }
-      await removeTeacherRoutineLink(client, sid);
       const result = await client.query('DELETE FROM class_schedules WHERE id = $1 RETURNING id', [sid]);
       return result.rows[0];
     });
@@ -1420,7 +1463,9 @@ const bulkUpdateClassSchedules = async (req, res) => {
           newStart: st,
           newEnd: en,
           teacherStaffId,
-          excludeId: id ? parseId(id) : null
+          excludeId: id ? parseId(id) : null,
+          classId,
+          sectionId,
         });
         if (tConflict) throw new Error(buildTeacherConflictMessage(tConflict, dayInt, slotMeta.slot_name));
 
@@ -1432,7 +1477,7 @@ const bulkUpdateClassSchedules = async (req, res) => {
           newEnd: en,
           classId,
           sectionId,
-          forTeacherStaffId: teacherStaffId,
+          classSubjectId: subject_id,
           excludeId: id ? parseId(id) : null
         });
         if (cConflict) throw new Error(buildClassConflictMessage(cConflict, dayInt, slotMeta.slot_name));
@@ -1525,7 +1570,7 @@ const copyClassSchedule = async (req, res) => {
             newEnd: en,
             classId: target_class_id,
             sectionId: target_section_id,
-            forTeacherStaffId: row.teacher_id
+            classSubjectId: row.class_subject_id
           });
           if (cConflict) { skipCount++; continue; }
 

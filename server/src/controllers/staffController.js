@@ -212,6 +212,7 @@ const getAllStaff = async (req, res) => {
     const result = await query(`
       ${STAFF_SELECT_NORMALIZED}
       WHERE s.deleted_at IS NULL
+        AND u.role_id != 1
         AND LOWER(TRIM(COALESCE(NULLIF(TRIM(s.status), ''), 'Active'))) = 'active'
       ORDER BY u.first_name ASC NULLS LAST, u.last_name ASC NULLS LAST, s.id ASC
     `);

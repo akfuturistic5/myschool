@@ -739,6 +739,16 @@ const StudentLeaves = () => {
                         Library
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        to={effectiveStudentId ? `${routes.studentSubjects}?studentId=${effectiveStudentId}` : routes.studentSubjects}
+                        className="nav-link"
+                        state={student ? { studentId: student.id, student } : undefined}
+                      >
+                        <i className="ti ti-book me-2" />
+                        Subjects
+                      </Link>
+                    </li>
                   </ul>
                   {/* /List */}
                   {/* Leave Nav*/}

@@ -129,11 +129,6 @@ const ClassSubject = () => {
       sorter: (a: TableData, b: TableData) => String(a.class).localeCompare(String(b.class)),
     },
     {
-      title: "Teacher",
-      dataIndex: "teacher",
-      render: (text: string) => <span className="text-muted">{text}</span>
-    },
-    {
       title: "Code",
       dataIndex: "code",
       render: (text: string) => <span className="badge badge-soft-info">{text}</span>
@@ -317,18 +312,34 @@ const ClassSubject = () => {
             <TooltipOption
               onRefresh={() => refetch()}
               onPrint={() => printData("Class Subjects", [{ title: "Name", dataKey: "name" }, { title: "Class", dataKey: "class" }, { title: "Type", dataKey: "type" }], data)}
+              onExportPdf={() => exportToPDF(data, "Class Subjects", "Class_Subjects", [{ title: "Name", dataKey: "name" }, { title: "Class", dataKey: "class" }, { title: "Type", dataKey: "type" }])}
+              onExportExcel={() => exportToExcel(data.map((item: any) => ({
+                ID: item.id,
+                Name: item.name,
+                Class: item.class,
+                Code: item.code,
+                Type: item.type,
+                Category: item.category
+              })), "Class_Subjects")}
             />
             <div className="mb-2 me-2">
-              <button 
-                className="btn btn-outline-primary d-flex align-items-center" 
-                data-bs-toggle="modal" 
-                data-bs-target="#manage_groups" 
-                disabled={!classFilterId}
-                onClick={() => fetchGroups(classFilterId)}
+              <span 
+                className="d-inline-block" 
+                style={{ cursor: !classFilterId ? 'not-allowed' : 'default' }}
+                title={!classFilterId ? "Select a class to manage its groups" : ""}
               >
-                <i className="ti ti-settings me-2"></i>
-                Manage Groups
-              </button>
+                <button 
+                  className="btn btn-outline-primary d-flex align-items-center" 
+                  data-bs-toggle="modal" 
+                  data-bs-target="#manage_groups" 
+                  disabled={!classFilterId}
+                  style={{ pointerEvents: !classFilterId ? 'none' : 'auto' }}
+                  onClick={() => fetchGroups(classFilterId)}
+                >
+                  <i className="ti ti-settings me-2"></i>
+                  Manage Groups
+                </button>
+              </span>
             </div>
             <div className="mb-2">
               <button className="btn btn-primary d-flex align-items-center" data-bs-toggle="modal" data-bs-target="#add_assignment" onClick={resetForm}>
