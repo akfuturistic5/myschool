@@ -166,7 +166,7 @@ const SuperAdminSchoolPermissions = () => {
                     key={s.id}
                     type="button"
                     className={`list-group-item list-group-item-action text-start border-0 border-bottom py-3 ${
-                      validSelectedId === s.id ? 'active' : ''
+                      validSelectedId === s.id ? 'sa-list-item--selected' : ''
                     }`}
                     onClick={() => selectSchool(s.id)}
                   >
