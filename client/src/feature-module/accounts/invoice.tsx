@@ -72,6 +72,19 @@ const Invoice = () => {
     inv?.amount != null && Number.isFinite(Number(inv.amount)) ? Number(inv.amount) : null;
   const amountStr = amountNum != null ? formatUsdDisplay(amountNum) : "—";
 
+  const hasItems = inv?.items && Array.isArray(inv.items) && inv.items.length > 0;
+  const items = hasItems 
+    ? (inv.items as any[])
+    : (amountNum != null
+        ? [{ description: String(inv?.description || "Basic Salary"), amount: amountNum }]
+        : []);
+
+  const earnings = items.filter(item => Number(item.amount) >= 0);
+  const deductions = items.filter(item => Number(item.amount) < 0);
+
+  const totalEarnings = earnings.reduce((sum, item) => sum + Number(item.amount), 0);
+  const totalDeductions = deductions.reduce((sum, item) => sum + Math.abs(Number(item.amount)), 0);
+
   const handlePrint = () => {
     const printContent = document.getElementById("print-invoice-section");
     if (!printContent) return;
@@ -154,54 +167,126 @@ const Invoice = () => {
 
     doc.setFontSize(22);
     doc.setTextColor(40);
-    doc.text("INVOICE", 550, 65, { align: "right" });
+    doc.text(inv.invoice_type === 'Payslip' ? "SALARY SLIP" : "INVOICE", 550, 65, { align: "right" });
     doc.setFontSize(10);
-    doc.text(`Invoice #: ${inv.invoice_number ?? "—"}`, 550, 80, { align: "right" });
+    doc.text(`${inv.invoice_type === 'Payslip' ? "Payslip" : "Invoice"} #: ${inv.invoice_number ?? "—"}`, 550, 80, { align: "right" });
 
     doc.setFontSize(12);
-    doc.text("Invoice To:", 40, 140);
+    doc.text(inv.invoice_type === 'Payslip' ? "Employee Details:" : "Invoice To:", 40, 140);
     doc.setFontSize(10);
-    doc.text(`Date: ${inv.invoice_date ? formatDateMonthDayYear(String(inv.invoice_date)) : "—"}`, 40, 160);
-    doc.text(`Due Date: ${inv.due_date ? formatDateMonthDayYear(String(inv.due_date)) : "—"}`, 40, 175);
+    doc.text(`Name: ${inv.customer_name ?? "—"}`, 40, 155);
 
-    autoTable(doc, {
-      startY: 200,
-      head: [["SL", "Item Description", "Amount"]],
-      body: [["1", String(inv.description || "—"), pdfAmount(amountStr)]],
-      theme: "grid",
-      headStyles: { fillColor: [51, 51, 51], textColor: [255, 255, 255], fontStyle: "bold" },
-      styles: { fontSize: 10, cellPadding: 8 },
-      columnStyles: { 0: { cellWidth: 40 }, 2: { halign: "right", cellWidth: 100 } },
-    });
+    if (inv.invoice_type === 'Payslip') {
+      doc.text(`Employee ID: ${String(inv.employee_code || "—")}`, 40, 170);
+      doc.text(`Department: ${String(inv.department || "—")}`, 40, 185);
+      doc.text(`Designation: ${String(inv.designation || "—")}`, 40, 200);
+      doc.text(`Date: ${inv.invoice_date ? formatDateMonthDayYear(String(inv.invoice_date)) : "—"}`, 40, 215);
+    } else {
+      doc.text(`Date: ${inv.invoice_date ? formatDateMonthDayYear(String(inv.invoice_date)) : "—"}`, 40, 170);
+      doc.text(`Due Date: ${inv.due_date ? formatDateMonthDayYear(String(inv.due_date)) : "—"}`, 40, 185);
+    }
 
-    const finalTableY = (doc as any).lastAutoTable.finalY + 30;
-    doc.setFontSize(10);
-    doc.setFont("Helvetica", "normal");
+    const tableStartY = inv.invoice_type === 'Payslip' ? 245 : 200;
+    let finalTableY;
 
-    // Amount Breakdown
-    doc.text("Subtotal:", 450, finalTableY, { align: "right" });
-    doc.text(pdfAmount(amountStr), 550, finalTableY, { align: "right" });
+    if (inv.invoice_type === 'Payslip') {
+      // Draw Earnings Table
+      autoTable(doc, {
+        startY: tableStartY,
+        head: [["SL", "Earnings & Allowances", "Amount"]],
+        body: earnings.map((item: any, idx: number) => [
+          String(idx + 1),
+          String(item.description || "—"),
+          pdfAmount(formatUsdDisplay(item.amount)),
+        ]),
+        theme: "grid",
+        headStyles: { fillColor: [40, 199, 111], textColor: [255, 255, 255], fontStyle: "bold" },
+        styles: { fontSize: 9, cellPadding: 6 },
+        columnStyles: { 0: { cellWidth: 30 }, 2: { halign: "right", cellWidth: 120 } },
+      });
 
-    doc.text("Discount (0%):", 450, finalTableY + 15, { align: "right" });
-    doc.text("Rs. 0.00", 550, finalTableY + 15, { align: "right" });
+      const earningsTableY = (doc as any).lastAutoTable.finalY + 15;
 
-    doc.text("Tax (0%):", 450, finalTableY + 30, { align: "right" });
-    doc.text("Rs. 0.00", 550, finalTableY + 30, { align: "right" });
+      // Draw Deductions Table
+      autoTable(doc, {
+        startY: earningsTableY,
+        head: [["SL", "Deductions & Taxes", "Amount"]],
+        body: deductions.map((item: any, idx: number) => [
+          String(idx + 1),
+          String(item.description || "—"),
+          pdfAmount(formatUsdDisplay(Math.abs(Number(item.amount)))),
+        ]),
+        theme: "grid",
+        headStyles: { fillColor: [234, 84, 85], textColor: [255, 255, 255], fontStyle: "bold" },
+        styles: { fontSize: 9, cellPadding: 6 },
+        columnStyles: { 0: { cellWidth: 30 }, 2: { halign: "right", cellWidth: 120 } },
+      });
 
-    doc.setFont("Helvetica", "bold");
-    doc.text("Total Amount Payable:", 450, finalTableY + 50, { align: "right" });
-    doc.text(pdfAmount(amountStr), 550, finalTableY + 50, { align: "right" });
+      finalTableY = (doc as any).lastAutoTable.finalY + 30;
 
-    doc.setFontSize(11);
-    doc.setFont("Helvetica", "bold");
-    doc.text("Payment Info:", 40, finalTableY + 80);
-    doc.setFontSize(10);
-    doc.setFont("Helvetica", "normal");
-    doc.text(`Method: ${inv.payment_method || "—"}`, 40, finalTableY + 100);
-    doc.text(`Status: ${inv.status || "—"}`, 40, finalTableY + 115);
-    doc.text(`Amount: ${pdfAmount(amountStr)}`, 40, finalTableY + 130);
+      // Draw Net Salary card in PDF
+      doc.setFontSize(10);
+      doc.setFont("Helvetica", "bold");
+      doc.text("Gross Earnings:", 400, finalTableY);
+      doc.setFont("Helvetica", "normal");
+      doc.text(pdfAmount(formatUsdDisplay(totalEarnings)), 550, finalTableY, { align: "right" });
 
-    const sigY = finalTableY + 80;
+      doc.setFont("Helvetica", "bold");
+      doc.text("Total Deductions:", 400, finalTableY + 15);
+      doc.setFont("Helvetica", "normal");
+      doc.text(pdfAmount(formatUsdDisplay(totalDeductions)), 550, finalTableY + 15, { align: "right" });
+
+      doc.setDrawColor(200);
+      doc.line(390, finalTableY + 22, 550, finalTableY + 22);
+
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("Net Salary Paid:", 400, finalTableY + 38);
+      doc.text(pdfAmount(inv.total_amount != null ? formatUsdDisplay(Number(inv.total_amount)) : amountStr), 550, finalTableY + 38, { align: "right" });
+
+      finalTableY = finalTableY + 60;
+    } else {
+      autoTable(doc, {
+        startY: tableStartY,
+        head: [["SL", "Item Description", "Amount"]],
+        body: [["1", String(inv.description || "—"), pdfAmount(amountStr)]],
+        theme: "grid",
+        headStyles: { fillColor: [51, 51, 51], textColor: [255, 255, 255], fontStyle: "bold" },
+        styles: { fontSize: 10, cellPadding: 8 },
+        columnStyles: { 0: { cellWidth: 40 }, 2: { halign: "right", cellWidth: 100 } },
+      });
+
+      finalTableY = (doc as any).lastAutoTable.finalY + 30;
+      doc.setFontSize(10);
+      doc.setFont("Helvetica", "normal");
+
+      // Amount Breakdown
+      doc.text("Subtotal:", 450, finalTableY, { align: "right" });
+      doc.text(pdfAmount(amountStr), 550, finalTableY, { align: "right" });
+
+      doc.text("Discount (0%):", 450, finalTableY + 15, { align: "right" });
+      doc.text("Rs. 0.00", 550, finalTableY + 15, { align: "right" });
+
+      doc.text("Tax (0%):", 450, finalTableY + 30, { align: "right" });
+      doc.text("Rs. 0.00", 550, finalTableY + 30, { align: "right" });
+
+      doc.setFont("Helvetica", "bold");
+      doc.text("Total Amount Payable:", 450, finalTableY + 50, { align: "right" });
+      doc.text(pdfAmount(amountStr), 550, finalTableY + 50, { align: "right" });
+
+      doc.setFontSize(11);
+      doc.setFont("Helvetica", "bold");
+      doc.text("Payment Info:", 40, finalTableY + 80);
+      doc.setFontSize(10);
+      doc.setFont("Helvetica", "normal");
+      doc.text(`Method: ${inv.payment_method || "—"}`, 40, finalTableY + 100);
+      doc.text(`Status: ${inv.status || "—"}`, 40, finalTableY + 115);
+      doc.text(`Amount: ${pdfAmount(amountStr)}`, 40, finalTableY + 130);
+
+      finalTableY = finalTableY + 150;
+    }
+
+    const sigY = finalTableY + 20;
     doc.setFont("Helvetica", "bold");
     doc.text(settings?.invoice_signature_name || "Authorized Signatory", 550, sigY, { align: "right" });
     try {
@@ -221,7 +306,7 @@ const Invoice = () => {
     const splitTerms = doc.splitTextToSize(settings?.invoice_terms || "Standard business terms apply.", 520);
     doc.text(splitTerms, 40, termsY + 15);
 
-    doc.text("Thanks for your Business", 297, termsY + 60, { align: "center" });
+    doc.text(inv.invoice_type === 'Payslip' ? 'This is a computer generated salary slip.' : "Thanks for your Business", 297, termsY + 60, { align: "center" });
 
     doc.save(`Invoice_${inv.invoice_number || "Draft"}.pdf`);
   };
@@ -351,9 +436,9 @@ const Invoice = () => {
                       </p>
                       {inv.invoice_type === 'Payslip' && (
                         <>
-                          <p className="mb-0">Employee ID: <span className="text-dark fw-medium">{inv.employee_code || "—"}</span></p>
-                          <p className="mb-0">Department: <span className="text-dark fw-medium">{inv.department || "—"}</span></p>
-                          <p className="mb-0">Designation: <span className="text-dark fw-medium">{inv.designation || "—"}</span></p>
+                          <p className="mb-0">Employee ID: <span className="text-dark fw-medium">{String(inv.employee_code || "—")}</span></p>
+                          <p className="mb-0">Department: <span className="text-dark fw-medium">{String(inv.department || "—")}</span></p>
+                          <p className="mb-0">Designation: <span className="text-dark fw-medium">{String(inv.designation || "—")}</span></p>
                         </>
                       )}
                       <p className="mb-0">
@@ -374,118 +459,225 @@ const Invoice = () => {
                   </div>
                 </div>
               </div>
-              <div className="invoice-table-details">
-                <div className="table-responsive no-pagination mb-4">
-                  <table className="table table-borderless table-center mb-0">
-                    <thead>
-                      <tr>
-                        <th style={{ width: "20px" }}>SL</th>
-                        <th>Item Description</th>
-                        <th className="text-end">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inv.items && Array.isArray(inv.items) && inv.items.length > 0 ? (
-                        inv.items.map((item: any, index: number) => (
-                          <tr key={index}>
-                            <td>{index + 1}</td>
-                            <td>{item.description}</td>
-                            <td className="text-end">{formatUsdDisplay(item.amount)}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td>1</td>
-                          <td>{inv.description != null ? String(inv.description) : "—"}</td>
-                          <td className="text-end">{amountStr}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="row">
-                  <div className="col-lg-7 col-md-5" />
-                  <div className="col-lg-5 col-md-7">
-                    <div className="invoice-total-card">
-                      <div className="total-amount-tax mb-2">
-                        {inv.invoice_type !== 'Payslip' && (
-                          <>
-                            <ul>
-                              <li>Subtotal</li>
-                              <li>Discount (0%)</li>
-                              <li>Tax (0%)</li>
-                            </ul>
-                            <ul>
-                              <li>{amountStr}</li>
-                              <li>+ $0.00</li>
-                              <li>$0.00</li>
-                            </ul>
-                          </>
-                        )}
+              {inv.invoice_type === 'Payslip' ? (
+                <div className="invoice-table-details mb-4">
+                  <div className="row">
+                    {/* Earnings and Allowances */}
+                    <div className="col-md-6 mb-4">
+                      <div className="card shadow-none border h-100">
+                        <div className="card-header py-2" style={{ backgroundColor: "rgba(40, 199, 111, 0.08)", borderBottom: "1px solid rgba(40, 199, 111, 0.2)" }}>
+                          <h5 className="mb-0 text-success fs-14 fw-bold d-flex align-items-center">
+                            <i className="ti ti-circle-chevron-up me-2 fs-18"></i> Earnings &amp; Allowances
+                          </h5>
+                        </div>
+                        <div className="table-responsive no-pagination">
+                          <table className="table table-borderless table-center mb-0">
+                            <thead>
+                              <tr className="border-bottom">
+                                <th style={{ width: "30px", padding: "10px" }}>SL</th>
+                                <th style={{ padding: "10px" }}>Item Description</th>
+                                <th className="text-end" style={{ padding: "10px" }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {earnings.map((item: any, idx: number) => (
+                                <tr key={idx} className="border-bottom-0">
+                                  <td style={{ padding: "10px" }}>{idx + 1}</td>
+                                  <td style={{ padding: "10px" }}>{item.description}</td>
+                                  <td className="text-end text-success fw-medium" style={{ padding: "10px" }}>
+                                    {formatUsdDisplay(item.amount)}
+                                  </td>
+                                </tr>
+                              ))}
+                              {earnings.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} className="text-center text-muted py-3">No earnings recorded</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="card-footer py-2 mt-auto border-top" style={{ backgroundColor: "rgba(30, 41, 59, 0.02)" }}>
+                          <div className="d-flex justify-content-between align-items-center fw-bold text-dark fs-14">
+                            <span>Total Earnings</span>
+                            <span className="text-success">{formatUsdDisplay(totalEarnings)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="total-amount-tax mb-3">
-                        <ul className="total-amount">
-                          <li className="text-dark">
-                            {inv.invoice_type === 'Payslip' ? 'Net Salary' : 'Amount Payable'}
-                          </li>
-                        </ul>
-                        <ul className="total-amount">
-                          <li className="text-dark">
-                            {inv.total_amount != null ? formatUsdDisplay(Number(inv.total_amount)) : amountStr}
-                          </li>
-                        </ul>
+                    </div>
+
+                    {/* Deductions */}
+                    <div className="col-md-6 mb-4">
+                      <div className="card shadow-none border h-100">
+                        <div className="card-header py-2" style={{ backgroundColor: "rgba(234, 84, 85, 0.08)", borderBottom: "1px solid rgba(234, 84, 85, 0.2)" }}>
+                          <h5 className="mb-0 text-danger fs-14 fw-bold d-flex align-items-center">
+                            <i className="ti ti-circle-chevron-down me-2 fs-18"></i> Deductions &amp; Taxes
+                          </h5>
+                        </div>
+                        <div className="table-responsive no-pagination">
+                          <table className="table table-borderless table-center mb-0">
+                            <thead>
+                              <tr className="border-bottom">
+                                <th style={{ width: "30px", padding: "10px" }}>SL</th>
+                                <th style={{ padding: "10px" }}>Item Description</th>
+                                <th className="text-end" style={{ padding: "10px" }}>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {deductions.map((item: any, idx: number) => (
+                                <tr key={idx} className="border-bottom-0">
+                                  <td style={{ padding: "10px" }}>{idx + 1}</td>
+                                  <td style={{ padding: "10px" }}>{item.description}</td>
+                                  <td className="text-end text-danger fw-medium" style={{ padding: "10px" }}>
+                                    {formatUsdDisplay(Math.abs(Number(item.amount)))}
+                                  </td>
+                                </tr>
+                              ))}
+                              {deductions.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} className="text-center text-muted py-3">No deductions recorded</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="card-footer py-2 mt-auto border-top" style={{ backgroundColor: "rgba(30, 41, 59, 0.02)" }}>
+                          <div className="d-flex justify-content-between align-items-center fw-bold text-dark fs-14">
+                            <span>Total Deductions</span>
+                            <span className="text-danger">{formatUsdDisplay(totalDeductions)}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                {inv.invoice_type !== 'Payslip' && (
-                  <>
-                    <div className="payment-info">
-                      <div className="row align-items-center">
-                        <div className="col-lg-6 mb-4 pt-4">
-                          <h5 className="mb-2">Payment Info:</h5>
-                          <p className="mb-1">
-                            Method :{" "}
-                            <span className="fw-medium text-dark">
-                              {inv.payment_method != null ? String(inv.payment_method) : "—"}
+
+                  {/* Summary Box */}
+                  <div className="row justify-content-end mt-2">
+                    <div className="col-lg-5 col-md-7">
+                      <div className="card shadow-none border bg-light">
+                        <div className="card-body p-3">
+                          <div className="d-flex justify-content-between mb-2">
+                            <span className="text-muted">Gross Earnings</span>
+                            <span className="text-dark fw-medium">{formatUsdDisplay(totalEarnings)}</span>
+                          </div>
+                          <div className="d-flex justify-content-between mb-2 border-bottom pb-2">
+                            <span className="text-muted">Total Deductions</span>
+                            <span className="text-dark fw-medium">- {formatUsdDisplay(totalDeductions)}</span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center pt-1 fw-bold fs-16 text-dark">
+                            <span>Net Salary</span>
+                            <span className="text-primary fs-18">
+                              {inv.total_amount != null ? formatUsdDisplay(Number(inv.total_amount)) : amountStr}
                             </span>
-                          </p>
-                          <p className="mb-0">
-                            Status :{" "}
-                            <span className="fw-medium text-dark">
-                              {inv.status != null ? String(inv.status) : "—"}
-                            </span>
-                          </p>
-                          <p className="mb-0">
-                            Amount : <span className="fw-medium text-dark">{amountStr}</span>
-                          </p>
-                        </div>
-                        <div className="col-lg-6 text-end mb-4 pt-4 ">
-                          <h6 className="mb-2">
-                            {settings?.invoice_signature_name || "Authorized Signatory"}
-                          </h6>
-                          {settings?.invoice_signature_url ? (
-                            <img src={fullUrl(settings.invoice_signature_url)} alt="Signature" style={{ height: "60px" }} />
-                          ) : (
-                            <div style={{ height: "60px", opacity: 0.3, fontStyle: "italic" }}>
-                              No signature configured
-                            </div>
-                          )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                    <div className="border-bottom text-center pt-4 pb-4">
-                      <span className="text-dark fw-medium">Terms &amp; Conditions : </span>
-                      <p>
-                        {settings?.invoice_terms || "Standard business terms and conditions apply."}
-                      </p>
+                  </div>
+                  <p className="text-center pt-4">This is a computer generated salary slip.</p>
+                </div>
+              ) : (
+                <div className="invoice-table-details">
+                  <div className="table-responsive no-pagination mb-4">
+                    <table className="table table-borderless table-center mb-0">
+                      <thead>
+                        <tr>
+                          <th style={{ width: "20px" }}>SL</th>
+                          <th>Item Description</th>
+                          <th className="text-end">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inv.items && Array.isArray(inv.items) && inv.items.length > 0 ? (
+                          inv.items.map((item: any, index: number) => (
+                            <tr key={index}>
+                              <td>{index + 1}</td>
+                              <td>{item.description}</td>
+                              <td className="text-end">{formatUsdDisplay(item.amount)}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td>1</td>
+                            <td>{inv.description != null ? String(inv.description) : "—"}</td>
+                            <td className="text-end">{amountStr}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="row">
+                    <div className="col-lg-7 col-md-5" />
+                    <div className="col-lg-5 col-md-7">
+                      <div className="invoice-total-card">
+                        <div className="total-amount-tax mb-2">
+                          <ul>
+                            <li>Subtotal</li>
+                            <li>Discount (0%)</li>
+                            <li>Tax (0%)</li>
+                          </ul>
+                          <ul>
+                            <li>{amountStr}</li>
+                            <li>+ $0.00</li>
+                            <li>$0.00</li>
+                          </ul>
+                        </div>
+                        <div className="total-amount-tax mb-3">
+                          <ul className="total-amount">
+                            <li className="text-dark">Amount Payable</li>
+                          </ul>
+                          <ul className="total-amount">
+                            <li className="text-dark">
+                              {inv.total_amount != null ? formatUsdDisplay(Number(inv.total_amount)) : amountStr}
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
-                  </>
-                )}
-                <p className="text-center pt-3">
-                  {inv.invoice_type === 'Payslip' ? 'This is a computer generated salary slip.' : 'Thanks for your Business'}
-                </p>
-              </div>
+                  </div>
+                  <div className="payment-info">
+                    <div className="row align-items-center">
+                      <div className="col-lg-6 mb-4 pt-4">
+                        <h5 className="mb-2">Payment Info:</h5>
+                        <p className="mb-1">
+                          Method :{" "}
+                          <span className="fw-medium text-dark">
+                            {inv.payment_method != null ? String(inv.payment_method) : "—"}
+                          </span>
+                        </p>
+                        <p className="mb-0">
+                          Status :{" "}
+                          <span className="fw-medium text-dark">
+                            {inv.status != null ? String(inv.status) : "—"}
+                          </span>
+                        </p>
+                        <p className="mb-0">
+                          Amount : <span className="fw-medium text-dark">{amountStr}</span>
+                        </p>
+                      </div>
+                      <div className="col-lg-6 text-end mb-4 pt-4 ">
+                        <h6 className="mb-2">
+                          {settings?.invoice_signature_name || "Authorized Signatory"}
+                        </h6>
+                        {settings?.invoice_signature_url ? (
+                          <img src={fullUrl(settings.invoice_signature_url)} alt="Signature" style={{ height: "60px" }} />
+                        ) : (
+                          <div style={{ height: "60px", opacity: 0.3, fontStyle: "italic" }}>
+                            No signature configured
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-bottom text-center pt-4 pb-4">
+                    <span className="text-dark fw-medium">Terms &amp; Conditions : </span>
+                    <p>
+                      {settings?.invoice_terms || "Standard business terms and conditions apply."}
+                    </p>
+                  </div>
+                  <p className="text-center pt-3">Thanks for your Business</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
