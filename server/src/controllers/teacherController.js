@@ -1554,9 +1554,9 @@ const getTeacherClassAttendance = async (req, res) => {
     // Filter by the attendance row's academic year (ledger model); do not rely on students.academic_year_id
     const academicYearFilter = hasAcademicYearFilter ? `AND a.academic_year_id = $${params.length}` : '';
 
-    // Visibility must match teacher scope used when saving attendance (attendanceController.buildTeacherScopeSql):
-    // schedule/class_teachers use section_id + optional NULL academic_year on config rows, not strict class_section_id
-    // or schedule valid_from/valid_to vs each attendance date (routine also ignores schedule validity dates).
+    // Visibility aligns with attendanceController.ensureTeacherStudentSectionAccess / buildSectionTeacherScopeSql:
+    // class_teachers by class+section assignment (no valid_period — marking access does not gate on assignment start date).
+    // schedule/class_teachers use section_id + optional NULL academic_year on config rows.
     // Rows this staff marked (marked_by) are included so substitutes see what they entered.
     // check_in_time / check_out_time are not on student_attendance in tenant schema — mirror student attendance API shape.
     const result = await query(
@@ -1582,17 +1582,13 @@ const getTeacherClassAttendance = async (req, res) => {
          OR EXISTS (
            SELECT 1
            FROM class_teachers ct
-           LEFT JOIN class_sections ct_sec ON ct_sec.id = ct.class_section_id
+           INNER JOIN class_sections ct_sec ON ct_sec.id = ct.class_section_id
            WHERE ct.staff_id = $1
+             AND ct.class_section_id IS NOT NULL
              AND ct.class_id = a.class_id
              AND ct.deleted_at IS NULL
-             AND ct.valid_period @> COALESCE(a.attendance_date::date, CURRENT_DATE)
              AND (ct.academic_year_id = a.academic_year_id OR ct.academic_year_id IS NULL)
-             AND (
-               csec.section_id IS NULL
-               OR ct.class_section_id IS NULL
-               OR ct_sec.section_id = csec.section_id
-             )
+             AND ct_sec.section_id = csec.section_id
          )
          OR EXISTS (
            SELECT 1
@@ -1600,7 +1596,6 @@ const getTeacherClassAttendance = async (req, res) => {
            WHERE sta.staff_id = $1
              AND sta.class_id = a.class_id
              AND sta.deleted_at IS NULL
-             AND sta.valid_period @> COALESCE(a.attendance_date::date, CURRENT_DATE)
              AND (sta.academic_year_id = a.academic_year_id OR sta.academic_year_id IS NULL)
              AND (sta.class_section_id IS NULL OR sta.class_section_id = a.class_section_id)
          )
@@ -1614,8 +1609,8 @@ const getTeacherClassAttendance = async (req, res) => {
     );
 
     const normalizeStatus = (s) => {
-      const v = (s || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
-      if (v === 'half_day' || v === 'halfday' || v === 'half' || v === 'half_day') return 'half_day';
+      const v = (s || '').toString().trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (v === 'half_day' || v === 'halfday' || v === 'half') return 'half_day';
       if (v === 'absent' || v === 'absence' || v === 'a' || v === 'ab') return 'absent';
       if (v === 'present' || v === 'p' || v === 'pres') return 'present';
       if (v === 'late' || v === 'l') return 'late';

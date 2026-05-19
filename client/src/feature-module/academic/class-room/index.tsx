@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback, useMemo } from "react";
 import { useClassRooms } from "../../../core/hooks/useClassRooms";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import Table from "../../../core/common/dataTable/index";
 import PredefinedDateRanges from "../../../core/common/datePicker";
 import {
@@ -39,6 +40,50 @@ const ClassRoom = () => {
     is_active: r.is_active ?? (String(r.status ?? "").toLowerCase() === "active"),
     key: r.id,
   }));
+
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Room No", dataKey: "roomNo" },
+      { title: "Capacity", dataKey: "capacity" },
+      { title: "Building", dataKey: "buildingName" },
+      { title: "Floor", dataKey: "floor" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      data.map((row: any) => ({
+        id: String(row.id ?? ""),
+        roomNo: String(row.roomNo ?? ""),
+        capacity: String(row.capacity ?? ""),
+        buildingName: String(row.buildingName ?? ""),
+        floor: String(row.floor ?? ""),
+        status: row.is_active ? "Active" : "Inactive",
+      })),
+    [data]
+  );
+
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "class-rooms-list", "Class Rooms");
+  }, [exportRows]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Class Rooms", "class-rooms-list", exportColumns);
+  }, [exportRows, exportColumns]);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Class Rooms", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
 
   const hideModal = (id: string) => {
     const el = document.getElementById(id);
@@ -254,7 +299,12 @@ const ClassRoom = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to="#"

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import { useSections } from "../../../core/hooks/useSections";
 import { useClassRooms } from "../../../core/hooks/useClassRooms";
 import { apiService } from "../../../core/services/apiService";
@@ -228,6 +229,59 @@ const ClassSectionsAssignment = () => {
     }
   };
 
+  const exportColumns = useMemo(
+    () => [
+      { title: "Class Name", dataKey: "className" },
+      { title: "Class Code", dataKey: "classCode" },
+      { title: "Assigned Sections", dataKey: "sections" },
+      { title: "Total Capacity", dataKey: "totalCapacity" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      classes.map((cls: any) => {
+        const sectionsText =
+          cls.sections?.length > 0
+            ? cls.sections
+                .map((s: any) => {
+                  const room = s.room_number ? ` (${s.room_number})` : "";
+                  return `${s.section_name || ""}${room}`;
+                })
+                .join(", ")
+            : "No sections assigned";
+        const total =
+          cls.sections?.reduce((acc: number, s: any) => acc + (s.max_students || 0), 0) || 0;
+        return {
+          className: String(cls.class_name ?? ""),
+          classCode: String(cls.class_code ?? ""),
+          sections: sectionsText,
+          totalCapacity: String(total),
+        };
+      }),
+    [classes]
+  );
+
+  const handleToolbarRefresh = useCallback(() => {
+    void fetchSummary();
+  }, []);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "class-sections-list", "Class Sections");
+  }, [exportRows]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Class Section Assignments", "class-sections-list", exportColumns);
+  }, [exportRows, exportColumns]);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Class Section Assignments", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
+
   const columns = [
     {
       title: "Class Name",
@@ -300,7 +354,12 @@ const ClassSectionsAssignment = () => {
             </nav>
           </div>
           <div className="d-flex my-xl-auto right-content align-items-center flex-wrap gap-2">
-            <TooltipOption />
+            <TooltipOption
+              onRefresh={handleToolbarRefresh}
+              onPrint={handlePrint}
+              onExportPdf={handleExportPdf}
+              onExportExcel={handleExportExcel}
+            />
           </div>
         </div>
 

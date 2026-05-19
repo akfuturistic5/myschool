@@ -1,4 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 import { useClassesWithSections } from "../../../core/hooks/useClassesWithSections";
 import { useTeachers } from "../../../core/hooks/useTeachers";
 import { apiService } from "../../../core/services/apiService";
@@ -356,6 +357,46 @@ const Classes = () => {
       sortOrder === "asc" ? String(a.class).localeCompare(String(b.class)) : String(b.class).localeCompare(String(a.class))
     );
 
+  const exportColumns = useMemo(
+    () => [
+      { title: "ID", dataKey: "id" },
+      { title: "Class", dataKey: "class" },
+      { title: "Class Code", dataKey: "classCode" },
+      { title: "Status", dataKey: "status" },
+    ],
+    []
+  );
+
+  const exportRows = useMemo(
+    () =>
+      filteredData.map((row: any) => ({
+        id: String(row.id ?? ""),
+        class: String(row.class ?? ""),
+        classCode: row.classCode === "—" ? "" : String(row.classCode ?? ""),
+        status: String(row.status ?? ""),
+      })),
+    [filteredData]
+  );
+
+  const handleToolbarRefresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  const handleExportExcel = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToExcel(exportRows, "classes-list", "Classes");
+  }, [exportRows]);
+
+  const handleExportPdf = useCallback(() => {
+    if (!exportRows.length) return;
+    exportToPDF(exportRows, "Classes", "classes-list", exportColumns);
+  }, [exportRows, exportColumns]);
+
+  const handlePrint = useCallback(() => {
+    if (!exportRows.length) return;
+    printData("Classes", exportColumns, exportRows);
+  }, [exportRows, exportColumns]);
+
   const columns = [
     {
       title: "ID",
@@ -510,7 +551,12 @@ const Classes = () => {
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption />
+              <TooltipOption
+                onRefresh={handleToolbarRefresh}
+                onPrint={handlePrint}
+                onExportPdf={handleExportPdf}
+                onExportExcel={handleExportExcel}
+              />
               <div className="mb-2">
                 <Link
                   to="#"

@@ -1,5 +1,6 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { canAccessClass } = require('../utils/accessControl');
 
 /**
  * Get elective subjects for a class grouped by elective group
@@ -8,6 +9,11 @@ const getElectiveSubjects = async (req, res) => {
   try {
     const { class_id, academic_year_id } = req.query;
     if (!class_id || !academic_year_id) return errorResponse(res, 400, 'Class ID and Academic Year are required');
+
+    const access = await canAccessClass(req, class_id);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
 
     const result = await query(
       `SELECT 
@@ -43,34 +49,93 @@ const getElectiveSubjects = async (req, res) => {
 const getCurriculumMap = async (req, res) => {
   try {
     const { class_id, section_id, academic_year_id } = req.query;
-    if (!class_id || !academic_year_id) return errorResponse(res, 400, 'Class and Academic Year are required');
+    if (!class_id || !academic_year_id) {
+      return errorResponse(res, 400, 'Class and Academic Year are required');
+    }
 
-    // Handle section_id that might come as "null" string or empty
-    const sanitizedSectionId = (section_id === 'null' || section_id === '') ? null : section_id;
+    const access = await canAccessClass(req, class_id);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
 
+    const sanitizedSectionId =
+      section_id === 'null' || section_id === '' || section_id == null
+        ? null
+        : parseInt(section_id, 10);
+
+    // Include students enrolled in class/year OR students who already have elective choices stored.
     const studentsResult = await query(
-      `SELECT 
-        s.id, u.first_name, u.last_name, s.admission_number, s.roll_number,
-        l.to_class_id as class_id, l.to_section_id as section_id,
-        string_agg(sub.subject_name, ', ') as selected_electives,
-        array_remove(array_agg(cs.id), NULL) as selected_subject_ids
-       FROM students s
-       JOIN users u ON s.user_id = u.id
-       JOIN LATERAL (
-         SELECT to_class_id, to_section_id
-         FROM student_lifecycle_ledger
-         WHERE student_id = s.id AND to_academic_year_id = $3
-         ORDER BY event_date DESC, id DESC
-         LIMIT 1
-       ) l ON true
-       LEFT JOIN student_subject_choices ssc ON s.id = ssc.student_id AND ssc.academic_year_id = $3
-       LEFT JOIN class_subjects cs ON ssc.class_subject_id = cs.id
-       LEFT JOIN subjects sub ON cs.subject_id = sub.id
-       WHERE l.to_class_id = $1 
-         AND ($2::int IS NULL OR l.to_section_id = $2)
-         AND s.deleted_at IS NULL
-       GROUP BY s.id, u.first_name, u.last_name, s.admission_number, s.roll_number, l.to_class_id, l.to_section_id
-       ORDER BY s.roll_number, u.first_name`,
+      `WITH latest_ledger AS (
+        SELECT DISTINCT ON (l.student_id)
+          l.student_id,
+          l.to_class_id AS class_id,
+          l.to_section_id AS section_id,
+          l.to_academic_year_id AS academic_year_id
+        FROM student_lifecycle_ledger l
+        ORDER BY l.student_id, l.event_date DESC NULLS LAST, l.id DESC
+      ),
+      scoped_students AS (
+        SELECT ll.student_id, ll.class_id, ll.section_id
+        FROM latest_ledger ll
+        WHERE ll.academic_year_id = $3::int
+          AND ll.class_id = $1::int
+          AND ($2::int IS NULL OR ll.section_id = $2::int)
+
+        UNION
+
+        SELECT DISTINCT ssc.student_id, cs.class_id, ll2.section_id
+        FROM student_subject_choices ssc
+        INNER JOIN class_subjects cs
+          ON cs.id = ssc.class_subject_id
+         AND cs.deleted_at IS NULL
+         AND cs.class_id = $1::int
+        LEFT JOIN latest_ledger ll2
+          ON ll2.student_id = ssc.student_id
+         AND ll2.academic_year_id = $3::int
+        WHERE ssc.academic_year_id = $3::int
+          AND ssc.deleted_at IS NULL
+          AND ($2::int IS NULL OR ll2.section_id = $2::int OR ll2.student_id IS NULL)
+      )
+      SELECT
+        s.id,
+        u.first_name,
+        u.last_name,
+        s.admission_number,
+        s.roll_number,
+        ss.class_id,
+        ss.section_id,
+        NULLIF(
+          string_agg(DISTINCT sub.subject_name, ', ' ORDER BY sub.subject_name),
+          ''
+        ) AS selected_electives,
+        COALESCE(
+          array_remove(array_agg(DISTINCT cs.id), NULL),
+          ARRAY[]::int[]
+        ) AS selected_subject_ids
+      FROM students s
+      INNER JOIN users u ON s.user_id = u.id
+      INNER JOIN scoped_students ss ON ss.student_id = s.id
+      LEFT JOIN student_subject_choices ssc
+        ON s.id = ssc.student_id
+       AND ssc.academic_year_id = $3::int
+       AND ssc.deleted_at IS NULL
+      LEFT JOIN class_subjects cs
+        ON ssc.class_subject_id = cs.id
+       AND cs.deleted_at IS NULL
+       AND cs.class_id = $1::int
+      LEFT JOIN subjects sub
+        ON cs.subject_id = sub.id
+       AND sub.deleted_at IS NULL
+      WHERE s.deleted_at IS NULL
+      GROUP BY
+        s.id,
+        u.first_name,
+        u.last_name,
+        s.admission_number,
+        s.roll_number,
+        ss.class_id,
+        ss.section_id
+      ORDER BY s.roll_number NULLS LAST, u.first_name, u.last_name`,
       [class_id, sanitizedSectionId, academic_year_id]
     );
 

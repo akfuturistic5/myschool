@@ -1,13 +1,15 @@
-import { useRef, useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSelector } from 'react-redux'
 import { selectSelectedAcademicYearId } from '../../../core/data/redux/academicYearSlice'
 import { apiService } from '../../../core/services/apiService'
+import { useClasses } from '../../../core/hooks/useClasses'
 import CommonSelect from '../../../core/common/commonSelect'
 import { Modal } from "react-bootstrap";
 import Swal from 'sweetalert2'
 
 const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSection, initialStudentId, initialSubjects }: any) => {
     const academicYearId = useSelector(selectSelectedAcademicYearId);
+    const { classes = [] } = useClasses(academicYearId);
     
     const [electives, setElectives] = useState<any[]>([]);
     const [students, setStudents] = useState<any[]>([]);
@@ -15,14 +17,30 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
     const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Filter States
-    const [classes, setClasses] = useState<any[]>([]);
     const [sections, setSections] = useState<any[]>([]);
-    const [filterClass, setFilterClass] = useState<string>(initialClass || "All");
-    const [filterSection, setFilterSection] = useState<string>(initialSection || "All");
+    const [filterClass, setFilterClass] = useState<string>(initialClass || "");
+    const [filterSection, setFilterSection] = useState<string>(initialSection || "");
+
+    const fetchSectionsForClass = useCallback(async (classId: string) => {
+        if (!classId || !academicYearId) {
+            setSections([]);
+            return;
+        }
+        try {
+            const res = await apiService.getClassSections(classId, academicYearId);
+            if (res.status === "SUCCESS") {
+                setSections(Array.isArray(res.data) ? res.data : []);
+            } else {
+                setSections([]);
+            }
+        } catch (err) {
+            console.error(err);
+            setSections([]);
+        }
+    }, [academicYearId]);
 
     const fetchElectives = async (classId: string) => {
-        if (!classId || classId === "All" || !academicYearId) {
+        if (!classId || !academicYearId) {
             setElectives([]);
             return;
         }
@@ -40,7 +58,7 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
     };
 
     const fetchStudents = async (classId: string, sectionId: string) => {
-        if (!academicYearId || !classId || classId === "All") {
+        if (!academicYearId || !classId) {
             setStudents([]);
             return;
         }
@@ -48,7 +66,7 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
             const res = await apiService.getCurriculumMap({ 
                 academic_year_id: academicYearId,
                 class_id: classId,
-                section_id: sectionId === "All" ? null : sectionId
+                section_id: sectionId || null
             });
             if (res.status === "SUCCESS") {
                 setStudents(res.data);
@@ -58,24 +76,13 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
         }
     };
 
-    const fetchInitialData = async () => {
-        try {
-            const cRes = await apiService.getClasses();
-            if (cRes.status === "SUCCESS") setClasses(cRes.data);
-            const sRes = await apiService.getSections();
-            if (sRes.status === "SUCCESS") setSections(sRes.data);
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
     useEffect(() => {
         if (show) {
-            fetchInitialData();
             if (initialClass) {
                 setFilterClass(initialClass);
+                fetchSectionsForClass(initialClass);
                 fetchElectives(initialClass);
-                fetchStudents(initialClass, initialSection || "All");
+                fetchStudents(initialClass, initialSection || "");
             }
             if (initialStudentId) {
                 setSelectedStudents([initialStudentId]);
@@ -88,20 +95,32 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
                 setSelectedSubjects([]);
             }
         }
-    }, [show, initialClass, initialSection, initialStudentId, initialSubjects, academicYearId]);
+    }, [show, initialClass, initialSection, initialStudentId, initialSubjects, academicYearId, fetchSectionsForClass]);
 
-    const handleClassChange = (val: string) => {
-        setFilterClass(val);
+    const handleClassChange = (val: string | null) => {
+        const classId = val || "";
+        setFilterClass(classId);
+        setFilterSection("");
         setSelectedSubjects([]);
         setSelectedStudents([]);
-        fetchElectives(val);
-        fetchStudents(val, filterSection);
+        if (classId) {
+            fetchSectionsForClass(classId);
+            fetchElectives(classId);
+            fetchStudents(classId, "");
+        } else {
+            setSections([]);
+            setElectives([]);
+            setStudents([]);
+        }
     };
 
-    const handleSectionChange = (val: string) => {
-        setFilterSection(val);
+    const handleSectionChange = (val: string | null) => {
+        const sectionId = val || "";
+        setFilterSection(sectionId);
         setSelectedStudents([]);
-        fetchStudents(filterClass, val);
+        if (filterClass) {
+            fetchStudents(filterClass, sectionId);
+        }
     };
 
     const handleAssign = async () => {
@@ -120,7 +139,7 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
 
         if (res.status === "SUCCESS") {
           Swal.fire("Success", "Electives assigned successfully", "success");
-          onSuccess();
+          onSuccess(filterClass, filterSection);
           handleClose();
           setSelectedSubjects([]);
           setSelectedStudents([]);
@@ -146,18 +165,29 @@ const MappingModal = ({ show, handleClose, onSuccess, initialClass, initialSecti
                   <label className="form-label">Target Class</label>
                   <CommonSelect
                     className="select"
-                    options={[{ value: "All", label: "Select Class" }, ...classes.map(c => ({ value: c.id.toString(), label: c.class_name || c.name }))]}
+                    options={classes.map((c: any) => ({
+                      value: String(c.id),
+                      label: c.class_name || c.name,
+                    }))}
                     value={filterClass}
-                    onChange={(val: any) => handleClassChange(val)}
+                    onChange={handleClassChange}
+                    isDisabled={!academicYearId}
                   />
               </div>
               <div className="col-md-6">
                   <label className="form-label">Target Section</label>
                   <CommonSelect
                     className="select"
-                    options={[{ value: "All", label: "All Sections" }, ...sections.map(s => ({ value: s.id.toString(), label: s.section_name || s.name }))]}
+                    options={[
+                      { value: "", label: "All Sections" },
+                      ...sections.map((s: any) => ({
+                        value: String(s.section_id ?? s.id),
+                        label: s.section_name || s.name,
+                      })),
+                    ]}
                     value={filterSection}
-                    onChange={(val: any) => handleSectionChange(val)}
+                    onChange={handleSectionChange}
+                    isDisabled={!filterClass}
                   />
               </div>
           </div>

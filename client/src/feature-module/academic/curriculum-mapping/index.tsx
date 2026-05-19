@@ -1,9 +1,10 @@
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
 import { Link } from "react-router-dom";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
 import { apiService } from "../../../core/services/apiService";
+import { useClasses } from "../../../core/hooks/useClasses";
 import CommonSelect from "../../../core/common/commonSelect";
 import type { TableData } from "../../../core/data/interface";
 import Table from "../../../core/common/dataTable/index";
@@ -16,112 +17,166 @@ const CurriculumMapping = () => {
   const routes = all_routes;
   const academicYearId = useSelector(selectSelectedAcademicYearId);
   const [addModal, setAddModal] = useState(false);
-  const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const [data, setData] = useState<any[]>([]);
   const [filteredData, setFilteredData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editStudent, setEditStudent] = useState<any>(null);
 
-  // Dynamic Options for Filters
-  const [classes, setClasses] = useState<any[]>([]);
+  const { classes = [], loading: classesLoading } = useClasses(academicYearId);
   const [sections, setSections] = useState<any[]>([]);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
 
-  // Filter States
-  const [selectedClass, setSelectedClass] = useState("All");
-  const [selectedSection, setSelectedSection] = useState("All");
+  const [selectedClass, setSelectedClass] = useState("");
+  const [selectedSection, setSelectedSection] = useState("");
 
-  const fetchCurriculumMap = async (isManualRefresh = false) => {
+  const classOptions = useMemo(
+    () =>
+      classes.map((c: any) => ({
+        value: String(c.id),
+        label: c.class_name || c.name || `Class ${c.id}`,
+      })),
+    [classes]
+  );
+
+  const sectionOptions = useMemo(
+    () =>
+      sections.map((s: any) => ({
+        value: String(s.section_id ?? s.id),
+        label: s.section_name || s.name || `Section ${s.section_id ?? s.id}`,
+      })),
+    [sections]
+  );
+
+  const fetchSectionsForClass = useCallback(async (classId: string) => {
+    if (!classId || !academicYearId) {
+      setSections([]);
+      return;
+    }
     try {
-      if (!academicYearId) return;
-      if (selectedClass === "All") {
-          setData([]);
-          setFilteredData([]);
-          setLoading(false);
-          return;
+      setSectionsLoading(true);
+      const res = await apiService.getClassSections(classId, academicYearId);
+      if (res.status === "SUCCESS") {
+        setSections(Array.isArray(res.data) ? res.data : []);
+      } else {
+        setSections([]);
       }
-      
+    } catch (err) {
+      console.error("Failed to fetch sections for class", err);
+      setSections([]);
+    } finally {
+      setSectionsLoading(false);
+    }
+  }, [academicYearId]);
+
+  const fetchCurriculumMap = useCallback(async (
+    isManualRefresh = false,
+    overrides?: { classId?: string; sectionId?: string }
+  ) => {
+    const classId = overrides?.classId ?? selectedClass;
+    const sectionId = overrides?.sectionId ?? selectedSection;
+
+    if (!academicYearId) {
+      setFilteredData([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    if (!classId) {
+      setFilteredData([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    try {
       setLoading(true);
       setError(null);
 
-      const res = await apiService.getCurriculumMap({ 
+      const res = await apiService.getCurriculumMap({
         academic_year_id: academicYearId,
-        class_id: selectedClass === "All" ? null : selectedClass,
-        section_id: selectedSection === "All" ? null : selectedSection
+        class_id: classId,
+        section_id: sectionId || null,
       });
 
       if (res.status === "SUCCESS") {
-        const mappedData = res.data.map((item: any, idx: number) => ({
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const mappedData = rows.map((item: any, idx: number) => ({
           ...item,
           key: item.id || idx,
           sNo: String(idx + 1),
-          studentName: `${item.first_name} ${item.last_name}`,
+          studentName: `${item.first_name || ""} ${item.last_name || ""}`.trim(),
           admissionNo: item.admission_number,
           rollNo: item.roll_number || "-",
-          selections: item.selected_electives || "None selected"
+          selections: item.selected_electives?.trim() ? item.selected_electives : "None selected",
         }));
-        setData(mappedData);
         setFilteredData(mappedData);
         if (isManualRefresh) {
           Swal.fire({
-            icon: 'success',
-            title: 'Refreshed',
-            text: 'Data updated successfully',
+            icon: "success",
+            title: "Refreshed",
+            text: "Data updated successfully",
             timer: 1500,
-            showConfirmButton: false
+            showConfirmButton: false,
           });
         }
+      } else {
+        setError(res.message || "Failed to fetch curriculum map");
+        setFilteredData([]);
       }
     } catch (err: any) {
       setError(err.message || "Failed to fetch curriculum map");
+      setFilteredData([]);
     } finally {
       setLoading(false);
     }
-  };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const cRes = await apiService.getClasses();
-      if (cRes.status === "SUCCESS") setClasses(cRes.data);
-      
-      const sRes = await apiService.getSections();
-      if (sRes.status === "SUCCESS") setSections(sRes.data);
-    } catch (err) {
-      console.error("Failed to fetch filter options", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchFilterOptions();
-  }, []);
-
-  useEffect(() => {
-    fetchCurriculumMap();
   }, [academicYearId, selectedClass, selectedSection]);
 
-  const handleApplyFilter = (e: any) => {
-    e.preventDefault();
-    fetchCurriculumMap();
-    if (dropdownMenuRef.current) {
-      dropdownMenuRef.current.classList.remove("show");
+  useEffect(() => {
+    if (selectedClass) {
+      fetchSectionsForClass(selectedClass);
+    } else {
+      setSections([]);
+      setSelectedSection("");
     }
+  }, [selectedClass, fetchSectionsForClass]);
+
+  useEffect(() => {
+    fetchCurriculumMap();
+  }, [fetchCurriculumMap]);
+
+  const handleClassChange = (classId: string | null) => {
+    setSelectedClass(classId || "");
+    setSelectedSection("");
   };
 
-  const handleReset = () => {
-    setSelectedClass("All");
-    setSelectedSection("All");
-  };
+  const handleAssignSuccess = useCallback(
+    (classId?: string, sectionId?: string) => {
+      const nextClass = classId || selectedClass;
+      const nextSection = sectionId !== undefined ? sectionId : selectedSection;
+      if (classId) {
+        setSelectedClass(classId);
+      }
+      if (sectionId !== undefined) {
+        setSelectedSection(sectionId || "");
+      }
+      if (nextClass) {
+        fetchCurriculumMap(false, { classId: nextClass, sectionId: nextSection });
+      }
+    },
+    [selectedClass, selectedSection, fetchCurriculumMap]
+  );
 
   const handleExportExcel = () => {
-    const exportData = filteredData.map(item => ({
+    const exportData = filteredData.map((item) => ({
       SNo: item.sNo,
       Student: item.studentName,
       AdmissionNo: item.admissionNo,
       RollNo: item.rollNo,
-      ElectiveChoices: item.selections
+      ElectiveChoices: item.selections,
     }));
-    exportToExcel(exportData, `CurriculumMapping_${new Date().toISOString().split('T')[0]}`);
+    exportToExcel(exportData, `CurriculumMapping_${new Date().toISOString().split("T")[0]}`);
   };
 
   const handleExportPDF = () => {
@@ -132,7 +187,12 @@ const CurriculumMapping = () => {
       { title: "Roll No", dataKey: "rollNo" },
       { title: "Elective Choices", dataKey: "selections" },
     ];
-    exportToPDF(filteredData, "Curriculum Mapping List", `CurriculumMapping_${new Date().toISOString().split('T')[0]}`, cols);
+    exportToPDF(
+      filteredData,
+      "Curriculum Mapping List",
+      `CurriculumMapping_${new Date().toISOString().split("T")[0]}`,
+      cols
+    );
   };
 
   const handlePrint = () => {
@@ -175,30 +235,89 @@ const CurriculumMapping = () => {
       title: "Elective Choices",
       dataIndex: "selections",
       render: (text: string) => (
-          <span className={`badge ${text === "None selected" ? "badge-soft-danger" : "badge-soft-success"}`}>
-              {text}
-          </span>
-      )
+        <span
+          className={`badge ${
+            text === "None selected" ? "badge-soft-danger" : "badge-soft-success"
+          }`}
+        >
+          {text}
+        </span>
+      ),
     },
     {
       title: "Action",
       dataIndex: "action",
       render: (_: any, record: any) => (
         <div className="d-flex align-items-center">
-            <Link
-              to="#"
-              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-              onClick={() => {
-                setEditStudent(record);
-                setAddModal(true);
-              }}
-            >
-              <i className="ti ti-edit fs-14" />
-            </Link>
+          <Link
+            to="#"
+            className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
+            onClick={(e) => {
+              e.preventDefault();
+              setEditStudent(record);
+              setAddModal(true);
+            }}
+          >
+            <i className="ti ti-edit fs-14" />
+          </Link>
         </div>
       ),
     },
   ];
+
+  const renderTableBody = () => {
+    if (!academicYearId) {
+      return (
+        <div className="text-center p-5">
+          <i className="ti ti-calendar-event fs-32 text-warning mb-3" />
+          <p className="mb-0">Please select an academic year from the header to view curriculum mapping.</p>
+        </div>
+      );
+    }
+
+    if (!selectedClass) {
+      return (
+        <div className="text-center p-5">
+          <i className="ti ti-info-circle fs-32 text-muted mb-3" />
+          <p className="mb-0">Please select a class to view student elective choices.</p>
+          {classesLoading && (
+            <p className="text-muted small mt-2 mb-0">Loading classes...</p>
+          )}
+          {!classesLoading && classes.length === 0 && (
+            <p className="text-muted small mt-2 mb-0">No classes found for the selected academic year.</p>
+          )}
+        </div>
+      );
+    }
+
+    if (loading) {
+      return (
+        <div className="text-center p-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (error) {
+      return <div className="alert alert-danger m-3">{error}</div>;
+    }
+
+    if (filteredData.length === 0) {
+      return (
+        <div className="text-center p-5">
+          <i className="ti ti-users fs-32 text-muted mb-3" />
+          <p className="mb-0">No students found for this class and section in the selected academic year.</p>
+          <p className="text-muted small mt-2 mb-0">
+            Ensure students are enrolled in this class for the current academic year.
+          </p>
+        </div>
+      );
+    }
+
+    return <Table dataSource={filteredData} columns={columns} Selection={true} />;
+  };
 
   return (
     <>
@@ -216,23 +335,24 @@ const CurriculumMapping = () => {
                     <Link to="#">Academic</Link>
                   </li>
                   <li className="breadcrumb-item active" aria-current="page">
-                  Curriculum Mapping
+                    Curriculum Mapping
                   </li>
                 </ol>
               </nav>
             </div>
             <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
-              <TooltipOption 
-                 onRefresh={() => fetchCurriculumMap(true)}
-                 onPrint={handlePrint}
-                 onExportExcel={handleExportExcel}
-                 onExportPdf={handleExportPDF}
+              <TooltipOption
+                onRefresh={() => fetchCurriculumMap(true)}
+                onPrint={handlePrint}
+                onExportExcel={handleExportExcel}
+                onExportPdf={handleExportPDF}
               />
               <div className="mb-2">
                 <Link
                   to="#"
                   className="btn btn-primary"
-                  onClick={()=>{
+                  onClick={(e) => {
+                    e.preventDefault();
                     setEditStudent(null);
                     setAddModal(true);
                   }}
@@ -248,52 +368,44 @@ const CurriculumMapping = () => {
             <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
               <h4 className="mb-3">Student Elective Choices</h4>
               <div className="d-flex align-items-center flex-wrap">
-                <div className="mb-3 me-2" style={{ minWidth: '200px' }}>
+                <div className="mb-3 me-2" style={{ minWidth: "200px" }}>
                   <CommonSelect
+                    key={`curriculum-class-${classOptions.length}-${academicYearId ?? "none"}`}
                     className="select"
-                    options={[
-                      { value: "All", label: "Select Class" },
-                      ...classes.map(c => ({ value: c.id.toString(), label: c.class_name || c.name }))
-                    ]}
+                    options={classOptions}
                     value={selectedClass}
-                    onChange={(val: any) => setSelectedClass(val || "All")}
+                    onChange={handleClassChange}
+                    placeholder="Select Class"
+                    isDisabled={!academicYearId || classesLoading || classOptions.length === 0}
                   />
                 </div>
-                <div className="mb-3 me-2" style={{ minWidth: '200px' }}>
+                <div className="mb-3 me-2" style={{ minWidth: "200px" }}>
                   <CommonSelect
                     className="select"
-                    options={[
-                      { value: "All", label: "All Sections" },
-                      ...sections.map(s => ({ value: s.id.toString(), label: s.section_name || s.name }))
-                    ]}
+                    options={sectionOptions}
                     value={selectedSection}
-                    onChange={(val: any) => setSelectedSection(val || "All")}
+                    onChange={(val) => setSelectedSection(val || "")}
+                    placeholder="All Sections"
+                    isDisabled={!selectedClass || sectionsLoading}
                   />
                 </div>
               </div>
             </div>
-            <div className="card-body p-0 py-3">
-              {selectedClass === "All" ? (
-                  <div className="text-center p-5">
-                      <i className="ti ti-info-circle fs-32 text-muted mb-3" />
-                      <p>Please select a class to view curriculum mapping</p>
-                  </div>
-              ) : (
-                <Table dataSource={filteredData} columns={columns} Selection={true} />
-              )}
-            </div>
+            <div className="card-body p-0 py-3">{renderTableBody()}</div>
           </div>
         </div>
       </div>
-      <MappingModal 
+      <MappingModal
         show={addModal}
         handleClose={() => {
           setAddModal(false);
           setEditStudent(null);
         }}
-        onSuccess={fetchCurriculumMap}
-        initialClass={editStudent ? String(editStudent.class_id) : (selectedClass !== "All" ? selectedClass : "")}
-        initialSection={editStudent ? String(editStudent.section_id) : (selectedSection !== "All" ? selectedSection : "")}
+        onSuccess={handleAssignSuccess}
+        initialClass={editStudent ? String(editStudent.class_id) : selectedClass}
+        initialSection={
+          editStudent ? String(editStudent.section_id || "") : selectedSection
+        }
         initialStudentId={editStudent?.id}
         initialSubjects={editStudent?.selected_subject_ids || []}
       />

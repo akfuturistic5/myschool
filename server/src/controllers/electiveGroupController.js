@@ -1,20 +1,34 @@
 const { query } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
+const { canAccessClass, parseId } = require('../utils/accessControl');
+
+async function getGroupClassId(groupId) {
+  const res = await query(
+    'SELECT class_id FROM subject_elective_groups WHERE id = $1 AND deleted_at IS NULL',
+    [groupId]
+  );
+  return res.rows[0]?.class_id ?? null;
+}
 
 const getAllGroups = async (req, res) => {
   try {
     const { class_id } = req.query;
-    let sql = 'SELECT * FROM subject_elective_groups WHERE deleted_at IS NULL';
-    const params = [];
 
-    if (class_id) {
-      params.push(class_id);
-      sql += ` AND class_id = $${params.length}`;
+    if (!class_id) {
+      return errorResponse(res, 400, 'class_id is required to fetch elective groups');
     }
 
-    sql += ' ORDER BY group_name ASC';
-    
-    const result = await query(sql, params);
+    const access = await canAccessClass(req, class_id);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
+
+    const result = await query(
+      `SELECT * FROM subject_elective_groups
+       WHERE deleted_at IS NULL AND class_id = $1
+       ORDER BY group_name ASC`,
+      [class_id]
+    );
     return success(res, 200, 'Elective groups fetched successfully', result.rows);
   } catch (error) {
     console.error('Error fetching elective groups:', error);
@@ -29,6 +43,11 @@ const createGroup = async (req, res) => {
 
     if (!class_id) {
       return errorResponse(res, 400, 'Class ID is required to create an elective group');
+    }
+
+    const access = await canAccessClass(req, class_id);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
     }
 
     const result = await query(
@@ -54,6 +73,21 @@ const createGroup = async (req, res) => {
 const updateGroup = async (req, res) => {
   try {
     const { id } = req.params;
+    const groupId = parseId(id);
+    if (!groupId) {
+      return errorResponse(res, 400, 'Invalid elective group id');
+    }
+
+    const groupClassId = await getGroupClassId(groupId);
+    if (!groupClassId) {
+      return errorResponse(res, 404, 'Elective group not found');
+    }
+
+    const access = await canAccessClass(req, groupClassId);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
+
     const { group_name, description, max_subjects, selectable_subjects } = req.body;
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
@@ -90,6 +124,21 @@ const updateGroup = async (req, res) => {
 const deleteGroup = async (req, res) => {
   try {
     const { id } = req.params;
+    const groupId = parseId(id);
+    if (!groupId) {
+      return errorResponse(res, 400, 'Invalid elective group id');
+    }
+
+    const groupClassId = await getGroupClassId(groupId);
+    if (!groupClassId) {
+      return errorResponse(res, 404, 'Elective group not found');
+    }
+
+    const access = await canAccessClass(req, groupClassId);
+    if (!access.ok) {
+      return errorResponse(res, access.status || 403, access.message || 'Access denied');
+    }
+
     const userId = req.user?.id != null ? parseInt(req.user.id, 10) : null;
 
     const used = await query(
