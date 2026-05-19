@@ -77,6 +77,7 @@ export const useGuardianWardLeaves = (options = {}) => {
             noOfDays: String(noOfDays),
             appliedOn: formatLeaveDate(row.applied_at || row.created_at || startDate),
             studentId: row.student_id,
+            document_url: row.document_url || null,
             badgeClass: getBadgeClass(leaveType),
             status: statusVal,
             statusBadgeClass: statusLower.includes('approv') ? 'bg-success' : statusLower.includes('declin') || statusLower.includes('reject') ? 'bg-danger' : 'bg-skyblue',

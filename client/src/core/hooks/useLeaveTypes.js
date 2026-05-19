@@ -29,6 +29,7 @@ export const useLeaveTypes = (options = {}) => {
             max_days_per_year: lt.max_days_per_year,
             max_days: lt.max_days,
             applicable_for: lt.applicable_for || 'both',
+            requires_medical_certificate: !!lt.requires_medical_certificate,
           }))
         );
       } else {

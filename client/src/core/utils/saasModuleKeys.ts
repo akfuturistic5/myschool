@@ -1,6 +1,6 @@
 /** Keep keys aligned with server/src/config/saasModuleCatalog.js */
 export const SAAS_MODULE_CATALOG: { key: string; label: string }[] = [
-  { key: 'peoples', label: 'Peoples' },
+  { key: 'peoples', label: 'People' },
   { key: 'academic', label: 'Academic' },
   { key: 'fees', label: 'Fees collection' },
   { key: 'library', label: 'Library' },

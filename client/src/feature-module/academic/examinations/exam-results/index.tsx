@@ -1660,7 +1660,9 @@ const ExamResult = () => {
                               const failed = !!r.is_absent || (!isPending && Number(r.marks_obtained ?? 0) < Number(r.passing_marks ?? 0));
                               return (
                                 <tr key={`${r.subject_id}-${idx}`}>
-                                  <td className="px-4 border-light fw-bold text-dark">{r.subject_name || "-"}</td>
+                                  <td className="px-4 border-light fw-bold text-dark">
+                                    {r.subject_name ? (r.subject_mode ? `${r.subject_name} (${r.subject_mode})` : r.subject_name) : "-"}
+                                  </td>
                                   <td className="border-light text-muted small">{r.subject_code || "-"}</td>
                                   <td className="border-light fw-bold">
                                     {r.is_absent ? <span className="text-danger">ABSENT</span> : <>{r.marks_obtained ?? "-"} / {r.max_marks ?? "-"}</>}

@@ -2,6 +2,7 @@ const { query } = require('../config/database');
 const { getParentsForUser } = require('../utils/parentUserMatch');
 const { ROLES } = require('../config/roles');
 const { canAccessStudent, getAuthContext, isAdmin, parseId } = require('../utils/accessControl');
+const { lateralCurrentEnrollment, subqueryLatestClassId } = require('../utils/studentEnrollmentSql');
 
 // Get fee collections list for Collect Fees page (students with fee summary)
 // Optional query: academic_year_id - filter students by academic year
@@ -13,7 +14,7 @@ const getFeeCollectionsList = async (req, res) => {
     }
     const academicYearId = req.query.academic_year_id ? parseInt(req.query.academic_year_id, 10) : null;
     const hasYearFilter = academicYearId != null && !Number.isNaN(academicYearId);
-    const studentWhere = hasYearFilter ? ' AND s.academic_year_id = $1' : '';
+    const studentWhere = hasYearFilter ? ' AND enr.academic_year_id = $1' : '';
     const params = hasYearFilter ? [academicYearId] : [];
 
     const result = await query(
@@ -22,11 +23,11 @@ const getFeeCollectionsList = async (req, res) => {
           s.id AS student_id,
           s.admission_number,
           s.roll_number,
-          s.first_name,
-          s.last_name,
-          s.photo_url AS student_photo_url,
-          s.class_id,
-          s.section_id,
+          u.first_name,
+          u.last_name,
+          u.avatar AS student_photo_url,
+          enr.class_id,
+          enr.section_id,
           c.class_name,
           sec.section_name,
           COALESCE(SUM(fs.amount::numeric), 0) AS total_due,
@@ -36,12 +37,14 @@ const getFeeCollectionsList = async (req, res) => {
             WHERE fc.student_id = s.id AND fc.is_active = true
           ), 0) AS total_paid
         FROM students s
-        LEFT JOIN classes c ON s.class_id = c.id
-        LEFT JOIN sections sec ON s.section_id = sec.id
-        LEFT JOIN fee_structures fs ON (fs.class_id IS NULL OR fs.class_id = s.class_id) AND COALESCE(fs.is_active, true) = true
+        INNER JOIN users u ON s.user_id = u.id
+        ${lateralCurrentEnrollment('s.id')}
+        LEFT JOIN classes c ON enr.class_id = c.id
+        LEFT JOIN sections sec ON enr.section_id = sec.id
+        LEFT JOIN fee_structures fs ON (fs.class_id IS NULL OR fs.class_id = enr.class_id) AND COALESCE(fs.is_active, true) = true
         WHERE s.is_active = true${studentWhere}
-        GROUP BY s.id, s.admission_number, s.roll_number, s.first_name, s.last_name, s.photo_url,
-          s.class_id, s.section_id, c.class_name, sec.section_name
+        GROUP BY s.id, s.admission_number, s.roll_number, u.first_name, u.last_name, u.avatar,
+          enr.class_id, enr.section_id, c.class_name, sec.section_name
       )
       SELECT
         student_id AS id,
@@ -109,7 +112,7 @@ const getStudentFees = async (req, res) => {
         FROM fee_structures fs
         LEFT JOIN classes c ON fs.class_id = c.id
         WHERE (
-          (fs.class_id IS NULL OR fs.class_id = (SELECT class_id FROM students WHERE id = $1))
+          (fs.class_id IS NULL OR fs.class_id = ${subqueryLatestClassId('$1')})
           OR fs.id IN (SELECT fee_structure_id FROM fee_collections WHERE student_id = $1 AND is_active = true)
         )
         AND COALESCE(fs.is_active, true) = true

@@ -26,6 +26,12 @@ const toMinutes = (value?: string | null) => {
   return h * 60 + m;
 };
 
+const formatSubjectName = (name: string, mode?: string) => {
+  if (!name) return "";
+  const trimMode = String(mode || "").trim();
+  return trimMode ? `${name} (${trimMode})` : name;
+};
+
 const getTimeCollisionError = (rows: Row[]) => {
   for (let i = 0; i < rows.length; i += 1) {
     const a = rows[i];
@@ -55,7 +61,43 @@ const getTimeCollisionError = (rows: Row[]) => {
         if (a.is_elective && b.is_elective && a.elective_group_id && a.elective_group_id === b.elective_group_id) {
           continue;
         }
-        return `Schedule conflict: '${a.subject_name}' and '${b.subject_name}' overlap on ${aDate}. Please ensure each exam has a unique time slot.`;
+        return `Schedule conflict: '${formatSubjectName(a.subject_name, a.subject_mode)}' and '${formatSubjectName(b.subject_name, b.subject_mode)}' overlap on ${aDate}. Please ensure each exam has a unique time slot.`;
+      }
+    }
+  }
+  return null;
+};
+
+const getRoomCollisionError = (rows: Row[]) => {
+  for (let i = 0; i < rows.length; i += 1) {
+    const a = rows[i];
+    const aDate = a.exam_date ? String(a.exam_date).slice(0, 10) : "";
+    const aStart = a.start_time ? String(a.start_time).slice(0, 5) : "";
+    const aEnd = a.end_time ? String(a.end_time).slice(0, 5) : "";
+    const aRoom = a.room_id;
+    if (!aDate || !aStart || !aEnd || !aRoom) continue;
+
+    const aStartMin = toMinutes(aStart);
+    const aEndMin = toMinutes(aEnd);
+    if (aStartMin == null || aEndMin == null || aStartMin >= aEndMin) continue;
+
+    for (let j = i + 1; j < rows.length; j += 1) {
+      const b = rows[j];
+      const bDate = b.exam_date ? String(b.exam_date).slice(0, 10) : "";
+      const bStart = b.start_time ? String(b.start_time).slice(0, 5) : "";
+      const bEnd = b.end_time ? String(b.end_time).slice(0, 5) : "";
+      const bRoom = b.room_id;
+      if (!bDate || !bStart || !bEnd || !bRoom) continue;
+      if (aDate !== bDate) continue;
+      if (Number(aRoom) !== Number(bRoom)) continue;
+
+      const bStartMin = toMinutes(bStart);
+      const bEndMin = toMinutes(bEnd);
+      if (bStartMin == null || bEndMin == null || bStartMin >= bEndMin) continue;
+
+      const overlaps = aStartMin < bEndMin && bStartMin < aEndMin;
+      if (overlaps) {
+        return `Room conflict: '${formatSubjectName(a.subject_name, a.subject_mode)}' and '${formatSubjectName(b.subject_name, b.subject_mode)}' are both assigned to the same room at the same time on ${aDate}.`;
       }
     }
   }
@@ -248,12 +290,22 @@ const ExamSchedule = () => {
 
   const updateRow = (i: number, patch: Partial<Row>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
-    const collisionError = getTimeCollisionError(next);
-    if (collisionError) {
+    const timeError = getTimeCollisionError(next);
+    if (timeError) {
       void Swal.fire({
         icon: "warning",
         title: "Time slot conflict",
-        text: collisionError,
+        text: timeError,
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+    const roomError = getRoomCollisionError(next);
+    if (roomError) {
+      void Swal.fire({
+        icon: "warning",
+        title: "Room conflict",
+        text: roomError,
         confirmButtonText: "OK",
       });
       return;
@@ -290,7 +342,7 @@ const ExamSchedule = () => {
         Swal.fire({
           icon: "warning",
           title: "Incomplete Schedule",
-          text: `Please fill in the Date and Timing for all subjects (Missing for ${r.subject_name}).`,
+          text: `Please fill in the Date and Timing for all subjects (Missing for ${formatSubjectName(r.subject_name, r.subject_mode)}).`,
         });
         return;
       }
@@ -330,12 +382,22 @@ const ExamSchedule = () => {
         return;
       }
     }
-    const collisionError = getTimeCollisionError(rows);
-    if (collisionError) {
+    const timeError = getTimeCollisionError(rows);
+    if (timeError) {
       await Swal.fire({
         icon: "warning",
         title: "Time slot conflict",
-        text: collisionError,
+        text: timeError,
+        confirmButtonText: "OK",
+      });
+      return;
+    }
+    const roomError = getRoomCollisionError(rows);
+    if (roomError) {
+      await Swal.fire({
+        icon: "warning",
+        title: "Room conflict",
+        text: roomError,
         confirmButtonText: "OK",
       });
       return;
@@ -497,7 +559,7 @@ const ExamSchedule = () => {
                     {rows.map((row, i) => (
                       <tr key={`subject-row-${row.subject_id}`}>
                         <td className="px-4 border-light">
-                          <div className="fw-bold text-dark">{row.subject_name}</div>
+                          <div className="fw-bold text-dark">{formatSubjectName(row.subject_name, row.subject_mode)}</div>
                         </td>
                         <td className="border-light">
                           <div className="d-flex flex-column">

@@ -59,6 +59,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
   const [applyFromDate, setApplyFromDate] = useState<Dayjs | null>(null)
   const [applyToDate, setApplyToDate] = useState<Dayjs | null>(null)
   const [applyReason, setApplyReason] = useState('')
+  const [applyDocument, setApplyDocument] = useState<File | null>(null)
   const [applySubmitting, setApplySubmitting] = useState(false)
   const getModalContainer = () => document.body;
   const todayStart = dayjs().startOf("day");
@@ -415,6 +416,11 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
       alert('Please select Leave Type.')
       return
     }
+    const isDocRequired = (applyLeaveType as any)?.requires_medical_certificate;
+    if (isDocRequired && !applyDocument) {
+      alert('An attachment/document is required for this leave type.')
+      return
+    }
     if (!applyFromDate || !applyToDate) {
       alert('Please select From Date and To Date.')
       return
@@ -435,12 +441,25 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
     }
     setApplySubmitting(true)
     try {
+      let document_url = null;
+      if (applyDocument) {
+        const uploadRes = await apiService.uploadSchoolStorageFile(applyDocument, 'documents');
+        if (uploadRes?.status === 'SUCCESS' && uploadRes?.data?.url) {
+          document_url = uploadRes.data.url;
+        } else {
+          alert('Failed to upload document.');
+          setApplySubmitting(false);
+          return;
+        }
+      }
+
       const res = await apiService.createLeaveApplication({
         leave_type_id: Number(typeId),
         student_id: studentId,
         start_date: fromStr,
         end_date: toStr,
         reason: applyReason.trim(),
+        document_url,
       })
       if (res?.status === 'SUCCESS') {
         onLeaveApplied?.()
@@ -449,6 +468,7 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
         setApplyFromDate(null)
         setApplyToDate(null)
         setApplyReason('')
+        setApplyDocument(null)
       } else {
         alert(res?.message || 'Failed to apply leave.')
       }
@@ -900,6 +920,22 @@ const StudentModals = ({ studentId, onLeaveApplied, student, feeData, onFeeColle
                           value={applyReason}
                           onChange={(e) => setApplyReason(e.target.value)}
                         />
+                      </div>
+                      <div className="mb-0 mt-3">
+                        <label className="form-label">
+                          Attachment { (applyLeaveType as any)?.requires_medical_certificate ? <span className="text-danger">(Required) *</span> : '(Optional)' }
+                        </label>
+                        <input
+                           type="file"
+                           className="form-control"
+                           onChange={(e) => {
+                             if (e.target.files && e.target.files.length > 0) {
+                               setApplyDocument(e.target.files[0])
+                             } else {
+                               setApplyDocument(null)
+                             }
+                           }}
+                         />
                       </div>
                     </div>
                   </div>

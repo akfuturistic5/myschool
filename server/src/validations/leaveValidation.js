@@ -8,6 +8,7 @@ const createLeaveApplicationSchema = Joi.object({
   end_date: Joi.date().iso().min(Joi.ref('start_date')).required(),
   reason: Joi.string().trim().min(1).max(1000).required(),
   emergency_contact: Joi.string().trim().max(20).optional().allow(null, ''),
+  document_url: Joi.string().trim().max(2048).optional().allow(null, ''),
 }).unknown(true);
 
 const updateLeaveStatusSchema = Joi.object({

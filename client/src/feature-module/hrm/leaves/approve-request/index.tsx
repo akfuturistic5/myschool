@@ -48,14 +48,35 @@ const ApproveRequest = () => {
     }));
   }, [leaveApplications]);
 
-  const handleApprove = async (id: number) => {
+  const handleApprove = async (id: number, record?: any) => {
     if (leaveActionId != null) return;
+    const originalDays = record?.noofDays ? parseInt(String(record.noofDays), 10) : 0;
+    let approvedDays: number | null = null;
+    
+    if (originalDays > 1) {
+      const input = window.prompt(`Approve how many days out of ${originalDays}? (Leave blank or enter ${originalDays} to approve fully)`, String(originalDays));
+      if (input === null) return; // User cancelled
+      const trimmed = input.trim();
+      if (trimmed !== "") {
+        const parsed = parseInt(trimmed, 10);
+        if (Number.isNaN(parsed) || parsed <= 0 || parsed > originalDays) {
+          alert(`Invalid number of days. Must be between 1 and ${originalDays}.`);
+          return;
+        }
+        approvedDays = parsed;
+      }
+    }
+    
     setLeaveActionId(id);
     setActionFeedback(null);
     try {
-      const res = await apiService.updateLeaveApplicationStatus(id, "approved");
+      const options: any = {};
+      if (approvedDays !== null) {
+        options.total_days = approvedDays;
+      }
+      const res = await apiService.updateLeaveApplicationStatus(id, "approved", options);
       if (res?.status === "SUCCESS") {
-        setActionFeedback({ type: "success", text: "Leave approved." });
+        setActionFeedback({ type: "success", text: approvedDays !== null ? `Leave approved for ${approvedDays} days.` : "Leave approved." });
         await refetchLeaves();
       } else {
         setActionFeedback({ type: "danger", text: res?.message || "Could not approve leave." });
@@ -155,7 +176,7 @@ const ApproveRequest = () => {
     {
       title: "Action",
       dataIndex: "id",
-      render: (_: unknown, record: { id?: number; status?: string }) => {
+      render: (_: unknown, record: { id?: number; status?: string; noofDays?: string | number }) => {
         const id = record?.id;
         const statusLower = (record?.status ?? "").toString().toLowerCase();
         const isApproved = statusLower.includes("approv");
@@ -167,7 +188,7 @@ const ApproveRequest = () => {
             <button
               type="button"
               className="avatar avatar-xs p-0 btn btn-success"
-              onClick={() => handleApprove(Number(id))}
+              onClick={() => handleApprove(Number(id), record)}
               disabled={disabled}
               title="Approve"
             >
@@ -246,17 +267,19 @@ const ApproveRequest = () => {
             {/* Page Header */}
             <div className="d-md-flex d-block align-items-center justify-content-between mb-3">
               <div className="my-auto mb-2">
-                <h3 className="page-title mb-1">Leave Approval Requests</h3>
+                <h3 className="page-title mb-1">
+                  {isTeacher ? "Student Leave Requests" : "Leave Approval Requests"}
+                </h3>
                 <nav>
                   <ol className="breadcrumb mb-0">
                     <li className="breadcrumb-item">
-                      <Link to={routes.adminDashboard}>Dashboard</Link>
+                      <Link to={isTeacher ? routes.teacherDashboard : routes.adminDashboard}>Dashboard</Link>
                     </li>
                     <li className="breadcrumb-item">
-                      <Link to="#">HRM</Link>
+                      <Link to="#">{isTeacher ? "Peoples" : "HRM"}</Link>
                     </li>
                     <li className="breadcrumb-item active" aria-current="page">
-                      Leave Approval Requests
+                      {isTeacher ? "Student Leaves" : "Leave Approval Requests"}
                     </li>
                   </ol>
                 </nav>
@@ -274,7 +297,9 @@ const ApproveRequest = () => {
             {/* Filter Section */}
             <div className="card">
               <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
-                <h4 className="mb-3">Pending Leave Requests</h4>
+                <h4 className="mb-3">
+                  {isTeacher ? "Pending Student Leave Requests" : "Pending Leave Requests"}
+                </h4>
                 <div className="d-flex align-items-center flex-wrap">
                   <div className="input-icon-start mb-3 me-2 position-relative">
                   <PredefinedDateRanges />

@@ -389,12 +389,22 @@ const Books = () => {
     {
       title: "Copies",
       dataIndex: "qty",
+      render: (text: string, record: any) => (
+        <Link to={`${routes.libraryBookCopies}?book_id=${record.id}`} className="link-primary fw-medium">
+          {text}
+        </Link>
+      ),
       sorter: (a: TableData, b: TableData) =>
         String((a as any).qty || "").localeCompare(String((b as any).qty || "")),
     },
     {
       title: "Available",
       dataIndex: "available",
+      render: (text: string, record: any) => (
+        <Link to={`${routes.libraryBookCopies}?book_id=${record.id}`} className="link-primary fw-medium">
+          {text}
+        </Link>
+      ),
       sorter: (a: TableData, b: TableData) =>
         String((a as any).available || "").localeCompare(String((b as any).available || "")),
     },
@@ -408,45 +418,39 @@ const Books = () => {
       title: "Action",
       dataIndex: "action",
       render: (_: unknown, record: any) => (
-        <div className="d-flex align-items-center">
-          <div className="dropdown">
-            <Link
-              to="#"
-              className="btn btn-white btn-icon btn-sm d-flex align-items-center justify-content-center rounded-circle p-0"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
-            >
-              <i className="ti ti-dots-vertical fs-14" />
-            </Link>
-            <ul className="dropdown-menu dropdown-menu-end p-2">
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    openEdit(record);
-                  }}
-                >
-                  <i className="ti ti-edit-circle me-2" />
-                  Edit
-                </Link>
-              </li>
-              <li>
-                <Link
-                  className="dropdown-item rounded-1"
-                  to="#"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    openDelete(record);
-                  }}
-                >
-                  <i className="ti ti-trash-x me-2" />
-                  Delete
-                </Link>
-              </li>
-            </ul>
-          </div>
+        <div className="d-flex align-items-center gap-2" style={{ minWidth: "110px" }}>
+          <Link
+            to={`${routes.libraryBookCopies}?book_id=${record.id}&add_copy=true`}
+            className="btn btn-icon btn-sm btn-soft-info rounded-circle d-flex align-items-center justify-content-center"
+            title="Create Copies"
+            style={{ width: "30px", height: "30px" }}
+          >
+            <i className="ti ti-copy-plus fs-14" />
+          </Link>
+          <Link
+            to="#"
+            className="btn btn-icon btn-sm btn-soft-primary rounded-circle d-flex align-items-center justify-content-center"
+            title="Edit"
+            onClick={(e) => {
+              e.preventDefault();
+              openEdit(record);
+            }}
+            style={{ width: "30px", height: "30px" }}
+          >
+            <i className="ti ti-edit-circle fs-14" />
+          </Link>
+          <Link
+            to="#"
+            className="btn btn-icon btn-sm btn-soft-danger rounded-circle d-flex align-items-center justify-content-center"
+            title="Delete"
+            onClick={(e) => {
+              e.preventDefault();
+              openDelete(record);
+            }}
+            style={{ width: "30px", height: "30px" }}
+          >
+            <i className="ti ti-trash-x fs-14" />
+          </Link>
         </div>
       ),
     },

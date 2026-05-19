@@ -1032,6 +1032,13 @@ const getMarkingRoster = async (req, res) => {
         })}`;
       }
 
+      const hasStudentId = await hasColumn('leave_applications', 'student_id');
+      const leaveJoin = hasStudentId
+        ? `LEFT JOIN leave_applications la ON la.student_id = s.id
+             AND la.start_date <= $1 AND la.end_date >= $1
+             AND LOWER(TRIM(COALESCE(la.status, ''))) = 'approved'`
+        : `LEFT JOIN (SELECT NULL::int AS student_id, NULL::date AS start_date, NULL::date AS end_date, NULL::text AS status, NULL::text AS reason, NULL::int AS id LIMIT 0) la ON false`;
+
       const sql = `
         SELECT
           s.id AS entity_id,
@@ -1040,14 +1047,15 @@ const getMarkingRoster = async (req, res) => {
           s.admission_number,
           enr.class_id,
           enr.section_id,
-          a.status,
-          a.${studentAttendanceModel.remarkColumn} AS remark,
+          CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE a.status END AS status,
+          COALESCE(a.${studentAttendanceModel.remarkColumn}, la.reason) AS remark,
           ${studentAttendanceModel.hasCheckInTime ? 'a.check_in_time::text' : 'NULL::text'} AS check_in_time,
           ${studentAttendanceModel.hasCheckOutTime ? 'a.check_out_time::text' : 'NULL::text'} AS check_out_time
         FROM students s
         LEFT JOIN users u ON u.id = s.user_id
         ${lateralCurrentEnrollment('s.id')}
         LEFT JOIN ${studentAttendanceModel.table} a ON a.student_id = s.id AND a.attendance_date = $1
+        ${leaveJoin}
         ${where}
         ORDER BY u.first_name ASC, u.last_name ASC`;
       const roster = await query(sql, params);
@@ -1078,8 +1086,8 @@ const getMarkingRoster = async (req, res) => {
         st.designation_id,
         d.department_name,
         des.designation_name,
-        sa.status,
-        sa.${remarkColumn} AS remark,
+        COALESCE(sa.status, CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE NULL END) AS status,
+        COALESCE(sa.${remarkColumn}, la.reason) AS remark,
         sa.check_in_time::text AS check_in_time,
         sa.check_out_time::text AS check_out_time
       FROM staff st
@@ -1090,6 +1098,13 @@ const getMarkingRoster = async (req, res) => {
         ON sa.staff_id = st.id
        AND sa.attendance_date = $1
        ${academicYearJoinFilter}
+      LEFT JOIN leave_applications la ON (${await hasColumn('leave_applications', 'applicant_staff_id') ? 'la.applicant_staff_id' : 'la.staff_id'} = st.id)
+             AND (
+               (la.valid_period IS NOT NULL AND la.valid_period @> $1::date)
+               OR
+               (la.valid_period IS NULL AND la.start_date <= $1 AND la.end_date >= $1)
+             )
+             AND LOWER(TRIM(COALESCE(la.status, ''))) IN ('approved', 'accept', 'accepted')
       ${where}
       ORDER BY u.first_name ASC, u.last_name ASC`;
     const roster = await query(sql, params);
@@ -1166,6 +1181,14 @@ const getAttendanceReport = async (req, res) => {
           staffIdsParamRef,
         })}`;
       }
+      const hasStudentId = await hasColumn('leave_applications', 'student_id');
+      const leaveJoin = hasStudentId
+        ? `LEFT JOIN leave_applications la ON la.student_id = s.id
+             AND a.attendance_date IS NOT NULL
+             AND la.start_date <= a.attendance_date AND la.end_date >= a.attendance_date
+             AND LOWER(TRIM(COALESCE(la.status, ''))) = 'approved'`
+        : `LEFT JOIN (SELECT NULL::int AS student_id, NULL::date AS start_date, NULL::date AS end_date, NULL::text AS status, NULL::text AS reason, NULL::int AS id LIMIT 0) la ON false`;
+
       const result = await query(
         `
         SELECT
@@ -1177,14 +1200,15 @@ const getAttendanceReport = async (req, res) => {
           enr.class_id,
           enr.section_id,
           a.attendance_date::date AS attendance_date,
-          a.status,
-          a.${studentAttendanceModel.remarkColumn} AS remark
+          COALESCE(a.status, CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE NULL END) AS status,
+          COALESCE(a.${studentAttendanceModel.remarkColumn}, la.reason) AS remark
         FROM students s
         LEFT JOIN users u ON u.id = s.user_id
         ${lateralCurrentEnrollment('s.id')}
         LEFT JOIN ${studentAttendanceModel.table} a
           ON a.student_id = s.id
          AND a.attendance_date BETWEEN $1::date AND $2::date
+        ${leaveJoin}
         ${where}
         ORDER BY u.first_name ASC, u.last_name ASC, a.attendance_date ASC
       `,
@@ -1269,8 +1293,8 @@ const getAttendanceReport = async (req, res) => {
         d.department_name,
         des.designation_name,
         sa.attendance_date::date AS attendance_date,
-        sa.status,
-        sa.${remarkColumn} AS remark
+        COALESCE(sa.status, CASE WHEN la.id IS NOT NULL THEN 'on_leave' ELSE NULL END) AS status,
+        COALESCE(sa.${remarkColumn}, la.reason) AS remark
       FROM staff st
       INNER JOIN users u ON u.id = st.user_id
       LEFT JOIN departments d ON d.id = st.department_id
@@ -1279,6 +1303,14 @@ const getAttendanceReport = async (req, res) => {
         ON sa.staff_id = st.id
        AND sa.attendance_date BETWEEN $1::date AND $2::date
        ${academicYearJoinFilter}
+      LEFT JOIN leave_applications la ON (${await hasColumn('leave_applications', 'applicant_staff_id') ? 'la.applicant_staff_id' : 'la.staff_id'} = st.id)
+             AND sa.attendance_date IS NOT NULL
+             AND (
+               (la.valid_period IS NOT NULL AND la.valid_period @> sa.attendance_date::date)
+               OR
+               (la.valid_period IS NULL AND la.start_date <= sa.attendance_date AND la.end_date >= sa.attendance_date)
+             )
+             AND LOWER(TRIM(COALESCE(la.status, ''))) IN ('approved', 'accept', 'accepted')
       ${where}
       ORDER BY u.first_name ASC, u.last_name ASC, sa.attendance_date ASC
     `,

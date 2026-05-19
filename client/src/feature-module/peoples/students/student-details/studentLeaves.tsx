@@ -12,7 +12,6 @@ import { useGuardianWardLeaves } from "../../../../core/hooks/useGuardianWardLea
 import { useStudentAttendance } from "../../../../core/hooks/useStudentAttendance";
 import { useAcademicYears } from "../../../../core/hooks/useAcademicYears";
 import { useLinkedStudentContext } from "../../../../core/hooks/useLinkedStudentContext";
-import { useLeaveTypes } from "../../../../core/hooks/useLeaveTypes";
 import { apiService } from "../../../../core/services/apiService";
 import { useSelector } from "react-redux";
 import { selectUser } from "../../../../core/data/redux/authSlice";
@@ -120,8 +119,7 @@ const StudentLeaves = () => {
     limit: 50,
     studentId: effectiveStudentId && isGuardianViewer ? effectiveStudentId : null,
   });
-  const { leaveTypes } = useLeaveTypes({ applicableFor: "student" });
-  const leaveTypesList = Array.isArray(leaveTypes) ? (leaveTypes as any[]) : [];
+
 
   const data = useMemo(() => {
     if (isGuardianViewer) return guardianLeaves;
@@ -255,48 +253,7 @@ const StudentLeaves = () => {
     }
   };
 
-  const leaveSummaryCards = useMemo(() => {
-    const normalize = (value: unknown) => String(value || "").trim().toLowerCase();
-    const keyToUsedDays = new Map<string, number>();
-    const addUsedDays = (key: string, days: number) => {
-      keyToUsedDays.set(key, (keyToUsedDays.get(key) || 0) + days);
-    };
-    data.forEach((item: { leaveTypeId?: number | string | null; leaveType?: string; status?: string; noOfDays?: string | number }) => {
-      const status = normalize(item.status);
-      if (status !== "approved") return;
-      const days = Number(item.noOfDays || 0);
-      const safeDays = Number.isFinite(days) && days > 0 ? days : 0;
-      const byId = item.leaveTypeId != null ? `id:${String(item.leaveTypeId)}` : "";
-      const byName = item.leaveType ? `name:${normalize(item.leaveType)}` : "";
-      if (byId) addUsedDays(byId, safeDays);
-      if (byName) addUsedDays(byName, safeDays);
-    });
 
-    if (leaveTypesList.length > 0) {
-      return leaveTypesList.map((type: { id?: number | string; label?: string; max_days?: number | string; max_days_per_year?: number | string }) => {
-        const idKey = type?.id != null ? `id:${String(type.id)}` : "";
-        const nameKey = `name:${normalize(type?.label)}`;
-        const usedDays = (idKey && keyToUsedDays.has(idKey) ? keyToUsedDays.get(idKey) : keyToUsedDays.get(nameKey)) || 0;
-        const totalDaysRaw = Number(type?.max_days_per_year ?? type?.max_days ?? 0);
-        const totalDays = Number.isFinite(totalDaysRaw) && totalDaysRaw > 0 ? totalDaysRaw : 0;
-        return {
-          key: idKey || nameKey,
-          label: type?.label || "Leave",
-          usedDays,
-          totalDays,
-        };
-      });
-    }
-
-    return Array.from(keyToUsedDays.entries())
-      .filter(([k]) => k.startsWith("name:"))
-      .map(([k, v]) => ({
-        key: k,
-        label: k.slice(5) || "Leave",
-        usedDays: v,
-        totalDays: 0,
-      }));
-  }, [data, leaveTypesList]);
 
   const showLoading = loading;
 
@@ -326,6 +283,24 @@ const StudentLeaves = () => {
       dataIndex: "appliedOn",
       sorter: (a: TableData, b: TableData) =>
         a.appliedOn.length - b.appliedOn.length,
+    },
+    {
+      title: "Attachment",
+      dataIndex: "document_url",
+      render: (text: string, record: any) => {
+        if (!text) return "—";
+        return (
+          <a
+            href={text}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-sm btn-outline-primary"
+            title="View Attachment"
+          >
+            <i className="ti ti-link"></i>
+          </a>
+        );
+      },
     },
     {
       title: "Status",
@@ -786,21 +761,7 @@ const StudentLeaves = () => {
                   <div className="tab-content">
                     {/* Leave */}
                     <div className={`tab-pane fade ${activeTab === "leave" ? "show active" : ""}`} id="leave">
-                      <div className="row gx-3">
-                        {leaveSummaryCards.map((item) => (
-                          <div className="col-lg-6 col-xxl-3 d-flex" key={item.key}>
-                            <div className="card flex-fill">
-                              <div className="card-body">
-                                <h5 className="mb-2">{item.label}</h5>
-                                <div className="d-flex align-items-center flex-wrap">
-                                  <p className="border-end pe-2 me-2 mb-0">Used : {item.usedDays}</p>
-                                  <p className="mb-0">Total : {item.totalDays}</p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+
                       <div className="card">
                         <div className="card-header d-flex align-items-center justify-content-between flex-wrap pb-0">
                           <h4 className="mb-3">Leaves</h4>

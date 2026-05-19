@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSelector } from "react-redux";
 import { Link } from "react-router-dom";
 import CommonSelect from "../../../core/common/commonSelect";
@@ -139,7 +139,7 @@ function TimetableCell({
 }: CellProps) {
   if (slot.isBreak) {
     return (
-      <td className="bg-light align-top text-center py-3">
+      <td className="bg-light align-top text-center py-3" style={{ minWidth: 80 }}>
         <small className="text-muted fw-bold">Break</small>
       </td>
     );
@@ -169,17 +169,17 @@ function TimetableCell({
 
   if (isEmpty) {
     return (
-      <td className="align-top p-2" style={{ minWidth: 200, maxWidth: 280 }}>
+      <td className="align-top p-2" style={{ minWidth: 170, maxWidth: 280 }}>
         <div className="small text-muted mb-2 border-bottom pb-1">
           <span>{slot.start}{slot.end ? ` – ${slot.end}` : ""}</span>
         </div>
-        <div 
+        <div
           className="d-flex align-items-center justify-content-center rounded p-3 text-muted border border-dashed"
-          style={{ 
-            height: 85, 
+          style={{
+            height: 85,
             backgroundColor: "#f8f9fa",
-            cursor: "pointer", 
-            transition: "all 0.2s ease-in-out" 
+            cursor: "pointer",
+            transition: "all 0.2s ease-in-out"
           }}
           onClick={onEditClick}
           onMouseEnter={(e) => {
@@ -203,11 +203,11 @@ function TimetableCell({
   }
 
   return (
-    <td 
-      className="align-top p-2" 
-      style={{ 
-        minWidth: 200, 
-        maxWidth: 280, 
+    <td
+      className="align-top p-2"
+      style={{
+        minWidth: 170,
+        maxWidth: 280,
         backgroundColor: drafts.some((d) => d.dirty) ? "#fffdf5" : undefined,
         cursor: "pointer",
         transition: "all 0.15s"
@@ -231,9 +231,9 @@ function TimetableCell({
           const rLabel = getRoomLabel(d.roomId);
 
           return (
-            <div 
-              key={index} 
-              className="p-2 border rounded bg-white shadow-sm position-relative" 
+            <div
+              key={index}
+              className="p-2 border rounded bg-white shadow-sm position-relative"
               style={{ borderLeft: d.dirty ? "3px solid #ffc107" : "3px solid #0d6efd" }}
             >
               <div className="fw-bold text-dark fs-12 text-truncate" title={sLabel || "Unassigned"}>
@@ -277,6 +277,77 @@ const ClassTimetable = () => {
   const [filterClassId, setFilterClassId] = useState("");
   const [filterSectionId, setFilterSectionId] = useState("");
 
+  // Horizontal Scroll & Drag-to-Scroll helper hooks
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showLeftScroll, setShowLeftScroll] = useState(false);
+  const [showRightScroll, setShowRightScroll] = useState(false);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const startX = useRef(0);
+  const scrollLeftStart = useRef(0);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    setShowLeftScroll(el.scrollLeft > 5);
+    setShowRightScroll(el.scrollLeft < el.scrollWidth - el.clientWidth - 5);
+  }, []);
+
+  const scrollTimetable = useCallback((direction: "left" | "right") => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const scrollAmount = 300;
+    el.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth"
+    });
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only left click
+    const target = e.target as HTMLElement;
+    if (
+      target.closest("button") || 
+      target.closest("a") || 
+      target.closest("select") || 
+      target.closest(".badge") ||
+      target.closest("input") ||
+      target.closest(".ts-control")
+    ) {
+      return;
+    }
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    setIsDragging(true);
+    startX.current = e.pageX - el.offsetLeft;
+    scrollLeftStart.current = el.scrollLeft;
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    e.preventDefault();
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startX.current) * 1.5;
+    el.scrollLeft = scrollLeftStart.current - walk;
+  }, [isDragging]);
+
+  const handleMouseUpOrLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUpOrLeave);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUpOrLeave);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUpOrLeave]);
+
   // Copy Routine state
   const [copySourceClassId, setCopySourceClassId] = useState("");
   const [copySourceSectionId, setCopySourceSectionId] = useState("");
@@ -306,8 +377,8 @@ const ClassTimetable = () => {
   }, [classRooms]);
 
   const selectionReady = Boolean(
-    filterClassId && 
-    academicYearId && 
+    filterClassId &&
+    academicYearId &&
     (filterSectionId || (!sectionsLoading && sections.length === 0))
   );
 
@@ -489,6 +560,28 @@ const ClassTimetable = () => {
     return deduped.map(({ sortKey: _sk, windowKey: _wk, ...col }) => col);
   }, [apiSlots, routineData]);
 
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver(() => {
+      updateScrollButtons();
+    });
+    observer.observe(el);
+
+    const tableEl = el.querySelector("table");
+    if (tableEl) {
+      observer.observe(tableEl);
+    }
+
+    updateScrollButtons();
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [updateScrollButtons, periodColumns, selectionReady, loading]);
+
+
   const exportColumns = useMemo(
     () => [
       { title: "Sr", dataKey: "sr" },
@@ -554,7 +647,7 @@ const ClassTimetable = () => {
         if (col.isBreak) return;
         const entries = findAllCellsForSlot(routineData, label, col.id);
         const key = makeCellKey(dow, col.id);
-        
+
         if (entries.length === 0) {
           next[key] = [{
             existingId: null,
@@ -633,7 +726,7 @@ const ClassTimetable = () => {
     setEditingCellLabel(dayLabel);
     setEditingCellSlotLabel(slotLabel);
     setModalError("");
-    
+
     const current = cellDrafts[key] || [];
     setModalDrafts(JSON.parse(JSON.stringify(current)));
 
@@ -866,7 +959,7 @@ const ClassTimetable = () => {
     try {
       Object.keys(cellDrafts).forEach((key) => {
         const list = cellDrafts[key] || [];
-        
+
         const { valid, reason } = validateElectiveGroupConflict(list);
         if (!valid) {
           void Swal.fire({
@@ -1078,47 +1171,148 @@ const ClassTimetable = () => {
               ) : null}
 
               {selectionReady && !loading && periodColumns.length > 0 ? (
-                <div className="table-responsive">
-                  <table className="table table-bordered table-sm align-middle">
-                    <thead className="table-light">
-                      <tr>
-                        <th style={{ minWidth: 96 }}>Day</th>
-                        {periodColumns.map((col) => (
-                          <th key={col.id} className={col.isBreak ? "text-muted" : ""} style={{ minWidth: 200 }}>
-                            <div>{col.label}</div>
-                            <div className="small fw-normal text-muted">
-                              {col.isBreak ? "Break" : `${col.start} – ${col.end}`}
-                            </div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {WEEK_DAYS.map(({ label, dow }) => (
-                        <tr key={label}>
-                          <th className="table-light">{label}</th>
-                          {periodColumns.map((col) => {
-                            const key = makeCellKey(dow, col.id);
-                            const drafts = cellDrafts[key] || [];
-                            return (
-                              <TimetableCell
-                                key={`${label}-${col.id}`}
-                                dayLabel={label}
-                                dayNum={dow}
-                                slot={col}
-                                drafts={drafts}
-                                subjectOptions={subjectOptions}
-                                teacherOptions={teacherOptions}
-                                roomOptions={roomOptions}
-                                onEditClick={() => openEditModal(key, label, col.label)}
-                              />
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <style dangerouslySetInnerHTML={{ __html: `
+                    .custom-timetable-container {
+                      cursor: grab;
+                    }
+                    .custom-timetable-container.dragging {
+                      cursor: grabbing;
+                      user-select: none;
+                    }
+                    .custom-timetable-container::-webkit-scrollbar {
+                      height: 8px;
+                      width: 8px;
+                    }
+                    .custom-timetable-container::-webkit-scrollbar-track {
+                      background: #f8f9fa;
+                      border-radius: 4px;
+                    }
+                    .custom-timetable-container::-webkit-scrollbar-thumb {
+                      background: #ced4da;
+                      border-radius: 4px;
+                    }
+                    .custom-timetable-container::-webkit-scrollbar-thumb:hover {
+                      background: #6c757d;
+                    }
+                    .timetable-scroll-wrapper {
+                      position: relative;
+                    }
+                  ` }} />
+                  <div className="timetable-scroll-wrapper">
+                    <div className="d-flex justify-content-between align-items-center mb-2 px-1">
+                      <div className="text-muted small d-flex align-items-center">
+                        <i className="ti ti-info-circle me-1 text-primary"></i>
+                        <span>Drag grid horizontally or use the navigation buttons</span>
+                      </div>
+                      <div className="d-flex gap-2">
+                        <button 
+                          type="button" 
+                          className="btn btn-sm btn-outline-primary py-1 px-2 d-flex align-items-center"
+                          onClick={() => scrollTimetable("left")}
+                          disabled={!showLeftScroll}
+                          style={{ opacity: showLeftScroll ? 1 : 0.4 }}
+                        >
+                          <i className="ti ti-chevron-left me-1"></i> Left
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn btn-sm btn-outline-primary py-1 px-2 d-flex align-items-center"
+                          onClick={() => scrollTimetable("right")}
+                          disabled={!showRightScroll}
+                          style={{ opacity: showRightScroll ? 1 : 0.4 }}
+                        >
+                          Right <i className="ti ti-chevron-right ms-1"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div 
+                      ref={scrollContainerRef}
+                      onScroll={updateScrollButtons}
+                      onMouseDown={handleMouseDown}
+                      className={`table-responsive custom-timetable-container mb-0 ${isDragging ? "dragging" : ""}`}
+                      style={{ 
+                        maxHeight: "65vh", 
+                        overflow: "auto", 
+                        border: "1px solid #e9ecef", 
+                        borderRadius: "6px" 
+                      }}
+                    >
+                      <table className="table table-bordered table-sm align-middle mb-0">
+                        <thead className="table-light">
+                          <tr>
+                            <th 
+                              style={{ 
+                                minWidth: 96, 
+                                position: "sticky", 
+                                top: 0,
+                                left: 0, 
+                                zIndex: 4, 
+                                backgroundColor: "#f8f9fa", 
+                                boxShadow: "2px 2px 5px rgba(0, 0, 0, 0.08)" 
+                              }}
+                            >
+                              Day
+                            </th>
+                            {periodColumns.map((col) => (
+                              <th 
+                                key={col.id} 
+                                className={col.isBreak ? "text-muted" : ""} 
+                                style={{ 
+                                  minWidth: col.isBreak ? 80 : 170,
+                                  position: "sticky",
+                                  top: 0,
+                                  zIndex: 1,
+                                  backgroundColor: "#f8f9fa"
+                                }}
+                              >
+                                <div>{col.label}</div>
+                                <div className="small fw-normal text-muted">
+                                  {col.isBreak ? "Break" : `${col.start} – ${col.end}`}
+                                </div>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {WEEK_DAYS.map(({ label, dow }) => (
+                            <tr key={label}>
+                              <th 
+                                className="table-light"
+                                style={{ 
+                                  position: "sticky", 
+                                  left: 0, 
+                                  zIndex: 2, 
+                                  backgroundColor: "#f8f9fa", 
+                                  boxShadow: "2px 0 5px rgba(0, 0, 0, 0.08)" 
+                                }}
+                              >
+                                {label}
+                              </th>
+                              {periodColumns.map((col) => {
+                                const key = makeCellKey(dow, col.id);
+                                const drafts = cellDrafts[key] || [];
+                                return (
+                                  <TimetableCell
+                                    key={`${label}-${col.id}`}
+                                    dayLabel={label}
+                                    dayNum={dow}
+                                    slot={col}
+                                    drafts={drafts}
+                                    subjectOptions={subjectOptions}
+                                    teacherOptions={teacherOptions}
+                                    roomOptions={roomOptions}
+                                    onEditClick={() => openEditModal(key, label, col.label)}
+                                  />
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               ) : null}
 
               {!selectionReady && academicYearId ? (
@@ -1138,10 +1332,10 @@ const ClassTimetable = () => {
                 <i className="ti ti-calendar-event me-2 fs-4"></i>
                 Schedule Slot: {editingCellLabel} – {editingCellSlotLabel}
               </h5>
-              <button 
-                type="button" 
-                className="btn-close btn-close-white" 
-                data-bs-dismiss="modal" 
+              <button
+                type="button"
+                className="btn-close btn-close-white"
+                data-bs-dismiss="modal"
                 aria-label="Close"
               ></button>
             </div>
@@ -1184,8 +1378,8 @@ const ClassTimetable = () => {
                   };
 
                   return (
-                    <div 
-                      key={index} 
+                    <div
+                      key={index}
                       className="card border shadow-sm mb-0"
                       style={{ borderLeft: "4px solid #0d6efd", overflow: "visible" }}
                     >
@@ -1240,9 +1434,9 @@ const ClassTimetable = () => {
               </div>
             </div>
             <div className="modal-footer bg-light p-3">
-              <button 
-                type="button" 
-                className="btn btn-light border" 
+              <button
+                type="button"
+                className="btn btn-light border"
                 data-bs-dismiss="modal"
               >
                 Close

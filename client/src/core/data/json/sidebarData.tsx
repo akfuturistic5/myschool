@@ -66,87 +66,6 @@ export const SidebarData = [
     ],
   }, */
   {
-    label: "Peoples",
-    submenuOpen: true,
-    showSubRoute: false,
-    submenuHdr: "Peoples",
-
-    submenuItems: [
-      {
-        label: "Students",
-        icon: "ti ti-school",
-        submenu: true,
-        showSubRoute: false,
-
-        submenuItems: [
-          {
-            label: "All Students",
-            link: routes.studentGrid,
-            subLink1: routes.addStudent,
-            subLink2: routes.editStudent,
-          },
-          { label: "Students List", link: routes.studentList },
-          {
-            label: "Students Details",
-            link: routes.studentList,
-            subLink1: routes.studentLibrary,
-            subLink2: routes.studentResult,
-            subLink3: routes.studentFees,
-            subLink4: routes.studentLeaves,
-            subLink5: routes.studentTimeTable,
-          },
-          { label: "Student Promotion", link: routes.studentPromotion },
-          { label: "Bonafide", link: routes.bonafideGenerator },
-        ],
-      },
-      {
-        label: "Parents",
-        icon: "ti ti-user-bolt",
-        showSubRoute: false,
-        submenu: true,
-        submenuItems: [
-          { label: "All Parents", link: routes.parentGrid },
-          { label: "Parents List", link: routes.parentList },
-        ],
-      },
-      {
-        label: "Guardians",
-        icon: "ti ti-user-shield",
-        showSubRoute: false,
-        submenu: true,
-        submenuItems: [
-          { label: "All Guardians", link: routes.guardiansGrid },
-          { label: "Guardians List", link: routes.guardiansList },
-        ],
-      },
-      {
-        label: "Teachers",
-        icon: "ti ti-users",
-        submenu: true,
-        showSubRoute: false,
-
-        submenuItems: [
-          {
-            label: "All Teachers",
-            link: routes.teacherGrid,
-            subLink1: routes.addTeacher,
-            subLink2: routes.editTeacher,
-          },
-          { label: "Teacher List", link: routes.teacherList },
-          { label: "Teacher assignments", link: routes.teacherAssignments },
-          {
-            label: "Teacher Details",
-            link: routes.teacherDetails,
-            subLink1: routes.teacherLibrary,
-            subLink2: routes.teacherSalary,
-            subLink3: routes.teacherLeaves,
-          },
-          { label: "Timetable", link: routes.teachersRoutine },
-        ],
-      },
-    ],
-  },
-  {
     label: "Academic",
     submenuOpen: true,
     showSubRoute: false,
@@ -256,6 +175,87 @@ export const SidebarData = [
     ],
   },
   {
+    label: "People",
+    submenuOpen: true,
+    showSubRoute: false,
+    submenuHdr: "People",
+
+    submenuItems: [
+      {
+        label: "Students",
+        icon: "ti ti-school",
+        submenu: true,
+        showSubRoute: false,
+
+        submenuItems: [
+          {
+            label: "All Students",
+            link: routes.studentGrid,
+            subLink1: routes.addStudent,
+            subLink2: routes.editStudent,
+          },
+          { label: "Students List", link: routes.studentList },
+          {
+            label: "Students Details",
+            link: routes.studentList,
+            subLink1: routes.studentLibrary,
+            subLink2: routes.studentResult,
+            subLink3: routes.studentFees,
+            subLink4: routes.studentLeaves,
+            subLink5: routes.studentTimeTable,
+          },
+          { label: "Student Promotion", link: routes.studentPromotion },
+          { label: "Bonafide", link: routes.bonafideGenerator },
+        ],
+      },
+      {
+        label: "Parents",
+        icon: "ti ti-user-bolt",
+        showSubRoute: false,
+        submenu: true,
+        submenuItems: [
+          { label: "All Parents", link: routes.parentGrid },
+          { label: "Parents List", link: routes.parentList },
+        ],
+      },
+      {
+        label: "Guardians",
+        icon: "ti ti-user-shield",
+        showSubRoute: false,
+        submenu: true,
+        submenuItems: [
+          { label: "All Guardians", link: routes.guardiansGrid },
+          { label: "Guardians List", link: routes.guardiansList },
+        ],
+      },
+      {
+        label: "Teachers",
+        icon: "ti ti-users",
+        submenu: true,
+        showSubRoute: false,
+
+        submenuItems: [
+          {
+            label: "All Teachers",
+            link: routes.teacherGrid,
+            subLink1: routes.addTeacher,
+            subLink2: routes.editTeacher,
+          },
+          { label: "Teacher List", link: routes.teacherList },
+          { label: "Teacher assignments", link: routes.teacherAssignments },
+          {
+            label: "Teacher Details",
+            link: routes.teacherDetails,
+            subLink1: routes.teacherLibrary,
+            subLink2: routes.teacherSalary,
+            subLink3: routes.teacherLeaves,
+          },
+          { label: "Timetable", link: routes.teachersRoutine },
+        ],
+      },
+    ],
+  },
+  {
     label: "MANAGEMENT",
     submenuOpen: true,
     submenuHdr: "Management",
@@ -298,12 +298,12 @@ export const SidebarData = [
         showSubRoute: false,
 
         submenuItems: [
-          { label: "Hostel Assignments", link: routes.hostelAssignments },
           { label: "Hostel List", link: routes.hostelList },
           { label: "Hostel Floors", link: routes.hostelFloors },
           { label: "Room Type", link: routes.hostelType },
           { label: "Hostel Rooms", link: routes.hostelRoom },
           { label: "Hostel Beds", link: routes.hostelBeds },
+          { label: "Hostel Assignments", link: routes.hostelAssignments },
         ],
       },
       {

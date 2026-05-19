@@ -20,7 +20,7 @@ const ROLE_DASHBOARD_MAP: Record<string, { label: string; link: string }> = {
 const ADMINISTRATIVE_VISIBLE_SECTIONS = new Set([
   "MAIN",
   "Settings",
-  "Peoples",
+  "People",
   "Academic",
   "MANAGEMENT",
   "HRM",
@@ -71,46 +71,6 @@ function buildTeacherSidebar() {
       ],
     },
     {
-      label: "Peoples",
-      submenuOpen: true,
-      showSubRoute: false,
-      submenuHdr: "Peoples",
-      submenuItems: [
-        {
-          label: "Students",
-          icon: "ti ti-school",
-          submenu: true,
-          showSubRoute: false,
-          submenuItems: [
-            { label: "All Students", link: routes.studentGrid },
-            { label: "Students List", link: routes.studentList },
-            { label: "Students Details", link: routes.studentList },
-            { label: "Bonafide", link: routes.bonafideGenerator },
-          ],
-        },
-        {
-          label: "Parents",
-          icon: "ti ti-user-bolt",
-          submenu: true,
-          showSubRoute: false,
-          submenuItems: [
-            { label: "All Parents", link: routes.parentGrid },
-            { label: "Parents List", link: routes.parentList },
-          ],
-        },
-        {
-          label: "Guardians",
-          icon: "ti ti-user-shield",
-          submenu: true,
-          showSubRoute: false,
-          submenuItems: [
-            { label: "All Guardians", link: routes.guardiansGrid },
-            { label: "Guardians List", link: routes.guardiansList },
-          ],
-        },
-      ],
-    },
-    {
       label: "Academic",
       submenuOpen: true,
       showSubRoute: false,
@@ -155,6 +115,47 @@ function buildTeacherSidebar() {
       ],
     },
     {
+      label: "People",
+      submenuOpen: true,
+      showSubRoute: false,
+      submenuHdr: "People",
+      submenuItems: [
+        {
+          label: "Students",
+          icon: "ti ti-school",
+          submenu: true,
+          showSubRoute: false,
+          submenuItems: [
+            { label: "All Students", link: routes.studentGrid },
+            { label: "Students List", link: routes.studentList },
+            { label: "Students Details", link: routes.studentList },
+            { label: "Student Leaves", link: routes.approveRequest },
+            { label: "Bonafide", link: routes.bonafideGenerator },
+          ],
+        },
+        {
+          label: "Parents",
+          icon: "ti ti-user-bolt",
+          submenu: true,
+          showSubRoute: false,
+          submenuItems: [
+            { label: "All Parents", link: routes.parentGrid },
+            { label: "Parents List", link: routes.parentList },
+          ],
+        },
+        {
+          label: "Guardians",
+          icon: "ti ti-user-shield",
+          submenu: true,
+          showSubRoute: false,
+          submenuItems: [
+            { label: "All Guardians", link: routes.guardiansGrid },
+            { label: "Guardians List", link: routes.guardiansList },
+          ],
+        },
+      ],
+    },
+    {
       label: "Announcements",
       submenuOpen: true,
       showSubRoute: false,
@@ -176,21 +177,7 @@ function buildTeacherSidebar() {
         },
       ],
     },
-    {
-      label: "HRM",
-      submenuOpen: true,
-      showSubRoute: false,
-      submenuHdr: "HRM",
-      submenuItems: [
-        {
-          label: "Leaves",
-          icon: "ti ti-calendar-time",
-          link: routes.listLeaves,
-          submenu: false,
-          showSubRoute: false,
-        },
-      ],
-    },
+
     {
       label: "Reports",
       submenuOpen: true,

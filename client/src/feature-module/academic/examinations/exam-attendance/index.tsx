@@ -194,7 +194,7 @@ const ExamAttendance = () => {
 
   const getExportData = () =>
     rows.map((r: any) => ({
-      subject_name: r.subject_name || "-",
+      subject_name: r.subject_name ? (r.subject_mode ? `${r.subject_name} (${r.subject_mode})` : r.subject_name) : "-",
       subject_code: r.subject_code || "-",
       exam_date: r.exam_date ? String(r.exam_date).slice(0, 10) : "-",
       start_time: r.start_time ? String(r.start_time).slice(0, 5) : "-",
@@ -429,7 +429,7 @@ const ExamAttendance = () => {
                     {rows.map((r: any, idx: number) => (
                       <tr key={`${r.exam_id}-${r.subject_id}-${idx}`}>
                         <td className="px-4 border-light fw-bold text-dark">
-                          {r.subject_name}
+                          {r.subject_name ? (r.subject_mode ? `${r.subject_name} (${r.subject_mode})` : r.subject_name) : "-"}
                         </td>
                         <td className="border-light">
                           <span className="badge badge-soft-secondary px-2">{r.subject_code || "-"}</span>
