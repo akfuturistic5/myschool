@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { all_routes } from "../../router/all_routes";
@@ -6,8 +6,18 @@ import TooltipOption from "../../../core/common/tooltipOption";
 import { apiService } from "../../../core/services/apiService";
 import { selectUser } from "../../../core/data/redux/authSlice";
 import { selectSelectedAcademicYearId } from "../../../core/data/redux/academicYearSlice";
+import { exportToExcel, exportToPDF, printData } from "../../../core/utils/exportUtils";
 
 const defaultForm = { title: "", description: "", start_date: "", end_date: "", holiday_type: "school" };
+
+const HOLIDAY_EXPORT_COLUMNS = [
+  { title: "Title", dataKey: "title" },
+  { title: "Start", dataKey: "start" },
+  { title: "End", dataKey: "end" },
+  { title: "Type", dataKey: "type" },
+  { title: "Description", dataKey: "description" },
+] as const;
+
 const getReadableError = (err: any, fallback: string) => {
   const raw = String(err?.message || "");
   const m = raw.match(/"message"\s*:\s*"([^"]+)"/);
@@ -30,7 +40,7 @@ const Holiday = () => {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(defaultForm);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -43,16 +53,57 @@ const Holiday = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterMonth, academicYearId]);
 
   useEffect(() => {
     load();
-  }, [filterMonth, academicYearId]);
+  }, [load]);
 
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => String(a.start_date).localeCompare(String(b.start_date))),
     [rows]
   );
+
+  const exportRows = useMemo(
+    () =>
+      sortedRows.map((row) => ({
+        title: String(row.title || "").trim(),
+        start: String(row.start_date || "").slice(0, 10),
+        end: String(row.end_date || "").slice(0, 10),
+        type: String(row.holiday_type || "custom"),
+        description: String(row.description || "").trim(),
+      })),
+    [sortedRows]
+  );
+
+  const exportFileBase = `Holidays_${filterMonth}`;
+
+  const handleRefresh = async () => {
+    setMessage(null);
+    await load();
+    setMessage("Holidays refreshed.");
+  };
+
+  const handlePrint = () => {
+    printData(`Holidays (${filterMonth})`, [...HOLIDAY_EXPORT_COLUMNS], exportRows);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(
+      exportRows.map((row) => ({
+        Title: row.title,
+        Start: row.start,
+        End: row.end,
+        Type: row.type,
+        Description: row.description,
+      })),
+      exportFileBase
+    );
+  };
+
+  const handleExportPDF = () => {
+    exportToPDF(exportRows, `Holidays (${filterMonth})`, exportFileBase, [...HOLIDAY_EXPORT_COLUMNS]);
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,7 +169,14 @@ const Holiday = () => {
               <li className="breadcrumb-item active">Holidays</li>
             </ol>
           </div>
-          <TooltipOption />
+          <div className="d-flex my-xl-auto right-content align-items-center flex-wrap">
+            <TooltipOption
+              onRefresh={handleRefresh}
+              onPrint={handlePrint}
+              onExportExcel={handleExportExcel}
+              onExportPdf={handleExportPDF}
+            />
+          </div>
         </div>
 
         <div className="card mb-3">

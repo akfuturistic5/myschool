@@ -3,21 +3,36 @@ import { useEffect, useMemo, useState } from "react";
 import { all_routes } from "../../router/all_routes";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { apiService } from "../../../core/services/apiService";
-import { useDispatch } from "react-redux";
-import { patchAuthUser } from "../../../core/data/redux/authSlice";
+import { useDispatch, useSelector } from "react-redux";
+import { patchAuthUser, selectUser } from "../../../core/data/redux/authSlice";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { alertLogoUploadError, alertLogoUploadSuccess } from "../../../core/utils/schoolLogoUploadAlerts";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
 import SchoolLogoImage from "../../../core/common/schoolLogoImage";
 
+const MASTER_SETTINGS_ROLE_IDS = new Set([1, 6]);
+
 const SchoolSettings = () => {
   const route = all_routes;
   const dispatch = useDispatch();
-  const { user } = useCurrentUser();
-  const isAdmin = useMemo(
-    () => isHeadmasterRole(user) || isAdministrativeRole(user),
-    [user]
-  );
+  const { user: meUser, loading: meLoading } = useCurrentUser();
+  const reduxUser = useSelector(selectUser);
+
+  const isAdmin = useMemo(() => {
+    const candidates: Array<unknown> = [meUser, reduxUser].filter(Boolean);
+    if (candidates.length === 0) return false;
+    return candidates.some((candidate) => {
+      const c = candidate as { role_id?: number | string; user_role_id?: number | string };
+      const rawId = c.role_id ?? c.user_role_id;
+      const rid = Number(rawId);
+      if (Number.isFinite(rid) && MASTER_SETTINGS_ROLE_IDS.has(rid)) return true;
+      return isHeadmasterRole(candidate as Parameters<typeof isHeadmasterRole>[0])
+        || isAdministrativeRole(candidate as Parameters<typeof isAdministrativeRole>[0]);
+    });
+  }, [meUser, reduxUser]);
+
+  const sessionPending = meLoading && !meUser && !reduxUser;
+  const controlsLocked = !isAdmin;
   const [schoolName, setSchoolName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -55,7 +70,7 @@ const SchoolSettings = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (controlsLocked) return;
     const trimmedName = schoolName.trim();
     const trimmedPhone = phone.trim();
     const trimmedEmail = email.trim().toLowerCase();
@@ -108,7 +123,7 @@ const SchoolSettings = () => {
   };
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!isAdmin) return;
+    if (controlsLocked) return;
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -172,7 +187,7 @@ const SchoolSettings = () => {
                     type="button"
                     className="btn btn-outline-light bg-white btn-icon me-1"
                     onClick={() => loadProfile()}
-                    disabled={loading || saving}
+                    disabled={loading || saving || sessionPending}
                   >
                     <i className="ti ti-refresh" />
                   </button>
@@ -204,19 +219,24 @@ const SchoolSettings = () => {
                         className="btn btn-light me-2"
                         type="button"
                         onClick={() => loadProfile()}
-                        disabled={loading || saving}
+                        disabled={loading || saving || sessionPending}
                       >
                         Cancel
                       </button>
-                      <button className="btn btn-primary" type="submit" disabled={!isAdmin || saving || loading}>
+                      <button className="btn btn-primary" type="submit" disabled={controlsLocked || saving || loading || sessionPending}>
                         Save
                       </button>
                     </div>
                   </div>
-                  {loading && <div className="alert alert-info">Loading school profile...</div>}
+                  {sessionPending && <div className="alert alert-info">Loading your session…</div>}
+                  {loading && !sessionPending && <div className="alert alert-info">Loading school profile...</div>}
                   {!!message && <div className="alert alert-success">{message}</div>}
                   {!!error && <div className="alert alert-danger">{error}</div>}
-                  {!isAdmin && <div className="alert alert-warning">Only Headmaster or Administrative can edit school settings.</div>}
+                  {!sessionPending && controlsLocked && (
+                    <div className="alert alert-warning">
+                      Only Headmaster or Administrative can edit school settings.
+                    </div>
+                  )}
                   <div className="d-md-flex">
                     <div className="row flex-fill">
                       <div className="col-xl-10">
@@ -236,7 +256,7 @@ const SchoolSettings = () => {
                                   placeholder="Enter School Name"
                                   value={schoolName}
                                   onChange={(e) => setSchoolName(e.target.value)}
-                                  disabled={!isAdmin || loading || saving}
+                                  disabled={controlsLocked || loading || saving}
                                 />
                               </div>
                             </div>
@@ -266,7 +286,7 @@ const SchoolSettings = () => {
                                   accept="image/*"
                                   className="form-control"
                                   onChange={handleLogoChange}
-                                  disabled={!isAdmin || uploading || loading}
+                                  disabled={controlsLocked || uploading || loading}
                                 />
                                 {uploading && <small className="text-muted">Uploading...</small>}
                               </div>
@@ -290,7 +310,7 @@ const SchoolSettings = () => {
                                   value={phone}
                                   onChange={(e) => setPhone(e.target.value)}
                                   maxLength={30}
-                                  disabled={!isAdmin || loading || saving}
+                                  disabled={controlsLocked || loading || saving}
                                 />
                               </div>
                             </div>
@@ -313,7 +333,7 @@ const SchoolSettings = () => {
                                   value={email}
                                   onChange={(e) => setEmail(e.target.value)}
                                   maxLength={255}
-                                  disabled={!isAdmin || loading || saving}
+                                  disabled={controlsLocked || loading || saving}
                                 />
                               </div>
                             </div>
@@ -336,7 +356,7 @@ const SchoolSettings = () => {
                                   value={fax}
                                   onChange={(e) => setFax(e.target.value)}
                                   maxLength={30}
-                                  disabled={!isAdmin || loading || saving}
+                                  disabled={controlsLocked || loading || saving}
                                 />
                               </div>
                             </div>
@@ -359,7 +379,7 @@ const SchoolSettings = () => {
                                   value={address}
                                   onChange={(e) => setAddress(e.target.value)}
                                   maxLength={2000}
-                                  disabled={!isAdmin || loading || saving}
+                                  disabled={controlsLocked || loading || saving}
                                 />
                               </div>
                             </div>

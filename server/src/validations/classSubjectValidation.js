@@ -1,12 +1,19 @@
 const Joi = require('joi');
 
-const electiveGroupSchema = Joi.object({
+const electiveGroupCreateSchema = Joi.object({
   group_name: Joi.string().trim().max(100).required(),
   description: Joi.string().trim().allow('', null).optional(),
-  class_id: Joi.number().integer().optional(), // Optional for updates
+  class_id: Joi.number().integer().required(),
   max_subjects: Joi.number().integer().min(0).optional(),
   selectable_subjects: Joi.number().integer().min(0).optional(),
-});
+}).unknown(false);
+
+const electiveGroupUpdateSchema = Joi.object({
+  group_name: Joi.string().trim().max(100).required(),
+  description: Joi.string().trim().allow('', null).optional(),
+  max_subjects: Joi.number().integer().min(0).optional(),
+  selectable_subjects: Joi.number().integer().min(0).optional(),
+}).unknown(false);
 
 const classSubjectAssignSchema = Joi.object({
   class_id: Joi.number().integer().required(),
@@ -22,7 +29,8 @@ const classSubjectUpdateSchema = Joi.object({
 }).min(1).unknown(false);
 
 module.exports = {
-  electiveGroupSchema,
+  electiveGroupCreateSchema,
+  electiveGroupUpdateSchema,
   classSubjectAssignSchema,
   classSubjectUpdateSchema,
 };

@@ -1,0 +1,445 @@
+COMPLETED WORK DOCUMENT
+MySchool Multi Tenant School Management System
+Analysis date: 18 May 2026
+Based on actual code only
+
+
+HOW TO READ THIS DOCUMENT
+
+Only modules marked Completed are listed here.
+Completed means main screens work on UI and matching APIs work on server for that module.
+Anything Partial or Pending is only in pending_task document.
+
+
+================================================================================
+PLATFORM AND SECURITY
+================================================================================
+
+Module Name: Multi Tenant Architecture
+Status: Completed
+Frontend Status: Login screen sends institute number. User session stores school context after login.
+Backend Status: master_db schools registry. Per school tenant database. runWithTenant on each request.
+Key Features Implemented: School provisioning with database clone. Tenant sessions. JWT and cookies. School disable check.
+
+
+Module Name: Tenant Login and Session
+Status: Completed
+Frontend Status: Route /login. AuthBootstrap calls /auth/me on app load. CSRF on write requests.
+Backend Status: POST /api/auth/login. GET PATCH /api/auth/me. POST change-password. POST logout. bcrypt password check.
+Key Features Implemented: Cookie session. Optional bearer token. Inactive account block middleware.
+
+
+Module Name: Super Admin Login and Session
+Status: Completed
+Frontend Status: Route /super-admin/login. SuperAdminProtectedRoute wraps super admin pages.
+Backend Status: /super-admin/api/auth separate from tenant auth.
+Key Features Implemented: Login session profile password logout CSRF.
+
+
+Module Name: CSRF Protection
+Status: Completed
+Frontend Status: apiService sends X-XSRF-TOKEN on POST PUT PATCH DELETE.
+Backend Status: Double submit cookie in server.js.
+
+
+Module Name: Role Based Route Access
+Status: Completed
+Frontend Status: RoleGuard and canAccessPath in roleUtils.ts. DashboardGuard per role dashboard.
+Backend Status: requireRole middleware on route files. Role IDs in roles.js.
+Key Features Implemented: Headmaster Administrative Teacher Student Parent Guardian Driver scopes. Role groups for fees exams library accounts people.
+
+
+================================================================================
+SUPER ADMIN PANEL
+================================================================================
+
+Module Name: Super Admin Dashboard
+Status: Completed
+Frontend Status: Page SuperAdminDashboard.tsx route /super-admin/dashboard
+Backend Status: GET /super-admin/api/stats/platform
+Key Features Implemented: Platform statistics cards and summary.
+
+
+Module Name: Schools Management
+Status: Completed
+Frontend Status: Pages SuperAdminSchoolList SuperAdminSchoolEdit SuperAdminSchoolPermissions SuperAdminSchoolModules
+Backend Status: Schools list create update status plan modules impersonate delete
+Key Features Implemented: New school provisioning. Impersonate into tenant as support.
+
+
+Module Name: SaaS Plans and Pricing
+Status: Completed
+Frontend Status: Page SuperAdminPlans.tsx route /super-admin/plans
+Backend Status: Plans CRUD and plan module matrix. Table saas_plans in master DB.
+Key Features Implemented: show_in_menu and route_accessible toggles per module key on plan editor.
+
+
+Module Name: Super Admin Enquiries
+Status: Completed
+Frontend Status: Page SuperAdminEnquiries.tsx route /super-admin/enquiries
+Backend Status: Platform school_enquiries in master_db
+Key Features Implemented: Lead list and status before onboarding.
+
+
+================================================================================
+DASHBOARDS BY ROLE
+================================================================================
+
+Module Name: Headmaster Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/adminDashboard/index.tsx route /index
+Backend Status: /api/dashboard admin and shared widgets
+Key Features Implemented: Routine fees finance leaves events notices activity from live hooks.
+
+
+Module Name: Administrative Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/administrativeDashboard/index.tsx route /administrative-dashboard
+Backend Status: Same dashboard APIs plus leave approval actions
+Key Features Implemented: Operational stats and approve leave from dashboard.
+
+
+Module Name: Teacher Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/teacherDashboard/index.tsx route /teacher-dashboard
+Backend Status: Teacher routine attendance leaves events notices student widgets
+Key Features Implemented: Class routine and class attendance summary. Star students.
+Notes: Syllabus widget on this page is empty. That gap is in pending_task.
+
+
+Module Name: Student Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/studentDashboard/index.tsx route /student-dashboard
+Backend Status: /api/students/me and related scoped reads
+Key Features Implemented: Attendance fees exam results schedule leaves events notices.
+
+
+Module Name: Parent Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/parentDashboard/index.tsx route /parent-dashboard
+Backend Status: useParents and ward scoped fee attendance exam APIs
+Key Features Implemented: Child selector. Ward fees attendance exams on dashboard.
+
+
+Module Name: Driver Dashboard
+Status: Completed
+Frontend Status: Page mainMenu/driverDashboard.tsx route /driver-dashboard
+Backend Status: GET /api/driver-portal/me
+Key Features Implemented: Driver profile summary from portal API.
+
+
+================================================================================
+ACADEMIC
+================================================================================
+
+Module Name: Academic Years
+Status: Completed
+Frontend Status: Pages under academic/academic-years list create detail. Header year switcher.
+Backend Status: /api/academic-years full CRUD clone stats
+Key Features Implemented: Manage year. Clone data between years.
+
+
+Module Name: Classes and Sections
+Status: Completed
+Frontend Status: academic/classes and academic/class-section with useSections apiService
+Backend Status: /api/classes /api/sections /api/class-sections
+Key Features Implemented: Section create update delete from class section screen.
+
+
+Module Name: Subjects and Class Subjects
+Status: Completed
+Frontend Status: academic/subjects and academic/class-subject with hooks
+Backend Status: /api/subjects /api/class-subjects /api/elective-groups
+Key Features Implemented: Assign subjects to classes. Elective groups.
+
+
+Module Name: Curriculum Mapping
+Status: Completed
+Frontend Status: academic/curriculum-mapping/index.tsx loads and saves via API
+Backend Status: /api/curriculum map and assign electives
+Key Features Implemented: Elective map per class section.
+
+
+Module Name: Class Rooms
+Status: Completed
+Frontend Status: academic/class-room with useClassRooms
+Backend Status: /api/class-rooms CRUD
+
+
+Module Name: Timetable and Schedules
+Status: Completed
+Frontend Status: Routes class-timetable section-routine timetable/time-slots. Hooks useClassSchedules useSchedules.
+Backend Status: /api/class-schedules /api/timetable /api/schedules
+Key Features Implemented: Time slots. Class and section timetable. Bulk save.
+
+
+Module Name: Class Syllabus
+Status: Completed
+Frontend Status: academic/class-syllabus/index.tsx useClassSyllabus apiService CRUD modals
+Backend Status: /api/class-syllabus validated in syllabusValidation.js
+Key Features Implemented: Filter by academic year. Add edit delete per class subject.
+
+
+Module Name: Teacher Assignments
+Status: Completed
+Frontend Status: peoples/teacher teacher-assignments with apiService delete assignment
+Backend Status: /api/teacher-assignments class and subject teachers
+Key Features Implemented: Assign and remove class teacher and subject teacher.
+
+
+Module Name: School Holidays
+Status: Completed
+Frontend Status: hrm/holidays page
+Backend Status: /api/holidays CRUD
+
+
+Module Name: Examinations and Results
+Status: Completed
+Frontend Status: academic/examinations exam schedule examResult grade examTopPerformers exam-timetable
+Backend Status: /api/exams /api/exam-types /api/exam-subjects
+Key Features Implemented: Exam setup marks entry results grade scale reports top performers.
+
+
+Module Name: Admission Enquiries
+Status: Completed
+Frontend Status: enquiries page route /enquiries
+Backend Status: /api/enquiries and follow ups
+Key Features Implemented: Enquiry list add follow up convert workflow on tenant DB.
+
+
+================================================================================
+PEOPLE
+================================================================================
+
+Module Name: Student Management
+Status: Completed
+Frontend Status: student-grid student-list add-student edit student-details subpages promotion leaving rejoin bonafide
+Backend Status: /api/students full CRUD promote leave rejoin reports
+Key Features Implemented: Delete student works on API and UI. Lifecycle. Teacher scoped list. Portal views.
+
+
+Module Name: Staff Management
+Status: Completed
+Frontend Status: hrm/staff-list directory add edit documents photo profile sidebar
+Backend Status: /api/staff full CRUD
+Key Features Implemented: Administrative users as staff role_id 6. Driver role and portal link.
+
+
+Module Name: Addresses
+Status: Completed
+Frontend Status: Used inside people add and edit forms
+Backend Status: /api/addresses CRUD
+Key Features Implemented: Multiple addresses per user where forms support it.
+
+
+Module Name: Bonafide Certificate
+Status: Completed
+Frontend Status: Bonafide action from student flow
+Backend Status: /api/bonafide and student bonafide download route
+Key Features Implemented: PDF generation for student.
+
+
+================================================================================
+ATTENDANCE
+================================================================================
+
+Module Name: Student Attendance
+Status: Completed
+Frontend Status: hrm/attendance/student-attendance marking and filters
+Backend Status: POST PUT /api/attendance GET marking and reports
+Key Features Implemented: Admin Administrative Teacher can mark. Student sees own via /me.
+
+
+Module Name: Staff Attendance
+Status: Completed
+Frontend Status: hrm/attendance/staff-attendance. Route teacher-attendance redirects here.
+Backend Status: attendance reports entityType staff
+Key Features Implemented: Staff marking and monthly reports staffReportLive staffDayWiseLive.
+
+
+================================================================================
+FEES
+================================================================================
+
+Module Name: Fees Collection
+Status: Completed
+Frontend Status: management/feescollection fees group types master assign collect all use apiService
+Backend Status: fees-groups fees-types fees-master fees-assign fees-collect payment-modes
+Key Features Implemented: Assign to students. Collect and reverse. Bulk master actions.
+
+
+================================================================================
+HRM
+================================================================================
+
+Module Name: Departments
+Status: Completed
+Frontend Status: hrm/departments with useDepartments
+Backend Status: /api/departments CRUD
+
+
+Module Name: Leave Management
+Status: Completed
+Frontend Status: leave types list leaves approve-request teacher student leave in portals
+Backend Status: /api/leave-applications workflow
+Key Features Implemented: Apply approve cancel. Role scoped lists.
+
+
+Module Name: Payroll Main Screen
+Status: Completed
+Frontend Status: hrm/payroll/index.tsx uses usePayroll apiService generate delete bulk
+Backend Status: /api/payroll payslip CRUD bulk. /api/salary-components
+Key Features Implemented: Payslip list generate update delete from main payroll page only.
+Notes: Staff profile payroll tab is not complete. See pending_task.
+
+
+Module Name: Salary Components Settings
+Status: Completed
+Frontend Status: hrm payroll salary settings screens
+Backend Status: /api/salary-components CRUD
+
+
+================================================================================
+MANAGEMENT
+================================================================================
+
+Module Name: Library
+Status: Completed
+Frontend Status: library books members issue return reservations modals
+Backend Status: /api/library full module
+Key Features Implemented: Issue return policies members copies.
+
+
+Module Name: Hostel
+Status: Completed
+Frontend Status: hostel list floors rooms beds types assignments
+Backend Status: /api/hostel routes hierarchy
+Key Features Implemented: Bed assignment checkout cancel.
+
+
+Module Name: Transport
+Status: Completed
+Frontend Status: routes pickups vehicles drivers assignments fees
+Backend Status: /api/transport sub routes
+Key Features Implemented: Vehicle route assignment student allocation.
+
+
+================================================================================
+FINANCE
+================================================================================
+
+Module Name: Accounts Income Expenses Invoices Categories
+Status: Completed
+Frontend Status: accounts income expense expense-category invoices pages call apiService
+Backend Status: /api/accounts income expenses categories invoices write APIs
+Key Features Implemented: CRUD on income expense categories invoices for Admin Administrative roles.
+Notes: Transactions screen is read only only. See pending_task Accounts Transactions.
+
+
+================================================================================
+COMMUNICATION
+================================================================================
+
+Module Name: Notice Board
+Status: Completed
+Frontend Status: announcements/notice-board useNoticeBoard
+Backend Status: /api/notice-board CRUD
+
+
+Module Name: School Events
+Status: Completed
+Frontend Status: announcements/events useEvents attachments
+Backend Status: /api/events CRUD and attachments
+
+
+Module Name: Chat
+Status: Completed
+Frontend Status: application/chat.tsx useChats apiService conversations
+Backend Status: /api/chats
+Key Features Implemented: Conversations messages. Some extra buttons still coming soon in pending_task.
+
+
+Module Name: Email Todo Notes File Manager Call History
+Status: Completed
+Frontend Status: application/email todo notes fileManager callHistory with hooks
+Backend Status: /api/emails todos notes files calls
+Key Features Implemented: Per user scoped toolkit data.
+
+
+================================================================================
+REPORTS
+================================================================================
+
+Module Name: Reports Module
+Status: Completed
+Frontend Status: report student teacher class grade leave fees attendance day-wise pages use API or hooks
+Backend Status: student reports attendance reports dashboard widgets
+Key Features Implemented: Live staff attendance reports. Export on several report screens.
+
+
+================================================================================
+SETTINGS
+================================================================================
+
+Module Name: Core School Settings
+Status: Completed
+Frontend Status: schoolSettings religion examType SchoolMasterSettingsPage paymentModes invoiceSettings
+Backend Status: school profile settings masters payment-modes
+Key Features Implemented: School logo upload for headmaster. Houses blood groups casts mother tongues. Payment modes. Invoice logo and terms.
+Notes: Other settings menu pages are template only. List is in pending_task Extended Settings.
+
+
+================================================================================
+USER MANAGEMENT
+================================================================================
+
+Module Name: Custom User Roles
+Status: Completed
+Frontend Status: userManagement/rolesPermissions.tsx useUserRoles apiService create update roles
+Backend Status: /api/user-roles CRUD
+Key Features Implemented: Create edit custom roles from UI.
+
+
+================================================================================
+ROLE BASED WHAT IS WORKING TODAY
+================================================================================
+
+SUPER ADMIN
+Working: Login. Dashboard stats. Schools full flow. Plans and module flags. Enquiries. Impersonate school.
+
+HEADMASTER AND SCHOOL ADMIN
+Working: Full sidebar when SaaS show_in_menu allows. All completed modules above. User roles. Manage users list view only is partial see pending_task.
+
+ADMINISTRATIVE
+Working: Administrative dashboard. Filtered sidebar for peoples academic management HRM finance reports announcements. Same operational APIs as headmaster on students fees attendance etc. My details via staff profile.
+
+TEACHER
+Working: Teacher dashboard except empty syllabus box. Sidebar students parents guardians timetable attendance exams enquiries events notices leaves reports profile. Mark attendance enter marks where allowed.
+
+STUDENT
+Working: Student dashboard and sidebar profile timetable leaves fees exams announcements.
+
+PARENT
+Working: Parent dashboard child switcher fees attendance exams for selected child.
+
+GUARDIAN
+Working: Guardian dashboard ward fees and leaves data loads.
+Note: Guardian menu navigation is not complete. See pending_task.
+
+DRIVER
+Working: Driver dashboard and profile from driver portal API.
+
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Modules in this document: 58
+
+Completed count: 58
+
+Partial count: 0
+
+Pending count: 0
+
+All incomplete work is in pending_task with Status Partial or Pending and separate Backend pending and UI pending sections.

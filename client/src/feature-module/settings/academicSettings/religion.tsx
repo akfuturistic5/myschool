@@ -1,7 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 import { apiService } from "../../../core/services/apiService";
+import { selectUser } from "../../../core/data/redux/authSlice";
 import { useCurrentUser } from "../../../core/hooks/useCurrentUser";
 import { isAdministrativeRole, isHeadmasterRole } from "../../../core/utils/roleUtils";
+
+const MASTER_SETTINGS_ROLE_IDS = new Set([1, 6]);
 
 type ReligionItem = {
   id: number;
@@ -11,11 +15,24 @@ type ReligionItem = {
 };
 
 const Religion = () => {
-  const { user } = useCurrentUser();
-  const isAdmin = useMemo(
-    () => isHeadmasterRole(user) || isAdministrativeRole(user),
-    [user]
-  );
+  const { user: meUser, loading: meLoading } = useCurrentUser();
+  const reduxUser = useSelector(selectUser);
+
+  const isAdmin = useMemo(() => {
+    const candidates: Array<unknown> = [meUser, reduxUser].filter(Boolean);
+    if (candidates.length === 0) return false;
+    return candidates.some((candidate) => {
+      const c = candidate as { role_id?: number | string; user_role_id?: number | string };
+      const rawId = c.role_id ?? c.user_role_id;
+      const rid = Number(rawId);
+      if (Number.isFinite(rid) && MASTER_SETTINGS_ROLE_IDS.has(rid)) return true;
+      return isHeadmasterRole(candidate as Parameters<typeof isHeadmasterRole>[0])
+        || isAdministrativeRole(candidate as Parameters<typeof isAdministrativeRole>[0]);
+    });
+  }, [meUser, reduxUser]);
+
+  const sessionPending = meLoading && !meUser && !reduxUser;
+  const controlsLocked = !isAdmin;
   const [religions, setReligions] = useState<ReligionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,7 +76,7 @@ const Religion = () => {
 
   const handleAdd = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (controlsLocked) return;
     const validationError = validatePayload(newName, newDescription);
     if (validationError) {
       setError(validationError);
@@ -97,7 +114,7 @@ const Religion = () => {
 
   const handleEdit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!isAdmin || editingId == null) return;
+    if (controlsLocked || editingId == null) return;
     const validationError = validatePayload(editName, editDescription);
     if (validationError) {
       setError(validationError);
@@ -123,7 +140,7 @@ const Religion = () => {
   };
 
   const handleToggleStatus = async (id: number) => {
-    if (!isAdmin) return;
+    if (controlsLocked) return;
     try {
       setSaving(true);
       setError("");
@@ -139,7 +156,7 @@ const Religion = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!isAdmin) return;
+    if (controlsLocked) return;
     if (!window.confirm("Delete this religion? This action cannot be undone.")) return;
     try {
       setSaving(true);
@@ -170,19 +187,24 @@ const Religion = () => {
                   className="btn btn-light me-2"
                   type="button"
                   onClick={() => loadReligions()}
-                  disabled={saving || loading}
+                  disabled={saving || loading || sessionPending}
                 >
                   Refresh
                 </button>
-                <button className="btn btn-primary" type="submit" disabled={!isAdmin || saving || loading}>
+                <button className="btn btn-primary" type="submit" disabled={controlsLocked || saving || loading || sessionPending}>
                   Add Religion
                 </button>
               </div>
             </div>
-                  {loading && <div className="alert alert-info">Loading religions...</div>}
+                  {sessionPending && <div className="alert alert-info">Loading your session…</div>}
+                  {loading && !sessionPending && <div className="alert alert-info">Loading religions...</div>}
                   {!!message && <div className="alert alert-success">{message}</div>}
                   {!!error && <div className="alert alert-danger">{error}</div>}
-                  {!isAdmin && <div className="alert alert-warning">Only Headmaster or Administrative can manage religions.</div>}
+                  {!sessionPending && controlsLocked && (
+                    <div className="alert alert-warning">
+                      Only Headmaster or Administrative can manage religions.
+                    </div>
+                  )}
                   <div className="border rounded p-3 mb-3">
                     <div className="row">
                       <div className="col-md-5">
@@ -195,7 +217,7 @@ const Religion = () => {
                             value={newName}
                             maxLength={50}
                             onChange={(e) => setNewName(e.target.value)}
-                            disabled={!isAdmin || saving || loading}
+                            disabled={controlsLocked || saving || loading}
                           />
                         </div>
                       </div>
@@ -209,7 +231,7 @@ const Religion = () => {
                             value={newDescription}
                             maxLength={200}
                             onChange={(e) => setNewDescription(e.target.value)}
-                            disabled={!isAdmin || saving || loading}
+                            disabled={controlsLocked || saving || loading}
                           />
                         </div>
                       </div>
@@ -221,7 +243,7 @@ const Religion = () => {
                             id="religion-active"
                             checked={newIsActive}
                             onChange={(e) => setNewIsActive(e.target.checked)}
-                            disabled={!isAdmin || saving || loading}
+                            disabled={controlsLocked || saving || loading}
                           />
                           <label className="form-check-label" htmlFor="religion-active">
                             Active
@@ -250,7 +272,7 @@ const Religion = () => {
                                     className="check"
                                     checked={item.is_active}
                                     onChange={() => handleToggleStatus(item.id)}
-                                    disabled={!isAdmin || saving || loading}
+                                    disabled={controlsLocked || saving || loading}
                                   />
                                   <label htmlFor={`religion-${item.id}`} className="checktoggle">
                                     {" "}
@@ -261,7 +283,7 @@ const Religion = () => {
                                     type="button"
                                     className="btn btn-link p-0 text-dark"
                                     onClick={() => startEdit(item)}
-                                    disabled={!isAdmin || saving || loading}
+                                    disabled={controlsLocked || saving || loading}
                                   >
                                     <i className="ti ti-edit me-2" />
                                   </button>
@@ -269,7 +291,7 @@ const Religion = () => {
                                     type="button"
                                     className="btn btn-link p-0 text-danger"
                                     onClick={() => handleDelete(item.id)}
-                                    disabled={!isAdmin || saving || loading}
+                                    disabled={controlsLocked || saving || loading}
                                   >
                                     <i className="ti ti-trash" />
                                   </button>
@@ -340,7 +362,7 @@ const Religion = () => {
                   </div>
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary" disabled={!isAdmin || saving || loading}>
+              <button type="submit" className="btn btn-primary" disabled={controlsLocked || saving || loading}>
                 Save Changes
               </button>
             </form>
