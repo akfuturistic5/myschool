@@ -132,6 +132,22 @@ import TransportPickupPoints from "../management/transport/transportPickupPoints
 import TransportRoutes from "../management/transport/transportRoutes";
 import TransportVehicle from "../management/transport/transportVehicle";
 import TransportVehicleDrivers from "../management/transport/transportVehicleDrivers";
+import {
+  guardHostelModule,
+  guardTransportModule,
+  guardLibraryModule,
+  guardFeesModule,
+  guardHrmModule,
+  guardReportsModule,
+  guardAccountsModule,
+  guardUserManagementModule,
+  guardMembershipModule,
+  guardSettingsModule,
+  guardApplicationModule,
+  guardAnnouncementsModule,
+  guardContentModule,
+  guardSportsModule,
+} from "../../core/components/saasRouteGuard";
 import MembershipAddon from "../membership/membershipaddon";
 import Membershipplan from "../membership/membershipplan";
 import MembershipTransaction from "../membership/membershiptrasaction";
@@ -316,22 +332,22 @@ export const publicRoutes = [
   },
   {
     path: routes.audioCall,
-    element: <AudioCall />,
+    element: guardApplicationModule(<AudioCall />),
     route: Route,
   },
   {
     path: routes.callHistory,
-    element: <CallHistory />,
+    element: guardApplicationModule(<CallHistory />),
     route: Route,
   },
   {
     path: routes.connectedApps,
-    element: <ConnectedApps />,
+    element: guardSettingsModule(<ConnectedApps />),
     route: Route,
   },
   {
     path: routes.countries,
-    element: <Countries />,
+    element: guardContentModule(<Countries />),
     route: Route,
   },
   {
@@ -341,29 +357,29 @@ export const publicRoutes = [
   },
   {
     path: routes.calendar,
-    element: <Calendar />,
+    element: guardApplicationModule(<Calendar />),
     route: Route,
   },
 
   {
     path: routes.membershipplan,
-    element: <Membershipplan />,
+    element: guardMembershipModule(<Membershipplan />),
   },
   {
     path: routes.membershipAddon,
-    element: <MembershipAddon />,
+    element: guardMembershipModule(<MembershipAddon />),
   },
   {
     path: routes.membershipTransaction,
-    element: <MembershipTransaction />,
+    element: guardMembershipModule(<MembershipTransaction />),
   },
   {
     path: routes.notes,
-    element: <Notes />,
+    element: guardApplicationModule(<Notes />),
   },
   {
     path: routes.customFields,
-    element: <CustomFields />,
+    element: guardSettingsModule(<CustomFields />),
     route: Route,
   },
   // {
@@ -379,12 +395,12 @@ export const publicRoutes = [
 
   {
     path: routes.deleteRequest,
-    element: <DeleteRequest />,
+    element: guardUserManagementModule(<DeleteRequest />),
     route: Route,
   },
   {
     path: routes.cities,
-    element: <Cities />,
+    element: guardContentModule(<Cities />),
     route: Route,
   },
 
@@ -521,69 +537,69 @@ export const publicRoutes = [
   },
   {
     path: routes.banIpAddress,
-    element: <BanIpAddress />,
+    element: guardSettingsModule(<BanIpAddress />),
     route: Route,
   },
   // {
   //   path: routes.localization,
-  //   element: <Localization />,
+  //   element: guardSettingsModule(<Localization />),
   //   route: Route,
   // },
   {
     path: routes.preference,
-    element: <Preference />,
+    element: guardSettingsModule(<Preference />),
     route: Route,
   },
   {
     path: routes.todo,
-    element: <Todo />,
+    element: guardApplicationModule(<Todo />),
     route: Route,
   },
   {
     path: routes.email,
-    element: <Email />,
+    element: guardApplicationModule(<Email />),
     route: Route,
   },
   {
     path: routes.videoCall,
-    element: <Videocall />,
+    element: guardApplicationModule(<Videocall />),
     route: Route,
   },
   {
     path: routes.conferenceCall,
-    element: <ConferenceCall />,
+    element: guardApplicationModule(<ConferenceCall />),
     route: Route,
   },
   {
     path: routes.chat,
-    element: <Chat />,
+    element: guardApplicationModule(<Chat />),
     route: Route,
   },
   {
     path: routes.pages,
-    element: <Pages />,
+    element: guardContentModule(<Pages />),
     route: Route,
   },
 
   {
     path: routes.fileManager,
-    element: <FileManager />,
+    element: guardApplicationModule(<FileManager />),
     route: Route,
   },
   {
     path: routes.faq,
-    element: <Faq />,
+    element: guardContentModule(<Faq />),
     route: Route,
   },
 
   {
     path: routes.states,
-    element: <States />,
+    element: guardContentModule(<States />),
     route: Route,
   },
   {
     path: routes.testimonials,
-    element: <Testimonials />,
+    element: guardContentModule(<Testimonials />),
     route: Route,
   },
   {
@@ -795,7 +811,7 @@ export const publicRoutes = [
   },
   {
     path: routes.studentLibrary,
-    element: <StudentLibrary />,
+    element: guardLibraryModule(<StudentLibrary />),
     route: Route,
   },
   {
@@ -810,7 +826,7 @@ export const publicRoutes = [
   },
   {
     path: routes.studentFees,
-    element: <StudentFees />,
+    element: guardFeesModule(<StudentFees />),
     route: Route,
   },
   {
@@ -919,12 +935,12 @@ export const publicRoutes = [
   },
   {
     path: routes.staff,
-    element: <Staff />,
+    element: guardHrmModule(<Staff />),
     route: Route,
   },
   {
     path: routes.departments,
-    element: <Departments />,
+    element: guardHrmModule(<Departments />),
     route: Route,
   },
   {
@@ -1004,7 +1020,7 @@ export const publicRoutes = [
   },
   {
     path: routes.teacherLibrary,
-    element: <TeacherLibrary />,
+    element: guardLibraryModule(<TeacherLibrary />),
     route: Route,
   },
   {
@@ -1039,47 +1055,47 @@ export const publicRoutes = [
   },
   {
     path: routes.payroll,
-    element: <Payroll />,
+    element: guardHrmModule(<Payroll />),
     route: Route,
   },
   {
     path: routes.salarySettings,
-    element: <SalarySettings />,
+    element: guardHrmModule(<SalarySettings />),
     route: Route,
   },
   {
     path: routes.holidays,
-    element: <Holiday />,
+    element: guardHrmModule(<Holiday />),
     route: Route,
   },
   {
     path: routes.designation,
-    element: <Designation />,
+    element: guardHrmModule(<Designation />),
     route: Route,
   },
   {
     path: routes.listLeaves,
-    element: <ListLeaves />,
+    element: guardHrmModule(<ListLeaves />),
     route: Route,
   },
   {
     path: routes.leaveTypesManage,
-    element: <LeaveTypesPage />,
+    element: guardHrmModule(<LeaveTypesPage />),
     route: Route,
   },
   {
     path: routes.staffDetails,
-    element: <StaffDetails />,
+    element: guardHrmModule(<StaffDetails />),
     route: Route,
   },
   {
     path: routes.staffPayroll,
-    element: <StaffPayRoll />,
+    element: guardHrmModule(<StaffPayRoll />),
     route: Route,
   },
   {
     path: routes.staffLeave,
-    element: <StaffLeave />,
+    element: guardHrmModule(<StaffLeave />),
     route: Route,
   },
 
@@ -1120,152 +1136,152 @@ export const publicRoutes = [
   },
   {
     path: routes.feesGroup,
-    element: <FeesGroup />,
+    element: guardFeesModule(<FeesGroup />),
     route: Route,
   },
   {
     path: routes.feesType,
-    element: <FeesTypes />,
+    element: guardFeesModule(<FeesTypes />),
     route: Route,
   },
   {
     path: routes.collectFees,
-    element: <CollectFees />,
+    element: guardFeesModule(<CollectFees />),
     route: Route,
   },
   {
     path: routes.feesAssign,
-    element: <FeesAssign />,
+    element: guardFeesModule(<FeesAssign />),
     route: Route,
   },
   {
     path: routes.libraryMembers,
-    element: <LibraryMember />,
+    element: guardLibraryModule(<LibraryMember />),
     route: Route,
   },
   {
     path: routes.libraryCategories,
-    element: <LibraryCategory />,
+    element: guardLibraryModule(<LibraryCategory />),
     route: Route,
   },
   {
     path: routes.libraryPolicies,
-    element: <LibraryPolicy />,
+    element: guardLibraryModule(<LibraryPolicy />),
     route: Route,
   },
   {
     path: routes.libraryBooks,
-    element: <Books />,
+    element: guardLibraryModule(<Books />),
     route: Route,
   },
   {
     path: routes.libraryBookCopies,
-    element: <LibraryBookCopies />,
+    element: guardLibraryModule(<LibraryBookCopies />),
     route: Route,
   },
   {
     path: routes.libraryIssueBook,
-    element: <IssueBook />,
+    element: guardLibraryModule(<IssueBook />),
     route: Route,
   },
   {
     path: routes.libraryReturn,
-    element: <ReturnBook />,
+    element: guardLibraryModule(<ReturnBook />),
     route: Route,
   },
   {
     path: routes.libraryReservations,
-    element: <LibraryReservations />,
+    element: guardLibraryModule(<LibraryReservations />),
     route: Route,
   },
   {
     path: routes.sportsList,
-    element: <SportsList />,
+    element: guardSportsModule(<SportsList />),
     route: Route,
   },
   {
     path: routes.playerList,
-    element: <PlayersList />,
+    element: guardSportsModule(<PlayersList />),
     route: Route,
   },
   {
     path: routes.hostelRoom,
-    element: <HostelRooms />,
+    element: guardHostelModule(<HostelRooms />),
     route: Route,
   },
   {
     path: routes.hostelFloors,
-    element: <HostelFloors />,
+    element: guardHostelModule(<HostelFloors />),
     route: Route,
   },
   {
     path: routes.hostelBeds,
-    element: <HostelBeds />,
+    element: guardHostelModule(<HostelBeds />),
     route: Route,
   },
   {
     path: routes.hostelAssignments,
-    element: <HostelAssignments />,
+    element: guardHostelModule(<HostelAssignments />),
     route: Route,
   },
   {
     path: routes.hostelType,
-    element: <HostelType />,
+    element: guardHostelModule(<HostelType />),
     route: Route,
   },
   {
     path: routes.hostelList,
-    element: <HostelList />,
+    element: guardHostelModule(<HostelList />),
     route: Route,
   },
   {
     path: routes.transportRoutes,
-    element: <TransportRoutes />,
+    element: guardTransportModule(<TransportRoutes />),
     route: Route,
   },
   {
     path: routes.transportAssignVehicle,
-    element: <TransportAssignVehicle />,
+    element: guardTransportModule(<TransportAssignVehicle />),
     route: Route,
   },
   {
     path: routes.transportPickupPoints,
-    element: <TransportPickupPoints />,
+    element: guardTransportModule(<TransportPickupPoints />),
     route: Route,
   },
   {
     path: routes.transportVehicleDrivers,
-    element: <TransportVehicleDrivers />,
+    element: guardTransportModule(<TransportVehicleDrivers />),
     route: Route,
   },
   {
     path: routes.transportVehicle,
-    element: <TransportVehicle />,
+    element: guardTransportModule(<TransportVehicle />),
     route: Route,
   },
   {
     path: routes.transportFees,
-    element: <TransportFees />,
+    element: guardTransportModule(<TransportFees />),
     route: Route,
   },
   {
     path: routes.transportAllocation,
-    element: <TransportAllocation />,
+    element: guardTransportModule(<TransportAllocation />),
     route: Route,
   },
   {
     path: routes.approveRequest,
-    element: <ApproveRequest />,
+    element: guardHrmModule(<ApproveRequest />),
     route: Route,
   },
   {
     path: routes.studentAttendance,
-    element: <StudentAttendance />,
+    element: guardHrmModule(<StudentAttendance />),
     route: Route,
   },
   {
     path: routes.studentAttendanceReport,
-    element: <StudentAttendanceReport />,
+    element: guardHrmModule(<StudentAttendanceReport />),
     route: Route,
   },
   {
@@ -1275,48 +1291,48 @@ export const publicRoutes = [
   },
   {
     path: routes.staffAttendance,
-    element: <StaffAttendance />,
+    element: guardHrmModule(<StaffAttendance />),
     route: Route,
   },
   {
     path: routes.staffsAttendance,
-    element: <StaffsAttendance />,
+    element: guardHrmModule(<StaffsAttendance />),
     route: Route,
   },
   {
     path: routes.addStaff,
-    element: <AddStaff />,
+    element: guardHrmModule(<AddStaff />),
     route: Route,
   },
   {
     path: routes.editStaff,
-    element: <EditStaff />,
+    element: guardHrmModule(<EditStaff />),
     route: Route,
   },
 
   {
     path: routes.accountsIncome,
-    element: <AccountsIncome />,
+    element: guardAccountsModule(<AccountsIncome />),
     route: Route,
   },
   {
     path: routes.accountsInvoices,
-    element: <AccountsInvoices />,
+    element: guardAccountsModule(<AccountsInvoices />),
     route: Route,
   },
   {
     path: routes.accountsTransactions,
-    element: <AccountsTransactions />,
+    element: guardAccountsModule(<AccountsTransactions />),
     route: Route,
   },
   {
     path: routes.addInvoice,
-    element: <AddInvoice />,
+    element: guardAccountsModule(<AddInvoice />),
     route: Route,
   },
   {
     path: routes.editInvoice,
-    element: <EditInvoice />,
+    element: guardAccountsModule(<EditInvoice />),
     route: Route,
   },
   {
@@ -1326,27 +1342,27 @@ export const publicRoutes = [
   },
   {
     path: routes.expense,
-    element: <Expense />,
+    element: guardAccountsModule(<Expense />),
     route: Route,
   },
   {
     path: routes.expenseCategory,
-    element: <ExpensesCategory />,
+    element: guardAccountsModule(<ExpensesCategory />),
     route: Route,
   },
   {
     path: routes.invoice,
-    element: <Invoice />,
+    element: guardAccountsModule(<Invoice />),
     route: Route,
   },
   {
     path: routes.events,
-    element: <Events />,
+    element: guardAnnouncementsModule(<Events />),
     route: Route,
   },
   {
     path: routes.noticeBoard,
-    element: <NoticeBoard />,
+    element: guardAnnouncementsModule(<NoticeBoard />),
     route: Route,
   },
   {
@@ -1359,100 +1375,100 @@ export const publicRoutes = [
 
   {
     path: routes.securitysettings,
-    element: <Securitysettings />,
+    element: guardSettingsModule(<Securitysettings />),
     route: Route,
   },
   {
     path: routes.notificationssettings,
-    element: <Notificationssettings />,
+    element: guardSettingsModule(<Notificationssettings />),
     route: Route,
   },
   {
     path: routes.connectedApps,
-    element: <ConnectedApps />,
+    element: guardSettingsModule(<ConnectedApps />),
     route: Route,
   },
   {
     path: routes.companySettings,
-    element: <CompanySettings />,
+    element: guardSettingsModule(<CompanySettings />),
     route: Route,
   },
   {
     path: routes.localization,
-    element: <Localization />,
+    element: guardSettingsModule(<Localization />),
     route: Route,
   },
   {
     path: routes.prefixes,
-    element: <Prefixes />,
+    element: guardSettingsModule(<Prefixes />),
     route: Route,
   },
   {
     path: routes.socialAuthentication,
-    element: <Socialauthentication />,
+    element: guardSettingsModule(<Socialauthentication />),
     route: Route,
   },
   {
     path: routes.language,
-    element: <Languagesettings />,
+    element: guardSettingsModule(<Languagesettings />),
     route: Route,
   },
   {
     path: routes.invoiceSettings,
-    element: <InvoiceSettings />,
+    element: guardSettingsModule(<InvoiceSettings />),
     route: Route,
   },
   {
     path: routes.customFields,
-    element: <CustomFields />,
+    element: guardSettingsModule(<CustomFields />),
     route: Route,
   },
   {
     path: routes.emailSettings,
-    element: <EmailSettings />,
+    element: guardSettingsModule(<EmailSettings />),
     route: Route,
   },
   {
     path: routes.emailTemplates,
-    element: <Emailtemplates />,
+    element: guardSettingsModule(<Emailtemplates />),
     route: Route,
   },
   {
     path: routes.smsSettings,
-    element: <SmsSettings />,
+    element: guardSettingsModule(<SmsSettings />),
     route: Route,
   },
   {
     path: routes.optSettings,
-    element: <OtpSettings />,
+    element: guardSettingsModule(<OtpSettings />),
     route: Route,
   },
   {
     path: routes.gdprCookies,
-    element: <GdprCookies />,
+    element: guardSettingsModule(<GdprCookies />),
     route: Route,
   },
 
   {
     path: routes.paymentGateways,
-    element: <PaymentGateways />,
+    element: guardSettingsModule(<PaymentGateways />),
     route: Route,
     id: 310,
   },
   {
     path: routes.taxRates,
-    element: <TaxRates />,
+    element: guardSettingsModule(<TaxRates />),
     route: Route,
   },
   {
     path: routes.paymentModes,
-    element: <PaymentModes />,
+    element: guardSettingsModule(<PaymentModes />),
     route: Route,
   },
 
   {
     path: routes.schoolSettings,
-    element: <SchoolSettings />,
+    element: guardSettingsModule(<SchoolSettings />),
     route: Route,
   },
   {
@@ -1462,68 +1478,68 @@ export const publicRoutes = [
   },
   {
     path: routes.religion,
-    element: <Religion />,
+    element: guardSettingsModule(<Religion />),
     route: Route,
   },
   {
     path: routes.settingsHouses,
-    element: <SchoolMasterSettingsPage kind="houses" />,
+    element: guardSettingsModule(<SchoolMasterSettingsPage kind="houses" />),
     route: Route,
   },
   {
     path: routes.settingsBloodGroups,
-    element: <SchoolMasterSettingsPage kind="blood-groups" />,
+    element: guardSettingsModule(<SchoolMasterSettingsPage kind="blood-groups" />),
     route: Route,
   },
   {
     path: routes.settingsMotherTongues,
-    element: <SchoolMasterSettingsPage kind="mother-tongues" />,
+    element: guardSettingsModule(<SchoolMasterSettingsPage kind="mother-tongues" />),
     route: Route,
   },
   {
     path: routes.settingsCasts,
-    element: <SchoolMasterSettingsPage kind="casts" />,
+    element: guardSettingsModule(<SchoolMasterSettingsPage kind="casts" />),
     route: Route,
   },
   {
     path: routes.storage,
-    element: <Storage />,
+    element: guardSettingsModule(<Storage />),
     route: Route,
   },
 
   {
     path: routes.rolesPermissions,
-    element: <RolesPermissions />,
+    element: guardUserManagementModule(<RolesPermissions />),
     route: Route,
   },
   {
     path: routes.permissions,
-    element: <Permission />,
+    element: guardUserManagementModule(<Permission />),
     route: Route,
   },
   {
     path: routes.manageusers,
-    element: <Manageusers />,
+    element: guardUserManagementModule(<Manageusers />),
     route: Route,
   },
   {
     path: routes.allBlogs,
-    element: <AllBlogs />,
+    element: guardContentModule(<AllBlogs />),
     route: Route,
   },
   {
     path: routes.blogCategories,
-    element: <BlogCategories />,
+    element: guardContentModule(<BlogCategories />),
     route: Route,
   },
   {
     path: routes.blogComments,
-    element: <BlogComments />,
+    element: guardContentModule(<BlogComments />),
     route: Route,
   },
   {
     path: routes.blogTags,
-    element: <BlogTags />,
+    element: guardContentModule(<BlogTags />),
     route: Route,
   },
   {
@@ -1543,67 +1559,67 @@ export const publicRoutes = [
   },
   {
     path: routes.feesReport,
-    element: <FeesReport />,
+    element: guardReportsModule(<FeesReport />),
     route: Route,
   },
   {
     path: routes.leaveReport,
-    element: <LeaveReport />,
+    element: guardReportsModule(<LeaveReport />),
     route: Route,
   },
   {
     path: routes.gradeReport,
-    element: <GradeReport />,
+    element: guardReportsModule(<GradeReport />),
     route: Route,
   },
   {
     path: routes.studentReport,
-    element: <StudentReport />,
+    element: guardReportsModule(<StudentReport />),
     route: Route,
   },
   {
     path: routes.classReport,
-    element: <ClassReport />,
+    element: guardReportsModule(<ClassReport />),
     route: Route,
   },
   {
     path: routes.attendanceReport,
-    element: <AttendanceReport />,
+    element: guardReportsModule(<AttendanceReport />),
     route: Route,
   },
   {
     path: routes.dailyAttendance,
-    element: <DailyAttendance />,
+    element: guardReportsModule(<DailyAttendance />),
     route: Route,
   },
   {
     path: routes.studentAttendanceType,
-    element: <StudentAttendanceType />,
+    element: guardReportsModule(<StudentAttendanceType />),
     route: Route,
   },
   {
     path: routes.studentDayWise,
-    element: <StudentDayWise />,
+    element: guardReportsModule(<StudentDayWise />),
     route: Route,
   },
   {
     path: routes.teacherDayWise,
-    element: <StaffDayWise />,
+    element: guardReportsModule(<StaffDayWise />),
     route: Route,
   },
   {
     path: routes.staffDayWise,
-    element: <StaffDayWise />,
+    element: guardReportsModule(<StaffDayWise />),
     route: Route,
   },
   {
     path: routes.teacherReport,
-    element: <TeacherReport />,
+    element: guardReportsModule(<TeacherReport />),
     route: Route,
   },
   {
     path: routes.staffReport,
-    element: <StaffReport />,
+    element: guardReportsModule(<StaffReport />),
     route: Route,
   },
   {
@@ -1613,7 +1629,7 @@ export const publicRoutes = [
   },
   {
     path: routes.events,
-    element: <Events />,
+    element: guardAnnouncementsModule(<Events />),
     route: Route,
   },
   {

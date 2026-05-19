@@ -263,6 +263,7 @@ const Header = () => {
                 <Link
                   to={dashboardRoute}
                   className="logo-school-name text-decoration-none text-reset ms-0"
+                  title={user?.school_name || "PreSkool"}
                 >
                   {user?.school_name || "PreSkool"}
                 </Link>
@@ -296,7 +297,9 @@ const Header = () => {
                   alt="School Logo"
                   className={`logo-icon ${isMillatLogo ? "logo-icon--large" : ""}`}
                 />
-                <span className="logo-school-name">{user?.school_name || "PreSkool"}</span>
+                <span className="logo-school-name" title={user?.school_name || "PreSkool"}>
+                  {user?.school_name || "PreSkool"}
+                </span>
               </Link>
               <Link to={dashboardRoute} className="logo-small">
                 <SchoolLogoImage

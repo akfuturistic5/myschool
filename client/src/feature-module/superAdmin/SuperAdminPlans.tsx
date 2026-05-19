@@ -5,7 +5,7 @@ import {
   selectSuperAdminAuthChecked,
   selectSuperAdminIsAuthenticated,
 } from '../../core/data/redux/superAdminAuthSlice';
-import { SAAS_MODULE_CATALOG, type SaasModulesMap } from '../../core/utils/saasModuleKeys';
+import { SAAS_MODULE_CATALOG, type SaasModulesMap, isSaasCoreModule } from '../../core/utils/saasModuleKeys';
 import { patchSaasModuleFlags } from './saasModuleUi';
 import { superAdminToast } from './superAdminToast';
 
@@ -440,15 +440,23 @@ const SuperAdminPlans = () => {
                       </thead>
                       <tbody>
                         {SAAS_MODULE_CATALOG.map(({ key, label }) => {
-                          const menuOn = !!modules[key]?.show_in_menu;
+                          const core = isSaasCoreModule(key);
+                          const menuOn = core || !!modules[key]?.show_in_menu;
                           return (
                             <tr key={key}>
-                              <td>{label}</td>
+                              <td>
+                                {label}
+                                {core && (
+                                  <span className="badge bg-light text-muted ms-2">Core</span>
+                                )}
+                              </td>
                               <td>
                                 <input
                                   type="checkbox"
                                   className="form-check-input"
                                   checked={menuOn}
+                                  disabled={core}
+                                  title={core ? 'Included in every plan' : undefined}
                                   onChange={(e) => updateFlag(key, 'show_in_menu', e.target.checked)}
                                 />
                               </td>
@@ -456,9 +464,15 @@ const SuperAdminPlans = () => {
                                 <input
                                   type="checkbox"
                                   className="form-check-input"
-                                  checked={!!modules[key]?.route_accessible}
-                                  disabled={!menuOn}
-                                  title={menuOn ? undefined : 'Enable menu first'}
+                                  checked={core || !!modules[key]?.route_accessible}
+                                  disabled={core || !menuOn}
+                                  title={
+                                    core
+                                      ? 'Included in every plan'
+                                      : menuOn
+                                        ? undefined
+                                        : 'Enable menu first'
+                                  }
                                   onChange={(e) => updateFlag(key, 'route_accessible', e.target.checked)}
                                 />
                               </td>

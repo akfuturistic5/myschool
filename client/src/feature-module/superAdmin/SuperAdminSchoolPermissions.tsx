@@ -6,7 +6,7 @@ import {
   selectSuperAdminAuthChecked,
   selectSuperAdminIsAuthenticated,
 } from '../../core/data/redux/superAdminAuthSlice';
-import { SAAS_MODULE_CATALOG, type SaasModulesMap } from '../../core/utils/saasModuleKeys';
+import { SAAS_MODULE_CATALOG, type SaasModulesMap, isSaasCoreModule } from '../../core/utils/saasModuleKeys';
 import { all_routes } from '../router/all_routes';
 import '../../style/icon/tabler-icons/webfont/tabler-icons.css';
 import './superAdminShell.css';
@@ -291,13 +291,19 @@ const SuperAdminSchoolPermissions = () => {
                       </thead>
                       <tbody>
                         {SAAS_MODULE_CATALOG.map(({ key, label }) => {
+                          const core = isSaasCoreModule(key);
                           const m = modules[key];
-                          const menuOn = m?.show_in_menu !== false;
-                          const accOn = m?.route_accessible !== false;
+                          const menuOn = core || m?.show_in_menu !== false;
+                          const accOn = core || m?.route_accessible !== false;
                           return (
                             <tr key={key}>
                               <td className="ps-2 small">
-                                <span className="fw-medium">{label}</span>
+                                <span className="fw-medium">
+                                  {label}
+                                  {core && (
+                                    <span className="badge bg-light text-muted ms-1">Core</span>
+                                  )}
+                                </span>
                                 <code className="d-block text-muted" style={{ fontSize: '0.7rem' }}>
                                   {key}
                                 </code>

@@ -1,6 +1,11 @@
 const { masterQuery } = require('../config/database');
 const { success, error: errorResponse } = require('../utils/responseHelper');
-const { SAAS_MODULE_KEYS, defaultAllModulesTrue } = require('../config/saasModuleCatalog');
+const {
+  SAAS_MODULE_KEYS,
+  SAAS_CORE_MODULE_KEYS,
+  defaultAllModulesTrue,
+  enforceCoreModules,
+} = require('../config/saasModuleCatalog');
 const { listPlanModuleRows, replacePlanModules } = require('../services/saasSchoolModulesService');
 const { writeSuperAdminAudit } = require('../utils/superAdminSecurity');
 const {
@@ -159,7 +164,7 @@ const getPlanModules = async (req, res) => {
         route_accessible: !!row.route_accessible,
       };
     }
-    return success(res, 200, 'Plan modules', { modules: map, rows });
+    return success(res, 200, 'Plan modules', { modules: enforceCoreModules(map), rows });
   } catch (err) {
     console.error('getPlanModules error:', err);
     return errorResponse(res, 500, 'Failed to load plan modules');
@@ -179,6 +184,10 @@ const putPlanModules = async (req, res) => {
 
     const rows = [];
     for (const key of SAAS_MODULE_KEYS) {
+      if (SAAS_CORE_MODULE_KEYS.includes(key)) {
+        rows.push({ module_key: key, show_in_menu: true, route_accessible: true });
+        continue;
+      }
       const m = modules[key];
       if (!m || typeof m !== 'object') {
         rows.push({ module_key: key, show_in_menu: true, route_accessible: true });
@@ -205,7 +214,7 @@ const putPlanModules = async (req, res) => {
         route_accessible: row.route_accessible,
       };
     }
-    return success(res, 200, 'Plan modules saved', { modules: map });
+    return success(res, 200, 'Plan modules saved', { modules: enforceCoreModules(map) });
   } catch (err) {
     console.error('putPlanModules error:', err);
     return errorResponse(res, 500, 'Failed to save plan modules');

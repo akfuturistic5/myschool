@@ -25,3 +25,19 @@ SET price_amount = 0,
     currency_code = COALESCE(NULLIF(TRIM(currency_code), ''), 'INR')
 WHERE slug = 'full'
   AND price_amount IS NULL;
+
+-- Peoples and Academic are core modules included in every SaaS plan.
+UPDATE public.saas_plan_modules
+SET show_in_menu = TRUE, route_accessible = TRUE
+WHERE module_key IN ('peoples', 'academic');
+
+DELETE FROM public.school_module_overrides
+WHERE module_key IN ('peoples', 'academic');
+
+-- Ensure every plan has core module rows (for plans created before these keys existed).
+INSERT INTO public.saas_plan_modules (plan_id, module_key, show_in_menu, route_accessible)
+SELECT p.id, k, TRUE, TRUE
+FROM public.saas_plans p
+CROSS JOIN (VALUES ('peoples'), ('academic')) AS v(k)
+ON CONFLICT (plan_id, module_key) DO UPDATE
+  SET show_in_menu = TRUE, route_accessible = TRUE;
