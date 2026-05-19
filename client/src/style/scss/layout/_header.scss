@@ -2,7 +2,8 @@
 @use "../utils/variables";
 
 .header {
-    height: 56px;
+    min-height: 56px;
+    height: auto;
     // Above stacked dashboard widgets/cards; below Bootstrap modals (1055) / theme drawer (9999+)
     z-index: 1030;
     background: variables.$white;
@@ -186,20 +187,26 @@
         -webkit-justify-content: space-between;
         -ms-flex-pack: space-between;
         float: left;
-        height: 56px;
+        min-height: 56px;
+        height: auto;
         position: relative;
         text-align: center;
         width: 252px;
         z-index: 1;
         background: variables.$white;
-        padding: 0 15px;
+        padding: 8px 15px;
         @include mixins.transition(all 0.5s ease);
         border-right: 1px solid variables.$light-900;
         .logo {
             display: inline-flex;
-            align-items: center;
-            line-height: 1.2;
-            gap: 8px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            flex: 1;
+            min-width: 0;
+            max-width: calc(100% - 36px);
+            line-height: 1.25;
+            gap: 6px 8px;
+            text-align: left;
             .logo-icon, img {
                 width: 32px;
                 height: 32px;
@@ -210,18 +217,26 @@
                 padding: 2px;
             }
             .logo-icon--large {
-                width: 44px;
-                height: 44px;
+                width: 40px;
+                height: 40px;
                 padding: 2px;
             }
+            > .btn {
+                flex-shrink: 0;
+            }
             .logo-school-name {
-                font-size: 1.25rem;
+                flex: 1 1 calc(100% - 48px);
+                min-width: 0;
+                font-size: 0.9375rem;
                 font-weight: 700;
                 color: variables.$dark;
-                white-space: nowrap;
+                white-space: normal;
+                word-wrap: break-word;
+                overflow-wrap: anywhere;
+                line-height: 1.25;
             }
             @include mixins.respond-below(lg) {
-                text-align: left;
+                max-width: 100%;
                 width: 100%;
                 justify-content: flex-start;
                 -webkit-justify-content: flex-start;
@@ -230,12 +245,11 @@
                     width: 32px;
                 }
                 .logo-school-name {
-                    display: inline-block;
-                    font-size: 16px;
+                    font-size: 0.875rem;
                     font-weight: 800;
-                    max-width: 160px;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
+                    max-width: none;
+                    overflow: visible;
+                    text-overflow: unset;
                 }
             }
         }
@@ -249,18 +263,23 @@
                 padding: 2px;
             }
             .logo-icon--large {
-                width: 44px;
-                height: 44px;
+                width: 40px;
+                height: 40px;
                 padding: 2px;
             }
             .logo-school-name {
-                font-size: 1.25rem;
+                flex: 1 1 calc(100% - 48px);
+                min-width: 0;
+                font-size: 0.9375rem;
                 font-weight: 700;
                 color: variables.$dark;
-                white-space: nowrap;
+                white-space: normal;
+                word-wrap: break-word;
+                overflow-wrap: anywhere;
+                line-height: 1.25;
             }
             @include mixins.respond-below(lg) {
-                text-align: center;
+                text-align: left;
                 width: 100%;
                 img {
                     width: 32px;

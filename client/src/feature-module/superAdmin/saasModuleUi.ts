@@ -1,4 +1,5 @@
 import type { SaasModulesMap } from '../../core/utils/saasModuleKeys';
+import { isSaasCoreModule } from '../../core/utils/saasModuleKeys';
 
 /** When menu is off, route access is forced off. Route toggle only applies when menu is on. */
 export function patchSaasModuleFlags(
@@ -7,6 +8,7 @@ export function patchSaasModuleFlags(
   field: 'show_in_menu' | 'route_accessible',
   value: boolean
 ): SaasModulesMap {
+  if (isSaasCoreModule(key)) return prev;
   const cur = prev[key] || { show_in_menu: true, route_accessible: true };
 
   if (field === 'show_in_menu') {
@@ -34,6 +36,10 @@ export function normalizeSaasModulesMap(modules: SaasModulesMap): SaasModulesMap
   for (const key of Object.keys(out)) {
     const row = out[key];
     if (!row) continue;
+    if (isSaasCoreModule(key)) {
+      out[key] = { show_in_menu: true, route_accessible: true };
+      continue;
+    }
     if (!row.show_in_menu) {
       out[key] = { ...row, route_accessible: false };
     }

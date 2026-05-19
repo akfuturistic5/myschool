@@ -1,5 +1,5 @@
 const { masterQuery } = require('../config/database');
-const { SAAS_MODULE_KEYS, defaultAllModulesTrue } = require('../config/saasModuleCatalog');
+const { SAAS_MODULE_KEYS, SAAS_CORE_MODULE_KEYS, defaultAllModulesTrue, enforceCoreModules } = require('../config/saasModuleCatalog');
 
 /**
  * Effective module flags for a school: plan defaults merged with optional per-school overrides.
@@ -63,7 +63,7 @@ async function getEffectiveSchoolModules(schoolId) {
     }
   }
 
-  return { plan: planMeta, modules: base };
+  return { plan: planMeta, modules: enforceCoreModules(base) };
 }
 
 async function listPlanModuleRows(planId) {
@@ -99,6 +99,14 @@ async function replacePlanModules(planId, rows) {
       [pid, k, flags.show_in_menu, flags.route_accessible]
     );
   }
+  await masterQuery(
+    `INSERT INTO saas_plan_modules (plan_id, module_key, show_in_menu, route_accessible)
+     SELECT $1, k, TRUE, TRUE
+     FROM unnest($2::text[]) AS k
+     ON CONFLICT (plan_id, module_key) DO UPDATE
+       SET show_in_menu = TRUE, route_accessible = TRUE`,
+    [pid, SAAS_CORE_MODULE_KEYS]
+  );
 }
 
 async function replaceSchoolOverrides(schoolId, rows) {
@@ -108,6 +116,7 @@ async function replaceSchoolOverrides(schoolId, rows) {
   for (const row of rows) {
     const k = String(row.module_key || '').trim();
     if (!SAAS_MODULE_KEYS.includes(k)) continue;
+    if (SAAS_CORE_MODULE_KEYS.includes(k)) continue;
     const flags = normalizeModuleRow(row);
     await masterQuery(
       `INSERT INTO school_module_overrides (school_id, module_key, show_in_menu, route_accessible)
