@@ -416,7 +416,7 @@ function validateNoExamSlotCollision(rows = []) {
 }
 
 async function getExamSchemaFlags() {
-  const [tableCheck, colCheck, studentColCheck, promoCheck] = await Promise.all([
+  const [tableCheck, colCheck, studentColCheck, promoCheck, subjectsColCheck] = await Promise.all([
     query(
       `SELECT to_regclass('public.exam_classes') AS exam_classes_table`
     ),
@@ -437,10 +437,18 @@ async function getExamSchemaFlags() {
     query(
       `SELECT to_regclass('public.student_promotions') AS promo_table`
     ),
+    query(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'subjects'
+         AND column_name IN ('theory_hours', 'practical_hours')`
+    ),
   ]);
 
   const cols = new Set((colCheck.rows || []).map((r) => String(r.column_name)));
   const sCols = new Set((studentColCheck.rows || []).map((r) => String(r.column_name)));
+  const subCols = new Set((subjectsColCheck.rows || []).map((r) => String(r.column_name)));
   return {
     hasExamClassesTable: !!tableCheck.rows?.[0]?.exam_classes_table,
     hasIsActiveColumn: cols.has('is_active'),
@@ -450,6 +458,8 @@ async function getExamSchemaFlags() {
     studentHasClassId: sCols.has('class_id'),
     studentHasSectionId: sCols.has('section_id'),
     hasStudentPromotionsTable: !!promoCheck.rows?.[0]?.promo_table,
+    hasTheoryHours: subCols.has('theory_hours'),
+    hasPracticalHours: subCols.has('practical_hours'),
   };
 }
 
@@ -1359,6 +1369,10 @@ async function viewExamSchedule(req, res) {
       examFilter = ` AND es.exam_id = $${params.length}`;
     }
 
+    const schema = await getExamSchemaFlags();
+    const theoryCol = schema.hasTheoryHours ? 's.theory_hours' : '0 AS theory_hours';
+    const practicalCol = schema.hasPracticalHours ? 's.practical_hours' : '0 AS practical_hours';
+
     const r = await query(
       `SELECT
          es.exam_id,
@@ -1371,8 +1385,8 @@ async function viewExamSchedule(req, res) {
          es.class_subject_id AS subject_id,
          s.subject_name,
          s.subject_code,
-         s.theory_hours,
-         s.practical_hours,
+         ${theoryCol},
+         ${practicalCol},
          es.exam_date::TEXT,
          es.start_time,
          es.end_time,
@@ -1444,6 +1458,10 @@ async function viewExamResults(req, res) {
       const studentId = parseId(selfStudent.student_id);
       if (!studentId) return success(res, 200, 'Result loaded', { results: [], has_pending_electives: false });
 
+      const schema = await getExamSchemaFlags();
+      const theoryCol = schema.hasTheoryHours ? 'sb.theory_hours' : '0 AS theory_hours';
+      const practicalCol = schema.hasPracticalHours ? 'sb.practical_hours' : '0 AS practical_hours';
+
       const rows = await query(
         `SELECT
            st.id AS student_id,
@@ -1453,8 +1471,8 @@ async function viewExamResults(req, res) {
            es.class_subject_id AS subject_id,
            sb.subject_name,
            sb.subject_code,
-           sb.theory_hours,
-           sb.practical_hours,
+           ${theoryCol},
+           ${practicalCol},
            er.marks_obtained,
            COALESCE(er.is_absent, false) AS is_absent,
            es.max_marks,
@@ -1917,7 +1935,8 @@ async function listSelfExamOptions(req, res) {
     if (!classId) return success(res, 200, 'Self exams loaded', { exams: [], students: availableStudents });
     const academicYearId = req.query.academic_year_id ? parseId(req.query.academic_year_id) : null;
     const isStaff = [ROLES.ADMIN, ROLES.TEACHER, ROLES.ADMINISTRATIVE].includes(ctx.roleId);
-    const publishFilter = isStaff ? "" : "AND e.is_published = true";
+    const forTimetable = req.query.for_timetable === 'true';
+    const publishFilter = (isStaff || forTimetable) ? "" : "AND e.is_published = true";
  
     const esCaps = await query(`SELECT (to_regclass('public.exam_schedules') IS NOT NULL) AS has_es`);
     const hasExamSchedules = !!esCaps.rows?.[0]?.has_es;

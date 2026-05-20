@@ -1,13 +1,17 @@
 
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import ImageWithBasePath from "../../core/common/imageWithBasePath";
 import { all_routes } from "../router/all_routes";
-import { apiService, getApiBaseUrl } from "../../core/services/apiService";
+import { apiService, getApiBaseUrl, getTenantBearerToken } from "../../core/services/apiService";
 import { formatDateMonthDayYear, formatUsdDisplay } from "../../core/utils/dateDisplay";
 import { getAccountsErrorMessage } from "./accountsApiErrors";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { selectUser } from "../../core/data/redux/authSlice";
+import { getSchoolLogoSrc } from "../../core/utils/schoolLogo";
+import SchoolLogoImage from "../../core/common/schoolLogoImage";
 
 const Invoice = () => {
   const routes = all_routes;
@@ -18,6 +22,8 @@ const Invoice = () => {
   const [inv, setInv] = useState<Record<string, unknown> | null>(null);
   const [settings, setSettings] = useState<Record<string, string> | null>(null);
   const [apiBaseUrl, setApiBaseUrl] = useState("");
+  const user = useSelector(selectUser);
+  const schoolLogoSrc = getSchoolLogoSrc(user);
 
   const fullUrl = (path: string) => {
     if (!path) return "";
@@ -25,6 +31,20 @@ const Invoice = () => {
     const cleanPath = path.startsWith("/api/") ? path.slice(4) : path;
     const finalPath = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
     return `${apiBaseUrl}${finalPath}`;
+  };
+
+  const resolveFullUrl = (src: string, apiBase: string) => {
+    if (!src) return "";
+    const s = src.trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    if (s.includes("/api/")) {
+      const cleanPath = s.startsWith("/api/") ? s.slice(4) : s;
+      const finalPath = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
+      return `${apiBase}${finalPath}`;
+    }
+    const base = window.location.origin;
+    const finalPath = s.startsWith("/") ? s : `/${s}`;
+    return `${base}${finalPath}`;
   };
 
   useEffect(() => {
@@ -106,8 +126,14 @@ const Invoice = () => {
             body { background: #fff !important; padding: 20px !important; }
             #print-invoice-section { display: block !important; width: 100% !important; margin: 0 !important; }
             .no-print { display: none !important; }
+            * {
+              visibility: visible !important;
+            }
             @media print {
               .no-print { display: none !important; }
+              * {
+                visibility: visible !important;
+              }
             }
           </style>
         </head>
@@ -129,7 +155,34 @@ const Invoice = () => {
     }, 500);
   };
 
-  const getBase64Image = (url: string): Promise<string> => {
+  const getBase64ImageWithAuth = async (url: string): Promise<string> => {
+    if (url.includes("/api/school/profile/logo/")) {
+      const headers: Record<string, string> = {
+        Accept: "image/*,*/*",
+      };
+      const tb = getTenantBearerToken();
+      if (tb) {
+        headers.Authorization = `Bearer ${tb}`;
+      }
+      const res = await fetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        cache: "no-store",
+        mode: "cors",
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch logo: ${res.statusText}`);
+      }
+      const blob = await res.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.setAttribute("crossOrigin", "anonymous");
@@ -150,7 +203,7 @@ const Invoice = () => {
   const handleDownloadPDF = async () => {
     if (!inv) return;
     const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-    const logoSrc = settings?.invoice_logo ? fullUrl(settings.invoice_logo) : "";
+    const logoSrc = schoolLogoSrc ? resolveFullUrl(schoolLogoSrc, apiBaseUrl) : "";
     const signatureSrc = settings?.invoice_signature_url ? fullUrl(settings.invoice_signature_url) : "";
 
     // Helper to replace Rupee sign for PDF compatibility
@@ -158,12 +211,19 @@ const Invoice = () => {
 
     try {
       if (logoSrc) {
-        const logoData = await getBase64Image(logoSrc);
-        doc.addImage(logoData, "PNG", 40, 40, 60, 60, undefined, "FAST");
+        const logoData = await getBase64ImageWithAuth(logoSrc);
+        doc.addImage(logoData, "PNG", 40, 40, 40, 40, undefined, "FAST");
       }
     } catch (e) {
       console.warn("Failed to load logo for PDF", e);
     }
+
+    // Draw school name next to logo (or at 40 if no logo)
+    const schoolName = user?.school_name || "PreSkool";
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(30, 41, 59);
+    doc.text(schoolName, logoSrc ? 95 : 40, 65);
 
     doc.setFontSize(22);
     doc.setTextColor(40);
@@ -291,7 +351,7 @@ const Invoice = () => {
     doc.text(settings?.invoice_signature_name || "Authorized Signatory", 550, sigY, { align: "right" });
     try {
       if (signatureSrc) {
-        const sigData = await getBase64Image(signatureSrc);
+        const sigData = await getBase64ImageWithAuth(signatureSrc);
         doc.addImage(sigData, "PNG", 450, sigY + 5, 100, 40, undefined, "FAST");
       }
     } catch (e) {
@@ -378,29 +438,26 @@ const Invoice = () => {
           <style>
             {`
               @media print {
-                /* Explicitly hide standard UI wrappers */
-                .header, .sidebar, .sidebar-overlay, .settings-icon, .breadcrumb, .no-print, .btn {
-                  display: none !important;
+                body * {
+                  visibility: hidden !important;
                 }
-                .main-wrapper, .page-wrapper {
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  min-height: auto !important;
-                }
-                .content {
-                  padding: 0 !important;
-                  margin: 0 !important;
-                }
-                body {
-                  background: #fff !important;
-                  -webkit-print-color-adjust: exact;
+                #print-invoice-section,
+                #print-invoice-section * {
+                  visibility: visible !important;
                 }
                 #print-invoice-section {
+                  position: absolute;
+                  left: 0;
+                  top: 0;
+                  width: 100%;
                   display: block !important;
-                  width: 100% !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: #fff !important;
+                }
+                .no-print, .btn, .header, .sidebar, .sidebar-overlay, .settings-icon, .breadcrumb {
+                  display: none !important;
+                  visibility: hidden !important;
                 }
               }
             `}
@@ -408,13 +465,14 @@ const Invoice = () => {
           <div className="row" id="print-invoice-section">
             <div className="col-md-12">
               <div className="invoice-popup-head d-flex align-items-center justify-content-between mb-4">
-                <span>
-                  {settings?.invoice_logo ? (
-                    <img src={fullUrl(settings.invoice_logo)} alt="School Logo" style={{ height: "60px" }} />
-                  ) : (
-                    <ImageWithBasePath src="assets/img/logo.svg" alt="Img" />
-                  )}
-                </span>
+                <div className="d-flex align-items-center">
+                  <SchoolLogoImage
+                    src={schoolLogoSrc}
+                    alt="School Logo"
+                    style={{ height: "40px", marginRight: "12px", objectFit: "contain" }}
+                  />
+                  <h3 className="mb-0 text-dark fw-bold">{user?.school_name || "PreSkool"}</h3>
+                </div>
                 <div className="popup-title">
                   <h2>{inv.invoice_type === 'Payslip' ? 'SALARY SLIP' : 'INVOICE'}</h2>
                   <p>{inv.invoice_type === 'Payslip' ? 'Employee Copy' : 'Original For Recipient'}</p>
