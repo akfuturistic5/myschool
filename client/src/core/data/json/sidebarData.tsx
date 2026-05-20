@@ -392,7 +392,7 @@ export const SidebarData = [
         submenu: true,
         showSubRoute: false,
         submenuItems: [
-          { label: "Expense Category", link: routes.expenseCategory },
+          { label: "Categories", link: routes.accountCategories },
           { label: "Expenses", link: routes.expense },
           { label: "Income", link: routes.accountsIncome },
           {

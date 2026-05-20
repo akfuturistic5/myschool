@@ -14,7 +14,7 @@ function sliceYmd(s) {
 async function assertCategoryUsable(client, categoryId, expenseYearId) {
   const r = await client.query(
     `SELECT id, academic_year_id, COALESCE(is_active, true) AS is_active
-     FROM accounts_expense_categories WHERE id = $1`,
+     FROM account_categories WHERE id = $1 AND deleted_at IS NULL AND category_type = 'Expense'`,
     [categoryId]
   );
   if (r.rows.length === 0) {
@@ -101,7 +101,7 @@ const listExpenses = async (req, res) => {
     }
 
     const baseFrom = `FROM accounts_expenses e
-      INNER JOIN accounts_expense_categories cat ON cat.id = e.category_id
+      INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
       ${where}`;
 
     const orderSql = buildOrderClause(
@@ -156,7 +156,7 @@ const getExpense = async (req, res) => {
     const r = await query(
       `SELECT e.*, cat.category_name
        FROM accounts_expenses e
-       INNER JOIN accounts_expense_categories cat ON cat.id = e.category_id
+       INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
        WHERE e.id = $1`,
       [id]
     );
@@ -226,7 +226,10 @@ const createExpense = async (req, res) => {
       return exp;
     });
 
-    const cat = await query(`SELECT category_name FROM accounts_expense_categories WHERE id = $1`, [category_id]);
+    const cat = await query(
+      `SELECT category_name FROM account_categories WHERE id = $1 AND deleted_at IS NULL AND category_type = 'Expense'`,
+      [category_id]
+    );
     const merged = { ...row, category_name: cat.rows[0]?.category_name };
     res.status(201).json({ status: 'SUCCESS', message: 'Expense created', data: mapExpenseRow(merged) });
   } catch (e) {
@@ -344,7 +347,7 @@ const updateExpense = async (req, res) => {
     const r = await query(
       `SELECT e.*, cat.category_name
        FROM accounts_expenses e
-       INNER JOIN accounts_expense_categories cat ON cat.id = e.category_id
+       INNER JOIN account_categories cat ON cat.id = e.category_id AND cat.deleted_at IS NULL AND cat.category_type = 'Expense'
        WHERE e.id = $1`,
       [id]
     );

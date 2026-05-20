@@ -3491,6 +3491,7 @@ class ApiService {
     set('sort_by', params.sort_by);
     set('sort_order', params.sort_order);
     set('payment_method', params.payment_method);
+    set('category_type', params.category_type);
     return q;
   }
 
@@ -3565,8 +3566,38 @@ class ApiService {
     return this.makeRequest(`/accounts/transactions/${id}`);
   }
 
-  async getAccountsExpenseCategories(params = {}) {
+  async getAccountsCategories(params = {}) {
     const q = this._accountsListParams(params);
+    const qs = q.toString();
+    return this.makeRequest(`/accounts/categories${qs ? `?${qs}` : ''}`);
+  }
+
+  async getAccountsCategoryById(id) {
+    return this.makeRequest(`/accounts/categories/${id}`);
+  }
+
+  async createAccountsCategory(data) {
+    return this.makeRequest('/accounts/categories', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAccountsCategory(id, data) {
+    return this.makeRequest(`/accounts/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAccountsCategory(id) {
+    return this.makeRequest(`/accounts/categories/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAccountsExpenseCategories(params = {}) {
+    const q = this._accountsListParams({ ...params, category_type: params.category_type || 'Expense' });
     const qs = q.toString();
     return this.makeRequest(`/accounts/expense-categories${qs ? `?${qs}` : ''}`);
   }

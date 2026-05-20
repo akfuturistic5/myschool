@@ -7,6 +7,8 @@ const {
   updateIncomeSchema,
   createInvoiceSchema,
   updateInvoiceSchema,
+  createAccountCategorySchema,
+  updateAccountCategorySchema,
   createExpenseCategorySchema,
   updateExpenseCategorySchema,
   createExpenseSchema,
@@ -33,11 +35,13 @@ const { listTransactions, getTransaction } = require('../controllers/accountsTra
 
 const {
   listCategories,
+  listExpenseCategories,
   getCategory,
   createCategory,
+  createExpenseCategory,
   updateCategory,
   deleteCategory,
-} = require('../controllers/accountsExpenseCategoryController');
+} = require('../controllers/accountsAccountCategoryController');
 
 const {
   listExpenses,
@@ -66,9 +70,15 @@ router.delete('/invoices/:id', requireRole(WRITE), deleteInvoice);
 router.get('/transactions', requireRole(ALL_AUTHENTICATED_ROLES), listTransactions);
 router.get('/transactions/:id', requireRole(ALL_AUTHENTICATED_ROLES), getTransaction);
 
-router.get('/expense-categories', requireRole(ALL_AUTHENTICATED_ROLES), listCategories);
+router.get('/categories', requireRole(ALL_AUTHENTICATED_ROLES), listCategories);
+router.get('/categories/:id', requireRole(ALL_AUTHENTICATED_ROLES), getCategory);
+router.post('/categories', requireRole(WRITE), validate(createAccountCategorySchema), createCategory);
+router.put('/categories/:id', requireRole(WRITE), validate(updateAccountCategorySchema), updateCategory);
+router.delete('/categories/:id', requireRole(WRITE), deleteCategory);
+
+router.get('/expense-categories', requireRole(ALL_AUTHENTICATED_ROLES), listExpenseCategories);
 router.get('/expense-categories/:id', requireRole(ALL_AUTHENTICATED_ROLES), getCategory);
-router.post('/expense-categories', requireRole(WRITE), validate(createExpenseCategorySchema), createCategory);
+router.post('/expense-categories', requireRole(WRITE), validate(createExpenseCategorySchema), createExpenseCategory);
 router.put('/expense-categories/:id', requireRole(WRITE), validate(updateExpenseCategorySchema), updateCategory);
 router.delete('/expense-categories/:id', requireRole(WRITE), deleteCategory);
 
