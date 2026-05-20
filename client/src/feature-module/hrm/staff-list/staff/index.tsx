@@ -68,7 +68,14 @@ const Staff = () => {
   const dashboardFallback = getDashboardForRole(user?.role, user?.user_role_id);
 
   const dropdownMenuRef = useRef<HTMLDivElement | null>(null);
-  const { staffList, loading, error, refetch } = useStaff({ enabled: canManage });
+  const { staffList: rawStaffList, loading, error, refetch } = useStaff({ enabled: canManage });
+  const staffList = useMemo(() => {
+    return rawStaffList.filter((row: any) => {
+      const roleName = String(row.originalData?.user_role_name || "").toLowerCase();
+      const roleId = Number(row.originalData?.role_id);
+      return roleId !== 2 && roleName !== "teacher";
+    });
+  }, [rawStaffList]);
   const { departments: deptRows } = useDepartments();
   const { designations: desigRows } = useDesignations();
 
